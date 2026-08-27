@@ -522,10 +522,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -542,10 +542,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -562,10 +562,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -582,10 +582,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -602,10 +602,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -622,10 +622,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -642,10 +642,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -662,10 +662,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -682,10 +682,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -702,10 +702,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -722,10 +722,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -742,10 +742,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -762,10 +762,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -782,10 +782,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -802,10 +802,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
@@ -822,10 +822,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
-      - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:712 - handleConfigPost definition"
-      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path"
+      - "include/api_config_apply.h:68 - configApply Apply Core"
+      - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
+      - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
     missing_metadata: []
     notes: ""
