@@ -502,18 +502,3 @@ public:
 
 // Static initializer object — constructor runs at startup (before main())
 static BenchInitializer __benchInit;
-
-// ============================================================================
-// Weak setup/loop — fallback when src/ is NOT included (standalone bench mode)
-// ============================================================================
-// When this harness is compiled WITH src/main.cpp (as in firebeetle2_p4_rt_bench
-// with extended filters), src/main.cpp's STRONG setup/loop take precedence and
-// the firmware runs normally. The static initializer __benchInit has already
-// created benchMainTask, which runs in parallel.
-//
-// If compiled WITHOUT src/ (standalone bench mode), these weak symbols provide
-// the entry point and run the phases as the main application.
-
-__attribute__((weak))
-void setup() {
-    Serial.begin(115200);
