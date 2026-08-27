@@ -58,7 +58,7 @@
   let currentSpeedLimitMax = null;
   let currentSpeedPreset = null;
   const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
-  const s1EnableInSetup = setupActionText("Enable S1 — Hoverboard");
+  const s1EnableInSetup = setupActionText("Enable S1 — Drive");
 
   const FAILSAFE_SOURCE_LABELS = {
     0: "None",
@@ -309,8 +309,8 @@
     if (!hasTelemetry) {
       if (hbNoData) {
         hbNoData.textContent = driveHardwareEnabled
-          ? "Waiting for complete hoverboard telemetry…"
-          : `Hoverboard not enabled — ${s1EnableInSetup}.`;
+          ? "Waiting for complete drive telemetry…"
+          : `Drive not enabled — ${s1EnableInSetup}.`;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";

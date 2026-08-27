@@ -141,7 +141,7 @@
         : transport === "wifi" ? " - WiFi (fallback)"
         : "";
       const ownerDetail = payload.dome_link.uart_owned_by_dome === true
-        ? ", UART2 owned by DomeLink"
+        ? ", UART2 owned by protoR2link"
         : "";
       return healthSignal(
         "ok",

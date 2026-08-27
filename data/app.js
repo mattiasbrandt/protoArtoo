@@ -226,11 +226,11 @@
         let transportLine = "";
         if (key === "protoR2link" && payload.dome_link?.state === "connected") {
           if (payload.dome_link?.uart_owned_by_dome === true) {
-            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
+            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by protoR2link")}</div>`;
           }
         }
         if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
-          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
+          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while protoR2link owns UART2")}</div>`;
         }
         return `
         <div class="status-item" id="comp-${key}">
