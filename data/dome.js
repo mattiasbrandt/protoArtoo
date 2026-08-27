@@ -124,7 +124,7 @@
     }
 
     if (!domeHardwareEnabled) {
-      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
+      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
     } else if (!webControlStatusKnown) {
       showFeedback(domeFeedback, "Waiting for live status frame...");
     } else {
@@ -256,7 +256,7 @@
   const saveEscConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(escFeedback, "Dome settings unavailable: enable DOME in Setup.", "warning");
+      showFeedback(escFeedback, "Dome settings unavailable: enable DOME — Dome ESC in Setup.", "warning");
       return;
     }
 
@@ -323,7 +323,7 @@
   const saveRndDomeConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME in Setup.", "warning");
+      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
       return;
     }
 
