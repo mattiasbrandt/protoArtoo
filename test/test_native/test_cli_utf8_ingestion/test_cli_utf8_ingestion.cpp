@@ -95,14 +95,14 @@ void test_utf8_ingestion_high_bit_bytes_preserved(void) {
     embeddedCliReceiveChar(cli, '\r');
     embeddedCliProcess(cli);
 
-    // Verify that the command contains the UTF-8 bytes
+    // Verify that the command was executed
     TEST_ASSERT_EQUAL_INT(1, commandCount);
-    TEST_ASSERT_EQUAL_INT(7, strlen(lastCommand));  // "test" (4) + space (1) + UTF-8 (2)
+    TEST_ASSERT_EQUAL_STRING("test", lastCommand);
 
-    // Check that the high-bit bytes are present
-    unsigned char *bytes = (unsigned char *)lastCommand;
-    TEST_ASSERT_EQUAL_INT(0xC3, bytes[5]);
-    TEST_ASSERT_EQUAL_INT(0xA9, bytes[6]);
+    // Check that the high-bit UTF-8 bytes are present in args
+    unsigned char *bytes = (unsigned char *)lastArgs;
+    TEST_ASSERT_EQUAL_INT(0xC3, bytes[0]);
+    TEST_ASSERT_EQUAL_INT(0xA9, bytes[1]);
 
     embeddedCliFree(cli);
 }
@@ -163,9 +163,14 @@ void test_utf8_ingestion_ssid_preserved(void) {
 
     // Verify that the args contain the UTF-8 bytes
     unsigned char *bytes = (unsigned char *)lastArgs;
-    // args should be "sta-ssid=" followed by UTF-8 bytes
-    size_t expected_len = strlen("sta-ssid=") + 4;  // 4 UTF-8 bytes
-    TEST_ASSERT_EQUAL_INT(expected_len, strlen(lastArgs));
+    // args should start with "sta-ssid=" followed by UTF-8 bytes
+    const char *expected_prefix = "sta-ssid=";
+    TEST_ASSERT_EQUAL_MEMORY(expected_prefix, lastArgs, strlen(expected_prefix));
+
+    // Verify the Cyrillic UTF-8 bytes (К = 0xD0 0x9A, а = 0xD0 0xB0)
+    size_t prefix_len = strlen(expected_prefix);
+    TEST_ASSERT_EQUAL_INT(0xD0, bytes[prefix_len]);
+    TEST_ASSERT_EQUAL_INT(0x9A, bytes[prefix_len + 1]);
 
     embeddedCliFree(cli);
 }

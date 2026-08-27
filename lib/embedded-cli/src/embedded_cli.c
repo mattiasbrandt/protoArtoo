@@ -1191,7 +1191,8 @@ static bool isDisplayableChar(char c) {
     // [PATCH: UTF-8 ingestion] Accept all bytes >= 0x20 (space).
     // High-bit bytes (>= 0x80) are part of valid UTF-8 sequences.
     // Validation of UTF-8 integrity is the Console dispatcher's job.
-    return (c >= 0x20);
+    // Cast to unsigned to handle high-bit bytes in signed char context.
+    return ((unsigned char)c >= 0x20);
 }
 
 static uint16_t fifoBufAvailable(FifoBuf *buffer) {
