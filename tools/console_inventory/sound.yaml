@@ -38,7 +38,10 @@ rows:
     registry_marcduino_cmd: $...
     anchor_kind: api
     evidence:
-      - FILL
+      - src/web/web_seam_routes.cpp:118 - route registration POST /api/audio
+      - include/api_audio.h:54 - handler declaration void handleAudioPost()
+      - src/web/api_audio.cpp:888-920 - handleAudioPost() accepts action=dollar, calls audioQueueDollar()
+      - include/audio_task.h:102 - audioQueueDollar() declaration, enqueues AUDIO_CMD_DOLLAR
     executor_or_core: audioQueueDollar() -> AudioTask Core 0
     missing_metadata:
       - FILL
@@ -792,7 +795,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: api
     evidence:
-      - FILL
+      - src/web/web_seam_routes.cpp:111 - route registration GET /api/audio/mood-map
+      - include/api_audio.h:61 - handler declaration void handleAudioMoodMapGet()
+      - src/web/api_audio.cpp:379-395 - handleAudioMoodMapGet reads mood masks from config cache
+      - include/config_store.h - AudioConfig holds snd_moodcat_quiet/mid/full/awakeplus fields
     executor_or_core: handleAudioMoodMapGet() -> web handler Core 0
     missing_metadata:
       - FILL
