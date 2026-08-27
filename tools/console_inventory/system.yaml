@@ -4,12 +4,15 @@
 # firmware and replaced with evidence; a file containing FILL is unfinished by definition.
 #
 # Row schema (decide these):
-#   anchor_kind:        api | rc_internal | event | config | none
+#   anchor_kind:        api | rc_internal | event | config | aggregate-field | none
+#                       aggregate-field = describes one field/section inside a larger query's
+#                       response; stays metadata, cites the owning aggregate + builder line
 #   evidence:           list of "file:line - what it shows" citations. Required per anchor_kind:
 #                         api          -> route registration + handler declaration header + definition + domain core
 #                         rc_internal  -> dispatcher site + enum/token + owning queue or core
 #                         event        -> emitter + SSE registration
 #                         config       -> read path + apply path + persistence path
+#                         aggregate-field -> owning aggregate query name + the builder line that emits it
 #                         none         -> explicit file:line evidence that NO executor exists
 #   executor_or_core:   the function/core the Console must call (or "none")
 #   missing_metadata:   registry fields the Console needs that are absent (argument schema, alias,
