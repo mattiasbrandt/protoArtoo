@@ -259,3 +259,66 @@ class TestExecutorSymbols(unittest.TestCase):
         self.assertFalse(any('none' in e for e in errors),
                         f"Expected no error for executor: none, got: {errors}")
 
+
+class TestNoneExecutorEvidence(unittest.TestCase):
+    """Test check_none_executor_evidence() function."""
+
+    def test_none_executor_requires_evidence_or_notes(self):
+        """Fails when executor: none has no evidence or notes in inventory."""
+        from tools.check_action_registry_drift import check_none_executor_evidence
+
+        doc = {
+            'entries': [
+                # system.api.get-coredump has evidence, so it should not fail
+                {
+                    'name': 'system.api.get-coredump',
+                    'type': 'action',
+                    'executor': 'none'
+                },
+                # A hypothetical entry without evidence (not in real inventory)
+                {
+                    'name': 'nonexistent.api.unevidenced',
+                    'type': 'action',
+                    'executor': 'none'
+                }
+            ]
+        }
+        errors = []
+        check_none_executor_evidence(doc, errors)
+
+        # Should report error for the nonexistent entry without inventory row
+        self.assertTrue(
+            any('nonexistent.api.unevidenced' in e and ('evidence or notes' in e or 'inventory row' in e)
+                for e in errors),
+            f"Expected error about missing evidence, got: {errors}"
+        )
+
+    def test_none_executor_with_evidence_passes(self):
+        """Passes when executor: none has evidence in inventory."""
+        from tools.check_action_registry_drift import check_none_executor_evidence
+
+        doc = {
+            'entries': [
+                # system.api.get-coredump exists in the real inventory with evidence
+                {
+                    'name': 'system.api.get-coredump',
+                    'type': 'action',
+                    'executor': 'none'
+                },
+                # Other real entries with evidence should also pass
+                {
+                    'name': 'system.action.upload-firmware',
+                    'type': 'action',
+                    'executor': 'none'
+                }
+            ]
+        }
+        errors = []
+        check_none_executor_evidence(doc, errors)
+
+        # Real inventory entries with evidence should not produce errors
+        self.assertFalse(
+            any('system.api.get-coredump' in e or 'system.action.upload-firmware' in e for e in errors),
+            f"Expected no error for real entries with evidence, got: {errors}"
+        )
+

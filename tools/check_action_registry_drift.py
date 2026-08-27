@@ -537,6 +537,62 @@ def check_executor_symbols(doc: dict, errors: list[str]) -> None:
         )
 
 
+def check_none_executor_evidence(doc: dict, errors: list[str]) -> None:
+    """Validate that every entry claiming executor: none has evidence in the inventory.
+
+    'none' is allowed for entries without a project executor core, but it must be justified:
+    - External system calls (e.g. ESP-IDF functions) must be named in the evidence.
+    - Bulk/streaming operations (OTA upload) must be marked as out-of-scope.
+    - Unemitted events must be marked as internal or non-SSE.
+    - Pure adapter endpoints (SSE stream) must document the delegation model.
+
+    An unevidenced 'none' is indistinguishable from "I did not look."
+    """
+    # Load all inventory files
+    inventory_files = [
+        ROOT / "tools" / "console_inventory" / "sound.yaml",
+        ROOT / "tools" / "console_inventory" / "dome.yaml",
+        ROOT / "tools" / "console_inventory" / "system.yaml",
+        ROOT / "tools" / "console_inventory" / "drive-servo-aux-rc.yaml",
+    ]
+
+    inventory_rows = {}
+    for inv_file in inventory_files:
+        if not inv_file.exists():
+            continue
+        with open(inv_file) as f:
+            inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                inventory_rows[name] = row
+
+    # Check each 'none' entry in registry
+    for entry in doc.get('entries', []):
+        if entry.get('executor') != 'none':
+            continue
+
+        name = entry.get('name')
+        inv_row = inventory_rows.get(name)
+
+        if not inv_row:
+            errors.append(
+                f"{name} has executor: none but no inventory row to provide justification"
+            )
+            continue
+
+        # Require either evidence or notes explaining the absence
+        evidence = inv_row.get('evidence', [])
+        notes = inv_row.get('notes', '')
+
+        has_evidence = evidence and len(evidence) > 0
+        has_notes = notes and len(notes) > 0
+
+        if not (has_evidence or has_notes):
+            errors.append(
+                f"{name} has executor: none but no evidence or notes to justify the absence"
+            )
+
+
 def check_status_query_classification(doc: dict, errors: list[str]) -> None:
     """Enforce that every type: status entry is explicitly classified as query or non-query.
     
@@ -664,6 +720,7 @@ def main() -> int:
     check_inventory_registry_alignment(doc, errors)
     check_status_query_classification(doc, errors)
     check_executor_symbols(doc, errors)
+    check_none_executor_evidence(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
