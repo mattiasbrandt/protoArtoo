@@ -387,7 +387,7 @@ A rare long-lived branch (`epic/<name>`) holding all work of one multi-ticket ep
 _Avoid_: phase branch, dev branch, per-ticket PRs inside an epic
 
 **artoo-esp32**:
-The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target.
+The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). Permanently maintained and carrying the complete feature set - not a legacy build kept alive for compatibility.
 _Avoid_: classic, legacy board, clone build
 
 **ESP32-P4 Target**:
