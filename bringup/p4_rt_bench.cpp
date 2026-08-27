@@ -73,46 +73,38 @@ static constexpr uint32_t SBUS_FRAME_PERIOD_MS = 14;
 // ============================================================================
 // SBUS frame builder (centered channels, no failsafe)
 // ============================================================================
-// Packing reference from docs/spec-sheets/sbus-protocol.md §4
-// 16 channels x 11 bits, LSB-first into bytes 1-22
+// Exact inverse of sbusUnpackChannels() in include/sbus_unpack.h: that function
+// forms a little-endian 24-bit word from data[byteIdx..byteIdx+2] and takes
+// (raw >> bitOff) & 0x7FF. Packing therefore shifts LEFT by the same bitOff and
+// ORs the three bytes back in the same order. An earlier revision shifted RIGHT,
+// which discards each channel's low bits and mis-packs 15 of 16 channels.
 static void buildSbusFrame(uint8_t* frame, uint16_t ch1, uint16_t ch2) {
-    // Header
+    memset(frame, 0, 25);
     frame[0] = 0x0F;
 
-    // Channels 1-16 at center (1024 = middle of 0-2047 range)
-    // For bench: all channels centered except optionally ch1/ch2
     uint16_t channels[16];
     for (int i = 0; i < 16; i++) {
-        if (i == 0) {
-            channels[i] = ch1;
-        } else if (i == 1) {
-            channels[i] = ch2;
-        } else {
-            channels[i] = 1024;  // Center all others
-        }
+        channels[i] = 1024;  // centre
     }
+    channels[0] = ch1;
+    channels[1] = ch2;
 
-    // Pack channels into bytes 1-22 (LSB-first)
     int bitPos = 0;
     for (int ch = 0; ch < 16; ch++) {
-        int byteIdx = bitPos / 8 + 1;  // +1 offset for frame[1..22]
-        int bitOff = bitPos % 8;
-
-        uint32_t val = channels[ch] & 0x7FFU;
+        const int byteIdx = bitPos / 8 + 1;  // +1: the payload starts at frame[1]
+        const int bitOff = bitPos % 8;
+        const uint32_t v = static_cast<uint32_t>(channels[ch] & 0x7FFU) << bitOff;
         for (int b = 0; b < 3; b++) {
-            int idx = byteIdx + b;
-            if (idx < 23) {
-                frame[idx] |= (val >> (bitOff + 8 * b)) & 0xFFU;
+            const int idx = byteIdx + b;
+            if (idx <= 22) {  // never touch the flags byte at frame[23]
+                frame[idx] |= static_cast<uint8_t>((v >> (8 * b)) & 0xFFU);
             }
         }
         bitPos += 11;
     }
 
-    // Flags byte (no failsafe, no frame loss, ch17/ch18 = 0)
-    frame[23] = 0x00;
-
-    // Footer
-    frame[24] = 0x00;
+    frame[23] = 0x00;  // flags: no failsafe, no frame loss
+    frame[24] = 0x00;  // footer
 }
 
 // ============================================================================
@@ -227,8 +219,7 @@ void benchPhase1SbusGeneratorOn() {
     uint32_t lastFrameMs = startMs;
 
     while (millis() - startMs < PHASE_1_DURATION_MS) {
-        // Build centered SBUS frame
-        memset(sbusFrame, 0, sizeof(sbusFrame));
+        // Build centered SBUS frame (buildSbusFrame does memset internally)
         buildSbusFrame(sbusFrame, 1024, 1024);
 
         // Transmit
