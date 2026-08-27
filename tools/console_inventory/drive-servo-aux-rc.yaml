@@ -103,6 +103,7 @@ rows:
       - "include/config_store.h:273 - uint8_t aux_led_count"
       - "src/web/api_config_apply.cpp:344 - paramUint8 parsing aux_led_count"
       - "src/web/api_config_apply.cpp:345 - working->servo.aux_led_count applied"
+      - "include/config_store.h:445 - bool configSaveServo (Commit Step)"
     executor_or_core: "configApplyCore"
     missing_metadata: []
     notes: "NVS key aux_led_count. Apply Core (ADR 0011)."
@@ -127,6 +128,7 @@ rows:
       - "include/config_store.h:272 - uint8_t aux_led_pin"
       - "src/web/api_config_apply.cpp:336 - paramUint8 parsing aux_led_pin"
       - "src/web/api_config_apply.cpp:337 - working->servo.aux_led_pin applied"
+      - "include/config_store.h:445 - bool configSaveServo (Commit Step)"
     executor_or_core: "configApplyCore"
     missing_metadata: []
     notes: "NVS key aux_led_pin. Requires restart. Apply Core (ADR 0011)."
@@ -340,6 +342,7 @@ rows:
       - "include/config_store.h:180 - int16_t speedLimitMax"
       - "src/web/api_config_apply.cpp:205 - paramInt16 parsing speedLimitMax"
       - "src/web/api_config_apply.cpp:206 - working->drive.speedLimitMax applied"
+      - "include/config_store.h:443 - bool configSaveDrive (Commit Step)"
     executor_or_core: "configApplyCore"
     missing_metadata:
       - "parameter name not in registry"
@@ -501,6 +504,7 @@ rows:
       - "include/config_store.h:362 - RcInputMode rc_input_mode"
       - "src/web/api_config_apply.cpp:318 - mode parsing from params"
       - "src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)"
+      - "include/config_store.h:447 - bool configSaveSystem (Commit Step)"
     executor_or_core: "configApplyCore"
     missing_metadata:
       - "enum values not in registry"
