@@ -64,12 +64,11 @@ Each config row cites:
 **Definition:** Query current state and return a structured snapshot.
 
 **Classification:**
-- **Standalone queries (5):** Own endpoint, return complete JSON
-  - `dome.status.current` → `/api/status` (subset of full status)
+- **Standalone queries (4):** Own endpoint, return complete JSON
+  - `dome.status.current` → `/api/status`
   - `sound.status.current` → `/api/audio`
   - `dome.status.serial-link` → `/api/serial`
   - `rc.status.snapshot` → `/api/rc`
-  - `system.api.event-stream` → `/api/events` (SSE stream)
 
 - **Aggregate-field (9):** Describe one field within a larger response (metadata, never standalone commands)
   - `drive.status.current` (motor outputs in `/api/status`)
