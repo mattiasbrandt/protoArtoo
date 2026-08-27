@@ -309,10 +309,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:44 - enum RobotActionId SOUND_ACTION_RANDOM_ALERT"
-      - "src/rc_action_dispatcher.cpp:43 - rcAudioCategoryTable maps SOUND_ACTION_RANDOM_ALERT to alrm_lo/alrm_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case for SOUND_ACTION_RANDOM_* calls selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - RC result audioTrack sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:95 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only RC trigger; random track from snd_cat_alrm_lo/snd_cat_alrm_hi range"
@@ -332,10 +332,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:36 - enum RobotActionId SOUND_ACTION_RANDOM_CHATTY"
-      - "src/rc_action_dispatcher.cpp:27 - rcAudioCategoryTable maps to chat_lo/chat_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:87 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_chat_lo/snd_cat_chat_hi"
@@ -355,10 +355,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:35 - enum RobotActionId SOUND_ACTION_RANDOM_GENERAL"
-      - "src/rc_action_dispatcher.cpp:25 - rcAudioCategoryTable maps to gen_lo/gen_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:86 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_gen_lo/snd_cat_gen_hi"
@@ -378,10 +378,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:37 - enum RobotActionId SOUND_ACTION_RANDOM_HAPPY"
-      - "src/rc_action_dispatcher.cpp:29 - rcAudioCategoryTable maps to hap_lo/hap_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:88 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_hap_lo/snd_cat_hap_hi"
@@ -401,10 +401,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:41 - enum RobotActionId SOUND_ACTION_RANDOM_HUMMING"
-      - "src/rc_action_dispatcher.cpp:37 - rcAudioCategoryTable maps to hum_lo/hum_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:92 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_hum_lo/snd_cat_hum_hi"
@@ -421,10 +421,10 @@ rows:
     registry_marcduino_cmd: $O
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $O command via audioQueueDollar($O)"
-      - "include/audio_dollar_parser.h:46 - audio_dollar_parser.h defines $O random mode disable"
+      - "include/audio_dollar_parser.h:25 - //   $O     --  disable random mode"
+      - "include/audio_dollar_parser.h:108 - AUDIO_ACTION_RANDOM_OFF, // disable random mode"
+      - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_OFF command"
+      - "include/audio_task.h:1 - audio task core processes random mode disable"
     executor_or_core: "audioQueueDollar($O) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; disables random mode without stopping current playback"
@@ -441,10 +441,10 @@ rows:
     registry_marcduino_cmd: $R
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $R command via audioQueueDollar($R)"
-      - "include/audio_dollar_parser.h:45 - audio_dollar_parser.h defines $R random mode enable"
+      - "include/audio_dollar_parser.h:24 - //   $R     --  enable random playback mode"
+      - "include/audio_dollar_parser.h:107 - AUDIO_ACTION_RANDOM_ON, // enable random playback mode"
+      - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_ON command"
+      - "include/audio_task.h:1 - audio task core processes random mode enable"
     executor_or_core: "audioQueueDollar($R) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; enables random idle playback mode"
@@ -464,10 +464,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:38 - enum RobotActionId SOUND_ACTION_RANDOM_PROCESSING"
-      - "src/rc_action_dispatcher.cpp:31 - rcAudioCategoryTable maps to proc_lo/proc_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:89 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_proc_lo/snd_cat_proc_hi"
@@ -487,10 +487,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:39 - enum RobotActionId SOUND_ACTION_RANDOM_SAD"
-      - "src/rc_action_dispatcher.cpp:33 - rcAudioCategoryTable maps to sad_lo/sad_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:90 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_sad_lo/snd_cat_sad_hi"
@@ -510,10 +510,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:42 - enum RobotActionId SOUND_ACTION_RANDOM_SCREAM"
-      - "src/rc_action_dispatcher.cpp:39 - rcAudioCategoryTable maps to scrm_lo/scrm_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:93 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_scrm_lo/snd_cat_scrm_hi"
@@ -533,10 +533,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:40 - enum RobotActionId SOUND_ACTION_RANDOM_SENTIMENTAL"
-      - "src/rc_action_dispatcher.cpp:35 - rcAudioCategoryTable maps to sent_lo/sent_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:91 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_sent_lo/snd_cat_sent_hi"
@@ -556,10 +556,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:45 - enum RobotActionId SOUND_ACTION_RANDOM_SNARKY"
-      - "src/rc_action_dispatcher.cpp:45 - rcAudioCategoryTable maps to snarky_lo/snarky_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:96 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_snrk_lo/snd_cat_snrk_hi"
@@ -579,10 +579,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:43 - enum RobotActionId SOUND_ACTION_RANDOM_SURPRISED"
-      - "src/rc_action_dispatcher.cpp:41 - rcAudioCategoryTable maps to ooh_lo/ooh_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:94 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_ooh_lo/snd_cat_ooh_hi"
@@ -602,10 +602,10 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:46 - enum RobotActionId SOUND_ACTION_RANDOM_WHISTLE"
-      - "src/rc_action_dispatcher.cpp:47 - rcAudioCategoryTable maps to whis_lo/whis_hi"
-      - "src/rc_action_dispatcher.cpp:86 - switch case dispatches via selectRandomTrackInRange()"
-      - "src/rc_dispatcher_helpers.cpp:114 - result sent via audioQueuePlayTrack(SRC_SBUS)"
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:97 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
     executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "SBUS-only; random track from snd_cat_whis_lo/snd_cat_whis_hi"
@@ -741,10 +741,10 @@ rows:
     registry_marcduino_cmd: $-
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $- command via audioQueueDollar($-)"
-      - "include/audio_dollar_parser.h:48 - audio_dollar_parser.h defines $- volume down"
+      - "include/audio_dollar_parser.h:28 - //   $-     --  volume down by 1"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
     executor_or_core: "audioQueueDollar($-) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; decrements volume by 1"
@@ -761,10 +761,10 @@ rows:
     registry_marcduino_cmd: $f
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $f command via audioQueueDollar($f)"
-      - "include/audio_dollar_parser.h:49 - audio_dollar_parser.h defines $f max volume (30)"
+      - "include/audio_dollar_parser.h:29 - //   $f     --  volume to max (30)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
     executor_or_core: "audioQueueDollar($f) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; sets volume to 30"
@@ -781,10 +781,10 @@ rows:
     registry_marcduino_cmd: $m
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $m command via audioQueueDollar($m)"
-      - "include/audio_dollar_parser.h:47 - audio_dollar_parser.h defines $m mid volume (15)"
+      - "include/audio_dollar_parser.h:30 - //   $m     --  volume to mid (15)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
     executor_or_core: "audioQueueDollar($m) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; sets volume to 15"
@@ -801,10 +801,10 @@ rows:
     registry_marcduino_cmd: $p
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $p command via audioQueueDollar($p)"
-      - "include/audio_dollar_parser.h:50 - audio_dollar_parser.h defines $p min volume (0)"
+      - "include/audio_dollar_parser.h:31 - //   $p     --  volume to min (0)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
     executor_or_core: "audioQueueDollar($p) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; sets volume to 0"
@@ -821,10 +821,10 @@ rows:
     registry_marcduino_cmd: $+
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $+ command via audioQueueDollar($+)"
-      - "include/audio_dollar_parser.h:51 - audio_dollar_parser.h defines $+ volume up"
+      - "include/audio_dollar_parser.h:27 - //   $+     --  volume up by 1"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
     executor_or_core: "audioQueueDollar($+) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; increments volume by 1"
@@ -1022,9 +1022,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:60 - struct AudioConfig { ... snd_moodcat_quiet, snd_moodcat_mid, ... }"
-      - "src/tasks/audio_config_map.cpp:1 - audio config layer manages mood masks"
-      - "src/web/api_audio.cpp:397 - handleAudioMoodMapPost applies mood masks"
+      - "include/config_store.h:224 - uint16_t snd_moodcat_quiet;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_moodcat_* in JSON"
+      - "src/tasks/audio_config_map.cpp:43 - moodMasks configuration applied"
     executor_or_core: "audioMoodMapApply() -> NVS"
     missing_metadata: []
     notes: "mood to category mask mapping (4 uint16 values)"
@@ -1117,9 +1117,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:219 - snd_rand_max field in AudioConfig"
+      - "include/config_store.h:219 - uint16_t snd_rand_max;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_max in JSON"
-      - "src/tasks/audio_config_map.cpp:37 - random range configuration applied to AudioState"
+      - "src/tasks/audio_config_map.cpp:38 - out->randMax = cfg.audio.snd_rand_max;"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "upper bound for random pool (track range selection)"
@@ -1136,9 +1136,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:218 - snd_rand_min field in AudioConfig"
+      - "include/config_store.h:218 - uint16_t snd_rand_min;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_min in JSON"
-      - "src/tasks/audio_config_map.cpp:36 - random range configuration applied to AudioState"
+      - "src/tasks/audio_config_map.cpp:37 - out->randMin = cfg.audio.snd_rand_min;"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "lower bound for random pool (track range selection)"
@@ -1243,9 +1243,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:60 - AudioConfig holds audioVolume and cfg_sndVol NVS key"
-      - "src/tasks/audio_config_map.cpp:1 - config layer manages volume"
-      - "src/web/api_audio.cpp:859 - handleAudioPost volume action persists"
+      - "include/config_store.h:190 - uint8_t audioVolume;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON"
+      - "src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "default volume (0-30) persisted across reboots"
