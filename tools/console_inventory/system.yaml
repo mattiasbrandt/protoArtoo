@@ -320,10 +320,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute("/upload/filesystem", ...)
-  - src/web/api_upload.cpp:226 - void handleFilesystemUploadChunk()
-  - 'src/web/api_upload.cpp:228 - handleUploadChunk() called: writes U_SPIFFS directly to LittleFS partition'
-  - src/web/api_upload.cpp:233 - handleUploadDone() finalizes upload
+  - src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk)
+  - src/web/api_upload.cpp:226 - void handleFilesystemUploadChunk streams chunks to partition
+  - src/web/api_upload.cpp:228 - handleUploadChunk() called to write directly via Update library
+  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -340,10 +340,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute("/upload/firmware", ...)
-  - src/web/api_upload.cpp:214 - void handleFirmwareUploadChunk()
-  - 'src/web/api_upload.cpp:216 - handleUploadChunk() called: writes U_FLASH directly to flash via Update library'
-  - src/web/api_upload.cpp:220 - handleUploadDone() finalizes upload
+  - src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk)
+  - src/web/api_upload.cpp:214 - void handleFirmwareUploadChunk streams chunks to flash
+  - src/web/api_upload.cpp:216 - handleUploadChunk() called to write directly via Update library
+  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -383,8 +383,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:46 - webRegisterRoute("/api/events", WebMethod::kGet, handleEventsGet)
   - src/web/api_events.cpp:24 - void handleEventsGet(WebRequest& req)
-  - 'src/web/api_events.cpp:38 - req.beginEventStream(): establishes SSE stream, does not call executor'
-  - src/web/web_event_stream.cpp - event emission dispatched from event sources, not from this stream handler
+  - src/web/api_events.cpp:38 - req.beginEventStream() establishes SSE stream without emitting events
+  - src/web/web_server.cpp:816 - events emitted from other sources; stream handler is pure adapter
   executor_or_core: none
   missing_metadata: []
   notes: 'SSE stream adapter: no executor; events emitted from other sources and pushed to stream'
@@ -424,8 +424,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:71 - webRegisterRoute("/api/coredump", WebMethod::kGet, handleCoredumpGet)
   - src/web/api_system.cpp:163 - void handleCoredumpGet(WebRequest& req)
-  - src/web/api_system.cpp:165 - esp_core_dump_image_get(&addr, &size) called (ESP-IDF external)
-  - 'src/web/api_system.cpp:181 - no project core: streams binary coredump directly from flash partition'
+  - src/web/api_system.cpp:165 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
+  - src/web/api_system.cpp:181 - sendChunked streams coredump directly from partition; no project executor
   executor_or_core: none
   missing_metadata: []
   notes: Delegates to ESP-IDF esp_core_dump_image_get(); coredump is external persistent state, not a project executor
@@ -444,7 +444,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/coredump/status", WebMethod::kGet, handleCoredumpStatusGet)
   - src/web/api_system.cpp:154 - void handleCoredumpStatusGet(WebRequest& req)
-  - src/web/api_system.cpp:156 - esp_core_dump_image_get(&addr, &size) called (ESP-IDF external)
+  - src/web/api_system.cpp:156 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
+  - src/web/api_system.cpp:160 - handler builds JSON response inline without calling project executor
   executor_or_core: none
   missing_metadata: []
   notes: Delegates to ESP-IDF esp_core_dump_image_get(); no project executor
@@ -858,9 +859,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - 'docs/action-registry.yaml line - sse_event: null (not exposed via SSE)'
-  - 'docs/action-registry.yaml line - sources: [internal] (internal state, not emitted)'
-  - 'grep -r boot-complete src/ returns: no web emission sites found'
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; boot-complete not among them
+  - 'docs/action-registry.yaml:2624 - entry marked sources: [internal] and sse_event: null; not exposed'
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists
@@ -877,9 +879,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - 'docs/action-registry.yaml line - sse_event: null (not exposed via SSE)'
-  - 'docs/action-registry.yaml line - sources: [internal] (internal state, not emitted)'
-  - 'grep -r dome.enabled src/ returns: no SSE emission sites found'
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; dome-enabled not among them
+  - 'docs/action-registry.yaml:2608 - entry marked sources: [internal] and sse_event: null; not exposed'
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists
@@ -896,9 +899,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - 'docs/action-registry.yaml line - sse_event: null (not exposed via SSE)'
-  - 'docs/action-registry.yaml line - sources: [internal] (internal state, not emitted)'
-  - 'grep -r drives.engaged src/ returns: no SSE emission sites found'
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; drives-engaged not among them
+  - 'docs/action-registry.yaml:2592 - entry marked sources: [internal] and sse_event: null; not exposed'
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists

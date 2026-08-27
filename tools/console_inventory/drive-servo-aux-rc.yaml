@@ -467,7 +467,7 @@ rows:
   - src/web/api_actions_json.cpp:72 - defined, generates runtime action registry JSON
   executor_or_core: fillActionsResponse
   missing_metadata: []
-  notes: Web-API only. Reads read-only registry. NO-CORE-BELOW-HANDLER.
+  notes: Web-API handler for runtime action registry. Calls fillActionsResponse to generate JSON payload.
 - name: rc.api.get-map
   type: action
   registry_api_path: /api/rc/map
