@@ -419,11 +419,12 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:39 - webRegisterRoute(\"/api/actions/test\", kPost, handleActionsTestPost)"
-      - "include/api_actions.h:5 - void handleActionsTestPost(WebRequest& req)"
+      - "include/api_actions.h:40 - void handleActionsTestPost(WebRequest& req)"
       - "src/web/api_actions.cpp:64 - void handleActionsTestPost(WebRequest& req) {"
-    executor_or_core: "NO-CORE-BELOW-HANDLER"
+      - "src/web/api_actions.cpp:115 - dispatchRcTriggerActionTest(target, \"\", true) is the core"
+    executor_or_core: "dispatchRcTriggerActionTest"
     missing_metadata: []
-    notes: "Web-API only. Handler returns result directly. NO-CORE-BELOW-HANDLER at src/web/api_actions.cpp:64."
+    notes: "Web-API. Calls dispatchRcTriggerActionTest (RC task core). Guard: webControlEnabledForActionTest at api_actions.cpp:100."
   - name: rc.action.toggle-debug
     type: action
     registry_api_path: /api/rc/debug
@@ -438,11 +439,12 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:99 - webRegisterRoute(\"/api/rc/debug\", kPost, handleRcDebugPost)"
-      - "include/api_rc.h:6 - void handleRcDebugPost(WebRequest& req)"
+      - "include/api_rc.h:16 - void handleRcDebugPost(WebRequest& req)"
       - "src/web/api_rc.cpp:51 - void handleRcDebugPost(WebRequest& req) {"
-    executor_or_core: "NO-CORE-BELOW-HANDLER"
+      - "src/web/api_rc.cpp:80 - commandedSetRcDebug(enabled, SRC_WEB_API) is the core"
+    executor_or_core: "commandedSetRcDebug"
     missing_metadata: []
-    notes: "Web-API only. Handler toggles flag directly. NO-CORE-BELOW-HANDLER at src/web/api_rc.cpp:51."
+    notes: "Web-API. Calls commandedSetRcDebug (robot state command setter). No web control guard."
   - name: rc.api.get-bindable-actions
     type: action
     registry_api_path: /api/actions
