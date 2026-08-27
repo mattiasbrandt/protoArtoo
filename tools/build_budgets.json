@@ -18,7 +18,8 @@
       "size_tool": "riscv32-esp-elf-size",
       "envs": [
         "firebeetle2_bringup",
-        "firebeetle2"
+        "firebeetle2",
+        "firebeetle2_p4_rt_bench"
       ]
     },
     "esp32": {
@@ -75,10 +76,10 @@
       "dram_limit_bytes": 327680,
       "flash_budget_bytes": 2000000,
       "ram_budget_bytes": 100000,
-      "baseline_measured_at": "8fea3c73ebce",
-      "baseline_flash_bytes": 1606882,
-      "baseline_ram_bytes": 79952,
-      "budget_rationale": "RT bench harness extending firebeetle2. Runs alongside full firmware via static initializer. Same flash/RAM budgets as firebeetle2."
+      "baseline_measured_at": "deaf97889e52f70beb479ed59510f15d324f3b4b",
+      "baseline_flash_bytes": 1207008,
+      "baseline_ram_bytes": 61224,
+      "budget_rationale": "Complete firmware plus RT bench harness (SBUS loopback, TWDT stall). Full src/ compilation with p4_rt_bench.cpp instrumentation on FireBeetle 2 P4. Baseline is a real measurement of this image configuration."
     }
   }
 }
