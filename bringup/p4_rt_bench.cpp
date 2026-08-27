@@ -517,12 +517,3 @@ static BenchInitializer __benchInit;
 __attribute__((weak))
 void setup() {
     Serial.begin(115200);
-    delay(500);
-    Serial.println("[BENCH-STANDALONE] setup() (weak symbol fallback)");
-    Serial.flush();
-}
-
-__attribute__((weak))
-void loop() {
-    vTaskDelay(pdMS_TO_TICKS(1000));
-}
