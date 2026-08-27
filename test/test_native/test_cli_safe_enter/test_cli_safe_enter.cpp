@@ -65,9 +65,13 @@ void test_safe_enter_unique_prefix_not_auto_expanded(void) {
             .name = "sound_rand_general",
             .help = "Play random general sound",
             .tokenizeArgs = false,
+            .context = NULL,
             .binding = NULL,  // NULL binding: command goes to onCommand for dispatch
         },
     };
+
+    // Allocate static CLI buffer (4KB is sufficient for test configuration)
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
 
     EmbeddedCliConfig config = {
         .invitation = "> ",
@@ -75,21 +79,20 @@ void test_safe_enter_unique_prefix_not_auto_expanded(void) {
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,  // Live autocomplete OFF - but Enter still calls onAutocompleteRequest without patch
     };
 
-    // Allocate static CLI buffer
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     // Create CLI instance
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
     cli->appContext = (void *)1;  // Dummy context
 
     // Add binding
-    embeddedCliAddBinding(cli, &bindings[0]);
+    embeddedCliAddBinding(cli, bindings[0]);
 
     // Type "so" (unique prefix for "sound_rand_general")
     embeddedCliReceiveChar(cli, 's');
@@ -128,9 +131,12 @@ void test_safe_enter_exact_match_executes(void) {
             .name = "sound_rand_general",
             .help = "Play random general sound",
             .tokenizeArgs = false,
+            .context = NULL,
             .binding = NULL,
         },
     };
+
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
 
     EmbeddedCliConfig config = {
         .invitation = "> ",
@@ -138,17 +144,17 @@ void test_safe_enter_exact_match_executes(void) {
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
-    embeddedCliAddBinding(cli, &bindings[0]);
+    embeddedCliAddBinding(cli, bindings[0]);
 
     // Type the exact bound name
     const char *cmd = "sound_rand_general";
@@ -180,19 +186,21 @@ void test_safe_enter_exact_match_executes(void) {
  * This verifies that unbound commands are dispatched as-is.
  */
 void test_safe_enter_unknown_command_dispatched_as_is(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -213,4 +221,12 @@ void test_safe_enter_unknown_command_dispatched_as_is(void) {
     TEST_ASSERT_EQUAL_STRING("unknown_command", lastCommand);
 
     embeddedCliFree(cli);
+}
+
+int main() {
+    UNITY_BEGIN();
+    RUN_TEST(test_safe_enter_unique_prefix_not_auto_expanded);
+    RUN_TEST(test_safe_enter_exact_match_executes);
+    RUN_TEST(test_safe_enter_unknown_command_dispatched_as_is);
+    return UNITY_END();
 }

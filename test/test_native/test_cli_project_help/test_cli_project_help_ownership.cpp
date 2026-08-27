@@ -69,19 +69,21 @@ void tearDown(void) {
  */
 void test_project_help_ownership_not_shadowed(void) {
     // Create CLI with no bindings
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -122,8 +124,11 @@ void test_project_help_ownership_explicit_binding(void) {
         .name = "help",
         .help = "Project help command - shows available commands",
         .tokenizeArgs = false,
+        .context = NULL,
         .binding = NULL,  // Dispatch to onCommand
     };
+
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
 
     EmbeddedCliConfig config = {
         .invitation = "> ",
@@ -131,13 +136,13 @@ void test_project_help_ownership_explicit_binding(void) {
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -182,8 +187,11 @@ void test_project_help_ownership_other_commands_work(void) {
         .name = "system.status",
         .help = "Show system status",
         .tokenizeArgs = false,
+        .context = NULL,
         .binding = NULL,
     };
+
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
 
     EmbeddedCliConfig config = {
         .invitation = "> ",
@@ -191,13 +199,13 @@ void test_project_help_ownership_other_commands_work(void) {
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -222,4 +230,12 @@ void test_project_help_ownership_other_commands_work(void) {
     TEST_ASSERT_FALSE(projectHelpCalled);
 
     embeddedCliFree(cli);
+}
+
+int main() {
+    UNITY_BEGIN();
+    RUN_TEST(test_project_help_ownership_not_shadowed);
+    RUN_TEST(test_project_help_ownership_explicit_binding);
+    RUN_TEST(test_project_help_ownership_other_commands_work);
+    return UNITY_END();
 }

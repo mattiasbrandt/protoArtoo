@@ -59,19 +59,21 @@ void tearDown(void) {
  * This is the core test for UTF-8 ingestion.
  */
 void test_utf8_ingestion_high_bit_bytes_preserved(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -117,19 +119,21 @@ void test_utf8_ingestion_high_bit_bytes_preserved(void) {
  * This simulates the real use case: setting a WiFi SSID with non-ASCII characters.
  */
 void test_utf8_ingestion_ssid_preserved(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -177,19 +181,22 @@ void test_utf8_ingestion_ssid_preserved(void) {
  * This is a regression check to ensure the patch doesn't break ASCII.
  */
 void test_utf8_ingestion_ascii_still_works(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
+    // Verify buffer is large enough for the configuration
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -211,4 +218,12 @@ void test_utf8_ingestion_ascii_still_works(void) {
     TEST_ASSERT_EQUAL_STRING("system.status", lastArgs);
 
     embeddedCliFree(cli);
+}
+
+int main() {
+    UNITY_BEGIN();
+    RUN_TEST(test_utf8_ingestion_high_bit_bytes_preserved);
+    RUN_TEST(test_utf8_ingestion_ssid_preserved);
+    RUN_TEST(test_utf8_ingestion_ascii_still_works);
+    return UNITY_END();
 }

@@ -61,19 +61,21 @@ void tearDown(void) {
  * This is a boundary test to ensure valid input at the limit is accepted.
  */
 void test_safe_overflow_valid_length_accepted(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -109,19 +111,21 @@ void test_safe_overflow_valid_length_accepted(void) {
  * and the Enter key produces no command.
  */
 void test_safe_overflow_exceeds_buffer_rejected(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -159,19 +163,21 @@ void test_safe_overflow_exceeds_buffer_rejected(void) {
  * This verifies that the buffer can recover after an overflow.
  */
 void test_safe_overflow_recovery(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
     EmbeddedCliConfig config = {
         .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
         .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
         .enableAutoComplete = false,
     };
 
-    CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
-    config.cliBuffer = cliBuffer;
-
     EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
@@ -201,4 +207,12 @@ void test_safe_overflow_recovery(void) {
     TEST_ASSERT_EQUAL_STRING("hello", lastCommand);
 
     embeddedCliFree(cli);
+}
+
+int main() {
+    UNITY_BEGIN();
+    RUN_TEST(test_safe_overflow_valid_length_accepted);
+    RUN_TEST(test_safe_overflow_exceeds_buffer_rejected);
+    RUN_TEST(test_safe_overflow_recovery);
+    return UNITY_END();
 }
