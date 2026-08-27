@@ -3075,7 +3075,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: none
+  executor: buildProfilerJson
 - name: system.action.profiler-trace-start
   display_name: Start Heap Trace
   description: 'Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires the profiler and SDK heap-tracing support).
@@ -3297,7 +3297,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: none
+  executor: fillActionsResponse
 - name: rc.api.get-map
   display_name: Get RC Map
   description: Current RC channel-to-action binding map
@@ -3313,7 +3313,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: none
+  executor: populateRcMapJson
 - name: rc.action.set-map
   display_name: Set RC Map
   description: 'Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.

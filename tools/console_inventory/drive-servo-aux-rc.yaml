@@ -462,10 +462,10 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:38 - webRegisterRoute("/api/actions", kGet, handleActionsGet)
-  - include/api_actions.h:39 - void handleActionsGet(WebRequest& req)
-  - src/web/api_actions.cpp:47 - void handleActionsGet(WebRequest& req) {
-  - src/web/action_registry.cpp:16 - const ActionEntry ACTION_REGISTRY[]
-  executor_or_core: none
+  - src/web/api_actions_json.cpp:87 - void handleActionsGet(WebRequest& req)
+  - src/web/api_actions_json.cpp:88 - fillActionsResponse called via req.sendChunked
+  - src/web/api_actions_json.cpp:72 - defined, generates runtime action registry JSON
+  executor_or_core: fillActionsResponse
   missing_metadata: []
   notes: Web-API only. Reads read-only registry. NO-CORE-BELOW-HANDLER.
 - name: rc.api.get-map
@@ -481,11 +481,12 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:60 - webRegisterRoute("/api/rc/map", kGet, handleRcMapGet)
-  - include/api_config.h:26 - void handleRcMapGet(WebRequest& req)
-  - src/web/api_config.cpp:651 - void handleRcMapGet(WebRequest& req) {
-  - include/robot_state.h:137 - struct RobotState (rcMap field)
-  executor_or_core: none
+  - src/web/web_seam_routes.cpp:60 - webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet)
+  - src/web/api_config.cpp:651 - void handleRcMapGet(WebRequest& req)
+  - src/web/api_config.cpp:655 - populateRcMapJson(doc, snap) called
+  - include/api_config_snapshot.h:37 - bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap)
+  - src/web/api_config.cpp:227 - defined, serializes RC map bindings to JSON
+  executor_or_core: populateRcMapJson
   missing_metadata: []
   notes: Web-API only. Reads robotState snapshot. NO-CORE-BELOW-HANDLER.
 - name: rc.config.mode
