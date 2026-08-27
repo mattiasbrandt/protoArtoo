@@ -51,7 +51,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:92 - webRegisterRoute(\"/api/aux-led/color\", kPost, handleAuxLedColorPost)"
-      - "include/api_aux_led.h:7 - void handleAuxLedColorPost(WebRequest& req)"
+      - "include/api_aux_led.h:22 - void handleAuxLedColorPost(WebRequest& req)"
       - "src/web/api_aux_led.cpp:180 - void handleAuxLedColorPost(WebRequest& req) {"
       - "src/web/api_aux_led.cpp:189 - auxLedQueueSetColor(r, g, b, SRC_WEB_API) queues to auxLedQueue"
     executor_or_core: "auxLedQueue"
@@ -76,7 +76,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:93 - webRegisterRoute(\"/api/aux-led/effect\", kPost, handleAuxLedEffectPost)"
-      - "include/api_aux_led.h:6 - void handleAuxLedEffectPost(WebRequest& req)"
+      - "include/api_aux_led.h:23 - void handleAuxLedEffectPost(WebRequest& req)"
       - "src/web/api_aux_led.cpp:197 - void handleAuxLedEffectPost(WebRequest& req) {"
       - "src/web/api_aux_led.cpp:206 - auxLedQueueEffect(effect, SRC_WEB_API) queues"
     executor_or_core: "auxLedQueue"
@@ -174,7 +174,7 @@ rows:
       - "src/web/web_seam_routes.cpp:81 - webRegisterRoute(\"/api/drive\", kPost, handleDrivePost)"
       - "include/api_drive.h:5 - void handleDrivePost(WebRequest& req)"
       - "src/web/api_drive.cpp:307 - void handleDrivePost(WebRequest& req) {"
-      - "src/web/api_drive.cpp:330 - driveArbiterSubmit(DriveSource::WEB, speed, steer, millis())"
+      - "src/web/api_drive.cpp:216 - driveArbiterSubmit(DriveSource::WEB, speed, steer, millis())"
     executor_or_core: "driveArbiter"
     missing_metadata: []
     notes: "Requires webControlEnabled at api_drive.cpp:318. Speed cap enforced. Queue guarded."
@@ -198,8 +198,8 @@ rows:
     anchor_kind: "rc_internal"
     evidence:
       - "include/rc_action_types.h:23 - DRIVE_ACTION_SPEED, // Analog: forward/back movement"
-      - "src/rc_channel_mapper.cpp:52 - readChannelRaw processes driveSpeed binding"
-      - "src/tasks/rc_input.cpp:130 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
+      - "src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSpeed binding"
+      - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
     executor_or_core: "driveArbiter"
     missing_metadata: []
     notes: "Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced."
@@ -218,9 +218,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:44 - DRIVE_ACTION_SPEED_PRESET_CYCLE"
+      - "include/rc_action_types.h:61 - DRIVE_ACTION_SPEED_PRESET_CYCLE"
       - "src/rc_action_dispatcher.cpp:71 - case DRIVE_ACTION_SPEED_PRESET_CYCLE:"
-      - "src/drive_speed_preset.cpp:12 - applySpeedPresetRuntime(nextSpeedPreset(...))"
+      - "src/drive_speed_preset.cpp:56 - applySpeedPresetRuntime(nextSpeedPreset(...))"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
     notes: "Button RC action. Cycles Slow->Normal->Turbo."
@@ -243,7 +243,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
-      - "include/api_drive.h:8 - void handleSpeedPresetPost(WebRequest& req)"
+      - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
     executor_or_core: "driveSpeedPresetCore"
@@ -268,7 +268,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
-      - "include/api_drive.h:8 - void handleSpeedPresetPost(WebRequest& req)"
+      - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
     executor_or_core: "driveSpeedPresetCore"
@@ -293,7 +293,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
-      - "include/api_drive.h:8 - void handleSpeedPresetPost(WebRequest& req)"
+      - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
     executor_or_core: "driveSpeedPresetCore"
@@ -320,7 +320,7 @@ rows:
     evidence:
       - "include/rc_action_types.h:24 - DRIVE_ACTION_STEER, // Analog: left/right steering"
       - "src/rc_channel_mapper.cpp:60 - readChannelRaw processes driveSteer binding"
-      - "src/tasks/rc_input.cpp:130 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
+      - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
     executor_or_core: "driveArbiter"
     missing_metadata: []
     notes: "Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer."
