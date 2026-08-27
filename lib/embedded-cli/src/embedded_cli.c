@@ -207,7 +207,8 @@ static EmbeddedCliConfig defaultConfig;
  * Number of commands that cli adds. Commands:
  * - help
  */
-static const uint16_t cliInternalBindingCount = 1;
+// [PATCH: Project-help ownership] Disable internal help binding so the project's help owns the name.
+static const uint16_t cliInternalBindingCount = 0;  // Was: 1 (internal help binding)
 
 static const char *lineBreak = "\r\n";
 
@@ -509,7 +510,9 @@ EmbeddedCli *embeddedCliNew(EmbeddedCliConfig *config) {
     impl->invitation = config->invitation;
     impl->cursorPos = 0;
 
-    initInternalBindings(cli);
+    // [PATCH: Project-help ownership] Skip internal binding initialization when count is 0.
+    if (cliInternalBindingCount > 0)
+        initInternalBindings(cli);
 
     return cli;
 }
@@ -574,6 +577,14 @@ bool embeddedCliAddBinding(EmbeddedCli *cli, CliCommandBinding binding) {
 
     ++impl->bindingsCount;
     return true;
+}
+
+void embeddedCliResetInput(EmbeddedCli *cli) {
+    // [PATCH: Safe overflow] Reset the input buffer when an overflow is detected.
+    // Allows the listener to explicitly clear the partial command without discarding other state.
+    PREPARE_IMPL(cli);
+    impl->cmdSize = 0;
+    UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
 }
 
 void embeddedCliPrint(EmbeddedCli *cli, const char *string) {
@@ -817,7 +828,10 @@ static void onControlInput(EmbeddedCli *cli, char c) {
 
     if (c == '\r' || c == '\n') {
         // try to autocomplete command and then process it
-        onAutocompleteRequest(cli);
+        // [PATCH: Safe Enter] Only autocomplete if live autocomplete is enabled.
+        // This prevents accidental command expansion when the operator presses Enter.
+        if (IS_FLAG_SET(impl->flags, CLI_FLAG_AUTOCOMPLETE_ENABLED))
+            onAutocompleteRequest(cli);
 
         writeToOutput(cli, lineBreak);
 
@@ -1174,7 +1188,10 @@ static bool isControlChar(char c) {
 }
 
 static bool isDisplayableChar(char c) {
-    return (c >= 32 && c <= 126);
+    // [PATCH: UTF-8 ingestion] Accept all bytes >= 0x20 (space).
+    // High-bit bytes (>= 0x80) are part of valid UTF-8 sequences.
+    // Validation of UTF-8 integrity is the Console dispatcher's job.
+    return (c >= 0x20);
 }
 
 static uint16_t fifoBufAvailable(FifoBuf *buffer) {
