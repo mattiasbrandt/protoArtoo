@@ -144,8 +144,7 @@ rows:
     anchor_kind: "aggregate-field"
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
-      - "src/web/api_status_serializers.cpp:97 - formatAuxStatusJson emits auxLed field"
-      - "src/web/api_aux_led_serializers.cpp:12 - bool formatAuxLedStateJson core builder"
+      - "src/web/web_server.cpp:385 - auxLed JSON field emitted in status response"
     executor_or_core: "statusSnapshotCore"
     missing_metadata: []
     notes: "Aggregate-field in /api/status response. Read-only status snapshot."
@@ -246,7 +245,7 @@ rows:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
-      - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
+      - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'normal'."
@@ -271,7 +270,7 @@ rows:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
-      - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
+      - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'slow'."
@@ -296,7 +295,7 @@ rows:
       - "src/web/web_seam_routes.cpp:82 - webRegisterRoute(\"/api/drive/speed-preset\", kPost, handleSpeedPresetPost)"
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
-      - "src/web/api_drive.cpp:275 - applySpeedPresetRuntime(normalizedPreset)"
+      - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'turbo'."
