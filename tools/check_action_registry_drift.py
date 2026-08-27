@@ -486,6 +486,51 @@ def add_mismatch(errors: list[str], label: str, expected: object, actual: object
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
+    """Validate one-to-one mapping: registry entries <-> inventory rows.
+
+    Each registry entry must have a matching row in the inventory files with
+    matching executor_or_core value.
+    """
+    import subprocess
+    inventory_dir = ROOT / "tools" / "console_inventory"
+
+    # Load all inventory rows
+    inventory_rows = {}  # name -> inventory row
+    for inv_file in sorted(inventory_dir.glob("*.yaml")):
+        try:
+            with open(inv_file) as f:
+                inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                if name in inventory_rows:
+                    errors.append(f"{name} appears in multiple inventory files")
+                inventory_rows[name] = row
+        except Exception as e:
+            errors.append(f"Failed to read {inv_file.name}: {e}")
+            return
+
+    # Build registry lookup
+    registry_entries = {e['name']: e for e in doc.get('entries', [])}
+
+    # Check bidirectional mapping
+    for name, inv_row in inventory_rows.items():
+        if name not in registry_entries:
+            errors.append(f"{name} in inventory but missing from registry")
+        else:
+            inv_executor = inv_row.get('executor_or_core')
+            reg_executor = registry_entries[name].get('executor')
+            if inv_executor != reg_executor:
+                errors.append(
+                    f"{name} executor mismatch: inventory={inv_executor!r}, "
+                    f"registry={reg_executor!r}"
+                )
+
+    for name in registry_entries:
+        if name not in inventory_rows:
+            errors.append(f"{name} in registry but missing from inventory")
+
+
 def main() -> int:
     errors: list[str] = []
     doc = load_registry_doc()
@@ -540,6 +585,7 @@ def main() -> int:
     check_feature_availability_metadata(doc, errors)
     check_component_toggle_entries(doc, errors)
     check_html_data_attributes(errors)
+    check_inventory_registry_alignment(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
