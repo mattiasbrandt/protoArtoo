@@ -489,7 +489,7 @@ rows:
   - src/web/api_profiler.cpp:500 - defined, generates profiler JSON response
   executor_or_core: buildProfilerJson
   missing_metadata: []
-  notes: 'Gated by PA_HEAP_PROFILE; NO-CORE-BELOW-HANDLER: handler directly queries heap'
+  notes: Gated by PA_HEAP_PROFILE; handler directly queries heap
 - name: system.api.get-validation
   type: action
   registry_api_path: /api/validation

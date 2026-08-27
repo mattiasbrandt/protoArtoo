@@ -488,7 +488,7 @@ rows:
   - src/web/api_config.cpp:227 - defined, serializes RC map bindings to JSON
   executor_or_core: populateRcMapJson
   missing_metadata: []
-  notes: Web-API only. Reads robotState snapshot. NO-CORE-BELOW-HANDLER.
+  notes: Web-API only. Reads robotState snapshot..
 - name: rc.config.mode
   type: config
   registry_api_path: /api/config
@@ -530,7 +530,7 @@ rows:
   - src/web/rc_diagnostics_snapshot.cpp:288 - populateRcDiagnosticsJson builds snapshot
   executor_or_core: captureRcDiagnosticsSnapshot
   missing_metadata: []
-  notes: Web-API only. Builds diagnostics snapshot. NO-CORE-BELOW-HANDLER.
+  notes: Web-API only. Builds diagnostics snapshot..
 - name: servo.action.close
   type: action
   registry_api_path: /api/servo

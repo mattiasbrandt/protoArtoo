@@ -322,3 +322,58 @@ class TestNoneExecutorEvidence(unittest.TestCase):
             f"Expected no error for real entries with evidence, got: {errors}"
         )
 
+
+
+class TestExecutorMarkerContradiction(unittest.TestCase):
+    """Test check_executor_marker_contradiction() function."""
+
+    def test_executor_with_marker_contradiction_fails(self):
+        """Fails when an entry has both a real executor and NO-CORE-BELOW-HANDLER marker."""
+        from tools.check_action_registry_drift import check_executor_marker_contradiction
+
+        doc = {
+            'entries': [
+                # Real executors from the live registry
+                {
+                    'name': 'rc.api.get-map',
+                    'type': 'action',
+                    'executor': 'populateRcMapJson'
+                },
+                {
+                    'name': 'rc.status.snapshot',
+                    'type': 'action',
+                    'executor': 'captureRcDiagnosticsSnapshot'
+                }
+            ]
+        }
+        errors = []
+        check_executor_marker_contradiction(doc, errors)
+
+        # Real entries with evidence in inventory should not produce errors
+        # (they don't have NO-CORE-BELOW-HANDLER marker)
+        contradiction_errors = [e for e in errors if 'NO-CORE-BELOW-HANDLER' in e]
+        self.assertEqual(len(contradiction_errors), 0,
+                        f"Real entries with proper evidence should not contradict, got: {errors}")
+
+    def test_none_executor_with_marker_allowed(self):
+        """Passes when executor: none is paired with NO-CORE-BELOW-HANDLER marker."""
+        from tools.check_action_registry_drift import check_executor_marker_contradiction
+
+        doc = {
+            'entries': [
+                # Entries claiming none are allowed to have the marker
+                {
+                    'name': 'system.action.upload-firmware',
+                    'type': 'action',
+                    'executor': 'none'
+                }
+            ]
+        }
+        errors = []
+        check_executor_marker_contradiction(doc, errors)
+
+        # executor: none entries should not produce contradiction errors
+        self.assertFalse(
+            any('contradiction' in e.lower() for e in errors),
+            f"executor: none should not produce contradiction errors, got: {errors}"
+        )

@@ -593,6 +593,53 @@ def check_none_executor_evidence(doc: dict, errors: list[str]) -> None:
             )
 
 
+
+
+def check_executor_marker_contradiction(doc: dict, errors: list[str]) -> None:
+    """Validate that no entry has both a real executor and claims NO-CORE-BELOW-HANDLER.
+
+    An entry cannot both name a project core and assert there is none. This check
+    prevents mixing evidence (here is the core) with the absence marker (there is no core).
+    """
+    # Load all inventory files
+    inventory_files = [
+        ROOT / "tools" / "console_inventory" / "sound.yaml",
+        ROOT / "tools" / "console_inventory" / "dome.yaml",
+        ROOT / "tools" / "console_inventory" / "system.yaml",
+        ROOT / "tools" / "console_inventory" / "drive-servo-aux-rc.yaml",
+    ]
+
+    inventory_rows = {}
+    for inv_file in inventory_files:
+        if not inv_file.exists():
+            continue
+        with open(inv_file) as f:
+            inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                inventory_rows[name] = row
+
+    # Check each entry in registry
+    for entry in doc.get('entries', []):
+        name = entry.get('name')
+        executor = entry.get('executor')
+
+        # Skip entries that don't have an executor or claim 'none'
+        if not executor or executor == 'none':
+            continue
+
+        inv_row = inventory_rows.get(name)
+        if not inv_row:
+            continue
+
+        # Check if the inventory notes still claim NO-CORE-BELOW-HANDLER
+        notes = inv_row.get('notes', '')
+        if 'NO-CORE-BELOW-HANDLER' in notes:
+            errors.append(
+                f"{name} has executor: {executor!r} in registry but notes in inventory claim "
+                f"NO-CORE-BELOW-HANDLER - drop the marker, they cannot both hold"
+            )
+
 def check_status_query_classification(doc: dict, errors: list[str]) -> None:
     """Enforce that every type: status entry is explicitly classified as query or non-query.
     
@@ -721,6 +768,7 @@ def main() -> int:
     check_status_query_classification(doc, errors)
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
+    check_executor_marker_contradiction(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
