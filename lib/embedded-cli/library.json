@@ -11,7 +11,7 @@
     },
     "build": {
         "libArchive": false,
-        "includeDir": "lib/include/",
-        "srcDir": "lib/src/"
+        "includeDir": "include/",
+        "srcDir": "src/"
     } 
 }
