@@ -667,21 +667,8 @@ class LittleFSClass {
     }
 };
 
-class ESPClass {
-   public:
-    unsigned long getFreeHeap() const {
-        return 0;
-    }
-    unsigned long getMinFreeHeap() const {
-        return 0;
-    }
-    unsigned long getMaxAllocHeap() const {
-        return 0;
-    }
-};
-
 static LittleFSClass LittleFS;
-static ESPClass ESP;
+ESPClass ESP;  // Instantiation of ESPClass defined in Arduino.h stub
 
 // Note: pdMS_TO_TICKS is already defined in test/stubs/include/freertos/FreeRTOS.h
 // So we only define the task-related stubs here.
@@ -770,6 +757,11 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
         .staIp = {},     // empty string
         .staSsid = {},   // empty string
     };
+}
+
+// Web server stubs — native tests need these for console_module.cpp
+bool webLittleFsMounted() {
+    return true;  // Stub: assume filesystem is available in tests
 }
 
 // ESP-IDF reset reason enum and stub — native tests need this for

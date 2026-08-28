@@ -22,6 +22,7 @@
 #include "logging.h"
 #include "console_module.h"
 #include "console_record.h"
+#include "console_serial_output.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {

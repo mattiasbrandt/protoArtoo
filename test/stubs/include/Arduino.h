@@ -80,3 +80,10 @@ inline T constrain(T value, T min_val, T max_val) {
     if (value > max_val) return max_val;
     return value;
 }
+
+// ESP stub — provides heap info methods used by console_module.cpp
+struct ESPClass {
+    unsigned long getFreeHeap() const { return 1048576; }      // Stub: 1MB
+    unsigned long getMinFreeHeap() const { return 524288; }    // Stub: 512KB
+};
+extern ESPClass ESP;
