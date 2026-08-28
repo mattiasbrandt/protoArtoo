@@ -17,6 +17,7 @@
 #include "config_store.h"
 #include "config_cache.h"
 #include "console_module.h"
+#include "console_serial_output.h"
 #include "console_task.h"
 #include "dome_link.h"
 #include "dome_task.h"
@@ -153,7 +154,6 @@ void paLogLine(const char* line) {
     // Route through the serial output coordinator once the Console task binds the CLI.
     // Before the Console task starts, write directly (boot messages, early logs).
     // consoleSerialEmitLine handles the serial mutex and coordinates with console input.
-    extern void consoleSerialEmitLine(const char* line);
     if (line[0] != '\0') {
         consoleSerialEmitLine(line);
     }
