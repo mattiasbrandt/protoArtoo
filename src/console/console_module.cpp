@@ -19,8 +19,6 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
-#include <FS.h>
-#include <LittleFS.h>
 #endif
 
 #include "logging.h"
@@ -36,80 +34,41 @@ static volatile uint32_t g_nextRequestId = 1;
 static portMUX_TYPE g_requestIdMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
-// Help File Management (once-open pattern, no per-request allocation)
+// Help Reader Management (Dependency Injection)
+// =============================================================================
+// The Console module receives a help reader from the caller (set in setup()),
+// allowing LittleFS-backed reads on Arduino and memory-backed reads in tests.
+// A NULL reader gracefully degrades to "help unavailable".
 // =============================================================================
 
-#ifdef ARDUINO
-// File handle for help text, opened once and held for lifetime.
-// Opened in setup(), never closed. Each help lookup is seek() + read() into stack buffer.
-static File g_helpFile;
-#endif
-
-static bool g_helpFileReady = false;
-
-// Path to the help text file in LittleFS
-static const char* HELP_FILE_PATH = "/console_help.txt";
+// The injected help reader (set by consoleModuleSetHelpReader)
+static const ConsoleHelpReader* g_helpReader = nullptr;
 
 // Maximum help text size per operation (description + display_name + delimiters)
 static const size_t HELP_TEXT_MAX = 512;
 
-// =============================================================================
-// Private: Help Text Lookup from File
-// =============================================================================
-
-// =============================================================================
-// Seam: File access (can be mocked in native tests)
-// =============================================================================
-
-// Abstract file access for help text (allows native tests to substitute)
-struct HelpFileHandle {
-    bool valid;
-    // Platform-specific implementation
-    #ifdef ARDUINO
-    File file;
-    #endif
-};
-
-// Seek to offset in help file. Returns true on success.
-static inline bool helpFileSeek(uint32_t offset) {
-    #ifdef ARDUINO
-    if (!g_helpFileReady) return false;
-    return g_helpFile.seek(offset);
-    #else
-    // Native test stub
-    (void)offset;
-    return false;
-    #endif
+// Set the help reader for the Console module.
+// Called from setup() after LittleFS is ready on Arduino builds.
+// Pass NULL to disable help text.
+void consoleModuleSetHelpReader(const ConsoleHelpReader* reader) {
+    g_helpReader = reader;
 }
 
-// Read bytes from current position. Returns number of bytes read.
-static inline size_t helpFileRead(char* buffer, size_t size) {
-    #ifdef ARDUINO
-    if (!g_helpFileReady || !buffer || size == 0) return 0;
-    return g_helpFile.read((uint8_t*)buffer, size);
-    #else
-    // Native test stub
-    (void)buffer;
-    (void)size;
-    return 0;
-    #endif
-}
-
-// Extract help text for an operation from the help file using addressed read.
+// Extract help text for an operation using the injected reader.
 // The catalog entry contains offset and length, so this is a single seek + read.
 // Returns true if help text was found and written to out_buffer (null-terminated).
-// If false, out_buffer is left empty.
-// This function seeks into the already-open help file, so no allocation occurs in the loop.
+// If false, out_buffer is left empty. No allocation occurs in this path.
 static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
                                 uint16_t help_length, char* out_buffer, size_t buffer_size) {
     out_buffer[0] = '\0';
 
-    if (!g_helpFileReady || !operationName || help_length == 0) {
+    // Graceful degradation: if reader is NULL or no help text for this entry
+    if (g_helpReader == nullptr || operationName == nullptr || help_length == 0) {
         return false;
     }
 
     // Seek to the help offset for this operation
-    if (!helpFileSeek(help_offset)) {
+    if (!g_helpReader->seek(g_helpReader->ctx, help_offset)) {
         return false;
     }
 
@@ -120,7 +79,7 @@ static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
         lineLen = buffer_size - 1;
     }
 
-    size_t bytesRead = helpFileRead(out_buffer, lineLen);
+    size_t bytesRead = g_helpReader->read(g_helpReader->ctx, out_buffer, lineLen);
     if (bytesRead > 0) {
         out_buffer[bytesRead] = '\0';
         return true;
@@ -202,8 +161,8 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
             }
             pos++;
         }
-    } else if (!g_helpFileReady) {
-        // Help file not available - emit explicit degradation reason
+    } else if (g_helpReader == nullptr) {
+        // Help reader not available - emit explicit degradation reason
         if (sink->onRecordField) {
             sink->onRecordField(requestId, "help_file_status", "unavailable");
         }
@@ -378,23 +337,9 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
 // =============================================================================
 
 void consoleModuleInit(void) {
-#ifdef ARDUINO
-    // Open help file once, hold handle for lifetime (no per-request allocation)
-    // This is called from setup() after LittleFS is mounted.
-    if (LittleFS.exists(HELP_FILE_PATH)) {
-        g_helpFile = LittleFS.open(HELP_FILE_PATH, "r");
-        if (g_helpFile) {
-            g_helpFileReady = true;
-            PA_LOG_DEBUG(TAG, "help file opened, %u bytes", g_helpFile.size());
-        } else {
-            PA_LOG_WARN(TAG, "failed to open help file at %s", HELP_FILE_PATH);
-        }
-    } else {
-        PA_LOG_WARN(TAG, "help file not found at %s", HELP_FILE_PATH);
-    }
-#else
-    // Native tests: g_helpFileReady stays false, consoleGetHelpText returns false
-#endif
+    // Console module initialization (before LittleFS and web server).
+    // The help reader will be set separately via consoleModuleSetHelpReader()
+    // after LittleFS is ready (see ADR 0034).
 
     size_t catalogCount = consoleCatalogGetCount();
     PA_LOG_DEBUG(TAG, "console module initialized, %u operations in catalog", catalogCount);

@@ -91,6 +91,38 @@ void test_catalog_availability_flags() {
     TEST_ASSERT_TRUE(move->available_in_build);  // No build_flag requirement
 }
 
+void test_availability_tracks_build_flags() {
+    // The native env sets PA_HEAP_PROFILE=0, PA_HEAP_TRACING=0, PA_ADMISSION_TRACE=1.
+    // This test proves that availability is NOT constant - it varies based on
+    // the build flags defined at compile time (ADR 0029).
+    // If this test fails on availability being hardcoded true, the generator
+    // did not emit the macro names correctly.
+
+    // PA_HEAP_PROFILE=0 in the native env
+    const ConsoleCatalogEntry* profiler = consoleCatalogFindByName("system.api.get-profiler");
+    TEST_ASSERT_NOT_NULL(profiler);
+    TEST_ASSERT_FALSE(profiler->available_in_build);
+
+    // PA_HEAP_TRACING=0 in the native env
+    const ConsoleCatalogEntry* trace_start = consoleCatalogFindByName("system.action.profiler-trace-start");
+    TEST_ASSERT_NOT_NULL(trace_start);
+    TEST_ASSERT_FALSE(trace_start->available_in_build);
+
+    const ConsoleCatalogEntry* trace_stop = consoleCatalogFindByName("system.action.profiler-trace-stop");
+    TEST_ASSERT_NOT_NULL(trace_stop);
+    TEST_ASSERT_FALSE(trace_stop->available_in_build);
+
+    // PA_ADMISSION_TRACE=1 in the native env - same build, opposite answer
+    const ConsoleCatalogEntry* admission = consoleCatalogFindByName("system.api.get-admission-trace");
+    TEST_ASSERT_NOT_NULL(admission);
+    TEST_ASSERT_TRUE(admission->available_in_build);
+
+    // and an unflagged entry is unconditionally in the build
+    const ConsoleCatalogEntry* dome_seq = consoleCatalogFindByName("dome.action.dome-sequence");
+    TEST_ASSERT_NOT_NULL(dome_seq);
+    TEST_ASSERT_TRUE(dome_seq->available_in_build);
+}
+
 // =============================================================================
 // Test: Help Text Storage and Addressing
 // =============================================================================
@@ -129,14 +161,28 @@ void test_executor_ready_flag() {
 // =============================================================================
 
 void test_aliases_null_terminated() {
-    // Current registry has no aliases, all should be NULL
+    // Registry has 38 rc_token entries that map to aliases.
+    // Others have NULL aliases. All alias arrays are NULL-terminated.
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
 
+    // Count entries with aliases
+    int aliases_count = 0;
     for (size_t i = 0; i < count; ++i) {
         const ConsoleCatalogEntry* entry = &entries[i];
-        TEST_ASSERT_NULL(entry->aliases);  // No aliases in registry yet
+        if (entry->aliases != NULL) {
+            aliases_count++;
+            // Each alias array must be NULL-terminated
+            TEST_ASSERT_NOT_NULL(entry->aliases[0]);  // At least one alias
+            // Find the NULL terminator
+            int alias_idx = 0;
+            while (entry->aliases[alias_idx] != NULL) {
+                alias_idx++;
+            }
+            TEST_ASSERT_GREATER_THAN(0, alias_idx);  // At least one alias before NULL
+        }
     }
+    TEST_ASSERT_EQUAL_INT(38, aliases_count);  // Exactly 38 rc_token entries
 }
 
 // =============================================================================
@@ -245,6 +291,7 @@ int main(void) {
     RUN_TEST(test_catalog_count_and_iteration);
     RUN_TEST(test_catalog_parameter_descriptors);
     RUN_TEST(test_catalog_availability_flags);
+    RUN_TEST(test_availability_tracks_build_flags);
 
     // Help text tests
     RUN_TEST(test_help_text_offset_and_length);

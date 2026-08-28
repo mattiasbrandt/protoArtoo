@@ -23,16 +23,18 @@ def load_registry(registry_path):
         raise ValueError(f"Invalid registry format in {registry_path}")
     return data['entries']
 
-def check_build_flag_defined(flag_name):
-    """Check if a build flag is defined. For now, assume all defined.
+def build_rc_token_map(entries):
+    """Build a map from operation name to rc_token value.
 
-    In a full build context, this would check platformio.ini or environment variables.
-    For catalog generation, we mark entries as available unless proof of absence exists.
+    Returns dict: operation_name -> rc_token_string
     """
-    # TODO: integrate with build environment to check actual flags
-    # For now, all entries with build_flag are marked as available_in_build=true
-    # if flag is in the registry. A missing flag value would be marked false.
-    return True
+    rc_token_map = {}
+    for entry in entries:
+        name = entry['name']
+        rc_token = entry.get('rc_token')
+        if rc_token:
+            rc_token_map[name] = rc_token
+    return rc_token_map
 
 def generate_catalog_header(entries, output_path):
     """Generate include/console_catalog.h"""
@@ -77,17 +79,17 @@ typedef struct {
 
 // Operation descriptor
 typedef struct {
-    const char* name;              // e.g. "drive.action.move"
-    const char* type;              // "action", "status", "config", "event"
-    const char** aliases;          // aliases for this operation (NULL-terminated)
+    const char* name;                    // e.g. "drive.action.move"
+    const char* type;                    // "action", "status", "config", "event"
+    const char* const* aliases;          // aliases for this operation (NULL-terminated, or NULL)
     const ConsoleParamDescriptor* params;  // parameter descriptors (NULL-terminated)
-    bool available_on_board;       // board availability
-    bool available_in_build;       // build flag availability
-    bool requires_web_control;     // if true, needs webControlEnabled for motion
-    bool safety_critical;          // if true, subject to safety constraints
-    bool executor_ready;           // true if executor function is defined and ready
-    uint16_t help_offset;          // offset in help file for this operation
-    uint16_t help_length;          // length of help text in help file
+    bool available_on_board;             // board availability
+    bool available_in_build;             // build flag availability
+    bool requires_web_control;           // if true, needs webControlEnabled for motion
+    bool safety_critical;                // if true, subject to safety constraints
+    bool executor_ready;                 // true if executor function is defined and ready
+    uint16_t help_offset;                // offset in help file for this operation
+    uint16_t help_length;                // length of help text in help file
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -162,6 +164,9 @@ def generate_catalog_source(entries, offsets, output_path):
     offsets: dict mapping entry name -> (offset, length)
     """
 
+    # Build rc_token map for aliases
+    rc_token_map = build_rc_token_map(entries)
+
     # Build the C++ source
     source = """// =============================================================================
 // src/console/console_catalog.cpp
@@ -173,12 +178,35 @@ def generate_catalog_source(entries, offsets, output_path):
 // parameter schemas, availability metadata, and help text addressing.
 // Help text (description, display_name, parameter schema, executor details)
 // is stored in LittleFS and addressed by offset/length.
+//
+// Availability (available_on_board and available_in_build) is evaluated at
+// compile-time via macros from include/config.h and include/board_capabilities.inc
+// (ADR 0029). This allows a board that sets PA_CAP_DRIVE_BACKEND_HOVERBOARD=0
+// to flip the availability of drive operations with no generator change.
 // =============================================================================
 
 #include "console_catalog.h"
+#include "config.h"
 #include <string.h>
 
 """
+
+    # Generate alias arrays (NULL-terminated, one for each rc_token entry)
+    source += "// =============================================================================\n"
+    source += "// Alias Arrays (RC tokens mapped to operation names)\n"
+    source += "// =============================================================================\n\n"
+
+    aliases_count = 0
+    for entry in entries:
+        name = entry['name']
+        rc_token = entry.get('rc_token')
+        if rc_token:
+            aliases_count += 1
+            safe_name = name.replace('.', '_').replace('-', '_')
+            alias_var_name = f"g_aliases_{safe_name}"
+            source += f"static const char* const {alias_var_name}[] = {{ \"{rc_token}\", NULL }};\n"
+
+    source += f"\n// Total alias arrays: {aliases_count}\n\n"
 
     # Generate parameter descriptor tables
     source += "// =============================================================================\n"
@@ -214,10 +242,27 @@ def generate_catalog_source(entries, offsets, output_path):
         requires_web = entry.get('requires_web_control', False)
         safety_critical = entry.get('safety_critical', False)
         build_flag = entry.get('build_flag')
+        domain = name.split('.')[0]
 
-        # Availability flags
-        available_on_board = not entry.get('board_capability')  # true if no board_capability
-        available_in_build = build_flag is None or check_build_flag_defined(build_flag)
+        # Availability flags are now compile-time expressions (macros)
+        # available_on_board: drive domain uses PA_CAP_DRIVE_BACKEND_HOVERBOARD, others use 1
+        if domain == 'drive':
+            available_on_board_expr = 'PA_CAP_DRIVE_BACKEND_HOVERBOARD'
+        else:
+            available_on_board_expr = '1'
+
+        # available_in_build: if entry has build_flag, use the macro; otherwise use 1
+        if build_flag:
+            available_in_build_expr = build_flag
+        else:
+            available_in_build_expr = '1'
+
+        # Aliases: reference the alias array if one exists, else NULL
+        if name in rc_token_map:
+            safe_name = name.replace('.', '_').replace('-', '_')
+            aliases_expr = f"g_aliases_{safe_name}"
+        else:
+            aliases_expr = "NULL"
 
         # Executor ready (simplified: assume all are ready for now)
         # TODO: check if executor function is actually defined
@@ -239,10 +284,10 @@ def generate_catalog_source(entries, offsets, output_path):
         source += f"    {{\n"
         source += f"        \"{name}\",\n"
         source += f"        \"{op_type}\",\n"
-        source += f"        NULL,  // aliases\n"
+        source += f"        {aliases_expr},  // aliases\n"
         source += f"        {param_var_name},\n"
-        source += f"        {'true' if available_on_board else 'false'},  // available_on_board\n"
-        source += f"        {'true' if available_in_build else 'false'},  // available_in_build\n"
+        source += f"        {available_on_board_expr},  // available_on_board\n"
+        source += f"        {available_in_build_expr},  // available_in_build\n"
         source += f"        {'true' if requires_web else 'false'},  // requires_web_control\n"
         source += f"        {'true' if safety_critical else 'false'},  // safety_critical\n"
         source += f"        {'true' if executor_ready else 'false'},  // executor_ready\n"
@@ -295,6 +340,14 @@ def main():
     print(f"Loading registry from {registry_path}...")
     entries = load_registry(registry_path)
     print(f"Loaded {len(entries)} entries")
+
+    # Count aliases for diagnostic output
+    rc_token_map = build_rc_token_map(entries)
+    print(f"Found {len(rc_token_map)} entries with rc_token (aliases)")
+
+    # Count build flags for diagnostic output
+    build_flag_count = sum(1 for e in entries if e.get('build_flag'))
+    print(f"Found {build_flag_count} entries with build_flag")
 
     # Generate files
     catalog_h = repo_root / 'include' / 'console_catalog.h'

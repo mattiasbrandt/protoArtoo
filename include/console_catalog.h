@@ -39,17 +39,17 @@ typedef struct {
 
 // Operation descriptor
 typedef struct {
-    const char* name;              // e.g. "drive.action.move"
-    const char* type;              // "action", "status", "config", "event"
-    const char** aliases;          // aliases for this operation (NULL-terminated)
+    const char* name;                    // e.g. "drive.action.move"
+    const char* type;                    // "action", "status", "config", "event"
+    const char* const* aliases;          // aliases for this operation (NULL-terminated, or NULL)
     const ConsoleParamDescriptor* params;  // parameter descriptors (NULL-terminated)
-    bool available_on_board;       // board availability
-    bool available_in_build;       // build flag availability
-    bool requires_web_control;     // if true, needs webControlEnabled for motion
-    bool safety_critical;          // if true, subject to safety constraints
-    bool executor_ready;           // true if executor function is defined and ready
-    uint16_t help_offset;          // offset in help file for this operation
-    uint16_t help_length;          // length of help text in help file
+    bool available_on_board;             // board availability
+    bool available_in_build;             // build flag availability
+    bool requires_web_control;           // if true, needs webControlEnabled for motion
+    bool safety_critical;                // if true, subject to safety constraints
+    bool executor_ready;                 // true if executor function is defined and ready
+    uint16_t help_offset;                // offset in help file for this operation
+    uint16_t help_length;                // length of help text in help file
 } ConsoleCatalogEntry;
 
 // Get the complete catalog

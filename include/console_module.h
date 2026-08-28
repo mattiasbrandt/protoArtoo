@@ -115,6 +115,33 @@ typedef struct {
 } ConsoleRecordSink;
 
 // =============================================================================
+// Help Text Reader (Dependency Injection)
+// =============================================================================
+// The Console module reads help text on demand from a reader that the caller
+// provides. This allows LittleFS-backed reads on Arduino and memory-backed reads
+// in native tests. A NULL reader means "help unavailable" (graceful degradation).
+// =============================================================================
+
+typedef struct {
+    // Seek to offset in the help file. Returns true on success.
+    // ctx is the pointer provided in the reader struct.
+    bool (*seek)(void* ctx, uint32_t offset);
+
+    // Read bytes from current position into out_buffer.
+    // Returns the number of bytes read (0 on failure or EOF).
+    // ctx is the pointer provided in the reader struct.
+    size_t (*read)(void* ctx, char* out_buffer, size_t len);
+
+    // Caller-owned context (e.g., a File handle on Arduino, a buffer pointer in tests)
+    void* ctx;
+} ConsoleHelpReader;
+
+// Set the help reader for the Console module.
+// Pass NULL to disable help text (graceful degradation if LittleFS is unavailable).
+// Called from setup() after LittleFS is ready (see ADR 0034).
+void consoleModuleSetHelpReader(const ConsoleHelpReader* reader);
+
+// =============================================================================
 // Public API
 // =============================================================================
 

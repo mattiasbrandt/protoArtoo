@@ -8,10 +8,61 @@
 // parameter schemas, availability metadata, and help text addressing.
 // Help text (description, display_name, parameter schema, executor details)
 // is stored in LittleFS and addressed by offset/length.
+//
+// Availability (available_on_board and available_in_build) is evaluated at
+// compile-time via macros from include/config.h and include/board_capabilities.inc
+// (ADR 0029). This allows a board that sets PA_CAP_DRIVE_BACKEND_HOVERBOARD=0
+// to flip the availability of drive operations with no generator change.
 // =============================================================================
 
 #include "console_catalog.h"
+#include "config.h"
 #include <string.h>
+
+// =============================================================================
+// Alias Arrays (RC tokens mapped to operation names)
+// =============================================================================
+
+static const char* const g_aliases_drive_action_speed[] = { "drive_speed", NULL };
+static const char* const g_aliases_drive_action_steer[] = { "drive_steer", NULL };
+static const char* const g_aliases_drive_action_speed_preset_cycle[] = { "speed_preset_cycle", NULL };
+static const char* const g_aliases_dome_action_set_speed[] = { "dome_speed", NULL };
+static const char* const g_aliases_dome_action_marcduino_sequence[] = { "seq", NULL };
+static const char* const g_aliases_dome_action_marcduino_command[] = { "cmd", NULL };
+static const char* const g_aliases_dome_action_dome_sequence[] = { "dome_seq", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_scream[] = { "droid_seq_scream", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_wave[] = { "droid_seq_wave", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_fast_wave[] = { "droid_seq_fast_wave", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_open_wave[] = { "droid_seq_open_wave", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_beep_cantina[] = { "droid_seq_beep_cantina", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_faint[] = { "droid_seq_faint", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_cantina[] = { "droid_seq_cantina", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_leia[] = { "droid_seq_leia", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_disco[] = { "droid_seq_disco", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_screams[] = { "droid_seq_screams", NULL };
+static const char* const g_aliases_dome_action_droid_sequence_wiggle[] = { "droid_seq_wiggle", NULL };
+static const char* const g_aliases_sound_action_random_general[] = { "sound_rand_general", NULL };
+static const char* const g_aliases_sound_action_random_chatty[] = { "sound_rand_chatty", NULL };
+static const char* const g_aliases_sound_action_random_happy[] = { "sound_rand_happy", NULL };
+static const char* const g_aliases_sound_action_random_processing[] = { "sound_rand_processing", NULL };
+static const char* const g_aliases_sound_action_random_sad[] = { "sound_rand_sad", NULL };
+static const char* const g_aliases_sound_action_random_sentimental[] = { "sound_rand_sentimental", NULL };
+static const char* const g_aliases_sound_action_random_humming[] = { "sound_rand_humming", NULL };
+static const char* const g_aliases_sound_action_random_scream[] = { "sound_rand_scream", NULL };
+static const char* const g_aliases_sound_action_random_surprised[] = { "sound_rand_surprised", NULL };
+static const char* const g_aliases_sound_action_random_alert[] = { "sound_rand_alert", NULL };
+static const char* const g_aliases_sound_action_random_snarky[] = { "sound_rand_snarky", NULL };
+static const char* const g_aliases_sound_action_random_whistle[] = { "sound_rand_whistle", NULL };
+static const char* const g_aliases_servo_action_toggle_arm1[] = { "arm1_toggle", NULL };
+static const char* const g_aliases_servo_action_toggle_arm2[] = { "arm2_toggle", NULL };
+static const char* const g_aliases_servo_action_toggle_aux1[] = { "aux1_toggle", NULL };
+static const char* const g_aliases_servo_action_toggle_aux2[] = { "aux2_toggle", NULL };
+static const char* const g_aliases_servo_action_toggle_aux3[] = { "aux3_toggle", NULL };
+static const char* const g_aliases_system_action_set_mode[] = { "op_mode", NULL };
+static const char* const g_aliases_system_action_estop[] = { "estop", NULL };
+static const char* const g_aliases_system_action_sleep_toggle[] = { "sleep_toggle", NULL };
+
+// Total alias arrays: 38
 
 // =============================================================================
 // Parameter Descriptors
@@ -188,8 +239,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_drive_action_move,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         true,  // safety_critical
         true,  // executor_ready
@@ -199,10 +250,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "drive.action.speed",
         "action",
-        NULL,  // aliases
+        g_aliases_drive_action_speed,  // aliases
         g_params_drive_action_speed,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -212,10 +263,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "drive.action.steer",
         "action",
-        NULL,  // aliases
+        g_aliases_drive_action_steer,  // aliases
         g_params_drive_action_steer,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -227,8 +278,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_drive_action_speed_preset_slow,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -240,8 +291,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_drive_action_speed_preset_normal,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -253,8 +304,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_drive_action_speed_preset_turbo,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -264,10 +315,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "drive.action.speed-preset-cycle",
         "action",
-        NULL,  // aliases
+        g_aliases_drive_action_speed_preset_cycle,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -279,8 +330,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -292,8 +343,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
         true,  // executor_ready
@@ -305,8 +356,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        PA_CAP_DRIVE_BACKEND_HOVERBOARD,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -316,10 +367,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.set-speed",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_set_speed,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -331,8 +382,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -342,10 +393,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.marcduino-sequence",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_marcduino_sequence,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -355,10 +406,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.marcduino-command",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_marcduino_command,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -368,10 +419,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.dome-sequence",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_dome_sequence,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -381,10 +432,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-scream",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_scream,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -394,10 +445,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-wave",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_wave,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -407,10 +458,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-fast-wave",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_fast_wave,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -420,10 +471,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-open-wave",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_open_wave,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -433,10 +484,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-beep-cantina",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_beep_cantina,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -446,10 +497,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-faint",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_faint,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -459,10 +510,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-cantina",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_cantina,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -472,10 +523,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-leia",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_leia,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -485,10 +536,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-disco",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_disco,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -498,10 +549,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-screams",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_screams,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -511,10 +562,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "dome.action.droid-sequence-wiggle",
         "action",
-        NULL,  // aliases
+        g_aliases_dome_action_droid_sequence_wiggle,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -526,8 +577,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -539,8 +590,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -552,8 +603,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -565,8 +616,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -578,8 +629,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -591,8 +642,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -604,8 +655,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -617,8 +668,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -630,8 +681,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -643,8 +694,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -656,8 +707,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -669,8 +720,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -682,8 +733,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -695,8 +746,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -708,8 +759,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_dome_action_move,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -721,8 +772,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -734,8 +785,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_dome_api_list_builtin_sequences,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -747,8 +798,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_dome_api_get_sequence,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -760,8 +811,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -773,8 +824,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_dome_action_delete_sequence,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -786,8 +837,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_dome_action_test_sequence,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -799,8 +850,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -812,8 +863,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_action_play_track,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -825,8 +876,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -838,8 +889,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -851,8 +902,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -864,8 +915,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -877,8 +928,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -890,8 +941,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -903,8 +954,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -916,8 +967,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -929,8 +980,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -942,8 +993,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_api_get_catalog,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -955,8 +1006,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -968,8 +1019,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_api_play_banked,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -981,8 +1032,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -994,8 +1045,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_action_set_mood_map,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1007,8 +1058,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_action_set_category_range,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1020,8 +1071,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1033,8 +1084,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1046,8 +1097,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1059,8 +1110,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_sound_action_set_volume,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1072,8 +1123,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1085,8 +1136,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1098,8 +1149,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1111,8 +1162,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1124,8 +1175,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1137,8 +1188,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1150,8 +1201,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1163,8 +1214,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1174,10 +1225,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-general",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_general,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1187,10 +1238,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-chatty",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_chatty,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1200,10 +1251,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-happy",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_happy,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1213,10 +1264,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-processing",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_processing,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1226,10 +1277,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-sad",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_sad,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1239,10 +1290,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-sentimental",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_sentimental,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1252,10 +1303,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-humming",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_humming,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1265,10 +1316,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-scream",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_scream,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1278,10 +1329,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-surprised",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_surprised,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1291,10 +1342,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-alert",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_alert,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1304,10 +1355,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-snarky",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_snarky,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1317,10 +1368,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "sound.action.random-whistle",
         "action",
-        NULL,  // aliases
+        g_aliases_sound_action_random_whistle,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1332,8 +1383,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1345,8 +1396,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         g_params_sound_config_volume,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1358,8 +1409,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1371,8 +1422,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1384,8 +1435,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1397,8 +1448,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1410,8 +1461,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1423,8 +1474,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1436,8 +1487,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1449,8 +1500,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1462,8 +1513,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1475,8 +1526,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1488,8 +1539,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1501,8 +1552,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         g_params_sound_config_mood_category_map,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1514,8 +1565,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_servo_action_open,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1527,8 +1578,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_servo_action_close,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1540,8 +1591,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_servo_action_set_position,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1553,8 +1604,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1564,10 +1615,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "servo.action.toggle-arm1",
         "action",
-        NULL,  // aliases
+        g_aliases_servo_action_toggle_arm1,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1577,10 +1628,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "servo.action.toggle-arm2",
         "action",
-        NULL,  // aliases
+        g_aliases_servo_action_toggle_arm2,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1590,10 +1641,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "servo.action.toggle-aux1",
         "action",
-        NULL,  // aliases
+        g_aliases_servo_action_toggle_aux1,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1603,10 +1654,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "servo.action.toggle-aux2",
         "action",
-        NULL,  // aliases
+        g_aliases_servo_action_toggle_aux2,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1616,10 +1667,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "servo.action.toggle-aux3",
         "action",
-        NULL,  // aliases
+        g_aliases_servo_action_toggle_aux3,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1631,8 +1682,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1644,8 +1695,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_aux_action_led_color,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1657,8 +1708,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_aux_action_led_effect,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1670,8 +1721,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1683,8 +1734,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         g_params_aux_config_led_pin,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1696,8 +1747,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         g_params_aux_config_led_count,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1707,10 +1758,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "system.action.set-mode",
         "action",
-        NULL,  // aliases
+        g_aliases_system_action_set_mode,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1720,10 +1771,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "system.action.estop",
         "action",
-        NULL,  // aliases
+        g_aliases_system_action_estop,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
         true,  // executor_ready
@@ -1735,8 +1786,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
         true,  // executor_ready
@@ -1748,8 +1799,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1761,8 +1812,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1774,8 +1825,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1787,8 +1838,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_system_action_set_mood,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1800,8 +1851,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1813,8 +1864,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1824,10 +1875,10 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "system.action.sleep-toggle",
         "action",
-        NULL,  // aliases
+        g_aliases_system_action_sleep_toggle,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1839,8 +1890,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1852,8 +1903,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1865,8 +1916,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "event",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1878,8 +1929,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1891,8 +1942,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1904,8 +1955,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1917,8 +1968,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1930,8 +1981,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1943,8 +1994,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1956,8 +2007,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1969,8 +2020,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1982,8 +2033,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -1995,8 +2046,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2008,8 +2059,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2021,8 +2072,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2034,8 +2085,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2047,8 +2098,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2060,8 +2111,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2073,8 +2124,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2086,8 +2137,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2099,8 +2150,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2112,8 +2163,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2125,8 +2176,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2138,8 +2189,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2151,8 +2202,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2164,8 +2215,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2177,8 +2228,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2190,8 +2241,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_system_action_set_identity,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2203,8 +2254,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        PA_HEAP_PROFILE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2216,8 +2267,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2229,8 +2280,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2242,8 +2293,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2255,8 +2306,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2268,8 +2319,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2281,8 +2332,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        PA_ADMISSION_TRACE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2294,8 +2345,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2307,8 +2358,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2320,8 +2371,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2333,8 +2384,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2346,8 +2397,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "status",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2359,8 +2410,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2372,8 +2423,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2385,8 +2436,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2398,8 +2449,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2411,8 +2462,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         g_params_rc_action_test_bindable,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2424,8 +2475,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "config",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2437,8 +2488,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2450,8 +2501,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2463,8 +2514,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2476,8 +2527,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2489,8 +2540,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2502,8 +2553,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2515,8 +2566,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2528,8 +2579,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2541,8 +2592,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2554,8 +2605,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2567,8 +2618,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2580,8 +2631,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2593,8 +2644,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2606,8 +2657,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2619,8 +2670,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2632,8 +2683,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
@@ -2645,8 +2696,8 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         "action",
         NULL,  // aliases
         NULL,
-        true,  // available_on_board
-        true,  // available_in_build
+        1,  // available_on_board
+        1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
