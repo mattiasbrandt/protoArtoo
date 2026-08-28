@@ -377,3 +377,173 @@ class TestExecutorMarkerContradiction(unittest.TestCase):
             any('contradiction' in e.lower() for e in errors),
             f"executor: none should not produce contradiction errors, got: {errors}"
         )
+
+
+class TestConsoleHelpFileDrift(unittest.TestCase):
+    """Test check_console_help_file() catches stale or missing help artefacts."""
+
+    def test_help_file_missing(self):
+        """Fails when console help file is missing."""
+        from tools.check_action_registry_drift import check_console_help_file
+        import tempfile
+        from pathlib import Path
+
+        # Create a temporary directory without a help file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Patch the CONSOLE_HELP_PATH to point to a non-existent file
+            import tools.check_action_registry_drift as drift_module
+            original_path = drift_module.CONSOLE_HELP_PATH
+
+            try:
+                drift_module.CONSOLE_HELP_PATH = Path(tmpdir) / "nonexistent_help.txt"
+
+                doc = {
+                    'entries': [
+                        {
+                            'name': 'test.status.health',
+                            'type': 'status',
+                            'display_name': 'Health',
+                            'description': 'System health'
+                        }
+                    ]
+                }
+                errors = []
+                check_console_help_file(doc, errors)
+
+                # Should report missing help file
+                self.assertTrue(
+                    any('missing' in e.lower() for e in errors),
+                    f"Should report missing help file, got: {errors}"
+                )
+            finally:
+                drift_module.CONSOLE_HELP_PATH = original_path
+
+    def test_help_entry_missing_from_file(self):
+        """Fails when registry entry exists but help file lacks it."""
+        from tools.check_action_registry_drift import check_console_help_file
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import tools.check_action_registry_drift as drift_module
+            original_path = drift_module.CONSOLE_HELP_PATH
+            help_file = Path(tmpdir) / "console_help.txt"
+
+            try:
+                # Create a help file with only one entry
+                help_file.write_text(
+                    "test.status.health|Health|System health status\n",
+                    encoding="utf-8"
+                )
+                drift_module.CONSOLE_HELP_PATH = help_file
+
+                # Registry has two entries, but help file has only one
+                doc = {
+                    'entries': [
+                        {
+                            'name': 'test.status.health',
+                            'type': 'status',
+                            'display_name': 'Health',
+                            'description': 'System health status'
+                        },
+                        {
+                            'name': 'test.action.reset',
+                            'type': 'action',
+                            'display_name': 'Reset',
+                            'description': 'Perform reset'
+                        }
+                    ]
+                }
+                errors = []
+                check_console_help_file(doc, errors)
+
+                # Should report missing help entry
+                self.assertTrue(
+                    any('test.action.reset' in e and 'missing from help' in e for e in errors),
+                    f"Should report missing help entry for test.action.reset, got: {errors}"
+                )
+            finally:
+                drift_module.CONSOLE_HELP_PATH = original_path
+
+    def test_help_entry_extra_in_file(self):
+        """Fails when help file has entries not in registry (stale file)."""
+        from tools.check_action_registry_drift import check_console_help_file
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import tools.check_action_registry_drift as drift_module
+            original_path = drift_module.CONSOLE_HELP_PATH
+            help_file = Path(tmpdir) / "console_help.txt"
+
+            try:
+                # Create a help file with two entries
+                help_file.write_text(
+                    "test.status.health|Health|System health status\n"
+                    "old.stale.operation|Old|This was removed from registry\n",
+                    encoding="utf-8"
+                )
+                drift_module.CONSOLE_HELP_PATH = help_file
+
+                # Registry has only one entry (the other is stale in help file)
+                doc = {
+                    'entries': [
+                        {
+                            'name': 'test.status.health',
+                            'type': 'status',
+                            'display_name': 'Health',
+                            'description': 'System health status'
+                        }
+                    ]
+                }
+                errors = []
+                check_console_help_file(doc, errors)
+
+                # Should report stale help entry
+                self.assertTrue(
+                    any('old.stale.operation' in e and 'missing from registry' in e for e in errors),
+                    f"Should report stale help entry old.stale.operation, got: {errors}"
+                )
+            finally:
+                drift_module.CONSOLE_HELP_PATH = original_path
+
+    def test_help_display_name_mismatch(self):
+        """Fails when help file display_name does not match registry."""
+        from tools.check_action_registry_drift import check_console_help_file
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import tools.check_action_registry_drift as drift_module
+            original_path = drift_module.CONSOLE_HELP_PATH
+            help_file = Path(tmpdir) / "console_help.txt"
+
+            try:
+                # Help file has outdated display_name
+                help_file.write_text(
+                    "test.status.health|Old Health Name|System health status\n",
+                    encoding="utf-8"
+                )
+                drift_module.CONSOLE_HELP_PATH = help_file
+
+                # Registry has updated display_name
+                doc = {
+                    'entries': [
+                        {
+                            'name': 'test.status.health',
+                            'type': 'status',
+                            'display_name': 'New Health Name',
+                            'description': 'System health status'
+                        }
+                    ]
+                }
+                errors = []
+                check_console_help_file(doc, errors)
+
+                # Should report display_name mismatch
+                self.assertTrue(
+                    any('test.status.health' in e and 'display_name mismatch' in e for e in errors),
+                    f"Should report display_name mismatch, got: {errors}"
+                )
+            finally:
+                drift_module.CONSOLE_HELP_PATH = original_path

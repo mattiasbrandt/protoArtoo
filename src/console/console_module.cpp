@@ -170,9 +170,9 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
                 sink->onRecordField(requestId, "help_file_status", "unavailable");
             }
         } else {
-            // Reader exists but seek failed or read returned 0 bytes (corrupted/stale/truncated file)
+            // Reader exists but seek failed or read returned 0 bytes (unreadable file)
             if (sink->onRecordField) {
-                sink->onRecordField(requestId, "help_file_status", "corrupted");
+                sink->onRecordField(requestId, "help_file_status", "unreadable");
             }
         }
     }
@@ -410,8 +410,23 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
     }
 
     // Meta-command: operations [type=<type>]
-    if (opName != nullptr && strcmp(opName, "operations") == 0) {
-        // List all operations in the catalog
+    if (opName != nullptr && (strcmp(opName, "operations") == 0 || strncmp(opName, "operations ", 11) == 0)) {
+        // List all operations in the catalog, optionally filtered by type
+        const char* filterType = nullptr;
+
+        // Parse type filter if present (e.g., "operations type=action")
+        if (strlen(opName) > 10 && opName[10] == ' ') {
+            const char* args = opName + 11;
+            // Skip leading whitespace
+            while (*args == ' ') {
+                ++args;
+            }
+            // Check for "type=" prefix
+            if (strncmp(args, "type=", 5) == 0) {
+                filterType = args + 5;
+            }
+        }
+
         size_t catalogCount = 0;
         const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&catalogCount);
 
@@ -421,6 +436,12 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
         for (size_t i = 0; i < catalogCount; ++i) {
             const ConsoleCatalogEntry* entry = &entries[i];
+
+            // Skip if type filter is specified and does not match
+            if (filterType != nullptr && strcmp(entry->type, filterType) != 0) {
+                continue;
+            }
+
             // Emit each operation as an item record
             // Format: name (type, [reason if unavailable])
             if (sink->onRecordItem) {
@@ -492,11 +513,19 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
         case CONSOLE_OP_ACTION:
         case CONSOLE_OP_CONFIG:
-        case CONSOLE_OP_EVENT:
             // T2+: not yet implemented - return single result record (guard path)
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+            }
+            break;
+
+        case CONSOLE_OP_EVENT:
+            // Events are never executable - they are signals, not commands.
+            // Return distinct reason so operator does not retry.
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_EXECUTABLE);
             }
             break;
     }
