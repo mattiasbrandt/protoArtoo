@@ -595,6 +595,64 @@ void test_stage_audio_trigger_rising_edge() {
 // Run All Tests
 // =============================================================================
 
+// =============================================================================
+// Test: validity covers every stage, not just motion
+// =============================================================================
+
+// An intent carrying only a servo toggle is a real intent. Validity used to be
+// "drive or dome moved", so this scored false - and anything that later gated
+// dispatch on it would have silently dropped arm toggles.
+void test_servo_only_intent_is_valid() {
+    RcChannelSnapshot snap = makePwmSnapshot(1900, 1500);  // CH1 high
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.driveSpeed = disabledRcBinding();   // no drive
+    cfg.driveSteer = disabledRcBinding();
+    cfg.enableArm1 = true;
+    cfg.arm1 = defaultPwmBinding(1);        // arm1 on CH1, which the snapshot has
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_TRUE_MESSAGE(intent.valid,
+                             "a servo-only intent must be valid");
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
+}
+
+// Same for a sound-only intent: the audio trigger is the whole intent.
+void test_sound_only_intent_is_valid() {
+    RcChannelSnapshot snap = makePwmSnapshot(1900, 1500);  // CH1 high
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.driveSpeed = disabledRcBinding();
+    cfg.driveSteer = disabledRcBinding();
+    cfg.enableSound = true;
+    cfg.sound = defaultPwmBinding(1);
+    cfg.prevSoundPressed = false;           // rising edge
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_TRUE_MESSAGE(intent.valid,
+                             "a sound-only intent must be valid");
+    TEST_ASSERT_NOT_NULL(intent.audioTrigger);
+}
+
+// A dome binding that is active but centred reports zero speed. That is an
+// active binding reporting zero, not an absent one: validity comes from the
+// stage result, not from re-deriving it as intent.domeSpeed != 0.
+void test_active_dome_binding_at_centre_is_valid() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);  // CH1 centred
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.driveSpeed = disabledRcBinding();
+    cfg.driveSteer = disabledRcBinding();
+    cfg.enableDome = true;
+    cfg.domeSpeed = defaultPwmBinding(1);
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+    TEST_ASSERT_TRUE_MESSAGE(intent.valid,
+                             "an active dome binding at centre must still be valid");
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -656,6 +714,9 @@ int main() {
     RUN_TEST(test_stage_dome_control_center_stick);
     RUN_TEST(test_stage_servo_controls_arm1);
     RUN_TEST(test_stage_audio_trigger_rising_edge);
+    RUN_TEST(test_servo_only_intent_is_valid);
+    RUN_TEST(test_sound_only_intent_is_valid);
+    RUN_TEST(test_active_dome_binding_at_centre_is_valid);
 
     return UNITY_END();
 }

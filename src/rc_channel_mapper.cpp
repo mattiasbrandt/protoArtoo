@@ -258,14 +258,27 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
     // This can be extended in future if dual-receiver mapping becomes needed
     const bool useCh2 = false;
 
-    // Apply mapping stages
+    // Apply mapping stages. Each returns whether it had an active, valid
+    // binding for this snapshot and therefore contributed to the intent.
     bool driveActive = rcMapDriveControls(snap, cfg, useCh2, &intent);
     bool domeActive = rcMapDomeControl(snap, cfg, useCh2, &intent);
     bool servoActive = rcMapServoControls(snap, cfg, useCh2, &intent);
     bool soundActive = rcMapAudioTrigger(snap, cfg, useCh2, &intent);
 
-    // Validity: intent is valid if we have at least drive speed/steer or dome speed
-    intent.valid = driveActive || (cfg.enableDome && intent.domeSpeed != 0);
+    // Validity: any stage that produced an intent makes this intent valid.
+    //
+    // Every stage already gates on binding validity and source-mode match, so
+    // this is exactly "a configured binding was active for this snapshot".
+    // Servo and sound count: an intent carrying only an arm toggle or only an
+    // audio trigger is as real as one carrying drive output, and reporting it
+    // invalid would mean anything that later gates on this field silently
+    // drops those actions.
+    //
+    // Dome is taken from the stage result rather than re-derived from
+    // intent.domeSpeed: rcMapDomeControl() already honours cfg.enableDome, and
+    // a centred dome stick is an active binding reporting zero, not an absent
+    // one.
+    intent.valid = driveActive || domeActive || servoActive || soundActive;
 
     return intent;
 }
