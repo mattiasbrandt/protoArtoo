@@ -154,22 +154,81 @@ and remains available as described below.
 
 ### Serial monitor caveat
 
-Opening the USB serial port toggles DTR/RTS, which **resets the ESP32** (so a
-"reboot" right when you connect the monitor is self-inflicted, not a crash). USB
-serial *read* works seated (RX only); only flashing needs the blocked TX/bootloader
-path. Use `tools/serial_monitor.py` (holds DTR/RTS low — though on this board the
-connect can still reset). `resetReason` distinguishes: `PANIC` = real crash;
-`POWERON`/`EXT` = external/serial reset.
+> [!IMPORTANT]
+> **Measured 2026-08-28 (32 unseated open/close trials, artoo-esp32 on a CP2102
+> bridge).** Attaching a host terminal does **not** reset this board -- with one
+> exception, which resets every single time. The blanket "opening the port resets
+> the ESP32" advice that stood here before that session was wrong for five of the
+> six methods tested, and it is replaced by the matrix below.
 
-2026-06-22 regression note: this reset is no longer limited to the seated Artoo
-PCB. With the ESP32 unseated and only USB connected, a second
-`tools/serial_monitor.py --port /dev/ttyUSB0 --duration 10` attach still printed
-the ROM boot banner (`rst:0x1 (POWERON_RESET)`). A month-plus earlier, USB serial
-monitor attach worked without rebooting. Treat current USB-open resets as a
-regression in the host/USB-UART/reset-line path until the change is explained.
-The project monitor now defaults to a POSIX `O_NOCTTY`/`termios` backend that
-does not touch DTR/RTS; use `--pyserial` only when intentionally comparing the
-older pyserial path, which can toggle modem-control lines on open.
+**Safe: use any of these.** Five trials each, zero resets.
+
+| Attach method | resets |
+|---|---|
+| `tools/serial_monitor.py` (default POSIX `O_NOCTTY`/termios backend) | 0/5 |
+| `pio device monitor` | 0/5 |
+| `picocom` | 0/5 |
+| `cat` after `stty -F <port> -hupcl` | 0/5 |
+| `cat` after `stty -F <port> hupcl` | 0/5 |
+
+**Unsafe: `tools/serial_monitor.py --pyserial`.** 7/7 resets, and 2 of those 7 also
+left the board **stranded off the network** -- silent on serial and absent from
+WiFi, because it came up in the ROM download stub instead of the application.
+
+Why, from the source rather than from inference: `open_pyserial_port()` sets
+`dtr = False` and `rts = False` *before* `Serial.open()`, and pyserial's
+`serialposix.Serial.open()` then calls `_update_dtr_state()` and
+`_update_rts_state()` as two **separate** ioctls after the open. DTR and RTS are
+therefore driven low one after the other rather than together, and DTR is left
+low across the transition. Every other method above raises and lowers both lines
+together, and `TIOCMGET` shows both asserted after open and still asserted after
+close.
+
+> [!NOTE]
+> That paragraph describes what the **host driver** does to DTR/RTS. The EN and
+> GPIO0 transitions at the chip were **not** captured: there is no logic analyser
+> or scope on this bench, so the board-side auto-reset behaviour remains
+> `UNKNOWN`. Nothing here should be read as a waveform measurement. Verification
+> step if an instrument is acquired: a 4-channel capture at >= 1 MS/s on DTR, RTS,
+> EN and GPIO0 across a port open with each client above.
+
+**Recovering a stranded board.** Deassert DTR (so GPIO0 is high and the chip boots
+the application, not the download stub), then pulse RTS to cycle EN:
+
+```python
+import serial, time
+s = serial.Serial('/dev/ttyUSB0', 115200)
+s.dtr = False        # GPIO0 high -> boot the app image
+s.rts = True         # EN low  -> hold in reset
+time.sleep(0.2)
+s.rts = False        # EN high -> boot
+s.close()
+```
+
+A successful recovery prints `rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)`.
+If it prints a `DOWNLOAD_BOOT` mode instead, DTR was still asserted.
+
+**The rule:** pick any safe method above, and **never change DTR or RTS after the
+port is open**. A deliberate post-open toggle resets the board every time -- that
+is how the matrix above was proven able to detect a reset at all, rather than
+merely never firing.
+
+**Anchoring a reset.** Two independent anchors, because a missed serial capture
+looks identical to "no reset": the ROM boot banner (`rst:0x...`) in the serial
+stream, **and** `resetReason` + `uptimeMs` from `/api/status` over HTTP either
+side of the attach. The HTTP anchor does not travel over the serial path.
+`resetReason` distinguishes causes: `PANIC` = real crash; `POWERON`/`EXT` =
+external/serial reset.
+
+USB serial *read* works seated (RX only); only flashing needs the blocked
+TX/bootloader path (GPIO15/SBUS strapping). **The seated arm of this matrix was
+not run** -- seated measurement is not available on this bench -- so every row
+above is an unseated result.
+
+The 2026-06-22 regression note that stood here (a second POSIX-backend attach
+printing the ROM banner while the board was unseated) is **not reproducible**: the
+POSIX backend measured 0/5 across this session. What that earlier observation
+actually captured is not established, and is not re-asserted here.
 
 ### Serial log integrity caveat
 

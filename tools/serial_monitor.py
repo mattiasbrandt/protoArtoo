@@ -8,6 +8,11 @@
 # DTR/RTS on POSIX systems. Output goes to stdout; status/errors go to stderr.
 # Exit code 0 on success, 1 on failure.
 #
+# The default POSIX backend is one of the attach methods measured at 0/5 resets
+# (docs/troubleshooting.md, "Serial monitor caveat"). The --pyserial backend is
+# NOT safe: it drives DTR and RTS low in two separate ioctls after the open, which
+# resets the board every time and can leave it in the ROM download stub.
+#
 # Usage:
 #   # Capture for 10 s (default), print to stdout:
 #   python3 tools/serial_monitor.py
@@ -168,7 +173,10 @@ def stream_forever_pyserial(s) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="protoArtoo serial monitor — does not reset the ESP32 on connect"
+        description=(
+            "protoArtoo serial monitor. The default POSIX backend does not reset the "
+            "ESP32 on connect (measured 0/5 unseated); --pyserial does, every time."
+        )
     )
     parser.add_argument(
         "--port", default="/dev/ttyUSB0",
@@ -196,7 +204,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--pyserial", action="store_true",
-        help="Use the old pyserial backend. May toggle DTR/RTS on some hosts."
+        help=(
+            "Use the old pyserial backend. WARNING: this RESETS the board on open "
+            "(measured 7/7 unseated) and can strand it in the ROM download stub, "
+            "off the network. Comparison use only -- see docs/troubleshooting.md."
+        )
     )
     args = parser.parse_args()
 
