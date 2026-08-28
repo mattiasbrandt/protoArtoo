@@ -45,10 +45,11 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
 // =============================================================================
 
 // Static buffer for embedded-cli instance (no dynamic allocation per criterion)
-// Size from embedded_cli.h:206 - required buffer size is computed from config
-static EmbeddedCliConfig embeddedCliConfig = {};
+// Per embedded_cli.h:202, embeddedCliRequiredSize() computes the required size.
+// This buffer must be large enough for the config (verified at init time).
+static CLI_UINT embeddedCliBuffer[512];  // CLI_UINT is size-aligned per embedded_cli.h
+static EmbeddedCliConfig* embeddedCliConfig = nullptr;
 static EmbeddedCli* embeddedCli = nullptr;
-static CLI_UINT embeddedCliBuffer[512];  // Sized for embeddedCliRequiredSize; CLI_UINT is size-aligned
 
 // Output buffer for a single Console Record line
 static char recordBuffer[CONSOLE_RECORD_LINE_MAX] = {};
@@ -133,7 +134,12 @@ static void onRecordBegin(uint32_t requestId, const char* operationType) {
         Serial.write((const uint8_t*)recordBuffer, len);
         Serial.write('\n');
     }
-    // Mutex held for the entire record sequence (begin -> field... -> end)
+    // CONSTRAINT: Mutex held for the entire record sequence (begin -> field... -> end)
+    // The mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic creates non-recursive).
+    // Any log emitted between onRecordBegin and onRecordEnd will self-deadlock the console task,
+    // since paLogLine also takes the same mutex with portMAX_DELAY.
+    // Current usage: system.status.health does not log during execution, so this is safe.
+    // Future operations (#219+) must ensure they do not call PA_LOG_* between begin and end.
 }
 
 static void onRecordField(uint32_t requestId, const char* name, const char* value) {
@@ -188,12 +194,24 @@ void consoleTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "active");
 
     // Initialize embedded-cli with static buffer configuration (no dynamic allocation)
-    // Per embedded_cli.h:160-217, use embeddedCliRequiredSize + static buffer
-    embeddedCliConfig.cliBuffer = embeddedCliBuffer;
-    embeddedCliConfig.cliBufferSize = sizeof(embeddedCliBuffer);
-    embeddedCliConfig.rxBufferSize = 256;  // Input line buffer
+    // Per embedded_cli.h documentation, derive config from embeddedCliDefaultConfig()
+    // and check the required size against our static buffer
+    embeddedCliConfig = embeddedCliDefaultConfig();
+    embeddedCliConfig->cliBuffer = embeddedCliBuffer;
+    embeddedCliConfig->cliBufferSize = sizeof(embeddedCliBuffer);
+    // Use default rxBufferSize, cmdBufferSize, historyBufferSize
+    // Use default enableAutoComplete (true) - needed for #219
 
-    embeddedCli = embeddedCliNew(&embeddedCliConfig);
+    // Verify buffer is large enough for the configuration
+    uint16_t requiredSize = embeddedCliRequiredSize(embeddedCliConfig);
+    if (requiredSize > sizeof(embeddedCliBuffer)) {
+        PA_LOG_ERROR(TAG, "embedded-cli buffer too small: need %u bytes, have %zu",
+                     requiredSize, sizeof(embeddedCliBuffer));
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    embeddedCli = embeddedCliNew(embeddedCliConfig);
     if (embeddedCli == nullptr) {
         PA_LOG_ERROR(TAG, "failed to initialize embedded-cli with static buffer");
         vTaskDelete(nullptr);
@@ -215,16 +233,17 @@ void consoleTask(void* pvParameters) {
     }
     Serial.flush();
 
-    // Measure stack high water mark
+    // Measure stack high water mark after first command is processed
+    // This allows us to measure the stack usage for command parsing + execution + record emission
     bool hwmLogged = false;
 
     // Main loop: read from UART and process through embedded-cli
     while (true) {
         // Log stack high water mark once after first command is processed
-        // (ADR 0034: stack sized from measured high-water mark with margin)
+        // Measured value guides stack depth sizing for future runs (ADR 0034)
         if (!hwmLogged && currentRequestId > 0) {
             UBaseType_t freeStack = uxTaskGetStackHighWaterMark(nullptr);
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free (96 B frame + margin)", (unsigned)freeStack);
+            PA_LOG_INFO(TAG, "stack HWM: %u words free after first command", (unsigned)freeStack);
             hwmLogged = true;
         }
 

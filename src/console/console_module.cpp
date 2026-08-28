@@ -62,12 +62,9 @@ static ConsoleOperationType consoleGetOperationType(const char* operationName) {
 // Execute system.status.health query
 // Reads the current system health snapshot and emits records through sink
 // ADR 0034: status query flows through the existing snapshot builder, rendering as Console Records
+// Note: onRecordBegin is already called by consoleExecuteCommand before this function,
+// so the mutex is already held and we emit fields directly.
 static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRecordSink* sink) {
-    // Begin multi-record response
-    if (sink->onRecordBegin) {
-        sink->onRecordBegin(requestId, "system.status.health");
-    }
-
     // Read values directly from RobotState and other sources
     // This replicates the logic from api_status.cpp's buildHealthJson
     FailsafeDiagnostics diag = {};
@@ -191,6 +188,11 @@ uint32_t consoleGetNextRequestId(void) {
 void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSink* sink) {
     if (request == nullptr || sink == nullptr) {
         return;
+    }
+
+    // Emit begin for every command (even errors) to establish proper take/give pairing
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(request->requestId, request->operationName);
     }
 
     // Check if operation is known
