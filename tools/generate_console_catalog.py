@@ -122,10 +122,13 @@ def generate_help_text(entries, output_path):
         description = entry.get('description', '')
         executor = entry.get('executor', 'none')
 
-        # Escape special characters in text (replace newlines with space, pipes with underscore)
-        # This handles D8 - explicit transformation rule
-        display_name = display_name.replace('\n', ' ').replace('|', '_')
-        description = description.replace('\n', ' ').replace('|', '_')
+        # Escape special characters per drift checker requirements: \n for newlines, \| for pipes
+        # display_name: newlines -> space (display names shouldn't span lines)
+        display_name = display_name.replace('\n', ' ').replace('|', '\\|').rstrip()
+        # description: escape newlines and pipes as per drift checker format
+        description = description.replace('\\', '\\\\')  # escape backslashes first
+        description = description.replace('\n', '\\n')   # then newlines
+        description = description.replace('|', '\\|')    # then pipes
 
         # Build parameter list: param1:type1:required1|param2:type2:required2
         param_list = []
