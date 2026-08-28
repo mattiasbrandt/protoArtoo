@@ -272,7 +272,6 @@ void setup() {
     // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     paLogRingApplyBootDepth();
-    consoleModuleInit();
     logBootHealth();
     ConfigSnapshot bootCfg = {};
     configCacheRead(&bootCfg);
@@ -421,6 +420,11 @@ void setup() {
     // server only starts once WiFi genuinely comes up, via
     // startHttpServerOnce() inside handleWiFiEvent().
     webServerInit();
+
+    // Initialize console module after LittleFS is mounted.
+    // The module opens the help file once, holds the handle for the process lifetime,
+    // and uses seek+read (no per-request allocation) to serve help text.
+    consoleModuleInit();
 
     uint16_t bootTrack = 0;
     bootTrack = bootCfg.audio.snd_sys_boot;
