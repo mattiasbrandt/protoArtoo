@@ -363,6 +363,61 @@ void test_operations_unknown_type_filter_is_invalid() {
     TEST_ASSERT_EQUAL_STRING("out-of-range", rec["reason"].as<const char*>());
 }
 
+// -----------------------------------------------------------------------------
+// #219 D3 rework: `help <op>` must render schema/availability from the
+// IN-IMAGE catalog table (ConsoleCatalogEntry) regardless of the FS-resident
+// help file's health - consoleEmitHelpForOperation() used to jump straight
+// from `type` to the file and never touch entry->aliases/params/available_*/
+// executor_ready at all, even though the catalog carries real data for 38
+// alias entries and 29 parameter entries.
+// -----------------------------------------------------------------------------
+
+// drive.action.move: no rc_token (no aliases), two required int16 params.
+void test_help_emits_catalog_availability_fields() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.move");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    char value[64] = {};
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "available_on_board", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "available_in_build", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "requires_web_control", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "executor_ready", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+}
+
+void test_help_emits_params_from_catalog_not_file() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.move");
+
+    char value[128] = {};
+    TEST_ASSERT_TRUE_MESSAGE(fieldValue(backend.sentBody, "params", value, sizeof(value)),
+        "help must render params from the in-image catalog");
+    TEST_ASSERT_EQUAL_STRING("speed:int16:required,steer:int16:required", value);
+
+    // No rc_token on this entry: the aliases field must be entirely absent,
+    // not present-and-empty (matches the reason= field's presence convention).
+    TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "aliases", value, sizeof(value)),
+        "drive.action.move has no rc_token alias and must not carry an aliases field");
+}
+
+// drive.action.speed: has rc_token "drive_speed" (one alias) and one param.
+void test_help_emits_aliases_from_catalog() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.speed");
+
+    char value[64] = {};
+    TEST_ASSERT_TRUE_MESSAGE(fieldValue(backend.sentBody, "aliases", value, sizeof(value)),
+        "drive.action.speed has an rc_token alias that must reach help");
+    TEST_ASSERT_EQUAL_STRING("drive_speed", value);
+
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "params", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("value:float:required", value);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -379,5 +434,8 @@ int main(int, char**) {
     RUN_TEST(test_operations_lists_catalog_entries_as_items);
     RUN_TEST(test_operations_type_filter_lists_only_that_type);
     RUN_TEST(test_operations_unknown_type_filter_is_invalid);
+    RUN_TEST(test_help_emits_catalog_availability_fields);
+    RUN_TEST(test_help_emits_params_from_catalog_not_file);
+    RUN_TEST(test_help_emits_aliases_from_catalog);
     return UNITY_END();
 }
