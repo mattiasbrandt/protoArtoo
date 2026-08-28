@@ -16,6 +16,9 @@
 #include "aux_led.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "console_module.h"
+#include "console_serial_output.h"
+#include "console_task.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
@@ -86,6 +89,11 @@ void paLogInit() {
     }
 }
 
+// Accessor for console_task to coordinate atomic serial output (ADR 0034)
+SemaphoreHandle_t paGetSerialMutex() {
+    return logSerialMutex;
+}
+
 // Size the log ring and the /api/logs body from the operator's saved log
 // level. Called once from setup() after NVS config loads and before any task
 // or the web server starts; bootstrap lines are carried over. On allocation
@@ -138,20 +146,10 @@ void paLogLine(const char* line) {
         return;
     }
 
-    size_t lineLen = 0;
-    while (line[lineLen] != '\0' && lineLen < PA_LOG_SERIAL_LINE_MAX) {
-        ++lineLen;
-    }
-
-    SemaphoreHandle_t serialMutex = logSerialMutex;
-    if (serialMutex != nullptr) {
-        xSemaphoreTake(serialMutex, portMAX_DELAY);
-    }
-    Serial.write((const uint8_t*)line, lineLen);
-    Serial.write('\n');
-    if (serialMutex != nullptr) {
-        xSemaphoreGive(serialMutex);
-    }
+    // Route through the serial output coordinator once the Console task binds the CLI.
+    // Before the Console task starts, write directly (boot messages, early logs).
+    // consoleSerialEmitLine handles the serial mutex, line length cap, and coordinates with console input.
+    consoleSerialEmitLine(line);
 
     paLogLineRaw(line);
 }
@@ -274,6 +272,7 @@ void setup() {
     // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     paLogRingApplyBootDepth();
+    consoleModuleInit();
     logBootHealth();
     ConfigSnapshot bootCfg = {};
     configCacheRead(&bootCfg);
@@ -397,6 +396,12 @@ void setup() {
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
     xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
+
+    // ConsoleTask: Core 0 (non-RT)  --  serial console adapter using embedded-cli.
+    // ADR 0034: persistent Controller Console, no network dependency, no dynamic
+    // allocation in its loop. Stack sized from measured high-water mark with margin.
+    // Created on both boards (P4 USB CDC, artoo UART0 bridge).
+    xTaskCreatePinnedToCore(consoleTask, "Console", 5120, nullptr, 2, nullptr, 0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.

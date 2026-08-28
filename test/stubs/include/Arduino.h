@@ -40,6 +40,11 @@ struct SerialStub {
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
     static void println(const char* /*s*/) {}
     static void print(const char* /*s*/) {}
+    static size_t write(uint8_t /*c*/) { return 1; }
+    static size_t write(const uint8_t* /*data*/, size_t len) { return len; }
+    static void flush() {}
+    static int available() { return 0; }
+    static int read() { return -1; }
 };
 extern SerialStub Serial;
 
@@ -80,3 +85,12 @@ inline T constrain(T value, T min_val, T max_val) {
     if (value > max_val) return max_val;
     return value;
 }
+
+// ESP stub — provides heap info methods used by console_module.cpp
+// Minimal stub with default zero values to avoid affecting other tests.
+struct ESPClass {
+    unsigned long getFreeHeap() const { return 0; }
+    unsigned long getMinFreeHeap() const { return 0; }
+    unsigned long getMaxAllocHeap() const { return 0; }
+};
+extern ESPClass ESP;
