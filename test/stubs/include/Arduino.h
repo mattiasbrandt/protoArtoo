@@ -82,8 +82,10 @@ inline T constrain(T value, T min_val, T max_val) {
 }
 
 // ESP stub — provides heap info methods used by console_module.cpp
+// Minimal stub with default zero values to avoid affecting other tests.
 struct ESPClass {
-    unsigned long getFreeHeap() const { return 1048576; }      // Stub: 1MB
-    unsigned long getMinFreeHeap() const { return 524288; }    // Stub: 512KB
+    unsigned long getFreeHeap() const { return 0; }
+    unsigned long getMinFreeHeap() const { return 0; }
+    unsigned long getMaxAllocHeap() const { return 0; }
 };
 extern ESPClass ESP;

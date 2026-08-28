@@ -92,7 +92,13 @@ typedef struct {
     // Called for list items (T2+ scope)
     void (*onRecordItem)(uint32_t requestId, const char* value);
 
-    // Called at the end of any response
+    // Called for a single-record response (error, action completion, config write).
+    // Per docs/console-protocol.md, guard paths (unknown operation, unavailable,
+    // non-status operation type) emit a single type=result record, not begin+end.
+    void (*onRecordResult)(uint32_t requestId, ConsoleStatus status,
+                          ConsoleOutcome outcome, ConsoleReason reason);
+
+    // Called at the end of a multi-record response (after all fields/items)
     void (*onRecordEnd)(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                        ConsoleReason reason);
 } ConsoleRecordSink;

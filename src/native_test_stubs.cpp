@@ -22,6 +22,10 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
+// Arduino ESP instance (heap methods used by console_module.cpp)
+// Minimal stub with zero values — avoids affecting other 1756 tests
+ESPClass ESP;
+
 // Logging sinks  --  no-op in native test builds
 void paLogInit() {
 }
@@ -668,7 +672,6 @@ class LittleFSClass {
 };
 
 static LittleFSClass LittleFS;
-ESPClass ESP;  // Instantiation of ESPClass defined in Arduino.h stub
 
 // Note: pdMS_TO_TICKS is already defined in test/stubs/include/freertos/FreeRTOS.h
 // So we only define the task-related stubs here.
@@ -760,10 +763,6 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
 }
 
 // Web server stubs — native tests need these for console_module.cpp
-bool webLittleFsMounted() {
-    return true;  // Stub: assume filesystem is available in tests
-}
-
 // ESP-IDF reset reason enum and stub — native tests need this for
 // evaluateNetworkRecoveryGesture() to compile
 enum esp_reset_reason_t {
@@ -783,6 +782,18 @@ enum esp_reset_reason_t {
 esp_reset_reason_t esp_reset_reason() {
     // Always return software reset in native tests
     return ESP_RST_SW;
+}
+
+// Web filesystem ready status — used by console_module.cpp
+// Default false in native tests (minimal impact on other 1756 tests)
+bool webLittleFsMounted() {
+    return false;
+}
+
+// Serial mutex accessor — used by console_serial_output.cpp and paLogLine
+// Returns the test harness mutex from test/stubs/include/freertos/semphr.h
+SemaphoreHandle_t paGetSerialMutex() {
+    return (SemaphoreHandle_t)paStubMutexStorage();
 }
 
 #endif

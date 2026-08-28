@@ -190,26 +190,23 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         return;
     }
 
-    // Emit begin for every command (even errors) to establish proper take/give pairing
-    if (sink->onRecordBegin) {
-        sink->onRecordBegin(request->requestId, request->operationName);
-    }
-
     // Check if operation is known
     if (!consoleIsKnownOperation(request->operationName)) {
-        // Unknown operation: return invalid with reason
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(request->requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
-                            CONSOLE_REASON_UNKNOWN_OPERATION);
+        // Unknown operation: return single result record (guard path)
+        // Per docs/console-protocol.md, a single type=result record, not begin+end
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
+                                CONSOLE_REASON_UNKNOWN_OPERATION);
         }
         return;
     }
 
     // Check if operation is available on this board
     if (!consoleIsAvailableOnBoard(request->operationName)) {
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(request->requestId, CONSOLE_STATUS_ERR,
-                            CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_ON_THIS_BOARD);
+        // Unavailable operation: return single result record (guard path)
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_ON_THIS_BOARD);
         }
         return;
     }
@@ -219,18 +216,23 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
     switch (opType) {
         case CONSOLE_OP_STATUS:
+            // Status query: emit begin + fields + end
+            if (sink->onRecordBegin) {
+                sink->onRecordBegin(request->requestId, request->operationName);
+            }
             if (strcmp(request->operationName, "system.status.health") == 0) {
                 consoleExecuteSystemStatusHealth(request->requestId, sink);
+                // consoleExecuteSystemStatusHealth emits onRecordEnd
             }
             break;
 
         case CONSOLE_OP_ACTION:
         case CONSOLE_OP_CONFIG:
         case CONSOLE_OP_EVENT:
-            // T2+ scope
-            if (sink->onRecordEnd) {
-                sink->onRecordEnd(request->requestId, CONSOLE_STATUS_ERR,
-                                CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+            // T2+ scope: return single result record (guard path)
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
             }
             break;
     }

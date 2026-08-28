@@ -150,14 +150,12 @@ void paLogLine(const char* line) {
         ++lineLen;
     }
 
-    SemaphoreHandle_t serialMutex = logSerialMutex;
-    if (serialMutex != nullptr) {
-        xSemaphoreTake(serialMutex, portMAX_DELAY);
-    }
-    Serial.write((const uint8_t*)line, lineLen);
-    Serial.write('\n');
-    if (serialMutex != nullptr) {
-        xSemaphoreGive(serialMutex);
+    // Route through the serial output coordinator once the Console task binds the CLI.
+    // Before the Console task starts, write directly (boot messages, early logs).
+    // consoleSerialEmitLine handles the serial mutex and coordinates with console input.
+    extern void consoleSerialEmitLine(const char* line);
+    if (line[0] != '\0') {
+        consoleSerialEmitLine(line);
     }
 
     paLogLineRaw(line);

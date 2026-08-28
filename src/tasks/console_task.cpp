@@ -9,8 +9,9 @@
 //  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - Format and output Console Records to serial, atomized under serial mutex
-//  - Maintain atomic output: log arriving mid-entry clears line, writes record, redraws prompt
+//  - Emit Console Records to serial through consoleSerialEmitLine() for atomic output
+//  - Atomic output: log arriving mid-entry clears the input line, writes the record,
+//    then redraws the prompt and buffered command via embeddedCliPrint()
 // =============================================================================
 
 #include <Arduino.h>
@@ -37,6 +38,8 @@ static const char* TAG = "ConsoleTask";
 static void onRecordBegin(uint32_t requestId, const char* operationType);
 static void onRecordField(uint32_t requestId, const char* name, const char* value);
 static void onRecordItem(uint32_t requestId, const char* value);
+static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
+                          ConsoleReason reason);
 static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                        ConsoleReason reason);
 
@@ -109,6 +112,7 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
         .onRecordBegin = onRecordBegin,
         .onRecordField = onRecordField,
         .onRecordItem = onRecordItem,
+        .onRecordResult = onRecordResult,
         .onRecordEnd = onRecordEnd,
     };
 
@@ -158,6 +162,36 @@ static void onRecordItem(uint32_t requestId, const char* value) {
     (void)requestId;
     (void)value;
     // T2+ scope: list items
+}
+
+static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
+                          ConsoleReason reason) {
+    // Guard path: emit single result record for error/unknown/unsupported operations
+    // Emit: < id=<n> type=result status=ok outcome=queued [reason=...]
+    // Take serial mutex for atomic emission (log lines will wait while this emits)
+    SemaphoreHandle_t mutex = paGetSerialMutex();
+    if (mutex != nullptr) {
+        xSemaphoreTake(mutex, portMAX_DELAY);
+    }
+
+    char reasonStr[64] = {};
+    if (status == CONSOLE_STATUS_ERR && reason != CONSOLE_REASON_NOT_IN_THIS_BUILD) {
+        snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
+    }
+
+    size_t len =
+        snprintf(recordBuffer, sizeof(recordBuffer),
+                 "< id=%lu type=result status=%s outcome=%s%s", (unsigned long)requestId,
+                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
+    if (len < sizeof(recordBuffer)) {
+        Serial.write((const uint8_t*)recordBuffer, len);
+        Serial.write('\n');
+    }
+
+    // Give the mutex
+    if (mutex != nullptr) {
+        xSemaphoreGive(mutex);
+    }
 }
 
 static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
@@ -221,6 +255,9 @@ void consoleTask(void* pvParameters) {
     // Set up embedded-cli callbacks
     embeddedCli->writeChar = onCliWrite;
     embeddedCli->onCommand = onCliCommand;
+
+    // Bind the CLI to the serial output coordinator (routes log/event/record lines)
+    consoleSerialBindCli(embeddedCli);
 
     // Print initial prompt under serial mutex
     SemaphoreHandle_t mutex = paGetSerialMutex();
