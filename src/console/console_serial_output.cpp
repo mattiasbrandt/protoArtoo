@@ -48,27 +48,23 @@ void consoleSerialEmitLine(const char* line) {
         return;
     }
 
-    // Cap line length to prevent serial buffer overflow
-    static char lineBuf[PA_LOG_SERIAL_LINE_MAX];
-    size_t lineLen = strlen(line);
-    const char* lineToEmit = line;
-
-    if (lineLen >= PA_LOG_SERIAL_LINE_MAX) {
-        // Truncate to max length (excluding null terminator)
-        strncpy(lineBuf, line, PA_LOG_SERIAL_LINE_MAX - 1);
-        lineBuf[PA_LOG_SERIAL_LINE_MAX - 1] = '\0';
-        lineToEmit = lineBuf;
-    }
-
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex == nullptr || g_boundCli == nullptr) {
         // No coordination available (boot, before console task). Direct write.
-        // Still take the mutex if available, to serialize with paLogLine writes.
+        // Cap line length before write to prevent serial buffer overflow.
+        // PA_LOG_* macro lines are already bounded (logging.h:33-42), so this
+        // only truncates direct paLogLine() calls with over-length strings.
+        size_t lineLen = strlen(line);
+        if (lineLen > PA_LOG_SERIAL_LINE_MAX - 1) {
+            lineLen = PA_LOG_SERIAL_LINE_MAX - 1;
+        }
+
+        // Take mutex if available to serialize with other writers
         if (mutex != nullptr) {
             xSemaphoreTake(mutex, portMAX_DELAY);
         }
-        Serial.print(lineToEmit);
-        Serial.print("\n");
+        Serial.write((const uint8_t*)line, lineLen);
+        Serial.write('\n');
         if (mutex != nullptr) {
             xSemaphoreGive(mutex);
         }
@@ -79,6 +75,19 @@ void consoleSerialEmitLine(const char* line) {
     if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
         // Should not happen with portMAX_DELAY, but fail gracefully
         return;
+    }
+
+    // For the bound path with embeddedCliPrint, truncate if needed inside the lock
+    // to avoid data races. Create a local buffer only if truncation is required.
+    size_t lineLen = strlen(line);
+    const char* lineToEmit = line;
+    char lineBuf[PA_LOG_SERIAL_LINE_MAX];
+
+    if (lineLen >= PA_LOG_SERIAL_LINE_MAX) {
+        // Truncate to max length (excluding null terminator)
+        strncpy(lineBuf, line, PA_LOG_SERIAL_LINE_MAX - 1);
+        lineBuf[PA_LOG_SERIAL_LINE_MAX - 1] = '\0';
+        lineToEmit = lineBuf;
     }
 
     // Use embeddedCliPrint() which implements the coordinator:
