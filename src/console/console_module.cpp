@@ -68,7 +68,6 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     }
 
     // Emit help as multi-record response
-    char tempBuf[256] = {};
 
     // Begin
     if (sink->onRecordBegin) {
