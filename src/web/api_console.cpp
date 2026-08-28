@@ -45,12 +45,15 @@ struct ConsoleWebSink {
 static ConsoleWebSink* g_currentWebSink = nullptr;
 
 // Helper: copy string into arena, return pointer.
-// D9: Truncate on overflow, never return the module's buffer (reintroduces dangling pointers).
+// Truncates on overflow; never returns the module's buffer to avoid dangling pointers.
+// Guard against overflow: if we cannot store even a NUL terminator, return nullptr.
 static const char* arenaStoreString(const char* src) {
     if (g_currentWebSink == nullptr || src == nullptr) return src;
     size_t len = strlen(src);
     size_t available = CONSOLE_RECORD_VALUE_ARENA - g_currentWebSink->arenaUsed;
-    if (len + 1 > available) len = available > 1 ? available - 1 : 0;  // Truncate to fit
+    // Need space for at least the NUL terminator
+    if (available == 0) return "";
+    if (len + 1 > available) len = available - 1;  // Truncate to fit, leaving room for NUL
     char* dest = &g_currentWebSink->valueArena[g_currentWebSink->arenaUsed];
     if (len > 0) strncpy(dest, src, len);
     dest[len] = '\0';
@@ -107,7 +110,48 @@ static void webOnRecordEnd_impl(uint32_t requestId, ConsoleStatus status,
 
 void handleConsolePost(WebRequest& req) {
     char command[256] = {};
-    if (!req.param("command", command, sizeof(command)) || command[0] == '\0') {
+
+    // Check for truncation in form parameter (D13: detect oversized command)
+    const char* paramValue = req.paramRef("command");
+    if (paramValue != nullptr) {
+        if (strlen(paramValue) >= sizeof(command)) {
+            // Line too long; emit error with proper reason code
+            ConsoleWebSink webSink = {};
+            g_currentWebSink = &webSink;
+
+            uint32_t reqId = consoleGetNextRequestId();
+            ConsoleRecordSink sink = {
+                .onRecordBegin = webOnRecordBegin_impl,
+                .onRecordField = webOnRecordField_impl,
+                .onRecordItem = webOnRecordItem_impl,
+                .onRecordResult = webOnRecordResult_impl,
+                .onRecordEnd = webOnRecordEnd_impl,
+            };
+
+            webOnRecordEnd_impl(reqId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_LINE_TOO_LONG);
+            g_currentWebSink = nullptr;
+
+            // Build and send error response
+            JsonDocument responseDoc;
+            JsonArray recordsArray = responseDoc.createNestedArray("records");
+
+            const ConsoleRecord& rec = webSink.records[0];
+            JsonObject recordObj = recordsArray.createNestedObject();
+            recordObj["id"] = rec.requestId;
+            recordObj["type"] = rec.type;
+            recordObj["status"] = rec.status;
+            recordObj["outcome"] = rec.outcome;
+            if (rec.reason != nullptr) recordObj["reason"] = rec.reason;
+
+            static char responseBody[4096];
+            size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
+            req.send(200, "application/json", responseBody);
+            return;
+        }
+        snprintf(command, sizeof(command), "%s", paramValue);
+    }
+
+    if (command[0] == '\0') {
         const char* body = req.body();
         if (body != nullptr) {
             JsonDocument bodyDoc;
@@ -120,7 +164,13 @@ void handleConsolePost(WebRequest& req) {
                 req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing command\"}");
                 return;
             }
-            snprintf(command, sizeof(command), "%s", cmdVar.as<const char*>());
+            // Also check JSON body command length
+            const char* jsonCmd = cmdVar.as<const char*>();
+            if (strlen(jsonCmd) >= sizeof(command)) {
+                req.send(400, "application/json", "{\"ok\":false,\"error\":\"command too long\"}");
+                return;
+            }
+            snprintf(command, sizeof(command), "%s", jsonCmd);
         }
     }
 
@@ -180,7 +230,8 @@ void handleConsolePost(WebRequest& req) {
         }
     }
 
-    char responseBody[4096] = {};
+    static char responseBody[4096];
+    memset(responseBody, 0, sizeof(responseBody));
     size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
     if (bodySize == 0 || bodySize >= sizeof(responseBody)) {
         req.send(500, "application/json", "{\"ok\":false,\"error\":\"response too large\"}");

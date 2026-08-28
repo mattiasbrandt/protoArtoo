@@ -1007,10 +1007,10 @@ rows:
   missing_metadata: []
   notes: Aggregate-field in /api/status; built by buildStatusJson
 - name: system.console
-  type: status
+  type: action
   registry_api_path: /api/console
   registry_cpp_enum: null
-  registry_cpp_file: src/web/api_console.cpp
+  registry_cpp_file: null
   registry_sse_event: null
   registry_nvs_key: null
   registry_requires_web_control: false
