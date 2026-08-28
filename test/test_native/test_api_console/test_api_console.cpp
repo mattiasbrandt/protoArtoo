@@ -198,6 +198,31 @@ void test_empty_command_is_rejected() {
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
 }
 
+// An over-length line is refused with the protocol's own reason, as ONE
+// type=result record. docs/console-protocol.md:124-130 defines `end` as the
+// record that CLOSES a group opened by `begin`; a guard path that emits a bare
+// `end` puts a close on the wire with nothing open, which a reader
+// reassembling by Request ID cannot interpret.
+void test_over_length_line_is_one_result_record_with_line_too_long() {
+    WebRequestTestBackend backend;
+    char longLine[512];
+    memset(longLine, 'x', sizeof(longLine) - 1);
+    longLine[sizeof(longLine) - 1] = '\0';
+    runCommand(backend, longLine);
+
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(backend.sentBody, "result"),
+                                   "an over-length line must answer with one type=result "
+                                   "record, not a bare type=end");
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "end"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "begin"));
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObjectConst rec = doc["records"][0];
+    TEST_ASSERT_EQUAL_STRING("err", rec["status"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("line-too-long", rec["reason"].as<const char*>());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -207,5 +232,6 @@ int main(int, char**) {
     RUN_TEST(test_status_query_is_begin_fields_end);
     RUN_TEST(test_request_ids_are_shared_within_and_advance_between);
     RUN_TEST(test_empty_command_is_rejected);
+    RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);
     return UNITY_END();
 }
