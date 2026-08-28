@@ -41,11 +41,28 @@ const makeElement = () => {
     disabled: false,
     hidden: false,
     children: [],
+    // Handlers this element registered, so a test can drive a control the way
+    // an operator does. Without this, addEventListener falls through to the
+    // catch-all below and the handler is unreachable -- a page whose only
+    // entry point is a keypress could then only be tested by calling internals
+    // the browser never calls.
+    __listeners: [],
   };
   return new Proxy(own, {
     get(target, key) {
       if (key in target) return target[key];
       if (key === Symbol.toPrimitive || typeof key === "symbol") return undefined;
+      if (key === "addEventListener") {
+        return (type, handler) => target.__listeners.push({ type, handler });
+      }
+      if (key === "removeEventListener") {
+        return (type, handler) => {
+          const at = target.__listeners.findIndex(
+            (l) => l.type === type && l.handler === handler
+          );
+          if (at >= 0) target.__listeners.splice(at, 1);
+        };
+      }
       // Any unknown property is treated as a method returning a fresh element,
       // which covers querySelector/closest/appendChild/etc. in one rule.
       return (...args) => (key === "querySelectorAll" ? [] : makeElement(args));
@@ -294,6 +311,17 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       return entry.load(opts);
     },
     sectionOptions: (name) => sections.get(name)?.opts ?? null,
+    // Delivers an event to the handlers an ELEMENT registered, the way a real
+    // interaction would. Throws when nothing is listening, so a test cannot
+    // silently assert on a control that was never wired.
+    emitOn: (id, type, event = {}) => {
+      const el = elementById(id);
+      const matching = el.__listeners.filter((l) => l.type === type);
+      if (matching.length === 0) {
+        throw new Error(`page_module_env: #${id} in ${file} registered no "${type}" listener`);
+      }
+      matching.forEach(({ handler }) => handler(event));
+    },
     pathsRequested: () => requests.map((r) => r.path),
   };
 };
