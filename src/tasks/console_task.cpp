@@ -39,6 +39,7 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "console_serial_output.h"
+#include "console_cli_line.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
@@ -90,24 +91,23 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     // Parse command (T1: system.status.health, help, operations, unknown)
     const char* commandName = cmd->name;
 
-    // Construct the operation name, handling meta-commands
+    // Reconstruct meta-command arguments ("help <op>", "operations type=<t>")
+    // into one command line - consoleExecuteCommand()'s own parsing expects
+    // it (console_module.cpp:476-490's "operations " prefix check and the
+    // "help " prefix check just above it), but embedded-cli's default
+    // onCommand callback hands name and args separately. This used to
+    // reconstruct only for "help", so "operations type=action" reached the
+    // module as the bare string "operations" and its filter parse never
+    // fired (#219 R2). See include/console_cli_line.h for the scope fence -
+    // this covers ONLY "help" and "operations"; registry-entry operations
+    // with arguments are #221's and #226's contract, not extended here.
+    // Pulled out to a portable function (console_cli_line.cpp) specifically
+    // so this reconstruction is unit-testable without the Arduino/FreeRTOS
+    // dependencies the rest of this file carries - see
+    // test/test_native/test_console_cli_line/.
     static char operationNameBuf[128];
-    const char* operationName;
-
-    // T1 meta-command: "help <operation>"
-    if (strcmp(commandName, "help") == 0) {
-        // Reconstruct "help system.status.health" from cmd->args
-        if (cmd->args != nullptr && cmd->args[0] != '\0') {
-            snprintf(operationNameBuf, sizeof(operationNameBuf), "help %s", cmd->args);
-            operationName = operationNameBuf;
-        } else {
-            // help with no args - treat as unknown command
-            operationName = commandName;
-        }
-    } else {
-        // Regular operation name (system.status.health, etc)
-        operationName = commandName;
-    }
+    const char* operationName =
+        consoleBuildCommandLine(commandName, cmd->args, operationNameBuf, sizeof(operationNameBuf));
 
     // Get request ID (global across both adapters)
     uint32_t requestId = consoleGetNextRequestId();
