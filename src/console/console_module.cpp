@@ -57,65 +57,77 @@ static const size_t HELP_TEXT_MAX = 512;
 // Private: Help Text Lookup from File
 // =============================================================================
 
-// Extract help text for an operation from the help file.
+// =============================================================================
+// Seam: File access (can be mocked in native tests)
+// =============================================================================
+
+// Abstract file access for help text (allows native tests to substitute)
+struct HelpFileHandle {
+    bool valid;
+    // Platform-specific implementation
+    #ifdef ARDUINO
+    File file;
+    #endif
+};
+
+// Seek to offset in help file. Returns true on success.
+static inline bool helpFileSeek(uint32_t offset) {
+    #ifdef ARDUINO
+    if (!g_helpFileReady) return false;
+    return g_helpFile.seek(offset);
+    #else
+    // Native test stub
+    (void)offset;
+    return false;
+    #endif
+}
+
+// Read bytes from current position. Returns number of bytes read.
+static inline size_t helpFileRead(char* buffer, size_t size) {
+    #ifdef ARDUINO
+    if (!g_helpFileReady || !buffer || size == 0) return 0;
+    return g_helpFile.read((uint8_t*)buffer, size);
+    #else
+    // Native test stub
+    (void)buffer;
+    (void)size;
+    return 0;
+    #endif
+}
+
+// Extract help text for an operation from the help file using addressed read.
+// The catalog entry contains offset and length, so this is a single seek + read.
 // Returns true if help text was found and written to out_buffer (null-terminated).
 // If false, out_buffer is left empty.
 // This function seeks into the already-open help file, so no allocation occurs in the loop.
-// Only available on ARDUINO platforms (native tests have g_helpFileReady = false always).
-#ifdef ARDUINO
-static bool consoleGetHelpText(const char* operationName, char* out_buffer, size_t buffer_size) {
+static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
+                                uint16_t help_length, char* out_buffer, size_t buffer_size) {
     out_buffer[0] = '\0';
 
-    if (!g_helpFileReady || !operationName) {
+    if (!g_helpFileReady || !operationName || help_length == 0) {
         return false;
     }
 
-    // Format in console_help.txt: name|display_name|description
-    // Example: "drive.action.move|Move|Set drive speed and steering"
-
-    // Seek to beginning
-    if (!g_helpFile.seek(0)) {
+    // Seek to the help offset for this operation
+    if (!helpFileSeek(help_offset)) {
         return false;
     }
 
-    // Read and search line by line
-    char lineBuf[HELP_TEXT_MAX];
-    while (g_helpFile.available()) {
-        size_t lineLen = g_helpFile.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-        if (lineLen == 0) {
-            break;
-        }
-        lineBuf[lineLen] = '\0';
+    // Read the help text line (it's one line per entry)
+    // Help text format: name|display_name|description|executor|params
+    size_t lineLen = help_length;
+    if (lineLen >= buffer_size) {
+        lineLen = buffer_size - 1;
+    }
 
-        // Parse: name|display_name|description
-        const char* nameEnd = strchr(lineBuf, '|');
-        if (!nameEnd) {
-            continue;  // Malformed line
-        }
-
-        // Check if this is the operation we're looking for
-        size_t nameLen = nameEnd - lineBuf;
-        if (strncmp(lineBuf, operationName, nameLen) == 0 && operationName[nameLen] == '\0') {
-            // Found it - copy the rest (display_name|description)
-            // For now, we return the entire line after the first pipe
-            const char* helpText = nameEnd + 1;
-            snprintf(out_buffer, buffer_size, "%s", helpText);
-            return true;
-        }
+    size_t bytesRead = helpFileRead(out_buffer, lineLen);
+    if (bytesRead > 0) {
+        out_buffer[bytesRead] = '\0';
+        return true;
     }
 
     return false;
 }
-#else
-// Native test stub: always returns false
-static inline bool consoleGetHelpText(const char* operationName, char* out_buffer, size_t buffer_size) {
-    (void)operationName;
-    if (out_buffer && buffer_size) {
-        out_buffer[0] = '\0';
-    }
-    return false;
-}
-#endif
 
 // Emit help for an operation as console records
 // Help text comes from the LittleFS file opened in setup().
@@ -142,32 +154,59 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         sink->onRecordField(requestId, "type", entry->type);
     }
 
-    // Display name field
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "display_name", entry->display_name);
-    }
-
-    // Help text from file
+    // Help text from file - addressed by offset+length
     char helpBuf[HELP_TEXT_MAX] = {};
-    if (consoleGetHelpText(operationName, helpBuf, sizeof(helpBuf))) {
-        // Parse display_name|description from the help buffer
-        const char* pipePos = strchr(helpBuf, '|');
-        if (pipePos) {
-            const char* description = pipePos + 1;
-            if (sink->onRecordField) {
-                sink->onRecordField(requestId, "description", description);
+    if (consoleGetHelpText(operationName, entry->help_offset, entry->help_length,
+                           helpBuf, sizeof(helpBuf))) {
+        // Parse help text format: name|display_name|description|executor|params
+        // Extract fields by splitting on pipe delimiter
+        const char* pos = helpBuf;
+        int field = 0;
+        const char* fieldStart = pos;
+
+        while (*pos != '\0' && field < 5) {
+            if (*pos == '|') {
+                size_t fieldLen = pos - fieldStart;
+
+                if (field == 1 && fieldLen > 0) {
+                    // display_name field
+                    char displayName[64] = {};
+                    size_t cpyLen = (fieldLen < sizeof(displayName) - 1) ? fieldLen : sizeof(displayName) - 1;
+                    memcpy(displayName, fieldStart, cpyLen);
+                    displayName[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "display_name", displayName);
+                    }
+                } else if (field == 2 && fieldLen > 0) {
+                    // description field
+                    char description[256] = {};
+                    size_t cpyLen = (fieldLen < sizeof(description) - 1) ? fieldLen : sizeof(description) - 1;
+                    memcpy(description, fieldStart, cpyLen);
+                    description[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "description", description);
+                    }
+                } else if (field == 3 && fieldLen > 0) {
+                    // executor field
+                    char executor[64] = {};
+                    size_t cpyLen = (fieldLen < sizeof(executor) - 1) ? fieldLen : sizeof(executor) - 1;
+                    memcpy(executor, fieldStart, cpyLen);
+                    executor[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "executor", executor);
+                    }
+                }
+
+                field++;
+                fieldStart = pos + 1;
             }
+            pos++;
         }
     } else if (!g_helpFileReady) {
         // Help file not available - emit explicit degradation reason
         if (sink->onRecordField) {
             sink->onRecordField(requestId, "help_file_status", "unavailable");
         }
-    }
-
-    // Executor field
-    if (sink->onRecordField && entry->executor) {
-        sink->onRecordField(requestId, "executor", entry->executor);
     }
 
     // End: help is answered in full above, synchronously
@@ -429,16 +468,21 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         for (size_t i = 0; i < catalogCount; ++i) {
             const ConsoleCatalogEntry* entry = &entries[i];
             // Emit each operation as an item record
-            // Format: name (type, executor, [reason if unavailable])
+            // Format: name (type, [reason if unavailable])
             if (sink->onRecordItem) {
                 char itemBuf[256];
-                if (entry->available_on_board && entry->available_in_build) {
-                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, executor=%s)",
-                            entry->name, entry->type, entry->executor);
+                if (!entry->available_on_board) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-on-this-board)",
+                            entry->name, entry->type);
+                } else if (!entry->available_in_build) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-in-this-build)",
+                            entry->name, entry->type);
+                } else if (!entry->executor_ready) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, executor-not-ready)",
+                            entry->name, entry->type);
                 } else {
-                    const char* reason = !entry->available_on_board ? "not-on-this-board" : "not-in-this-build";
-                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, %s)",
-                            entry->name, entry->type, reason);
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s)",
+                            entry->name, entry->type);
                 }
                 sink->onRecordItem(request->requestId, itemBuf);
             }
