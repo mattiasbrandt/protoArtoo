@@ -2,20 +2,24 @@
 // src/console/console_module.cpp
 //
 // Controller Console module - transport-independent operation processor.
-// ADR 0034: one operation core below HTTP handlers.
+// ADR 0034: one operation core below HTTP handlers, operation catalog from registry.
 //
-// Handles command parsing and execution for system.status.health (T1 tracer).
-// Future tickets (#219-#227) will extend this to other operations.
+// Integrates the generated console_catalog with file-based help text in LittleFS.
+// Help file is opened once in setup() and held for the process lifetime.
 // =============================================================================
 
 #include "console_module.h"
 #include "console_record.h"
+#include "console_catalog.h"
 
-#include <Arduino.h>
 #include <string.h>
 #include <ctype.h>
+
+#ifdef ARDUINO
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
+#endif
 
 #include "logging.h"
 #include "robot_state.h"
@@ -30,36 +34,68 @@ static volatile uint32_t g_nextRequestId = 1;
 static portMUX_TYPE g_requestIdMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
-// Private: Operation Descriptors and Help
+// Help Reader Management (Dependency Injection)
+// =============================================================================
+// The Console module receives a help reader from the caller (set in setup()),
+// allowing LittleFS-backed reads on Arduino and memory-backed reads in tests.
+// A NULL reader gracefully degrades to "help unavailable".
 // =============================================================================
 
-typedef struct {
-    const char* name;
-    const char* description;
-    const char* type;  // "status", "action", "config", "event"
-} OperationDescriptor;
+// The injected help reader (set by consoleModuleSetHelpReader)
+static const ConsoleHelpReader* g_helpReader = nullptr;
 
-static const OperationDescriptor OPERATIONS[] = {
-    {"system.status.health", "System health snapshot: heap, failsafe, network", "status"},
-};
-static const size_t OPERATIONS_COUNT = sizeof(OPERATIONS) / sizeof(OPERATIONS[0]);
+// Maximum help text size per operation (description + display_name + delimiters)
+static const size_t HELP_TEXT_MAX = 512;
 
-// Get operation descriptor by name, or nullptr if not found
-static const OperationDescriptor* consoleFindDescriptor(const char* operationName) {
-    for (size_t i = 0; i < OPERATIONS_COUNT; ++i) {
-        if (strcmp(OPERATIONS[i].name, operationName) == 0) {
-            return &OPERATIONS[i];
-        }
+// Set the help reader for the Console module.
+// Called from setup() after LittleFS is ready on Arduino builds.
+// Pass NULL to disable help text.
+void consoleModuleSetHelpReader(const ConsoleHelpReader* reader) {
+    g_helpReader = reader;
+}
+
+// Extract help text for an operation using the injected reader.
+// The catalog entry contains offset and length, so this is a single seek + read.
+// Returns true if help text was found and written to out_buffer (null-terminated).
+// If false, out_buffer is left empty. No allocation occurs in this path.
+static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
+                                uint16_t help_length, char* out_buffer, size_t buffer_size) {
+    out_buffer[0] = '\0';
+
+    // Graceful degradation: if reader is NULL or no help text for this entry
+    if (g_helpReader == nullptr || operationName == nullptr || help_length == 0) {
+        return false;
     }
-    return nullptr;
+
+    // Seek to the help offset for this operation
+    if (!g_helpReader->seek(g_helpReader->ctx, help_offset)) {
+        return false;
+    }
+
+    // Read the help text line (it's one line per entry)
+    // Help text format: name|display_name|description|executor|params
+    size_t lineLen = help_length;
+    if (lineLen >= buffer_size) {
+        lineLen = buffer_size - 1;
+    }
+
+    size_t bytesRead = g_helpReader->read(g_helpReader->ctx, out_buffer, lineLen);
+    if (bytesRead > 0) {
+        out_buffer[bytesRead] = '\0';
+        return true;
+    }
+
+    return false;
 }
 
 // Emit help for an operation as console records
+// Help text comes from the LittleFS file opened in setup().
+// If the file is unavailable, degrade gracefully.
 static void consoleEmitHelpForOperation(uint32_t requestId, const char* operationName,
                                        const ConsoleRecordSink* sink) {
-    const OperationDescriptor* desc = consoleFindDescriptor(operationName);
-    if (desc == nullptr) {
-        // Operation not found
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    if (entry == nullptr) {
+        // Operation not found in catalog
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
                                 CONSOLE_REASON_UNKNOWN_OPERATION);
@@ -68,24 +104,80 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     }
 
     // Emit help as multi-record response
-
-    // Begin
     if (sink->onRecordBegin) {
         sink->onRecordBegin(requestId, operationName);
     }
 
-    // description field
+    // Type field
     if (sink->onRecordField) {
-        sink->onRecordField(requestId, "description", desc->description);
+        sink->onRecordField(requestId, "type", entry->type);
     }
 
-    // type field
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "type", desc->type);
+    // Help text from file - addressed by offset+length
+    char helpBuf[HELP_TEXT_MAX] = {};
+    if (consoleGetHelpText(operationName, entry->help_offset, entry->help_length,
+                           helpBuf, sizeof(helpBuf))) {
+        // Parse help text format: name|display_name|description|executor|params
+        // Extract fields by splitting on pipe delimiter
+        const char* pos = helpBuf;
+        int field = 0;
+        const char* fieldStart = pos;
+
+        while (*pos != '\0' && field < 5) {
+            if (*pos == '|') {
+                size_t fieldLen = pos - fieldStart;
+
+                if (field == 1 && fieldLen > 0) {
+                    // display_name field
+                    char displayName[64] = {};
+                    size_t cpyLen = (fieldLen < sizeof(displayName) - 1) ? fieldLen : sizeof(displayName) - 1;
+                    memcpy(displayName, fieldStart, cpyLen);
+                    displayName[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "display_name", displayName);
+                    }
+                } else if (field == 2 && fieldLen > 0) {
+                    // description field
+                    char description[256] = {};
+                    size_t cpyLen = (fieldLen < sizeof(description) - 1) ? fieldLen : sizeof(description) - 1;
+                    memcpy(description, fieldStart, cpyLen);
+                    description[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "description", description);
+                    }
+                } else if (field == 3 && fieldLen > 0) {
+                    // executor field
+                    char executor[64] = {};
+                    size_t cpyLen = (fieldLen < sizeof(executor) - 1) ? fieldLen : sizeof(executor) - 1;
+                    memcpy(executor, fieldStart, cpyLen);
+                    executor[cpyLen] = '\0';
+                    if (sink->onRecordField) {
+                        sink->onRecordField(requestId, "executor", executor);
+                    }
+                }
+
+                field++;
+                fieldStart = pos + 1;
+            }
+            pos++;
+        }
+    } else {
+        // Help text not available - determine reason and emit explicit degradation status
+        // (ADR 0034: never degrade silently; missing, stale or unreadable help file is always reported)
+        if (g_helpReader == nullptr) {
+            // Reader not available
+            if (sink->onRecordField) {
+                sink->onRecordField(requestId, "help_file_status", "unavailable");
+            }
+        } else {
+            // Reader exists but seek failed or read returned 0 bytes (unreadable file)
+            if (sink->onRecordField) {
+                sink->onRecordField(requestId, "help_file_status", "unreadable");
+            }
+        }
     }
 
-    // End: help is answered in full above, synchronously, so the outcome is
-    // completed and no reason applies.
+    // End: help is answered in full above, synchronously
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
                          CONSOLE_REASON_NONE);
@@ -93,29 +185,39 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
 }
 
 // =============================================================================
-// Private: Operation Lookup and Execution
+// Private: Operation Lookup and Execution (uses catalog)
 // =============================================================================
 
-// Check if operation is recognized
+// Check if operation is recognized in the catalog
 static bool consoleIsKnownOperation(const char* operationName) {
-    // T1 scope: only system.status.health
     if (operationName == nullptr) return false;
-    return strcmp(operationName, "system.status.health") == 0;
+    return consoleCatalogFindByName(operationName) != nullptr;
 }
 
 // Check if operation is available on this board
+// (ADR 0029: catalog entries carry build_flags and board_capability; runtime checks them)
 static bool consoleIsAvailableOnBoard(const char* operationName) {
-    // T1 scope: all implemented operations are available
-    (void)operationName;
-    return true;
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    if (!entry) return false;
+    return entry->available_on_board;
 }
 
 // Get the operation type from its name
 static ConsoleOperationType consoleGetOperationType(const char* operationName) {
-    if (strcmp(operationName, "system.status.health") == 0) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    if (!entry) return CONSOLE_OP_ACTION;
+
+    // Map catalog type strings to enum
+    if (strcmp(entry->type, CONSOLE_CATALOG_TYPE_STATUS) == 0) {
         return CONSOLE_OP_STATUS;
     }
-    return CONSOLE_OP_ACTION;  // default (will not be reached in T1)
+    if (strcmp(entry->type, CONSOLE_CATALOG_TYPE_CONFIG) == 0) {
+        return CONSOLE_OP_CONFIG;
+    }
+    if (strcmp(entry->type, CONSOLE_CATALOG_TYPE_EVENT) == 0) {
+        return CONSOLE_OP_EVENT;
+    }
+    return CONSOLE_OP_ACTION;
 }
 
 // =============================================================================
@@ -151,9 +253,16 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     wifiRssi = connectivity.wifiRssi;
 
     fsReady = webLittleFsMounted();
+#ifdef ARDUINO
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+#else
+    // Native tests: use reasonable stub values (not available on standard C heap)
+    heapFree = 262144;      // 256 KB stub value for test consistency
+    heapMin = 262144;
+    heapLargestBlock = 262144;
+#endif
 
     // Emit fields through sink (Console Record format)
     char tempBuf[64] = {};
@@ -237,7 +346,12 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
 // =============================================================================
 
 void consoleModuleInit(void) {
-    PA_LOG_DEBUG(TAG, "console module initialized");
+    // Console module initialization (before LittleFS and web server).
+    // The help reader will be set separately via consoleModuleSetHelpReader()
+    // after LittleFS is ready (see ADR 0034).
+
+    size_t catalogCount = consoleCatalogGetCount();
+    PA_LOG_DEBUG(TAG, "console module initialized, %u operations in catalog", catalogCount);
 }
 
 uint32_t consoleGetNextRequestId(void) {
@@ -256,22 +370,102 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
     const char* opName = request->operationName;
 
-    // Meta-command: help <operation> (T1 scope)
-    if (opName != nullptr && strlen(opName) >= 5 && strncmp(opName, "help ", 5) == 0) {
-        // Extract operation name from "help system.status.health"
-        const char* targetOp = opName + 5;
-        // Skip leading whitespace
-        while (*targetOp == ' ') {
-            ++targetOp;
-        }
-        if (*targetOp != '\0') {
-            consoleEmitHelpForOperation(request->requestId, targetOp, sink);
-        } else {
-            // "help" with no operation name - treat as unknown
-            if (sink->onRecordResult) {
-                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
-                                    CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_UNKNOWN_OPERATION);
+    // Meta-command: help [operation]
+    if (opName != nullptr && strncmp(opName, "help", 4) == 0) {
+        // "help" or "help operation_name"
+        if (strlen(opName) == 4) {
+            // "help" with no arguments - emit general help
+            if (sink->onRecordBegin) {
+                sink->onRecordBegin(request->requestId, "help");
             }
+            if (sink->onRecordField) {
+                sink->onRecordField(request->requestId, "detach_key", "Ctrl-C (serial) or close browser tab (web)");
+            }
+            if (sink->onRecordField) {
+                sink->onRecordField(request->requestId, "hint", "Type 'operations' to list all commands");
+            }
+            if (sink->onRecordEnd) {
+                sink->onRecordEnd(request->requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                                 CONSOLE_REASON_NONE);
+            }
+            return;
+        } else if (opName[4] == ' ') {
+            // "help operation_name"
+            const char* targetOp = opName + 5;
+            // Skip leading whitespace
+            while (*targetOp == ' ') {
+                ++targetOp;
+            }
+            if (*targetOp != '\0') {
+                consoleEmitHelpForOperation(request->requestId, targetOp, sink);
+                return;
+            }
+        }
+        // Malformed help command
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_UNKNOWN_OPERATION);
+        }
+        return;
+    }
+
+    // Meta-command: operations [type=<type>]
+    if (opName != nullptr && (strcmp(opName, "operations") == 0 || strncmp(opName, "operations ", 11) == 0)) {
+        // List all operations in the catalog, optionally filtered by type
+        const char* filterType = nullptr;
+
+        // Parse type filter if present (e.g., "operations type=action")
+        if (strlen(opName) > 10 && opName[10] == ' ') {
+            const char* args = opName + 11;
+            // Skip leading whitespace
+            while (*args == ' ') {
+                ++args;
+            }
+            // Check for "type=" prefix
+            if (strncmp(args, "type=", 5) == 0) {
+                filterType = args + 5;
+            }
+        }
+
+        size_t catalogCount = 0;
+        const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&catalogCount);
+
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(request->requestId, "operations");
+        }
+
+        for (size_t i = 0; i < catalogCount; ++i) {
+            const ConsoleCatalogEntry* entry = &entries[i];
+
+            // Skip if type filter is specified and does not match
+            if (filterType != nullptr && strcmp(entry->type, filterType) != 0) {
+                continue;
+            }
+
+            // Emit each operation as an item record
+            // Format: name (type, [reason if unavailable])
+            if (sink->onRecordItem) {
+                char itemBuf[256];
+                if (!entry->available_on_board) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-on-this-board)",
+                            entry->name, entry->type);
+                } else if (!entry->available_in_build) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-in-this-build)",
+                            entry->name, entry->type);
+                } else if (!entry->executor_ready) {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, executor-not-ready)",
+                            entry->name, entry->type);
+                } else {
+                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s)",
+                            entry->name, entry->type);
+                }
+                sink->onRecordItem(request->requestId, itemBuf);
+            }
+        }
+
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(request->requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
         }
         return;
     }
@@ -279,7 +473,6 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
     // Check if operation is known
     if (!consoleIsKnownOperation(opName)) {
         // Unknown operation: return single result record (guard path)
-        // Per docs/console-protocol.md, a single type=result record, not begin+end
         if (sink->onRecordResult) {
             sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
                                 CONSOLE_REASON_UNKNOWN_OPERATION);
@@ -309,16 +502,30 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             if (strcmp(request->operationName, "system.status.health") == 0) {
                 consoleExecuteSystemStatusHealth(request->requestId, sink);
                 // consoleExecuteSystemStatusHealth emits onRecordEnd
+            } else {
+                // T2+: status not yet implemented
+                if (sink->onRecordEnd) {
+                    sink->onRecordEnd(request->requestId, CONSOLE_STATUS_ERR,
+                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+                }
             }
             break;
 
         case CONSOLE_OP_ACTION:
         case CONSOLE_OP_CONFIG:
-        case CONSOLE_OP_EVENT:
-            // T2+ scope: return single result record (guard path)
+            // T2+: not yet implemented - return single result record (guard path)
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+            }
+            break;
+
+        case CONSOLE_OP_EVENT:
+            // Events are never executable - they are signals, not commands.
+            // Return distinct reason so operator does not retry.
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_EXECUTABLE);
             }
             break;
     }

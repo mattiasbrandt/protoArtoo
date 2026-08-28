@@ -1,0 +1,190 @@
+drive.action.move|Move|Set drive speed and steering|driveArbiterSubmit|speed:int16:1|steer:int16:1
+drive.action.speed|Speed|Forward/reverse drive speed (analog axis binding)|driveArbiterSubmit|value:float:1
+drive.action.steer|Steer|Left/right steering (analog axis binding)|driveArbiterSubmit|value:float:1
+drive.action.speed-preset-slow|Speed Preset Slow|Apply the configured Slow speed preset to drive speed limit|applySpeedPresetRuntime|preset:string:1
+drive.action.speed-preset-normal|Speed Preset Normal|Apply the configured Normal speed preset to drive speed limit|applySpeedPresetRuntime|preset:string:1
+drive.action.speed-preset-turbo|Speed Preset Turbo|Apply the configured Turbo speed preset to drive speed limit|applySpeedPresetRuntime|preset:string:1
+drive.action.speed-preset-cycle|Speed Preset Cycle|Cycle speed preset Slow -> Normal -> Turbo|applySpeedPresetRuntime|
+drive.status.current|Drive Status|Current drive speed, steering, and failsafe state|buildStatusJson|
+drive.event.failsafe-triggered|Failsafe Triggered|Drive stopped due to signal loss, estop, or watchdog|failsafeTrigger|
+drive.config.speed-limit|Speed Limit Setting|Persisted maximum drive speed setting|configApply|
+dome.action.set-speed|Dome Speed|Dome rotation speed (analog axis)|domeCmdQueue|
+dome.action.send-command|Send Dome Command|Send a raw Marcduino command to the dome controller|sequenceStart|
+dome.action.marcduino-sequence|Marcduino Sequence|Trigger a raw numbered body sequence payload (typically SE30-SE36)|parseMarcduinoCommand|
+dome.action.marcduino-command|Marcduino Command|Send a specific Marcduino command string to the dome|parseMarcduinoCommand|
+dome.action.dome-sequence|Dome Sequence|Forward a DM:<NAME> choreography command to the dome (AstroPixelsPlus DomeSequences.h). Payload is the full DM: string stored in marcduinoPayload[16]. Valid payloads: DM:PIES, DM:LOW, DM:OPENALL, DM:FLUTTER, DM:BLOOM, DM:SCREAM, DM:OVERLOAD, DM:HEART, DM:ALARM, DM:DISCO, DM:VADER, DM:ROCKMARCH, DM:HELLO, DM:LEIA, DM:CANTINA, DM:RESET, DM:RANDOM. The dome handles panels/holos/logics and sends dome=seqon/BD:/dome=seqoff back to the body, which are handled by dome_link.cpp + dome_cue_handler.cpp (T27).\n|sequenceStart|
+dome.action.droid-sequence-scream|Scream|SE01 - scream audio and body sequence, then forward :SE01 to dome|sequenceStart|
+dome.action.droid-sequence-wave|Wave|SE02 - body wave sequence, then forward :SE02 to dome|sequenceStart|
+dome.action.droid-sequence-fast-wave|Fast Wave|SE03 - fast wave sequence, then forward :SE03 to dome|sequenceStart|
+dome.action.droid-sequence-open-wave|Open Wave|SE04 - open wave sequence, then forward :SE04 to dome|sequenceStart|
+dome.action.droid-sequence-beep-cantina|Beep Cantina|SE05 - short Cantina audio with body wave, then forward :SE05 to dome|sequenceStart|
+dome.action.droid-sequence-faint|Faint|SE06 - faint audio with body park sequence, then forward :SE06 to dome|sequenceStart|
+dome.action.droid-sequence-cantina|Cantina Dance|SE07 - long Cantina audio with body wave, then forward :SE07 to dome|sequenceStart|
+dome.action.droid-sequence-leia|Leia Message|SE08 - Leia audio with body sequence, then forward :SE08 to dome|sequenceStart|
+dome.action.droid-sequence-disco|Disco|SE09 - disco audio ($D) with body wave, then forward :SE09 to dome|sequenceStart|
+dome.action.droid-sequence-screams|Screams|SE15 - screams audio only on body side, then forward :SE15 to dome|sequenceStart|
+dome.action.droid-sequence-wiggle|Panel Wiggle|SE16 - body wave sequence, then forward :SE16 to dome|sequenceStart|
+dome.api.get-layout|Get Dome Layout|Body proxy for the dome's composed layout view-model (ADR 0009): a cached, non-blocking relay of GET /api/dome/layout on the dome. Requires WiFi as the active dome transport; returns 503 on cache miss or non-WiFi transport and triggers a background refresh.\n|domeLayoutCacheReadChunk|
+dome.action.sequence-stop|Stop Sequence|Non-latching abort of the currently running DM:* sequence, reusing the dispatcher's existing abort path (seqEngineAbort + staggered dome cleanup). Idempotent 200 OK even when nothing is running; does not latch or affect estop.\n|robotState.seqStopRequested|
+dome.event.cue-scream|BD:SCREAM|Dome cue -- plays scream category audio (cfg_snd_cat_scrm), fallback AUDIO_SLOT_NAMED_SCREAM|audioQueuePlayCategory|
+dome.event.cue-happy|BD:HAPPY|Dome cue -- plays happy category audio (cfg_snd_cat_hap); sent on every panel open/close toggle|audioQueuePlayCategory|
+dome.event.cue-overload|BD:OVERLOAD|Dome cue -- plays sad/distressed category audio (cfg_snd_cat_sad), fallback AUDIO_SLOT_NAMED_FAINT|audioQueuePlayCategory|
+dome.event.cue-alarm|BD:ALARM|Dome cue -- plays alarm category audio (cfg_snd_cat_alrm)|audioQueuePlayCategory|
+dome.event.cue-vader|BD:VADER|Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (Imperial March, ~47 s)|audioQueuePlaySlot|
+dome.event.cue-rockmarch|BD:ROCKMARCH|Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (same as VADER; alternate visual on dome)|audioQueuePlaySlot|
+dome.event.cue-leia|BD:LEIA|Dome cue -- plays AUDIO_SLOT_NAMED_LEIA (Leia message track, ~36 s)|audioQueuePlaySlot|
+dome.event.cue-cantina|BD:CANTINA|Dome cue -- plays AUDIO_SLOT_NAMED_CANTINA_L (Cantina, 130 BPM, ~17 s)|audioQueuePlaySlot|
+dome.event.cue-heart|BD:HEART|Dome cue -- plays sentimental category audio (cfg_snd_cat_sent)|audioQueuePlayCategory|
+dome.event.cue-hello|BD:HELLO|Dome cue -- plays general category audio (cfg_snd_cat_gen)|audioQueuePlayCategory|
+dome.event.cue-reset|BD:RESET|Dome cue -- Track Stop (audioQueueTrackStop, ADR 0010): stops current audio playback only, preserves random/idle mood; sent by DM:RESET sequence\n|audioQueueTrackStop|
+dome.status.current|Dome Status|Current dome motor speed and connection state|buildStatusJson|
+dome.action.move|Dome Speed (Web)|Set dome rotation speed from the browser. Gated by sleep mode (423) and the enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is the SBUS/PWM RC-bindable axis.\n|domeCmdQueue|speed:float:1
+dome.api.list-sequences|List Learned Sequences|Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)|seqStoreIndexAt|
+dome.api.list-builtin-sequences|List Factory Sequences|Lightweight Factory catalog metadata (no step data), or the full JSON v1 of one Factory sequence when a name parameter is given (used as the clone source in the editor).\n|sequenceCatalogAt|name:string:0
+dome.api.get-sequence|Get Learned Sequence|Raw stored JSON v1 of one Learned Sequence by name|seqStoreReadFileSlice|name:string:1
+dome.action.save-sequence|Save Learned Sequence|Validate (Protocol Check) and persist a Learned Sequence JSON v1 body to LittleFS|seqStoreSave|
+dome.action.delete-sequence|Memory Wipe|Delete a Learned Sequence by name. Reports any RC trigger bindings the wipe leaves dangling (silent no-ops) unless a Factory sequence shadows the name.\n|seqStoreDelete|name:string:1
+dome.action.test-sequence|Test Sequence|Run a DM:* sequence by name (Learned or Factory) via the same ungated path as POST /api/dome/cmd. Accepts a JSON body { "name": "DM:..." } or a form "name" parameter.\n|sequenceStart|name:string:1
+dome.api.get-sequence-last-run|Get Last Sequence Run|Machine-readable evidence of the most recent body-owned sequence run: outcome, bounded TX stream, cleanup commands, inferred FX scopes and ring masks, retained-TX truncation, and body-local queue-full/retry counters (issue #2 task #6).\n|seqEvidenceSnapshot|
+sound.action.play-track|Play Track|Play a specific track number from the SD card|audioQueuePlayTrack|track:uint16:1
+sound.action.play-track-scream|Play Scream|Play the scream track (AUDIO_TRACK_SCREAM)|audioQueuePlayTrackBanked|
+sound.action.play-track-faint|Play Short Circuit|Play the short circuit / faint track (AUDIO_TRACK_FAINT)|audioQueuePlayTrackBanked|
+sound.action.play-track-leia|Play Leia Message|Play the Leia message track (AUDIO_TRACK_LEIA)|audioQueuePlayTrackBanked|
+sound.action.play-track-cantina-short|Play Short Cantina|Play the short Cantina track (AUDIO_TRACK_CANTINA_S)|audioQueuePlayTrackBanked|
+sound.action.play-track-cantina-long|Play Long Cantina|Play the long Cantina track (AUDIO_TRACK_CANTINA_L, 130 BPM)|audioQueuePlayTrackBanked|
+sound.action.play-track-sw-theme|Play Star Wars Theme|Play the Star Wars main theme track (AUDIO_TRACK_SW_THEME)|audioQueuePlayTrackBanked|
+sound.action.play-track-imperial-march|Play Imperial March|Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)|audioQueuePlayTrackBanked|
+sound.action.play-track-startup|Play Startup Sound|Play the startup / boot track (AUDIO_TRACK_STARTUP)|audioQueuePlayTrackBanked|
+sound.action.play-track-disco|Play Disco|Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)|audioQueuePlayTrackBanked|
+sound.api.get-catalog|Get Catalog|Return cached CHIRP catalog banks and entries from the active audio backend|audioGetCatalogEntries|bank:uint8:0
+sound.api.refresh-catalog|Refresh Catalog|Queue CHIRP catalog refresh (GMAN plus GNME enumeration)|audioQueueRefreshCatalog|
+sound.api.play-banked|Play Banked Entry|Play a CHIRP sound by explicit bank, page, and index|audioQueuePlayTrackBanked|bank:uint8:1|page:string:1|index:uint16:1
+sound.api.get-mood-map|Get Mood Category Map|Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)|configCacheRead|
+sound.action.set-mood-map|Set Mood Category Map|Set the per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+), each 0..4095|audioMoodMapApply|quiet:uint16:1|mid:uint16:1|full:uint16:1|awakeplus:uint16:1
+sound.action.set-category-range|Set Category Range|Atomic update of one CHIRP category's lo/hi track range (and optional bank/page/index binding), avoiding a partial two-request save.\n|audioCategoryRangeApply|lo_key:string:1|hi_key:string:1|lo:uint16:1|hi:uint16:1
+sound.action.query-status|Query Module Status|Enqueue an on-demand audio module status query; result becomes available via GET /api/audio after ~1.5 s (query timeout + queue latency).\n|audioQueueQueryStatus|
+sound.action.track-stop|Track Stop|Stop current audio playback only; preserves random/idle mood, bumping the anti-spam cadence instead of disabling it (ADR 0010). Used by the web Stop button, the sequence engine's terminal/abort cleanup, and the dome BD:RESET cue (dome.event.cue-reset). Distinct from Quiet (sound.action.quiet), which also disables idle mood.\n|audioQueueTrackStop|
+sound.action.quiet|Quiet|Stop playback and disable random/idle mood until reboot or Random On (ADR 0010 term: Quiet). Exclusive to the mood system; unlike Track Stop (sound.action.track-stop), this changes standing idle-chatter behavior, not just the current track.\n|audioQueuePlayTrack|
+sound.action.set-volume|Set Volume|Set the audio output volume to an absolute level|audioQueueSetVolume|volume:uint8:1
+sound.action.volume-up|Volume Up|Increase volume by 1 step (0-30 scale)|audioQueueSetVolume|
+sound.action.volume-down|Volume Down|Decrease volume by 1 step (0-30 scale)|audioQueueSetVolume|
+sound.action.volume-preset-mid|Volume Preset Mid|Set volume to the mid preset (15)|audioQueueSetVolume|
+sound.action.volume-preset-max|Volume Preset Max|Set volume to the max preset (30)|audioQueueSetVolume|
+sound.action.volume-preset-min|Volume Preset Min|Set volume to the min preset (0)|audioQueueSetVolume|
+sound.action.dollar-command|Raw Sound Command|Send a raw dollar-prefix command to the sound module|audioQueueDollar|
+sound.action.random-on|Random Sound On|Enable automatic random sound playback|audioQueuePlayTrack|
+sound.action.random-off|Random Sound Off|Disable automatic random sound playback|audioQueuePlayTrack|
+sound.action.random-general|Random General|Play one random track from the configured General category range|audioQueuePlayTrack|
+sound.action.random-chatty|Random Chatty|Play one random track from the configured Chatty category range|audioQueuePlayTrack|
+sound.action.random-happy|Random Happy|Play one random track from the configured Happy category range|audioQueuePlayTrack|
+sound.action.random-processing|Random Processing|Play one random track from the configured Processing category range|audioQueuePlayTrack|
+sound.action.random-sad|Random Sad|Play one random track from the configured Sad category range|audioQueuePlayTrack|
+sound.action.random-sentimental|Random Sentimental|Play one random track from the configured Sentimental category range|audioQueuePlayTrack|
+sound.action.random-humming|Random Humming|Play one random track from the configured Humming category range|audioQueuePlayTrack|
+sound.action.random-scream|Random Scream|Play one random track from the configured Scream category range|audioQueuePlayTrack|
+sound.action.random-surprised|Random Surprised|Play one random track from the configured Surprised category range|audioQueuePlayTrack|
+sound.action.random-alert|Random Alert|Play one random track from the configured Alert category range|audioQueuePlayTrack|
+sound.action.random-snarky|Random Snarky|Play one random track from the configured Snarky category range|audioQueuePlayTrack|
+sound.action.random-whistle|Random Whistle|Play one random track from the configured Whistle category range|audioQueuePlayTrack|
+sound.status.current|Sound Status|Current playback state, volume, and module health|Core 0|
+sound.config.volume|Volume|Default audio volume (0–30)|configApply|volume:uint8:1
+sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|
+sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|
+sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood|configApply|
+sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between random sound plays in Mid-Awake mood|configApply|
+sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound plays in Full-Awake mood|configApply|
+sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood|configApply|
+sound.config.startup-track|Startup Boot Sound Track ($B)|Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event|audioTracksApply|
+sound.config.boot-complete-track|Boot Complete System Track|Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)|audioTracksApply|
+sound.config.track-assignments|Track Assignments|Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)|audioTracksApply|
+sound.config.system-track-assignments|System Sound Assignments|System-event sound track assignments (T09), including automatic boot-complete playback|audioTracksApply|
+sound.config.category-ranges|Category Ranges|Min/max track ranges for RC random-by-category sound actions (T07/T10)|audioCategoryRangeApply|
+sound.config.mood-category-map|Mood Category Map|Per-mood bitmask selecting which of the 12 sound categories contribute to idle random chatter. One uint16 per mood (bits 0–11, one per category in T07 registration order). Stored as four NVS uint16 values. Configurable via GET/POST /api/audio/mood-map. Default bitmasks reflect suggested character-appropriate presets (see T11 spec). A bitmask of 0x0000 disables category-based selection for that mood and falls back to the flat [randMin, randMax] pool.\n|audioMoodMapApply|quiet:uint16:1|mid:uint16:1|full:uint16:1|awakeplus:uint16:1
+servo.action.open|Open|Open a servo-driven panel or arm to its open position|servoCmdQueue|target:string:1
+servo.action.close|Close|Close a servo-driven panel or arm to its closed position|servoCmdQueue|target:string:1
+servo.action.set-position|Set Position|Move a servo to a specific pulse-width position|servoCmdQueue|target:string:1|position_us:uint16:1
+servo.action.stop|Stop|Stop servo movement and hold current position|servoCmdQueue|
+servo.action.toggle-arm1|ARM1 Toggle|Toggle the arm 1 servo between open and closed|servoCmdQueue|
+servo.action.toggle-arm2|ARM2 Toggle|Toggle the arm 2 servo between open and closed|servoCmdQueue|
+servo.action.toggle-aux1|AUX1 Toggle|Toggle the aux 1 servo between open and closed|servoCmdQueue|
+servo.action.toggle-aux2|AUX2 Toggle|Toggle the aux 2 servo between open and closed|servoCmdQueue|
+servo.action.toggle-aux3|AUX3 Toggle|Toggle the aux 3 servo between open and closed|servoCmdQueue|
+servo.status.current|Servo Status|Current position and state of all servo channels|buildStatusJson|
+aux.action.led-color|LED Color|Set AUX LED strip RGB color|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
+aux.action.led-effect|LED Effect|Set AUX LED strip effect mode|auxLedQueue|effect:string:1
+aux.status.led-state|AUX LED State|Current AUX LED pin selection, color, and effect|buildStatusJson|
+aux.config.led-pin|LED Header Selection|Selected AUX header for WS2812B strip (0=disabled, 1=AUX1, 2=AUX2, 3=AUX3)|configApply|aux_led_pin:uint8:1
+aux.config.led-count|LED Count|Number of LEDs in the selected AUX strip|configApply|aux_led_count:uint8:1
+system.action.set-mode|Set Mode|Switch between stationary and driving mode|commandedSetStationary|
+system.action.estop|Emergency Stop|Immediately stop all drive output and latch the emergency stop|failsafeTrigger|
+system.action.estop-clear|Clear E-Stop|Release the latched emergency stop to allow drive again|failsafeClearEstop|
+system.action.enable-web-control|Enable Web Control|Allow the browser to send drive commands|commandedSetWebControl|
+system.action.disable-web-control|Disable Web Control|Revoke browser drive control and zero motors|commandedSetWebControl|
+system.action.reboot|Reboot|Restart the controller firmware|requestSystemRestart|
+system.action.set-mood|Set Mood|Set the droid's active mood, controlling body chatter rate and dome lighting behaviour|applyMood|mood:uint8:1
+system.action.sleep|Sleep|Put the droid into sleep mode: suppresses sound chatter, dome idle animations, and servo idle animations. Drive and RC remain fully active. Also notifies the dome controller via the dome serial link.\n|commandedSetSleep|
+system.action.wake|Wake|Wake the droid from sleep mode: resumes sound chatter, dome idle animations, and servo idle animations. Also notifies the dome controller via the dome serial link.\n|commandedSetSleep|
+system.action.sleep-toggle|Sleep / Wake Toggle|Toggle sleep mode on/off. RC-bindable momentary or toggle.|commandedSetSleep|
+system.event.drives-engaged|Drives Engaged|Internal event when mode changes from stationary to driving|none|
+system.event.dome-enabled|Dome Enabled|Internal event when dome output is enabled|none|
+system.event.boot-complete|Boot Complete|Internal event emitted when boot completes and automatic boot-complete sound may play|none|
+system.status.sleep-mode|Sleep Mode|Whether the droid is currently in sleep mode. RAM-only — always boots awake. Carried as the `sleepMode` field in the status SSE event.\n|buildStatusJson|
+system.status.mood|Mood|Currently active mood preset (Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14)|buildStatusJson|
+system.config.mood|Active Mood|Persisted active mood preset ID|configApply|
+system.config.enable_arm1|ARM1|Use the utility arm connected to the ARM1 output|configApply|
+system.config.enable_arm2|ARM2|Use the utility arm connected to the ARM2 output|configApply|
+system.config.enable_aux1|AUX1|Use the component connected to the AUX1 output|configApply|
+system.config.enable_aux2|AUX2|Use the component connected to the AUX2 output|configApply|
+system.config.enable_aux3|AUX3|Use the component connected to the AUX3 output|configApply|
+system.config.enable_dome_esc|Dome Motor|Use the dome rotation motor connected to the DOME output|configApply|
+system.config.enable_rc_ch1|RC CH1|Use the receiver signal connected to RC channel 1|configApply|
+system.config.enable_rc_ch2|RC CH2|Use the receiver signal connected to RC channel 2|configApply|
+system.config.enable_rc_ch3|RC CH3|Use the receiver signal connected to RC channel 3|configApply|
+system.config.enable_rc_ch4|RC CH4|Use the receiver signal connected to RC channel 4|configApply|
+system.config.enable_rc_ch5|RC CH5|Use the receiver signal connected to RC channel 5|configApply|
+system.config.enable_rc_ch6|RC CH6|Use the receiver signal connected to RC channel 6|configApply|
+system.config.enable_drive|S1 — Hoverboard|Use the hoverboard drive controller connected to S1|configApply|
+system.config.enable_audio|S2 — Sound|Use the sound module connected to S2|configApply|
+system.config.enable_protor2link|S3 — Dome Control|Use the dome controller connected to S3|configApply|
+system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem|buildStatusJson|
+system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
+system.status.logs|Logs|Recent firmware log lines|buildStatusJson|
+system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|buildStatusJson|
+dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|buildSerialJson|
+system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|
+system.action.set-identity|Set Droid Identity|Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in|configCacheApply|droidName:string:1|mdnsUseName:bool:0
+system.api.get-profiler|Get Heap Profiler Snapshot|Heap/stack diagnostics snapshot: global heap free/min/largest-block, fragmentation ratio, per-task stack high-water marks, mode-scoped low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING) per-task heap stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).\n|buildProfilerJson|
+system.action.profiler-trace-start|Start Heap Trace|Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires the profiler and SDK heap-tracing support).\n|heap_trace_start|
+system.action.profiler-trace-stop|Stop Heap Trace|Stop the running Tier 3 heap leak trace and dump results to the serial log|heap_trace_stop|
+system.api.get-coredump-status|Get Coredump Status|Whether a PANIC coredump image is present in the coredump partition, and its size|none|
+system.api.get-coredump|Download Coredump|Stream the raw ELF coredump image from the coredump partition (issue #8 observability; the seated controller cannot be USB-read due to GPIO15/SBUS strapping).\n|none|
+system.action.erase-coredump|Erase Coredump|Erase the coredump image from the coredump partition|esp_core_dump_image_erase|
+system.api.get-admission-trace|Get Admission Trace|Ring buffer of admission decisions — shed count, reasons, and admission state snapshots. Compiled in only when PA_ADMISSION_TRACE=1 (issue #97 floor decision diagnostics).\n|fillAdmissionTraceResponse|
+system.api.get-validation|Get Validation Snapshot|Consolidated hardware-validation snapshot (Phase 4 closure checks)|populateValidationJson|
+system.action.upload-firmware|Upload Firmware|OTA upload of a new firmware image (U_FLASH), applied on next boot|none|
+system.action.upload-filesystem|Upload Filesystem|OTA upload of a new LittleFS/SPIFFS image (U_SPIFFS) to the data partition; LittleFS is unmounted by the Update library during write.\n|none|
+system.api.event-stream|Event Stream|Server-sent event stream the dashboard subscribes to for status and rc events|none|
+rc.status.snapshot|RC Snapshot|Live RC channel values, SBUS raw data, and current binding state|captureRcDiagnosticsSnapshot|
+rc.action.toggle-debug|Toggle RC Debug|Enable or disable verbose RC channel logging|commandedSetRcDebug|
+rc.api.get-bindable-actions|List Bindable Actions|JSON array of all RC-bindable robot actions with token + testability metadata|fillActionsResponse|
+rc.api.get-map|Get RC Map|Current RC channel-to-action binding map|populateRcMapJson|
+rc.action.set-map|Set RC Map|Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.\n|rcMapApply|
+rc.action.test-bindable|Test Bindable Action|Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing|dispatchRcTriggerActionTest|token:string:1
+rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|rcMapApply|
+dome.seq.vader|DM:VADER — Imperial March|47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.|sequenceStart|
+dome.seq.hello|DM:HELLO — Hello There|4-second greeting: logic text + P1 panel wave. Body-owned flat sequence.|sequenceStart|
+dome.seq.nod|DM:NOD — Acknowledgment nod|3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence.|sequenceStart|
+dome.seq.flutter|DM:FLUTTER — Panel flutter|4-second ring and pie sweep to 75 percent, then close. Body-owned flat sequence.|sequenceStart|
+dome.seq.bloom|DM:BLOOM — Pie bloom|6-second pie bloom: slow open together, triple wiggle, close. Body-owned flat sequence (linear easing).|sequenceStart|
+dome.seq.leia|DM:LEIA — Leia message|36-second Leia message: front holo Leia effect, Leia logics/PSI, $L audio. Body-owned flat sequence.|sequenceStart|
+dome.seq.alarm|DM:ALARM — Alarm|10-second alarm: red holo flashes, alarm logics/PSI, alert-category audio. Body-owned flat sequence.|sequenceStart|
+dome.seq.heart|DM:HEART — Heart|10-second sweetheart mode: rainbow holos, logic message, sentimental-category audio. Body-owned flat sequence.|sequenceStart|
+dome.seq.reset|DM:RESET — Reset all|Stop audio, close and release all panels, reset holos/logics/PSI; clears toggle latches. Body-owned flat sequence.|sequenceStart|
+dome.seq.pies|DM:PIES — Pie panels toggle|Pie panel toggle with latched state: wave-open twice or serial close. Body-owned toggle sequence (12 s window).|sequenceStart|
+dome.seq.low|DM:LOW — Ring panels toggle|Ring panel toggle with latched state: wave twice then open, or serial close. Body-owned toggle sequence (15 s window).|sequenceStart|
+dome.seq.openall|DM:OPENALL — All panels toggle|All-panel toggle with latched state: pie sweep + ring burst + twinkle, or serial close-all. Body-owned toggle sequence (10 s window).|sequenceStart|
+dome.seq.cantina|DM:CANTINA — Cantina dance|15-second 130 BPM alternating panel dance with white holo flashes, long Cantina track. Body-owned loop sequence.|sequenceStart|
+dome.seq.rockmarch|DM:ROCKMARCH — Rock march|45-second Imperial March with one ring panel stepping per 923 ms beat. Body-owned loop sequence.|sequenceStart|
+dome.seq.scream|DM:SCREAM — Scream|7-second scream: burst-open panels, red alert logics/PSI, random one-panel flutter, scream-category audio. Body-owned random sequence (15 s window).|sequenceStart|
+dome.seq.overload|DM:OVERLOAD — Overload|7-second overload: failure logics/PSI, holos short-circuit, six panels drift to random positions, sad-category audio. Body-owned random sequence (12 s window).|sequenceStart|
+system.console|Controller Console|Browser adapter for the Controller Console (ADR 0034). Processes operations and returns Console Records.|consoleExecuteCommand|

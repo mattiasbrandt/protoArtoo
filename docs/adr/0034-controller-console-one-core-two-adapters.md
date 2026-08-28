@@ -118,6 +118,21 @@ We decided:
   embedded-cli's own with editor-only cursor sequences; both are recorded in the
   plan and CONTEXT.md rather than here because either can be reversed without
   touching this architecture.
+- Help text (description, display_name, parameter schema, executor details) is
+  stored in LittleFS as a machine-generated file indexed by operation name,
+  offset and byte length, rather than embedded in flash. The module opens the
+  help file once during `setup()` and holds the file handle for the process
+  lifetime, reading a bounded stack buffer per request. No per-request file open
+  occurs (`VFSImpl::open()` allocates; reads into caller buffers do not). The
+  help reader is injected at the module boundary so the read path is
+  host-testable without filesystem mocking. Help file unavailability (missing,
+  unreadable, or stale offsets) degrades gracefully: help queries emit a
+  `help_file_status` field naming the state (`unavailable` or `unreadable`), and
+  all other help fields except `type` are omitted. **Firmware and FS image must
+  ship together.** Mismatched versions (a newer firmware image with an older
+  help file) result in seek/read failures that are reported to the operator; a
+  control stalled by missing help is recoverable by booting both partitions from
+  a matching release image.
 - Implementation location (a normal-review detail, fixed here so the epic's
   concurrency table can name it): the transport-neutral module, catalog and
   record renderer live in `src/console/` with flat `include/console_*.h`

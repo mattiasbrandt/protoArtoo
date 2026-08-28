@@ -137,3 +137,77 @@ test("a malformed answer is reported, not rendered as empty success", async () =
       "see the echoed command and nothing else"
   );
 });
+
+// Catalog and help text tests (#219)
+test("operations command lists catalog entries", async () => {
+  const { run } = await consoleHarness((path) => {
+    if (path === "/api/console") {
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          records: [
+            { id: 10, type: "begin", operation: "operations" },
+            { id: 10, type: "item", value: "drive.action.move (action)" },
+            { id: 10, type: "item", value: "system.status.health (status)" },
+            { id: 10, type: "end", status: "ok", outcome: "completed" },
+          ],
+        },
+      };
+    }
+    return { data: {} };
+  });
+
+  const output = await run("operations");
+  assert.ok(
+    output.includes("drive.action.move"),
+    "operations list missing drive.action.move entry"
+  );
+  assert.ok(
+    output.includes("system.status.health"),
+    "operations list missing system.status.health entry"
+  );
+  assert.ok(
+    output.includes("type=item"),
+    "operations list item records missing from the log"
+  );
+});
+
+test("help command renders operation details from catalog", async () => {
+  const { run } = await consoleHarness((path) => {
+    if (path === "/api/console") {
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          records: [
+            { id: 11, type: "begin", operation: "drive.action.move" },
+            { id: 11, type: "field", name: "type", value: "action" },
+            { id: 11, type: "field", name: "display_name", value: "Move" },
+            { id: 11, type: "field", name: "description", value: "Set drive speed and steering" },
+            { id: 11, type: "end", status: "ok", outcome: "completed" },
+          ],
+        },
+      };
+    }
+    return { data: {} };
+  });
+
+  const output = await run("help drive.action.move");
+  assert.ok(
+    output.includes("display_name"),
+    "help output missing display_name field"
+  );
+  assert.ok(
+    output.includes("Move"),
+    "help output missing operation display name"
+  );
+  assert.ok(
+    output.includes("description"),
+    "help output missing description field"
+  );
+  assert.ok(
+    output.includes("Set drive speed and steering"),
+    "help output missing operation description"
+  );
+});

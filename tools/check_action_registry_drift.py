@@ -35,6 +35,9 @@ DOMAIN_GROUP = {
     "aux": "Aux",
 }
 
+# Path to generated help file (from #219)
+CONSOLE_HELP_PATH = ROOT / "data" / "console_help.txt"
+
 ACTION_GROUP_OVERRIDE = {
     "system.action.set-mode": "Mode",
     "system.action.estop": "Safety",
@@ -595,6 +598,89 @@ def check_none_executor_evidence(doc: dict, errors: list[str]) -> None:
 
 
 
+def check_console_help_file(doc: dict, errors: list[str]) -> None:
+    """Verify registry <-> generated console help file alignment (#219).
+
+    The help file is generated from the registry by tools/generate_console_catalog.py.
+    Format: name|display_name|description (one entry per line).
+    Newlines and pipes are escaped as \\n and \\| respectively.
+    Every registry entry must have a corresponding help entry, and vice versa.
+    """
+    if not CONSOLE_HELP_PATH.exists():
+        errors.append(f"console help file missing at {CONSOLE_HELP_PATH}")
+        return
+
+    # Load help file entries
+    help_entries = {}
+    try:
+        for line_number, line in enumerate(CONSOLE_HELP_PATH.read_text(encoding="utf-8").splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+            # Split on unescaped pipes - be careful with escaped pipes (\|)
+            parts = []
+            current = []
+            i = 0
+            while i < len(line):
+                if i < len(line) - 1 and line[i] == '\\' and line[i+1] in ('|', 'n'):
+                    # Escaped character - keep both backslash and character for now
+                    current.append(line[i:i+2])
+                    i += 2
+                elif line[i] == '|':
+                    # Unescaped pipe - field separator
+                    parts.append(''.join(current))
+                    current = []
+                    i += 1
+                else:
+                    current.append(line[i])
+                    i += 1
+            if current or parts:
+                parts.append(''.join(current))
+
+            if len(parts) < 3:
+                errors.append(
+                    f"{CONSOLE_HELP_PATH.name}:{line_number}: malformed help entry (expected 3 pipe-separated fields): {line!r}"
+                )
+                continue
+
+            name, display_name, description = parts[0], parts[1], parts[2]
+
+            # Unescape special characters
+            display_name = display_name.replace('\\|', '|').replace('\\n', '\n')
+            description = description.replace('\\|', '|').replace('\\n', '\n')
+
+            help_entries[name] = (display_name, description)
+    except Exception as e:
+        errors.append(f"Failed to read {CONSOLE_HELP_PATH}: {e}")
+        return
+
+    # Check bidirectional mapping
+    registry_entries = {e['name']: e for e in doc.get('entries', [])}
+
+    for name, (help_display_name, help_desc) in help_entries.items():
+        if name not in registry_entries:
+            errors.append(f"console help: {name} in help file but missing from registry")
+        else:
+            reg_entry = registry_entries[name]
+            reg_display_name = reg_entry.get('display_name', '')
+            reg_description = reg_entry.get('description', '')
+
+            if help_display_name != reg_display_name:
+                errors.append(
+                    f"console help: {name} display_name mismatch: "
+                    f"help={help_display_name!r}, registry={reg_display_name!r}"
+                )
+            if help_desc != reg_description:
+                errors.append(
+                    f"console help: {name} description mismatch: "
+                    f"help={help_desc!r}, registry={reg_description!r}"
+                )
+
+    for name in registry_entries:
+        if name not in help_entries:
+            errors.append(f"console help: {name} in registry but missing from help file")
+
+
 def check_executor_marker_contradiction(doc: dict, errors: list[str]) -> None:
     """Validate that no entry has both a real executor and claims NO-CORE-BELOW-HANDLER.
 
@@ -769,6 +855,7 @@ def main() -> int:
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)
+    check_console_help_file(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

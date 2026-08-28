@@ -84,11 +84,22 @@ operations type=action
 
 - `help` - the command language in brief and how to list operations.
 - `help <operation>` - description, argument schema, aliases, current
-  availability and its reason.
+  availability and its reason. See section 3.4 for the `help_file_status`
+  field that reports help file availability.
 - `operations` - every catalog entry with its type and availability;
   `type=<action|status|config|event>` filters. Known-but-unavailable entries
   are listed with their reason - discovery shows what exists, not only what can
   run right now.
+
+### 2.1 Operations listing output volume
+
+The `operations` command lists ~190 entries, each 40-60 characters on average,
+totaling approximately 9 KB of output. At 115200 baud this is ~0.8 seconds of
+solid output. On both serial and web transports, the listing is emitted in full
+without pagination. Interleaving log lines do not block output; the command and
+its result are discrete. A reader expecting chunked output should buffer one
+`operations` result as a single logical block before splitting on record
+boundaries.
 
 ## 3. Results: Console Records
 
@@ -176,7 +187,26 @@ never type an ID.
   already uses for Feature Availability; the Console never invents a synonym.
 - Availability is **re-checked at execution**, not cached from discovery.
 
-### 3.4 Token and field naming
+### 3.4 Help file status
+
+When a `help` command returns full help text from the LittleFS-backed help file,
+all expected fields are populated. When the help file is unavailable or cannot
+be read:
+
+- If the help reader is not initialized (LittleFS unavailable, or native test
+  without a mock reader), the `help_file_status` field is emitted with value
+  `unavailable`. All other help fields except `type` are omitted.
+- If the help file exists and the reader is initialized but a seek or read
+  operation fails (e.g., file truncated or stale offsets), the `help_file_status`
+  field is emitted with value `unreadable`. All other help fields except `type`
+  are omitted.
+
+This field is only present when help text could not be retrieved in full; a
+successful help response contains no `help_file_status` field. This allows a
+reader to distinguish "help not available" from "no help given" (which does not
+occur on a normal path).
+
+### 3.5 Token and field naming
 
 - Every token the protocol *defines* - operation names, argument keys, record
   types, outcomes, reasons, meta-commands - is **kebab-case**.

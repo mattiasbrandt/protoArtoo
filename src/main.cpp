@@ -6,6 +6,8 @@
 // =============================================================================
 
 #include <Arduino.h>
+#include <FS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <cstddef>
 #include <esp_task_wdt.h>
@@ -421,6 +423,39 @@ void setup() {
     // server only starts once WiFi genuinely comes up, via
     // startHttpServerOnce() inside handleWiFiEvent().
     webServerInit();
+
+    // Inject the help reader for the Console module after LittleFS is mounted.
+    // The reader provides seek+read access to console_help.txt with no per-request
+    // allocation (ADR 0034, address-based read pattern).
+    // If the help file is unavailable, pass NULL to degrade gracefully.
+#ifdef ARDUINO
+    {
+        static File g_helpFile;  // Held for process lifetime
+        static ConsoleHelpReader g_helpReader = {};
+
+        if (LittleFS.exists("/console_help.txt")) {
+            g_helpFile = LittleFS.open("/console_help.txt", "r");
+            if (g_helpFile) {
+                g_helpReader.seek = [](void* ctx, uint32_t offset) -> bool {
+                    File* f = (File*)ctx;
+                    return f && f->seek(offset);
+                };
+                g_helpReader.read = [](void* ctx, char* out_buffer, size_t len) -> size_t {
+                    File* f = (File*)ctx;
+                    if (!f || !out_buffer || len == 0) return 0;
+                    return f->read((uint8_t*)out_buffer, len);
+                };
+                g_helpReader.ctx = &g_helpFile;
+                consoleModuleSetHelpReader(&g_helpReader);
+                PA_LOG_DEBUG("main", "console help reader injected");
+            } else {
+                PA_LOG_WARN("main", "failed to open console help file");
+            }
+        } else {
+            PA_LOG_WARN("main", "console help file not found");
+        }
+    }
+#endif  // ARDUINO
 
     uint16_t bootTrack = 0;
     bootTrack = bootCfg.audio.snd_sys_boot;
