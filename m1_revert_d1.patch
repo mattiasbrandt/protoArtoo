@@ -1,0 +1,14 @@
+diff --git a/data/app.js b/data/app.js
+index abcd1234..xyz5678 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -709,8 +709,8 @@ const dispatchConsoleCommand = async (rawToken) => {
+       // Parse and display Console Records from the response
+       // D1: postForm returns {ok, status, data}, so access result.data
+-      if (result?.data?.records && Array.isArray(result.data.records)) {
+-        for (const record of result.data.records) {
++      if (result?.records && Array.isArray(result.records)) {
++        for (const record of result.records) {
+           formatAndAppendConsoleRecord(record);
+         }
+       } else {
