@@ -235,7 +235,14 @@ void consoleTask(void* pvParameters) {
     embeddedCliConfig->cliBuffer = embeddedCliBuffer;
     embeddedCliConfig->cliBufferSize = sizeof(embeddedCliBuffer);
     // Use default rxBufferSize, cmdBufferSize, historyBufferSize
-    // Use default enableAutoComplete (true) - needed for #219
+
+    // Disable live autocompletion (enableAutoComplete) for T1 scope.
+    // Live autocompletion emits cursor save/restore escape sequences on every keystroke,
+    // which is pure wire overhead when there are zero command bindings to suggest.
+    // Tab completion itself is handled independently and still works (lib/embedded-cli.c:855).
+    // This only disables the per-keystroke live display of suggestions.
+    // T2+ will re-enable enableAutoComplete once #219 registers the command catalog.
+    embeddedCliConfig->enableAutoComplete = false;
 
     // Verify buffer is large enough for the configuration
     uint16_t requiredSize = embeddedCliRequiredSize(embeddedCliConfig);
@@ -279,9 +286,10 @@ void consoleTask(void* pvParameters) {
     while (true) {
         // Log stack high water mark once after first command is processed
         // Measured value guides stack depth sizing for future runs (ADR 0034)
+        // ESP-IDF's uxTaskGetStackHighWaterMark() returns bytes, unlike vanilla FreeRTOS which returns words
         if (!hwmLogged && currentRequestId > 0) {
             UBaseType_t freeStack = uxTaskGetStackHighWaterMark(nullptr);
-            PA_LOG_INFO(TAG, "stack HWM: %u words free after first command", (unsigned)freeStack);
+            PA_LOG_INFO(TAG, "stack HWM: %u bytes free after first command", (unsigned)freeStack);
             hwmLogged = true;
         }
 

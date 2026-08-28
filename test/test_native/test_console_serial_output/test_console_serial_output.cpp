@@ -264,7 +264,63 @@ void test_long_lines_are_truncated_to_serial_max(void) {
                              "long line was not truncated; entire oversized input reached output");
 }
 
-// ----------------------------------------------------------------------------
+// =============================================================================
+// 4. Keystroke echo and redraw output stays proportional to input (#217 hardening)
+// =============================================================================
+// CRITERION: Output through the echo/redraw path must stay proportional to input.
+// When garbage or incomplete fragments arrive as input, the console's echoing and
+// redrawing of the partial command buffer should not produce output that grows
+// faster than the input itself. This bounds output-per-keystroke even with sustained
+// invalid input.
+//
+// NOTE: This harness cannot model a feedback loop (no path from output back to input),
+// so it tests the proportionality of the echo/redraw mechanism itself. A real loop
+// would require wiring the output sink to feed back into the input buffer.
+
+void test_keystroke_echo_output_stays_proportional_to_input(void) {
+    cliFixtureSetUp();
+
+    // Pre-measure the baseline output after initialization (prompt + fixture startup)
+    size_t baseline = g_captureLen;
+
+    // Feed fragments of garbage input that resemble log output fragments.
+    // This simulates incomplete input arriving on UART0.
+    const char fragments[][20] = {
+        "already initial",  // Incomplete fragment
+        "ized",             // Tail fragment
+        "waiting for firs",
+        "t frame",
+        "TWDT already",
+        "\n\r"
+    };
+    const size_t numFragments = sizeof(fragments) / sizeof(fragments[0]);
+
+    // Feed multiple copies of these fragments, accumulating input over time.
+    size_t garbageBytesFed = 0;
+    for (int i = 0; i < 10; ++i) {  // 10 iterations
+        for (size_t j = 0; j < numFragments; ++j) {
+            typeChars(fragments[j]);
+            garbageBytesFed += strlen(fragments[j]);
+        }
+    }
+
+    size_t outputProduced = g_captureLen - baseline;
+
+    // Proportionality bound: output should not exceed a reasonable multiple of input.
+    // The echo/redraw path includes character echo, prompt redraw, and cursor management.
+    // Each keystroke should produce output proportional to (roughly) the keystroke itself
+    // plus overhead for cursor escape sequences. A 100x bound is conservative.
+    size_t maxAllowedOutput = garbageBytesFed * 100;
+
+    TEST_ASSERT_TRUE_MESSAGE(outputProduced < maxAllowedOutput,
+                             "keystroke echo/redraw produced too much output relative to input");
+    // Tighter secondary bound: even with overhead, sustained input shouldn't produce
+    // more than 50 KB total in this scenario (catching accidentally expensive redraw).
+    TEST_ASSERT_TRUE_MESSAGE(outputProduced < 50000,
+                             "keystroke echo/redraw produced more than 50 KB output");
+}
+
+// =============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -274,5 +330,6 @@ int main(int, char**) {
     RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     RUN_TEST(test_long_lines_are_truncated_to_serial_max);
+    RUN_TEST(test_keystroke_echo_output_stays_proportional_to_input);
     return UNITY_END();
 }
