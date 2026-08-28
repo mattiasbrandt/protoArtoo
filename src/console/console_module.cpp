@@ -427,6 +427,24 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             }
         }
 
+        // A type= filter must name one of the catalog's four types. Without this
+        // check an unrecognized value (typo, or a value from a future registry
+        // type) fell through to a filter that matches nothing and answered
+        // status=ok outcome=completed with zero items - indistinguishable on the
+        // wire from "no operations of this type exist", which hides the typo from
+        // the operator instead of naming it (#219 D1).
+        if (filterType != nullptr &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_ACTION) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_STATUS) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_CONFIG) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_EVENT) != 0) {
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_OUT_OF_RANGE);
+            }
+            return;
+        }
+
         size_t catalogCount = 0;
         const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&catalogCount);
 

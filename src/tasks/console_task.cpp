@@ -160,9 +160,16 @@ static void onRecordField(uint32_t requestId, const char* name, const char* valu
 }
 
 static void onRecordItem(uint32_t requestId, const char* value) {
-    (void)requestId;
-    (void)value;
-    // T2+ scope: list items
+    // Emit: < id=<n> type=item value=<value>
+    // Mutex held from onRecordBegin (same discipline as onRecordField below);
+    // this is what makes `operations`' 175-entry listing atomic under the lock.
+    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
+                         "< id=%lu type=item value=%s",
+                         (unsigned long)requestId, value);
+    if (len < sizeof(recordBuffer)) {
+        Serial.write((const uint8_t*)recordBuffer, len);
+        Serial.write('\n');
+    }
 }
 
 static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,

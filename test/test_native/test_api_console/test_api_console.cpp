@@ -275,6 +275,94 @@ void test_over_length_line_is_one_result_record_with_line_too_long() {
     TEST_ASSERT_EQUAL_STRING("line-too-long", rec["reason"].as<const char*>());
 }
 
+// -----------------------------------------------------------------------------
+// #219 D1 rework: `operations` puts every catalog entry on the wire as an item
+// record, and an unrecognized `type=` filter is rejected rather than silently
+// answering an empty success. The web adapter's item sink was already wired
+// (src/web/api_console.cpp:webOnRecordItem_impl), so this exercises the shared
+// module logic at console_module.cpp:437-463 that both adapters call through -
+// the serial adapter's own item stub is unreachable from a native test (it is
+// gated on `#ifdef ARDUINO` code never in the native build_src_filter) and is
+// proven instead by the #215 device transcript.
+// -----------------------------------------------------------------------------
+
+void test_operations_lists_catalog_entries_as_items() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    // The web sink's response buffer (CONSOLE_RESPONSE_RECORDS_MAX = 32,
+    // api_console.cpp) caps how many of the catalog's 190 entries survive one
+    // HTTP response - a separate, pre-existing capacity limit (#216) that this
+    // ticket does not touch. So this only proves the shared item-building loop
+    // (console_module.cpp:437-463) reaches the sink at all and names a real
+    // entry; the full un-truncated 175/190-entry listing is proven on the
+    // serial adapter by the #215 device transcript, per the section 2.1
+    // "emitted in full without pagination" contract that only serial can carry.
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "result"));
+    size_t itemCount = countRecordsOfType(backend.sentBody, "item");
+    TEST_ASSERT_TRUE_MESSAGE(itemCount > 0, "operations produced zero item records");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    bool foundMove = false;
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        const char* type = rec["type"];
+        if (!type || strcmp(type, "item") != 0) continue;
+        const char* value = rec["value"];
+        if (value && strstr(value, "drive.action.move") != nullptr) {
+            foundMove = true;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(foundMove, "operations list missing drive.action.move");
+}
+
+// Registry has exactly 14 status-type entries (docs/action-registry.yaml) -
+// few enough to fit under the web response cap with room for begin/end, so
+// this filtered case can assert the exact, complete count.
+void test_operations_type_filter_lists_only_that_type() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations type=status");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(14, countRecordsOfType(backend.sentBody, "item"),
+        "operations type=status must list every status entry, no more, no less");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        const char* type = rec["type"];
+        if (!type || strcmp(type, "item") != 0) continue;
+        const char* value = rec["value"];
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_TRUE_MESSAGE(strstr(value, "(status") != nullptr,
+            "operations type=status listed an entry that is not a status entry");
+    }
+}
+
+// Sub-point of D1: an unrecognized type= value must not answer an empty
+// success (status=ok outcome=completed with zero items is indistinguishable
+// from "no operations of this type exist").
+void test_operations_unknown_type_filter_is_invalid() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations type=bogus");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(backend.sentBody, "result"),
+        "an unrecognized type= filter must answer with one type=result record");
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "end"));
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObjectConst rec = doc["records"][0];
+    TEST_ASSERT_EQUAL_STRING("err", rec["status"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("invalid", rec["outcome"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("out-of-range", rec["reason"].as<const char*>());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -288,5 +376,8 @@ int main(int, char**) {
     RUN_TEST(test_request_ids_are_shared_within_and_advance_between);
     RUN_TEST(test_empty_command_is_rejected);
     RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);
+    RUN_TEST(test_operations_lists_catalog_entries_as_items);
+    RUN_TEST(test_operations_type_filter_lists_only_that_type);
+    RUN_TEST(test_operations_unknown_type_filter_is_invalid);
     return UNITY_END();
 }
