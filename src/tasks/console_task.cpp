@@ -235,13 +235,13 @@ void consoleTask(void* pvParameters) {
     embeddedCliConfig->cliBuffer = embeddedCliBuffer;
     embeddedCliConfig->cliBufferSize = sizeof(embeddedCliBuffer);
     // Use default rxBufferSize, cmdBufferSize, historyBufferSize
-    // Use default enableAutoComplete (true) - needed for #219
 
-    // Disable live autocompletion for T1 (no bindings registered yet).
+    // Disable live autocompletion (enableAutoComplete) for T1 scope.
     // Live autocompletion emits cursor save/restore escape sequences on every keystroke,
-    // which is pure wire overhead when there are zero completion candidates.
-    // Tab completion still works; this only disables the per-keystroke display.
-    // T2+ will re-enable this once #219 registers a catalog.
+    // which is pure wire overhead when there are zero command bindings to suggest.
+    // Tab completion itself is handled independently and still works (lib/embedded-cli.c:855).
+    // This only disables the per-keystroke live display of suggestions.
+    // T2+ will re-enable enableAutoComplete once #219 registers the command catalog.
     embeddedCliConfig->enableAutoComplete = false;
 
     // Verify buffer is large enough for the configuration

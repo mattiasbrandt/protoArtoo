@@ -265,26 +265,26 @@ void test_long_lines_are_truncated_to_serial_max(void) {
 }
 
 // =============================================================================
-// 4. Bounded input / bounded output property (#217 amplification regression)
+// 4. Keystroke echo and redraw output stays proportional to input (#217 hardening)
 // =============================================================================
-// CRITERION: The Console must not amplify garbage input into unbounded output.
-// This prevents self-amplifying loops where noise on the serial line causes
-// output that is read back as input, creating a feedback loop.
+// CRITERION: Output through the echo/redraw path must stay proportional to input.
+// When garbage or incomplete fragments arrive as input, the console's echoing and
+// redrawing of the partial command buffer should not produce output that grows
+// faster than the input itself. This bounds output-per-keystroke even with sustained
+// invalid input.
 //
-// Test: Feed a large amount of garbage (binary noise, fragments, incomplete lines)
-// and verify that the total emitted output is bounded relative to the input size.
-// Even if the garbage is interpreted as buffered commands, the output must not
-// grow faster than log(n) with respect to input size.
+// NOTE: This harness cannot model a feedback loop (no path from output back to input),
+// so it tests the proportionality of the echo/redraw mechanism itself. A real loop
+// would require wiring the output sink to feed back into the input buffer.
 
-void test_bounded_input_produces_bounded_output(void) {
+void test_keystroke_echo_output_stays_proportional_to_input(void) {
     cliFixtureSetUp();
 
     // Pre-measure the baseline output after initialization (prompt + fixture startup)
     size_t baseline = g_captureLen;
 
-    // Feed fragments of pseudo-random garbage: bytes that resemble log output fragments.
-    // This simulates the measured scenario where UART0 received fragments of strings
-    // like "already initialized", "waiting for first frame", etc.
+    // Feed fragments of garbage input that resemble log output fragments.
+    // This simulates incomplete input arriving on UART0.
     const char fragments[][20] = {
         "already initial",  // Incomplete fragment
         "ized",             // Tail fragment
@@ -295,9 +295,7 @@ void test_bounded_input_produces_bounded_output(void) {
     };
     const size_t numFragments = sizeof(fragments) / sizeof(fragments[0]);
 
-    // Feed multiple copies of these fragments, simulating a sustained garbage stream.
-    // On the artoo flood, 6500 emissions/s suggests each garbage byte somehow triggers output.
-    // We test that feeding 1000+ bytes doesn't produce 150+ KB (the measured flood rate).
+    // Feed multiple copies of these fragments, accumulating input over time.
     size_t garbageBytesFed = 0;
     for (int i = 0; i < 10; ++i) {  // 10 iterations
         for (size_t j = 0; j < numFragments; ++j) {
@@ -308,17 +306,18 @@ void test_bounded_input_produces_bounded_output(void) {
 
     size_t outputProduced = g_captureLen - baseline;
 
-    // Bound: output should not exceed a reasonable multiple of input (e.g., 20x max
-    // to account for prompt redraw + editing echo + line framing).
-    // The measured flood had output/input ratio of 900KB / 6s on artoo vs 40B / 6s baseline,
-    // which is 22,500x amplification. A fix should drop this drastically.
-    // We test that it is at most 100x (conservative bound to catch massive amplification).
+    // Proportionality bound: output should not exceed a reasonable multiple of input.
+    // The echo/redraw path includes character echo, prompt redraw, and cursor management.
+    // Each keystroke should produce output proportional to (roughly) the keystroke itself
+    // plus overhead for cursor escape sequences. A 100x bound is conservative.
     size_t maxAllowedOutput = garbageBytesFed * 100;
 
     TEST_ASSERT_TRUE_MESSAGE(outputProduced < maxAllowedOutput,
-                             "garbage input produced too much output (possible amplification loop)");
+                             "keystroke echo/redraw produced too much output relative to input");
+    // Tighter secondary bound: even with overhead, sustained input shouldn't produce
+    // more than 50 KB total in this scenario (catching accidentally expensive redraw).
     TEST_ASSERT_TRUE_MESSAGE(outputProduced < 50000,
-                             "garbage input produced more than 50 KB output (amplification detected)");
+                             "keystroke echo/redraw produced more than 50 KB output");
 }
 
 // =============================================================================
@@ -331,6 +330,6 @@ int main(int, char**) {
     RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     RUN_TEST(test_long_lines_are_truncated_to_serial_max);
-    RUN_TEST(test_bounded_input_produces_bounded_output);
+    RUN_TEST(test_keystroke_echo_output_stays_proportional_to_input);
     return UNITY_END();
 }
