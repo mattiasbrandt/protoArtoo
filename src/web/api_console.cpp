@@ -193,11 +193,11 @@ void handleConsolePost(WebRequest& req) {
     memset(responseBody, 0, sizeof(responseBody));
 
     JsonDocument responseDoc;
-    JsonArray recordsArray = responseDoc.createNestedArray("records");
+    JsonArray recordsArray = responseDoc["records"].to<JsonArray>();
 
     for (size_t i = 0; i < webSink.recordCount; i++) {
         const ConsoleRecord& rec = webSink.records[i];
-        JsonObject recordObj = recordsArray.createNestedObject();
+        JsonObject recordObj = recordsArray.add<JsonObject>();
         recordObj["id"] = rec.requestId;
         recordObj["type"] = rec.type;
         if (strcmp(rec.type, "begin") == 0) {
