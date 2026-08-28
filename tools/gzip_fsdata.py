@@ -16,6 +16,13 @@ stays raw (source of truth); git is untouched.
 Excluded from gzip:
   - *version*.json — the firmware opens /fs-version.json DIRECTLY from LittleFS
     (not via serveStatic), so a .gz would break the reported fsVersion.
+  - console_help.txt — same shape as version JSON: src/main.cpp opens
+    /console_help.txt directly via LittleFS.exists()/.open() in setup() (ADR
+    0034, #219), never through PsychicHttp's serveStatic() (the only place a
+    .gz is transparently unwrapped). LittleFS.open() has no such fallback, so
+    staging only the .gz left the firmware asking for a name that was never on
+    the image. .txt IS otherwise gzipped (GZIP_EXTS below), so this is a
+    name-based exception, not an extension-based one like version JSON's.
   - images and other binaries — already compressed; copied verbatim.
 
 HTML includes: a page may carry `<!-- PA:INCLUDE _partial.html -->`, which is
@@ -44,8 +51,20 @@ Import("env")  # noqa: F821  (PlatformIO injects this)
 # json is read raw by the firmware).
 GZIP_EXTS = {".js", ".css", ".html", ".htm", ".svg", ".txt", ".map"}
 
+# Assets the firmware opens by exact name straight off LittleFS (LittleFS.open()
+# / .exists()), never through PsychicHttp's serveStatic() -- the only handler
+# that transparently falls back from "foo" to "foo.gz". For these, gzipping
+# would leave the literal path the firmware asks for missing from the image.
+# Extension-excluded assets (version JSON: .json is not in GZIP_EXTS at all)
+# don't need an entry here; this set is for names whose extension IS otherwise
+# gzipped. See docs/console-protocol.md section 3.4 and src/main.cpp for the
+# console_help.txt reader (ADR 0034, #219 D2).
+RAW_ASSET_NAMES = {"console_help.txt"}
+
 
 def _should_gzip(filename):
+    if filename in RAW_ASSET_NAMES:
+        return False
     if os.path.splitext(filename)[1].lower() not in GZIP_EXTS:
         return False
     return True
