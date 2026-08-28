@@ -142,6 +142,7 @@ never type an ID.
   | Outcome | Meaning |
   |---|---|
   | `queued` | accepted by the responsible non-blocking queue; **not** "physically completed" |
+  | `completed` | answered in full before the record was written - queries (`help`, status) run synchronously, so nothing was queued and nothing changed |
   | `applied` | a configuration value changed and, where the value persists, was persisted |
   | `staged-until-reboot` | accepted and saved; takes effect at the next boot (Component Toggles, staged network switch) |
   | `unavailable` | the operation exists but cannot run now - see `reason=` |
@@ -151,6 +152,10 @@ never type an ID.
   | `internal-error` | the firmware could not complete the request for a reason of its own |
 
 - `reason=` - a stable token explaining `unavailable`, `blocked` or `invalid`.
+  **The field is present exactly when there is a reason and absent otherwise**, so
+  a successful record carries no `reason=`. Both adapters decide this the same way,
+  by testing the reason itself rather than the status, which keeps an availability
+  answer's reason intact on every path.
   The **Availability Reasons** are:
 
   | Reason | Meaning |

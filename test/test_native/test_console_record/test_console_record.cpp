@@ -186,6 +186,40 @@ void test_quote_value_with_backslash_escapes_properly(void) {
 // Test Runner
 // =============================================================================
 
+
+// The reason field is present exactly when there is a reason. Both adapters ask
+// this one helper, so the rule cannot drift between them.
+//
+// Regression guard: the serial adapter used to suppress the reason whenever it
+// equalled CONSOLE_REASON_NOT_IN_THIS_BUILD - then the enum's zero value, and
+// doubled as filler on success paths. That would have dropped
+// `reason=not-in-this-build` from a genuine `unavailable` answer, which is the
+// exact answer a profiler operation owes on a non-profiler build.
+void test_reason_is_present_for_every_real_reason_and_absent_for_none(void) {
+    TEST_ASSERT_FALSE_MESSAGE(consoleReasonIsPresent(CONSOLE_REASON_NONE),
+                              "NONE must not render a reason field");
+
+    const ConsoleReason kReal[] = {
+        CONSOLE_REASON_NOT_IN_THIS_BUILD,      CONSOLE_REASON_NOT_ON_THIS_BOARD,
+        CONSOLE_REASON_COMPONENT_DISABLED,     CONSOLE_REASON_BLOCKED_BY_STATE,
+        CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, CONSOLE_REASON_LINE_TOO_LONG,
+        CONSOLE_REASON_SECRET_NOT_SETTABLE,    CONSOLE_REASON_UNKNOWN_OPERATION,
+        CONSOLE_REASON_UNKNOWN_ARGUMENT,       CONSOLE_REASON_MISSING_ARGUMENT,
+        CONSOLE_REASON_OUT_OF_RANGE,           CONSOLE_REASON_NOT_EXECUTABLE,
+        CONSOLE_REASON_EXECUTOR_NOT_READY,     CONSOLE_REASON_QUEUE_FULL,
+    };
+    for (size_t i = 0; i < sizeof(kReal) / sizeof(kReal[0]); ++i) {
+        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(kReal[i]),
+                                 "a real reason must render a reason field");
+    }
+}
+
+// A synchronously answered query reports completed, not queued.
+void test_completed_outcome_has_its_own_token(void) {
+    TEST_ASSERT_EQUAL_STRING("completed", consoleOutcomeString(CONSOLE_OUTCOME_COMPLETED));
+    TEST_ASSERT_EQUAL_STRING("queued", consoleOutcomeString(CONSOLE_OUTCOME_QUEUED));
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -229,6 +263,8 @@ int main(void) {
     RUN_TEST(test_quote_value_with_equals_adds_quotes);
     RUN_TEST(test_quote_value_with_quote_escapes_properly);
     RUN_TEST(test_quote_value_with_backslash_escapes_properly);
+    RUN_TEST(test_reason_is_present_for_every_real_reason_and_absent_for_none);
+    RUN_TEST(test_completed_outcome_has_its_own_token);
 
     return UNITY_END();
 }

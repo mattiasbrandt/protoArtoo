@@ -48,23 +48,32 @@ typedef enum {
     CONSOLE_OUTCOME_QUEUE_FULL = 5,
     CONSOLE_OUTCOME_INVALID = 6,
     CONSOLE_OUTCOME_INTERNAL_ERROR = 7,
+    // Answered in full before the end record was written: queries (help,
+    // status) complete synchronously, so "queued" would describe work that
+    // never entered a queue. Distinct from APPLIED, which means state changed.
+    CONSOLE_OUTCOME_COMPLETED = 8,
 } ConsoleOutcome;
 
+// NONE is 0 so a zero-initialised record carries "no reason" rather than
+// borrowing a real availability reason. A success path must pass NONE: the
+// adapters decide whether to render the field by testing against it, so any
+// real value passed as filler would be printed as though it applied.
 typedef enum {
-    CONSOLE_REASON_NOT_IN_THIS_BUILD = 0,
-    CONSOLE_REASON_NOT_ON_THIS_BOARD = 1,
-    CONSOLE_REASON_COMPONENT_DISABLED = 2,
-    CONSOLE_REASON_BLOCKED_BY_STATE = 3,
-    CONSOLE_REASON_TEMPORARILY_UNAVAILABLE = 4,
-    CONSOLE_REASON_LINE_TOO_LONG = 5,
-    CONSOLE_REASON_SECRET_NOT_SETTABLE = 6,
-    CONSOLE_REASON_UNKNOWN_OPERATION = 7,
-    CONSOLE_REASON_UNKNOWN_ARGUMENT = 8,
-    CONSOLE_REASON_MISSING_ARGUMENT = 9,
-    CONSOLE_REASON_OUT_OF_RANGE = 10,
-    CONSOLE_REASON_NOT_EXECUTABLE = 11,
-    CONSOLE_REASON_EXECUTOR_NOT_READY = 12,
-    CONSOLE_REASON_QUEUE_FULL = 13,
+    CONSOLE_REASON_NONE = 0,
+    CONSOLE_REASON_NOT_IN_THIS_BUILD = 1,
+    CONSOLE_REASON_NOT_ON_THIS_BOARD = 2,
+    CONSOLE_REASON_COMPONENT_DISABLED = 3,
+    CONSOLE_REASON_BLOCKED_BY_STATE = 4,
+    CONSOLE_REASON_TEMPORARILY_UNAVAILABLE = 5,
+    CONSOLE_REASON_LINE_TOO_LONG = 6,
+    CONSOLE_REASON_SECRET_NOT_SETTABLE = 7,
+    CONSOLE_REASON_UNKNOWN_OPERATION = 8,
+    CONSOLE_REASON_UNKNOWN_ARGUMENT = 9,
+    CONSOLE_REASON_MISSING_ARGUMENT = 10,
+    CONSOLE_REASON_OUT_OF_RANGE = 11,
+    CONSOLE_REASON_NOT_EXECUTABLE = 12,
+    CONSOLE_REASON_EXECUTOR_NOT_READY = 13,
+    CONSOLE_REASON_QUEUE_FULL = 14,
 } ConsoleReason;
 
 // =============================================================================

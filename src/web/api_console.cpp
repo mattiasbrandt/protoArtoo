@@ -94,7 +94,8 @@ static void webOnRecordResult_impl(uint32_t requestId, ConsoleStatus status,
     rec->requestId = requestId;
     rec->status = consoleStatusString(status);
     rec->outcome = consoleOutcomeString(outcome);
-    if (status == CONSOLE_STATUS_ERR) rec->reason = consoleReasonString(reason);
+    // Present exactly when there is a reason, matching the serial adapter.
+    if (consoleReasonIsPresent(reason)) rec->reason = consoleReasonString(reason);
 }
 
 static void webOnRecordEnd_impl(uint32_t requestId, ConsoleStatus status,
@@ -105,7 +106,8 @@ static void webOnRecordEnd_impl(uint32_t requestId, ConsoleStatus status,
     rec->requestId = requestId;
     rec->status = consoleStatusString(status);
     rec->outcome = consoleOutcomeString(outcome);
-    if (status == CONSOLE_STATUS_ERR) rec->reason = consoleReasonString(reason);
+    // Present exactly when there is a reason, matching the serial adapter.
+    if (consoleReasonIsPresent(reason)) rec->reason = consoleReasonString(reason);
 }
 
 void handleConsolePost(WebRequest& req) {
