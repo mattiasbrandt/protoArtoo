@@ -4,6 +4,9 @@
 // POST /api/console - browser adapter for the Controller Console (ADR 0034).
 // The same command processor (consoleExecuteCommand) that the serial task uses,
 // driven by a web-specific sink that accumulates records into a JSON response.
+//
+// D2: The web sink copies field values into owned storage because the module
+// reuses a single stack buffer for successive field emissions.
 // =============================================================================
 
 #include "../../include/api_console.h"
@@ -16,131 +19,90 @@
 #include "../../include/console_module.h"
 #include "../../include/console_record.h"
 
-// =============================================================================
-// Web-Specific Console Record Sink
-//
-// The sink is bound at request time; state lives in the stack, so the handler
-// must hold storage for all records in a command's response. This is practical:
-// - T1 scope (system.status.health): ~6 records max
-// - HTTP responses are already buffered and serialized to JSON
-// - The sink executes inline, no async coordination needed
-// =============================================================================
-
-// Maximum number of records in a single response. Conservative upper bound
-// for T1 (status queries) and early T2 (simple actions).
+// Maximum number of records + value storage for a single response
 #define CONSOLE_RESPONSE_RECORDS_MAX 32
+#define CONSOLE_RECORD_VALUE_ARENA 2048
 
-// Holder for a single record in the response. Fields are accumulated from
-// sink callbacks and indexed by record type.
 struct ConsoleRecord {
-    // Record type (result, begin, field, item, end)
     const char* type;
     uint32_t requestId;
-
-    // Single-record responses (result, end)
-    const char* status;    // "ok" or "err"
-    const char* outcome;   // "queued", "applied", etc
-    const char* reason;    // optional: "unknown-operation", etc
-
-    // Multi-record responses (begin, field, item, end)
-    const char* operation;  // operation name for begin
-    const char* name;       // field name (for type=field)
-    const char* value;      // field value (for type=field or item)
+    const char* status;
+    const char* outcome;
+    const char* reason;
+    const char* operation;
+    const char* name;
+    const char* value;
 };
 
-// Accumulator for a command response
+// D2: Arena holds copied values; all record pointers reference this storage
 struct ConsoleWebSink {
     ConsoleRecord records[CONSOLE_RESPONSE_RECORDS_MAX];
     size_t recordCount;
-    // Tracking state for multi-record sequences
-    uint32_t currentRequestId;
-    bool inMultiRecord;  // true between begin and end
-    bool hasError;       // true if any record has status=err
+    char valueArena[CONSOLE_RECORD_VALUE_ARENA];
+    size_t arenaUsed;
 };
 
-// Forward declaration for global sink context (set during handleConsolePost)
 static ConsoleWebSink* g_currentWebSink = nullptr;
 
-// =============================================================================
-// Sink Callback Implementations
-// =============================================================================
+// Helper: copy string into arena, return pointer
+static const char* arenaStoreString(const char* src) {
+    if (g_currentWebSink == nullptr || src == nullptr) return src;
+    size_t len = strlen(src);
+    if (g_currentWebSink->arenaUsed + len + 1 > CONSOLE_RECORD_VALUE_ARENA) return src;
+    char* dest = &g_currentWebSink->valueArena[g_currentWebSink->arenaUsed];
+    strcpy(dest, src);
+    g_currentWebSink->arenaUsed += len + 1;
+    return dest;
+}
 
 static void webOnRecordBegin_impl(uint32_t requestId, const char* operationType) {
-    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
-        return;
-    }
+    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) return;
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "begin";
     rec->requestId = requestId;
-    rec->operation = operationType;
-    g_currentWebSink->currentRequestId = requestId;
-    g_currentWebSink->inMultiRecord = true;
+    rec->operation = arenaStoreString(operationType);
 }
 
 static void webOnRecordField_impl(uint32_t requestId, const char* name, const char* value) {
-    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
-        return;
-    }
+    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) return;
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "field";
     rec->requestId = requestId;
-    rec->name = name;
-    rec->value = value;
+    rec->name = arenaStoreString(name);
+    rec->value = arenaStoreString(value);
 }
 
 static void webOnRecordItem_impl(uint32_t requestId, const char* value) {
-    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
-        return;
-    }
+    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) return;
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "item";
     rec->requestId = requestId;
-    rec->value = value;
+    rec->value = arenaStoreString(value);
 }
 
 static void webOnRecordResult_impl(uint32_t requestId, ConsoleStatus status,
                                    ConsoleOutcome outcome, ConsoleReason reason) {
-    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
-        return;
-    }
+    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) return;
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "result";
     rec->requestId = requestId;
     rec->status = consoleStatusString(status);
     rec->outcome = consoleOutcomeString(outcome);
-    if (status == CONSOLE_STATUS_ERR) {
-        rec->reason = consoleReasonString(reason);
-    }
-    if (status == CONSOLE_STATUS_ERR) {
-        g_currentWebSink->hasError = true;
-    }
+    if (status == CONSOLE_STATUS_ERR) rec->reason = consoleReasonString(reason);
 }
 
 static void webOnRecordEnd_impl(uint32_t requestId, ConsoleStatus status,
                                ConsoleOutcome outcome, ConsoleReason reason) {
-    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
-        return;
-    }
+    if (g_currentWebSink == nullptr || g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) return;
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "end";
     rec->requestId = requestId;
     rec->status = consoleStatusString(status);
     rec->outcome = consoleOutcomeString(outcome);
-    if (status == CONSOLE_STATUS_ERR) {
-        rec->reason = consoleReasonString(reason);
-    }
-    g_currentWebSink->inMultiRecord = false;
-    if (status == CONSOLE_STATUS_ERR) {
-        g_currentWebSink->hasError = true;
-    }
+    if (status == CONSOLE_STATUS_ERR) rec->reason = consoleReasonString(reason);
 }
 
-// =============================================================================
-// Handler Implementation
-// =============================================================================
-
 void handleConsolePost(WebRequest& req) {
-    // Extract the command line from the request (form parameter or JSON body)
     char command[256] = {};
     if (!req.param("command", command, sizeof(command)) || command[0] == '\0') {
         const char* body = req.body();
@@ -159,39 +121,29 @@ void handleConsolePost(WebRequest& req) {
         }
     }
 
-    // Trim and validate command
-    // Remove leading/trailing whitespace
+    // D5: Cast to (unsigned char) to avoid UB on high-bit chars
     size_t start = 0;
-    while (command[start] && isspace(command[start])) start++;
+    while (command[start] && isspace((unsigned char)command[start])) start++;
     size_t end = strlen(command);
-    while (end > start && isspace(command[end - 1])) end--;
+    while (end > start && isspace((unsigned char)command[end - 1])) end--;
     command[end] = '\0';
-    if (start > 0) {
-        memmove(command, command + start, end - start + 1);
-    }
+    if (start > 0) memmove(command, command + start, end - start + 1);
 
     if (command[0] == '\0') {
         req.send(400, "application/json", "{\"ok\":false,\"error\":\"empty command\"}");
         return;
     }
 
-    // Initialize web sink for this request
     ConsoleWebSink webSink = {};
     g_currentWebSink = &webSink;
 
-    // Create the console request
-    // For T1: parse the command line to extract operation name
-    // Simple parsing: first whitespace-delimited token is the operation name
-    char operationName[256] = {};
-    sscanf(command, "%255s", operationName);
-
+    // D3: Pass FULL command line (not just first token)
     ConsoleRequest consoleReq = {
         .requestId = consoleGetNextRequestId(),
         .source = CONSOLE_SOURCE_WEB,
-        .operationName = operationName,
+        .operationName = command,
     };
 
-    // Create the sink callbacks
     ConsoleRecordSink sink = {
         .onRecordBegin = webOnRecordBegin_impl,
         .onRecordField = webOnRecordField_impl,
@@ -200,24 +152,17 @@ void handleConsolePost(WebRequest& req) {
         .onRecordEnd = webOnRecordEnd_impl,
     };
 
-    // Execute the command through the Console module
     consoleExecuteCommand(&consoleReq, &sink);
-
-    // Clear the global sink reference
     g_currentWebSink = nullptr;
 
-    // Build JSON response from accumulated records
     JsonDocument responseDoc;
     JsonArray recordsArray = responseDoc.createNestedArray("records");
 
     for (size_t i = 0; i < webSink.recordCount; i++) {
         const ConsoleRecord& rec = webSink.records[i];
         JsonObject recordObj = recordsArray.createNestedObject();
-
         recordObj["id"] = rec.requestId;
         recordObj["type"] = rec.type;
-
-        // Type-specific fields
         if (strcmp(rec.type, "begin") == 0) {
             recordObj["operation"] = rec.operation;
         } else if (strcmp(rec.type, "field") == 0) {
@@ -228,13 +173,10 @@ void handleConsolePost(WebRequest& req) {
         } else if (strcmp(rec.type, "result") == 0 || strcmp(rec.type, "end") == 0) {
             recordObj["status"] = rec.status;
             recordObj["outcome"] = rec.outcome;
-            if (rec.reason != nullptr) {
-                recordObj["reason"] = rec.reason;
-            }
+            if (rec.reason != nullptr) recordObj["reason"] = rec.reason;
         }
     }
 
-    // Serialize response
     char responseBody[4096] = {};
     size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
     if (bodySize == 0 || bodySize >= sizeof(responseBody)) {

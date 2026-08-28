@@ -706,8 +706,9 @@
       const result = await window.PAApi.postForm("/api/console", { command: token }, { timeoutMs: 5000 });
 
       // Parse and display Console Records from the response
-      if (result?.records && Array.isArray(result.records)) {
-        for (const record of result.records) {
+      // D1: postForm returns {ok, status, data}, so access result.data
+      if (result?.data?.records && Array.isArray(result.data.records)) {
+        for (const record of result.data.records) {
           formatAndAppendConsoleRecord(record);
         }
       } else {
