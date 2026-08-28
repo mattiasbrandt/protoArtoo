@@ -9,9 +9,21 @@
 //  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - Emit Console Records to serial atomically: the sink callbacks hold the serial mutex
-//    from onRecordBegin through onRecordEnd, ensuring the entire multi-record response
-//    is atomic under the lock (see console_task.cpp:130-219 for mutex discipline)
+//  - Emit Console Records to serial with PER-LINE atomicity: each sink callback
+//    takes the serial mutex, writes its own one record line whole, and gives the
+//    mutex back before returning (see console_task.cpp:135-246 for mutex discipline).
+//    A multi-record response (begin -> field/item* -> end) is NOT held as one
+//    locked block - #219 R1 measured operations' 190-entry catalog listing at
+//    10985 B / ~0.95 s @115200 8N1, and the old per-group lock blocked every
+//    PA_LOG_* caller for that whole window, including Core 1 prio-5 rcInputTask
+//    and driveTask logging inside their loops (AGENTS.md Architecture Guardrails:
+//    Core 1 is real-time, real-time paths must not block; and drive zero-frame
+//    continuity at 50 Hz). Per-line locking is what docs/console-protocol.md
+//    already specifies: section 3.1 says records of one request "may be
+//    separated by other lines" (the Request ID reassembles them), and section
+//    2.1 records the no-paging decision this line-level design makes
+//    affordable. The only invariant that survives is section 6's "no line is
+//    ever interleaved inside another".
 //  - Log arriving mid-entry clears the input line, writes the log via consoleSerialEmitLine(),
 //    then redraws the prompt and buffered command via embeddedCliPrint()
 // =============================================================================
@@ -125,50 +137,64 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
 // Console Record Sink Callbacks (output formatting)
 // =============================================================================
 
-static void onRecordBegin(uint32_t requestId, const char* operationType) {
+// Emit one fully-formatted record line atomically: take the serial mutex,
+// write the line + a newline, give the mutex back. This is the ONLY unit of
+// atomicity the wire format needs (docs/console-protocol.md section 6: "no
+// line is ever interleaved inside another"). A multi-record response
+// (begin -> field/item* -> end) is deliberately NOT held as one locked block
+// across this call boundary -- see the file header for why (#219 R1).
+//
+// CONSTRAINT: the mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic). Do
+// not call PA_LOG_* (or anything else that takes paGetSerialMutex()) between
+// the take and the give inside this function -- paLogLine routes through
+// consoleSerialEmitLine(), which takes the same mutex with portMAX_DELAY, and
+// a non-recursive mutex self-deadlocks the calling task. None of the sink
+// callbacks below log while formatting a record, so this holds; it is the
+// narrower, still-live form of the warning this file used to state at the
+// whole-group level (begin..end) before #219 R1 moved locking to per-line.
+static void emitRecordLine(const char* line, size_t len) {
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex != nullptr) {
         xSemaphoreTake(mutex, portMAX_DELAY);
     }
+    Serial.write((const uint8_t*)line, len);
+    Serial.write('\n');
+    if (mutex != nullptr) {
+        xSemaphoreGive(mutex);
+    }
+}
 
+static void onRecordBegin(uint32_t requestId, const char* operationType) {
     // Emit: < id=<n> type=begin operation=system.status.health
     size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
                          "< id=%lu type=begin operation=%s",
                          (unsigned long)requestId, operationType);
     if (len < sizeof(recordBuffer)) {
-        Serial.write((const uint8_t*)recordBuffer, len);
-        Serial.write('\n');
+        emitRecordLine(recordBuffer, len);
     }
-    // CONSTRAINT: Mutex held for the entire record sequence (begin -> field... -> end)
-    // The mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic creates non-recursive).
-    // Any log emitted between onRecordBegin and onRecordEnd will self-deadlock the console task,
-    // since paLogLine also takes the same mutex with portMAX_DELAY.
-    // Current usage: system.status.health does not log during execution, so this is safe.
-    // Future operations (#219+) must ensure they do not call PA_LOG_* between begin and end.
 }
 
 static void onRecordField(uint32_t requestId, const char* name, const char* value) {
-    // Mutex held from onRecordBegin
     // Emit: < id=<n> type=field name=<key> value=<value>
     size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
                          "< id=%lu type=field name=%s value=%s",
                          (unsigned long)requestId, name, value);
     if (len < sizeof(recordBuffer)) {
-        Serial.write((const uint8_t*)recordBuffer, len);
-        Serial.write('\n');
+        emitRecordLine(recordBuffer, len);
     }
 }
 
 static void onRecordItem(uint32_t requestId, const char* value) {
     // Emit: < id=<n> type=item value=<value>
-    // Mutex held from onRecordBegin (same discipline as onRecordField below);
-    // this is what makes `operations`' 175-entry listing atomic under the lock.
+    // Each item is its own locked line (emitRecordLine above); this is what
+    // lets a 190-entry `operations` listing (#219 R1: 10985 B, ~0.95 s
+    // @115200 8N1) share the wire with other tasks' log lines instead of
+    // blocking them for the whole listing.
     size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
                          "< id=%lu type=item value=%s",
                          (unsigned long)requestId, value);
     if (len < sizeof(recordBuffer)) {
-        Serial.write((const uint8_t*)recordBuffer, len);
-        Serial.write('\n');
+        emitRecordLine(recordBuffer, len);
     }
 }
 
@@ -176,11 +202,6 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
                           ConsoleReason reason) {
     // Guard path: emit single result record for error/unknown/unsupported operations
     // Emit: < id=<n> type=result status=ok outcome=queued [reason=...]
-    // Take serial mutex for atomic emission (log lines will wait while this emits)
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-    }
 
     // Present exactly when there is a reason. This is the record an unavailable
     // operation answers with, so the reason must survive: the previous guard
@@ -195,13 +216,7 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
                  "< id=%lu type=result status=%s outcome=%s%s", (unsigned long)requestId,
                  consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
     if (len < sizeof(recordBuffer)) {
-        Serial.write((const uint8_t*)recordBuffer, len);
-        Serial.write('\n');
-    }
-
-    // Give the mutex
-    if (mutex != nullptr) {
-        xSemaphoreGive(mutex);
+        emitRecordLine(recordBuffer, len);
     }
 }
 
@@ -225,14 +240,7 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
                  "< id=%lu type=end status=%s outcome=%s%s", (unsigned long)requestId,
                  consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
     if (len < sizeof(recordBuffer)) {
-        Serial.write((const uint8_t*)recordBuffer, len);
-        Serial.write('\n');
-    }
-
-    // Release serial mutex after complete response
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        xSemaphoreGive(mutex);
+        emitRecordLine(recordBuffer, len);
     }
 }
 
