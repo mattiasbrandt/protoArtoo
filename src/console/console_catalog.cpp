@@ -7,15 +7,14 @@
 // Operation Catalog - runtime table mapping operation names to descriptors,
 // parameter schemas, availability metadata, and executor references.
 // Help text (description, display_name) is stored in LittleFS.
+//
+// Executor references are stored as strings, not function pointers.
+// Resolution of executor symbols to function addresses happens at dispatch time
+// in the Console task, not at compile/link time.
 // =============================================================================
 
 #include "console_catalog.h"
 #include <string.h>
-
-// Forward declarations for executor references (will be resolved by link-time)
-// extern void driveArbiterSubmit(void);
-// extern void soundCommandExecutor(void);
-// etc. - these are reference strings, not function pointers
 
 // =============================================================================
 // Parameter Descriptors
