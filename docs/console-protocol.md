@@ -84,7 +84,7 @@ operations type=action
 
 - `help` - the command language in brief and how to list operations.
 - `help <operation>` - description, argument schema, aliases, current
-  availability and its reason. See section 3.5 for the `help_file_status`
+  availability and its reason. See section 3.4 for the `help_file_status`
   field that reports help file availability.
 - `operations` - every catalog entry with its type and availability;
   `type=<action|status|config|event>` filters. Known-but-unavailable entries
