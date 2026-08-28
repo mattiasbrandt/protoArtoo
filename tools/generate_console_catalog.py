@@ -224,6 +224,10 @@ def generate_help_text(entries, output_path):
 
     Format: one entry per line
     name|display_name|description
+
+    Newlines and pipes in text are escaped:
+    - \n -> \\n (literal backslash-n)
+    - | -> \\| (literal backslash-pipe)
     """
 
     lines = []
@@ -232,9 +236,10 @@ def generate_help_text(entries, output_path):
         display_name = entry.get('display_name', name)
         description = entry.get('description', '')
 
-        # Escape pipe characters in text
-        display_name = display_name.replace('|', '\\|')
-        description = description.replace('|', '\\|')
+        # Escape special characters
+        # Must escape newlines before pipes
+        display_name = display_name.replace('\n', '\\n').replace('|', '\\|')
+        description = description.replace('\n', '\\n').replace('|', '\\|')
 
         lines.append(f"{name}|{display_name}|{description}\n")
 
