@@ -696,27 +696,67 @@
     rememberCommand(token);
     appendCommandLine(`> ${token}`);
 
-    if (token === "help" || token === "?") {
-      printCommandHelp();
-      return;
-    }
-
-    if (!commandTokens.includes(token)) {
-      appendCommandLine(`[ERROR] unknown command: ${token}`, " log-line-command-error");
-      return;
-    }
-
     if (!window.PAApi) {
       appendCommandLine("[ERROR] API unavailable", " log-line-command-error");
       return;
     }
 
     try {
-      await window.PAApi.postForm("/api/actions/test", { token }, { timeoutMs: 5000 });
-      appendCommandLine(`[OK] ${token}`);
+      // Send command to the Console endpoint (ADR 0034)
+      const result = await window.PAApi.postForm("/api/console", { command: token }, { timeoutMs: 5000 });
+
+      // Parse and display Console Records from the response.
+      // postForm returns {ok, status, data}, so access result.data (not result.records).
+      if (result?.data?.records && Array.isArray(result.data.records)) {
+        for (const record of result.data.records) {
+          formatAndAppendConsoleRecord(record);
+        }
+      } else {
+        appendCommandLine("[ERROR] invalid response format", " log-line-command-error");
+      }
     } catch (error) {
       appendCommandLine(`[ERROR] ${window.PAApi.messageFor(error)}`, " log-line-command-error");
     }
+  };
+
+  // Format a single Console Record and append it to the log (ADR 0034)
+  const formatAndAppendConsoleRecord = (record) => {
+    if (!record || !record.type) return;
+
+    // Build the record line as shown in docs/console-protocol.md
+    // Each record is formatted as key=value pairs prefixed with "< "
+    let line = `< id=${record.id} type=${record.type}`;
+
+    if (record.type === "begin") {
+      line += ` operation=${record.operation}`;
+    } else if (record.type === "field") {
+      line += ` name=${record.name} value=${formatConsoleValue(record.value)}`;
+    } else if (record.type === "item") {
+      line += ` value=${formatConsoleValue(record.value)}`;
+    } else if (record.type === "result" || record.type === "end") {
+      line += ` status=${record.status} outcome=${record.outcome}`;
+      if (record.reason) {
+        line += ` reason=${record.reason}`;
+      }
+    }
+
+    // Determine CSS class based on status
+    let extraClass = " log-line-command";
+    if (record.status === "err") {
+      extraClass = " log-line-command-error";
+    }
+
+    appendCommandLine(line, extraClass);
+  };
+
+  // Format a console value for display (handle quoting if needed)
+  const formatConsoleValue = (value) => {
+    if (!value) return '""';
+    // If value contains spaces, =, or quotes, wrap in quotes
+    if (value.includes(" ") || value.includes("=") || value.includes('"')) {
+      return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+    return value;
   };
 
   const commonPrefix = (values) => {

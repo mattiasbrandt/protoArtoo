@@ -3640,3 +3640,19 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: sequenceStart
+- name: system.console
+  display_name: Controller Console
+  description: 'Browser adapter for the Controller Console (ADR 0034). Processes operations and returns Console Records.'
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/console
+  sse_event: null
+  cpp_enum: null
+  cpp_file: null
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+  executor: consoleExecuteCommand

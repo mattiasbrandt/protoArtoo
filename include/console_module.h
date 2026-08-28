@@ -86,7 +86,9 @@ typedef struct {
     void (*onRecordBegin)(uint32_t requestId, const char* operationType);
 
     // Called for each field in a status response
-    // name and value are both guaranteed to not be NULL.
+    // name and value are not NULL, but valid only during the callback's duration.
+    // The module reuses a single buffer for successive field emissions, so adapters
+    // that retain values must copy them into owned storage.
     void (*onRecordField)(uint32_t requestId, const char* name, const char* value);
 
     // Called for list items (T2+ scope)

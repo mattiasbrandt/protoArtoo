@@ -22,7 +22,7 @@
 base_commit: f0b0dbc
 ticket: 210
 domains: [system]
-row_count: 48
+row_count: 49
 rows:
 - name: system.action.disable-web-control
   type: action
@@ -1006,6 +1006,26 @@ rows:
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status; built by buildStatusJson
+- name: system.console
+  type: action
+  registry_api_path: /api/console
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:47 - webRegisterRoute("/api/console", WebMethod::kPost, handleConsolePost)
+  - include/api_console.h:12 - void handleConsolePost(WebRequest& req) declaration
+  - src/web/api_console.cpp:108 - void handleConsolePost(WebRequest& req) definition
+  - src/web/api_console.cpp:158 - consoleExecuteCommand(&consoleReq, &sink) command processor invocation
+  executor_or_core: consoleExecuteCommand
+  missing_metadata: []
+  notes: Console browser adapter; PostForm request handler, same processor as serial task
 - name: system.status.wifi
   type: status
   registry_api_path: /api/wifi
