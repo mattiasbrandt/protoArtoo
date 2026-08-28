@@ -5,7 +5,7 @@
 // The same command processor (consoleExecuteCommand) that the serial task uses,
 // driven by a web-specific sink that accumulates records into a JSON response.
 //
-// D2: The web sink copies field values into owned storage because the module
+// The web sink copies field values into owned storage because the module
 // reuses a single stack buffer for successive field emissions.
 // =============================================================================
 
@@ -34,7 +34,7 @@ struct ConsoleRecord {
     const char* value;
 };
 
-// D2: Arena holds copied values; all record pointers reference this storage
+// Arena holds copied values; all record pointers reference this storage
 struct ConsoleWebSink {
     ConsoleRecord records[CONSOLE_RESPONSE_RECORDS_MAX];
     size_t recordCount;
@@ -44,13 +44,16 @@ struct ConsoleWebSink {
 
 static ConsoleWebSink* g_currentWebSink = nullptr;
 
-// Helper: copy string into arena, return pointer
+// Helper: copy string into arena, return pointer.
+// D9: Truncate on overflow, never return the module's buffer (reintroduces dangling pointers).
 static const char* arenaStoreString(const char* src) {
     if (g_currentWebSink == nullptr || src == nullptr) return src;
     size_t len = strlen(src);
-    if (g_currentWebSink->arenaUsed + len + 1 > CONSOLE_RECORD_VALUE_ARENA) return src;
+    size_t available = CONSOLE_RECORD_VALUE_ARENA - g_currentWebSink->arenaUsed;
+    if (len + 1 > available) len = available > 1 ? available - 1 : 0;  // Truncate to fit
     char* dest = &g_currentWebSink->valueArena[g_currentWebSink->arenaUsed];
-    strcpy(dest, src);
+    if (len > 0) strncpy(dest, src, len);
+    dest[len] = '\0';
     g_currentWebSink->arenaUsed += len + 1;
     return dest;
 }
@@ -121,7 +124,7 @@ void handleConsolePost(WebRequest& req) {
         }
     }
 
-    // D5: Cast to (unsigned char) to avoid UB on high-bit chars
+    // Cast to (unsigned char) to avoid UB on high-bit chars
     size_t start = 0;
     while (command[start] && isspace((unsigned char)command[start])) start++;
     size_t end = strlen(command);
@@ -137,7 +140,7 @@ void handleConsolePost(WebRequest& req) {
     ConsoleWebSink webSink = {};
     g_currentWebSink = &webSink;
 
-    // D3: Pass FULL command line (not just first token)
+    // Pass FULL command line to module (not just first token, which enables "help system.status.health")
     ConsoleRequest consoleReq = {
         .requestId = consoleGetNextRequestId(),
         .source = CONSOLE_SOURCE_WEB,

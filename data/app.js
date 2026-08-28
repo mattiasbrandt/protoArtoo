@@ -705,8 +705,8 @@
       // Send command to the Console endpoint (ADR 0034)
       const result = await window.PAApi.postForm("/api/console", { command: token }, { timeoutMs: 5000 });
 
-      // Parse and display Console Records from the response
-      // D1: postForm returns {ok, status, data}, so access result.data
+      // Parse and display Console Records from the response.
+      // postForm returns {ok, status, data}, so access result.data (not result.records).
       if (result?.data?.records && Array.isArray(result.data.records)) {
         for (const record of result.data.records) {
           formatAndAppendConsoleRecord(record);
