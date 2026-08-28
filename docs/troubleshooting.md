@@ -291,6 +291,13 @@ problem. Use the documented **Network Recovery Mode** local gesture (3 rapid
 power cycles) to temporarily re-open WiFi Provisioning and fix the saved
 settings without erasing them.
 
+Check the network itself as well:
+
+- **WPA3-only WiFi networks are not supported; use WPA2 or WPA2/WPA3 mixed
+  mode.** A WPA3-only access point refuses the controller, and the symptom
+  looks the same as a wrong password: the join never completes. Mixed mode
+  (the common home-router default) works.
+
 ---
 
 ## References

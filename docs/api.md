@@ -361,6 +361,11 @@ curl -s -X POST http://artoo.local/api/dome/cmd \
 
 Fetches cached dome layout JSON from WiFi transport.
 
+The controller makes no HTTPS connections. The dome link's WiFi (fallback)
+transport and OTA both use plain `http://` on the local network, and the
+firmware is built without an HTTPS client, so an `https://` peer address
+will not connect.
+
 The layout is cached by the dome link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
 
 If the cache is empty or transport is not WiFi, returns `503` and sets a flag for the background task to fetch on the next loop.
