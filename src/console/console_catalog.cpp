@@ -5,12 +5,9 @@
 // DO NOT EDIT MANUALLY
 //
 // Operation Catalog - runtime table mapping operation names to descriptors,
-// parameter schemas, availability metadata, and executor references.
-// Help text (description, display_name) is stored in LittleFS.
-//
-// Executor references are stored as strings, not function pointers.
-// Resolution of executor symbols to function addresses happens at dispatch time
-// in the Console task, not at compile/link time.
+// parameter schemas, availability metadata, and help text addressing.
+// Help text (description, display_name, parameter schema, executor details)
+// is stored in LittleFS and addressed by offset/length.
 // =============================================================================
 
 #include "console_catalog.h"
@@ -21,164 +18,164 @@
 // =============================================================================
 
 static const ConsoleParamDescriptor g_params_drive_action_move[] = {
-    {"speed", "int16", "-1000", "1000", true},
-    {"steer", "int16", "-1000", "1000", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"speed", "int16", true},
+    {"steer", "int16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed[] = {
-    {"value", "float", "-1", "1.0", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"value", "float", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_steer[] = {
-    {"value", "float", "-1", "1.0", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"value", "float", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_slow[] = {
-    {"preset", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"preset", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_normal[] = {
-    {"preset", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"preset", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_turbo[] = {
-    {"preset", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"preset", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_move[] = {
-    {"speed", "float", "-1.0", "1.0", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"speed", "float", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_list_builtin_sequences[] = {
-    {"name", "string", NULL, NULL, false},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"name", "string", false},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_get_sequence[] = {
-    {"name", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"name", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_delete_sequence[] = {
-    {"name", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"name", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_test_sequence[] = {
-    {"name", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"name", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_play_track[] = {
-    {"track", "uint16", "1", "999", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"track", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_get_catalog[] = {
-    {"bank", "uint8", "1", "6", false},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"bank", "uint8", false},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_play_banked[] = {
-    {"bank", "uint8", "1", "6", true},
-    {"page", "string", NULL, NULL, true},
-    {"index", "uint16", "1", "65535", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"bank", "uint8", true},
+    {"page", "string", true},
+    {"index", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_mood_map[] = {
-    {"quiet", "uint16", "0", "4095", true},
-    {"mid", "uint16", "0", "4095", true},
-    {"full", "uint16", "0", "4095", true},
-    {"awakeplus", "uint16", "0", "4095", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"quiet", "uint16", true},
+    {"mid", "uint16", true},
+    {"full", "uint16", true},
+    {"awakeplus", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_category_range[] = {
-    {"lo_key", "string", NULL, NULL, true},
-    {"hi_key", "string", NULL, NULL, true},
-    {"lo", "uint16", NULL, NULL, true},
-    {"hi", "uint16", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"lo_key", "string", true},
+    {"hi_key", "string", true},
+    {"lo", "uint16", true},
+    {"hi", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_volume[] = {
-    {"volume", "uint8", "0", "30", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"volume", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_volume[] = {
-    {"volume", "uint8", "0", "30", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"volume", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_mood_category_map[] = {
-    {"quiet", "uint16", "0", "4095", true},
-    {"mid", "uint16", "0", "4095", true},
-    {"full", "uint16", "0", "4095", true},
-    {"awakeplus", "uint16", "0", "4095", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"quiet", "uint16", true},
+    {"mid", "uint16", true},
+    {"full", "uint16", true},
+    {"awakeplus", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_open[] = {
-    {"target", "string", "arm1", "arm2", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"target", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_close[] = {
-    {"target", "string", "arm1", "arm2", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"target", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_set_position[] = {
-    {"target", "string", "arm1", "arm2", true},
-    {"position_us", "uint16", "500", "2500", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"target", "string", true},
+    {"position_us", "uint16", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_color[] = {
-    {"r", "uint8", "0", "255", true},
-    {"g", "uint8", "0", "255", true},
-    {"b", "uint8", "0", "255", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"r", "uint8", true},
+    {"g", "uint8", true},
+    {"b", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_effect[] = {
-    {"effect", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"effect", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_pin[] = {
-    {"aux_led_pin", "uint8", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"aux_led_pin", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_count[] = {
-    {"aux_led_count", "uint8", "1", "255", true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"aux_led_count", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_mood[] = {
-    {"mood", "uint8", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"mood", "uint8", true},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_identity[] = {
-    {"droidName", "string", NULL, NULL, true},
-    {"mdnsUseName", "bool", NULL, NULL, false},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"droidName", "string", true},
+    {"mdnsUseName", "bool", false},
+    {NULL, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_rc_action_test_bindable[] = {
-    {"token", "string", NULL, NULL, true},
-    {NULL, NULL, NULL, NULL, false}  // terminator
+    {"token", "string", true},
+    {NULL, NULL, false}  // terminator
 };
 
 // =============================================================================
@@ -189,2282 +186,2472 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     {
         "drive.action.move",
         "action",
-        "Move",
-        "driveArbiterSubmit",
-        NULL,  // TODO: aliases for drive.action.move
+        NULL,  // aliases
         g_params_drive_action_move,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         true,  // safety_critical
+        true,  // executor_ready
+        0,  // help_offset
+        98,  // help_length
     },
     {
         "drive.action.speed",
         "action",
-        "Speed",
-        "driveArbiterSubmit",
-        NULL,  // TODO: aliases for drive.action.speed
+        NULL,  // aliases
         g_params_drive_action_speed,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        99,  // help_offset
+        107,  // help_length
     },
     {
         "drive.action.steer",
         "action",
-        "Steer",
-        "driveArbiterSubmit",
-        NULL,  // TODO: aliases for drive.action.steer
+        NULL,  // aliases
         g_params_drive_action_steer,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        207,  // help_offset
+        99,  // help_length
     },
     {
         "drive.action.speed-preset-slow",
         "action",
-        "Speed Preset Slow",
-        "applySpeedPresetRuntime",
-        NULL,  // TODO: aliases for drive.action.speed-preset-slow
+        NULL,  // aliases
         g_params_drive_action_speed_preset_slow,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        307,  // help_offset
+        148,  // help_length
     },
     {
         "drive.action.speed-preset-normal",
         "action",
-        "Speed Preset Normal",
-        "applySpeedPresetRuntime",
-        NULL,  // TODO: aliases for drive.action.speed-preset-normal
+        NULL,  // aliases
         g_params_drive_action_speed_preset_normal,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        456,  // help_offset
+        154,  // help_length
     },
     {
         "drive.action.speed-preset-turbo",
         "action",
-        "Speed Preset Turbo",
-        "applySpeedPresetRuntime",
-        NULL,  // TODO: aliases for drive.action.speed-preset-turbo
+        NULL,  // aliases
         g_params_drive_action_speed_preset_turbo,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        611,  // help_offset
+        151,  // help_length
     },
     {
         "drive.action.speed-preset-cycle",
         "action",
-        "Speed Preset Cycle",
-        "applySpeedPresetRuntime",
-        NULL,  // TODO: aliases for drive.action.speed-preset-cycle
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        763,  // help_offset
+        118,  // help_length
     },
     {
         "drive.status.current",
         "status",
-        "Drive Status",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for drive.status.current
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        882,  // help_offset
+        100,  // help_length
     },
     {
         "drive.event.failsafe-triggered",
         "event",
-        "Failsafe Triggered",
-        "failsafeTrigger",
-        NULL,  // TODO: aliases for drive.event.failsafe-triggered
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
+        true,  // executor_ready
+        983,  // help_offset
+        119,  // help_length
     },
     {
         "drive.config.speed-limit",
         "config",
-        "Speed Limit Setting",
-        "configApply",
-        NULL,  // TODO: aliases for drive.config.speed-limit
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1103,  // help_offset
+        95,  // help_length
     },
     {
         "dome.action.set-speed",
         "action",
-        "Dome Speed",
-        "domeCmdQueue",
-        NULL,  // TODO: aliases for dome.action.set-speed
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1199,  // help_offset
+        80,  // help_length
     },
     {
         "dome.action.send-command",
         "action",
-        "Send Dome Command",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.send-command
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1280,  // help_offset
+        109,  // help_length
     },
     {
         "dome.action.marcduino-sequence",
         "action",
-        "Marcduino Sequence",
-        "parseMarcduinoCommand",
-        NULL,  // TODO: aliases for dome.action.marcduino-sequence
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1390,  // help_offset
+        139,  // help_length
     },
     {
         "dome.action.marcduino-command",
         "action",
-        "Marcduino Command",
-        "parseMarcduinoCommand",
-        NULL,  // TODO: aliases for dome.action.marcduino-command
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1530,  // help_offset
+        123,  // help_length
     },
     {
         "dome.action.dome-sequence",
         "action",
-        "Dome Sequence",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.dome-sequence
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        1654,  // help_offset
+        560,  // help_length
     },
     {
         "dome.action.droid-sequence-scream",
         "action",
-        "Scream",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-scream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2215,  // help_offset
+        121,  // help_length
     },
     {
         "dome.action.droid-sequence-wave",
         "action",
-        "Wave",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-wave
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2337,  // help_offset
+        105,  // help_length
     },
     {
         "dome.action.droid-sequence-fast-wave",
         "action",
-        "Fast Wave",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-fast-wave
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2443,  // help_offset
+        115,  // help_length
     },
     {
         "dome.action.droid-sequence-open-wave",
         "action",
-        "Open Wave",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-open-wave
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2559,  // help_offset
+        115,  // help_length
     },
     {
         "dome.action.droid-sequence-beep-cantina",
         "action",
-        "Beep Cantina",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-beep-cantina
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2675,  // help_offset
+        137,  // help_length
     },
     {
         "dome.action.droid-sequence-faint",
         "action",
-        "Faint",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-faint
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2813,  // help_offset
+        124,  // help_length
     },
     {
         "dome.action.droid-sequence-cantina",
         "action",
-        "Cantina Dance",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-cantina
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        2938,  // help_offset
+        132,  // help_length
     },
     {
         "dome.action.droid-sequence-leia",
         "action",
-        "Leia Message",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-leia
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3071,  // help_offset
+        124,  // help_length
     },
     {
         "dome.action.droid-sequence-disco",
         "action",
-        "Disco",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-disco
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3196,  // help_offset
+        120,  // help_length
     },
     {
         "dome.action.droid-sequence-screams",
         "action",
-        "Screams",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-screams
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3317,  // help_offset
+        124,  // help_length
     },
     {
         "dome.action.droid-sequence-wiggle",
         "action",
-        "Panel Wiggle",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.droid-sequence-wiggle
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3442,  // help_offset
+        115,  // help_length
     },
     {
         "dome.api.get-layout",
         "action",
-        "Get Dome Layout",
-        "domeLayoutCacheReadChunk",
-        NULL,  // TODO: aliases for dome.api.get-layout
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3558,  // help_offset
+        320,  // help_length
     },
     {
         "dome.action.sequence-stop",
         "action",
-        "Stop Sequence",
-        "robotState.seqStopRequested",
-        NULL,  // TODO: aliases for dome.action.sequence-stop
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        3879,  // help_offset
+        296,  // help_length
     },
     {
         "dome.event.cue-scream",
         "event",
-        "BD:SCREAM",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-scream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4176,  // help_offset
+        148,  // help_length
     },
     {
         "dome.event.cue-happy",
         "event",
-        "BD:HAPPY",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-happy
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4325,  // help_offset
+        149,  // help_length
     },
     {
         "dome.event.cue-overload",
         "event",
-        "BD:OVERLOAD",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-overload
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4475,  // help_offset
+        158,  // help_length
     },
     {
         "dome.event.cue-alarm",
         "event",
-        "BD:ALARM",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-alarm
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4634,  // help_offset
+        111,  // help_length
     },
     {
         "dome.event.cue-vader",
         "event",
-        "BD:VADER",
-        "audioQueuePlaySlot",
-        NULL,  // TODO: aliases for dome.event.cue-vader
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4746,  // help_offset
+        118,  // help_length
     },
     {
         "dome.event.cue-rockmarch",
         "event",
-        "BD:ROCKMARCH",
-        "audioQueuePlaySlot",
-        NULL,  // TODO: aliases for dome.event.cue-rockmarch
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        4865,  // help_offset
+        144,  // help_length
     },
     {
         "dome.event.cue-leia",
         "event",
-        "BD:LEIA",
-        "audioQueuePlaySlot",
-        NULL,  // TODO: aliases for dome.event.cue-leia
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5010,  // help_offset
+        115,  // help_length
     },
     {
         "dome.event.cue-cantina",
         "event",
-        "BD:CANTINA",
-        "audioQueuePlaySlot",
-        NULL,  // TODO: aliases for dome.event.cue-cantina
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5126,  // help_offset
+        124,  // help_length
     },
     {
         "dome.event.cue-heart",
         "event",
-        "BD:HEART",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-heart
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5251,  // help_offset
+        117,  // help_length
     },
     {
         "dome.event.cue-hello",
         "event",
-        "BD:HELLO",
-        "audioQueuePlayCategory",
-        NULL,  // TODO: aliases for dome.event.cue-hello
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5369,  // help_offset
+        112,  // help_length
     },
     {
         "dome.event.cue-reset",
         "event",
-        "BD:RESET",
-        "audioQueueTrackStop",
-        NULL,  // TODO: aliases for dome.event.cue-reset
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5482,  // help_offset
+        196,  // help_length
     },
     {
         "dome.status.current",
         "status",
-        "Dome Status",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for dome.status.current
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5679,  // help_offset
+        94,  // help_length
     },
     {
         "dome.action.move",
         "action",
-        "Dome Speed (Web)",
-        "domeCmdQueue",
-        NULL,  // TODO: aliases for dome.action.move
+        NULL,  // aliases
         g_params_dome_action_move,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        5774,  // help_offset
+        249,  // help_length
     },
     {
         "dome.api.list-sequences",
         "action",
-        "List Learned Sequences",
-        "seqStoreIndexAt",
-        NULL,  // TODO: aliases for dome.api.list-sequences
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6024,  // help_offset
+        161,  // help_length
     },
     {
         "dome.api.list-builtin-sequences",
         "action",
-        "List Factory Sequences",
-        "sequenceCatalogAt",
-        NULL,  // TODO: aliases for dome.api.list-builtin-sequences
+        NULL,  // aliases
         g_params_dome_api_list_builtin_sequences,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6186,  // help_offset
+        257,  // help_length
     },
     {
         "dome.api.get-sequence",
         "action",
-        "Get Learned Sequence",
-        "seqStoreReadFileSlice",
-        NULL,  // TODO: aliases for dome.api.get-sequence
+        NULL,  // aliases
         g_params_dome_api_get_sequence,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6444,  // help_offset
+        129,  // help_length
     },
     {
         "dome.action.save-sequence",
         "action",
-        "Save Learned Sequence",
-        "seqStoreSave",
-        NULL,  // TODO: aliases for dome.action.save-sequence
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6574,  // help_offset
+        143,  // help_length
     },
     {
         "dome.action.delete-sequence",
         "action",
-        "Memory Wipe",
-        "seqStoreDelete",
-        NULL,  // TODO: aliases for dome.action.delete-sequence
+        NULL,  // aliases
         g_params_dome_action_delete_sequence,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6718,  // help_offset
+        221,  // help_length
     },
     {
         "dome.action.test-sequence",
         "action",
-        "Test Sequence",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.action.test-sequence
+        NULL,  // aliases
         g_params_dome_action_test_sequence,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        6940,  // help_offset
+        235,  // help_length
     },
     {
         "dome.api.get-sequence-last-run",
         "action",
-        "Get Last Sequence Run",
-        "seqEvidenceSnapshot",
-        NULL,  // TODO: aliases for dome.api.get-sequence-last-run
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7176,  // help_offset
+        310,  // help_length
     },
     {
         "sound.action.play-track",
         "action",
-        "Play Track",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.play-track
+        NULL,  // aliases
         g_params_sound_action_play_track,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7487,  // help_offset
+        115,  // help_length
     },
     {
         "sound.action.play-track-scream",
         "action",
-        "Play Scream",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-scream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7603,  // help_offset
+        112,  // help_length
     },
     {
         "sound.action.play-track-faint",
         "action",
-        "Play Short Circuit",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-faint
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7716,  // help_offset
+        132,  // help_length
     },
     {
         "sound.action.play-track-leia",
         "action",
-        "Play Leia Message",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-leia
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7849,  // help_offset
+        120,  // help_length
     },
     {
         "sound.action.play-track-cantina-short",
         "action",
-        "Play Short Cantina",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-cantina-short
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        7970,  // help_offset
+        136,  // help_length
     },
     {
         "sound.action.play-track-cantina-long",
         "action",
-        "Play Long Cantina",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-cantina-long
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8107,  // help_offset
+        142,  // help_length
     },
     {
         "sound.action.play-track-sw-theme",
         "action",
-        "Play Star Wars Theme",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-sw-theme
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8250,  // help_offset
+        139,  // help_length
     },
     {
         "sound.action.play-track-imperial-march",
         "action",
-        "Play Imperial March",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-imperial-march
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8390,  // help_offset
+        139,  // help_length
     },
     {
         "sound.action.play-track-startup",
         "action",
-        "Play Startup Sound",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-startup
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8530,  // help_offset
+        129,  // help_length
     },
     {
         "sound.action.play-track-disco",
         "action",
-        "Play Disco",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.action.play-track-disco
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8660,  // help_offset
+        150,  // help_length
     },
     {
         "sound.api.get-catalog",
         "action",
-        "Get Catalog",
-        "audioGetCatalogEntries",
-        NULL,  // TODO: aliases for sound.api.get-catalog
+        NULL,  // aliases
         g_params_sound_api_get_catalog,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8811,  // help_offset
+        145,  // help_length
     },
     {
         "sound.api.refresh-catalog",
         "action",
-        "Refresh Catalog",
-        "audioQueueRefreshCatalog",
-        NULL,  // TODO: aliases for sound.api.refresh-catalog
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        8957,  // help_offset
+        124,  // help_length
     },
     {
         "sound.api.play-banked",
         "action",
-        "Play Banked Entry",
-        "audioQueuePlayTrackBanked",
-        NULL,  // TODO: aliases for sound.api.play-banked
+        NULL,  // aliases
         g_params_sound_api_play_banked,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        9082,  // help_offset
+        160,  // help_length
     },
     {
         "sound.api.get-mood-map",
         "action",
-        "Get Mood Category Map",
-        "configCacheRead",
-        NULL,  // TODO: aliases for sound.api.get-mood-map
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        9243,  // help_offset
+        126,  // help_length
     },
     {
         "sound.action.set-mood-map",
         "action",
-        "Set Mood Category Map",
-        "audioMoodMapApply",
-        NULL,  // TODO: aliases for sound.action.set-mood-map
+        NULL,  // aliases
         g_params_sound_action_set_mood_map,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        9370,  // help_offset
+        205,  // help_length
     },
     {
         "sound.action.set-category-range",
         "action",
-        "Set Category Range",
-        "audioCategoryRangeApply",
-        NULL,  // TODO: aliases for sound.action.set-category-range
+        NULL,  // aliases
         g_params_sound_action_set_category_range,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        9576,  // help_offset
+        264,  // help_length
     },
     {
         "sound.action.query-status",
         "action",
-        "Query Module Status",
-        "audioQueueQueryStatus",
-        NULL,  // TODO: aliases for sound.action.query-status
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        9841,  // help_offset
+        207,  // help_length
     },
     {
         "sound.action.track-stop",
         "action",
-        "Track Stop",
-        "audioQueueTrackStop",
-        NULL,  // TODO: aliases for sound.action.track-stop
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        10049,  // help_offset
+        382,  // help_length
     },
     {
         "sound.action.quiet",
         "action",
-        "Quiet",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.quiet
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        10432,  // help_offset
+        287,  // help_length
     },
     {
         "sound.action.set-volume",
         "action",
-        "Set Volume",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.set-volume
+        NULL,  // aliases
         g_params_sound_action_set_volume,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        10720,  // help_offset
+        118,  // help_length
     },
     {
         "sound.action.volume-up",
         "action",
-        "Volume Up",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.volume-up
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        10839,  // help_offset
+        92,  // help_length
     },
     {
         "sound.action.volume-down",
         "action",
-        "Volume Down",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.volume-down
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        10932,  // help_offset
+        96,  // help_length
     },
     {
         "sound.action.volume-preset-mid",
         "action",
-        "Volume Preset Mid",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.volume-preset-mid
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11029,  // help_offset
+        103,  // help_length
     },
     {
         "sound.action.volume-preset-max",
         "action",
-        "Volume Preset Max",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.volume-preset-max
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11133,  // help_offset
+        103,  // help_length
     },
     {
         "sound.action.volume-preset-min",
         "action",
-        "Volume Preset Min",
-        "audioQueueSetVolume",
-        NULL,  // TODO: aliases for sound.action.volume-preset-min
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11237,  // help_offset
+        102,  // help_length
     },
     {
         "sound.action.dollar-command",
         "action",
-        "Raw Sound Command",
-        "audioQueueDollar",
-        NULL,  // TODO: aliases for sound.action.dollar-command
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11340,  // help_offset
+        116,  // help_length
     },
     {
         "sound.action.random-on",
         "action",
-        "Random Sound On",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-on
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11457,  // help_offset
+        98,  // help_length
     },
     {
         "sound.action.random-off",
         "action",
-        "Random Sound Off",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-off
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11556,  // help_offset
+        101,  // help_length
     },
     {
         "sound.action.random-general",
         "action",
-        "Random General",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-general
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11658,  // help_offset
+        128,  // help_length
     },
     {
         "sound.action.random-chatty",
         "action",
-        "Random Chatty",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-chatty
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11787,  // help_offset
+        125,  // help_length
     },
     {
         "sound.action.random-happy",
         "action",
-        "Random Happy",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-happy
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        11913,  // help_offset
+        122,  // help_length
     },
     {
         "sound.action.random-processing",
         "action",
-        "Random Processing",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-processing
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12036,  // help_offset
+        137,  // help_length
     },
     {
         "sound.action.random-sad",
         "action",
-        "Random Sad",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-sad
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12174,  // help_offset
+        116,  // help_length
     },
     {
         "sound.action.random-sentimental",
         "action",
-        "Random Sentimental",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-sentimental
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12291,  // help_offset
+        140,  // help_length
     },
     {
         "sound.action.random-humming",
         "action",
-        "Random Humming",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-humming
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12432,  // help_offset
+        128,  // help_length
     },
     {
         "sound.action.random-scream",
         "action",
-        "Random Scream",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-scream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12561,  // help_offset
+        125,  // help_length
     },
     {
         "sound.action.random-surprised",
         "action",
-        "Random Surprised",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-surprised
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12687,  // help_offset
+        134,  // help_length
     },
     {
         "sound.action.random-alert",
         "action",
-        "Random Alert",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-alert
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12822,  // help_offset
+        122,  // help_length
     },
     {
         "sound.action.random-snarky",
         "action",
-        "Random Snarky",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-snarky
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        12945,  // help_offset
+        125,  // help_length
     },
     {
         "sound.action.random-whistle",
         "action",
-        "Random Whistle",
-        "audioQueuePlayTrack",
-        NULL,  // TODO: aliases for sound.action.random-whistle
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13071,  // help_offset
+        128,  // help_length
     },
     {
         "sound.status.current",
         "status",
-        "Sound Status",
-        "Core 0",
-        NULL,  // TODO: aliases for sound.status.current
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13200,  // help_offset
+        91,  // help_length
     },
     {
         "sound.config.volume",
         "config",
-        "Volume",
-        "configApply",
-        NULL,  // TODO: aliases for sound.config.volume
+        NULL,  // aliases
         g_params_sound_config_volume,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13292,  // help_offset
+        81,  // help_length
     },
     {
         "sound.config.random-min",
         "config",
-        "Random Min Track",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.random-min
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13374,  // help_offset
+        106,  // help_length
     },
     {
         "sound.config.random-max",
         "config",
-        "Random Max Track",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.random-max
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13481,  // help_offset
+        107,  // help_length
     },
     {
         "sound.config.mood-interval-quiet",
         "config",
-        "Quiet Mode Interval",
-        "configApply",
-        NULL,  // TODO: aliases for sound.config.mood-interval-quiet
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13589,  // help_offset
+        114,  // help_length
     },
     {
         "sound.config.mood-interval-mid",
         "config",
-        "Mid-Awake Interval",
-        "configApply",
-        NULL,  // TODO: aliases for sound.config.mood-interval-mid
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13704,  // help_offset
+        115,  // help_length
     },
     {
         "sound.config.mood-interval-full",
         "config",
-        "Full-Awake Interval",
-        "configApply",
-        NULL,  // TODO: aliases for sound.config.mood-interval-full
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13820,  // help_offset
+        118,  // help_length
     },
     {
         "sound.config.mood-interval-awake-plus",
         "config",
-        "Awake+ Interval",
-        "configApply",
-        NULL,  // TODO: aliases for sound.config.mood-interval-awake-plus
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        13939,  // help_offset
+        116,  // help_length
     },
     {
         "sound.config.startup-track",
         "config",
-        "Startup Boot Sound Track ($B)",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.startup-track
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14056,  // help_offset
+        175,  // help_length
     },
     {
         "sound.config.boot-complete-track",
         "config",
-        "Boot Complete System Track",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.boot-complete-track
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14232,  // help_offset
+        176,  // help_length
     },
     {
         "sound.config.track-assignments",
         "config",
-        "Track Assignments",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.track-assignments
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14409,  // help_offset
+        174,  // help_length
     },
     {
         "sound.config.system-track-assignments",
         "config",
-        "System Sound Assignments",
-        "audioTracksApply",
-        NULL,  // TODO: aliases for sound.config.system-track-assignments
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14584,  // help_offset
+        167,  // help_length
     },
     {
         "sound.config.category-ranges",
         "config",
-        "Category Ranges",
-        "audioCategoryRangeApply",
-        NULL,  // TODO: aliases for sound.config.category-ranges
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14752,  // help_offset
+        140,  // help_length
     },
     {
         "sound.config.mood-category-map",
         "config",
-        "Mood Category Map",
-        "audioMoodMapApply",
-        NULL,  // TODO: aliases for sound.config.mood-category-map
+        NULL,  // aliases
         g_params_sound_config_mood_category_map,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        14893,  // help_offset
+        582,  // help_length
     },
     {
         "servo.action.open",
         "action",
-        "Open",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.open
+        NULL,  // aliases
         g_params_servo_action_open,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        15476,  // help_offset
+        106,  // help_length
     },
     {
         "servo.action.close",
         "action",
-        "Close",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.close
+        NULL,  // aliases
         g_params_servo_action_close,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        15583,  // help_offset
+        111,  // help_length
     },
     {
         "servo.action.set-position",
         "action",
-        "Set Position",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.set-position
+        NULL,  // aliases
         g_params_servo_action_set_position,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        15695,  // help_offset
+        137,  // help_length
     },
     {
         "servo.action.stop",
         "action",
-        "Stop",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.stop
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        15833,  // help_offset
+        83,  // help_length
     },
     {
         "servo.action.toggle-arm1",
         "action",
-        "ARM1 Toggle",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.toggle-arm1
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        15917,  // help_offset
+        98,  // help_length
     },
     {
         "servo.action.toggle-arm2",
         "action",
-        "ARM2 Toggle",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.toggle-arm2
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16016,  // help_offset
+        98,  // help_length
     },
     {
         "servo.action.toggle-aux1",
         "action",
-        "AUX1 Toggle",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.toggle-aux1
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16115,  // help_offset
+        98,  // help_length
     },
     {
         "servo.action.toggle-aux2",
         "action",
-        "AUX2 Toggle",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.toggle-aux2
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16214,  // help_offset
+        98,  // help_length
     },
     {
         "servo.action.toggle-aux3",
         "action",
-        "AUX3 Toggle",
-        "servoCmdQueue",
-        NULL,  // TODO: aliases for servo.action.toggle-aux3
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16313,  // help_offset
+        98,  // help_length
     },
     {
         "servo.status.current",
         "status",
-        "Servo Status",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for servo.status.current
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16412,  // help_offset
+        99,  // help_length
     },
     {
         "aux.action.led-color",
         "action",
-        "LED Color",
-        "auxLedQueue",
-        NULL,  // TODO: aliases for aux.action.led-color
+        NULL,  // aliases
         g_params_aux_action_led_color,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16512,  // help_offset
+        100,  // help_length
     },
     {
         "aux.action.led-effect",
         "action",
-        "LED Effect",
-        "auxLedQueue",
-        NULL,  // TODO: aliases for aux.action.led-effect
+        NULL,  // aliases
         g_params_aux_action_led_effect,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16613,  // help_offset
+        90,  // help_length
     },
     {
         "aux.status.led-state",
         "status",
-        "AUX LED State",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for aux.status.led-state
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16704,  // help_offset
+        100,  // help_length
     },
     {
         "aux.config.led-pin",
         "config",
-        "LED Header Selection",
-        "configApply",
-        NULL,  // TODO: aliases for aux.config.led-pin
+        NULL,  // aliases
         g_params_aux_config_led_pin,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16805,  // help_offset
+        146,  // help_length
     },
     {
         "aux.config.led-count",
         "config",
-        "LED Count",
-        "configApply",
-        NULL,  // TODO: aliases for aux.config.led-count
+        NULL,  // aliases
         g_params_aux_config_led_count,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        16952,  // help_offset
+        105,  // help_length
     },
     {
         "system.action.set-mode",
         "action",
-        "Set Mode",
-        "commandedSetStationary",
-        NULL,  // TODO: aliases for system.action.set-mode
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17058,  // help_offset
+        98,  // help_length
     },
     {
         "system.action.estop",
         "action",
-        "Emergency Stop",
-        "failsafeTrigger",
-        NULL,  // TODO: aliases for system.action.estop
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
+        true,  // executor_ready
+        17157,  // help_offset
+        114,  // help_length
     },
     {
         "system.action.estop-clear",
         "action",
-        "Clear E-Stop",
-        "failsafeClearEstop",
-        NULL,  // TODO: aliases for system.action.estop-clear
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
+        true,  // executor_ready
+        17272,  // help_offset
+        114,  // help_length
     },
     {
         "system.action.enable-web-control",
         "action",
-        "Enable Web Control",
-        "commandedSetWebControl",
-        NULL,  // TODO: aliases for system.action.enable-web-control
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17387,  // help_offset
+        116,  // help_length
     },
     {
         "system.action.disable-web-control",
         "action",
-        "Disable Web Control",
-        "commandedSetWebControl",
-        NULL,  // TODO: aliases for system.action.disable-web-control
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17504,  // help_offset
+        122,  // help_length
     },
     {
         "system.action.reboot",
         "action",
-        "Reboot",
-        "requestSystemRestart",
-        NULL,  // TODO: aliases for system.action.reboot
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17627,  // help_offset
+        81,  // help_length
     },
     {
         "system.action.set-mood",
         "action",
-        "Set Mood",
-        "applyMood",
-        NULL,  // TODO: aliases for system.action.set-mood
+        NULL,  // aliases
         g_params_system_action_set_mood,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17709,  // help_offset
+        141,  // help_length
     },
     {
         "system.action.sleep",
         "action",
-        "Sleep",
-        "commandedSetSleep",
-        NULL,  // TODO: aliases for system.action.sleep
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        17851,  // help_offset
+        245,  // help_length
     },
     {
         "system.action.wake",
         "action",
-        "Wake",
-        "commandedSetSleep",
-        NULL,  // TODO: aliases for system.action.wake
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18097,  // help_offset
+        207,  // help_length
     },
     {
         "system.action.sleep-toggle",
         "action",
-        "Sleep / Wake Toggle",
-        "commandedSetSleep",
-        NULL,  // TODO: aliases for system.action.sleep-toggle
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18305,  // help_offset
+        124,  // help_length
     },
     {
         "system.event.drives-engaged",
         "event",
-        "Drives Engaged",
-        "none",
-        NULL,  // TODO: aliases for system.event.drives-engaged
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18430,  // help_offset
+        108,  // help_length
     },
     {
         "system.event.dome-enabled",
         "event",
-        "Dome Enabled",
-        "none",
-        NULL,  // TODO: aliases for system.event.dome-enabled
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18539,  // help_offset
+        87,  // help_length
     },
     {
         "system.event.boot-complete",
         "event",
-        "Boot Complete",
-        "none",
-        NULL,  // TODO: aliases for system.event.boot-complete
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18627,  // help_offset
+        132,  // help_length
     },
     {
         "system.status.sleep-mode",
         "status",
-        "Sleep Mode",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.sleep-mode
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18760,  // help_offset
+        188,  // help_length
     },
     {
         "system.status.mood",
         "status",
-        "Mood",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.mood
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        18949,  // help_offset
+        120,  // help_length
     },
     {
         "system.config.mood",
         "config",
-        "Active Mood",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.mood
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19070,  // help_offset
+        75,  // help_length
     },
     {
         "system.config.enable_arm1",
         "config",
-        "ARM1",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_arm1
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19146,  // help_offset
+        92,  // help_length
     },
     {
         "system.config.enable_arm2",
         "config",
-        "ARM2",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_arm2
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19239,  // help_offset
+        92,  // help_length
     },
     {
         "system.config.enable_aux1",
         "config",
-        "AUX1",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_aux1
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19332,  // help_offset
+        90,  // help_length
     },
     {
         "system.config.enable_aux2",
         "config",
-        "AUX2",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_aux2
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19423,  // help_offset
+        90,  // help_length
     },
     {
         "system.config.enable_aux3",
         "config",
-        "AUX3",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_aux3
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19514,  // help_offset
+        90,  // help_length
     },
     {
         "system.config.enable_dome_esc",
         "config",
-        "Dome Motor",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_dome_esc
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19605,  // help_offset
+        110,  // help_length
     },
     {
         "system.config.enable_rc_ch1",
         "config",
-        "RC CH1",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch1
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19716,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_rc_ch2",
         "config",
-        "RC CH2",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch2
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19814,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_rc_ch3",
         "config",
-        "RC CH3",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch3
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        19912,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_rc_ch4",
         "config",
-        "RC CH4",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch4
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20010,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_rc_ch5",
         "config",
-        "RC CH5",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch5
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20108,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_rc_ch6",
         "config",
-        "RC CH6",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_rc_ch6
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20206,  // help_offset
+        97,  // help_length
     },
     {
         "system.config.enable_drive",
         "config",
-        "S1 — Hoverboard",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_drive
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20304,  // help_offset
+        107,  // help_length
     },
     {
         "system.config.enable_audio",
         "config",
-        "S2 — Sound",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_audio
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20412,  // help_offset
+        87,  // help_length
     },
     {
         "system.config.enable_protor2link",
         "config",
-        "S3 — Dome Control",
-        "configApply",
-        NULL,  // TODO: aliases for system.config.enable_protor2link
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20500,  // help_offset
+        103,  // help_length
     },
     {
         "system.status.health",
         "status",
-        "Health",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.health
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20604,  // help_offset
+        104,  // help_length
     },
     {
         "system.status.dashboard-health",
         "status",
-        "Dashboard Health Signals",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.dashboard-health
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20709,  // help_offset
+        221,  // help_length
     },
     {
         "system.status.logs",
         "status",
-        "Logs",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.logs
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20931,  // help_offset
+        66,  // help_length
     },
     {
         "system.status.wifi",
         "status",
-        "WiFi",
-        "buildStatusJson",
-        NULL,  // TODO: aliases for system.status.wifi
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        20998,  // help_offset
+        104,  // help_length
     },
     {
         "dome.status.serial-link",
         "status",
-        "Dome Serial Link",
-        "buildSerialJson",
-        NULL,  // TODO: aliases for dome.status.serial-link
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        21103,  // help_offset
+        102,  // help_length
     },
     {
         "system.api.get-identity",
         "action",
-        "Get Droid Identity",
-        "sendIdentityResponse",
-        NULL,  // TODO: aliases for system.api.get-identity
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        21206,  // help_offset
+        108,  // help_length
     },
     {
         "system.action.set-identity",
         "action",
-        "Set Droid Identity",
-        "configCacheApply",
-        NULL,  // TODO: aliases for system.action.set-identity
+        NULL,  // aliases
         g_params_system_action_set_identity,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        21315,  // help_offset
+        198,  // help_length
     },
     {
         "system.api.get-profiler",
         "action",
-        "Get Heap Profiler Snapshot",
-        "buildProfilerJson",
-        NULL,  // TODO: aliases for system.api.get-profiler
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        21514,  // help_offset
+        351,  // help_length
     },
     {
         "system.action.profiler-trace-start",
         "action",
-        "Start Heap Trace",
-        "heap_trace_start",
-        NULL,  // TODO: aliases for system.action.profiler-trace-start
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        21866,  // help_offset
+        264,  // help_length
     },
     {
         "system.action.profiler-trace-stop",
         "action",
-        "Stop Heap Trace",
-        "heap_trace_stop",
-        NULL,  // TODO: aliases for system.action.profiler-trace-stop
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22131,  // help_offset
+        141,  // help_length
     },
     {
         "system.api.get-coredump-status",
         "action",
-        "Get Coredump Status",
-        "none",
-        NULL,  // TODO: aliases for system.api.get-coredump-status
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22273,  // help_offset
+        138,  // help_length
     },
     {
         "system.api.get-coredump",
         "action",
-        "Download Coredump",
-        "none",
-        NULL,  // TODO: aliases for system.api.get-coredump
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22412,  // help_offset
+        207,  // help_length
     },
     {
         "system.action.erase-coredump",
         "action",
-        "Erase Coredump",
-        "esp_core_dump_image_erase",
-        NULL,  // TODO: aliases for system.action.erase-coredump
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22620,  // help_offset
+        123,  // help_length
     },
     {
         "system.api.get-admission-trace",
         "action",
-        "Get Admission Trace",
-        "fillAdmissionTraceResponse",
-        NULL,  // TODO: aliases for system.api.get-admission-trace
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22744,  // help_offset
+        251,  // help_length
     },
     {
         "system.api.get-validation",
         "action",
-        "Get Validation Snapshot",
-        "populateValidationJson",
-        NULL,  // TODO: aliases for system.api.get-validation
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        22996,  // help_offset
+        140,  // help_length
     },
     {
         "system.action.upload-firmware",
         "action",
-        "Upload Firmware",
-        "none",
-        NULL,  // TODO: aliases for system.action.upload-firmware
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23137,  // help_offset
+        118,  // help_length
     },
     {
         "system.action.upload-filesystem",
         "action",
-        "Upload Filesystem",
-        "none",
-        NULL,  // TODO: aliases for system.action.upload-filesystem
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23256,  // help_offset
+        190,  // help_length
     },
     {
         "system.api.event-stream",
         "status",
-        "Event Stream",
-        "none",
-        NULL,  // TODO: aliases for system.api.event-stream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23447,  // help_offset
+        120,  // help_length
     },
     {
         "rc.status.snapshot",
         "status",
-        "RC Snapshot",
-        "captureRcDiagnosticsSnapshot",
-        NULL,  // TODO: aliases for rc.status.snapshot
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23568,  // help_offset
+        125,  // help_length
     },
     {
         "rc.action.toggle-debug",
         "action",
-        "Toggle RC Debug",
-        "commandedSetRcDebug",
-        NULL,  // TODO: aliases for rc.action.toggle-debug
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23694,  // help_offset
+        104,  // help_length
     },
     {
         "rc.api.get-bindable-actions",
         "action",
-        "List Bindable Actions",
-        "fillActionsResponse",
-        NULL,  // TODO: aliases for rc.api.get-bindable-actions
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23799,  // help_offset
+        148,  // help_length
     },
     {
         "rc.api.get-map",
         "action",
-        "Get RC Map",
-        "populateRcMapJson",
-        NULL,  // TODO: aliases for rc.api.get-map
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        23948,  // help_offset
+        85,  // help_length
     },
     {
         "rc.action.set-map",
         "action",
-        "Set RC Map",
-        "rcMapApply",
-        NULL,  // TODO: aliases for rc.action.set-map
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24034,  // help_offset
+        194,  // help_length
     },
     {
         "rc.action.test-bindable",
         "action",
-        "Test Bindable Action",
-        "dispatchRcTriggerActionTest",
-        NULL,  // TODO: aliases for rc.action.test-bindable
+        NULL,  // aliases
         g_params_rc_action_test_bindable,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24229,  // help_offset
+        177,  // help_length
     },
     {
         "rc.config.mode",
         "config",
-        "RC Mode",
-        "rcMapApply",
-        NULL,  // TODO: aliases for rc.config.mode
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24407,  // help_offset
+        96,  // help_length
     },
     {
         "dome.seq.vader",
         "action",
-        "DM:VADER — Imperial March",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.vader
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24504,  // help_offset
+        152,  // help_length
     },
     {
         "dome.seq.hello",
         "action",
-        "DM:HELLO — Hello There",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.hello
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24657,  // help_offset
+        125,  // help_length
     },
     {
         "dome.seq.nod",
         "action",
-        "DM:NOD — Acknowledgment nod",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.nod
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24783,  // help_offset
+        149,  // help_length
     },
     {
         "dome.seq.flutter",
         "action",
-        "DM:FLUTTER — Panel flutter",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.flutter
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        24933,  // help_offset
+        139,  // help_length
     },
     {
         "dome.seq.bloom",
         "action",
-        "DM:BLOOM — Pie bloom",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.bloom
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25073,  // help_offset
+        154,  // help_length
     },
     {
         "dome.seq.leia",
         "action",
-        "DM:LEIA — Leia message",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.leia
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25228,  // help_offset
+        152,  // help_length
     },
     {
         "dome.seq.alarm",
         "action",
-        "DM:ALARM — Alarm",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.alarm
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25381,  // help_offset
+        147,  // help_length
     },
     {
         "dome.seq.heart",
         "action",
-        "DM:HEART — Heart",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.heart
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25529,  // help_offset
+        157,  // help_length
     },
     {
         "dome.seq.reset",
         "action",
-        "DM:RESET — Reset all",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.reset
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25687,  // help_offset
+        165,  // help_length
     },
     {
         "dome.seq.pies",
         "action",
-        "DM:PIES — Pie panels toggle",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.pies
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        25853,  // help_offset
+        168,  // help_length
     },
     {
         "dome.seq.low",
         "action",
-        "DM:LOW — Ring panels toggle",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.low
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26022,  // help_offset
+        174,  // help_length
     },
     {
         "dome.seq.openall",
         "action",
-        "DM:OPENALL — All panels toggle",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.openall
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26197,  // help_offset
+        196,  // help_length
     },
     {
         "dome.seq.cantina",
         "action",
-        "DM:CANTINA — Cantina dance",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.cantina
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26394,  // help_offset
+        171,  // help_length
     },
     {
         "dome.seq.rockmarch",
         "action",
-        "DM:ROCKMARCH — Rock march",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.rockmarch
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26566,  // help_offset
+        156,  // help_length
     },
     {
         "dome.seq.scream",
         "action",
-        "DM:SCREAM — Scream",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.scream
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26723,  // help_offset
+        198,  // help_length
     },
     {
         "dome.seq.overload",
         "action",
-        "DM:OVERLOAD — Overload",
-        "sequenceStart",
-        NULL,  // TODO: aliases for dome.seq.overload
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        26922,  // help_offset
+        215,  // help_length
     },
     {
         "system.console",
         "action",
-        "Controller Console",
-        "consoleExecuteCommand",
-        NULL,  // TODO: aliases for system.console
+        NULL,  // aliases
         NULL,
-        true,  // available_on_board (TODO: check board_capability)
-        true,  // available_in_build (TODO: check build_flag)
+        true,  // available_on_board
+        true,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
+        true,  // executor_ready
+        27138,  // help_offset
+        161,  // help_length
     },
 };
 

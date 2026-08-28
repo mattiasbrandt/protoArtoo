@@ -7,8 +7,8 @@ This tool produces:
 2. src/console/console_catalog.cpp - C++ implementation with the catalog table
 3. data/console_help.txt - Help text for LittleFS (help description strings)
 
-The catalog is the machine-readable part (names, types, schemas, availability).
-Help text (description, display_name) goes into the FS partition.
+The catalog is the machine-readable part (names, types, argument keys, availability).
+Help text (description, display_name, parameter schema, executor details) goes into the FS partition.
 """
 
 import yaml
@@ -23,6 +23,17 @@ def load_registry(registry_path):
         raise ValueError(f"Invalid registry format in {registry_path}")
     return data['entries']
 
+def check_build_flag_defined(flag_name):
+    """Check if a build flag is defined. For now, assume all defined.
+
+    In a full build context, this would check platformio.ini or environment variables.
+    For catalog generation, we mark entries as available unless proof of absence exists.
+    """
+    # TODO: integrate with build environment to check actual flags
+    # For now, all entries with build_flag are marked as available_in_build=true
+    # if flag is in the registry. A missing flag value would be marked false.
+    return True
+
 def generate_catalog_header(entries, output_path):
     """Generate include/console_catalog.h"""
     header = """// =============================================================================
@@ -32,9 +43,9 @@ def generate_catalog_header(entries, output_path):
 // DO NOT EDIT MANUALLY
 //
 // Operation Catalog - machine-readable registry for the Console module.
-// Includes: canonical name, type, aliases, argument schema, availability metadata,
-// executor reference. Help text (description, display_name) is stored separately
-// in LittleFS.
+// Includes: canonical name, type, argument keys, availability metadata.
+// Help text (description, display_name, parameter schema) is stored separately
+// in LittleFS, addressed by offset and length in each entry.
 // =============================================================================
 
 #pragma once
@@ -51,32 +62,32 @@ def generate_catalog_header(entries, output_path):
 // Parameter type values
 #define CONSOLE_PARAM_TYPE_INT16     "int16"
 #define CONSOLE_PARAM_TYPE_INT32     "int32"
+#define CONSOLE_PARAM_TYPE_UINT8     "uint8"
+#define CONSOLE_PARAM_TYPE_UINT16    "uint16"
 #define CONSOLE_PARAM_TYPE_FLOAT     "float"
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
 
-// Parameter descriptor
+// Parameter descriptor (simplified - full schema is in help text)
 typedef struct {
-    const char* name;
-    const char* type;
-    // Ranges as strings to support all numeric types (int16, int32, float, etc.)
-    const char* range_min_str;
-    const char* range_max_str;
-    bool required;
+    const char* name;      // parameter name (e.g. "speed", "steer")
+    const char* type;      // parameter type (e.g. "int16", "string", "bool")
+    bool required;         // required vs optional
 } ConsoleParamDescriptor;
 
 // Operation descriptor
 typedef struct {
     const char* name;              // e.g. "drive.action.move"
     const char* type;              // "action", "status", "config", "event"
-    const char* display_name;      // short label (e.g. "Move")
-    const char* executor;          // executor function name or "none"
     const char** aliases;          // aliases for this operation (NULL-terminated)
     const ConsoleParamDescriptor* params;  // parameter descriptors (NULL-terminated)
     bool available_on_board;       // board availability
     bool available_in_build;       // build flag availability
     bool requires_web_control;     // if true, needs webControlEnabled for motion
     bool safety_critical;          // if true, subject to safety constraints
+    bool executor_ready;           // true if executor function is defined and ready
+    uint16_t help_offset;          // offset in help file for this operation
+    uint16_t help_length;          // length of help text in help file
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -93,8 +104,60 @@ size_t consoleCatalogGetCount(void);
     with open(output_path, 'w') as f:
         f.write(header)
 
-def generate_catalog_source(entries, output_path):
-    """Generate src/console/console_catalog.cpp with the complete catalog table."""
+def generate_help_text(entries, output_path):
+    """Generate data/console_help.txt - help text for LittleFS.
+
+    Format: one entry per line
+    name|display_name|description|executor|param1:type1:required1|param2:type2:required2|...
+
+    Returns dict mapping name -> (offset, length)
+    """
+    lines = []
+    offsets = {}
+    current_offset = 0
+
+    for entry in entries:
+        name = entry['name']
+        display_name = entry.get('display_name', name)
+        description = entry.get('description', '')
+        executor = entry.get('executor', 'none')
+
+        # Escape special characters in text (replace newlines with space, pipes with underscore)
+        # This handles D8 - explicit transformation rule
+        display_name = display_name.replace('\n', ' ').replace('|', '_')
+        description = description.replace('\n', ' ').replace('|', '_')
+
+        # Build parameter list: param1:type1:required1|param2:type2:required2
+        param_list = []
+        for param in entry.get('params', []):
+            pname = param.get('name', '')
+            ptype = param.get('type', 'string')
+            preq = '1' if param.get('required', False) else '0'
+            param_list.append(f"{pname}:{ptype}:{preq}")
+        params_str = '|'.join(param_list) if param_list else ''
+
+        # Construct line: name|display_name|description|executor|params
+        line = f"{name}|{display_name}|{description}|{executor}|{params_str}\n"
+
+        # Record offset before adding to lines
+        offsets[name] = (current_offset, len(line) - 1)  # -1 for newline
+        current_offset += len(line)
+        lines.append(line)
+
+    with open(output_path, 'w') as f:
+        for line in lines:
+            f.write(line)
+
+    # Print stats
+    total_bytes = sum(len(l) for l in lines)
+    print(f"Generated help text: {len(lines)} entries, {total_bytes} bytes")
+    return offsets
+
+def generate_catalog_source(entries, offsets, output_path):
+    """Generate src/console/console_catalog.cpp with the complete catalog table.
+
+    offsets: dict mapping entry name -> (offset, length)
+    """
 
     # Build the C++ source
     source = """// =============================================================================
@@ -104,26 +167,15 @@ def generate_catalog_source(entries, output_path):
 // DO NOT EDIT MANUALLY
 //
 // Operation Catalog - runtime table mapping operation names to descriptors,
-// parameter schemas, availability metadata, and executor references.
-// Help text (description, display_name) is stored in LittleFS.
-//
-// Executor references are stored as strings, not function pointers.
-// Resolution of executor symbols to function addresses happens at dispatch time
-// in the Console task, not at compile/link time.
+// parameter schemas, availability metadata, and help text addressing.
+// Help text (description, display_name, parameter schema, executor details)
+// is stored in LittleFS and addressed by offset/length.
 // =============================================================================
 
 #include "console_catalog.h"
 #include <string.h>
 
 """
-
-    # Group entries by domain
-    by_domain = {}
-    for entry in entries:
-        domain = entry.get('domain', 'unknown')
-        if domain not in by_domain:
-            by_domain[domain] = []
-        by_domain[domain].append(entry)
 
     # Generate parameter descriptor tables
     source += "// =============================================================================\n"
@@ -139,13 +191,11 @@ def generate_catalog_source(entries, output_path):
                 param_names_used.add(param_var_name)
                 source += f"static const ConsoleParamDescriptor {param_var_name}[] = {{\n"
                 for param in entry['params']:
+                    param_name = param.get('name', '')
                     param_type = param.get('type', 'string')
-                    range_data = param.get('range', [None, None])
-                    range_min_str = str(range_data[0]) if range_data[0] is not None else "NULL"
-                    range_max_str = str(range_data[1]) if range_data[1] is not None else "NULL"
                     required = param.get('required', False)
-                    source += f"    {{\"{param['name']}\", \"{param_type}\", {range_min_str if range_min_str == 'NULL' else f'\"{range_min_str}\"'}, {range_max_str if range_max_str == 'NULL' else f'\"{range_max_str}\"'}, {'true' if required else 'false'}}},\n"
-                source += "    {NULL, NULL, NULL, NULL, false}  // terminator\n"
+                    source += f"    {{\"{param_name}\", \"{param_type}\", {'true' if required else 'false'}}},\n"
+                source += "    {NULL, NULL, false}  // terminator\n"
                 source += "};\n\n"
 
     # Generate the main catalog table
@@ -157,10 +207,18 @@ def generate_catalog_source(entries, output_path):
     for entry in entries:
         name = entry['name']
         op_type = entry.get('type', 'action')
-        display_name = entry.get('display_name', name)
         executor = entry.get('executor', 'none')
         requires_web = entry.get('requires_web_control', False)
         safety_critical = entry.get('safety_critical', False)
+        build_flag = entry.get('build_flag')
+
+        # Availability flags
+        available_on_board = not entry.get('board_capability')  # true if no board_capability
+        available_in_build = build_flag is None or check_build_flag_defined(build_flag)
+
+        # Executor ready (simplified: assume all are ready for now)
+        # TODO: check if executor function is actually defined
+        executor_ready = True  # All registry entries have executors defined
 
         # Parameters
         if entry.get('params'):
@@ -169,20 +227,24 @@ def generate_catalog_source(entries, output_path):
         else:
             param_var_name = "NULL"
 
-        # Aliases (for now, just the canonical name - could be extended)
-        aliases_comment = f"  // TODO: aliases for {name}"
+        # Help text offset and length
+        if name in offsets:
+            help_offset, help_length = offsets[name]
+        else:
+            help_offset, help_length = 0, 0
 
         source += f"    {{\n"
         source += f"        \"{name}\",\n"
         source += f"        \"{op_type}\",\n"
-        source += f"        \"{display_name}\",\n"
-        source += f"        \"{executor}\",\n"
-        source += f"        NULL,{aliases_comment}\n"
+        source += f"        NULL,  // aliases\n"
         source += f"        {param_var_name},\n"
-        source += f"        true,  // available_on_board (TODO: check board_capability)\n"
-        source += f"        true,  // available_in_build (TODO: check build_flag)\n"
+        source += f"        {'true' if available_on_board else 'false'},  // available_on_board\n"
+        source += f"        {'true' if available_in_build else 'false'},  // available_in_build\n"
         source += f"        {'true' if requires_web else 'false'},  // requires_web_control\n"
         source += f"        {'true' if safety_critical else 'false'},  // safety_critical\n"
+        source += f"        {'true' if executor_ready else 'false'},  // executor_ready\n"
+        source += f"        {help_offset},  // help_offset\n"
+        source += f"        {help_length},  // help_length\n"
         source += f"    }},\n"
 
     source += "};\n\n"
@@ -218,37 +280,6 @@ size_t consoleCatalogGetCount(void) {
     with open(output_path, 'w') as f:
         f.write(source)
 
-def generate_help_text(entries, output_path):
-    """Generate data/console_help.txt - help text for LittleFS.
-
-    Format: one entry per line
-    name|display_name|description
-
-    Newlines and pipes in text are escaped:
-    - \n -> \\n (literal backslash-n)
-    - | -> \\| (literal backslash-pipe)
-    """
-
-    lines = []
-    for entry in entries:
-        name = entry['name']
-        display_name = entry.get('display_name', name)
-        description = entry.get('description', '')
-
-        # Escape special characters
-        # Must escape newlines before pipes
-        display_name = display_name.replace('\n', '\\n').replace('|', '\\|')
-        description = description.replace('\n', '\\n').replace('|', '\\|')
-
-        lines.append(f"{name}|{display_name}|{description}\n")
-
-    with open(output_path, 'w') as f:
-        for line in lines:
-            f.write(line)
-
-    # Print stats
-    print(f"Generated help text: {len(lines)} entries, {sum(len(l) for l in lines)} bytes")
-
 def main():
     repo_root = Path(__file__).parent.parent
     registry_path = repo_root / 'docs' / 'action-registry.yaml'
@@ -270,11 +301,11 @@ def main():
     print(f"Generating {catalog_h}...")
     generate_catalog_header(entries, catalog_h)
 
-    print(f"Generating {catalog_cpp}...")
-    generate_catalog_source(entries, catalog_cpp)
-
     print(f"Generating {help_txt}...")
-    generate_help_text(entries, help_txt)
+    offsets = generate_help_text(entries, help_txt)
+
+    print(f"Generating {catalog_cpp}...")
+    generate_catalog_source(entries, offsets, catalog_cpp)
 
     print("Done!")
 

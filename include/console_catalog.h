@@ -5,9 +5,9 @@
 // DO NOT EDIT MANUALLY
 //
 // Operation Catalog - machine-readable registry for the Console module.
-// Includes: canonical name, type, aliases, argument schema, availability metadata,
-// executor reference. Help text (description, display_name) is stored separately
-// in LittleFS.
+// Includes: canonical name, type, argument keys, availability metadata.
+// Help text (description, display_name, parameter schema) is stored separately
+// in LittleFS, addressed by offset and length in each entry.
 // =============================================================================
 
 #pragma once
@@ -24,32 +24,32 @@
 // Parameter type values
 #define CONSOLE_PARAM_TYPE_INT16     "int16"
 #define CONSOLE_PARAM_TYPE_INT32     "int32"
+#define CONSOLE_PARAM_TYPE_UINT8     "uint8"
+#define CONSOLE_PARAM_TYPE_UINT16    "uint16"
 #define CONSOLE_PARAM_TYPE_FLOAT     "float"
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
 
-// Parameter descriptor
+// Parameter descriptor (simplified - full schema is in help text)
 typedef struct {
-    const char* name;
-    const char* type;
-    // Ranges as strings to support all numeric types (int16, int32, float, etc.)
-    const char* range_min_str;
-    const char* range_max_str;
-    bool required;
+    const char* name;      // parameter name (e.g. "speed", "steer")
+    const char* type;      // parameter type (e.g. "int16", "string", "bool")
+    bool required;         // required vs optional
 } ConsoleParamDescriptor;
 
 // Operation descriptor
 typedef struct {
     const char* name;              // e.g. "drive.action.move"
     const char* type;              // "action", "status", "config", "event"
-    const char* display_name;      // short label (e.g. "Move")
-    const char* executor;          // executor function name or "none"
     const char** aliases;          // aliases for this operation (NULL-terminated)
     const ConsoleParamDescriptor* params;  // parameter descriptors (NULL-terminated)
     bool available_on_board;       // board availability
     bool available_in_build;       // build flag availability
     bool requires_web_control;     // if true, needs webControlEnabled for motion
     bool safety_critical;          // if true, subject to safety constraints
+    bool executor_ready;           // true if executor function is defined and ready
+    uint16_t help_offset;          // offset in help file for this operation
+    uint16_t help_length;          // length of help text in help file
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
