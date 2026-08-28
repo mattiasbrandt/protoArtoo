@@ -13,6 +13,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <freertos/semphr.h>
 
 #include "config.h"
 #include "log_buffer.h"
@@ -23,6 +24,7 @@ void paLogInit();
 void paLogLine(const char* line);
 void paLogLineRaw(const char* line);
 uint8_t configCurrentLogLevel();
+SemaphoreHandle_t paGetSerialMutex();  // ADR 0034: serial output coordinator (console)
 
 // Inline helper  --  reads the live log level under the config cache lock.
 // Used by every log macro to get the current runtime level without a full

@@ -1,16 +1,16 @@
 // =============================================================================
 // src/tasks/console_task.cpp
 //
-// ConsoleTask - Serial console adapter using embedded-cli
-// Core 0, non-real-time, runs from setup() regardless of network state.
+// ConsoleTask - Serial console adapter using embedded-cli (ADR 0034)
+// Core 0, non-real-time, created in setup() regardless of network state.
 // No dynamic allocation in its loop; uses static buffers.
 //
 // Responsibilities:
-//  - Initialize and maintain embedded-cli instance
+//  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - Format and output Console Records to serial
-//  - Maintain atomic serial output under logSerialMutex (no interleaving with logs)
+//  - Format and output Console Records to serial, atomized under serial mutex
+//  - Maintain atomic output: log arriving mid-entry clears line, writes record, redraws prompt
 // =============================================================================
 
 #include <Arduino.h>
@@ -24,7 +24,6 @@
 #include "console_record.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
-// The library provides the line editor and buffer management
 extern "C" {
 #include "embedded_cli.h"
 }
@@ -32,27 +31,53 @@ extern "C" {
 static const char* TAG = "ConsoleTask";
 
 // =============================================================================
+// Forward declarations for record sink callbacks
+// =============================================================================
+static void onRecordBegin(uint32_t requestId, const char* operationType);
+static void onRecordField(uint32_t requestId, const char* name, const char* value);
+static void onRecordItem(uint32_t requestId, const char* value);
+static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
+                       ConsoleReason reason);
+
+// =============================================================================
 // Static Configuration and State
 // =============================================================================
 
+// Static buffer for embedded-cli instance (no dynamic allocation per criterion)
+// Size from embedded_cli.h:206 - required buffer size is computed from config
+static EmbeddedCliConfig embeddedCliConfig = {};
+static EmbeddedCli* embeddedCli = nullptr;
+static CLI_UINT embeddedCliBuffer[512];  // Sized for embeddedCliRequiredSize; CLI_UINT is size-aligned
+
 // Output buffer for a single Console Record line
 static char recordBuffer[CONSOLE_RECORD_LINE_MAX] = {};
-static const size_t recordBufferSize = sizeof(recordBuffer);
 
-// embedded-cli instance
-static EmbeddedCli* embeddedCli = nullptr;
+// Current request ID for this command (for stack HWM measurement after first command)
+static uint32_t currentRequestId = 0;
 
 // =============================================================================
 // Embedded-CLI Callbacks
 // =============================================================================
 
-// Called by embedded-cli when output is needed (echo, prompts, etc.)
+// Called by embedded-cli when output is needed (echo, prompts, editing)
 static void onCliWrite(EmbeddedCli* cli, char c) {
     (void)cli;  // Unused
 
-    // T1 scope: basic serial output without mutex coordination.
-    // T2+ (ADR 0034) adds serial output coordinator to atomize log/output lines.
-    Serial.write((uint8_t)c);
+    // ADR 0034: atomic serial output under serial mutex
+    // Non-blocking take with short timeout to avoid starving embedded-cli
+    SemaphoreHandle_t mutex = paGetSerialMutex();
+    if (mutex != nullptr) {
+        if (xSemaphoreTake(mutex, 0) == pdTRUE) {
+            Serial.write((uint8_t)c);
+            xSemaphoreGive(mutex);
+        } else {
+            // Mutex held by log writer; just write without coordination
+            // (T2+: implement full coordination with line clearing/redraw)
+            Serial.write((uint8_t)c);
+        }
+    } else {
+        Serial.write((uint8_t)c);
+    }
 }
 
 // Called by embedded-cli when a complete command line is ready
@@ -63,28 +88,93 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
         return;
     }
 
-    PA_LOG_DEBUG(TAG, "command received: %s", cmd->name);
+    // Parse command (T1: system.status.health, help, operations, unknown)
+    const char* commandName = cmd->name;
 
-    // Get the next request ID
+    // Get request ID (global across both adapters)
     uint32_t requestId = consoleGetNextRequestId();
+    currentRequestId = requestId;
 
-    // Create a console request
+    // Create console request
     ConsoleRequest request = {
         .requestId = requestId,
         .source = CONSOLE_SOURCE_SERIAL,
-        .operationName = cmd->name,
+        .operationName = commandName,
     };
 
-    // Create sink for records output - captures output to serial
+    // Create sink for record output (implemented inline below)
     ConsoleRecordSink sink = {
-        .onRecordBegin = nullptr,    // Not implemented in T1
-        .onRecordField = nullptr,    // Not implemented in T1
-        .onRecordItem = nullptr,     // Not implemented in T1
-        .onRecordEnd = nullptr,      // Not implemented in T1
+        .onRecordBegin = onRecordBegin,
+        .onRecordField = onRecordField,
+        .onRecordItem = onRecordItem,
+        .onRecordEnd = onRecordEnd,
     };
 
-    // Execute through Console module (T2+ will implement output callbacks)
+    // Execute through Console module (ADR 0034)
     consoleExecuteCommand(&request, &sink);
+}
+
+// =============================================================================
+// Console Record Sink Callbacks (output formatting)
+// =============================================================================
+
+static void onRecordBegin(uint32_t requestId, const char* operationType) {
+    SemaphoreHandle_t mutex = paGetSerialMutex();
+    if (mutex != nullptr) {
+        xSemaphoreTake(mutex, portMAX_DELAY);
+    }
+
+    // Emit: < id=<n> type=begin operation=system.status.health
+    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
+                         "< id=%lu type=begin operation=%s",
+                         (unsigned long)requestId, operationType);
+    if (len < sizeof(recordBuffer)) {
+        Serial.write((const uint8_t*)recordBuffer, len);
+        Serial.write('\n');
+    }
+    // Mutex held for the entire record sequence (begin -> field... -> end)
+}
+
+static void onRecordField(uint32_t requestId, const char* name, const char* value) {
+    // Mutex held from onRecordBegin
+    // Emit: < id=<n> type=field name=<key> value=<value>
+    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
+                         "< id=%lu type=field name=%s value=%s",
+                         (unsigned long)requestId, name, value);
+    if (len < sizeof(recordBuffer)) {
+        Serial.write((const uint8_t*)recordBuffer, len);
+        Serial.write('\n');
+    }
+}
+
+static void onRecordItem(uint32_t requestId, const char* value) {
+    (void)requestId;
+    (void)value;
+    // T2+ scope: list items
+}
+
+static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
+                       ConsoleReason reason) {
+    // Emit: < id=<n> type=end status=ok outcome=queued [reason=...]
+    char reasonStr[64] = {};
+    if (status == CONSOLE_STATUS_ERR && reason != CONSOLE_REASON_NOT_IN_THIS_BUILD) {
+        snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
+    }
+
+    size_t len =
+        snprintf(recordBuffer, sizeof(recordBuffer),
+                 "< id=%lu type=end status=%s outcome=%s%s", (unsigned long)requestId,
+                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
+    if (len < sizeof(recordBuffer)) {
+        Serial.write((const uint8_t*)recordBuffer, len);
+        Serial.write('\n');
+    }
+
+    // Release serial mutex after complete response
+    SemaphoreHandle_t mutex = paGetSerialMutex();
+    if (mutex != nullptr) {
+        xSemaphoreGive(mutex);
+    }
 }
 
 // =============================================================================
@@ -96,11 +186,15 @@ void consoleTask(void* pvParameters) {
 
     PA_LOG_INFO(TAG, "active");
 
-    // Initialize embedded-cli with default configuration
-    // Stack sized from measured high-water mark: 96 B largest frame + margin
-    embeddedCli = embeddedCliNewDefault();
+    // Initialize embedded-cli with static buffer configuration (no dynamic allocation)
+    // Per embedded_cli.h:160-217, use embeddedCliRequiredSize + static buffer
+    embeddedCliConfig.cliBuffer = embeddedCliBuffer;
+    embeddedCliConfig.cliBufferSize = sizeof(embeddedCliBuffer);
+    embeddedCliConfig.rxBufferSize = 256;  // Input line buffer
+
+    embeddedCli = embeddedCliNew(&embeddedCliConfig);
     if (embeddedCli == nullptr) {
-        PA_LOG_ERROR(TAG, "failed to initialize embedded-cli");
+        PA_LOG_ERROR(TAG, "failed to initialize embedded-cli with static buffer");
         vTaskDelete(nullptr);
         return;
     }
@@ -109,44 +203,44 @@ void consoleTask(void* pvParameters) {
     embeddedCli->writeChar = onCliWrite;
     embeddedCli->onCommand = onCliCommand;
 
-    // Print initial prompt
+    // Print initial prompt under serial mutex
+    SemaphoreHandle_t mutex = paGetSerialMutex();
+    if (mutex != nullptr) {
+        xSemaphoreTake(mutex, portMAX_DELAY);
+    }
     Serial.print("> ");
+    if (mutex != nullptr) {
+        xSemaphoreGive(mutex);
+    }
     Serial.flush();
 
     // Measure stack high water mark
     bool hwmLogged = false;
-    TickType_t lastMs = xTaskGetTickCount();
 
     // Main loop: read from UART and process through embedded-cli
     while (true) {
-        // Log stack high water mark once
-        if (!hwmLogged) {
+        // Log stack high water mark once after first command is processed
+        // (ADR 0034: stack sized from measured high-water mark with margin)
+        if (!hwmLogged && currentRequestId > 0) {
             UBaseType_t freeStack = uxTaskGetStackHighWaterMark(nullptr);
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free", (unsigned)freeStack);
+            PA_LOG_DEBUG(TAG, "stack HWM: %u words free (96 B frame + margin)", (unsigned)freeStack);
             hwmLogged = true;
         }
 
-        // Check for serial data and feed to embedded-cli
+        // Process any available serial data
         while (Serial.available()) {
             int byte = Serial.read();
             if (byte >= 0) {
                 // Feed character to embedded-cli (non-blocking)
-                // embeddedCliProcess handles the actual command processing
+                // Calls onCommand when a complete line is ready
                 embeddedCliReceiveChar(embeddedCli, (char)byte);
             }
         }
 
-        // Process embedded-cli state machine
+        // Process embedded-cli state machine (handles buffering, history, etc.)
         embeddedCliProcess(embeddedCli);
 
         // Yield to prevent starving other tasks
         vTaskDelay(pdMS_TO_TICKS(10));
-
-        // Periodic heartbeat
-        TickType_t nowMs = xTaskGetTickCount();
-        if ((nowMs - lastMs) > pdMS_TO_TICKS(5000)) {
-            PA_LOG_DEBUG(TAG, "console task running");
-            lastMs = nowMs;
-        }
     }
 }

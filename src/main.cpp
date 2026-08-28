@@ -88,6 +88,11 @@ void paLogInit() {
     }
 }
 
+// Accessor for console_task to coordinate atomic serial output (ADR 0034)
+SemaphoreHandle_t paGetSerialMutex() {
+    return logSerialMutex;
+}
+
 // Size the log ring and the /api/logs body from the operator's saved log
 // level. Called once from setup() after NVS config loads and before any task
 // or the web server starts; bootstrap lines are carried over. On allocation

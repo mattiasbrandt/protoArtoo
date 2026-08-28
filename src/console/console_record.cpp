@@ -105,10 +105,11 @@ const char* consoleQuoteValue(const char* value, char* tempBuffer, size_t tempBu
         return value;
     }
 
-    // Check if quoting is needed (spaces, equals, or quotes in value)
+    // Check if quoting is needed (spaces, equals, quotes, or backslashes in value)
+    // Per docs/console-protocol.md:56-57, backslash escaping is T1 protocol
     bool needsQuote = false;
     for (const char* p = value; *p != '\0'; ++p) {
-        if (*p == ' ' || *p == '=' || *p == '"') {
+        if (*p == ' ' || *p == '=' || *p == '"' || *p == '\\') {
             needsQuote = true;
             break;
         }
