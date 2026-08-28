@@ -13,13 +13,10 @@
 #pragma once
 
 #include <Arduino.h>
+#include <freertos/semphr.h>
 
 #include "config.h"
 #include "log_buffer.h"
-
-// Forward declare SemaphoreHandle_t to avoid including freertos/semphr.h
-// (FreeRTOS include causes issues in native test stubs)
-typedef void* SemaphoreHandle_t;
 
 static constexpr size_t PA_LOG_SERIAL_LINE_MAX = 256;
 
