@@ -12,13 +12,16 @@
 #include "console_record.h"
 #include "console_catalog.h"
 
-#include <Arduino.h>
 #include <string.h>
 #include <ctype.h>
+
+#ifdef ARDUINO
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
 #include <FS.h>
 #include <LittleFS.h>
+#endif
 
 #include "logging.h"
 #include "robot_state.h"
@@ -36,9 +39,12 @@ static portMUX_TYPE g_requestIdMux = portMUX_INITIALIZER_UNLOCKED;
 // Help File Management (once-open pattern, no per-request allocation)
 // =============================================================================
 
+#ifdef ARDUINO
 // File handle for help text, opened once and held for lifetime.
 // Opened in setup(), never closed. Each help lookup is seek() + read() into stack buffer.
 static File g_helpFile;
+#endif
+
 static bool g_helpFileReady = false;
 
 // Path to the help text file in LittleFS
@@ -55,6 +61,8 @@ static const size_t HELP_TEXT_MAX = 512;
 // Returns true if help text was found and written to out_buffer (null-terminated).
 // If false, out_buffer is left empty.
 // This function seeks into the already-open help file, so no allocation occurs in the loop.
+// Only available on ARDUINO platforms (native tests have g_helpFileReady = false always).
+#ifdef ARDUINO
 static bool consoleGetHelpText(const char* operationName, char* out_buffer, size_t buffer_size) {
     out_buffer[0] = '\0';
 
@@ -98,6 +106,16 @@ static bool consoleGetHelpText(const char* operationName, char* out_buffer, size
 
     return false;
 }
+#else
+// Native test stub: always returns false
+static inline bool consoleGetHelpText(const char* operationName, char* out_buffer, size_t buffer_size) {
+    (void)operationName;
+    if (out_buffer && buffer_size) {
+        out_buffer[0] = '\0';
+    }
+    return false;
+}
+#endif
 
 // Emit help for an operation as console records
 // Help text comes from the LittleFS file opened in setup().
@@ -228,9 +246,16 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     wifiRssi = connectivity.wifiRssi;
 
     fsReady = webLittleFsMounted();
+#ifdef ARDUINO
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+#else
+    // Native tests: use reasonable stub values (not available on standard C heap)
+    heapFree = 262144;      // 256 KB stub value for test consistency
+    heapMin = 262144;
+    heapLargestBlock = 262144;
+#endif
 
     // Emit fields through sink (Console Record format)
     char tempBuf[64] = {};
@@ -314,6 +339,7 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
 // =============================================================================
 
 void consoleModuleInit(void) {
+#ifdef ARDUINO
     // Open help file once, hold handle for lifetime (no per-request allocation)
     // This is called from setup() after LittleFS is mounted.
     if (LittleFS.exists(HELP_FILE_PATH)) {
@@ -327,6 +353,9 @@ void consoleModuleInit(void) {
     } else {
         PA_LOG_WARN(TAG, "help file not found at %s", HELP_FILE_PATH);
     }
+#else
+    // Native tests: g_helpFileReady stays false, consoleGetHelpText returns false
+#endif
 
     size_t catalogCount = consoleCatalogGetCount();
     PA_LOG_DEBUG(TAG, "console module initialized, %u operations in catalog", catalogCount);
