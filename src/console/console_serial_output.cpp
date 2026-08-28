@@ -20,6 +20,19 @@ extern "C" {
 static EmbeddedCli* g_boundCli = nullptr;
 
 // =============================================================================
+// Per-Character Writer
+// =============================================================================
+
+// Exported for seam testing and embedded-cli binding.
+// Called by embeddedCliPrint() for every character of output.
+// CONSTRAINT: The mutex is held by the caller (consoleSerialEmitLine).
+// This writer must NOT attempt to take the mutex or any other blocking operation.
+void consoleSerialWriteChar(EmbeddedCli* cli, char c) {
+    (void)cli;  // Unused
+    Serial.write((uint8_t)c);
+}
+
+// =============================================================================
 // Seam Implementation
 // =============================================================================
 
@@ -35,8 +48,15 @@ void consoleSerialEmitLine(const char* line) {
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex == nullptr || g_boundCli == nullptr) {
         // No coordination available (boot, before console task). Direct write.
+        // Still take the mutex if available, to serialize with paLogLine writes.
+        if (mutex != nullptr) {
+            xSemaphoreTake(mutex, portMAX_DELAY);
+        }
         Serial.print(line);
         Serial.print("\n");
+        if (mutex != nullptr) {
+            xSemaphoreGive(mutex);
+        }
         return;
     }
 

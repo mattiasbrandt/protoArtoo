@@ -14,6 +14,13 @@
 // Forward declaration
 typedef struct EmbeddedCli EmbeddedCli;
 
+// Per-character writer for embedded-cli output.
+// Exported for embedded-cli binding as cli->writeChar.
+// Called by embeddedCliPrint() for every character.
+// CONSTRAINT: The caller (consoleSerialEmitLine) holds the serial mutex.
+// This writer must NOT attempt to take the mutex.
+void consoleSerialWriteChar(EmbeddedCli* cli, char c);
+
 // Bind the serial output coordinator to an embedded-cli instance.
 // Called once during console task initialization with the live CLI.
 // Allows a host test to inject a test CLI for harness verification.

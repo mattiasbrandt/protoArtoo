@@ -24,6 +24,7 @@ struct PaStubMutex {
     int takeCount;  // cumulative successful takes, for assertions
     int giveCount;  // cumulative gives, including unmatched ones
     int unmatchedGives;  // gives while not held - a real defect if non-zero
+    int failedTakes;     // takes refused because the mutex was already held
 };
 
 typedef struct PaStubMutex* SemaphoreHandle_t_stub;
@@ -31,7 +32,7 @@ typedef struct PaStubMutex* SemaphoreHandle_t_stub;
 // The production type is declared in freertos/FreeRTOS.h as void*; these helpers
 // cast through it so production code compiles unchanged.
 inline struct PaStubMutex* paStubMutexStorage(void) {
-    static struct PaStubMutex storage = {0, 0, 0, 0};
+    static struct PaStubMutex storage = {0, 0, 0, 0, 0};
     return &storage;
 }
 
@@ -41,6 +42,7 @@ inline void paStubMutexReset(void) {
     m->takeCount = 0;
     m->giveCount = 0;
     m->unmatchedGives = 0;
+    m->failedTakes = 0;
 }
 
 inline SemaphoreHandle_t xSemaphoreCreateMutexStatic(void* buffer) {
@@ -56,6 +58,7 @@ inline BaseType_t xSemaphoreTake(SemaphoreHandle_t sem, unsigned long timeout) {
     }
     struct PaStubMutex* m = (struct PaStubMutex*)sem;
     if (m->held) {
+        m->failedTakes++;
         // Non-recursive: a take while held fails. With portMAX_DELAY on a real
         // target this would block forever - the host surfaces it as a failure so
         // a test can assert the deadlock does not exist.

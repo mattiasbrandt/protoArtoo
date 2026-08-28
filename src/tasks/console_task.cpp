@@ -9,8 +9,10 @@
 //  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - Emit Console Records to serial through consoleSerialEmitLine() for atomic output
-//  - Atomic output: log arriving mid-entry clears the input line, writes the record,
+//  - Emit Console Records to serial atomically: the sink callbacks hold the serial mutex
+//    from onRecordBegin through onRecordEnd, ensuring the entire multi-record response
+//    is atomic under the lock (see console_task.cpp:130-219 for mutex discipline)
+//  - Log arriving mid-entry clears the input line, writes the log via consoleSerialEmitLine(),
 //    then redraws the prompt and buffered command via embeddedCliPrint()
 // =============================================================================
 
@@ -63,27 +65,6 @@ static uint32_t currentRequestId = 0;
 // =============================================================================
 // Embedded-CLI Callbacks
 // =============================================================================
-
-// Called by embedded-cli when output is needed (echo, prompts, editing)
-static void onCliWrite(EmbeddedCli* cli, char c) {
-    (void)cli;  // Unused
-
-    // ADR 0034: atomic serial output under serial mutex
-    // Non-blocking take with short timeout to avoid starving embedded-cli
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        if (xSemaphoreTake(mutex, 0) == pdTRUE) {
-            Serial.write((uint8_t)c);
-            xSemaphoreGive(mutex);
-        } else {
-            // Mutex held by log writer; just write without coordination
-            // (T2+: implement full coordination with line clearing/redraw)
-            Serial.write((uint8_t)c);
-        }
-    } else {
-        Serial.write((uint8_t)c);
-    }
-}
 
 // Called by embedded-cli when a complete command line is ready
 static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
@@ -253,7 +234,7 @@ void consoleTask(void* pvParameters) {
     }
 
     // Set up embedded-cli callbacks
-    embeddedCli->writeChar = onCliWrite;
+    embeddedCli->writeChar = consoleSerialWriteChar;
     embeddedCli->onCommand = onCliCommand;
 
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)

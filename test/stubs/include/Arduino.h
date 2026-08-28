@@ -40,6 +40,11 @@ struct SerialStub {
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
     static void println(const char* /*s*/) {}
     static void print(const char* /*s*/) {}
+    static size_t write(uint8_t /*c*/) { return 1; }
+    static size_t write(const uint8_t* /*data*/, size_t len) { return len; }
+    static void flush() {}
+    static int available() { return 0; }
+    static int read() { return -1; }
 };
 extern SerialStub Serial;
 

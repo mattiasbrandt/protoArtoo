@@ -192,6 +192,55 @@ void test_nested_emission_does_not_corrupt_mutex_pairing(void) {
 }
 
 // ----------------------------------------------------------------------------
+// 3. Re-entrancy under the emission lock
+// ----------------------------------------------------------------------------
+//
+// COORDINATOR NOTE (added after attempt 4): the first version of this harness
+// bound its own capture function as `cli->writeChar`, so it never exercised the
+// production per-character writer and could not see the defect below. That was a
+// gap in the harness, not in the worker's reading of it.
+//
+// consoleSerialEmitLine() holds the serial mutex and then calls
+// embeddedCliPrint(), which writes through `cli->writeChar` for every character.
+// If that writer also tries to take the same NON-RECURSIVE mutex, every single
+// byte performs a take that must fail - and whatever the writer does on that
+// failure path is what actually reaches the port. The mutex belongs to the
+// emission-level caller; the per-character writer must not touch it.
+//
+// Seam requirement: `consoleSerialWriteChar` is exported from
+// console_serial_output.cpp and bound as `cli->writeChar` by the Console task,
+// replacing the task-private onCliWrite.
+
+void test_emission_performs_no_nested_take_through_writechar(void) {
+    captureReset();
+    paStubMutexReset();
+
+    EmbeddedCliConfig* config = embeddedCliDefaultConfig();
+    config->cliBuffer = g_cliBuffer;
+    config->cliBufferSize = sizeof(g_cliBuffer);
+    g_cli = embeddedCliNew(config);
+    TEST_ASSERT_NOT_NULL(g_cli);
+
+    // Bind the PRODUCTION writer, not the harness capture writer.
+    g_cli->writeChar = consoleSerialWriteChar;
+    embeddedCliProcess(g_cli);
+    consoleSerialBindCli(g_cli);
+
+    paStubMutexReset();
+    consoleSerialEmitLine("[INFO] nested take probe");
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        0, m->failedTakes,
+        "the per-character writer tried to take the serial mutex the emission already holds; "
+        "the mutex belongs to consoleSerialEmitLine, not to writeChar");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount,
+                                  "an emission must take the serial mutex exactly once");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the serial mutex was left held");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give during emission");
+}
+
+// ----------------------------------------------------------------------------
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -199,5 +248,6 @@ int main(int, char**) {
     RUN_TEST(test_log_with_empty_input_line_still_emits_once_and_restores_prompt);
     RUN_TEST(test_emission_leaves_mutex_free_with_matched_take_and_give);
     RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
+    RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     return UNITY_END();
 }
