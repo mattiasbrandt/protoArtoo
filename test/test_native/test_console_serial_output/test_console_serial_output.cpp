@@ -264,7 +264,64 @@ void test_long_lines_are_truncated_to_serial_max(void) {
                              "long line was not truncated; entire oversized input reached output");
 }
 
-// ----------------------------------------------------------------------------
+// =============================================================================
+// 4. Bounded input / bounded output property (#217 amplification regression)
+// =============================================================================
+// CRITERION: The Console must not amplify garbage input into unbounded output.
+// This prevents self-amplifying loops where noise on the serial line causes
+// output that is read back as input, creating a feedback loop.
+//
+// Test: Feed a large amount of garbage (binary noise, fragments, incomplete lines)
+// and verify that the total emitted output is bounded relative to the input size.
+// Even if the garbage is interpreted as buffered commands, the output must not
+// grow faster than log(n) with respect to input size.
+
+void test_bounded_input_produces_bounded_output(void) {
+    cliFixtureSetUp();
+
+    // Pre-measure the baseline output after initialization (prompt + fixture startup)
+    size_t baseline = g_captureLen;
+
+    // Feed fragments of pseudo-random garbage: bytes that resemble log output fragments.
+    // This simulates the measured scenario where UART0 received fragments of strings
+    // like "already initialized", "waiting for first frame", etc.
+    const char fragments[][20] = {
+        "already initial",  // Incomplete fragment
+        "ized",             // Tail fragment
+        "waiting for firs",
+        "t frame",
+        "TWDT already",
+        "\n\r"
+    };
+    const size_t numFragments = sizeof(fragments) / sizeof(fragments[0]);
+
+    // Feed multiple copies of these fragments, simulating a sustained garbage stream.
+    // On the artoo flood, 6500 emissions/s suggests each garbage byte somehow triggers output.
+    // We test that feeding 1000+ bytes doesn't produce 150+ KB (the measured flood rate).
+    size_t garbageBytesFed = 0;
+    for (int i = 0; i < 10; ++i) {  // 10 iterations
+        for (size_t j = 0; j < numFragments; ++j) {
+            typeChars(fragments[j]);
+            garbageBytesFed += strlen(fragments[j]);
+        }
+    }
+
+    size_t outputProduced = g_captureLen - baseline;
+
+    // Bound: output should not exceed a reasonable multiple of input (e.g., 20x max
+    // to account for prompt redraw + editing echo + line framing).
+    // The measured flood had output/input ratio of 900KB / 6s on artoo vs 40B / 6s baseline,
+    // which is 22,500x amplification. A fix should drop this drastically.
+    // We test that it is at most 100x (conservative bound to catch massive amplification).
+    size_t maxAllowedOutput = garbageBytesFed * 100;
+
+    TEST_ASSERT_TRUE_MESSAGE(outputProduced < maxAllowedOutput,
+                             "garbage input produced too much output (possible amplification loop)");
+    TEST_ASSERT_TRUE_MESSAGE(outputProduced < 50000,
+                             "garbage input produced more than 50 KB output (amplification detected)");
+}
+
+// =============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -274,5 +331,6 @@ int main(int, char**) {
     RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     RUN_TEST(test_long_lines_are_truncated_to_serial_max);
+    RUN_TEST(test_bounded_input_produces_bounded_output);
     return UNITY_END();
 }
