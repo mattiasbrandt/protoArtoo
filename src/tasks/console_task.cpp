@@ -21,6 +21,7 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <string.h>
+#include <cstdio>
 
 #include "logging.h"
 #include "console_module.h"
@@ -77,6 +78,25 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     // Parse command (T1: system.status.health, help, operations, unknown)
     const char* commandName = cmd->name;
 
+    // Construct the operation name, handling meta-commands
+    static char operationNameBuf[128];
+    const char* operationName;
+
+    // T1 meta-command: "help <operation>"
+    if (strcmp(commandName, "help") == 0) {
+        // Reconstruct "help system.status.health" from cmd->args
+        if (cmd->args != nullptr && cmd->args[0] != '\0') {
+            snprintf(operationNameBuf, sizeof(operationNameBuf), "help %s", cmd->args);
+            operationName = operationNameBuf;
+        } else {
+            // help with no args - treat as unknown command
+            operationName = commandName;
+        }
+    } else {
+        // Regular operation name (system.status.health, etc)
+        operationName = commandName;
+    }
+
     // Get request ID (global across both adapters)
     uint32_t requestId = consoleGetNextRequestId();
     currentRequestId = requestId;
@@ -85,7 +105,7 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     ConsoleRequest request = {
         .requestId = requestId,
         .source = CONSOLE_SOURCE_SERIAL,
-        .operationName = commandName,
+        .operationName = operationName,
     };
 
     // Create sink for record output (implemented inline below)

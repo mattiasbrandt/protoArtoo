@@ -30,6 +30,69 @@ static volatile uint32_t g_nextRequestId = 1;
 static portMUX_TYPE g_requestIdMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
+// Private: Operation Descriptors and Help
+// =============================================================================
+
+typedef struct {
+    const char* name;
+    const char* description;
+    const char* type;  // "status", "action", "config", "event"
+} OperationDescriptor;
+
+static const OperationDescriptor OPERATIONS[] = {
+    {"system.status.health", "System health snapshot: heap, failsafe, network", "status"},
+};
+static const size_t OPERATIONS_COUNT = sizeof(OPERATIONS) / sizeof(OPERATIONS[0]);
+
+// Get operation descriptor by name, or nullptr if not found
+static const OperationDescriptor* consoleFindDescriptor(const char* operationName) {
+    for (size_t i = 0; i < OPERATIONS_COUNT; ++i) {
+        if (strcmp(OPERATIONS[i].name, operationName) == 0) {
+            return &OPERATIONS[i];
+        }
+    }
+    return nullptr;
+}
+
+// Emit help for an operation as console records
+static void consoleEmitHelpForOperation(uint32_t requestId, const char* operationName,
+                                       const ConsoleRecordSink* sink) {
+    const OperationDescriptor* desc = consoleFindDescriptor(operationName);
+    if (desc == nullptr) {
+        // Operation not found
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
+                                CONSOLE_REASON_UNKNOWN_OPERATION);
+        }
+        return;
+    }
+
+    // Emit help as multi-record response
+    char tempBuf[256] = {};
+
+    // Begin
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+
+    // description field
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "description", desc->description);
+    }
+
+    // type field
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "type", desc->type);
+    }
+
+    // End
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED,
+                         CONSOLE_REASON_NOT_IN_THIS_BUILD);
+    }
+}
+
+// =============================================================================
 // Private: Operation Lookup and Execution
 // =============================================================================
 
@@ -190,8 +253,30 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         return;
     }
 
+    const char* opName = request->operationName;
+
+    // Meta-command: help <operation> (T1 scope)
+    if (opName != nullptr && strlen(opName) >= 5 && strncmp(opName, "help ", 5) == 0) {
+        // Extract operation name from "help system.status.health"
+        const char* targetOp = opName + 5;
+        // Skip leading whitespace
+        while (*targetOp == ' ') {
+            ++targetOp;
+        }
+        if (*targetOp != '\0') {
+            consoleEmitHelpForOperation(request->requestId, targetOp, sink);
+        } else {
+            // "help" with no operation name - treat as unknown
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_UNKNOWN_OPERATION);
+            }
+        }
+        return;
+    }
+
     // Check if operation is known
-    if (!consoleIsKnownOperation(request->operationName)) {
+    if (!consoleIsKnownOperation(opName)) {
         // Unknown operation: return single result record (guard path)
         // Per docs/console-protocol.md, a single type=result record, not begin+end
         if (sink->onRecordResult) {
