@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "api_console.h"
+#include "console_module.h"
 #include "web_request_test_backend.h"
 
 void setUp() {
@@ -418,6 +419,73 @@ void test_help_emits_aliases_from_catalog() {
     TEST_ASSERT_EQUAL_STRING("value:float:required", value);
 }
 
+// -----------------------------------------------------------------------------
+// #219 D4 rework: bare `help`'s detach_key field must be adapter-aware - the
+// serial adapter has a real detach convention (Ctrl-C); the browser adapter
+// does not and must not claim one. The web half is reachable through the real
+// handler (webOnRecordField_impl -> WebRequestTestBackend); the serial half
+// needs a direct consoleExecuteCommand() call with CONSOLE_SOURCE_SERIAL,
+// since src/tasks/console_task.cpp itself is native-unreachable.
+// -----------------------------------------------------------------------------
+
+static const int kDetachMaxFields = 8;
+static char g_detachNames[kDetachMaxFields][32];
+static char g_detachValues[kDetachMaxFields][64];
+static int g_detachFieldCount = 0;
+
+static void detachCapBegin(uint32_t, const char*) {}
+static void detachCapField(uint32_t, const char* name, const char* value) {
+    if (g_detachFieldCount >= kDetachMaxFields) return;
+    snprintf(g_detachNames[g_detachFieldCount], sizeof(g_detachNames[0]), "%s", name);
+    snprintf(g_detachValues[g_detachFieldCount], sizeof(g_detachValues[0]), "%s", value);
+    g_detachFieldCount++;
+}
+static void detachCapEnd(uint32_t, ConsoleStatus, ConsoleOutcome, ConsoleReason) {}
+
+static const char* detachFieldNamed(const char* name) {
+    for (int i = 0; i < g_detachFieldCount; i++) {
+        if (strcmp(g_detachNames[i], name) == 0) return g_detachValues[i];
+    }
+    return nullptr;
+}
+
+static void runBareHelpWithSource(ConsoleCommandSource source) {
+    g_detachFieldCount = 0;
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = detachCapBegin;
+    sink.onRecordField = detachCapField;
+    sink.onRecordEnd = detachCapEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = source;
+    req.operationName = "help";
+    consoleExecuteCommand(&req, &sink);
+}
+
+void test_bare_help_serial_source_carries_detach_key() {
+    runBareHelpWithSource(CONSOLE_SOURCE_SERIAL);
+    const char* value = detachFieldNamed("detach_key");
+    TEST_ASSERT_NOT_NULL_MESSAGE(value, "the serial source must carry a detach_key field");
+    TEST_ASSERT_EQUAL_STRING("Ctrl-C", value);
+}
+
+void test_bare_help_web_source_has_no_detach_key() {
+    runBareHelpWithSource(CONSOLE_SOURCE_WEB);
+    TEST_ASSERT_NULL_MESSAGE(detachFieldNamed("detach_key"),
+        "the web adapter has no detach convention and must not claim one");
+}
+
+// Same check through the real HTTP handler (belt-and-braces: proves the web
+// adapter's own source assignment in api_console.cpp, not just the module).
+void test_help_over_web_adapter_has_no_detach_key() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help");
+    char value[64] = {};
+    TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "detach_key", value, sizeof(value)),
+        "POST /api/console must not claim a detach_key");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -437,5 +505,8 @@ int main(int, char**) {
     RUN_TEST(test_help_emits_catalog_availability_fields);
     RUN_TEST(test_help_emits_params_from_catalog_not_file);
     RUN_TEST(test_help_emits_aliases_from_catalog);
+    RUN_TEST(test_bare_help_serial_source_carries_detach_key);
+    RUN_TEST(test_bare_help_web_source_has_no_detach_key);
+    RUN_TEST(test_help_over_web_adapter_has_no_detach_key);
     return UNITY_END();
 }

@@ -437,8 +437,13 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             if (sink->onRecordBegin) {
                 sink->onRecordBegin(request->requestId, "help");
             }
-            if (sink->onRecordField) {
-                sink->onRecordField(request->requestId, "detach_key", "Ctrl-C (serial) or close browser tab (web)");
+            // detach_key names how to leave the console (#219 D4). Serial only:
+            // the field used to hand the browser adapter a value it must not
+            // claim ("close browser tab (web)") - the criterion is explicit
+            // that the web adapter has no detach convention of its own. Present
+            // exactly when there is one, matching the reason= field's convention.
+            if (request->source == CONSOLE_SOURCE_SERIAL && sink->onRecordField) {
+                sink->onRecordField(request->requestId, "detach_key", CONSOLE_DETACH_KEY_SERIAL);
             }
             if (sink->onRecordField) {
                 sink->onRecordField(request->requestId, "hint", "Type 'operations' to list all commands");

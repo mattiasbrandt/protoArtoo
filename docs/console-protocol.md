@@ -82,7 +82,9 @@ operations
 operations type=action
 ```
 
-- `help` - the command language in brief and how to list operations.
+- `help` - the command language in brief and how to list operations. On
+  serial, carries a `detach_key` field (Ctrl-C - see section 8); the browser
+  adapter has no detach convention and this field is absent there.
 - `help <operation>` - description, argument schema, aliases, current
   availability and its reason. See section 3.4 for the `help_file_status`
   field that reports help file availability.
@@ -290,6 +292,13 @@ buffered command. No line is ever interleaved inside another.
   controller unchanged (`pio device monitor --raw`, or picocom); a plain
   terminal can still submit complete lines, with imperfect in-line editing.
 - Firmware echoes; host local echo should be off. The prompt is `> `.
+- On connect, before the first prompt, the firmware prints a one-line ready
+  banner naming the detach key: `Controller Console ready. Type 'help' for
+  commands, Ctrl-C to leave.` The firmware states the convention; it never
+  attempts to close a terminal it does not own, and there is no `quit`/`exit`
+  operation. Bare `help` carries the same key as a `detach_key` field
+  (section 2) - serial only, since the browser adapter has no detach
+  convention and must not claim one.
 - 115200 baud on both boards. Attach rules for each board (and the artoo-esp32
   reset-on-open caveat) are in `docs/troubleshooting.md`.
 

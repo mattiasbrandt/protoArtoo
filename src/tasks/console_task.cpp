@@ -284,11 +284,18 @@ void consoleTask(void* pvParameters) {
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);
 
-    // Print initial prompt under serial mutex
+    // Print the ready banner and initial prompt under serial mutex. The banner
+    // names the detach key (#219 D4) - an operator attaching cold has no other
+    // way to learn it, since the firmware never closes a terminal it does not
+    // own. CONSOLE_DETACH_KEY_SERIAL is the same literal the bare `help`
+    // meta-command's detach_key field uses (console_module.cpp), so the two
+    // can't drift apart.
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex != nullptr) {
         xSemaphoreTake(mutex, portMAX_DELAY);
     }
+    Serial.print("Controller Console ready. Type 'help' for commands, "
+                 CONSOLE_DETACH_KEY_SERIAL " to leave.\n");
     Serial.print("> ");
     if (mutex != nullptr) {
         xSemaphoreGive(mutex);
