@@ -110,45 +110,20 @@ static void webOnRecordEnd_impl(uint32_t requestId, ConsoleStatus status,
 
 void handleConsolePost(WebRequest& req) {
     char command[256] = {};
+    ConsoleWebSink webSink = {};
 
     // Check for truncation in form parameter (D13: detect oversized command)
     const char* paramValue = req.paramRef("command");
     if (paramValue != nullptr) {
         if (strlen(paramValue) >= sizeof(command)) {
-            // Line too long; emit error with proper reason code
-            ConsoleWebSink webSink = {};
+            // Line too long; emit single result record with error reason, then serialize
             g_currentWebSink = &webSink;
-
             uint32_t reqId = consoleGetNextRequestId();
-            ConsoleRecordSink sink = {
-                .onRecordBegin = webOnRecordBegin_impl,
-                .onRecordField = webOnRecordField_impl,
-                .onRecordItem = webOnRecordItem_impl,
-                .onRecordResult = webOnRecordResult_impl,
-                .onRecordEnd = webOnRecordEnd_impl,
-            };
-
-            webOnRecordEnd_impl(reqId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_LINE_TOO_LONG);
+            webOnRecordResult_impl(reqId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_LINE_TOO_LONG);
             g_currentWebSink = nullptr;
-
-            // Build and send error response
-            JsonDocument responseDoc;
-            JsonArray recordsArray = responseDoc.createNestedArray("records");
-
-            const ConsoleRecord& rec = webSink.records[0];
-            JsonObject recordObj = recordsArray.createNestedObject();
-            recordObj["id"] = rec.requestId;
-            recordObj["type"] = rec.type;
-            recordObj["status"] = rec.status;
-            recordObj["outcome"] = rec.outcome;
-            if (rec.reason != nullptr) recordObj["reason"] = rec.reason;
-
-            static char responseBody[4096];
-            size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
-            req.send(200, "application/json", responseBody);
-            return;
+        } else {
+            snprintf(command, sizeof(command), "%s", paramValue);
         }
-        snprintf(command, sizeof(command), "%s", paramValue);
     }
 
     if (command[0] == '\0') {
@@ -174,39 +149,46 @@ void handleConsolePost(WebRequest& req) {
         }
     }
 
-    // Cast to (unsigned char) to avoid UB on high-bit chars
-    size_t start = 0;
-    while (command[start] && isspace((unsigned char)command[start])) start++;
-    size_t end = strlen(command);
-    while (end > start && isspace((unsigned char)command[end - 1])) end--;
-    command[end] = '\0';
-    if (start > 0) memmove(command, command + start, end - start + 1);
+    // Only process command through module if we didn't get a truncation error
+    if (webSink.recordCount == 0 && command[0] != '\0') {
+        // Cast to (unsigned char) to avoid UB on high-bit chars
+        size_t start = 0;
+        while (command[start] && isspace((unsigned char)command[start])) start++;
+        size_t end = strlen(command);
+        while (end > start && isspace((unsigned char)command[end - 1])) end--;
+        command[end] = '\0';
+        if (start > 0) memmove(command, command + start, end - start + 1);
 
-    if (command[0] == '\0') {
+        if (command[0] != '\0') {
+            g_currentWebSink = &webSink;
+
+            // Pass FULL command line to module (not just first token, which enables "help system.status.health")
+            ConsoleRequest consoleReq = {
+                .requestId = consoleGetNextRequestId(),
+                .source = CONSOLE_SOURCE_WEB,
+                .operationName = command,
+            };
+
+            ConsoleRecordSink sink = {
+                .onRecordBegin = webOnRecordBegin_impl,
+                .onRecordField = webOnRecordField_impl,
+                .onRecordItem = webOnRecordItem_impl,
+                .onRecordResult = webOnRecordResult_impl,
+                .onRecordEnd = webOnRecordEnd_impl,
+            };
+
+            consoleExecuteCommand(&consoleReq, &sink);
+            g_currentWebSink = nullptr;
+        }
+    }
+
+    if (webSink.recordCount == 0 && command[0] == '\0') {
         req.send(400, "application/json", "{\"ok\":false,\"error\":\"empty command\"}");
         return;
     }
 
-    ConsoleWebSink webSink = {};
-    g_currentWebSink = &webSink;
-
-    // Pass FULL command line to module (not just first token, which enables "help system.status.health")
-    ConsoleRequest consoleReq = {
-        .requestId = consoleGetNextRequestId(),
-        .source = CONSOLE_SOURCE_WEB,
-        .operationName = command,
-    };
-
-    ConsoleRecordSink sink = {
-        .onRecordBegin = webOnRecordBegin_impl,
-        .onRecordField = webOnRecordField_impl,
-        .onRecordItem = webOnRecordItem_impl,
-        .onRecordResult = webOnRecordResult_impl,
-        .onRecordEnd = webOnRecordEnd_impl,
-    };
-
-    consoleExecuteCommand(&consoleReq, &sink);
-    g_currentWebSink = nullptr;
+    static char responseBody[4096];
+    memset(responseBody, 0, sizeof(responseBody));
 
     JsonDocument responseDoc;
     JsonArray recordsArray = responseDoc.createNestedArray("records");
@@ -230,8 +212,6 @@ void handleConsolePost(WebRequest& req) {
         }
     }
 
-    static char responseBody[4096];
-    memset(responseBody, 0, sizeof(responseBody));
     size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
     if (bodySize == 0 || bodySize >= sizeof(responseBody)) {
         req.send(500, "application/json", "{\"ok\":false,\"error\":\"response too large\"}");
