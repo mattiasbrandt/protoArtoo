@@ -161,10 +161,19 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
             }
             pos++;
         }
-    } else if (g_helpReader == nullptr) {
-        // Help reader not available - emit explicit degradation reason
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "help_file_status", "unavailable");
+    } else {
+        // Help text not available - determine reason and emit explicit degradation status
+        // (ADR 0034: never degrade silently; missing, stale or unreadable help file is always reported)
+        if (g_helpReader == nullptr) {
+            // Reader not available
+            if (sink->onRecordField) {
+                sink->onRecordField(requestId, "help_file_status", "unavailable");
+            }
+        } else {
+            // Reader exists but seek failed or read returned 0 bytes (corrupted/stale/truncated file)
+            if (sink->onRecordField) {
+                sink->onRecordField(requestId, "help_file_status", "corrupted");
+            }
         }
     }
 
@@ -186,7 +195,7 @@ static bool consoleIsKnownOperation(const char* operationName) {
 }
 
 // Check if operation is available on this board
-// For now, all catalog entries are available. Future: check board_capability.
+// (ADR 0029: catalog entries carry build_flags and board_capability; runtime checks them)
 static bool consoleIsAvailableOnBoard(const char* operationName) {
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     if (!entry) return false;
