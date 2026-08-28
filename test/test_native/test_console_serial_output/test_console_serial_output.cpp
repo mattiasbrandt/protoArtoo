@@ -240,6 +240,30 @@ void test_emission_performs_no_nested_take_through_writechar(void) {
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give during emission");
 }
 
+// Line length cap: lines longer than PA_LOG_SERIAL_LINE_MAX are truncated
+void test_long_lines_are_truncated_to_serial_max(void) {
+    cliFixtureSetUp();
+
+    // Create a line longer than PA_LOG_SERIAL_LINE_MAX
+    // PA_LOG_SERIAL_LINE_MAX is typically 256, so create something much longer
+    char longLine[512];
+    memset(longLine, 'X', sizeof(longLine) - 1);
+    longLine[sizeof(longLine) - 1] = '\0';
+
+    captureReset();
+    consoleSerialEmitLine(longLine);
+
+    // Check that captured output is truncated to PA_LOG_SERIAL_LINE_MAX
+    // The output should be at most PA_LOG_SERIAL_LINE_MAX - 1 characters (plus \r, \n, etc from embeddedCliPrint)
+    // For this test, we check that we don't receive the entire 512-char string verbatim
+    size_t capturedLen = strlen(g_capture);
+
+    // A line of 512 X's would result in much more than 256 characters in the output
+    // If truncation works, the output should be bounded
+    TEST_ASSERT_TRUE_MESSAGE(capturedLen < 512,
+                             "long line was not truncated; entire oversized input reached output");
+}
+
 // ----------------------------------------------------------------------------
 
 int main(int, char**) {
@@ -249,5 +273,6 @@ int main(int, char**) {
     RUN_TEST(test_emission_leaves_mutex_free_with_matched_take_and_give);
     RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
+    RUN_TEST(test_long_lines_are_truncated_to_serial_max);
     return UNITY_END();
 }

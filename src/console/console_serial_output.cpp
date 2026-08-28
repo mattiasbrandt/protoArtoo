@@ -9,8 +9,11 @@
 #include "console_serial_output.h"
 
 #include <Arduino.h>
+#include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+
+#include "logging.h"
 
 extern "C" {
 #include "embedded_cli.h"
@@ -45,6 +48,18 @@ void consoleSerialEmitLine(const char* line) {
         return;
     }
 
+    // Cap line length to prevent serial buffer overflow
+    static char lineBuf[PA_LOG_SERIAL_LINE_MAX];
+    size_t lineLen = strlen(line);
+    const char* lineToEmit = line;
+
+    if (lineLen >= PA_LOG_SERIAL_LINE_MAX) {
+        // Truncate to max length (excluding null terminator)
+        strncpy(lineBuf, line, PA_LOG_SERIAL_LINE_MAX - 1);
+        lineBuf[PA_LOG_SERIAL_LINE_MAX - 1] = '\0';
+        lineToEmit = lineBuf;
+    }
+
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex == nullptr || g_boundCli == nullptr) {
         // No coordination available (boot, before console task). Direct write.
@@ -52,7 +67,7 @@ void consoleSerialEmitLine(const char* line) {
         if (mutex != nullptr) {
             xSemaphoreTake(mutex, portMAX_DELAY);
         }
-        Serial.print(line);
+        Serial.print(lineToEmit);
         Serial.print("\n");
         if (mutex != nullptr) {
             xSemaphoreGive(mutex);
@@ -72,7 +87,7 @@ void consoleSerialEmitLine(const char* line) {
     // - redraws the prompt
     // - redraws the buffered command
     // - restores cursor position
-    embeddedCliPrint(g_boundCli, line);
+    embeddedCliPrint(g_boundCli, lineToEmit);
 
     // Give the mutex back
     xSemaphoreGive(mutex);

@@ -146,14 +146,9 @@ void paLogLine(const char* line) {
         return;
     }
 
-    size_t lineLen = 0;
-    while (line[lineLen] != '\0' && lineLen < PA_LOG_SERIAL_LINE_MAX) {
-        ++lineLen;
-    }
-
     // Route through the serial output coordinator once the Console task binds the CLI.
     // Before the Console task starts, write directly (boot messages, early logs).
-    // consoleSerialEmitLine handles the serial mutex and coordinates with console input.
+    // consoleSerialEmitLine handles the serial mutex, line length cap, and coordinates with console input.
     consoleSerialEmitLine(line);
 
     paLogLineRaw(line);
