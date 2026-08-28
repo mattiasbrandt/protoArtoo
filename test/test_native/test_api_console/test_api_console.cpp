@@ -169,6 +169,58 @@ void test_status_query_is_begin_fields_end() {
     TEST_ASSERT_TRUE(countRecordsOfType(backend.sentBody, "field") > 1);
 }
 
+// docs/console-protocol.md: a query is answered synchronously, so its end record
+// reports outcome=completed. "queued" would claim work entered a queue that a
+// synchronous read never touches.
+void test_completed_query_reports_outcome_completed() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "system.status.health");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        if (strcmp(rec["type"].as<const char*>(), "end") != 0) continue;
+        TEST_ASSERT_EQUAL_STRING("ok", rec["status"].as<const char*>());
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("completed", rec["outcome"].as<const char*>(),
+                                         "a synchronous query must not report queued");
+        return;
+    }
+    TEST_FAIL_MESSAGE("no end record found");
+}
+
+// A successful record carries no reason: there is nothing to explain. The
+// previous code passed CONSOLE_REASON_NOT_IN_THIS_BUILD as filler on success.
+void test_successful_records_carry_no_reason() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help system.status.health");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        if (strcmp(rec["status"].as<const char*>() ? rec["status"].as<const char*>() : "", "ok") != 0)
+            continue;
+        TEST_ASSERT_FALSE_MESSAGE(rec["reason"].is<const char*>(),
+                                  "a successful record must not carry a reason field");
+    }
+}
+
+// A real availability reason must survive to the wire. The suppression guard
+// used to exclude not-in-this-build specifically - it was the enum's zero value
+// and doubled as success filler - which would have dropped the reason from the
+// very answer #224 requires.
+void test_error_record_keeps_its_reason() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "no.such.operation");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObjectConst rec = doc["records"][0];
+    TEST_ASSERT_EQUAL_STRING("err", rec["status"].as<const char*>());
+    TEST_ASSERT_TRUE_MESSAGE(rec["reason"].is<const char*>(),
+                             "an error record lost its reason");
+    TEST_ASSERT_EQUAL_STRING("unknown-operation", rec["reason"].as<const char*>());
+}
+
 // Every record carries the same request id, and ids advance between requests.
 void test_request_ids_are_shared_within_and_advance_between() {
     WebRequestTestBackend first;
@@ -230,6 +282,9 @@ int main(int, char**) {
     RUN_TEST(test_help_with_argument_returns_a_multi_record_answer);
     RUN_TEST(test_unknown_operation_is_a_single_result_record);
     RUN_TEST(test_status_query_is_begin_fields_end);
+    RUN_TEST(test_completed_query_reports_outcome_completed);
+    RUN_TEST(test_successful_records_carry_no_reason);
+    RUN_TEST(test_error_record_keeps_its_reason);
     RUN_TEST(test_request_ids_are_shared_within_and_advance_between);
     RUN_TEST(test_empty_command_is_rejected);
     RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);

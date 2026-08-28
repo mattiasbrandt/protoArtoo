@@ -175,8 +175,11 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
         xSemaphoreTake(mutex, portMAX_DELAY);
     }
 
+    // Present exactly when there is a reason. This is the record an unavailable
+    // operation answers with, so the reason must survive: the previous guard
+    // excluded CONSOLE_REASON_NOT_IN_THIS_BUILD and would have dropped it.
     char reasonStr[64] = {};
-    if (status == CONSOLE_STATUS_ERR && reason != CONSOLE_REASON_NOT_IN_THIS_BUILD) {
+    if (consoleReasonIsPresent(reason)) {
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 
@@ -197,9 +200,16 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
 
 static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                        ConsoleReason reason) {
-    // Emit: < id=<n> type=end status=ok outcome=queued [reason=...]
+    // Emit: < id=<n> type=end status=ok outcome=completed [reason=...]
+    //
+    // The reason field is present exactly when there is a reason. Testing
+    // against NONE rather than the status keeps a genuine availability answer
+    // intact: the previous guard also excluded CONSOLE_REASON_NOT_IN_THIS_BUILD
+    // (then the enum's zero value, used as filler on success paths), which
+    // would have silently dropped `reason=not-in-this-build` from a real
+    // `unavailable` answer.
     char reasonStr[64] = {};
-    if (status == CONSOLE_STATUS_ERR && reason != CONSOLE_REASON_NOT_IN_THIS_BUILD) {
+    if (consoleReasonIsPresent(reason)) {
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 

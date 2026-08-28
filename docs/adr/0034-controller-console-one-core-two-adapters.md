@@ -29,7 +29,9 @@ We decided:
     builders are not rewritten - a native test checks builder keys, registry
     fields and record names against each other. Registry rows that merely
     describe a field inside an aggregate response stay metadata, never
-    artificial standalone commands.
+    artificial standalone commands. A query is answered synchronously, so it
+    reports the outcome `completed`: nothing was queued and nothing changed,
+    which neither `queued` nor `applied` states truthfully.
   - an **action** Operation is the existing dispatch/guard core, changed to
     return an outcome (`queued`, `queue-full`, `blocked`, `unavailable`,
     `invalid`) instead of nothing, so the browser stops printing a false `OK`.

@@ -29,5 +29,13 @@ const char* consoleOutcomeString(ConsoleOutcome outcome);
 // Get the string representation of a reason
 const char* consoleReasonString(ConsoleReason reason);
 
+// Whether a record should carry a reason= field at all.
+//
+// Both adapters call this, so the rule cannot drift between them: the field is
+// present exactly when there is a reason, and absent otherwise. Deciding this
+// per adapter is what let the serial path special-case one reason value and
+// drop it from a genuine availability answer.
+bool consoleReasonIsPresent(ConsoleReason reason);
+
 // Get the string representation of a status
 const char* consoleStatusString(ConsoleStatus status);

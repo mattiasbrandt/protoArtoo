@@ -14,6 +14,10 @@
 // String Conversion Helpers
 // =============================================================================
 
+bool consoleReasonIsPresent(ConsoleReason reason) {
+    return reason != CONSOLE_REASON_NONE;
+}
+
 const char* consoleStatusString(ConsoleStatus status) {
     switch (status) {
         case CONSOLE_STATUS_OK:
@@ -43,6 +47,8 @@ const char* consoleOutcomeString(ConsoleOutcome outcome) {
             return "invalid";
         case CONSOLE_OUTCOME_INTERNAL_ERROR:
             return "internal-error";
+        case CONSOLE_OUTCOME_COMPLETED:
+            return "completed";
         default:
             return "unknown";
     }
@@ -50,6 +56,11 @@ const char* consoleOutcomeString(ConsoleOutcome outcome) {
 
 const char* consoleReasonString(ConsoleReason reason) {
     switch (reason) {
+        case CONSOLE_REASON_NONE:
+            // Never rendered: the adapters omit the reason field entirely when
+            // the reason is NONE. Named rather than empty so it is legible if
+            // it ever surfaces in a log or a test failure.
+            return "none";
         case CONSOLE_REASON_NOT_IN_THIS_BUILD:
             return "not-in-this-build";
         case CONSOLE_REASON_NOT_ON_THIS_BOARD:

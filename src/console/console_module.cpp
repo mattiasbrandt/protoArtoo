@@ -84,10 +84,11 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         sink->onRecordField(requestId, "type", desc->type);
     }
 
-    // End
+    // End: help is answered in full above, synchronously, so the outcome is
+    // completed and no reason applies.
     if (sink->onRecordEnd) {
-        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED,
-                         CONSOLE_REASON_NOT_IN_THIS_BUILD);
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
     }
 }
 
@@ -223,10 +224,11 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
         sink->onRecordField(requestId, "fsReady", tempBuf);
     }
 
-    // End multi-record response
+    // End multi-record response: the snapshot fields are emitted above, so the
+    // query is complete and no reason applies.
     if (sink->onRecordEnd) {
-        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED,
-                         CONSOLE_REASON_NOT_IN_THIS_BUILD);  // Reason 0 (not used for success)
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
     }
 }
 
