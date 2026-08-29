@@ -804,7 +804,7 @@ SemaphoreHandle_t paGetSerialMutex() {
 // Console module's own guard + outcome-mapping logic (console_module.cpp) is
 // what test_console_module.cpp exercises for real; this stub only lets that
 // logic reach a controllable result instead of linking to nothing.
-#include "rc_input.h"
+#include "rc_input_test_hooks.h"
 unsigned g_test_dispatch_action_calls = 0;
 RobotActionId g_test_last_dispatch_target = ROBOT_ACTION_NONE;
 CommandSource g_test_last_dispatch_source = SRC_NONE;

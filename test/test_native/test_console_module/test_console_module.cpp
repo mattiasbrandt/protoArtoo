@@ -39,15 +39,9 @@
 #include "console_module.h"
 #include "rc_diagnostics_snapshot.h"
 #include "rc_input.h"
+#include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
+                                  // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
-
-// dispatchRcTriggerActionTest() is stubbed in native_test_stubs.cpp
-// (rc_input.cpp is not in the native build - RcInputTask depends on pulseIn,
-// esp_task_wdt). These control/observe the stub (#220).
-extern unsigned g_test_dispatch_action_calls;
-extern RobotActionId g_test_last_dispatch_target;
-extern CommandSource g_test_last_dispatch_source;
-extern RcDispatchOutcome g_test_dispatch_outcome;
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
