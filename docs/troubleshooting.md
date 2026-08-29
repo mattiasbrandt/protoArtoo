@@ -300,9 +300,43 @@ Check the network itself as well:
 
 ---
 
+## 6. Controller Console: command typed but nothing (useful) happened
+
+Full guide: [console.md](console.md). Two specific symptoms:
+
+### Typed a long command on serial and it did something other than what you typed
+
+The serial Console's input line holds only about 60 characters by default —
+far shorter than the dashboard's 255-byte limit. Past that point, extra
+keystrokes on serial stop appearing and are not stored; whatever fit in the
+buffer is what runs when you press Enter. There is currently no
+`invalid reason=line-too-long` answer on serial the way there is from the
+dashboard — a command that silently ran short is the only visible symptom.
+If a command with a long quoted value (a WiFi network name, for example)
+behaves oddly on serial, retype it from the dashboard's Live Logs command
+box instead, or keep serial commands short.
+
+### An action answers `blocked reason=blocked-by-state` or `unavailable reason=temporarily-unavailable`
+
+- `blocked reason=blocked-by-state` on an action almost always means **Web
+  control** is off — enable it with the **✓ Enable Web Control** button
+  under Safety Controls on the Drive page, or `POST /api/web-control/enable`,
+  then retry. This applies from serial too, not only the dashboard.
+  `system.action.estop` always answers this way, on purpose; use the
+  dashboard's E-Stop control or `POST /api/estop` instead.
+- `outcome=queue-full` means the part of the firmware that would run the
+  command is busy right now (its queue is momentarily full) — the command
+  was not accepted; wait a moment and try again.
+- `unavailable reason=temporarily-unavailable` on an action, despite the
+  name, is not the same as busy: today it means the action has nothing to
+  do (a sound action drawing from a category with no tracks configured is
+  the current example) — retrying won't help until the underlying
+  configuration is fixed.
+
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.
+- Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md).
 - WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
 - Heap root-cause + fixes: GitHub issue #8 and `tasks/heap-exhaustion-and-flash-findings-2026-06-19.md`.
 - In-PCB USB flash limitation: `tasks/lessons.md` (2026-03-15 entry).
