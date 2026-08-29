@@ -779,7 +779,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildStatusJson
+  executor: captureDomeStatusSnapshot
   fields:
   - domeTargetSpeed
   - domeEnabled
@@ -1768,11 +1768,18 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: Core 0
+  executor: captureAudioStatusSnapshot
   fields:
-  - audioActive
-  - audioLinkOk
-  - activeMood
+  - driver
+  - capabilities
+  - link_ok
+  - active
+  - play_state
+  - device
+  - total_tracks
+  - current_track
+  - rx_status
+  - rx_detail
 - name: sound.config.volume
   display_name: Volume
   description: "Default audio volume (0\u201330)"
@@ -2942,8 +2949,19 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildStatusJson
-  is_query: false
+  executor: captureHealthSnapshot
+  fields:
+  - estop
+  - sbusSignalLost
+  - sbusHwFailsafe
+  - webControlEnabled
+  - wifiConnected
+  - wifiClientConnected
+  - littleFsReady
+  - heapFree
+  - heapMin
+  - heapLargestBlock
+  - wifiRssi
 - name: system.status.dashboard-health
   display_name: Dashboard Health Signals
   description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
@@ -2993,8 +3011,16 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildStatusJson
-  is_query: false
+  executor: captureWifiStatusSnapshot
+  fields:
+  - apSsid
+  - apIp
+  - staEnabled
+  - staConnected
+  - staIp
+  - staSsid
+  - wifiRssi
+  - networkRecovery
 - name: dome.status.serial-link
   display_name: Dome Serial Link
   description: Dome serial link status and heartbeat timing
@@ -3010,11 +3036,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildSerialJson
+  executor: captureDomeSerialLinkSnapshot
   fields:
-  - port
-  - available
-  - baud
+  - active
+  - heartbeatRx
+  - heartbeatTx
 - name: system.api.get-identity
   display_name: Get Droid Identity
   description: Current cosmetic droid name and mDNS opt-in

@@ -37,7 +37,7 @@ dome.event.cue-cantina|BD:CANTINA|Dome cue -- plays AUDIO_SLOT_NAMED_CANTINA_L (
 dome.event.cue-heart|BD:HEART|Dome cue -- plays sentimental category audio (cfg_snd_cat_sent)|audioQueuePlayCategory|
 dome.event.cue-hello|BD:HELLO|Dome cue -- plays general category audio (cfg_snd_cat_gen)|audioQueuePlayCategory|
 dome.event.cue-reset|BD:RESET|Dome cue -- Track Stop (audioQueueTrackStop, ADR 0010): stops current audio playback only, preserves random/idle mood; sent by DM:RESET sequence\n|audioQueueTrackStop|
-dome.status.current|Dome Status|Current dome motor speed and connection state|buildStatusJson|
+dome.status.current|Dome Status|Current dome motor speed and connection state|captureDomeStatusSnapshot|
 dome.action.move|Dome Speed (Web)|Set dome rotation speed from the browser. Gated by sleep mode (423) and the enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is the SBUS/PWM RC-bindable axis.\n|domeCmdQueue|speed:float:1
 dome.api.list-sequences|List Learned Sequences|Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)|seqStoreIndexAt|
 dome.api.list-builtin-sequences|List Factory Sequences|Lightweight Factory catalog metadata (no step data), or the full JSON v1 of one Factory sequence when a name parameter is given (used as the clone source in the editor).\n|sequenceCatalogAt|name:string:0
@@ -86,7 +86,7 @@ sound.action.random-surprised|Random Surprised|Play one random track from the co
 sound.action.random-alert|Random Alert|Play one random track from the configured Alert category range|audioQueuePlayTrack|
 sound.action.random-snarky|Random Snarky|Play one random track from the configured Snarky category range|audioQueuePlayTrack|
 sound.action.random-whistle|Random Whistle|Play one random track from the configured Whistle category range|audioQueuePlayTrack|
-sound.status.current|Sound Status|Current playback state, volume, and module health|Core 0|
+sound.status.current|Sound Status|Current playback state, volume, and module health|captureAudioStatusSnapshot|
 sound.config.volume|Volume|Default audio volume (0–30)|configApply|volume:uint8:1
 sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|
 sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|
@@ -146,11 +146,11 @@ system.config.enable_rc_ch6|RC CH6|Use the receiver signal connected to RC chann
 system.config.enable_drive|S1 — Hoverboard|Use the hoverboard drive controller connected to S1|configApply|
 system.config.enable_audio|S2 — Sound|Use the sound module connected to S2|configApply|
 system.config.enable_protor2link|S3 — Dome Control|Use the dome controller connected to S3|configApply|
-system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem|buildStatusJson|
+system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem|captureHealthSnapshot|
 system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
 system.status.logs|Logs|Recent firmware log lines|buildStatusJson|
-system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|buildStatusJson|
-dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|buildSerialJson|
+system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|captureWifiStatusSnapshot|
+dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|
 system.action.set-identity|Set Droid Identity|Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in|configCacheApply|droidName:string:1|mdnsUseName:bool:0
 system.api.get-profiler|Get Heap Profiler Snapshot|Heap/stack diagnostics snapshot: global heap free/min/largest-block, fragmentation ratio, per-task stack high-water marks, mode-scoped low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING) per-task heap stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).\n|buildProfilerJson|

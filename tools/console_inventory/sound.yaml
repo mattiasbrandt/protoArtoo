@@ -1334,8 +1334,8 @@ rows:
   - include/api_audio.h:54 - void handleAudioGet(WebRequest& req) declaration
   - src/web/api_audio.cpp:793 - void handleAudioGet(WebRequest& req) definition
   - src/web/api_audio.cpp:806 - currentTrack = robotState.audio_module_current_track; core reads state
-  executor_or_core: Core 0
-  missing_metadata:
-  - executor reference not in registry
-  - console_alias not in registry
-  notes: 'live status snapshot: driver name, active flag, play state, device, track counts, RX diagnostics'
+  - include/api_audio.h - captureAudioStatusSnapshot(AudioStatusSnapshot* out) declaration
+  - src/web/api_audio.cpp - captureAudioStatusSnapshot() definition; handleAudioGet() calls it (#223)
+  executor_or_core: captureAudioStatusSnapshot
+  missing_metadata: []
+  notes: 'live status snapshot: driver name, active flag, play state, device, track counts, RX diagnostics. #223: executor corrected from the placeholder "Core 0" to the real capture function; fields corrected from the invented audioActive/audioLinkOk/activeMood (activeMood does not exist in this response at all) to formatAudioStatusJson()''s real JSON keys.'

@@ -50,6 +50,14 @@ typedef struct {
     bool executor_ready;                 // true if executor function is defined and ready
     uint16_t help_offset;                // offset in help file for this operation
     uint16_t help_length;                // length of help text in help file
+    const char* const* fields;           // for type=status: API JSON keys this query answers
+                                          // with, verbatim (NULL-terminated, or NULL). Only
+                                          // meaningful when is_query is true (#223, ADR 0034).
+    bool is_query;                       // for type=status: true if independently console-
+                                          // queryable (registry carries fields:); false if the
+                                          // row only describes a field inside another query's
+                                          // response (registry carries is_query: false, #212).
+                                          // Always true for non-status types.
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
