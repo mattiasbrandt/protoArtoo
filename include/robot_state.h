@@ -40,6 +40,13 @@ enum CommandSource : uint8_t {
     SRC_WEB_API,   // Browser / REST API
     SRC_INTERNAL,  // Internal (safety zeroing, boot defaults)
     SRC_SEQ,       // Sequence coordinator (SequenceDispatcherTask)
+    // Controller Console provenance (ADR 0034, #220). Appended rather than
+    // interleaved so no existing numeric value shifts. Distinct from
+    // SRC_WEB_API: the Console's browser adapter (POST /api/console) and the
+    // REST endpoints are different command surfaces even though both arrive
+    // over HTTP.
+    SRC_SERIAL_CONSOLE,  // Physical serial terminal (embedded-cli adapter)
+    SRC_WEB_CONSOLE,     // Browser Live Logs command box (POST /api/console)
 };
 
 inline const char* commandSourceToString(CommandSource src) {
@@ -52,6 +59,10 @@ inline const char* commandSourceToString(CommandSource src) {
             return "INT";
         case SRC_SEQ:
             return "SEQ";
+        case SRC_SERIAL_CONSOLE:
+            return "SERIAL_CONSOLE";
+        case SRC_WEB_CONSOLE:
+            return "WEB_CONSOLE";
         default:
             return "?";
     }

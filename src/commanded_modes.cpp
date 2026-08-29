@@ -10,11 +10,12 @@
 
 #include "audio_task.h"
 #include "config_cache.h"
+#include "logging.h"
 #include "robot_state.h"
 
-void commandedSetStationary(bool stationary, CommandSource source) {
-    (void)source;  // Reserved for future logging/telemetry; currently unused
+static const char* TAG = "CommandedModes";
 
+void commandedSetStationary(bool stationary, CommandSource source) {
     bool queueDriveOn = false;
     bool wasStationary = false;
 
@@ -33,14 +34,23 @@ void commandedSetStationary(bool stationary, CommandSource source) {
     cfg.system.stationary = stationary;
     configCacheApply(cfg);
 
+    // Was "(void)source; Reserved for future logging/telemetry" until #220:
+    // the Controller Console adds two new sources (SRC_SERIAL_CONSOLE,
+    // SRC_WEB_CONSOLE) whose commands must be distinguishable from RC/Web
+    // API/sequence-triggered ones downstream (ADR 0034 criterion). Logged
+    // only on a real transition, matching the existing edge-triggered
+    // queueDriveOn/persistence behavior above.
+    if (wasStationary != stationary) {
+        PA_LOG_INFO(TAG, "[%s] stationary -> %s", commandSourceToString(source),
+                    stationary ? "true" : "false");
+    }
+
     if (queueDriveOn) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
     }
 }
 
 bool commandedSetSleep(bool sleep, CommandSource source) {
-    (void)source;  // Reserved for future logging/telemetry; currently unused
-
     uint32_t nowMs = millis();
     bool changed = false;
 
@@ -51,6 +61,12 @@ bool commandedSetSleep(bool sleep, CommandSource source) {
         changed = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
+
+    // See commandedSetStationary() above: source was accepted-but-unused
+    // until #220 gave it a real downstream consumer.
+    if (changed) {
+        PA_LOG_INFO(TAG, "[%s] sleep -> %s", commandSourceToString(source), sleep ? "true" : "false");
+    }
 
     return changed;
 }

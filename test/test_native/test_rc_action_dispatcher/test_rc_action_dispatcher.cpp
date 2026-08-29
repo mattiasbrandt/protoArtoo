@@ -275,6 +275,77 @@ void test_category_table_whistle_hi_pointer(void) {
     TEST_ASSERT_NOT_EQUAL(300, hi);
 }
 
+// =============================================================================
+// rcActionResultHasEffect() (#220): distinguishes "nothing to dispatch" from
+// a dispatch failure at the RC-trigger test/Console entry point.
+// =============================================================================
+
+void test_has_effect_false_for_none_action(void) {
+    RcActionPayload p = buildPayload(ROBOT_ACTION_NONE, nullptr, false);
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_FALSE(rcActionResultHasEffect(res));
+}
+
+// The scenario this ticket exists to fix: an unconfigured category range
+// (lo==0) means selectRandomTrackInRange() declines, so the result is
+// entirely empty even though the action target is valid and pressed.
+void test_has_effect_false_for_unconfigured_sound_category(void) {
+    RcActionPayload p = buildPayload(SOUND_ACTION_RANDOM_HUMMING, nullptr, true);
+    p.categories.hum_lo = 0;
+    p.categories.hum_hi = 0;
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_EQUAL_INT(0, res.audioTrack);
+    TEST_ASSERT_FALSE(rcActionResultHasEffect(res));
+}
+
+void test_has_effect_true_for_configured_sound_category(void) {
+    RcActionPayload p = buildPayload(SOUND_ACTION_RANDOM_HUMMING, nullptr, true);
+    p.categories.hum_lo = 10;
+    p.categories.hum_hi = 20;
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_TRUE(rcActionResultHasEffect(res));
+}
+
+void test_has_effect_true_for_servo_toggle(void) {
+    RcActionPayload p = buildPayload(SERVO_ACTION_ARM1_TOGGLE, nullptr, true);
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_TRUE(rcActionResultHasEffect(res));
+}
+
+void test_has_effect_true_for_droid_seq_dome_cmd_only(void) {
+    // Estop suppresses the servo-sequence portion (test_droid_seq_estop_blocks_servo
+    // above) but domeTxCmd is still set - rcActionResultHasEffect() must see it.
+    RcActionPayload p = buildPayload(DROID_SEQ_WAVE, nullptr, true);
+    p.estopActive = true;
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_EQUAL_INT(-1, res.servoIndex);
+    TEST_ASSERT_TRUE(rcActionResultHasEffect(res));
+}
+
+void test_has_effect_true_for_sleep_toggle_with_no_queue_fields(void) {
+    // setSleep is the only field this result carries - none of the
+    // audio/servo/dome/marcduino fields rcDispatchSingleAction() consumes.
+    RcActionPayload p = buildPayload(SYSTEM_ACTION_SLEEP_TOGGLE, nullptr, true);
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_EQUAL_INT(0, res.audioTrack);
+    TEST_ASSERT_EQUAL_INT(-1, res.servoIndex);
+    TEST_ASSERT_EQUAL_CHAR('\0', res.domeTxCmd[0]);
+    TEST_ASSERT_TRUE(rcActionResultHasEffect(res));
+}
+
+void test_has_effect_true_for_estop(void) {
+    RcActionPayload p = buildPayload(SYSTEM_ACTION_ESTOP, nullptr, true);
+    RcActionResult res = rcDispatchAction(p);
+
+    TEST_ASSERT_TRUE(rcActionResultHasEffect(res));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_none_action_returns_empty_result);
@@ -298,5 +369,12 @@ int main(void) {
     RUN_TEST(test_category_table_has_all_12_actions);
     RUN_TEST(test_category_table_gen_lo_hi_pointers);
     RUN_TEST(test_category_table_whistle_hi_pointer);
+    RUN_TEST(test_has_effect_false_for_none_action);
+    RUN_TEST(test_has_effect_false_for_unconfigured_sound_category);
+    RUN_TEST(test_has_effect_true_for_configured_sound_category);
+    RUN_TEST(test_has_effect_true_for_servo_toggle);
+    RUN_TEST(test_has_effect_true_for_droid_seq_dome_cmd_only);
+    RUN_TEST(test_has_effect_true_for_sleep_toggle_with_no_queue_fields);
+    RUN_TEST(test_has_effect_true_for_estop);
     return UNITY_END();
 }
