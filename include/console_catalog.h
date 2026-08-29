@@ -30,11 +30,24 @@
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
 
-// Parameter descriptor (simplified - full schema is in help text)
+// Parameter descriptor. Range/enum (has_range/range_min/range_max/
+// enum_values) close #221 gap 5: docs/action-registry.yaml's `range:` and
+// `values:` keys previously reached only the FS-resident help text
+// (name:type:required, no bounds) and never this in-image table, so the
+// Console's schema validator (include/console_args.h) had no data source
+// for the "range, enum" half of "type, range, enum" argument validation.
+// Populated straight from the registry's existing `range:`/`values:` keys -
+// no registry content change needed, so this is a generator-only diff
+// (data/console_help.txt's param encoding is unaffected and stays byte-
+// identical - verified at generation time, not assumed).
 typedef struct {
     const char* name;      // parameter name (e.g. "speed", "steer")
     const char* type;      // parameter type (e.g. "int16", "string", "bool")
     bool required;         // required vs optional
+    bool has_range;        // true if range_min/range_max apply (numeric types)
+    double range_min;
+    double range_max;
+    const char* const* enum_values;  // NULL-terminated allowed-value strings, or NULL
 } ConsoleParamDescriptor;
 
 // Operation descriptor

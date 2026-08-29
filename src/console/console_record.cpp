@@ -89,6 +89,8 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "executor-not-ready";
         case CONSOLE_REASON_QUEUE_FULL:
             return "queue-full";
+        case CONSOLE_REASON_MALFORMED_ARGUMENT:
+            return "malformed-argument";
         default:
             return "unknown";
     }

@@ -84,13 +84,13 @@ inline char g_argCandidatePool[kArgPoolSize][kArgCandidateMax];
 // re-checked at execution (console_module.cpp), never at discovery or
 // completion time.
 //
-// Quote-aware tokenization of prior argument values (docs/console-protocol.md
-// s.1.2) is deliberately NOT implemented here - only a plain space split is
-// used to find the first token. include/console_cli_line.h's SCOPE FENCE
-// reserves quote-aware argument parsing for #221/#226; this file only needs
-// to find the operation name, which is always the first token and never
-// itself contains a space, so the plain split is sufficient and correct for
-// that narrower purpose.
+// Quote-aware tokenization of argument values (docs/console-protocol.md
+// s.1.2, include/console_args.h's consoleParseArgs()) is deliberately NOT
+// used here - only a plain space split is used to find the first token.
+// This file only needs to find the operation name, which is always the
+// first token and never itself contains a space, so the plain split is
+// sufficient and correct for that narrower purpose; completing INSIDE a
+// quoted value is not attempted.
 inline const char *consoleCompletionCandidate(EmbeddedCli *cli, uint16_t index) {
     using namespace pa_console_completion;
 

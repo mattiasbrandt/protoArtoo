@@ -68,165 +68,178 @@ static const char* const g_aliases_system_action_sleep_toggle[] = { "sleep_toggl
 // Parameter Descriptors
 // =============================================================================
 
+static const char* const g_enum_drive_action_speed_preset_slow_preset[] = { "slow", NULL };
+static const char* const g_enum_drive_action_speed_preset_normal_preset[] = { "normal", NULL };
+static const char* const g_enum_drive_action_speed_preset_turbo_preset[] = { "turbo", NULL };
+static const char* const g_enum_sound_api_play_banked_page[] = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", NULL };
+static const char* const g_enum_servo_action_open_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
+static const char* const g_enum_servo_action_close_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
+static const char* const g_enum_servo_action_set_position_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", NULL };
+static const char* const g_enum_aux_action_led_effect_effect[] = { "solid", "blink", "pulse", "False", NULL };
+static const char* const g_enum_aux_config_led_pin_aux_led_pin[] = { "0", "1", "2", "3", NULL };
+static const char* const g_enum_system_action_set_mood_mood[] = { "10", "11", "13", "14", NULL };
+
+// Total enum-value arrays: 10
+
 static const ConsoleParamDescriptor g_params_drive_action_move[] = {
-    {"speed", "int16", true},
-    {"steer", "int16", true},
-    {NULL, NULL, false}  // terminator
+    {"speed", "int16", true, true, -1000.0, 1000.0, NULL},
+    {"steer", "int16", true, true, -1000.0, 1000.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed[] = {
-    {"value", "float", true},
-    {NULL, NULL, false}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_steer[] = {
-    {"value", "float", true},
-    {NULL, NULL, false}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_slow[] = {
-    {"preset", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_slow_preset},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_normal[] = {
-    {"preset", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_normal_preset},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_turbo[] = {
-    {"preset", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_turbo_preset},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_move[] = {
-    {"speed", "float", true},
-    {NULL, NULL, false}  // terminator
+    {"speed", "float", true, true, -1.0, 1.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_list_builtin_sequences[] = {
-    {"name", "string", false},
-    {NULL, NULL, false}  // terminator
+    {"name", "string", false, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_get_sequence[] = {
-    {"name", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_delete_sequence[] = {
-    {"name", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_test_sequence[] = {
-    {"name", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_play_track[] = {
-    {"track", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"track", "uint16", true, true, 1.0, 999.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_get_catalog[] = {
-    {"bank", "uint8", false},
-    {NULL, NULL, false}  // terminator
+    {"bank", "uint8", false, true, 1.0, 6.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_play_banked[] = {
-    {"bank", "uint8", true},
-    {"page", "string", true},
-    {"index", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"bank", "uint8", true, true, 1.0, 6.0, NULL},
+    {"page", "string", true, false, 0.0, 0.0, g_enum_sound_api_play_banked_page},
+    {"index", "uint16", true, true, 1.0, 65535.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_mood_map[] = {
-    {"quiet", "uint16", true},
-    {"mid", "uint16", true},
-    {"full", "uint16", true},
-    {"awakeplus", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_category_range[] = {
-    {"lo_key", "string", true},
-    {"hi_key", "string", true},
-    {"lo", "uint16", true},
-    {"hi", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"lo_key", "string", true, false, 0.0, 0.0, NULL},
+    {"hi_key", "string", true, false, 0.0, 0.0, NULL},
+    {"lo", "uint16", true, false, 0.0, 0.0, NULL},
+    {"hi", "uint16", true, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_volume[] = {
-    {"volume", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_volume[] = {
-    {"volume", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_mood_category_map[] = {
-    {"quiet", "uint16", true},
-    {"mid", "uint16", true},
-    {"full", "uint16", true},
-    {"awakeplus", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_open[] = {
-    {"target", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_open_target},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_close[] = {
-    {"target", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_close_target},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_set_position[] = {
-    {"target", "string", true},
-    {"position_us", "uint16", true},
-    {NULL, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_set_position_target},
+    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_color[] = {
-    {"r", "uint8", true},
-    {"g", "uint8", true},
-    {"b", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"r", "uint8", true, true, 0.0, 255.0, NULL},
+    {"g", "uint8", true, true, 0.0, 255.0, NULL},
+    {"b", "uint8", true, true, 0.0, 255.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_effect[] = {
-    {"effect", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"effect", "string", true, false, 0.0, 0.0, g_enum_aux_action_led_effect_effect},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_pin[] = {
-    {"aux_led_pin", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"aux_led_pin", "uint8", true, false, 0.0, 0.0, g_enum_aux_config_led_pin_aux_led_pin},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_count[] = {
-    {"aux_led_count", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"aux_led_count", "uint8", true, true, 1.0, 255.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_mood[] = {
-    {"mood", "uint8", true},
-    {NULL, NULL, false}  // terminator
+    {"mood", "uint8", true, false, 0.0, 0.0, g_enum_system_action_set_mood_mood},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_identity[] = {
-    {"droidName", "string", true},
-    {"mdnsUseName", "bool", false},
-    {NULL, NULL, false}  // terminator
+    {"droidName", "string", true, false, 0.0, 0.0, NULL},
+    {"mdnsUseName", "bool", false, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_rc_action_test_bindable[] = {
-    {"token", "string", true},
-    {NULL, NULL, false}  // terminator
+    {"token", "string", true, false, 0.0, 0.0, NULL},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
 };
 
 // =============================================================================

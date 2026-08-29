@@ -1,7 +1,8 @@
 // =============================================================================
 // src/console/console_cli_line.cpp
 //
-// See include/console_cli_line.h for the contract and the scope fence.
+// See include/console_cli_line.h for the contract (widened by #221 to
+// reconstruct every command, not just "help"/"operations").
 // =============================================================================
 
 #include "console_cli_line.h"
@@ -15,18 +16,18 @@ const char* consoleBuildCommandLine(const char* commandName, const char* args, c
         return nullptr;
     }
 
-    // Only these two meta-commands reconstruct args into the command line -
-    // see the scope fence in console_cli_line.h.
-    bool isMetaCommand =
-        (strcmp(commandName, "help") == 0) || (strcmp(commandName, "operations") == 0);
-
-    if (isMetaCommand && args != nullptr && args[0] != '\0' && outBuf != nullptr &&
-        outBufSize > 0) {
+    // #221 widened this: every command reconstructs, not just "help" and
+    // "operations" (see include/console_cli_line.h for why this file stays
+    // alive rather than being deleted). consoleExecuteCommand() splits the
+    // combined line right back into a bare name + raw argument remainder as
+    // its own first step (consoleSplitCommandLine(), include/console_args.h),
+    // so this only needs to get both adapters to the same "name args" shape
+    // - it does no argument-aware parsing of its own.
+    if (args != nullptr && args[0] != '\0' && outBuf != nullptr && outBufSize > 0) {
         snprintf(outBuf, outBufSize, "%s %s", commandName, args);
         return outBuf;
     }
 
-    // No reconstruction: not a meta-command, or a meta-command with no
-    // arguments (both "help" and "operations" have valid no-argument forms).
+    // No reconstruction needed: no arguments were typed.
     return commandName;
 }

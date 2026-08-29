@@ -809,12 +809,15 @@ unsigned g_test_dispatch_action_calls = 0;
 RobotActionId g_test_last_dispatch_target = ROBOT_ACTION_NONE;
 CommandSource g_test_last_dispatch_source = SRC_NONE;
 RcDispatchOutcome g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+char g_test_last_dispatch_payload[32] = {};
 
-RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* /*payload*/,
+RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
                                               bool /*pressed*/, CommandSource src) {
     g_test_dispatch_action_calls++;
     g_test_last_dispatch_target = target;
     g_test_last_dispatch_source = src;
+    snprintf(g_test_last_dispatch_payload, sizeof(g_test_last_dispatch_payload), "%s",
+             payload != nullptr ? payload : "");
     return g_test_dispatch_outcome;
 }
 

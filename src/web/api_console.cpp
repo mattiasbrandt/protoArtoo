@@ -29,6 +29,8 @@
 
 #include "../../include/console_module.h"
 #include "../../include/console_record.h"
+#include "../../include/console_args.h"  // consoleSplitCommandLine() - the `operations` routing
+                                          // check below (#221)
 #include "../../include/web_json_slice_writer.h"
 
 // Maximum number of records + value storage for a single BOUNDED response.
@@ -333,11 +335,20 @@ void handleConsolePost(WebRequest& req) {
             // `operations` (and its `type=` filter form) streams instead of
             // going through the bounded sink below - see the streaming
             // path's comment above fillOperationsResponse() for why this is
-            // the one operation name allowed to. Matches console_module.cpp's
-            // own dispatch predicate for the same meta-command exactly, so
-            // this file and the module can never disagree about which
-            // command names it.
-            if (strcmp(command, "operations") == 0 || strncmp(command, "operations ", 11) == 0) {
+            // the one operation name allowed to. Routed by the SAME name
+            // split console_module.cpp uses (consoleSplitCommandLine(),
+            // include/console_args.h) on a scratch copy - `command` itself
+            // must stay intact, since both this streaming branch and the
+            // bounded path below need the full, unmutated combined line -
+            // so this file and the module can never disagree about which
+            // command names it, including when whitespace between the name
+            // and "type=" is more than one space.
+            char routeScratch[sizeof(command)];
+            snprintf(routeScratch, sizeof(routeScratch), "%s", command);
+            char* routeName = nullptr;
+            char* routeArgsUnused = nullptr;
+            consoleSplitCommandLine(routeScratch, &routeName, &routeArgsUnused);
+            if (routeName != nullptr && strcmp(routeName, "operations") == 0) {
                 g_operationsRequestId = consoleGetNextRequestId();
                 snprintf(g_operationsCommand, sizeof(g_operationsCommand), "%s", command);
                 if (!req.sendChunked("application/json", fillOperationsResponse)) {
