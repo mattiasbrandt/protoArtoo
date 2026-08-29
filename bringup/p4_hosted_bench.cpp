@@ -49,6 +49,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PsychicHttp.h>
+#include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <esp_err.h>
 #include <esp_system.h>
@@ -215,6 +216,100 @@ static void startHttpIfReady() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// One-shot ESP32-C6 slave OTA over the live SDIO link (#189 probe).
+//
+// Disabled unless C6_OTA_URL is defined at build time, e.g.
+//   PLATFORMIO_BUILD_FLAGS='-DC6_OTA_URL=\"http://10.0.0.44:8000/esp32c6-v2.12.11.bin\"'
+// Serve the hash-verified artifact from tasks/c6-backup/c6-reflash-kit/ rather
+// than hostedGetUpdateURL(): the bytes are then known, and no TLS stack is
+// needed on the bench.
+//
+// Safety: the slave keeps a dual-OTA layout, so a failed or abandoned write
+// leaves otadata pointing at the intact factory slot. A slave older than 2.6.0
+// may not implement the OTA RPCs at all, in which case begin/write simply
+// fails and NOTHING is written - which is itself the answer.
+// ---------------------------------------------------------------------------
+#ifdef C6_OTA_URL
+static void runC6SlaveOtaOnce() {
+  static bool attempted = false;
+  if (attempted) {
+    return;
+  }
+  attempted = true;
+
+  uint32_t maj = 0, min = 0, pat = 0;
+  hostedGetSlaveVersion(&maj, &min, &pat);
+  Serial.printf("[C6OTA] start url=%s slaveVersionBefore=%lu.%lu.%lu\n", C6_OTA_URL,
+                (unsigned long)maj, (unsigned long)min, (unsigned long)pat);
+
+  HTTPClient http;
+  if (!http.begin(C6_OTA_URL)) {
+    Serial.println("[C6OTA] FAIL http.begin");
+    return;
+  }
+  const int code = http.GET();
+  const int total = http.getSize();
+  if (code != HTTP_CODE_OK || total <= 0) {
+    Serial.printf("[C6OTA] FAIL httpCode=%d size=%d\n", code, total);
+    http.end();
+    return;
+  }
+  Serial.printf("[C6OTA] fetching %d bytes\n", total);
+
+  if (!hostedBeginUpdate()) {
+    Serial.println("[C6OTA] FAIL hostedBeginUpdate - slave likely predates the OTA RPCs. Nothing written.");
+    http.end();
+    return;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  static uint8_t chunk[4096];
+  int remaining = total;
+  int written = 0;
+  bool ok = true;
+  uint32_t lastLogAt = 0;
+
+  while (remaining > 0 && http.connected()) {
+    const size_t avail = stream->available();
+    if (avail == 0) {
+      delay(1);
+      continue;
+    }
+    const int n = stream->readBytes(chunk, avail > sizeof(chunk) ? sizeof(chunk) : avail);
+    if (n <= 0) {
+      continue;
+    }
+    if (!hostedWriteUpdate(chunk, (uint32_t)n)) {
+      Serial.printf("[C6OTA] FAIL hostedWriteUpdate at offset %d\n", written);
+      ok = false;
+      break;
+    }
+    written += n;
+    remaining -= n;
+    if (millis() - lastLogAt > 2000) {
+      lastLogAt = millis();
+      Serial.printf("[C6OTA] %d/%d bytes\n", written, total);
+    }
+  }
+  http.end();
+
+  if (!ok || written != total) {
+    Serial.printf("[C6OTA] ABORT written=%d expected=%d - otadata still points at the factory slot\n", written, total);
+    return;
+  }
+  Serial.printf("[C6OTA] wrote %d bytes; calling hostedEndUpdate\n", written);
+  if (!hostedEndUpdate()) {
+    Serial.println("[C6OTA] FAIL hostedEndUpdate");
+    return;
+  }
+  Serial.println("[C6OTA] hostedEndUpdate OK; activating (slave reboots, SDIO link drops by design)");
+  const bool activated = hostedActivateUpdate();
+  Serial.printf("[C6OTA] hostedActivateUpdate=%s. Reboot the P4 and re-read hostedSlaveVersion.\n",
+                activated ? "true" : "false");
+}
+#endif  // C6_OTA_URL
+
 static void superviseLink() {
   const uint32_t now = millis();
   uint32_t lastWiFiCheckMs;
@@ -254,6 +349,9 @@ static void superviseLink() {
         WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel());
     }
     startHttpIfReady();
+#ifdef C6_OTA_URL
+    runC6SlaveOtaOnce();
+#endif
     return;
   }
 
