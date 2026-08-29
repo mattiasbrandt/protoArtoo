@@ -99,6 +99,16 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - Never leave a green slice uncommitted.
 
 VERIFICATION (software-verified cap)
+- One PlatformIO build runs on this machine at a time. Wrap EVERY invocation
+  in `flock /tmp/protoartoo-pio.lock` - `pio run`, `pio test`, `make build`,
+  and the slice gate, which builds internally. Keep this worktree on one chip
+  target unless the ticket demands both: alternating targets in one worktree
+  rebuilds the shared framework packages, which every other worktree links.
+- A size that moves with no matching source change is a toolchain fault, not
+  your slice. Report it and stop rather than working around it or re-measuring
+  until a number looks right; the coordinator owns the repair. Chase a number
+  that disagrees with your brief instead of taking whichever reads better -
+  three of this epic's most valuable findings came from exactly that.
 - Slice gate: after committing each slice, run
   `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
   below, if any, and --mutations with your mutation patches when your diff
