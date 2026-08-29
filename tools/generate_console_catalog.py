@@ -70,11 +70,24 @@ def generate_catalog_header(entries, output_path):
 #define CONSOLE_PARAM_TYPE_BOOL      "bool"
 #define CONSOLE_PARAM_TYPE_STRING    "string"
 
-// Parameter descriptor (simplified - full schema is in help text)
+// Parameter descriptor. Range/enum (has_range/range_min/range_max/
+// enum_values) close #221 gap 5: docs/action-registry.yaml's `range:` and
+// `values:` keys previously reached only the FS-resident help text
+// (name:type:required, no bounds) and never this in-image table, so the
+// Console's schema validator (include/console_args.h) had no data source
+// for the "range, enum" half of "type, range, enum" argument validation.
+// Populated straight from the registry's existing `range:`/`values:` keys -
+// no registry content change needed, so this is a generator-only diff
+// (data/console_help.txt's param encoding is unaffected and stays byte-
+// identical - verified at generation time, not assumed).
 typedef struct {
     const char* name;      // parameter name (e.g. "speed", "steer")
     const char* type;      // parameter type (e.g. "int16", "string", "bool")
     bool required;         // required vs optional
+    bool has_range;        // true if range_min/range_max apply (numeric types)
+    double range_min;
+    double range_max;
+    const char* const* enum_values;  // NULL-terminated allowed-value strings, or NULL
 } ConsoleParamDescriptor;
 
 // Operation descriptor
@@ -221,7 +234,61 @@ def generate_catalog_source(entries, offsets, output_path):
     source += "// Parameter Descriptors\n"
     source += "// =============================================================================\n\n"
 
+    def numeric_range(param):
+        """Return (min, max) floats if `range:` is a genuine 2-element
+        numeric bound, else None. The registry also spells a string enum as
+        `range:` for three servo entries (target: [arm1, arm2, ...]) instead
+        of `values:` - a pre-existing inconsistency this generator reads
+        around rather than "fixes" (a registry content change is out of
+        scope for this generator-only ticket)."""
+        r = param.get('range')
+        if not r or len(r) != 2:
+            return None
+        if not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in r):
+            return None
+        return float(r[0]), float(r[1])
+
+    def enum_source(param):
+        """Return the raw enum list a param declares, from whichever of the
+        registry's two spellings (`values:`, or a non-numeric `range:`) it
+        uses - unified into one shape here so the catalog carries exactly
+        one enum representation regardless of which YAML key produced it."""
+        if 'values' in param:
+            return param['values']
+        if numeric_range(param) is None and param.get('range'):
+            return param['range']
+        return None
+
+    # Enum-value arrays (one per param that declares one, since each param
+    # in a multi-param entry can have its own enum - unlike aliases/fields,
+    # which are one per operation). Enum entries may be strings, numbers, or
+    # (a pre-existing registry data-quality quirk - aux.action.led-effect's
+    # bare `off` parses as YAML boolean False, not fixed here, out of scope
+    # for this generator change) booleans; str() renders whatever came
+    # through so the generator does not silently drop a value, and the
+    # content question is left for a follow-up on the registry itself.
     param_names_used = set()
+    enum_names_used = set()
+    for entry in entries:
+        if not entry.get('params'):
+            continue
+        safe_name = entry['name'].replace('.', '_').replace('-', '_')
+        for param in entry['params']:
+            values = enum_source(param)
+            if values is None:
+                continue
+            param_name = param.get('name', '')
+            safe_param = param_name.replace('.', '_').replace('-', '_')
+            enum_var_name = f"g_enum_{safe_name}_{safe_param}"
+            if enum_var_name in enum_names_used:
+                continue
+            enum_names_used.add(enum_var_name)
+            quoted = ', '.join(f"\"{str(v)}\"" for v in values)
+            source += f"static const char* const {enum_var_name}[] = {{ {quoted}, NULL }};\n"
+
+    if enum_names_used:
+        source += f"\n// Total enum-value arrays: {len(enum_names_used)}\n\n"
+
     for entry in entries:
         if entry.get('params'):
             safe_name = entry['name'].replace('.', '_').replace('-', '_')
@@ -233,8 +300,23 @@ def generate_catalog_source(entries, offsets, output_path):
                     param_name = param.get('name', '')
                     param_type = param.get('type', 'string')
                     required = param.get('required', False)
-                    source += f"    {{\"{param_name}\", \"{param_type}\", {'true' if required else 'false'}}},\n"
-                source += "    {NULL, NULL, false}  // terminator\n"
+                    bounds = numeric_range(param)
+                    if bounds is not None:
+                        has_range = 'true'
+                        range_min, range_max = bounds
+                    else:
+                        has_range = 'false'
+                        range_min = 0.0
+                        range_max = 0.0
+                    if enum_source(param) is not None:
+                        safe_param = param_name.replace('.', '_').replace('-', '_')
+                        enum_expr = f"g_enum_{safe_name}_{safe_param}"
+                    else:
+                        enum_expr = "NULL"
+                    source += (f"    {{\"{param_name}\", \"{param_type}\", "
+                               f"{'true' if required else 'false'}, {has_range}, "
+                               f"{range_min}, {range_max}, {enum_expr}}},\n")
+                source += "    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator\n"
                 source += "};\n\n"
 
     # Generate field-name tables for type=status entries that carry fields:
