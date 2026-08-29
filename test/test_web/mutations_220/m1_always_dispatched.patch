@@ -1,0 +1,12 @@
+diff --git a/data/rc.js b/data/rc.js
+index 3ed4b43..c8ee3d4 100644
+--- a/data/rc.js
++++ b/data/rc.js
+@@ -109,6 +109,7 @@
+   // older/mismatched firmware) must not read as success - the whole point of
+   // #220 is that the picker stops claiming "Dispatched" on a dropped command.
+   const actionTestFeedbackForOutcome = (outcome) => {
++    return { kind: 'success', text: 'Dispatched' };
+     if (outcome === 'queued') return { kind: 'success', text: 'Dispatched' };
+     if (outcome === 'queue-full') return { kind: 'error', text: 'Queue full - try again' };
+     if (outcome === 'unavailable') return { kind: 'error', text: 'Unavailable right now' };
