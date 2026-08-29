@@ -1169,10 +1169,12 @@ rows:
       - "src/web/web_seam_routes.cpp:51 - webRegisterRoute(\"/api/status\", kGet, handleStatusGet)"
       - "include/web_request.h:31 - void handleStatusGet(WebRequest& req)"
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req) {"
-      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
-    executor_or_core: "buildStatusJson"
+      - "include/api_status.h - captureDomeStatusSnapshot(DomeStatusSnapshot* out) declaration"
+      - "src/web/api_status_serializers.cpp - captureDomeStatusSnapshot() definition"
+      - "src/web/web_server.cpp:303-306 - buildStatusJson() calls captureDomeStatusSnapshot() for domeTargetSpeed/domeEnabled (#223)"
+    executor_or_core: "captureDomeStatusSnapshot"
     missing_metadata: []
-    notes: "Status query via /api/status SSE stream"
+    notes: "Status query via /api/status SSE stream. #223: promoted to a real console query; captureDomeStatusSnapshot() is the Zone Snapshot capture buildStatusJson() and the Console module both call (ADR 0034)."
   - name: dome.status.serial-link
     type: status
     registry_api_path: /api/serial
@@ -1189,7 +1191,8 @@ rows:
       - "src/web/web_seam_routes.cpp:52 - webRegisterRoute(\"/api/serial\", kGet, handleSerialGet)"
       - "include/web_request.h:33 - void handleSerialGet(WebRequest& req)"
       - "src/web/api_status.cpp:114 - void handleSerialGet(WebRequest& req) {"
-      - "src/web/api_status.cpp:116 - buildSerialJson(body, sizeof(body))"
-    executor_or_core: "buildSerialJson"
+      - "include/api_status.h - captureDomeSerialLinkSnapshot(DomeSerialLinkSnapshot* out) declaration"
+      - "src/web/api_status_serializers.cpp - captureDomeSerialLinkSnapshot() definition; formatSerialJson()'s \"dome\" sub-object"
+    executor_or_core: "captureDomeSerialLinkSnapshot"
     missing_metadata: []
-    notes: "Serial transport status query"
+    notes: "Serial transport status query. #223: fields corrected from the invented port/available/baud (no such JSON keys exist) to the real dome sub-object's dynamic keys (active/heartbeatRx/heartbeatTx); the static label/name/hardwareRequired/note keys are compile-time literals, not state, and are not part of the console query."

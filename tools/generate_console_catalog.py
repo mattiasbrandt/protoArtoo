@@ -90,6 +90,14 @@ typedef struct {
     bool executor_ready;                 // true if executor function is defined and ready
     uint16_t help_offset;                // offset in help file for this operation
     uint16_t help_length;                // length of help text in help file
+    const char* const* fields;           // for type=status: API JSON keys this query answers
+                                          // with, verbatim (NULL-terminated, or NULL). Only
+                                          // meaningful when is_query is true (#223, ADR 0034).
+    bool is_query;                       // for type=status: true if independently console-
+                                          // queryable (registry carries fields:); false if the
+                                          // row only describes a field inside another query's
+                                          // response (registry carries is_query: false, #212).
+                                          // Always true for non-status types.
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -229,6 +237,26 @@ def generate_catalog_source(entries, offsets, output_path):
                 source += "    {NULL, NULL, false}  // terminator\n"
                 source += "};\n\n"
 
+    # Generate field-name tables for type=status entries that carry fields:
+    # (#223, ADR 0034). The registry's fields: list is the record emitter's
+    # contract: names here are the API JSON keys verbatim, checked against the
+    # JSON builder and the record emitter by a native test.
+    source += "// =============================================================================\n"
+    source += "// Status Query Field Lists (API JSON keys, verbatim)\n"
+    source += "// =============================================================================\n\n"
+
+    field_names_used = set()
+    for entry in entries:
+        if entry.get('fields'):
+            safe_name = entry['name'].replace('.', '_').replace('-', '_')
+            fields_var_name = f"g_fields_{safe_name}"
+            if fields_var_name not in field_names_used:
+                field_names_used.add(fields_var_name)
+                quoted = ', '.join(f"\"{f}\"" for f in entry['fields'])
+                source += f"static const char* const {fields_var_name}[] = {{ {quoted}, NULL }};\n"
+
+    source += f"\n// Total field-name arrays: {len(field_names_used)}\n\n"
+
     # Generate the main catalog table
     source += "// =============================================================================\n"
     source += "// Complete Operation Catalog\n"
@@ -281,6 +309,20 @@ def generate_catalog_source(entries, offsets, output_path):
         else:
             help_offset, help_length = 0, 0
 
+        # Fields + is_query: only meaningful for type=status (#212's rule: a
+        # status entry carries either fields: or is_query: false). Non-status
+        # entries carry no fields and are_query defaults true (unused).
+        if entry.get('fields'):
+            safe_name = name.replace('.', '_').replace('-', '_')
+            fields_expr = f"g_fields_{safe_name}"
+            is_query = True
+        elif op_type == 'status':
+            fields_expr = "NULL"
+            is_query = entry.get('is_query') is not False
+        else:
+            fields_expr = "NULL"
+            is_query = True
+
         source += f"    {{\n"
         source += f"        \"{name}\",\n"
         source += f"        \"{op_type}\",\n"
@@ -293,6 +335,8 @@ def generate_catalog_source(entries, offsets, output_path):
         source += f"        {'true' if executor_ready else 'false'},  // executor_ready\n"
         source += f"        {help_offset},  // help_offset\n"
         source += f"        {help_length},  // help_length\n"
+        source += f"        {fields_expr},  // fields\n"
+        source += f"        {'true' if is_query else 'false'},  // is_query\n"
         source += f"    }},\n"
 
     source += "};\n\n"
