@@ -19,8 +19,20 @@
 // =============================================================================
 #pragma once
 
+#include "config.h"
 #include "config_store.h"
 #include "wifi_boot_decision.h"
+
+// At most one network backend may be selected (ADR 0029). A Board Variant
+// declaring both PA_CAP_NATIVE_WIFI and PA_CAP_HOSTED_WIFI would compile two
+// definitions of every seam function below and fail at link with a
+// duplicate-symbol error that names none of this -- catching it here instead
+// gives the maintainer adding a board the actual invariant, not a linker
+// puzzle. Zero backends stays legal (ADR 0032, zero-backend composition):
+// this is *at most* one, not *exactly* one.
+static_assert(!(PA_CAP_NATIVE_WIFI && PA_CAP_HOSTED_WIFI),
+              "at most one network backend capability (PA_CAP_NATIVE_WIFI, PA_CAP_HOSTED_WIFI) "
+              "may be enabled per board");
 
 // Initialize network manager: register WiFi event handler and prepare for
 // bootstrap. Called once at boot from webServerInit() (web_server.cpp).
