@@ -1095,6 +1095,76 @@ void test_component_toggle_write_rejects_a_malformed_boolean() {
 
 // Mirrors test_action_executor_not_ready_count_report's shape for type=config
 // rows - informational, not a pass/fail assertion on the count itself.
+// =============================================================================
+// Non-toggle scalar config rows (#226): applied live, not staged
+// =============================================================================
+
+void test_drive_speed_limit_read_and_write() {
+    ConfigSnapshot snap = {};
+    snap.drive.speedLimitMax = 250;
+    configCacheApply(snap);
+
+    runQuery("drive.config.speed-limit");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("250", capturedValue("value"));
+
+    runQuery("drive.config.speed-limit value=300");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_INT16(300, after.drive.speedLimitMax);
+}
+
+void test_drive_speed_limit_rejects_out_of_range() {
+    runQuery("drive.config.speed-limit value=9999");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_aux_led_pin_read_and_write() {
+    runQuery("aux.config.led-pin value=2");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("aux.config.led-pin");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("2", capturedValue("value"));
+}
+
+void test_aux_led_count_read_and_write() {
+    runQuery("aux.config.led-count value=30");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("aux.config.led-count");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("30", capturedValue("value"));
+}
+
+void test_rc_mode_read_and_write() {
+    runQuery("rc.config.mode value=single_sbus");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("rc.config.mode");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("single_sbus", capturedValue("value"));
+}
+
+void test_rc_mode_rejects_an_unknown_mode_string() {
+    runQuery("rc.config.mode value=quantum_sbus");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_scalar_config_write_rejects_an_unknown_argument() {
+    runQuery("drive.config.speed-limit bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bogus", capturedValue("argument"));
+}
+
 void test_config_executor_not_ready_count_report() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -1333,6 +1403,13 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_accepts_the_named_key_not_only_value);
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
+    RUN_TEST(test_drive_speed_limit_read_and_write);
+    RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
+    RUN_TEST(test_aux_led_pin_read_and_write);
+    RUN_TEST(test_aux_led_count_read_and_write);
+    RUN_TEST(test_rc_mode_read_and_write);
+    RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
+    RUN_TEST(test_scalar_config_write_rejects_an_unknown_argument);
     RUN_TEST(test_config_executor_not_ready_count_report);
 
     RUN_TEST(test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts);

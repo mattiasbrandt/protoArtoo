@@ -932,6 +932,78 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
     return true;
 }
 
+// Shared write path for a single-field scalar config write through
+// configApply() + configCommitApplied() - the tokenize/validate/apply/
+// commit sequence every scalar config write shares regardless of which
+// outcome a clean write reports (Component Toggles below always answer
+// staged-until-reboot per ADR 0027; the four non-toggle scalar fields this
+// ticket also wires - drive.config.speed-limit, aux.config.led-pin/
+// led-count, rc.config.mode - answer applied, matching how their owning
+// task already reads config_cache live, the same as every other non-toggle
+// configApply field REST already exposes).
+static void consoleWriteScalarConfigField(uint32_t requestId, const char* operationName,
+                                          const char* fieldKey, char* rawArgs,
+                                          ConsoleCommandSource source, ConsoleOutcome successOutcome,
+                                          const ConsoleRecordSink* sink) {
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+    if (parsedArgs.count == 0) {
+        // rawArgs was non-empty whitespace with no key=value pairs at all -
+        // malformed, not a silent read (the caller only reaches here once
+        // rawArgs held a non-whitespace byte).
+        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
+        return;
+    }
+
+    const char* badKey = nullptr;
+    if (!consoleScalarConfigArgsValid(parsedArgs, fieldKey, &badKey)) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+
+    ConfigSnapshot working = {};
+    configCacheRead(&working);
+    const bool domeEnabledBefore = working.system.enable_dome_esc;
+
+    ScalarConfigArg adapter{&parsedArgs, fieldKey};
+    ConfigParamSource params;
+    params.ctx = &adapter;
+    params.get = consoleScalarConfigParamGet;
+
+    configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
+    if (s_consoleConfigApplyResult.error.hasError) {
+        // configApply()'s only failure for a single supplied field is that
+        // field's own type/range/enum check - OUT_OF_RANGE matches
+        // consoleValidateArgsAgainstSchema()'s classification for the same
+        // shape of failure on the registry-driven path.
+        consoleEmitArgFailure(requestId, operationName, fieldKey, CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    ConfigCommitOutcome commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
+    if (!commit.persisted) {
+        // "a failed NVS write is an explicit error" (criterion 3) - status=err
+        // with the module's existing catch-all outcome; no dedicated
+        // persistence-failure reason exists in the hand-maintained
+        // ConsoleReason set (include/console_module.h), and none is added
+        // here for these call sites alone.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, successOutcome, CONSOLE_REASON_NONE);
+    }
+}
+
 // system.config.enable_* (Component Toggles, ADR 0027/0033): a read with no
 // arguments renders "saved" (the config cache - what the next boot applies)
 // and "active" (what actually booted, include/config_cache.h's Active
@@ -969,67 +1041,174 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
         return;
     }
 
-    ConsoleArgs parsedArgs = {};
-    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
-    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
-        consoleEmitArgParseError(requestId, parseStatus, sink);
-        return;
-    }
-    if (parsedArgs.count == 0) {
-        // rawArgs was non-empty whitespace with no key=value pairs at all -
-        // malformed, not a silent read (isWrite already committed to the
-        // write branch above once rawArgs held a non-whitespace byte).
-        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
-        return;
-    }
+    // Every Component Toggle write that clears validation always answers
+    // staged-until-reboot (ADR 0027) - never contingent on whether the new
+    // value differs from the currently active one, which is exactly what
+    // the read side above already answers.
+    consoleWriteScalarConfigField(requestId, entry->name, field->paramKey, rawArgs, source,
+                                  CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, sink);
+}
 
-    const char* badKey = nullptr;
-    if (!consoleScalarConfigArgsValid(parsedArgs, field->paramKey, &badKey)) {
-        consoleEmitArgFailure(requestId, entry->name, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-        return;
-    }
+// =============================================================================
+// Private: the remaining scalar config.type rows configApply() already
+// handles live (not staged - unlike the Component Toggles above, these
+// fields are read from config_cache every control-loop iteration by their
+// owning task, the same "applied" semantics REST already gives them).
+// Confirmed one at a time by reading src/web/api_config_apply.cpp, not
+// assumed from the registry: sound.config.volume and sound.config.mood-
+// interval-* claim executor: configApply too but that function has no
+// "volume"/"sndIntQuiet"-shaped param at all (volume is set inline in
+// handleAudioPost's action=volume branch; the mood-interval fields have no
+// write path anywhere in this codebase today) - both are registry/
+// implementation gaps flagged in the status comment, not wired here since
+// there is no real Apply Core behind either to reuse.
+// =============================================================================
 
-    ConfigSnapshot working = {};
-    configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome_esc;
-
-    ScalarConfigArg adapter{&parsedArgs, field->paramKey};
-    ConfigParamSource params;
-    params.ctx = &adapter;
-    params.get = consoleScalarConfigParamGet;
-
-    configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
-    if (s_consoleConfigApplyResult.error.hasError) {
-        // The only failure configApply() can produce for a bool field is a
-        // malformed value (not true/false/1/0) - a type failure, matching
-        // consoleValidateArgsAgainstSchema()'s own OUT_OF_RANGE classification
-        // for "type/range/enum failure on a present key".
-        consoleEmitArgFailure(requestId, entry->name, field->paramKey, CONSOLE_REASON_OUT_OF_RANGE,
-                              sink);
-        return;
-    }
-
-    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-    ConfigCommitOutcome commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
-    if (!commit.persisted) {
-        // "a failed NVS write is an explicit error" (criterion) - status=err
-        // with the module's existing catch-all outcome; no dedicated
-        // persistence-failure reason exists in the hand-maintained
-        // ConsoleReason set (include/console_module.h) and none is added
-        // here for one call site (a future ticket adding real config rows
-        // beyond Component Toggles is the natural place to decide whether
-        // one earns its keep across every write path, not just this one).
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
-                                CONSOLE_REASON_NONE);
+// drive.config.speed-limit: value=<0..600> (speedLimitMax).
+static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                          char* rawArgs, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        char buf[12] = {};
+        snprintf(buf, sizeof(buf), "%d", (int)snap.drive.speedLimitMax);
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
         }
         return;
     }
+    consoleWriteScalarConfigField(requestId, entry->name, "speedLimitMax", rawArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
 
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT,
-                            CONSOLE_REASON_NONE);
+// aux.config.led-pin: value=<0..AUX_LED_PIN_MAX> (aux_led_pin).
+static void consoleExecuteAuxLedPin(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                   char* rawArgs, ConsoleCommandSource source,
+                                   const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_pin);
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
     }
+    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_pin", rawArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
+
+// aux.config.led-count: value=<AUX_LED_COUNT_DEFAULT..AUX_LED_COUNT_MAX>
+// (aux_led_count).
+static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                     char* rawArgs, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_count);
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_count", rawArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
+
+// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus (rcInputMode).
+// Registry drift note: docs/action-registry.yaml lists this row's executor
+// as rcMapApply, which is wrong - rcMapApply() handles the RC BINDING
+// table, not the input-mode enum; configApply()'s own "rcInputMode" param
+// (src/web/api_config_apply.cpp) is the real one. Not fixed in the registry
+// here since that edit reaches fenced data/console_help.txt (status comment).
+static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
+                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        const char* mode = "dual_sbus";
+        switch (snap.system.rc_input_mode) {
+            case RC_INPUT_STANDARD_PWM:
+                mode = "standard_pwm";
+                break;
+            case RC_INPUT_SINGLE_SBUS:
+                mode = "single_sbus";
+                break;
+            case RC_INPUT_DUAL_SBUS:
+            default:
+                mode = "dual_sbus";
+                break;
+        }
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", mode);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+    consoleWriteScalarConfigField(requestId, entry->name, "rcInputMode", rawArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
+
+typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                              char* rawArgs, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink);
+
+struct ConsoleScalarConfigExecutorEntry {
+    const char* operationName;
+    ConsoleScalarConfigExecutorFn executor;
+};
+
+static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
+    {"drive.config.speed-limit", consoleExecuteDriveSpeedLimit},
+    {"aux.config.led-pin", consoleExecuteAuxLedPin},
+    {"aux.config.led-count", consoleExecuteAuxLedCount},
+    {"rc.config.mode", consoleExecuteRcMode},
+};
+static const size_t kScalarConfigExecutorCount =
+    sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
+
+static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char* canonicalName) {
+    for (size_t i = 0; i < kScalarConfigExecutorCount; ++i) {
+        if (strcmp(g_scalarConfigExecutors[i].operationName, canonicalName) == 0) {
+            return g_scalarConfigExecutors[i].executor;
+        }
+    }
+    return nullptr;
 }
 
 // system.config.mood (#226): the config-typed view of the same active-mood
@@ -1662,10 +1841,19 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
+            ConsoleScalarConfigExecutorFn scalarExecutor =
+                (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
+            if (scalarExecutor != nullptr) {
+                scalarExecutor(request->requestId, entry, rawArgs, request->source, sink);
+                break;
+            }
+
             // Every other type=config row not yet added as a row above (the
-            // remaining scalar entries) or genuinely out of this dispatch's
-            // shape (the grouped audio/rc-map writes, see the pinned
-            // coordinator comment's scope note) is not wired.
+            // remaining scalar entries with no real Apply Core to reuse -
+            // sound.config.volume, sound.config.mood-interval-*, see this
+            // section's own header comment - or genuinely out of this
+            // dispatch's shape, the grouped audio/rc-map writes, see the
+            // pinned coordinator comment's scope note) is not wired.
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
