@@ -26,6 +26,10 @@
 #include "failsafe_gate.h"
 #include "web_server.h"
 #include "web_network_manager.h"
+#include "api_status.h"
+#include "api_audio.h"
+#include "audio_task.h"
+#include "rc_diagnostics_snapshot.h"
 
 static const char* TAG = "Console";
 
@@ -280,124 +284,233 @@ static ConsoleOperationType consoleGetOperationType(const char* operationName) {
 }
 
 // =============================================================================
-// Private: system.status.health Implementation
+// Private: status query executors (#223, ADR 0034)
+//
+// Each executor calls the same capture*Snapshot() "Zone Snapshot" function the
+// REST handler for that query calls (src/web/api_status*.cpp, src/web/api_audio.cpp,
+// src/web/rc_diagnostics_snapshot.cpp), then renders the snapshot's fields as
+// Console field records - never through the JSON builder. Field names are the
+// API's JSON keys verbatim (docs/console-protocol.md s.3.5); the registry's
+// fields: list, the JSON builder's keys and these names are checked against
+// each other by test/test_native/test_console_module.
+//
+// Note: onRecordBegin is already called by consoleExecuteCommand before an
+// executor runs, so each executor only emits fields (and its own onRecordEnd).
 // =============================================================================
 
-// Execute system.status.health query
-// Reads the current system health snapshot and emits records through sink
-// ADR 0034: status query flows through the existing snapshot builder, rendering as Console Records
-// Note: onRecordBegin is already called by consoleExecuteCommand before this function,
-// so the mutex is already held and we emit fields directly.
 static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRecordSink* sink) {
-    // Read values directly from RobotState and other sources
-    // This replicates the logic from api_status.cpp's buildHealthJson
-    FailsafeDiagnostics diag = {};
-    bool webControlEnabled;
-    bool wifiConnected;
-    bool wifiClientConnected;
-    bool fsReady;
-    unsigned long heapFree;
-    unsigned long heapMin;
-    unsigned long heapLargestBlock;
-    long wifiRssi;
+    HealthSnapshot snap = {};
+    captureHealthSnapshot(&snap);
 
-    taskENTER_CRITICAL(&robotStateMux);
-    copyFailsafeDiagnosticsLocked(&diag);
-    webControlEnabled = robotState.webControlEnabled;
-    taskEXIT_CRITICAL(&robotStateMux);
+    char tempBuf[32] = {};
 
-    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
-    wifiConnected = connectivity.wifiConnected;
-    wifiClientConnected = connectivity.wifiClientConnected;
-    wifiRssi = connectivity.wifiRssi;
-
-    fsReady = webLittleFsMounted();
-#ifdef ARDUINO
-    heapFree = ESP.getFreeHeap();
-    heapMin = ESP.getMinFreeHeap();
-    heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-#else
-    // Native tests: use reasonable stub values (not available on standard C heap)
-    heapFree = 262144;      // 256 KB stub value for test consistency
-    heapMin = 262144;
-    heapLargestBlock = 262144;
-#endif
-
-    // Emit fields through sink (Console Record format)
-    char tempBuf[64] = {};
-
-    // estop
-    snprintf(tempBuf, sizeof(tempBuf), "%s", diag.estop ? "true" : "false");
     if (sink->onRecordField) {
-        sink->onRecordField(requestId, "estop", tempBuf);
+        sink->onRecordField(requestId, "estop", snap.estop ? "true" : "false");
+        sink->onRecordField(requestId, "sbusSignalLost", snap.sbusSignalLost ? "true" : "false");
+        sink->onRecordField(requestId, "sbusHwFailsafe", snap.sbusHwFailsafe ? "true" : "false");
+        sink->onRecordField(requestId, "webControlEnabled",
+                           snap.webControlEnabled ? "true" : "false");
+        sink->onRecordField(requestId, "wifiConnected", snap.wifiConnected ? "true" : "false");
+        sink->onRecordField(requestId, "wifiClientConnected",
+                           snap.wifiClientConnected ? "true" : "false");
+        sink->onRecordField(requestId, "littleFsReady", snap.littleFsReady ? "true" : "false");
     }
 
-    // heapFree
-    snprintf(tempBuf, sizeof(tempBuf), "%lu", heapFree);
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "heapFree", tempBuf);
-    }
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapFree);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heapFree", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapMin);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heapMin", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapLargestBlock);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
+    if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
 
-    // heapMin
-    snprintf(tempBuf, sizeof(tempBuf), "%lu", heapMin);
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "heapMin", tempBuf);
-    }
-
-    // heapLargestBlock
-    snprintf(tempBuf, sizeof(tempBuf), "%lu", heapLargestBlock);
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
-    }
-
-    // sbusSignalLost
-    snprintf(tempBuf, sizeof(tempBuf), "%s", diag.sbusSignalLost ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "sbusSignalLost", tempBuf);
-    }
-
-    // sbusHwFailsafe
-    snprintf(tempBuf, sizeof(tempBuf), "%s", diag.sbusHwFailsafe ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "sbusHwFailsafe", tempBuf);
-    }
-
-    // webControlEnabled
-    snprintf(tempBuf, sizeof(tempBuf), "%s", webControlEnabled ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "webControlEnabled", tempBuf);
-    }
-
-    // wifiConnected
-    snprintf(tempBuf, sizeof(tempBuf), "%s", wifiConnected ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "wifiConnected", tempBuf);
-    }
-
-    // wifiClientConnected
-    snprintf(tempBuf, sizeof(tempBuf), "%s", wifiClientConnected ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "wifiClientConnected", tempBuf);
-    }
-
-    // wifiRssi
-    snprintf(tempBuf, sizeof(tempBuf), "%ld", wifiRssi);
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "wifiRssi", tempBuf);
-    }
-
-    // fsReady
-    snprintf(tempBuf, sizeof(tempBuf), "%s", fsReady ? "true" : "false");
-    if (sink->onRecordField) {
-        sink->onRecordField(requestId, "fsReady", tempBuf);
-    }
-
-    // End multi-record response: the snapshot fields are emitted above, so the
-    // query is complete and no reason applies.
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
                          CONSOLE_REASON_NONE);
     }
+}
+
+static void consoleExecuteSystemStatusWifi(uint32_t requestId, const ConsoleRecordSink* sink) {
+    WifiStatusSnapshot snap = {};
+    captureWifiStatusSnapshot(&snap);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "apSsid", snap.apSsid);
+        sink->onRecordField(requestId, "apIp", snap.apIp);
+        sink->onRecordField(requestId, "staEnabled", snap.staEnabled ? "true" : "false");
+        sink->onRecordField(requestId, "staConnected", snap.staConnected ? "true" : "false");
+        sink->onRecordField(requestId, "staIp", snap.staIp);
+        sink->onRecordField(requestId, "staSsid", snap.staSsid);
+    }
+
+    char tempBuf[16] = {};
+    snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
+    if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "networkRecovery", snap.networkRecovery ? "true" : "false");
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDomeStatusCurrent(uint32_t requestId, const ConsoleRecordSink* sink) {
+    DomeStatusSnapshot snap = {};
+    captureDomeStatusSnapshot(&snap);
+
+    // %.3f matches buildStatusJson()'s own "domeTargetSpeed" formatting
+    // (src/web/web_server.cpp) so the value reads identically on both adapters.
+    char tempBuf[24] = {};
+    snprintf(tempBuf, sizeof(tempBuf), "%.3f", (double)snap.domeTargetSpeed);
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "domeTargetSpeed", tempBuf);
+        sink->onRecordField(requestId, "domeEnabled", snap.domeEnabled ? "true" : "false");
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteSoundStatusCurrent(uint32_t requestId, const ConsoleRecordSink* sink) {
+    AudioStatusSnapshot snap = {};
+    captureAudioStatusSnapshot(&snap);
+
+    char tempBuf[16] = {};
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "driver", audioGetDriverName());
+    }
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)audioGetCapabilities());
+    if (sink->onRecordField) sink->onRecordField(requestId, "capabilities", tempBuf);
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "link_ok", snap.linkOk ? "true" : "false");
+        sink->onRecordField(requestId, "active", snap.active ? "true" : "false");
+        sink->onRecordField(requestId, "play_state", audioPlayStateLabel(snap.playState));
+        sink->onRecordField(requestId, "device", audioDeviceLabel(snap.device));
+    }
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.totalTracks);
+    if (sink->onRecordField) sink->onRecordField(requestId, "total_tracks", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.currentTrack);
+    if (sink->onRecordField) sink->onRecordField(requestId, "current_track", tempBuf);
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "rx_status", audioRxStatusToken(snap.rxStatus));
+        sink->onRecordField(requestId, "rx_detail", audioRxStatusDetail(snap.rxStatus));
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDomeStatusSerialLink(uint32_t requestId, const ConsoleRecordSink* sink) {
+    DomeSerialLinkSnapshot snap = {};
+    captureDomeSerialLinkSnapshot(&snap);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "active", snap.active ? "true" : "false");
+    }
+    char tempBuf[16] = {};
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heartbeatRx);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heartbeatRx", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heartbeatTx);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heartbeatTx", tempBuf);
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// Renders one RcDiagnosticsSourceSnapshot as a single whitespace-free token.
+// Colon-separated (not "="): the record's own wire format is space-separated
+// key=value tokens and no adapter quotes values yet (docs/console-protocol.md
+// s.3.5 asks for it; consoleQuoteValue() is unused, a pre-existing gap out of
+// scope here - same reasoning as the alias/param comma-joining above). An
+// internal "=" would still parse under a first-"="-split reader, but would
+// violate the documented "quote a value containing =" rule for no benefit, so
+// this avoids "=" entirely instead.
+static void consoleFormatRcSourceSummary(const RcDiagnosticsSourceSnapshot& source, char* out,
+                                        size_t outSize) {
+    snprintf(out, outSize, "enabled:%s,linked:%s,ageMs:%lu,lostFrames:%lu,failsafe:%s",
+             source.enabled ? "true" : "false", source.linked ? "true" : "false",
+             (unsigned long)source.ageMs, (unsigned long)source.lostFrames,
+             source.failsafe ? "true" : "false");
+}
+
+static void consoleExecuteRcStatusSnapshot(uint32_t requestId, const ConsoleRecordSink* sink) {
+    RcDiagnosticsSnapshot snap = {};
+    captureRcDiagnosticsSnapshot(&snap);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "mode", snap.mode != nullptr ? snap.mode : "");
+    }
+
+    // sources[0]/[1] are always "sbus1"/"sbus2" (fixed order,
+    // src/web/rc_diagnostics_snapshot.cpp); "sbus1"/"sbus2" are real JSON keys
+    // at sources.sbus1/sources.sbus2 in populateRcDiagnosticsJson()'s output,
+    // collapsed to one summary token per source rather than expanded field by
+    // field - /api/rc's full shape (sources/channels/digital/mappingProfile/raw)
+    // is deeply nested and not scalar-field-shaped.
+    char tempBuf[80] = {};
+    if (snap.sourceCount > 0 && sink->onRecordField) {
+        consoleFormatRcSourceSummary(snap.sources[0], tempBuf, sizeof(tempBuf));
+        sink->onRecordField(requestId, "sbus1", tempBuf);
+    }
+    if (snap.sourceCount > 1 && sink->onRecordField) {
+        consoleFormatRcSourceSummary(snap.sources[1], tempBuf, sizeof(tempBuf));
+        sink->onRecordField(requestId, "sbus2", tempBuf);
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// =============================================================================
+// Status executor dispatch table (#223)
+//
+// One dispatch point that resolves a catalog entry to an executor - not a
+// chain of strcmp prefixes bolted beside the meta-command checks. This is the
+// seam #220/#224/#225/#226 (actions, profiling, survival, config) extend:
+// adding an executor is adding a row here, not editing consoleExecuteCommand's
+// control flow.
+// =============================================================================
+
+typedef void (*ConsoleStatusExecutorFn)(uint32_t requestId, const ConsoleRecordSink* sink);
+
+struct ConsoleStatusExecutorEntry {
+    const char* operationName;
+    ConsoleStatusExecutorFn executor;
+};
+
+static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
+    {"system.status.health", consoleExecuteSystemStatusHealth},
+    {"system.status.wifi", consoleExecuteSystemStatusWifi},
+    {"dome.status.current", consoleExecuteDomeStatusCurrent},
+    {"sound.status.current", consoleExecuteSoundStatusCurrent},
+    {"dome.status.serial-link", consoleExecuteDomeStatusSerialLink},
+    {"rc.status.snapshot", consoleExecuteRcStatusSnapshot},
+};
+static const size_t kStatusExecutorCount =
+    sizeof(g_statusExecutors) / sizeof(g_statusExecutors[0]);
+
+static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationName) {
+    if (operationName == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < kStatusExecutorCount; ++i) {
+        if (strcmp(g_statusExecutors[i].operationName, operationName) == 0) {
+            return g_statusExecutors[i].executor;
+        }
+    }
+    return nullptr;
 }
 
 // =============================================================================
@@ -576,22 +689,40 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
     ConsoleOperationType opType = consoleGetOperationType(request->operationName);
 
     switch (opType) {
-        case CONSOLE_OP_STATUS:
-            // Status query: emit begin + fields + end
-            if (sink->onRecordBegin) {
-                sink->onRecordBegin(request->requestId, request->operationName);
+        case CONSOLE_OP_STATUS: {
+            ConsoleStatusExecutorFn executor = consoleFindStatusExecutor(request->operationName);
+            if (executor != nullptr) {
+                // A real query: begin + fields (emitted by the executor) + end.
+                if (sink->onRecordBegin) {
+                    sink->onRecordBegin(request->requestId, request->operationName);
+                }
+                executor(request->requestId, sink);  // executor emits fields + calls onRecordEnd
+                break;
             }
-            if (strcmp(request->operationName, "system.status.health") == 0) {
-                consoleExecuteSystemStatusHealth(request->requestId, sink);
-                // consoleExecuteSystemStatusHealth emits onRecordEnd
-            } else {
-                // T2+: status not yet implemented
-                if (sink->onRecordEnd) {
-                    sink->onRecordEnd(request->requestId, CONSOLE_STATUS_ERR,
-                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+
+            // No dispatch table row. The catalog's is_query flag (generated
+            // from the registry's fields:/is_query: false, #212) distinguishes
+            // two different reasons nothing runs, so the operator sees which
+            // one applies instead of one generic answer for both:
+            const ConsoleCatalogEntry* entry = consoleCatalogFindByName(request->operationName);
+            bool isQuery = (entry != nullptr) && entry->is_query;
+            if (sink->onRecordResult) {
+                if (isQuery) {
+                    // fields: is present, so this should be queryable, but no
+                    // dispatch table row exists yet - genuinely not wired.
+                    sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                        CONSOLE_OUTCOME_UNAVAILABLE,
+                                        CONSOLE_REASON_EXECUTOR_NOT_READY);
+                } else {
+                    // is_query: false (#212): this row only describes a field
+                    // inside another query's response, never an independently
+                    // executable command - not "not ready", never will be.
+                    sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                        CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_EXECUTABLE);
                 }
             }
             break;
+        }
 
         case CONSOLE_OP_ACTION:
         case CONSOLE_OP_CONFIG:

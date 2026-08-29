@@ -3,13 +3,15 @@
 //
 // Status and telemetry API endpoints, all ported to the project-owned
 // WebRequest seam (ADR 0021) and bound by the seam route table.
-// Also declares WiFi, health, and serial status serialization helpers.
+// Also declares WiFi, health, and serial status state-capture and
+// serialization helpers, shared with the Console module (ADR 0034).
 // =============================================================================
 #pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "config_store.h"  // WIFI_SSID_MAX_LEN, for the copy-out snapshot below
 #include "web_request.h"
 
 // WiFi connectivity status fields derived from WiFi modes and station counts.
@@ -18,6 +20,105 @@ struct WiFiConnectivityFields {
     bool wifiClientConnected;
     long wifiRssi;
 };
+
+// =============================================================================
+// State-capture snapshots (ADR 0034)
+//
+// Each capture*Snapshot() function is the "Zone Snapshot capture" ADR 0034
+// names: the read step behind a status query, factored out of the hand-written
+// build*Json() gather blocks in src/web/api_status.cpp and src/web/web_server.cpp
+// so the REST handler and the Console module (src/console/console_module.cpp)
+// read RobotState/config exactly once, through one function, instead of two
+// copies that can drift apart. The format*Json() functions below are NOT
+// rewritten - they still take plain scalar arguments and still own the JSON
+// shape; only the read step is shared (ADR 0034: "the proven JSON builders
+// are not rewritten").
+// =============================================================================
+
+// GET /api/health's fields, verbatim (formatHealthJson's JSON keys).
+struct HealthSnapshot {
+    bool estop;
+    bool sbusSignalLost;
+    bool sbusHwFailsafe;
+    bool webControlEnabled;
+    bool wifiConnected;
+    bool wifiClientConnected;
+    bool littleFsReady;
+    unsigned long heapFree;
+    unsigned long heapMin;
+    unsigned long heapLargestBlock;
+    long wifiRssi;
+};
+
+// Capture the health snapshot: estop/SBUS diagnostics under robotStateMux,
+// WiFi connectivity through the network manager seam, heap through the
+// Arduino/esp_heap_caps APIs (stubbed on native builds).
+// thread-safe: yes (owns its own short critical section)
+void captureHealthSnapshot(HealthSnapshot* out);
+
+// GET /api/wifi's fields, verbatim (formatWifiJson's JSON keys).
+struct WifiStatusSnapshot {
+    char apSsid[WIFI_SSID_MAX_LEN + 1];
+    char apIp[16];    // dotted-quad + NUL, matches WifiConnectivityStatus::apIp
+    bool staEnabled;
+    bool staConnected;
+    char staIp[16];   // dotted-quad + NUL, matches WifiConnectivityStatus::staIp
+    char staSsid[WIFI_SSID_MAX_LEN + 1];
+    long wifiRssi;
+    bool networkRecovery;
+};
+
+// Capture the WiFi status snapshot the same way buildWifiJson() (api_status.cpp)
+// does: active WiFi config from the config cache, connectivity through the
+// network manager seam.
+// thread-safe: yes (no RobotState access; config cache is its own mutex)
+void captureWifiStatusSnapshot(WifiStatusSnapshot* out);
+
+// The two dynamic fields of dome.status.current, verbatim JSON keys from
+// buildStatusJson() (src/web/web_server.cpp): "domeTargetSpeed" and
+// "domeEnabled". buildStatusJson's other ~60 fields belong to aggregate-field
+// registry rows (is_query: false, #212), not independently console-queryable;
+// this snapshot exists only for the two fields the registry promotes to a
+// real query (docs/action-registry.yaml: dome.status.current).
+struct DomeStatusSnapshot {
+    float domeTargetSpeed;
+    bool domeEnabled;
+};
+
+// Capture the dome slice of the /api/status snapshot. Used by both
+// buildStatusJson() (replacing its own inline reads of the same two fields)
+// and the Console module, so the two can never disagree about what
+// "domeTargetSpeed"/"domeEnabled" mean.
+// thread-safe: yes (owns its own short critical section, independent of any
+// caller's already-open one - see the call site comment in web_server.cpp for
+// why a second short critical section is preferred over nesting)
+void captureDomeStatusSnapshot(DomeStatusSnapshot* out);
+
+// The dynamic fields of the "dome" port object inside formatSerialJson()'s
+// GET /api/serial response (below): "active", "heartbeatRx", "heartbeatTx".
+// The other keys in that sub-object (label, name, hardwareRequired, note) are
+// compile-time string literals, not state, and are emitted by the Console
+// executor directly from the named constants formatSerialJson() uses (below)
+// rather than through this struct.
+struct DomeSerialLinkSnapshot {
+    bool active;
+    unsigned long heartbeatRx;
+    unsigned long heartbeatTx;
+};
+
+// Capture the dome serial link snapshot the same way buildSerialJson()
+// (api_status.cpp) does: domeConnected() plus the heartbeat counters under
+// robotStateMux.
+// thread-safe: yes (owns its own short critical section)
+void captureDomeSerialLinkSnapshot(DomeSerialLinkSnapshot* out);
+
+// The dome port's compile-time metadata, factored out of formatSerialJson()'s
+// format string so the Console executor for dome.status.serial-link can cite
+// the identical literals instead of a second hand-typed copy. Not part of
+// dome.status.serial-link's registry fields (they are not state).
+#define DOME_SERIAL_LINK_LABEL "S3"
+#define DOME_SERIAL_LINK_NAME "protoR2link"
+#define DOME_SERIAL_LINK_NOTE "Body-dome serial transport over S3 (GPIO 33/34)"
 
 // Compute canonical WiFi status booleans used in JSON status/health payloads.
 // Pure function - no globals, no Arduino, no FreeRTOS.

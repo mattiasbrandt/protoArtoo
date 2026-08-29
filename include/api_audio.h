@@ -28,7 +28,43 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio_rx_status.h"
 #include "web_request.h"
+
+// playState -> label, verbatim what formatAudioStatusJson() puts in its
+// "play_state" JSON key. Factored out so the Console executor for
+// sound.status.current (src/console/console_module.cpp) renders the same
+// string instead of a second hand-typed switch (ADR 0034).
+// Pure function - no globals, no Arduino, no FreeRTOS.
+const char* audioPlayStateLabel(uint8_t playState);
+
+// device -> label, verbatim what formatAudioStatusJson() puts in its
+// "device" JSON key. Same sharing rationale as audioPlayStateLabel() above.
+// Pure function - no globals, no Arduino, no FreeRTOS.
+const char* audioDeviceLabel(uint8_t device);
+
+// GET /api/audio's fields, verbatim (formatAudioStatusJson's JSON keys are
+// driver/capabilities/link_ok/active/play_state/device/total_tracks/
+// current_track/rx_status/rx_detail; driverName/capabilities/rx_status/
+// rx_detail are derived from this snapshot's fields via audioGetDriverName(),
+// audioGetCapabilities(), audioRxStatusToken()/audioRxStatusDetail(), all
+// already shared between handleAudioGet() and the Console executor).
+struct AudioStatusSnapshot {
+    bool linkOk;
+    bool active;
+    uint8_t playState;
+    uint8_t device;
+    uint16_t totalTracks;
+    uint16_t currentTrack;
+    AudioRxStatus rxStatus;
+};
+
+// Capture the audio status snapshot the same way handleAudioGet() used to
+// gather it inline: RobotState fields under robotStateMux (ADR 0034 "Zone
+// Snapshot capture"). Shared with the Console module's sound.status.current
+// executor so REST and Console read state through the same function.
+// thread-safe: yes (owns its own short critical section)
+void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 
 // Format JSON response for audio status endpoint.
 // Pure function - no globals, no Arduino, no FreeRTOS.
