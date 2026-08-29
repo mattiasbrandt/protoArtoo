@@ -791,27 +791,35 @@ void handleAudioPlayBankedPost(WebRequest& req) {
 // Polling during playback may interfere with some module RX paths; see
 // driver capabilities for safe-polling flag.
 void handleAudioGet(WebRequest& req) {
-    bool linkOk;
-    uint8_t playState, device;
-    uint16_t totalTracks, currentTrack;
-    bool active;
-    AudioRxStatus rxStatus;
-    taskENTER_CRITICAL(&robotStateMux);
-    linkOk = robotState.audio_module_link_ok;
-    playState = robotState.audio_module_play_state;
-    device = robotState.audio_module_device;
-    totalTracks = robotState.audio_module_total_tracks;
-    currentTrack = robotState.audio_module_current_track;
-    active = robotState.audioActive;
-    rxStatus = robotState.audio_module_rx_status;
-    taskEXIT_CRITICAL(&robotStateMux);
+    AudioStatusSnapshot snap = {};
+    captureAudioStatusSnapshot(&snap);
 
     uint8_t caps = audioGetCapabilities();
     char body[256];
-    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
-                          playState, device, totalTracks, currentTrack,
-                          audioRxStatusToken(rxStatus), audioRxStatusDetail(rxStatus));
+    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active,
+                          snap.playState, snap.device, snap.totalTracks, snap.currentTrack,
+                          audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
     req.send(200, "application/json", body);
+}
+
+// The gather step behind handleAudioGet()'s /api/audio response, shared with
+// the Console module's sound.status.current executor (ADR 0034) so both read
+// RobotState through the same function.
+void captureAudioStatusSnapshot(AudioStatusSnapshot* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = AudioStatusSnapshot{};
+
+    taskENTER_CRITICAL(&robotStateMux);
+    out->linkOk = robotState.audio_module_link_ok;
+    out->playState = robotState.audio_module_play_state;
+    out->device = robotState.audio_module_device;
+    out->totalTracks = robotState.audio_module_total_tracks;
+    out->currentTrack = robotState.audio_module_current_track;
+    out->active = robotState.audioActive;
+    out->rxStatus = robotState.audio_module_rx_status;
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 void handleAudioPost(WebRequest& req) {
