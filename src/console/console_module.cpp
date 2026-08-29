@@ -37,11 +37,10 @@
 #include "api_actions.h"      // evaluateActionTestGuard(), robotActionIsWebTestable() - the
                               // existing guard core (#220), reused verbatim, not duplicated
 #include "rc_input.h"          // dispatchRcTriggerActionTest(), RcDispatchOutcome
-#include "rc_action_types.h"   // robotActionNeedsPayload(), rcPayloadValidForBodySequence(),
-                               // rcPayloadValidForMarcduinoCommand() - the existing validators
-                               // the live RC trigger path already calls (#221 reuses them
-                               // verbatim for the raw Marcduino console operations, rather
-                               // than inventing a second set of format rules)
+#include "rc_action_types.h"   // rcPayloadValidForBodySequence(), rcPayloadValidForMarcduinoCommand()
+                               // - the existing validators the live RC trigger path already
+                               // calls (#221 reuses them verbatim for the raw Marcduino console
+                               // operations, rather than inventing a second set of format rules)
 
 static const char* TAG = "Console";
 
