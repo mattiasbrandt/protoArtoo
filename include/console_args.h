@@ -158,15 +158,35 @@ typedef enum {
 } ConsoleArgParseStatus;
 
 // Parses `args` (the untokenized remainder after the operation/meta-command
-// name) into `out`, in place: `args` is mutated (key/value substrings are
-// NUL-terminated and quoted values are unescaped into the same storage, one
-// byte for one-or-more input bytes, so it never grows) and every pointer in
-// `out` aliases into `args`. `args` must outlive `out`'s use. Passing NULL is
-// the same as passing an empty string: `out->count` is 0, status OK.
-inline ConsoleArgParseStatus consoleParseArgs(char* args, ConsoleArgs* out) {
+// name, `argsLen` bytes not counting a NUL terminator) into `out`, in
+// place: `args` is mutated (key/value substrings are NUL-terminated and
+// quoted values are unescaped into the same storage, one byte for
+// one-or-more input bytes, so it never grows) and every pointer in `out`
+// aliases into `args`. `args` must outlive `out`'s use.
+//
+// `argsLen` is what makes an embedded NUL byte detectable at all (docs/
+// console-protocol.md s.1.3: "a NUL byte ... in a quoted value fails
+// explicitly"; nothing is silently dropped or "fixed"): if the caller's
+// real byte count disagrees with where `args` happens to terminate as a C
+// string, there was a 0x00 byte before the end the caller intended -
+// rejected outright, the same as any other malformed input. Neither
+// shipping adapter can supply a length distinct from strlen() today
+// (src/web/api_console.cpp's `command[256]` is populated via `%s`-style
+// copies from a form param or an ArduinoJson `const char*`; embedded-cli's
+// `cmd->args` is a NUL-terminated C string), so both call this indirectly
+// through the length-inferring overload below - reported precisely rather
+// than silently: closing that gap for real needs a binary-safe capture
+// path on at least one adapter (deeper surgery on api_console.cpp's body/
+// JSON handling, or on lib/embedded-cli's fenced byte classification), not
+// a tokenizer change. Native tests exercise the real rejection directly,
+// with a genuine argsLen/strlen mismatch (test_console_args.cpp).
+inline ConsoleArgParseStatus consoleParseArgs(char* args, size_t argsLen, ConsoleArgs* out) {
     out->count = 0;
     if (args == nullptr) {
         return CONSOLE_ARGS_PARSE_OK;
+    }
+    if (strlen(args) != argsLen) {
+        return CONSOLE_ARGS_PARSE_MALFORMED;
     }
 
     char* p = args;
@@ -242,6 +262,14 @@ inline ConsoleArgParseStatus consoleParseArgs(char* args, ConsoleArgs* out) {
         ++out->count;
     }
     return CONSOLE_ARGS_PARSE_OK;
+}
+
+// Convenience overload for a plain NUL-terminated `args` - both adapters
+// (which have no length distinct from strlen()) call this form. Passing
+// NULL is the same as passing an empty string: `out->count` is 0, status
+// OK.
+inline ConsoleArgParseStatus consoleParseArgs(char* args, ConsoleArgs* out) {
+    return consoleParseArgs(args, args != nullptr ? strlen(args) : 0, out);
 }
 
 // =============================================================================

@@ -248,6 +248,28 @@ void test_parse_exactly_max_pairs_is_ok() {
     TEST_ASSERT_TRUE(8u == CONSOLE_ARGS_MAX);
 }
 
+// docs/console-protocol.md s.1.3: "a NUL byte ... in a quoted value fails
+// explicitly". A caller with a REAL length distinct from strlen() (proving
+// there is a byte after an embedded 0x00 the caller intended to include)
+// gets an explicit rejection - see the explicit-length overload's own
+// comment for why neither shipping adapter can supply this today.
+void test_parse_length_mismatch_embedded_nul_is_malformed() {
+    char args[] = "key=va\0lue";  // strlen() sees "key=va" (6), true length 10
+    ConsoleArgs out = {};
+    ConsoleArgParseStatus status = consoleParseArgs(args, sizeof(args) - 1, &out);
+    TEST_ASSERT_EQUAL(CONSOLE_ARGS_PARSE_MALFORMED, status);
+}
+
+// The matching-length case (what both adapters actually supply today) is
+// unaffected - this is not a general regression in the common path.
+void test_parse_length_matches_strlen_is_unaffected() {
+    char args[] = "key=value";
+    ConsoleArgs out = {};
+    ConsoleArgParseStatus status = consoleParseArgs(args, strlen(args), &out);
+    TEST_ASSERT_EQUAL(CONSOLE_ARGS_PARSE_OK, status);
+    TEST_ASSERT_EQUAL_STRING("value", out.items[0].value);
+}
+
 // =============================================================================
 // consoleUtf8Valid() in isolation
 // =============================================================================
@@ -446,6 +468,8 @@ int main(int, char**) {
     RUN_TEST(test_parse_valid_utf8_in_quoted_value_is_accepted);
     RUN_TEST(test_parse_too_many_pairs_is_too_many);
     RUN_TEST(test_parse_exactly_max_pairs_is_ok);
+    RUN_TEST(test_parse_length_mismatch_embedded_nul_is_malformed);
+    RUN_TEST(test_parse_length_matches_strlen_is_unaffected);
 
     RUN_TEST(test_utf8_valid_ascii);
     RUN_TEST(test_utf8_valid_two_byte_sequence);
