@@ -37,11 +37,18 @@
 #include "config_cache.h"
 #include "console_catalog.h"
 #include "console_module.h"
+#include "log_buffer.h"  // LogBuffer, logBufferInit()/logBufferAppend() - fills the ring
+                         // g_test_log_buffer below for system.status.logs (#239)
 #include "rc_diagnostics_snapshot.h"
 #include "rc_input.h"
 #include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
                                   // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
+
+// The same log-ring stand-in test_api_logs.cpp fills (native_test_stubs.cpp;
+// main.cpp's real ring is not compiled in [env:native]).
+extern LogBuffer g_test_log_buffer;
+extern char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX];
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
@@ -187,6 +194,9 @@ void setUp() {
     g_test_last_dispatch_target = ROBOT_ACTION_NONE;
     g_test_last_dispatch_source = SRC_NONE;
     g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+    // Reset to empty before every test (#239) - matches test_api_logs.cpp's
+    // own setUp(), so a log-ring test never sees another test's lines.
+    logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
 }
 void tearDown() {}
 
@@ -426,20 +436,145 @@ void test_rc_snapshot_carries_real_source_state() {
 }
 
 // =============================================================================
+// system.status.logs (#239)
+// =============================================================================
+// This query answers `item` records (recent log lines), not `field` records,
+// so it does not fit runQuery()/g_cap's field-capture shape - g_cap's capItem
+// is a no-op (no query before this ticket emitted items). A small dedicated
+// capture records item values instead, without touching the shared harness
+// the ~40 other tests in this file use.
+
+struct CapturedLogItems {
+    char values[LOG_RING_MAX_LINES][LOG_LINE_MAX];
+    int count;
+    bool beginCalled;
+    bool endCalled;
+    ConsoleStatus status;
+    ConsoleOutcome outcome;
+    ConsoleReason reason;
+};
+static CapturedLogItems g_logCap;
+
+static void logCapBegin(uint32_t, const char*) {
+    g_logCap.beginCalled = true;
+}
+static void logCapItem(uint32_t, const char* value) {
+    if (g_logCap.count >= (int)LOG_RING_MAX_LINES) return;
+    snprintf(g_logCap.values[g_logCap.count], sizeof(g_logCap.values[0]), "%s", value);
+    g_logCap.count++;
+}
+static void logCapEnd(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason) {
+    g_logCap.endCalled = true;
+    g_logCap.status = status;
+    g_logCap.outcome = outcome;
+    g_logCap.reason = reason;
+}
+
+static void runLogsQuery() {
+    memset(&g_logCap, 0, sizeof(g_logCap));
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = logCapBegin;
+    sink.onRecordItem = logCapItem;
+    sink.onRecordEnd = logCapEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = CONSOLE_SOURCE_SERIAL;
+    req.operationName = "system.status.logs";
+    consoleExecuteCommand(&req, &sink);
+}
+
+// The dispatch-table proof (#239 acceptance criterion 2): system.status.logs
+// used to answer through the not-executable guard path (is_query: false,
+// #223's original, incorrect classification - see the removed entry in
+// test_aggregate_field_status_entries_answer_not_executable above). It must
+// now execute like any other query: begin, item*, end - never a single
+// result record.
+void test_logs_query_is_dispatched_not_guarded_as_not_executable() {
+    runQuery("system.status.logs");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.resultCalled, "a query answers begin/item/end, not result");
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+}
+
+// The concurrency-safe streaming path itself (#239 acceptance criterion 3):
+// ring lines come back as item records, oldest first, matching /api/logs'
+// own ordering (test_api_logs.cpp's
+// test_buffered_lines_are_returned_oldest_first_newline_separated) even
+// though this path never touches recentLogsBodyBuffer()/copyRecentLogs() -
+// it reads the ring directly through getLogBufferCount()/copyLogLineAt().
+void test_logs_query_streams_ring_lines_as_items_oldest_first() {
+    logBufferAppend(&g_test_log_buffer, "first line");
+    logBufferAppend(&g_test_log_buffer, "second line");
+    logBufferAppend(&g_test_log_buffer, "third line");
+
+    runLogsQuery();
+
+    TEST_ASSERT_TRUE(g_logCap.beginCalled);
+    TEST_ASSERT_TRUE(g_logCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_logCap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_logCap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NONE, g_logCap.reason);
+    TEST_ASSERT_EQUAL_INT(3, g_logCap.count);
+    TEST_ASSERT_EQUAL_STRING("first line", g_logCap.values[0]);
+    TEST_ASSERT_EQUAL_STRING("second line", g_logCap.values[1]);
+    TEST_ASSERT_EQUAL_STRING("third line", g_logCap.values[2]);
+}
+
+// An empty ring (fresh boot, or right after a level change resets it) is a
+// real, expected state, not an error - the answer is a query that completed
+// with zero items, not an unavailable/invalid one.
+void test_logs_query_empty_ring_answers_completed_with_no_items() {
+    runLogsQuery();
+
+    TEST_ASSERT_TRUE(g_logCap.beginCalled);
+    TEST_ASSERT_TRUE(g_logCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_logCap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_logCap.outcome);
+    TEST_ASSERT_EQUAL_INT(0, g_logCap.count);
+}
+
+// A full ring (LOG_RING_MAX_LINES entries) must come back whole, matching
+// test_api_logs.cpp's own test_full_ring_is_served_without_truncating_the_response -
+// the two adapters answer the same question from the same ring, through
+// different functions, and must agree on "how much".
+void test_logs_query_full_ring_reports_every_line() {
+    for (size_t i = 0; i < LOG_RING_MAX_LINES; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line-%zu", i);
+        logBufferAppend(&g_test_log_buffer, line);
+    }
+
+    runLogsQuery();
+
+    TEST_ASSERT_EQUAL_INT((int)LOG_RING_MAX_LINES, g_logCap.count);
+    char lastLine[32];
+    snprintf(lastLine, sizeof(lastLine), "line-%zu", LOG_RING_MAX_LINES - 1);
+    TEST_ASSERT_EQUAL_STRING("line-0", g_logCap.values[0]);
+    TEST_ASSERT_EQUAL_STRING(lastLine, g_logCap.values[LOG_RING_MAX_LINES - 1]);
+}
+
+// =============================================================================
 // is_query: false status entries: never independently executable
 // =============================================================================
 
-// mood/sleep-mode/dashboard-health/drive/servo/aux-led/logs are aggregate-
+// mood/sleep-mode/dashboard-health/drive/servo/aux-led are aggregate-
 // field registry rows (#212): they describe a field inside another query's
 // response, not a standalone command. Attempting to run one directly must
 // answer NOT_EXECUTABLE, not EXECUTOR_NOT_READY - the latter implies a future
 // ticket owes a fix; the former says none is coming because none applies.
+//
+// system.status.logs used to be listed here too (#223's original, incorrect
+// classification) - it never fit this shape (docs/action-registry.yaml's own
+// comment on that row explains why) and is a real dispatched query as of
+// #239; see the system.status.logs section below instead.
 void test_aggregate_field_status_entries_answer_not_executable() {
     const char* aggregateFieldEntries[] = {
         "drive.status.current",       "servo.status.current",
         "aux.status.led-state",       "system.status.sleep-mode",
         "system.status.mood",         "system.status.dashboard-health",
-        "system.status.logs",
     };
     for (const char* name : aggregateFieldEntries) {
         const ConsoleCatalogEntry* entry = consoleCatalogFindByName(name);
@@ -474,6 +609,17 @@ void test_event_stream_status_entry_answers_not_executable() {
 // EXECUTOR_NOT_READY must never fire for a status entry once this ticket
 // lands. This is the automated form of the "executor-not-ready count" the
 // ticket requires reported: this test fails the moment that count is nonzero.
+//
+// system.status.logs is NOT swept by this loop even though it now has a real
+// dispatch row (#239): `entry.is_query` here comes from the COMPILED catalog
+// (include/console_catalog.h / src/console/console_catalog.cpp), generated
+// from docs/action-registry.yaml by tools/generate_console_catalog.py, which
+// #239 deliberately did not re-run - doing so would rewrite data/console_help.txt
+// (fenced on that ticket) and shift every later entry's help-text offset,
+// since the corrected `executor:` string is a different length. The compiled
+// is_query for that one row therefore still reads false until the next
+// unrelated regen; system.status.logs gets its own direct test below instead
+// of relying on this sweep.
 void test_no_status_entry_is_executor_not_ready() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -865,6 +1011,11 @@ int main(int, char**) {
 
     RUN_TEST(test_rc_snapshot_mode_and_sources_are_real_keys);
     RUN_TEST(test_rc_snapshot_carries_real_source_state);
+
+    RUN_TEST(test_logs_query_is_dispatched_not_guarded_as_not_executable);
+    RUN_TEST(test_logs_query_streams_ring_lines_as_items_oldest_first);
+    RUN_TEST(test_logs_query_empty_ring_answers_completed_with_no_items);
+    RUN_TEST(test_logs_query_full_ring_reports_every_line);
 
     RUN_TEST(test_aggregate_field_status_entries_answer_not_executable);
     RUN_TEST(test_event_stream_status_entry_answers_not_executable);

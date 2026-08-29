@@ -13,10 +13,21 @@
 void handleLogsGet(WebRequest& req) {
     // The body buffer is allocated once at boot alongside the ring, sized to
     // the ring's capacity (capacity * LOG_LINE_MAX + 1). Shared, not stack:
-    // neither the async_tcp task nor the psychic server task has 6 KB of stack
-    // to spare, and handlers serialize on one task under both backends, so one
-    // buffer is race-free - the same argument /api/status makes for its own
-    // payload buffer.
+    // neither the async_tcp task nor the psychic server task has 6 KB of
+    // stack to spare, and this handler's own callers - the async_tcp task or
+    // the psychic server task, never both in the same build - serialize on
+    // one task, so one buffer is race-free for THIS caller - the same
+    // argument /api/status makes for its own payload buffer.
+    //
+    // This is narrower than it used to read: the Console task
+    // (src/tasks/console_task.cpp) is a second, independent Core 0 task, and
+    // its system.status.logs query answers the same "recent log lines"
+    // question without going through this buffer at all - it reads the ring
+    // directly via getLogBufferCount()/copyLogLineAt() (include/web_server.h,
+    // src/console/console_module.cpp), each call taking the ring's own lock
+    // for one line rather than sharing this allocation (#239). Do not widen
+    // this function or this buffer to a second caller; add a ring-direct
+    // reader instead, the way the Console did.
     size_t bodySize = 0;
     char* body = recentLogsBodyBuffer(&bodySize);
     if (body == nullptr) {

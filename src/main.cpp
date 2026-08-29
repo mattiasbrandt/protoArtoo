@@ -60,8 +60,14 @@ static SemaphoreHandle_t logSerialMutex = nullptr;
 static char logBootstrapStorage[LOG_RING_BOOTSTRAP_LINES][LOG_LINE_MAX];
 static LogBuffer recentLogBuf = {};
 // /api/logs response body, allocated alongside the sized ring (capacity *
-// LOG_LINE_MAX + 1). One shared buffer is race-free because web handlers
-// serialize on one task; see handleLogsGet().
+// LOG_LINE_MAX + 1). One shared buffer, sized and synchronised for exactly
+// one caller (handleLogsGet(), src/web/api_logs.cpp) - race-free there
+// because its callers serialize on one task. The Console task's
+// system.status.logs query answers the same question WITHOUT this buffer:
+// it reads the ring directly, one line at a time, through
+// getLogBufferCount()/copyLogLineAt() below (#239, src/console/console_module.cpp)
+// rather than becoming a second concurrent caller of this allocation. Do not
+// add a caller here from a second task.
 static char* logsBodyBuf = nullptr;
 static size_t logsBodyBufSize = 0;
 

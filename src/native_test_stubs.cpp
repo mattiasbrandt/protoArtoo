@@ -425,6 +425,7 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
 // the actual copy behavior rather than a canned string. Tests fill it through
 // g_test_log_buffer directly (declared extern in the test file).
 #include "log_buffer.h"
+#include <string.h>  // strncpy() - copyLogLineAt() below
 LogBuffer g_test_log_buffer = {};
 char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
 static char s_testLogsBody[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
@@ -434,6 +435,30 @@ size_t copyRecentLogs(char* buffer, size_t bufferSize) {
 char* recentLogsBodyBuffer(size_t* size) {
     *size = sizeof(s_testLogsBody);
     return s_testLogsBody;
+}
+
+// getLogBufferCount()/copyLogLineAt(): the per-line reads the Console's
+// system.status.logs query is built on (src/console/console_module.cpp,
+// #239), instead of copyRecentLogs()/recentLogsBodyBuffer() above. main.cpp's
+// real implementations take logMux per call; this stand-in needs no lock
+// (native tests are single-threaded). The index arithmetic mirrors
+// logBufferCopy()'s own ring walk (log_buffer.cpp), applied to one index
+// instead of the whole ring, so a test filling g_test_log_buffer sees the
+// same oldest-first ordering both call sites report.
+size_t getLogBufferCount() {
+    return g_test_log_buffer.count;
+}
+
+bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
+    if (idx >= g_test_log_buffer.count || outSize == 0) {
+        return false;
+    }
+    size_t startIdx = (g_test_log_buffer.head + g_test_log_buffer.capacity - g_test_log_buffer.count) %
+                       g_test_log_buffer.capacity;
+    size_t ringIdx = (startIdx + idx) % g_test_log_buffer.capacity;
+    strncpy(out, g_test_log_buffer.lines[ringIdx], outSize - 1);
+    out[outSize - 1] = '\0';
+    return true;
 }
 
 // -----------------------------------------------------------------------------

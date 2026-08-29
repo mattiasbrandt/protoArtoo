@@ -728,19 +728,30 @@ def check_executor_marker_contradiction(doc: dict, errors: list[str]) -> None:
 
 def check_status_query_classification(doc: dict, errors: list[str]) -> None:
     """Enforce that every type: status entry is explicitly classified as query or non-query.
-    
-    Query entries (fields: present) have a standalone endpoint returning structured data.
-    Non-query entries (is_query: false) describe fields within aggregate responses (metadata).
+
+    Three valid shapes (#239 adds the second one):
+    - Field-based query: `fields:` present - a standalone endpoint answering
+      scalar JSON keys (system.status.health), checked against the JSON
+      builder and the record emitter's field names by a native test.
+    - Item-based query: no `fields:`, but `is_query: true` stated explicitly -
+      a standalone, dispatchable query that answers a sequence of `item`
+      records instead of scalar fields (system.status.logs, #239), so it does
+      not fit the fields:/JSON-key model the first shape assumes.
+    - Non-query: `is_query: false` (no `fields:`) - describes a field inside
+      another query's aggregate response (metadata, system.status.dashboard-
+      health), never independently executable.
     """
     status_entries = [e for e in doc.get('entries', []) if e.get('type') == 'status']
-    
+
     for entry in status_entries:
         name = entry.get('name', '<unnamed>')
         has_fields = 'fields' in entry
         is_non_query = entry.get('is_query') is False
-        
-        # Every status entry must have EITHER fields OR is_query: false
-        if not (has_fields or is_non_query):
+        is_explicit_query = entry.get('is_query') is True
+
+        # Every status entry must have fields, OR is_query: false, OR an
+        # explicit is_query: true (the fields-less "real query" shape).
+        if not (has_fields or is_non_query or is_explicit_query):
             errors.append(
                 f"{name} type=status but neither fields nor is_query: false present "
                 "(classification ambiguous; cannot distinguish unfinished from intentional non-query)"

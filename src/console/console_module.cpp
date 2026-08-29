@@ -27,7 +27,9 @@
 #include "logging.h"
 #include "robot_state.h"
 #include "failsafe_gate.h"
-#include "web_server.h"
+#include "web_server.h"       // getLogBufferCount(), copyLogLineAt() - the log-ring seam
+                              // consoleExecuteSystemStatusLogs() below streams from (#239)
+#include "log_buffer.h"       // LOG_LINE_MAX - sizes that executor's per-line scratch buffer
 #include "web_network_manager.h"
 #include "api_status.h"
 #include "api_audio.h"
@@ -515,6 +517,65 @@ static void consoleExecuteRcStatusSnapshot(uint32_t requestId, const ConsoleReco
     }
 }
 
+// system.status.logs (#239): recent log ring history as repeated `item`
+// records, not `field` records - the answer is a sequence of log lines, not
+// a fixed set of scalar JSON keys, so it does not fit the fields:/JSON-key
+// model the other executors above follow (docs/action-registry.yaml carries
+// is_query: true with no fields: for this one row - see the comment there).
+//
+// Deliberately does NOT call recentLogsBodyBuffer()/copyRecentLogs()
+// (src/web/api_logs.cpp, GET /api/logs's own path): that buffer is one
+// ~6 KB heap allocation sized and synchronised for exactly one caller (the
+// web server task) - its own file comment says so. The Console task is a
+// second, concurrent caller on a different core, so reusing it would race
+// two writers into one unsynchronised buffer. A second dedicated buffer was
+// rejected on RAM grounds too (8,580 B free on artoo-esp32 at #239's base
+// commit; ~6 KB is over two thirds of that margin for one feature).
+//
+// Instead this reads the ring directly through getLogBufferCount() and
+// copyLogLineAt() (include/web_server.h) - a seam that already existed,
+// unused, since #212's ring-sizing work. Each copyLogLineAt() call takes the
+// ring's own lock (logMux, src/main.cpp) for exactly one line, then releases
+// it; nothing here holds a lock - ring or serial - across the whole listing.
+// onRecordItem() (src/tasks/console_task.cpp / src/web/api_console.cpp)
+// takes the serial mutex per emitted line for the same reason #219 R1
+// established for `operations`: a multi-KB answer must never block Core 1's
+// real-time loggers for its own wall-clock duration.
+//
+// Bounded by construction, not by a paging protocol: LOG_RING_MAX_LINES caps
+// the ring at 48 lines (include/log_buffer.h) regardless of log level, so
+// this answer's size is a small, fixed ceiling the same way `operations`'
+// catalog listing is bounded by its (larger, but still fixed) entry count -
+// docs/console-protocol.md s.2.1 the record itself, not a second paging
+// mechanism.
+//
+// Concurrency note: getLogBufferCount() is read once, up front, fixing how
+// many lines this answer covers (mirrors fillOperationsResponse() reading
+// its command line once for the same reason, src/web/api_console.cpp). If
+// the ring is already at full depth and a writer appends between two
+// copyLogLineAt() calls, the oldest surviving line shifts by one slot and
+// this loop can skip a line it would otherwise have reported - it never
+// re-reads a line twice and never reads out of bounds or stale bytes, since
+// each call is independently locked and bounds-checked against the ring's
+// state at that instant. For a recent-history diagnostic query, an
+// occasional dropped line under heavy concurrent logging is the accepted
+// trade against the two alternatives above (a second buffer, or one lock
+// held across a multi-KB copy).
+static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleRecordSink* sink) {
+    size_t total = getLogBufferCount();
+    char lineBuf[LOG_LINE_MAX];
+    for (size_t i = 0; i < total; ++i) {
+        if (copyLogLineAt(i, lineBuf, sizeof(lineBuf)) && sink->onRecordItem) {
+            sink->onRecordItem(requestId, lineBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -539,6 +600,7 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"sound.status.current", consoleExecuteSoundStatusCurrent},
     {"dome.status.serial-link", consoleExecuteDomeStatusSerialLink},
     {"rc.status.snapshot", consoleExecuteRcStatusSnapshot},
+    {"system.status.logs", consoleExecuteSystemStatusLogs},
 };
 static const size_t kStatusExecutorCount =
     sizeof(g_statusExecutors) / sizeof(g_statusExecutors[0]);
