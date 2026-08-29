@@ -1341,13 +1341,22 @@ curl -s http://artoo.local/api/actions
 
 ### POST /api/actions/test
 
-Dispatches one test action through RC trigger path.
+Dispatches one test action through the same dispatch core the RC trigger
+path and the Controller Console share (`dispatchRcTriggerActionTest()`,
+`SRC_WEB_API`; #220, ADR 0034), and reports what actually happened.
 
 - Input options:
 - Form field: `token`
 - JSON body: `{ "token": "..." }`
-- Success: `200` `{"ok":true,"token":"...","domain":"..."}`
-- Errors:
+- Success: `200` `{"ok":<bool>,"outcome":"...","token":"...","domain":"..."}`
+- `ok`/`outcome` report the real dispatch result, not merely that the request
+  reached the guard: `ok:true` only when `outcome` is `queued` (the owning
+  queue accepted it). `outcome` is one of:
+  - `queued` - accepted; `ok:true`
+  - `queue-full` - an owning queue could not accept it; `ok:false`
+  - `unavailable` - the action produced no dispatchable effect right now
+    (e.g. an unconfigured sound-category range); `ok:false`
+- Errors (guard refused the request before any dispatch was attempted):
 - `400` invalid json/token
 - `403` `safety_critical_blocked`
 - `423` `web_control_disabled`
@@ -1364,7 +1373,7 @@ curl -s -X POST http://artoo.local/api/actions/test \
 #### Example response
 
 ```json
-{"ok":true,"token":"sound_rand_humming","domain":"sound"}
+{"ok":true,"outcome":"queued","token":"sound_rand_humming","domain":"sound"}
 ```
 
 #### Example request (json)
@@ -1378,7 +1387,7 @@ curl -s -X POST http://artoo.local/api/actions/test \
 #### Example response
 
 ```json
-{"ok":true,"token":"sound_rand_humming","domain":"sound"}
+{"ok":true,"outcome":"queued","token":"sound_rand_humming","domain":"sound"}
 ```
 
 ## Status and Validation
