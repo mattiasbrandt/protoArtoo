@@ -15,6 +15,16 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>  // BaseType_t, pdTRUE, pdFALSE
 
+// Real FreeRTOS declares xSemaphoreCreateMutexStatic() to take a
+// StaticSemaphore_t* (a fixed-size opaque buffer the kernel places the real
+// queue/semaphore control block into) - this stub ignores the buffer's
+// contents entirely (see below), so the exact size does not matter for
+// correctness here; sized generously (96 B, comfortably above the real
+// struct's ~80 B on a 32-bit target) so callers that declare static storage
+// for one (src/console/console_module.cpp's config-write mutex, matching
+// src/main.cpp's own logSerialMutexStorage precedent) compile natively.
+typedef struct { unsigned char reserved[96]; } StaticSemaphore_t;
+
 // Opaque-enough mutex model for host tests: a holder token plus a depth count.
 // Depth never exceeds 1 - a second take by the same notional owner fails, which
 // is exactly how a non-recursive FreeRTOS mutex behaves and is the deadlock the

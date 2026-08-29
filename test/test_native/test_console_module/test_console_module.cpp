@@ -30,11 +30,21 @@
 #include <string>
 #include <vector>
 
+#include <freertos/semphr.h>  // paStubMutexReset()/paStubMutexStorage()/PaStubMutex -
+                              // simulates the OTHER Console adapter holding
+                              // s_configWriteMutex (#226 defect 1 rework)
+
 #include "action_registry.h"
+#include "api_config_apply.h"  // configApply()/ConfigApplyResult/ConfigParamSource -
+                                 // drives the real Apply Core directly for defect 2's
+                                 // table-drift test, bypassing the Console dispatch layer
 #include "api_audio.h"
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
+                                    // proves the table matches configApply() by
+                                    // driving the real Apply Core, not a comment's promise
 #include "console_catalog.h"
 #include "console_module.h"
 #include "log_buffer.h"  // LogBuffer, logBufferInit()/logBufferAppend() - fills the ring
@@ -48,6 +58,9 @@
 #include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
                                   // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_*/g_test_applied_mood/
+                                         // g_test_status_broadcast_count - control/observe
+                                         // the commanded_modes.h setter stubs (#226)
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
@@ -196,6 +209,15 @@ void setUp() {
     // Reset to empty before every test (#239) - matches test_api_logs.cpp's
     // own setUp(), so a log-ring test never sees another test's lines.
     logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
+    g_test_status_broadcast_count = 0;
+    g_test_commanded_stationary = false;
+    g_test_commanded_sleep = false;
+    g_test_commanded_sleep_calls = 0;
+    g_test_commanded_web_control = false;
+    g_test_web_control_calls = 0;
+    g_test_commanded_rc_debug = false;
+    g_test_commanded_rc_debug_calls = 0;
+    g_test_applied_mood = 0;
 }
 void tearDown() {}
 
@@ -987,6 +1009,461 @@ void test_action_executor_not_ready_count_report() {
 }
 
 // =============================================================================
+// Component Toggle config dispatch (#226, ADR 0027/0033)
+// =============================================================================
+
+void test_component_toggle_read_reports_saved_and_active() {
+    ConfigSnapshot saved = {};
+    saved.system.enable_arm1 = true;
+    configCacheApply(saved);
+
+    // Active still reflects a boot where arm1 was off - the exact "staged,
+    // not yet rebooted into" divergence ADR 0027 describes.
+    ConfigSnapshot bootedOff = {};
+    configCacheSetActiveComponentToggles(bootedOff.system);
+
+    runQuery("system.config.enable_arm1");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.resultCalled, "a read answers begin/field/end, not result");
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("saved"));
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("active"));
+}
+
+void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
+    g_test_status_broadcast_count = 0;
+
+    runQuery("system.config.enable_arm2 value=true");
+
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a write answers a single result record");
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome,
+                              "ADR 0027: Component Toggle writes are always staged, never applied");
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_arm2, "the write must reach the config cache");
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, g_test_status_broadcast_count,
+                                  "a successful commit broadcasts status, matching the REST path");
+}
+
+// criterion 3's "value= (or the named keys)": the same write also succeeds
+// through api_config_apply.cpp's own param name, with no "value=" at all -
+// proving the schema check accepts either spelling verbatim, not just the
+// generic one.
+void test_component_toggle_write_accepts_the_named_key_not_only_value() {
+    runQuery("system.config.enable_aux1 enableAux1=true");
+
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_TRUE(snap.system.enable_aux1);
+}
+
+void test_component_toggle_write_rejects_an_unknown_argument() {
+    runQuery("system.config.enable_aux2 typo=true");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);  // consoleEmitArgFailure() begins+fields+ends
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("typo", capturedValue("argument"));
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_FALSE_MESSAGE(snap.system.enable_aux2, "a rejected write must not reach the cache");
+}
+
+void test_component_toggle_write_rejects_a_malformed_boolean() {
+    runQuery("system.config.enable_aux3 value=maybe");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("enableAux3", capturedValue("argument"));
+}
+
+// =============================================================================
+// Component Toggle table drift check (#226 rework, defect 2)
+//
+// include/console_config_fields.h's kComponentToggleFields[] says, in prose,
+// that its paramKey values are "copied verbatim from api_config_apply.cpp's
+// boolFields[] array" and that a rename in one needs a matching edit in the
+// other. Nothing enforced that. This drives configApply() - the real Apply
+// Core, bypassing the Console dispatch layer entirely - directly with each
+// of the 15 entries' paramKey and asserts the named SystemConfig field
+// actually flips. A rename in either table without the other breaks this
+// immediately: configApply() answers "no supported config fields supplied"
+// for the renamed key, or the pointer-to-member reads/writes the wrong
+// field, and either way the assertion below fails.
+// =============================================================================
+
+namespace {
+// The same single-name ConfigParamSource shape test_api_config_apply.cpp's
+// mapGet()/makeSource() establish (ADR 0002 MapReader precedent,
+// include/api_param_source.h) - a single key/value pair, since each
+// Component Toggle write only ever supplies one.
+struct SingleParamCtx {
+    const char* key;
+    const char* value;
+};
+
+const char* singleParamGet(void* ctx, const char* name) {
+    auto* c = static_cast<SingleParamCtx*>(ctx);
+    return strcmp(name, c->key) == 0 ? c->value : nullptr;
+}
+}  // namespace
+
+void test_component_toggle_table_paramkeys_match_config_apply() {
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        const ComponentToggleField& field = kComponentToggleFields[i];
+
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        working.system.*(field.field) = false;  // known starting value
+
+        SingleParamCtx ctx{field.paramKey, "true"};
+        ConfigParamSource params;
+        params.ctx = &ctx;
+        params.get = singleParamGet;
+
+        ConfigApplyResult result = {};
+        configApply(params, &working, working.system.enable_dome_esc, &result);
+
+        char message[96];
+        snprintf(message, sizeof(message), "operation=%s paramKey=%s", field.operationName,
+                 field.paramKey);
+        TEST_ASSERT_FALSE_MESSAGE(result.error.hasError, message);
+        TEST_ASSERT_TRUE_MESSAGE(working.system.*(field.field), message);
+    }
+}
+
+// =============================================================================
+// Non-toggle scalar config rows (#226): applied live, not staged
+// =============================================================================
+
+void test_drive_speed_limit_read_and_write() {
+    ConfigSnapshot snap = {};
+    snap.drive.speedLimitMax = 250;
+    configCacheApply(snap);
+
+    runQuery("drive.config.speed-limit");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("250", capturedValue("value"));
+
+    runQuery("drive.config.speed-limit value=300");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_INT16(300, after.drive.speedLimitMax);
+}
+
+void test_drive_speed_limit_rejects_out_of_range() {
+    runQuery("drive.config.speed-limit value=9999");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_aux_led_pin_read_and_write() {
+    runQuery("aux.config.led-pin value=2");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("aux.config.led-pin");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("2", capturedValue("value"));
+}
+
+void test_aux_led_count_read_and_write() {
+    runQuery("aux.config.led-count value=30");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("aux.config.led-count");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("30", capturedValue("value"));
+}
+
+void test_rc_mode_read_and_write() {
+    runQuery("rc.config.mode value=single_sbus");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("rc.config.mode");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("single_sbus", capturedValue("value"));
+}
+
+void test_rc_mode_rejects_an_unknown_mode_string() {
+    runQuery("rc.config.mode value=quantum_sbus");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_scalar_config_write_rejects_an_unknown_argument() {
+    runQuery("drive.config.speed-limit bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bogus", capturedValue("argument"));
+}
+
+// =============================================================================
+// Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
+// is the sole reader/writer of s_consoleConfigApplyResult, and both Console
+// adapters (serial task, browser's psychic server task - both pinned to
+// Core 0) can call it concurrently. s_configWriteMutex serializes the whole
+// configApply() -> error check -> configCommitApplied() window; these tests
+// simulate the OTHER adapter holding it via the native mutex stub's exposed
+// singleton (paStubMutexStorage()) - consoleModuleInit() creates
+// s_configWriteMutex via xSemaphoreCreateMutexStatic(), which the stub always
+// backs with that same singleton, matching the precedent
+// test_console_serial_output.cpp already set for inspecting/driving
+// paGetSerialMutex()'s stub state the same way.
+// =============================================================================
+
+void test_config_write_reports_busy_when_the_mutex_is_already_held() {
+    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    paStubMutexReset();
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // simulate the OTHER Console adapter mid-write
+
+    runQuery("system.config.enable_arm1 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_arm1,
+                              "a write blocked by contention must never reach the config cache");
+
+    paStubMutexReset();  // release the simulated hold for later tests
+}
+
+// The other half of the same guarantee: a write that DOES acquire the mutex
+// must give it back exactly once, or every later write on both adapters
+// deadlocks forever - a worse defect than the race being fixed.
+void test_config_write_releases_the_mutex_after_a_successful_write() {
+    consoleModuleInit();
+    paStubMutexReset();
+
+    runQuery("system.config.enable_arm2 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the config-write mutex was left held after a write");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give during the write");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(m->takeCount, m->giveCount, "takes and gives are not balanced");
+    TEST_ASSERT_TRUE_MESSAGE(m->takeCount >= 1, "the write did not take the mutex at all");
+
+    paStubMutexReset();
+}
+
+// A rejected write (fails schema validation before ever reaching configApply())
+// must not touch the mutex at all - contention only matters once a write is
+// actually about to reach the shared static.
+void test_config_write_rejected_before_apply_never_touches_the_mutex() {
+    consoleModuleInit();
+    paStubMutexReset();
+
+    runQuery("system.config.enable_aux1 bogus=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "an argument-validation rejection reached the mutex");
+
+    paStubMutexReset();
+}
+
+// Mirrors test_action_executor_not_ready_count_report's shape for type=config
+// rows - informational, not a pass/fail assertion on the count itself.
+void test_config_executor_not_ready_count_report() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int configTypeCount = 0;
+    int notReadyCount = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_CONFIG) != 0) continue;
+        configTypeCount++;
+        runQuery(entries[i].name);
+        if (g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY) {
+            notReadyCount++;
+        }
+    }
+
+    printf("[#226 report] config-type catalog entries: %d, executor-not-ready: %d\n",
+           configTypeCount, notReadyCount);
+    TEST_ASSERT_TRUE(true);
+}
+
+// =============================================================================
+// Commanded Mode direct executors (#226 criterion 4)
+// =============================================================================
+
+void test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts() {
+    runQuery("system.action.set-mode mode=stationary");
+
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a Commanded Mode write answers a single result");
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_commanded_mode_set_mode_driving_calls_setter() {
+    g_test_commanded_stationary = true;
+    runQuery("system.action.set-mode mode=driving");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+}
+
+void test_commanded_mode_set_mode_rejects_an_invalid_value() {
+    runQuery("system.action.set-mode mode=sideways");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_FALSE_MESSAGE(g_test_commanded_stationary,
+                             "no state change on a rejected write");
+}
+
+void test_commanded_mode_set_mode_missing_argument() {
+    runQuery("system.action.set-mode");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("mode", capturedValue("argument"));
+}
+
+void test_commanded_mode_sleep_broadcasts_only_on_a_real_transition() {
+    runQuery("system.action.sleep");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_sleep);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+
+    // Same state again - the setter still runs, but nothing changed, so no
+    // second broadcast (matches commandedSetSleep()'s own changed-detection).
+    runQuery("system.action.sleep");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(2, g_test_commanded_sleep_calls);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_commanded_mode_wake_calls_setter() {
+    g_test_commanded_sleep = true;
+    runQuery("system.action.wake");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_sleep);
+}
+
+void test_commanded_mode_sleep_rejects_an_argument() {
+    runQuery("system.action.sleep extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_commanded_sleep_calls,
+                                  "a rejected write must never reach the setter");
+}
+
+void test_commanded_mode_enable_web_control_calls_setter() {
+    runQuery("system.action.enable-web-control");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_web_control);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_web_control_calls);
+}
+
+void test_commanded_mode_disable_web_control_calls_setter() {
+    g_test_commanded_web_control = true;
+    runQuery("system.action.disable-web-control");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_web_control);
+}
+
+void test_commanded_mode_rc_debug_enable_and_disable() {
+    runQuery("rc.action.toggle-debug enabled=true");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_rc_debug);
+
+    runQuery("rc.action.toggle-debug enabled=false");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_rc_debug);
+    TEST_ASSERT_EQUAL_UINT(2, g_test_commanded_rc_debug_calls);
+}
+
+void test_commanded_mode_rc_debug_missing_argument() {
+    runQuery("rc.action.toggle-debug");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_commanded_rc_debug_calls);
+}
+
+void test_commanded_mode_rc_debug_malformed_value() {
+    runQuery("rc.action.toggle-debug enabled=maybe");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// system.action.set-mode is never routed through ACTION_REGISTRY[]/the
+// queued RC dispatch, even though it carries a cpp_enum/rc_token for the
+// unrelated momentary-RC-switch binding case - proves the direct-executor
+// table is checked first, per this ticket's own dispatch-order comment.
+void test_commanded_mode_set_mode_never_reaches_the_queued_dispatch() {
+    runQuery("system.action.set-mode mode=stationary");
+
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_dispatch_action_calls,
+                                  "set-mode must never reach dispatchRcTriggerActionTest()");
+}
+
+// =============================================================================
+// system.config.mood (#226 criterion 4: the config-typed view of active mood)
+// =============================================================================
+
+void test_mood_config_read_reports_the_live_active_mood() {
+    robotState.activeMood = 11;
+
+    runQuery("system.config.mood");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("11", capturedValue("value"));
+}
+
+void test_mood_config_write_applies_a_valid_mood() {
+    runQuery("system.config.mood value=14");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(14, g_test_applied_mood);
+}
+
+void test_mood_config_write_rejects_an_invalid_mood_id() {
+    runQuery("system.config.mood value=99");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_applied_mood);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -1044,6 +1521,42 @@ int main(int, char**) {
     RUN_TEST(test_action_marcduino_command_bad_prefix_answers_out_of_range);
     RUN_TEST(test_action_marcduino_command_quoted_value_dispatches_with_payload);
     RUN_TEST(test_action_marcduino_command_value_too_long_answers_out_of_range);
+
+    RUN_TEST(test_component_toggle_read_reports_saved_and_active);
+    RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
+    RUN_TEST(test_component_toggle_write_accepts_the_named_key_not_only_value);
+    RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
+    RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
+    RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
+    RUN_TEST(test_drive_speed_limit_read_and_write);
+    RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
+    RUN_TEST(test_aux_led_pin_read_and_write);
+    RUN_TEST(test_aux_led_count_read_and_write);
+    RUN_TEST(test_rc_mode_read_and_write);
+    RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
+    RUN_TEST(test_scalar_config_write_rejects_an_unknown_argument);
+    RUN_TEST(test_config_write_reports_busy_when_the_mutex_is_already_held);
+    RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);
+    RUN_TEST(test_config_write_rejected_before_apply_never_touches_the_mutex);
+    RUN_TEST(test_config_executor_not_ready_count_report);
+
+    RUN_TEST(test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts);
+    RUN_TEST(test_commanded_mode_set_mode_driving_calls_setter);
+    RUN_TEST(test_commanded_mode_set_mode_rejects_an_invalid_value);
+    RUN_TEST(test_commanded_mode_set_mode_missing_argument);
+    RUN_TEST(test_commanded_mode_sleep_broadcasts_only_on_a_real_transition);
+    RUN_TEST(test_commanded_mode_wake_calls_setter);
+    RUN_TEST(test_commanded_mode_sleep_rejects_an_argument);
+    RUN_TEST(test_commanded_mode_enable_web_control_calls_setter);
+    RUN_TEST(test_commanded_mode_disable_web_control_calls_setter);
+    RUN_TEST(test_commanded_mode_rc_debug_enable_and_disable);
+    RUN_TEST(test_commanded_mode_rc_debug_missing_argument);
+    RUN_TEST(test_commanded_mode_rc_debug_malformed_value);
+    RUN_TEST(test_commanded_mode_set_mode_never_reaches_the_queued_dispatch);
+
+    RUN_TEST(test_mood_config_read_reports_the_live_active_mood);
+    RUN_TEST(test_mood_config_write_applies_a_valid_mood);
+    RUN_TEST(test_mood_config_write_rejects_an_invalid_mood_id);
 
     return UNITY_END();
 }

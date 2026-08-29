@@ -693,6 +693,41 @@ void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
     TEST_ASSERT_TRUE(active.enableSound);
 }
 
+// Component Toggles are staged at reboot (ADR 0027): the Active snapshot
+// must keep answering the boot-time value even after a later Console/REST
+// write changes the saved config_cache value underneath it - this is the
+// exact "saved vs active" divergence the Console's read path (#226) reports.
+void test_active_component_toggles_survive_a_later_saved_write() {
+    ConfigSnapshot boot = {};
+    boot.system.enable_arm1 = true;
+    boot.system.enable_arm2 = false;
+    boot.system.enable_audio = true;
+    boot.system.enable_protor2link = false;
+    configCacheSetActiveComponentToggles(boot.system);
+
+    // A later write changes the saved cache without a reboot in between.
+    ConfigSnapshot saved = boot;
+    saved.system.enable_arm1 = false;
+    saved.system.enable_arm2 = true;
+    saved.system.enable_audio = false;
+    saved.system.enable_protor2link = true;
+    configCacheApply(saved);
+
+    // Active still reflects what actually booted...
+    TEST_ASSERT_TRUE(configCacheReadActiveComponentToggle(0));   // enable_arm1
+    TEST_ASSERT_FALSE(configCacheReadActiveComponentToggle(1));  // enable_arm2
+    TEST_ASSERT_TRUE(configCacheReadActiveComponentToggle(13));  // enable_audio
+    TEST_ASSERT_FALSE(configCacheReadActiveComponentToggle(14)); // enable_protor2link
+
+    // ...while the saved cache carries the new, not-yet-rebooted values.
+    ConfigSnapshot readBack = {};
+    configCacheRead(&readBack);
+    TEST_ASSERT_FALSE(readBack.system.enable_arm1);
+    TEST_ASSERT_TRUE(readBack.system.enable_arm2);
+    TEST_ASSERT_FALSE(readBack.system.enable_audio);
+    TEST_ASSERT_TRUE(readBack.system.enable_protor2link);
+}
+
 // Test: full save path — config cache -> configSave -> configLoad
 // Verifies that the complete chain used by saveConfigToNvs() preserves values correctly.
 void test_configCacheRead_save_round_trip() {
@@ -1284,6 +1319,7 @@ int main() {
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);
     RUN_TEST(test_configCacheRead_captures_all_categories);
     RUN_TEST(test_active_rc_config_survives_saved_toggle_and_mode_changes);
+    RUN_TEST(test_active_component_toggles_survive_a_later_saved_write);
     RUN_TEST(test_configCacheRead_save_round_trip);
     RUN_TEST(test_configCacheApply_applies_all_categories);
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);

@@ -623,15 +623,18 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     req.send(200, "application/json", body);
 }
 
-bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
+// WebRequest-free per ADR 0034's Consequences ("persistSystemConfig(WebRequest&,
+// ...), which sends its own HTTP error today, is the first such extraction"):
+// the caller renders its own failure, so this stays reachable from a future
+// non-web caller without a request object in scope. handleRcMapPost is the
+// only caller today.
+bool persistSystemConfig(const SystemConfig& system) {
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     if (!configSaveSystem(prefs, system)) {
         prefs.end();
-        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     prefs.end();
@@ -639,6 +642,48 @@ bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
 }
 
 }  // namespace
+
+// See include/api_config.h for the full contract.
+ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
+                                         CommandSource source) {
+    ConfigCommitOutcome outcome;
+
+    for (size_t i = 0; i < result.applied.count; ++i) {
+        PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
+    }
+
+    configCacheApply(*working);
+
+    // Sync stationary mode with edge detection and drive-on cue. Safe to call
+    // unconditionally: when the request omits "stationary", configApply() left
+    // working->system.stationary at the cache value read before the call, which
+    // always matches robotState.stationary (commandedSetStationary is the only
+    // runtime writer of both, keeping them in lockstep) - so the edge-detect
+    // inside it is a no-op and no cue fires.
+    commandedSetStationary(working->system.stationary, source);
+
+    if (result.actions.playDomeOnCue) {
+        audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
+    }
+
+    configCacheRead(&outcome.snap);
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.persisted = false;
+        return outcome;
+    }
+    if (!configSave(prefs, outcome.snap)) {
+        prefs.end();
+        outcome.persisted = false;
+        return outcome;
+    }
+    prefs.end();
+
+    requestStatusBroadcastNow();
+    outcome.persisted = true;
+    return outcome;
+}
 
 // GET /api/config - the config snapshot data/app.js fetches on every page load.
 void handleConfigGet(WebRequest& req) {
@@ -701,7 +746,8 @@ void handleRcMapPost(WebRequest& req) {
 
     ConfigSnapshot snap;
     configCacheRead(&snap);
-    if (!persistSystemConfig(req, snap.system)) {
+    if (!persistSystemConfig(snap.system)) {
+        webSendJsonError(req, 500, "failed to persist config");
         return;
     }
 
@@ -726,41 +772,13 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
 
-    for (size_t i = 0; i < result.applied.count; ++i) {
-        PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
-    }
-
-    configCacheApply(working);
-
-    // Sync stationary mode with edge detection and drive-on cue. Safe to call
-    // unconditionally: when the request omits "stationary", configApply() leaves
-    // working.system.stationary at the cache value read above, which always
-    // matches robotState.stationary (commandedSetStationary is the only runtime
-    // writer of both, keeping them in lockstep) - so the edge-detect inside it
-    // is a no-op and no cue fires.
-    commandedSetStationary(working.system.stationary, SRC_WEB_API);
-
-    if (result.actions.playDomeOnCue) {
-        audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
-    }
-
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    ConfigCommitOutcome commit = configCommitApplied(&working, result, SRC_WEB_API);
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist config");
         return;
     }
-    if (!configSave(prefs, snap)) {
-        prefs.end();
-        webSendJsonError(req, 500, "failed to persist config");
-        return;
-    }
-    prefs.end();
 
-    requestStatusBroadcastNow();
-    sendConfigSnapshot(req, snap);
+    sendConfigSnapshot(req, commit.snap);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).

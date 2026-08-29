@@ -28,6 +28,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "api_audio_category_range_apply.h"
+#include "api_audio_mood_map_apply.h"
+#include "api_audio_tracks_apply.h"
 #include "audio_rx_status.h"
 #include "web_request.h"
 
@@ -86,6 +89,32 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
                            uint8_t playState, uint8_t device, uint16_t totalTracks,
                            uint16_t currentTrack, const char* rxStatus,
                            const char* rxDetail);
+
+// Commit Steps (ADR 0034 criterion 1): the handler-owned post-apply side
+// effects for each of the three audio write Apply Cores, extracted so a
+// future non-REST caller (the Controller Console) reaches the identical
+// NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
+// No Console operation reaches these yet (#226 scope note: these three cores
+// are per-key or grouped writes - "key=<name>&track=N", paired lo/hi, a
+// four-value mood map - not the single "value=" scalar shape criterion 3
+// covers), so the REST handlers below remain the sole callers today; the
+// extraction stands ready for whichever ticket wires them.
+struct AudioMoodMapCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResult& result);
+
+struct AudioTracksCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
+                                                   const AudioTracksApplyResult& result);
+
+struct AudioCategoryRangeCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
+    ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);

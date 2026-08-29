@@ -11,6 +11,7 @@
 #include "config.h"
 #include "config_serializer.h"
 #include "config_nvsio.h"
+#include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
 #include "rc_mapping.h"
 
@@ -347,6 +348,9 @@ RcInputActiveConfig activeRcInputConfig = {};
 bool activeWifiRecovery = false;
 bool activeDomeEnabled = false;
 bool activeAudioEnabled = false;
+// Packed bitmask, 2 B: bit i is kComponentToggleFields[i]'s value as booted.
+// See include/config_cache.h and include/console_config_fields.h.
+uint16_t activeComponentToggleMask = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -462,6 +466,28 @@ bool configCacheReadActiveAudioEnabled() {
     bool result;
     taskENTER_CRITICAL(&configCacheMux);
     result = activeAudioEnabled;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveComponentToggles(const SystemConfig& system) {
+    uint16_t mask = 0;
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        if (system.*(kComponentToggleFields[i].field)) {
+            mask |= (uint16_t)(1u << i);
+        }
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    activeComponentToggleMask = mask;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+bool configCacheReadActiveComponentToggle(size_t bitIndex) {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = (activeComponentToggleMask & (uint16_t)(1u << bitIndex)) != 0;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }

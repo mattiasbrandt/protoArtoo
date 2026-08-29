@@ -92,12 +92,30 @@ bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true;
 // Side effects of the config write path, recorded rather than performed so a
 // test can assert that a POST reached them. Zeroed by the test's own setUp().
 #include "commanded_modes.h"
+#include "commanded_modes_test_hooks.h"  // declares the globals this section defines,
+                                         // type-checked against every consumer
 bool g_test_commanded_stationary = false;
 unsigned g_test_dome_on_cue_count = 0;
 unsigned g_test_status_broadcast_count = 0;
 
 void commandedSetStationary(bool stationary, CommandSource /*source*/) {
     g_test_commanded_stationary = stationary;
+}
+
+// POST /api/sleep and /api/wake's only side effect (src/web/api_system.cpp,
+// not in the native build) and the Console's system.action.sleep/wake
+// dispatch (#226). Records rather than reports "changed" the way the real
+// setter does - a test that needs the changed-detection edge sets/clears
+// g_test_commanded_sleep itself before calling, matching the real function's
+// "already this value -> false" contract.
+bool g_test_commanded_sleep = false;
+unsigned g_test_commanded_sleep_calls = 0;
+
+bool commandedSetSleep(bool sleep, CommandSource /*source*/) {
+    g_test_commanded_sleep_calls++;
+    bool changed = (g_test_commanded_sleep != sleep);
+    g_test_commanded_sleep = sleep;
+    return changed;
 }
 
 // POST /api/rc/debug's only side effect. Recorded rather than performed: RC

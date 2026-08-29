@@ -288,6 +288,7 @@ void setup() {
     configCacheSetActiveRcInput(activeRc);
     configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
     configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
+    configCacheSetActiveComponentToggles(bootCfg.system);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
