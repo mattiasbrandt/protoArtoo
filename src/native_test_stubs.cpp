@@ -100,6 +100,22 @@ void commandedSetStationary(bool stationary, CommandSource /*source*/) {
     g_test_commanded_stationary = stationary;
 }
 
+// POST /api/sleep and /api/wake's only side effect (src/web/api_system.cpp,
+// not in the native build) and the Console's system.action.sleep/wake
+// dispatch (#226). Records rather than reports "changed" the way the real
+// setter does - a test that needs the changed-detection edge sets/clears
+// g_test_commanded_sleep itself before calling, matching the real function's
+// "already this value -> false" contract.
+bool g_test_commanded_sleep = false;
+unsigned g_test_commanded_sleep_calls = 0;
+
+bool commandedSetSleep(bool sleep, CommandSource /*source*/) {
+    g_test_commanded_sleep_calls++;
+    bool changed = (g_test_commanded_sleep != sleep);
+    g_test_commanded_sleep = sleep;
+    return changed;
+}
+
 // POST /api/rc/debug's only side effect. Recorded rather than performed: RC
 // verbose logging lives in RCInputTask, which is not in the native build.
 bool g_test_commanded_rc_debug = false;

@@ -53,6 +53,18 @@
 // which configCommitApplied() (#226) calls on a successful persist.
 extern unsigned g_test_status_broadcast_count;
 
+// src/native_test_stubs.cpp's recorded Commanded Mode setter side effects
+// (#226's direct-executor dispatch calls these directly, same as the REST
+// handlers whose native tests these globals already back).
+extern bool g_test_commanded_stationary;
+extern bool g_test_commanded_sleep;
+extern unsigned g_test_commanded_sleep_calls;
+extern bool g_test_commanded_web_control;
+extern unsigned g_test_web_control_calls;
+extern bool g_test_commanded_rc_debug;
+extern unsigned g_test_commanded_rc_debug_calls;
+extern unsigned g_test_applied_mood;
+
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
 // =============================================================================
@@ -200,6 +212,15 @@ void setUp() {
     // Reset to empty before every test (#239) - matches test_api_logs.cpp's
     // own setUp(), so a log-ring test never sees another test's lines.
     logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
+    g_test_status_broadcast_count = 0;
+    g_test_commanded_stationary = false;
+    g_test_commanded_sleep = false;
+    g_test_commanded_sleep_calls = 0;
+    g_test_commanded_web_control = false;
+    g_test_web_control_calls = 0;
+    g_test_commanded_rc_debug = false;
+    g_test_commanded_rc_debug_calls = 0;
+    g_test_applied_mood = 0;
 }
 void tearDown() {}
 
@@ -1095,6 +1116,160 @@ void test_config_executor_not_ready_count_report() {
 }
 
 // =============================================================================
+// Commanded Mode direct executors (#226 criterion 4)
+// =============================================================================
+
+void test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts() {
+    runQuery("system.action.set-mode mode=stationary");
+
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a Commanded Mode write answers a single result");
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_commanded_mode_set_mode_driving_calls_setter() {
+    g_test_commanded_stationary = true;
+    runQuery("system.action.set-mode mode=driving");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+}
+
+void test_commanded_mode_set_mode_rejects_an_invalid_value() {
+    runQuery("system.action.set-mode mode=sideways");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_FALSE_MESSAGE(g_test_commanded_stationary,
+                             "no state change on a rejected write");
+}
+
+void test_commanded_mode_set_mode_missing_argument() {
+    runQuery("system.action.set-mode");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("mode", capturedValue("argument"));
+}
+
+void test_commanded_mode_sleep_broadcasts_only_on_a_real_transition() {
+    runQuery("system.action.sleep");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_sleep);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+
+    // Same state again - the setter still runs, but nothing changed, so no
+    // second broadcast (matches commandedSetSleep()'s own changed-detection).
+    runQuery("system.action.sleep");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(2, g_test_commanded_sleep_calls);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_commanded_mode_wake_calls_setter() {
+    g_test_commanded_sleep = true;
+    runQuery("system.action.wake");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_sleep);
+}
+
+void test_commanded_mode_sleep_rejects_an_argument() {
+    runQuery("system.action.sleep extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_commanded_sleep_calls,
+                                  "a rejected write must never reach the setter");
+}
+
+void test_commanded_mode_enable_web_control_calls_setter() {
+    runQuery("system.action.enable-web-control");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_web_control);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_web_control_calls);
+}
+
+void test_commanded_mode_disable_web_control_calls_setter() {
+    g_test_commanded_web_control = true;
+    runQuery("system.action.disable-web-control");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_web_control);
+}
+
+void test_commanded_mode_rc_debug_enable_and_disable() {
+    runQuery("rc.action.toggle-debug enabled=true");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_rc_debug);
+
+    runQuery("rc.action.toggle-debug enabled=false");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(g_test_commanded_rc_debug);
+    TEST_ASSERT_EQUAL_UINT(2, g_test_commanded_rc_debug_calls);
+}
+
+void test_commanded_mode_rc_debug_missing_argument() {
+    runQuery("rc.action.toggle-debug");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_commanded_rc_debug_calls);
+}
+
+void test_commanded_mode_rc_debug_malformed_value() {
+    runQuery("rc.action.toggle-debug enabled=maybe");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// system.action.set-mode is never routed through ACTION_REGISTRY[]/the
+// queued RC dispatch, even though it carries a cpp_enum/rc_token for the
+// unrelated momentary-RC-switch binding case - proves the direct-executor
+// table is checked first, per this ticket's own dispatch-order comment.
+void test_commanded_mode_set_mode_never_reaches_the_queued_dispatch() {
+    runQuery("system.action.set-mode mode=stationary");
+
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_dispatch_action_calls,
+                                  "set-mode must never reach dispatchRcTriggerActionTest()");
+}
+
+// =============================================================================
+// system.config.mood (#226 criterion 4: the config-typed view of active mood)
+// =============================================================================
+
+void test_mood_config_read_reports_the_live_active_mood() {
+    robotState.activeMood = 11;
+
+    runQuery("system.config.mood");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("11", capturedValue("value"));
+}
+
+void test_mood_config_write_applies_a_valid_mood() {
+    runQuery("system.config.mood value=14");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(14, g_test_applied_mood);
+}
+
+void test_mood_config_write_rejects_an_invalid_mood_id() {
+    runQuery("system.config.mood value=99");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_applied_mood);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -1159,6 +1334,24 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
     RUN_TEST(test_config_executor_not_ready_count_report);
+
+    RUN_TEST(test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts);
+    RUN_TEST(test_commanded_mode_set_mode_driving_calls_setter);
+    RUN_TEST(test_commanded_mode_set_mode_rejects_an_invalid_value);
+    RUN_TEST(test_commanded_mode_set_mode_missing_argument);
+    RUN_TEST(test_commanded_mode_sleep_broadcasts_only_on_a_real_transition);
+    RUN_TEST(test_commanded_mode_wake_calls_setter);
+    RUN_TEST(test_commanded_mode_sleep_rejects_an_argument);
+    RUN_TEST(test_commanded_mode_enable_web_control_calls_setter);
+    RUN_TEST(test_commanded_mode_disable_web_control_calls_setter);
+    RUN_TEST(test_commanded_mode_rc_debug_enable_and_disable);
+    RUN_TEST(test_commanded_mode_rc_debug_missing_argument);
+    RUN_TEST(test_commanded_mode_rc_debug_malformed_value);
+    RUN_TEST(test_commanded_mode_set_mode_never_reaches_the_queued_dispatch);
+
+    RUN_TEST(test_mood_config_read_reports_the_live_active_mood);
+    RUN_TEST(test_mood_config_write_applies_a_valid_mood);
+    RUN_TEST(test_mood_config_write_rejects_an_invalid_mood_id);
 
     return UNITY_END();
 }

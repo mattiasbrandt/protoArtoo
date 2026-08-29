@@ -18,8 +18,15 @@
 #include <string.h>
 #include <ctype.h>
 
-#ifdef ARDUINO
+// Unguarded (unlike the FreeRTOS/heap-caps group below, which has no native
+// stub): millis() needs a declaration on both Arduino and native builds, and
+// test/stubs/include/Arduino.h supplies one for native - same reasoning
+// src/web/api_drive.cpp's own unconditional Arduino.h include already
+// documents for its driveArbiterSubmit()/millis() calls, reused verbatim
+// here for the Commanded Mode direct executors below (#226).
 #include <Arduino.h>
+
+#ifdef ARDUINO
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
 #endif
@@ -46,10 +53,22 @@
 #include "api_config.h"        // configCommitApplied() - the ADR 0034 Commit Step beside
                                // configApply(), shared verbatim with handleConfigPost (#226)
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
+#include "api_helpers.h"       // parseBoolValue() - reused verbatim for rc.action.toggle-debug's
+                               // enabled= argument, matching src/web/api_rc.cpp's own JSON body parse
+#include "commanded_modes.h"   // commandedSetStationary/Sleep/WebControl/RcDebug() - Commanded
+                               // Mode setters (#226 criterion 4: Commanded Modes go only
+                               // through these, never the queued RC-dispatch core below)
 #include "config_cache.h"      // configCacheRead/Apply, configCacheReadActiveComponentToggle
 #include "console_config_fields.h"  // kComponentToggleFields[] - Component Toggle name<->field
                                      // table (#226; see its own header for why this is
                                      // hand-written C++ rather than registry-generated)
+#include "drive_arbiter.h"     // driveArbiterSubmit(), DriveSource - the zero-frame release
+                               // disable-web-control already submits (src/web/api_drive.cpp)
+#include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
+                               // real executor (registry drift note: the registry's own
+                               // `executor:` field for system.config.mood says configApply,
+                               // which is wrong - see the status comment; not fixed here, that
+                               // edit reaches the fenced data/console_help.txt)
 
 static const char* TAG = "Console";
 
@@ -1013,6 +1032,301 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
     }
 }
 
+// system.config.mood (#226): the config-typed view of the same active-mood
+// mechanism system.action.set-mood exposes as an action - both are backed by
+// applyMood()/commandedSetActiveMood() (src/tasks/mood.cpp), one of the five
+// Commanded Modes criterion 4 names. Read renders the live robotState value
+// with no arguments; write takes value=<10|11|13|14>, the same enum
+// system.action.set-mood already validates, and applies immediately -
+// active mood is not staged (ADR 0027 only covers the 15 Component
+// Toggles above; this is a live, non-hardware runtime flag).
+static bool consoleMoodIdValid(uint8_t moodId) {
+    return moodId == 10 || moodId == 11 || moodId == 13 || moodId == 14;
+}
+
+static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                     char* rawArgs, const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+
+    if (!isWrite) {
+        uint8_t moodId = 0;
+        taskENTER_CRITICAL(&robotStateMux);
+        moodId = robotState.activeMood;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)moodId);
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+    for (size_t i = 0; i < parsedArgs.count; ++i) {
+        if (strcmp(parsedArgs.items[i].key, "value") != 0) {
+            consoleEmitArgFailure(requestId, entry->name, parsedArgs.items[i].key,
+                                  CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+            return;
+        }
+    }
+    const char* raw = consoleArgsFind(parsedArgs, "value");
+    if (raw == nullptr) {
+        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
+        return;
+    }
+
+    char* end = nullptr;
+    long parsed = strtol(raw, &end, 10);
+    if (end == raw || *end != '\0' || parsed < 0 || parsed > 255 ||
+        !consoleMoodIdValid((uint8_t)parsed)) {
+        consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    applyMood((uint8_t)parsed);
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+// =============================================================================
+// Private: Commanded Mode direct executors (#226 criterion 4, generalizing
+// the pattern-setter role this ticket was asked to establish for a second
+// class of executor: a plain synchronous C function taking validated
+// Console arguments, checked before ACTION_REGISTRY[]/RobotActionId
+// resolution in the CONSOLE_OP_ACTION case below - never the queued RC
+// dispatch core the OTHER action executors use. "Commanded Modes ... go
+// only through commanded_modes setters" (criterion 4): stationary
+// (system.action.set-mode), sleep/wake, non-RC control (enable/disable-
+// web-control) and rc-debug all call their commanded_modes.h setter
+// directly here, reproducing exactly the side-effect sequence their REST
+// handler already runs (src/web/api_drive.cpp, src/web/api_system.cpp,
+// src/web/api_rc.cpp) rather than a second implementation of it - those
+// three files are outside this ticket's edit list, so this reads their
+// logic and calls the same shared functions, it does not import a Commit
+// Step from them.
+//
+// An operation resolved here is never also looked up in ACTION_REGISTRY[]
+// even when it carries a cpp_enum/rc_token for RC-binding purposes
+// (system.action.set-mode does, for a momentary RC switch) - that binding
+// is unrelated to what the Console runs for the same canonical name.
+// =============================================================================
+
+typedef void (*ConsoleDirectActionExecutorFn)(uint32_t requestId, const char* operationName,
+                                              const ConsoleArgs& args, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink);
+
+static CommandSource consoleCommandSourceFor(ConsoleCommandSource source) {
+    return (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+}
+
+// Rejects any argument this operation does not declare - every direct
+// executor below except set-mode/rc-debug takes none.
+static bool consoleRejectAnyArgument(uint32_t requestId, const char* operationName,
+                                    const ConsoleArgs& args, const ConsoleRecordSink* sink) {
+    if (args.count == 0) {
+        return true;
+    }
+    consoleEmitArgFailure(requestId, operationName, args.items[0].key,
+                          CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+    return false;
+}
+
+// system.action.set-mode: mode=stationary|driving, the same two values
+// POST /api/mode accepts (src/web/api_drive.cpp's handleModePost) - commit
+// step reproduced here: setter, persist, broadcast, in that order.
+static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operationName,
+                                        const ConsoleArgs& args, ConsoleCommandSource source,
+                                        const ConsoleRecordSink* sink) {
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < args.count; ++i) {
+        if (strcmp(args.items[i].key, "mode") != 0) {
+            badKey = args.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const char* mode = consoleArgsFind(args, "mode");
+    if (mode == nullptr) {
+        consoleEmitArgFailure(requestId, operationName, "mode", CONSOLE_REASON_MISSING_ARGUMENT, sink);
+        return;
+    }
+
+    bool stationary;
+    if (strcmp(mode, "stationary") == 0) {
+        stationary = true;
+    } else if (strcmp(mode, "driving") == 0) {
+        stationary = false;
+    } else {
+        consoleEmitArgFailure(requestId, operationName, "mode", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    commandedSetStationary(stationary, consoleCommandSourceFor(source));
+    // saveConfigToNvs() persists the whole cache (commandedSetStationary()
+    // already synced robotState.stationary into it) - the same call
+    // handleModePost makes, its result unchecked there; the Console checks
+    // it so a failed write is an explicit error (criterion 3) rather than a
+    // silently discarded one.
+    const bool persisted = saveConfigToNvs();
+    requestStatusBroadcastNow();
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
+                            persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+// system.action.sleep / system.action.wake: no arguments, matching
+// POST /api/sleep / /api/wake (src/web/api_system.cpp). Broadcasts only on
+// an actual transition, exactly like the REST handler.
+static void consoleExecuteDirectSleepWake(uint32_t requestId, const char* operationName, bool sleep,
+                                          const ConsoleArgs& args, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    const bool changed = commandedSetSleep(sleep, consoleCommandSourceFor(source));
+    if (changed) {
+        requestStatusBroadcastNow();
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDirectSleep(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink) {
+    consoleExecuteDirectSleepWake(requestId, operationName, true, args, source, sink);
+}
+
+static void consoleExecuteDirectWake(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleExecuteDirectSleepWake(requestId, operationName, false, args, source, sink);
+}
+
+// system.action.enable-web-control / disable-web-control: no arguments,
+// matching POST /api/web-control/enable|disable (src/web/api_drive.cpp).
+// Disable also zeroes any web-sourced drive frame, the same
+// driveArbiterSubmit() call the REST handler makes - DriveSource::WEB_API
+// is reused rather than a new console-specific source, since the effect
+// (release web-sourced drive control) is identical regardless of which
+// non-RC surface asked for it, and inventing a new DriveSource variant for
+// one zero-frame submission is out of this ticket's scope.
+static void consoleExecuteDirectWebControl(uint32_t requestId, const char* operationName,
+                                           bool enable, const ConsoleArgs& args,
+                                           ConsoleCommandSource source,
+                                           const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    commandedSetWebControl(enable, consoleCommandSourceFor(source));
+    if (!enable) {
+        driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDirectEnableWebControl(uint32_t requestId, const char* operationName,
+                                                 const ConsoleArgs& args,
+                                                 ConsoleCommandSource source,
+                                                 const ConsoleRecordSink* sink) {
+    consoleExecuteDirectWebControl(requestId, operationName, true, args, source, sink);
+}
+
+static void consoleExecuteDirectDisableWebControl(uint32_t requestId, const char* operationName,
+                                                  const ConsoleArgs& args,
+                                                  ConsoleCommandSource source,
+                                                  const ConsoleRecordSink* sink) {
+    consoleExecuteDirectWebControl(requestId, operationName, false, args, source, sink);
+}
+
+// rc.action.toggle-debug: enabled=true|false, the same JSON field
+// POST /api/rc/debug reads (src/web/api_rc.cpp).
+static void consoleExecuteDirectRcDebug(uint32_t requestId, const char* operationName,
+                                        const ConsoleArgs& args, ConsoleCommandSource source,
+                                        const ConsoleRecordSink* sink) {
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < args.count; ++i) {
+        if (strcmp(args.items[i].key, "enabled") != 0) {
+            badKey = args.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const char* raw = consoleArgsFind(args, "enabled");
+    if (raw == nullptr) {
+        consoleEmitArgFailure(requestId, operationName, "enabled", CONSOLE_REASON_MISSING_ARGUMENT,
+                              sink);
+        return;
+    }
+    bool enabled = false;
+    if (!parseBoolValue(raw, &enabled)) {
+        consoleEmitArgFailure(requestId, operationName, "enabled", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    commandedSetRcDebug(enabled, consoleCommandSourceFor(source));
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+struct ConsoleDirectActionExecutorEntry {
+    const char* operationName;
+    ConsoleDirectActionExecutorFn executor;
+};
+
+static const ConsoleDirectActionExecutorEntry g_directActionExecutors[] = {
+    {"system.action.set-mode", consoleExecuteDirectSetMode},
+    {"system.action.sleep", consoleExecuteDirectSleep},
+    {"system.action.wake", consoleExecuteDirectWake},
+    {"system.action.enable-web-control", consoleExecuteDirectEnableWebControl},
+    {"system.action.disable-web-control", consoleExecuteDirectDisableWebControl},
+    {"rc.action.toggle-debug", consoleExecuteDirectRcDebug},
+};
+static const size_t kDirectActionExecutorCount =
+    sizeof(g_directActionExecutors) / sizeof(g_directActionExecutors[0]);
+
+static ConsoleDirectActionExecutorFn consoleFindDirectActionExecutor(const char* canonicalName) {
+    for (size_t i = 0; i < kDirectActionExecutorCount; ++i) {
+        if (strcmp(g_directActionExecutors[i].operationName, canonicalName) == 0) {
+            return g_directActionExecutors[i].executor;
+        }
+    }
+    return nullptr;
+}
+
 // =============================================================================
 // Public API Implementation
 // =============================================================================
@@ -1262,12 +1576,38 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         }
 
         case CONSOLE_OP_ACTION: {
+            // Resolved once here (by canonical name or alias) and reused by
+            // both the Commanded Mode direct-executor check and the
+            // RobotActionId fallback below - consoleIsKnownOperation()
+            // already guaranteed this resolves (checked earlier in this
+            // function), so entry is never null past this point.
+            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
+
+            // Commanded Modes first (#226 criterion 4): an operation in
+            // g_directActionExecutors[] is dispatched through its
+            // commanded_modes.h setter directly and never reaches
+            // ACTION_REGISTRY[]/the queued RC dispatch below, even for
+            // system.action.set-mode, which does carry a cpp_enum/rc_token
+            // for an unrelated RC-binding purpose - looked up by canonical
+            // name so an alias (e.g. its rc_token) resolves the same way.
+            ConsoleDirectActionExecutorFn directExecutor =
+                (entry != nullptr) ? consoleFindDirectActionExecutor(entry->name) : nullptr;
+            if (directExecutor != nullptr) {
+                ConsoleArgs parsedArgs = {};
+                ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+                if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+                    consoleEmitArgParseError(request->requestId, parseStatus, sink);
+                    break;
+                }
+                directExecutor(request->requestId, entry->name, parsedArgs, request->source, sink);
+                break;
+            }
+
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a
-            // not-yet-wired action #226/#227 own, or a motion target #222
+            // not-yet-wired action #227 owns, or a motion target #222
             // owns - unchanged from before this ticket.
-            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion
@@ -1310,6 +1650,15 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             if (toggleField != nullptr) {
                 consoleExecuteComponentToggle(request->requestId, entry, toggleField,
                                               request->source, rawArgs, sink);
+                break;
+            }
+
+            // system.config.mood: the config-typed view of active mood, one
+            // of criterion 4's five Commanded Modes (real executor is
+            // applyMood(), not the registry's stated configApply - see the
+            // include comment at the top of this file).
+            if (entry != nullptr && strcmp(entry->name, "system.config.mood") == 0) {
+                consoleExecuteMoodConfig(request->requestId, entry, rawArgs, sink);
                 break;
             }
 
