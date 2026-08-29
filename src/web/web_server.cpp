@@ -42,6 +42,14 @@
 #include "../../include/web_network_manager.h"
 #include "../../include/wifi_recovery_gesture.h"
 
+// hosted_link_status.h is only meaningful (and only defined, by
+// web_network_manager_hosted.cpp) on boards with the ESP-Hosted backend; the
+// call site in buildStatusJson() below is guarded by the same capability
+// gate, so a board without it never references the undefined symbol.
+#if PA_CAP_HOSTED_WIFI
+#include "../../include/hosted_link_status.h"
+#endif
+
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
 // release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
@@ -712,6 +720,27 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      (double)(hbCurrentR / 100.0f));
             ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
         }
+
+#if PA_CAP_HOSTED_WIFI
+        // ESP-Hosted C6 link supervisor state (#189 slice 2). Board Capability
+        // Gate, not runtime config -- absent entirely on boards with no
+        // Hosted backend rather than emitted with placeholder values.
+        {
+            HostedLinkStatusSnapshot hl = hostedLinkQueryStatus();
+            char hlBuf[256];
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"hostedLink\":{\"phase\":\"%s\",\"terminal\":%s,"
+                     "\"transportFailureCount\":%u,\"transportUpEventCount\":%u,"
+                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u,"
+                     "\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu}",
+                     hostedLinkPhaseName(hl.phase),
+                     hl.phase == HostedLinkPhase::Degraded ? "true" : "false",
+                     hl.transportFailureEventCount, hl.transportUpEventCount, hl.attemptCount,
+                     hl.totalAttemptCount, hl.recoveredCount, (unsigned long)hl.lastFailureAtMs,
+                     (unsigned long)hl.lastAttemptAtMs, (unsigned long)hl.degradedAtMs);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+        }
+#endif
 
         ok = appendJsonChunk(pos, remaining, "}") && ok;
     }
