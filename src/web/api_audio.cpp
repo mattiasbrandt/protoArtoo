@@ -394,6 +394,25 @@ void handleAudioMoodMapGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
+// See include/api_audio.h for the full contract.
+AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResult& result) {
+    AudioMoodMapCommitOutcome outcome;
+
+    Preferences prefs;
+    if (prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.ok = configUpdateAudioMoodMasks(prefs, result.quiet, result.mid, result.full,
+                                                 result.awakeplus);
+        prefs.end();
+    }
+
+    if (outcome.ok) {
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/mood-map q=%u m=%u f=%u a=%u",
+                    (unsigned)result.quiet, (unsigned)result.mid, (unsigned)result.full,
+                    (unsigned)result.awakeplus);
+    }
+    return outcome;
+}
+
 void handleAudioMoodMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
@@ -405,22 +424,12 @@ void handleAudioMoodMapPost(WebRequest& req) {
         return;
     }
 
-    Preferences prefs;
-    bool ok = false;
-    if (prefs.begin(NVS_NAMESPACE, false)) {
-        ok = configUpdateAudioMoodMasks(prefs, result.quiet, result.mid, result.full,
-                                        result.awakeplus);
-        prefs.end();
-    }
-
-    if (!ok) {
+    AudioMoodMapCommitOutcome commit = audioMoodMapCommitApplied(result);
+    if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
         return;
     }
 
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/mood-map q=%u m=%u f=%u a=%u",
-                (unsigned)result.quiet, (unsigned)result.mid, (unsigned)result.full,
-                (unsigned)result.awakeplus);
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -465,18 +474,15 @@ void handleAudioTracksGet(WebRequest& req) {
                  s_tracksIncludeBindings ? "true" : "false");
 }
 
-void handleAudioTracksPost(WebRequest& req) {
-    ConfigParamSource params = webParamSource(req);
-
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    static AudioTracksApplyResult result;
-    audioTracksApply(params, audioCatalogSupported(), &snap, &result);
-    if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
-        return;
-    }
+// See include/api_audio.h for the full contract. `snap` must already carry
+// audioTracksApply()'s in-place mutation (the shell reads the cache, calls
+// the core, then this). audioQueueRefreshBindings() keeps SRC_WEB_API
+// hardcoded, matching today's sole REST caller - the day a second caller
+// (e.g. the Console) reaches this, that becomes a `source` parameter, not
+// invented speculatively here.
+AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
+                                                   const AudioTracksApplyResult& result) {
+    AudioTracksCommitOutcome outcome;
 
     const char* key = result.key;
     const uint16_t t = result.track;
@@ -487,12 +493,12 @@ void handleAudioTracksPost(WebRequest& req) {
     const char* chirpBindingKey =
         result.chirpBindingKey[0] != '\0' ? result.chirpBindingKey : nullptr;
 
-    configCacheApply(snap);
+    configCacheApply(*snap);
 
     Preferences prefs;
     bool ok = false;
     if (prefs.begin(NVS_NAMESPACE, false)) {
-        bool wroteTrack = configSaveAudio(prefs, snap.audio);
+        bool wroteTrack = configSaveAudio(prefs, snap->audio);
         bool wroteChirp = true;
 
         if (wroteTrack && chirpBindingKey != nullptr) {
@@ -532,29 +538,41 @@ void handleAudioTracksPost(WebRequest& req) {
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u", key, (unsigned)t);
     }
 
-    if (ok) {
-        if (chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
-            PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
-        }
-        req.send(200, "application/json", "{\"ok\":true}");
-    } else {
-        webSendJsonError(req, 500, "NVS write failed");
+    if (ok && chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
+        PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
     }
+
+    outcome.ok = ok;
+    return outcome;
 }
 
-// Atomic update for one category lo/hi pair to avoid partial two-request saves.
-void handleAudioCategoryRangePost(WebRequest& req) {
+void handleAudioTracksPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     ConfigSnapshot snap;
     configCacheRead(&snap);
 
-    static AudioCategoryRangeApplyResult result;
-    audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
+    static AudioTracksApplyResult result;
+    audioTracksApply(params, audioCatalogSupported(), &snap, &result);
     if (result.error.hasError) {
         sendApplyError(req, result.error.message, result.error.notFound);
         return;
     }
+
+    AudioTracksCommitOutcome commit = audioTracksCommitApplied(&snap, result);
+    if (!commit.ok) {
+        webSendJsonError(req, 500, "NVS write failed");
+        return;
+    }
+
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// See include/api_audio.h for the full contract. Same SRC_WEB_API note as
+// audioTracksCommitApplied() above applies to the binding-refresh enqueue.
+AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
+    ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result) {
+    AudioCategoryRangeCommitOutcome outcome;
 
     const char* loKey = result.loKey;
     const char* hiKey = result.hiKey;
@@ -568,12 +586,12 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     const char categoryPage = result.categoryPage;
     const char* categoryNvsKey = result.categoryNvsKey;
 
-    configCacheApply(snap);
+    configCacheApply(*snap);
 
     Preferences prefs;
     bool ok = false;
     if (prefs.begin(NVS_NAMESPACE, false)) {
-        bool wroteConfig = configSaveAudio(prefs, snap.audio);
+        bool wroteConfig = configSaveAudio(prefs, snap->audio);
         bool wroteBinding = true;
         if (wroteConfig && hasBankedParams) {
             uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
@@ -611,8 +629,8 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     }
 
     if (!ok) {
-        webSendJsonError(req, 500, "NVS write failed");
-        return;
+        outcome.ok = false;
+        return outcome;
     }
 
     if (hasBankedParams) {
@@ -630,6 +648,31 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     if ((hasBankedParams || clearBinding) && !audioQueueRefreshBindings(SRC_WEB_API)) {
         PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
     }
+
+    outcome.ok = true;
+    return outcome;
+}
+
+// Atomic update for one category lo/hi pair to avoid partial two-request saves.
+void handleAudioCategoryRangePost(WebRequest& req) {
+    ConfigParamSource params = webParamSource(req);
+
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+
+    static AudioCategoryRangeApplyResult result;
+    audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
+    if (result.error.hasError) {
+        sendApplyError(req, result.error.message, result.error.notFound);
+        return;
+    }
+
+    AudioCategoryRangeCommitOutcome commit = audioCategoryRangeCommitApplied(&snap, result);
+    if (!commit.ok) {
+        webSendJsonError(req, 500, "NVS write failed");
+        return;
+    }
+
     req.send(200, "application/json", "{\"ok\":true}");
 }
 

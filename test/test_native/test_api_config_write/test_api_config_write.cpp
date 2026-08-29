@@ -134,6 +134,22 @@ void test_rc_map_get_returns_the_map_shape() {
     TEST_ASSERT_FALSE(doc["capacity"]["total"].isNull());
 }
 
+void test_rc_map_post_applies_an_empty_map_and_persists() {
+    const WebRequestTestParam params[] = {{"plain", "{\"map\":[]}"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleRcMapPost(req);
+
+    // persistSystemConfig() (ADR 0034, WebRequest-free since #226) reports its
+    // own failure through this success path unchanged: 200 on a valid empty
+    // map, matching the async-era handler's success shape.
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
 void test_rc_map_post_rejects_a_bad_entry_with_the_cores_message() {
     const WebRequestTestParam params[] = {{"map", "not-json-at-all"}};
     WebRequestTestBackend backend;
@@ -199,6 +215,7 @@ int main() {
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
+    RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);
     RUN_TEST(test_wifi_post_stages_settings_without_leaking_the_password);
     RUN_TEST(test_wifi_post_rejects_invalid_settings);
