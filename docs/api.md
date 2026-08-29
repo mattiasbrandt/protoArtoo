@@ -19,6 +19,7 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - [Learned Sequences](#learned-sequences)
 - [Configuration and RC](#configuration-and-rc)
 - [Action Registry](#action-registry)
+- [Controller Console](#controller-console)
 - [Status and Validation](#status-and-validation)
 - [System and OTA](#system-and-ota)
 - [SSE Events](#sse-events)
@@ -1389,6 +1390,80 @@ curl -s -X POST http://artoo.local/api/actions/test \
 ```json
 {"ok":true,"outcome":"queued","token":"sound_rand_humming","domain":"sound"}
 ```
+
+## Controller Console
+
+### POST /api/console
+
+The browser adapter for the Controller Console (ADR 0034) — the same command
+processor a serial terminal drives, over HTTP. See
+[console.md](console.md) for the command language and
+[console-protocol.md](console-protocol.md) for the full record format. This is
+the endpoint the dashboard's Live Logs command box calls.
+
+- Input: form field `command`, or JSON body `{ "command": "..." }`.
+- Success: `200` `{"records":[...]}` — one object per Console Record, each
+  carrying `id` and `type` (`begin` | `field` | `item` | `result` | `end`)
+  plus the fields that record type carries (`operation` on `begin`;
+  `name`/`value` on `field`; `value` on `item`; `status`/`outcome`/`reason`
+  on `result`/`end` — `reason` is present only when there is one).
+- `system.status.logs` is the one command whose record set can run past what
+  this endpoint holds in memory: when the log ring has more lines than fit,
+  the response keeps the newest lines and adds `"truncated":true` to the
+  envelope (a JSON field beside `"records"`, not a Console Record field —
+  the wire format itself is unchanged). Every other command's answer is
+  small enough that this never applies.
+- `operations` (with or without `type=`) answers the same shape but is sent
+  as a chunked response rather than assembled in memory first, because the
+  full catalog is larger than this endpoint's normal response buffer. This
+  is invisible to a normal HTTP client — the body is the same
+  `{"records":[...]}` shape either way.
+- Errors:
+  - `400` `{"ok":false,"error":"missing command"}` — JSON body had no
+    string `command` field
+  - `400` `{"ok":false,"error":"command too long"}` — JSON body's `command`
+    was 256 bytes or more (form-encoded submissions past this length are
+    answered on the `200` path instead, as a normal `result` record with
+    `reason=line-too-long` — this is what the dashboard's command box
+    actually sends)
+  - `400` `{"ok":false,"error":"invalid json body"}` — body did not parse
+    as JSON
+  - `400` `{"ok":false,"error":"empty command"}` — no command supplied at
+    all
+  - `500` `{"ok":false,"error":"response too large for this adapter"}` —
+    a non-`operations` command produced more records or record data than
+    this endpoint's bounded response can hold
+  - `500` `{"ok":false,"error":"response alloc failed"}` / `{"ok":false,"error":"response too large"}` —
+    response-stream allocation failure
+
+#### Example request (form)
+
+```bash
+curl -s -X POST http://artoo.local/api/console -d 'command=system.status.health'
+```
+
+#### Example response (abridged)
+
+```json
+{"records":[{"id":9,"type":"begin","operation":"system.status.health"},{"id":9,"type":"field","name":"estop","value":"false"},{"id":9,"type":"field","name":"heapFree","value":"42120"},{"id":9,"type":"end","status":"ok","outcome":"completed"}]}
+```
+
+#### Example request (json)
+
+```bash
+curl -s -X POST http://artoo.local/api/console \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"sound.action.random-humming"}'
+```
+
+#### Example response
+
+```json
+{"records":[{"id":10,"type":"result","status":"ok","outcome":"queued"}]}
+```
+
+(Requires Web control enabled — see [console.md](console.md#web-control-what-actions-need)
+— otherwise this answers `{"records":[{"id":10,"type":"result","status":"err","outcome":"blocked","reason":"blocked-by-state"}]}`.)
 
 ## Status and Validation
 
