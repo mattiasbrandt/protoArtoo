@@ -1,0 +1,12 @@
+diff --git a/data/app.js b/data/app.js
+index b433167..da11b1c 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -921,6 +921,7 @@
+       // curated action-token subset, which always had a fixed known list to
+       // report the miss against; the catalog has no such notion of "not a
+       // command at all" versus "no match at this cursor position".
++      appendCommandLine(`[ERROR] unknown command: ${token}`, " log-line-command-error");
+       return;
+     }
+ 

@@ -40,6 +40,7 @@
 #include "console_record.h"
 #include "console_serial_output.h"
 #include "console_cli_line.h"
+#include "console_completion.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
@@ -261,12 +262,19 @@ void consoleTask(void* pvParameters) {
     embeddedCliConfig->cliBufferSize = sizeof(embeddedCliBuffer);
     // Use default rxBufferSize, cmdBufferSize, historyBufferSize
 
-    // Disable live autocompletion (enableAutoComplete) for T1 scope.
-    // Live autocompletion emits cursor save/restore escape sequences on every keystroke,
-    // which is pure wire overhead when there are zero command bindings to suggest.
-    // Tab completion itself is handled independently and still works (lib/embedded-cli.c:855).
-    // This only disables the per-keystroke live display of suggestions.
-    // T2+ will re-enable enableAutoComplete once #219 registers the command catalog.
+    // Disable live autocompletion (enableAutoComplete). Live autocompletion
+    // emits cursor save/restore escape sequences on every keystroke to show
+    // an inline suggestion as the operator types - a per-keystroke wire and
+    // CPU cost for a feature docs/console-protocol.md never asks for.
+    // Explicit Tab completion (#238) is a separate mechanism
+    // (lib/embedded-cli.c's onControlInput: `else if (c == '\t')`, not
+    // gated by this flag) and works with it left off; only the live,
+    // every-keystroke suggestion is disabled here. #238 completes from the
+    // runtime catalog via cli->getCompletionCandidate (set below), not from
+    // registered bindings (bindingsCount stays 0: 175 catalog entries as
+    // CliCommandBindings would cost ~3.5 KB of static RAM, most of the
+    // artoo-esp32 board's remaining headroom - see
+    // include/console_completion.h and lib/embedded-cli/VENDORED.md Patch 5).
     embeddedCliConfig->enableAutoComplete = false;
 
     // Verify buffer is large enough for the configuration
@@ -288,6 +296,11 @@ void consoleTask(void* pvParameters) {
     // Set up embedded-cli callbacks
     embeddedCli->writeChar = consoleSerialWriteChar;
     embeddedCli->onCommand = onCliCommand;
+    // Tab completion (#238): operation names and argument keys from the
+    // runtime catalog, via the catalog completion callback patch
+    // (lib/embedded-cli/VENDORED.md Patch 5). See
+    // include/console_completion.h for the candidate source itself.
+    embeddedCli->getCompletionCandidate = consoleCompletionCandidate;
 
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);

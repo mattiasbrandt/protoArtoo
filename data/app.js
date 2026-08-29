@@ -456,11 +456,41 @@
   const LOG_TRIM_LINES = 200;
   const LOG_EMPTY_TEXT = "No log history available yet.";
   const COMMAND_HISTORY_MAX = 20;
+  const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
-  let commandTokens = [];
-  let commandHistory = [];
-  let commandHistoryIndex = -1;
   let logSelectionActive = false;
+
+  // Persistent Console command history (Up/Down), surviving a page reload.
+  // Reads and writes are wrapped defensively: a browser with site data
+  // blocked (private mode, storage quota, disabled cookies/storage) must
+  // still render and operate the command box - it just keeps history for
+  // the current page load only instead of across a reload.
+  const readStoredCommandHistory = () => {
+    try {
+      const raw = window.localStorage.getItem(CONSOLE_HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((entry) => typeof entry === "string" && entry.length > 0)
+        .slice(-COMMAND_HISTORY_MAX);
+    } catch (error) {
+      return [];
+    }
+  };
+
+  const writeStoredCommandHistory = (history) => {
+    try {
+      window.localStorage.setItem(CONSOLE_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (error) {
+      // Site data blocked, storage full, or a private-mode restriction:
+      // history stays in-memory for this page load rather than failing the
+      // command box.
+    }
+  };
+
+  let commandHistory = readStoredCommandHistory();
+  let commandHistoryIndex = commandHistory.length;
 
   const normalizeLogMessage = (line) => String(line ?? "").trim();
 
@@ -654,29 +684,97 @@
     }
   });
 
-  const loadCommandTokens = async ({ handle = null } = {}) => {
+  // Console Tab completion catalog (ADR 0034, #238). Operation names are
+  // fetched once per session and cached; a given operation's argument keys
+  // are fetched (and cached) only when the operator actually Tabs one -
+  // never all 175+ operations' help up front (the coordinator brief is
+  // explicit about this: "fetch help <op> for the single operation being
+  // completed").
+  let consoleCatalogNames = [];
+  const consoleArgKeyCache = new Map();
+  const CONSOLE_ARG_KEY_CACHE_MAX = 50;
+
+  // Parses `operations`' item records (docs/console-protocol.md s.2:
+  // "name (type[, reason])") down to the bare canonical name. Tab completes
+  // canonical operations only, never aliases (the epic acceptance matrix's
+  // own wording), so no alias resolution happens here.
+  const parseOperationsResponse = (records) => {
+    const names = [];
+    for (const record of records) {
+      if (!record || record.type !== "item" || typeof record.value !== "string") continue;
+      const parenIndex = record.value.indexOf(" (");
+      names.push(parenIndex === -1 ? record.value : record.value.slice(0, parenIndex));
+    }
+    return names;
+  };
+
+  // Parses `help <op>`'s "params" field (console_module.cpp:
+  // "name:type:required|optional" comma-joined) down to "<key>=" candidates -
+  // the same shape the serial adapter's completion source returns
+  // (include/console_completion.h), so both adapters offer identical
+  // candidates.
+  const parseHelpParamsResponse = (records) => {
+    for (const record of records) {
+      if (record && record.type === "field" && record.name === "params" && typeof record.value === "string") {
+        return record.value
+          .split(",")
+          .map((entry) => entry.split(":")[0])
+          .filter((key) => key.length > 0)
+          .map((key) => `${key}=`);
+      }
+    }
+    return [];
+  };
+
+  // Section loader (Page Recovery, ADR 0019): registered below like the
+  // other startup sections. Replaces the old app-action-tokens section
+  // (/api/actions?testable, the curated completion subset the epic's
+  // background explicitly supersedes) with the real catalog.
+  const loadConsoleCatalog = async ({ handle = null } = {}) => {
     if (!window.PAApi) throw new Error("API unavailable");
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/actions", { cache: "no-store" });
-    if (!Array.isArray(result.data)) {
-      throw new Error("Action registry response is not an array");
+    const result = await api.postForm("/api/console", { command: "operations" });
+    // A section loader that cannot do its job must reject (#107) so the
+    // bootstrap shows recovery instead of the page silently carrying on
+    // with a permanently-empty completion catalog. This is deliberately
+    // stricter than fetchConsoleArgKeyCandidates() below, which is an
+    // on-demand per-Tab-press fetch, not a page-load section - it degrades
+    // to "no candidates this press" instead of blocking the whole page.
+    if (!Array.isArray(result?.data?.records)) {
+      throw new Error("Console operations response is not a records array");
     }
-    commandTokens = result.data
-      .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
-      .map((entry) => entry.token)
-      .sort((a, b) => a.localeCompare(b));
+    consoleCatalogNames = parseOperationsResponse(result.data.records).sort((a, b) => a.localeCompare(b));
+  };
+
+  // Fetches and caches one operation's argument-key candidates on demand.
+  // A network/transport failure is deliberately NOT cached, so the next Tab
+  // press retries instead of staying broken for the rest of the session; an
+  // operation with no params (or a genuine "no params field in the
+  // response") IS cached as an empty list - that is a stable fact about the
+  // operation, not a transient failure.
+  const fetchConsoleArgKeyCandidates = async (opName) => {
+    if (consoleArgKeyCache.has(opName)) return consoleArgKeyCache.get(opName);
+    if (!window.PAApi) return [];
+    try {
+      const result = await window.PAApi.postForm(
+        "/api/console",
+        { command: `help ${opName}` },
+        { timeoutMs: 5000 }
+      );
+      const records = Array.isArray(result?.data?.records) ? result.data.records : [];
+      const candidates = parseHelpParamsResponse(records);
+      if (consoleArgKeyCache.size >= CONSOLE_ARG_KEY_CACHE_MAX) {
+        consoleArgKeyCache.delete(consoleArgKeyCache.keys().next().value);
+      }
+      consoleArgKeyCache.set(opName, candidates);
+      return candidates;
+    } catch (error) {
+      return [];
+    }
   };
 
   const appendCommandLine = (text, extraClass = " log-line-command") => {
     appendLogLine(text, { extraClass });
-  };
-
-  const printCommandHelp = () => {
-    if (commandTokens.length === 0) {
-      appendCommandLine("[ERROR] action list unavailable", " log-line-command-error");
-      return;
-    }
-    appendCommandLine(`available commands: ${commandTokens.join(" ")}`);
   };
 
   const rememberCommand = (token) => {
@@ -686,6 +784,7 @@
       if (commandHistory.length > COMMAND_HISTORY_MAX) {
         commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
       }
+      writeStoredCommandHistory(commandHistory);
     }
     commandHistoryIndex = commandHistory.length;
   };
@@ -770,28 +869,81 @@
     return prefix;
   };
 
-  const completeConsoleCommand = () => {
+  // Splits the command box's raw value into (beforeToken, token): the
+  // current token is the substring after the last space, or the whole
+  // value if there is none. Deliberately does NOT trim the value first (a
+  // trailing space is exactly what signals "the operator finished the
+  // operation name, they are now completing an argument key" - trimming it
+  // away would erase that signal). Mirrors the same split the serial
+  // adapter's embedded-cli patch uses (lib/embedded-cli's
+  // getExternalAutocompletedCommand) - "Ambiguous Tab behaviour matches the
+  // browser" is one equivalence claim across both adapters, so both split
+  // the line the same way.
+  const splitCurrentToken = (value) => {
+    const spaceIndex = value.lastIndexOf(" ");
+    return spaceIndex === -1
+      ? { beforeToken: "", token: value }
+      : { beforeToken: value.slice(0, spaceIndex + 1), token: value.slice(spaceIndex + 1) };
+  };
+
+  // Resolves the candidate set for the CURRENT token: operation names when
+  // nothing is typed before it, or the resolved operation's argument keys
+  // when there is - the operation is always the line's first token,
+  // regardless of how many argument tokens already follow it (matching
+  // include/console_completion.h's rule for the serial adapter).
+  const candidatesForCurrentToken = async (value) => {
+    const { beforeToken, token } = splitCurrentToken(value);
+    if (beforeToken === "") {
+      return { beforeToken, token, candidates: consoleCatalogNames };
+    }
+    const opName = beforeToken.trim().split(" ")[0];
+    const candidates = await fetchConsoleArgKeyCandidates(opName);
+    return { beforeToken, token, candidates };
+  };
+
+  const completeConsoleCommand = async () => {
     if (!logCommandInput) return;
-    const partial = normalizeLogMessage(logCommandInput.value);
-    if (!partial) {
-      printCommandHelp();
+    const value = logCommandInput.value;
+    const { beforeToken, token, candidates } = await candidatesForCurrentToken(value);
+    // A stale response for a value the operator has since changed (e.g. kept
+    // typing while the "help <op>" fetch for a previous token was in
+    // flight) must not overwrite what they typed since - drop it silently
+    // rather than completing against an outdated token.
+    if (logCommandInput.value !== value) return;
+
+    const matches = candidates.filter((candidate) => candidate.startsWith(token));
+
+    if (matches.length === 0) {
+      // Matches the serial adapter exactly: zero candidates is a silent
+      // no-op (lib/embedded-cli's onAutocompleteRequest returns early with
+      // no output when candidateCount is 0), not an error line - the old
+      // "[ERROR] unknown command" here was specific to the superseded
+      // curated action-token subset, which always had a fixed known list to
+      // report the miss against; the catalog has no such notion of "not a
+      // command at all" versus "no match at this cursor position".
       return;
     }
-    const matches = commandTokens.filter((token) => token.startsWith(partial));
+
     if (matches.length === 1) {
-      logCommandInput.value = matches[0];
+      const candidate = matches[0];
+      // An argument-key candidate ends in "=" and IS the separator between
+      // key and value (docs/console-protocol.md s.1.2: key=value, no space
+      // around "="), so completion does not also add a trailing space there -
+      // the same rule the embedded-cli patch applies for the serial adapter.
+      const separator = candidate.endsWith("=") ? "" : " ";
+      logCommandInput.value = `${beforeToken}${candidate}${separator}`;
       return;
     }
-    if (matches.length > 1) {
-      const shared = commonPrefix(matches);
-      if (shared.length > partial.length) {
-        logCommandInput.value = shared;
-        return;
-      }
-      appendCommandLine(matches.join(" "));
+
+    const shared = commonPrefix(matches);
+    if (shared.length > token.length) {
+      logCommandInput.value = `${beforeToken}${shared}`;
       return;
     }
-    appendCommandLine(`[ERROR] unknown command: ${partial}`, " log-line-command-error");
+
+    // Several candidates already share the longest common prefix: list them
+    // and restore the typed line unchanged (docs/console-protocol.md s.8).
+    appendCommandLine(matches.join(" "));
   };
 
   logCommandInput?.addEventListener("keydown", (event) => {
@@ -869,14 +1021,14 @@
     ["app-initial-status", loadInitialStatus, "initial status"],
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
-    ["app-action-tokens", loadCommandTokens, "action registry"],
+    ["app-console-catalog", loadConsoleCatalog, "console commands"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadRecentLogs().catch(() => {});
       loadLogLevel().catch(() => {});
-      loadCommandTokens().catch(() => {});
+      loadConsoleCatalog().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

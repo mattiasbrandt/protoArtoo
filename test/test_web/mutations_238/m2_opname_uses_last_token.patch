@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index b433167..bfd67ee 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -896,7 +896,7 @@
+     if (beforeToken === "") {
+       return { beforeToken, token, candidates: consoleCatalogNames };
+     }
+-    const opName = beforeToken.trim().split(" ")[0];
++    const opName = beforeToken.trim().split(" ").pop();
+     const candidates = await fetchConsoleArgKeyCandidates(opName);
+     return { beforeToken, token, candidates };
+   };

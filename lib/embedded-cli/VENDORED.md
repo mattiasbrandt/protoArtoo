@@ -15,7 +15,7 @@ Rationale documented in `tasks/serial-interface-embedded-cli-deep-dive.md`:
 - Complete line editing with history, tab completion
 - Overflow-safe command buffer with built-in line ending support
 - Structured dispatch via `onCommand` callback with catch-all
-- Small footprint: 3.3 KB flash object (xtensa patched), ~1.1-5.2 KB static depending on bindings
+- Small footprint: 3.6 KB flash object (xtensa, all five patches), 20 B static regardless of catalog size (Patch 5's catalog completion callback pays no per-entry RAM cost)
 - Stack frame 96 B max (see measured table below)
 
 ## Configuration
@@ -33,20 +33,33 @@ EmbeddedCliConfig config = {
 config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
-Object Size Analysis (Measured at commit 9950006)
+Object Size Analysis (Measured at commit 9950006; Patch 5 row re-measured 2026-08-29)
 
 Measured with both toolchains under `-Os`:
 
 | Toolchain | State | .text | .rodata | .bss | max stack frame |
 |-----------|-------|-------|---------|------|-----------------|
 | xtensa | upstream | 3,430 B | 238 B | 20 B | 96 B |
-| xtensa | patched | 3,190 B | 118 B | 20 B | 96 B |
+| xtensa | patched (1-4) | 3,190 B | 118 B | 20 B | 96 B |
+| xtensa | patched (1-5) | 3,606 B | 118 B | 20 B | 96 B |
 | riscv32 | upstream | 4,342 B | 259 B | 20 B | 112 B |
-| riscv32 | patched | 3,854 B | 132 B | 20 B | 96 B |
+| riscv32 | patched (1-4) | 3,854 B | 132 B | 20 B | 96 B |
+| riscv32 | patched (1-5) | 4,284 B | 132 B | 20 B | 96 B |
 
-**Deltas (patched - upstream):**
+**Deltas (patched 1-4 - upstream):**
 - xtensa: .text -240 B, .rodata -120 B, .bss 0, max frame 0 B
 - riscv32: .text -488 B, .rodata -127 B, .bss 0, max frame -16 B
+
+**Deltas (patched 1-5 - patched 1-4):**
+- xtensa: .text +416 B, .rodata 0, .bss 0, max frame 0 B (`embedded_cli.c`'s own file-wide max frame is unchanged at 96 B - `getExternalAutocompletedCommand` inlines into `onAutocompleteRequest` at `-Os`, whose own frame grows 48 B -> 80 B, still under the file's existing 96 B max)
+- riscv32: .text +430 B, .rodata 0, .bss 0, max frame 0 B (same shape as xtensa)
+
+`.bss` is unchanged by Patch 5 in `embedded_cli.c` itself - the new candidate pool
+(`pa_console_completion::g_argCandidatePool`, 256 B) lives in
+`include/console_completion.h`, compiled into the *caller's* translation unit
+(`src/tasks/console_task.cpp`), not into `embedded_cli.c`. See "Patch 5" below
+for that file's own object-size and stack-frame numbers, and #238's closing
+comment for the measured whole-firmware delta on both boards.
 
 **Measurement commands:**
 ```bash
@@ -66,21 +79,25 @@ sort -t$'\t' -k2 -rn out.su | head -1
 
 3. **Prior research figures NOT reproduced.** The earlier document claimed Flash measurements of 4,299 B (xtensa) and 4,591 B (riscv32) for object code. Measured here: 3,190 B and 3,854 B (patched). The prior figures may have included linking overhead, runtime stubs, or different compilation flags not documented at the time. These measurements use `-Os` with no additional optimizations.
 
-**Per-binding and total allocations remain as documented:**
+**Per-binding and total allocations remain as documented (for the still-live
+binding path other callers may use):**
 - Per binding: 20 B (`sizeof(CliCommandBinding)`)
 - Static BSS without bindings: 20 B
 - Stack max frame (re-measured, corrected from prior research): 96 B
 
-**Artoo-esp32 (under ADR 0017 budget with margin):**
-- Flash headroom: 26,656 B; library (patched xtensa) + 55 bindings = 3.3 KB + 1.1 KB = 4.4 KB (17% of headroom)
-- Static headroom: 13,688 B; library + 55 bindings = 2.3 KB (17% of headroom)
-
-**FireBeetle 2 (ample margin):**
-- Library (patched riscv32) + 192 bindings = 4.0 KB + 3.8 KB = 7.8 KB flash, 6.3 KB static
+**As shipped, neither board uses the binding path for completion at all**
+(zero bindings registered - Patch 5's catalog completion callback,
+"Board Differences" below). Both boards' actual cost is the library object
+itself (3.6 KB flash, all five patches, xtensa; 4.3 KB riscv32) plus the
+~256 B RAM candidate pool in `include/console_completion.h` - a flat cost
+independent of catalog size, replacing the per-board binding-subset sizing
+this subsection originally worked through. #238's closing comment on the
+tracking issue carries the measured whole-firmware flash/RAM delta on both
+boards against the #233 baseline.
 
 ## Patches Applied
 
-The vendored source includes four required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
+The vendored source includes five required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
 
 ### Patch 1: Safe Enter - No Auto-completion on Enter
 
@@ -180,14 +197,113 @@ Non-ASCII SSIDs (and other UTF-8 configuration values) are silently corrupted or
 
 **Test**: `test/test_native/test_cli_project_help/test_cli_project_help_ownership.cpp` - verifies that a project-owned `help` command is not shadowed by the library binding.
 
+### Patch 5: Catalog Completion Callback
+
+**Problem**: `getAutocompletedCommand` (line 1020) and Tab's candidate listing in
+`onAutocompleteRequest` (line 1105, before this patch) only ever compare a typed
+prefix against `impl->bindings` - the array `embeddedCliAddBinding()` fills. The
+project's runtime catalog (##219, ##238) carries 175+ operation names plus their
+argument keys; registering all of them as `CliCommandBinding`s would cost 20 B
+each (`sizeof(CliCommandBinding)`) - roughly 3.5 KB, most of the artoo-esp32
+board's remaining static RAM headroom after #233 (9,100 B free) - just to make
+completion see them. The board's Console task registers **zero** bindings today
+(`src/tasks/console_task.cpp` sets `onCommand` and never calls
+`embeddedCliAddBinding`), so before this patch Tab completed nothing on either
+board.
+
+A second, narrower gap: the library's whole-buffer matching model has no
+concept of "the operation name is already typed, now complete the *next*
+token" - `getAutocompletedCommand` compares a candidate's full text against
+the *entire* command buffer as one prefix, so it cannot complete an argument
+key (`speed=`) that comes after an already-typed operation name and a space.
+
+**Solution**: Add an optional external completion source,
+`EmbeddedCli::getCompletionCandidate(cli, index)`, enumerated by index
+(0, 1, 2, ... until NULL) instead of stored in an array - a project catalog
+already resident in flash (`const` tables) can be walked in place, at zero
+extra RAM cost for the candidate names themselves. When set, it **replaces**
+binding-based completion for that `cli` instance (never merged - bindings and
+an external source are two different candidate universes, and merging them
+produces ambiguous listings neither the operator nor the code asked for) and
+completes the **current token** - the substring of the command buffer after
+the last space, or the whole buffer if there is none - instead of the whole
+line. That is what lets one callback complete both an operation name (the
+first token) and a later argument key (a later token) with the same
+mechanism. A companion getter, `embeddedCliGetCmdBuffer(cli)`, exposes the
+current buffer read-only so the external source can see what has been typed
+and decide what it is completing.
+
+Two smaller, deliberate behavior differences from the binding path, both
+scoped to the external-source branch only (the binding path's behavior is
+untouched, verified byte-for-byte by the unchanged `getAutocompletedCommand`
+function body):
+- An **empty current token** is allowed to match (Tab right after an
+  operation name and its trailing space lists that operation's argument
+  keys - discovery, not a no-op). The binding path's `prefixLen == 0` early
+  return is intentionally not touched.
+- A completed candidate **ending in `=`** (an argument key) does not get the
+  unconditional trailing space every other single-candidate completion adds -
+  `key=value` has no space around `=` (the Console protocol's own syntax), so
+  the operator would otherwise have to backspace it before typing the value.
+
+**File**: `include/embedded_cli.h`, `src/embedded_cli.c`
+**Lines**:
+- `include/embedded_cli.h`: new `getCompletionCandidate` field on `struct
+  EmbeddedCli`; new `embeddedCliGetCmdBuffer()` declaration.
+- `src/embedded_cli.c`: `AutocompletedCommand` gains a `tokenStart` field
+  (0 for the binding path, unchanged); new `getExternalAutocompletedCommand()`
+  static function; `onAutocompleteRequest()` branches on whether
+  `cli->getCompletionCandidate` is set; new `embeddedCliGetCmdBuffer()`
+  definition next to `embeddedCliResetInput()` (Patch 2).
+
+**Defensive bound**: the completed-token write path added by this patch
+checks `tokenStart + autocompletedLen + 2 <= cmdMaxSize` before writing,
+matching Patch 2's Safe Overflow philosophy - a candidate token that would
+not fit is refused rather than corrupting the fixed command buffer.
+
+**RAM ownership**: this patch adds no static RAM to `embedded_cli.c` itself
+(`.bss` unchanged, see the Object Size Analysis table above). The 256 B
+candidate pool this project's completion source uses lives in
+`include/console_completion.h`, in the *caller's* translation unit - the
+library itself remains a pure zero-copy enumerator over whatever the caller's
+callback returns.
+
+**Upstream candidacy**: Yes - a project-supplied candidate source is a
+natural extension of the existing bindings model for any embedded-cli user
+with a candidate set too large to bind (a generated catalog, a filesystem
+listing), and the change is additive (a new optional field, defaulting to
+NULL/unused, with zero behavior change to the existing bindings path).
+
+**Test**: `test/test_native/test_cli_catalog_completion/test_cli_catalog_completion.cpp` -
+verifies unique-match completion (with and without the trailing-space
+suppression for `=`-ending candidates), ambiguous-prefix extend-then-list,
+current-token-only splicing (an earlier token is preserved), that an
+external source replaces rather than merges with bindings, the fixed-buffer
+overflow bound, and - the regression #238's coordinator brief asked for
+explicitly - that Enter still never autocompletes (Patch 1) with an external
+completion source wired in, including immediately after a Tab press that
+only *extended* the line without fully completing it.
+`test/test_native/test_console_completion/test_console_completion.cpp`
+(alongside `include/console_completion.h`, not in `lib/`) covers this
+project's own candidate source against the real catalog: operation-name vs.
+argument-key mode selection, resolving the operation from the first token
+regardless of later tokens, no-params and unknown-operation degradation, and
+that availability fields never gate completion (##238's "known-but-
+unavailable operations remain completable" acceptance criterion).
+
 ## Integration Notes
 
 ### Static Buffer Allocation
 
-The caller must provide a static buffer sized by `embeddedCliRequiredSize()`:
+The caller must provide a static buffer sized by `embeddedCliRequiredSize()`.
+As shipped (`src/tasks/console_task.cpp`), `maxBindingCount` stays at the
+library default (8) and `embeddedCliAddBinding()` is never called: Tab
+completion is Patch 5's catalog completion callback, not bindings (see
+"Board Differences" below) - the 175+-entry catalog costs 20 B per name as a
+`CliCommandBinding`, which the binding-count sizing this section originally
+illustrated was written for and which the project deliberately does not pay:
 
 ```c
-#define CLI_BINDING_COUNT 55  // artoo-esp32: 38 RC + verb/status words
 #define CLI_BUFFER_SIZE embeddedCliRequiredSize(&config)
 
 static CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE)];
@@ -225,13 +341,26 @@ taskEXIT_CRITICAL(logMutex);
 
 ### Board Differences
 
+**Superseded (kept for history): a per-board binding subset.** The original
+plan here was "bind all 192 catalog names on FireBeetle 2, bind ~55 aliases
+on artoo-esp32 for completion RAM budget, unbound aliases still execute but
+don't Tab-complete." #238's coordinator brief rejected this explicitly: any
+board-specific completion subset is a reduced catalog on one board, which the
+epic's own acceptance matrix ("No board receives a reduced command or
+completion catalog", ##206) forbids. Patch 5's catalog completion callback
+(above) is the shipped mechanism instead: **both boards bind zero commands**
+and complete identically from the same in-image catalog via
+`include/console_completion.h`'s `consoleCompletionCandidate()`, at a flat
+~256 B RAM cost (the argument-key candidate pool) regardless of catalog size
+or board.
+
 **FireBeetle 2 (P4, native USB CDC)**:
-- Bind all 192 catalog names; no artoo constraints apply.
 - USB CDC may have different backpressure; measure `Serial.write` latency.
 
 **Artoo-esp32 (UART0 via debug bridge)**:
-- Bind ~55 aliases (38 RC + verb/query prefixes); unbind others for completion RAM budget.
-- Unbound aliases still execute (via `onCommand` fallthrough), they just don't Tab-complete or appear in built-in help.
+- No RAM trade-off to make: the catalog completion callback's cost does not
+  scale with catalog size, so there is nothing to trim for this board's
+  tighter static RAM headroom (#233).
 
 ### Test Environment
 

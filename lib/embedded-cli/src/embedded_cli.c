@@ -199,6 +199,14 @@ struct AutocompletedCommand {
      * Total number of candidates for autocompletion
      */
     uint16_t candidateCount;
+
+    /**
+     * [PATCH: Catalog completion callback] Offset in cmdBuffer where the
+     * completed token begins. 0 for binding-based completion (whole-buffer
+     * match, unchanged behavior); the current token's start offset for
+     * external-source completion (see getExternalAutocompletedCommand).
+     */
+    uint16_t tokenStart;
 };
 
 static EmbeddedCliConfig defaultConfig;
@@ -310,6 +318,18 @@ static void onUnknownCommand(EmbeddedCli *cli, const char *name);
  * @return
  */
 static AutocompletedCommand getAutocompletedCommand(EmbeddedCli *cli, const char *prefix);
+
+/**
+ * [PATCH: Catalog completion callback] Like getAutocompletedCommand, but
+ * matches against cli->getCompletionCandidate() instead of cli->bindings,
+ * and against the CURRENT TOKEN of cmdBuffer (the substring after the last
+ * space) instead of the whole buffer - see the field doc on
+ * EmbeddedCli::getCompletionCandidate for why. Only called when
+ * cli->getCompletionCandidate is non-NULL.
+ * @param cli
+ * @return
+ */
+static AutocompletedCommand getExternalAutocompletedCommand(EmbeddedCli *cli);
 
 /**
  * Prints autocompletion result while keeping current command unchanged
@@ -585,6 +605,12 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
     impl->cmdSize = 0;
     UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
+}
+
+const char *embeddedCliGetCmdBuffer(const EmbeddedCli *cli) {
+    // [PATCH: Catalog completion callback]
+    PREPARE_IMPL(cli);
+    return impl->cmdBuffer;
 }
 
 void embeddedCliPrint(EmbeddedCli *cli, const char *string) {
@@ -1018,7 +1044,7 @@ static void onUnknownCommand(EmbeddedCli *cli, const char *name) {
 }
 
 static AutocompletedCommand getAutocompletedCommand(EmbeddedCli *cli, const char *prefix) {
-    AutocompletedCommand cmd = {NULL, 0, 0};
+    AutocompletedCommand cmd = {NULL, 0, 0, 0};
 
     size_t prefixLen = strlen(prefix);
 
@@ -1071,6 +1097,67 @@ static AutocompletedCommand getAutocompletedCommand(EmbeddedCli *cli, const char
     return cmd;
 }
 
+// [PATCH: Catalog completion callback]
+static AutocompletedCommand getExternalAutocompletedCommand(EmbeddedCli *cli) {
+    AutocompletedCommand cmd = {NULL, 0, 0, 0};
+
+    PREPARE_IMPL(cli);
+
+    // Current token = substring after the last space in cmdBuffer (or the
+    // whole buffer if there is no space yet). Unlike the bindings path
+    // above, an empty token prefix is allowed to match (Tab right after an
+    // operation name and its trailing space lists that operation's argument
+    // keys - discovery, not a no-op).
+    uint16_t tokenStart = 0;
+    for (uint16_t i = 0; i < impl->cmdSize; ++i) {
+        if (impl->cmdBuffer[i] == ' ')
+            tokenStart = (uint16_t) (i + 1);
+    }
+    cmd.tokenStart = tokenStart;
+
+    const char *tokenPrefix = &impl->cmdBuffer[tokenStart];
+    size_t tokenPrefixLen = (size_t) (impl->cmdSize - tokenStart);
+
+    for (uint16_t i = 0; ; ++i) {
+        const char *name = cli->getCompletionCandidate(cli, i);
+        if (name == NULL)
+            break;
+
+        size_t len = strlen(name);
+        if (len < tokenPrefixLen)
+            continue;
+
+        bool isCandidate = true;
+        for (size_t j = 0; j < tokenPrefixLen; ++j) {
+            if (tokenPrefix[j] != name[j]) {
+                isCandidate = false;
+                break;
+            }
+        }
+        if (!isCandidate)
+            continue;
+
+        if (cmd.candidateCount == 0 || len < cmd.autocompletedLen)
+            cmd.autocompletedLen = (uint16_t) len;
+
+        ++cmd.candidateCount;
+
+        if (cmd.candidateCount == 1) {
+            cmd.firstCandidate = name;
+            continue;
+        }
+
+        for (size_t j = tokenPrefixLen; j < cmd.autocompletedLen; ++j) {
+            if (cmd.firstCandidate[j] != name[j]) {
+                cmd.autocompletedLen = (uint16_t) j;
+                break;
+            }
+        }
+    }
+
+    return cmd;
+}
+
 static void printLiveAutocompletion(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
 
@@ -1105,22 +1192,57 @@ static void printLiveAutocompletion(EmbeddedCli *cli) {
 static void onAutocompleteRequest(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
 
-    AutocompletedCommand cmd = getAutocompletedCommand(cli, impl->cmdBuffer);
+    // [PATCH: Catalog completion callback] An external source, when set,
+    // replaces binding-based completion entirely for this cli instance (see
+    // the field doc on EmbeddedCli::getCompletionCandidate) and completes
+    // the current token rather than the whole buffer.
+    bool external = (cli->getCompletionCandidate != NULL);
+    AutocompletedCommand cmd = external
+        ? getExternalAutocompletedCommand(cli)
+        : getAutocompletedCommand(cli, impl->cmdBuffer);
 
     if (cmd.candidateCount == 0)
         return;
 
-    if (cmd.candidateCount == 1 || cmd.autocompletedLen > impl->cmdSize) {
+    // cmd.tokenStart is always 0 on the binding path (whole-buffer match,
+    // unchanged), so typedLen equals impl->cmdSize there exactly as before.
+    uint16_t typedLen = (uint16_t) (impl->cmdSize - cmd.tokenStart);
+
+    if (cmd.candidateCount == 1 || cmd.autocompletedLen > typedLen) {
+        // [PATCH: Catalog completion callback] Defensive bound: the
+        // completed token, plus the trailing separator and NUL this branch
+        // may add, must fit in the fixed command buffer. Candidate text is
+        // catalog-derived and short in practice, but this guards the same
+        // fixed-buffer invariant the Safe Overflow patch protects elsewhere
+        // rather than assuming it holds for every future candidate source.
+        if ((size_t) cmd.tokenStart + cmd.autocompletedLen + 2 > impl->cmdMaxSize)
+            return;
+
         // can copy from index cmdSize, but prefix is the same, so copy everything
-        memcpy(impl->cmdBuffer, cmd.firstCandidate, cmd.autocompletedLen);
+        memcpy(&impl->cmdBuffer[cmd.tokenStart], cmd.firstCandidate, cmd.autocompletedLen);
+        uint16_t newCmdSize = (uint16_t) (cmd.tokenStart + cmd.autocompletedLen);
         if (cmd.candidateCount == 1) {
-            impl->cmdBuffer[cmd.autocompletedLen] = ' ';
-            ++cmd.autocompletedLen;
+            // [PATCH: Catalog completion callback] An argument-key candidate
+            // ("speed=") is itself the separator between key and value
+            // (docs/console-protocol.md s.1.2: key=value, no space around
+            // "="), so completing it does not also add a trailing space -
+            // the operator types the value immediately after. Every other
+            // single-candidate completion (operation names; every binding)
+            // keeps the unconditional trailing space, unchanged.
+            bool appendSeparator = true;
+            if (external && cmd.autocompletedLen > 0 &&
+                cmd.firstCandidate[cmd.autocompletedLen - 1] == '=') {
+                appendSeparator = false;
+            }
+            if (appendSeparator) {
+                impl->cmdBuffer[newCmdSize] = ' ';
+                ++newCmdSize;
+            }
         }
-        impl->cmdBuffer[cmd.autocompletedLen] = '\0';
+        impl->cmdBuffer[newCmdSize] = '\0';
 
         writeToOutput(cli, &impl->cmdBuffer[impl->cmdSize - impl->cursorPos]);
-        impl->cmdSize = cmd.autocompletedLen;
+        impl->cmdSize = newCmdSize;
         impl->inputLineLength = impl->cmdSize;
         impl->cursorPos = 0; // Cursor has been moved to the end
         return;
@@ -1131,16 +1253,49 @@ static void onAutocompleteRequest(EmbeddedCli *cli) {
     // we need to completely clear current line since it begins with invitation
     clearCurrentLine(cli);
 
-    for (int i = 0; i < impl->bindingsCount; ++i) {
-        // autocomplete flag is set for all candidates by last call to
-        // getAutocompletedCommand
-        if (!(impl->bindingsFlags[i] & BINDING_FLAG_AUTOCOMPLETE))
-            continue;
+    if (external) {
+        // [PATCH: Catalog completion callback] Re-derive the matching set
+        // for listing instead of persisting per-candidate flags (as
+        // impl->bindingsFlags does for bindings): the external candidate
+        // space (a project catalog) is too large to justify a parallel flags
+        // array sized to it, and re-scanning a ~200-entry catalog on an
+        // explicit, operator-initiated Tab press is cheap.
+        const char *tokenPrefix = &impl->cmdBuffer[cmd.tokenStart];
+        size_t tokenPrefixLen = (size_t) (impl->cmdSize - cmd.tokenStart);
+        for (uint16_t i = 0; ; ++i) {
+            const char *name = cli->getCompletionCandidate(cli, i);
+            if (name == NULL)
+                break;
 
-        const char *name = impl->bindings[i].name;
+            size_t len = strlen(name);
+            if (len < tokenPrefixLen)
+                continue;
 
-        writeToOutput(cli, name);
-        writeToOutput(cli, lineBreak);
+            bool matches = true;
+            for (size_t j = 0; j < tokenPrefixLen; ++j) {
+                if (tokenPrefix[j] != name[j]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (!matches)
+                continue;
+
+            writeToOutput(cli, name);
+            writeToOutput(cli, lineBreak);
+        }
+    } else {
+        for (int i = 0; i < impl->bindingsCount; ++i) {
+            // autocomplete flag is set for all candidates by last call to
+            // getAutocompletedCommand
+            if (!(impl->bindingsFlags[i] & BINDING_FLAG_AUTOCOMPLETE))
+                continue;
+
+            const char *name = impl->bindings[i].name;
+
+            writeToOutput(cli, name);
+            writeToOutput(cli, lineBreak);
+        }
     }
 
     writeToOutput(cli, impl->invitation);

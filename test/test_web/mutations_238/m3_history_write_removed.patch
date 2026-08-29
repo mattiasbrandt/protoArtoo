@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index b433167..4a3857a 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -784,7 +784,7 @@
+       if (commandHistory.length > COMMAND_HISTORY_MAX) {
+         commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
+       }
+-      writeStoredCommandHistory(commandHistory);
++      // mutation: persistence write removed
+     }
+     commandHistoryIndex = commandHistory.length;
+   };
