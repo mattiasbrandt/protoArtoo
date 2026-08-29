@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index b433167..466547b 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -701,7 +701,7 @@
+   const parseOperationsResponse = (records) => {
+     const names = [];
+     for (const record of records) {
+-      if (!record || record.type !== "item" || typeof record.value !== "string") continue;
++      if (!record || record.type !== "begin" || typeof record.value !== "string") continue;
+       const parenIndex = record.value.indexOf(" (");
+       names.push(parenIndex === -1 ? record.value : record.value.slice(0, parenIndex));
+     }

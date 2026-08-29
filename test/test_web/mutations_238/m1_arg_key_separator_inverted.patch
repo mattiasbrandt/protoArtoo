@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index b433167..bf56e9d 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -930,7 +930,7 @@
+       // key and value (docs/console-protocol.md s.1.2: key=value, no space
+       // around "="), so completion does not also add a trailing space there -
+       // the same rule the embedded-cli patch applies for the serial adapter.
+-      const separator = candidate.endsWith("=") ? "" : " ";
++      const separator = candidate.endsWith("=") ? " " : "";
+       logCommandInput.value = `${beforeToken}${candidate}${separator}`;
+       return;
+     }
