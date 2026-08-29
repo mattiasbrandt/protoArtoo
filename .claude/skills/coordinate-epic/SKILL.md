@@ -156,6 +156,53 @@ session. One image at a time; before any acceptance run, confirm
 invalidates the run. If the fix changed `data/`, the FS image must be
 uploaded too, and `fs-version.json` must match.
 
+## Builds and toolchain (serialized - one build machine-wide)
+
+Only one PlatformIO build may run on the machine, so wrap **every** invocation
+in `flock /tmp/protoartoo-pio.lock` - `pio run`, `pio test`, `make build`, and
+the slice gate, which builds internally. Hold every worker to it; the gate
+block you compare against is the one produced under the lock.
+
+The framework packages are shared by every worktree and are rebuilt **in
+place**, so one worktree's build changes what another links. The rebuild is
+gated by a per-project stamp while the libs it guards are global, and its path
+extracts pristine libs *before* recompiling them - so a run that stops half way
+leaves pristine libs behind a stamp claiming they were rebuilt, and every later
+build links them silently, with no marker and no failing check. Alternating
+chip targets inside one worktree is what forces that cycle; keep a worktree on
+one target unless a ticket demands both.
+
+**A size that moves with no matching source change is that fault, not the
+slice.** Chase the disagreement instead of taking whichever number reads
+better: rebuild the base the slice branched from under the same conditions and
+compare. Trust neither the build log nor the stamp - read the resolved config
+the libs were actually built with (`make check-envelope`). A budget row cannot
+stand in for this: a wrongly-configured image can be six figures of flash
+larger and still sit inside its budget.
+
+Measure a baseline in a tree the slice does not own. The gate's own baseline is
+isolated (it builds in a temporary worktree), but its HEAD-side build and
+budget rows use the worker's `.pio`, which is what a stale object corrupts; and
+a budgets file's `baseline_*` fields are stamped at one commit, so comparing
+against them charges earlier slices' bytes to this one.
+
+**The gate hashes itself into every block**, and you accept a slice by matching
+blocks character for character. Land changes to the verifier scripts between
+waves, with no worker mid-slice - otherwise its block and your re-run diverge
+on the hash, and a clean slice reads as tampered.
+
+### Parallel epics
+
+When another coordinator works the same repo, agree these and record them on
+your epic so they outlive the session: the build lock above; a post on your
+epic before either side touches shared build configuration (`platformio.ini`,
+framework envelope, budgets); announced device sessions; and each epic's
+integration branch left where the other's baseline expects it, with the
+measured merge surface recorded on the ticket that owns it.
+
+After any window where the other side built unlocked, verify rather than
+assume: clean-rebuild your base and symbol-check every merged slice.
+
 ## Reporting
 
 Keep one evolving status comment per epic with the frontier state (running /
