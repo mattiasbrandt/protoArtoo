@@ -81,21 +81,29 @@ static size_t countRecordsOfType(const char* body, const char* wanted) {
 // -----------------------------------------------------------------------------
 
 // The load-bearing one. heap_caps_get_largest_free_block() returns 262144 in
-// the native stub, and fsReady is the LAST field the module emits. An adapter
-// that stores the sink's pointer hands back the same bytes for both.
+// the native stub, and littleFsReady is the LAST field the module emits. An
+// adapter that stores the sink's pointer hands back the same bytes for both.
+//
+// #223: the field was "fsReady" (the C parameter name formatHealthJson() and
+// captureHealthSnapshot() happen to use) until this rewrite renamed it to
+// "littleFsReady" - the real API JSON key
+// (src/web/api_status_serializers.cpp's formatHealthJson(), docs/api.md
+// /api/health) - per docs/console-protocol.md s.3.5 ("a field record's name=
+// is the API JSON key verbatim").
 void test_status_field_values_are_not_aliased() {
     WebRequestTestBackend backend;
     runCommand(backend, "system.status.health");
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 
     char largest[64] = {};
-    char fsReady[64] = {};
+    char littleFsReady[64] = {};
     TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "heapLargestBlock", largest, sizeof(largest)));
-    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "fsReady", fsReady, sizeof(fsReady)));
+    TEST_ASSERT_TRUE(
+        fieldValue(backend.sentBody, "littleFsReady", littleFsReady, sizeof(littleFsReady)));
 
     // Under the aliasing defect both read the same storage, whatever it holds.
-    TEST_ASSERT_TRUE_MESSAGE(strcmp(largest, fsReady) != 0,
-                             "heapLargestBlock and fsReady returned identical bytes: "
+    TEST_ASSERT_TRUE_MESSAGE(strcmp(largest, littleFsReady) != 0,
+                             "heapLargestBlock and littleFsReady returned identical bytes: "
                              "the sink stored the callback's pointer instead of copying");
 }
 
@@ -108,7 +116,7 @@ void test_status_fields_keep_their_own_values() {
     TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "heapLargestBlock", value, sizeof(value)));
     TEST_ASSERT_EQUAL_STRING("262144", value);
 
-    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "fsReady", value, sizeof(value)));
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "littleFsReady", value, sizeof(value)));
     TEST_ASSERT_EQUAL_STRING("false", value);
 
     TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "wifiConnected", value, sizeof(value)));
