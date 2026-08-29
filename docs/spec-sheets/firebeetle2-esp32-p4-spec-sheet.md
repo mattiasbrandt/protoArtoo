@@ -369,6 +369,34 @@ from the main-board schematic; nothing in the normal path depends on it.
 > of the link failure. Left recorded because the paper contradiction is real and
 > will confuse the next reader otherwise.
 
+> [!NOTE]
+> **The C6 reset net, read from the main-board schematic 2026-08-29.** This
+> supersedes every inference about how GPIO54 reaches the C6. Source: page 7 and
+> page 1 of `[DFR1172][M027.00980](V1.0.0).PDF`, the main-board schematic bundled
+> in the DFR1237 schematics ZIP. The PDF is raster (Microsoft Print To PDF, zero
+> extractable text), but it renders legibly - `pdftoppm -r 1200` with a crop is
+> enough to read pin numbers and net labels.
+>
+> | Hop | Evidence |
+> | --- | --- |
+> | ESP32-P4 (`U1`) **pin 98** carries the net **`C6_EN`** | page 1; pin 98's function label reads `GPIO54/ADC13/ANA_COMP1/MAC_RXER/FLASH_D` |
+> | `C6_EN` continues as **`C6_RST`** | page 7, off-sheet label |
+> | `C6_RST` lands on **ESP32-C6-MINI-1-N4 (`U3`) pin 8 = `EN`** | page 7 |
+> | The same net is a **test pad** labelled `C6_RST` | page 7, six-pad array |
+>
+> **So the `C6_RST` test pad, the `C6_EN` net and P4 GPIO54 are one net, and it
+> terminates on the C6 module's single `EN` pin.** A scope on that pad observes
+> exactly what GPIO54 drives - no assumption required.
+>
+> **Reset-net passives (same page):** `R16` **10 k / 1 %** pull-up to `ESP_3V3`
+> and `C43` **100 nF / 16 V** to GND, i.e. tau = **1 ms**. A 100 ms assert is
+> 100x tau, so a driven pulse is unambiguous and the release edge settles in
+> about 5 ms. Anything slower than that at the pad is a circuit fault, not RC.
+>
+> This is also the missing half of the polarity note above: the host drives a
+> passive RC-held `EN` directly, so "release" is simply letting `R16` pull it up.
+
+
 GPIO14/GPIO15 doubling as the `LP_UART` IO MUX pads is why LP UART is impractical
 on this board while Wi-Fi is in use, and GPIO16-GPIO19 being `ADC1_CHANNEL0-3` is
 why only GPIO20-GPIO23 remain as reachable ADC1 inputs.
@@ -529,6 +557,27 @@ with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 > to force download mode, plus `TXD` → pad 2 (`ESP32C6_RX`) and `RXD` → pad 3
 > (`ESP32C6_TX`). This configuration is verified by `esptool chip-id` and by full 4 MB
 > read-back. Without pad 1 grounded, the chip boots from flash instead.
+
+> [!NOTE]
+> **The six pads, from the schematic (2026-08-29).** Page 7 of the main-board
+> schematic draws the pad array as six nets. This is the authoritative *set* and
+> their net names; the *physical left-to-right order* above still comes from
+> continuity on the bench, because a schematic symbol's pin order is not a
+> layout.
+>
+> | Schematic net | Goes to | Wiki figure calls it |
+> | --- | --- | --- |
+> | `C6_RX0` | C6 pin 30 `RXD0` | `ESP32C6_RX` |
+> | `C6_TX0` | C6 pin 31 `TXD0` | `ESP32C6_TX` |
+> | `C6_IO9` | C6 pin 23 `IO9`, pulled up by `R17` 10 k to `ESP_3V3` | `ESP32C6_IO9/BOOT` |
+> | `C6_RST` | C6 pin 8 `EN` - **and P4 GPIO54** | `ESP32C6_RST` |
+> | `ESP_3V3` | board 3V3 rail | `3V3` |
+> | GND | ground | `GND` |
+>
+> Two consequences worth having: `C6_IO9` shares `R17` with `C6_IO8` (both
+> strapping pins, both pulled high), which is why grounding pad 1 forces download
+> mode; and `C6_RST` is the **only** pad that is also a P4 GPIO, making it the
+> one point where host-driven behaviour can be observed directly.
 
 The host P4 must be prevented from driving GPIO54 (the C6 reset line); parking
 it in ROM bootloader does this without holding buttons:
@@ -947,7 +996,7 @@ fine; relevant if maximum SPI clock is ever needed.
 | GPIOs | Why |
 | --- | --- |
 | GPIO3 | Onboard LED |
-| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 ESP-Hosted SDIO link |
+| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 ESP-Hosted SDIO link. **GPIO54 is reachable for measurement** - not on a header, but on the `C6_RST` test pad, which the schematic confirms is the same net (see the C6 reset net table above) |
 | GPIO9, GPIO12 | Onboard microphone |
 | GPIO39-GPIO45 | Onboard TF card SDIO plus power enable |
 | GPIO24, GPIO25 | USB Serial/JTAG (`USB1P1_N0`/`P0`) |
@@ -1315,10 +1364,17 @@ Things this sheet states from documentation but has not confirmed on hardware:
    GPIOs" warning is unquantified. Measure before committing a UART or any
    timing-critical signal there.
 3. **PlatformIO flash mode.** `qio` vs `dio` per the note above.
-4. **GPIO6.** The wiki lists it as a C6 wakeup line; the Arduino variant does
-   not. Read the main-board schematic or probe it.
-5. **Main-board schematic.** DFRobot ships it only as a raster PDF. If precise
-   net-level truth is needed for GPIO6, the mic, or the TF power switch, ask
-   DFRobot for source CAD.
+4. ~~**GPIO6.**~~ **Resolved 2026-08-29 by reading the main-board schematic.**
+   `C6_WAKEUP` is on ESP32-P4 **pin 6** (`GPIO6/SPI2_HOLD`, page 1) and lands on
+   **ESP32-C6-MINI-1 pin 5 = `IO2`** (page 7). The wakeup line **is** physically
+   routed. The Arduino variant still does not define it, and nothing in the
+   normal boot or link-bring-up path depends on it (it is the host-wakeup input,
+   used only under `ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED`), so this changes no
+   firmware - it closes the question.
+5. **Main-board schematic.** DFRobot ships it only as a raster PDF (Microsoft
+   Print To PDF; `pdftotext` yields zero characters). **It is nonetheless
+   readable**: render it with `pdftoppm -r 1200` and crop. Done 2026-08-29 for
+   the C6 reset net and GPIO6 above. Source CAD is still worth asking DFRobot
+   for if net-level truth is needed at scale, but the raster is not a dead end.
 6. **Mounting-hole coordinates.** M3 diameter is confirmed; positions are not.
    Use the physical board or DFRobot CAD for enclosure work.
