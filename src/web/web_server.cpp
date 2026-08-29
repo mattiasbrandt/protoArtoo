@@ -288,6 +288,23 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     configCacheRead(&cfg);
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
+
+    // dome.status.current's two console-queryable fields (ADR 0034) come from
+    // captureDomeStatusSnapshot() (api_status_serializers.cpp) instead of the
+    // inline reads this block used before #223, so the Console module and this
+    // JSON builder can never disagree about what "domeTargetSpeed"/"domeEnabled"
+    // mean. It opens its own short critical section rather than being folded
+    // into the block below: RobotState's spinlock is reentrant on this target,
+    // but nesting would tie this function's one big lock to that helper's
+    // internals, and the two extra fields are read microseconds apart from the
+    // other ~60 either way - no consumer of this payload depends on a single
+    // atomic instant across all fields (see the independent buildHealthJson/
+    // buildWifiJson/buildSerialJson reads elsewhere in the same file/pair).
+    DomeStatusSnapshot domeSnap = {};
+    captureDomeStatusSnapshot(&domeSnap);
+    domeTargetSpeed = domeSnap.domeTargetSpeed;
+    enableDome = domeSnap.domeEnabled;
+
     taskENTER_CRITICAL(&robotStateMux);
     copyFailsafeDiagnosticsLocked(&diag);
     sbusSignalLost = diag.sbusSignalLost;
@@ -295,7 +312,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     sbus2SignalLost = robotState.sbus2SignalLost;
     driveSpeed = robotState.driveOutputSpeed;
     driveSteer = robotState.driveOutputSteer;
-    domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitMax = cfg.drive.speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     stationary = robotState.stationary;
@@ -324,7 +340,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableAux1 = cfg.system.enable_aux1;
     enableAux2 = cfg.system.enable_aux2;
     enableAux3 = cfg.system.enable_aux3;
-    enableDome = cfg.system.enable_dome_esc;
     enableRcCh1 = activeRc.enableRc[0];
     enableRcCh2 = activeRc.enableRc[1];
     enableRcCh3 = activeRc.enableRc[2];

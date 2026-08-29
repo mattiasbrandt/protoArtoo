@@ -10,75 +10,38 @@
 
 #include "api_status.h"
 
-#include <Arduino.h>
-#include <esp_heap_caps.h>
-
 #include "config.h"
-#include "config_cache.h"
-#include "dome_link.h"
 #include "dome_task.h"
 #include "log_buffer.h"
 #include "logging.h"
-#include "robot_state.h"
-#include "web_network_manager.h"
 #include "web_request.h"
 #include "web_server.h"
 
+// The gather step for each of these three lives in captureWifiStatusSnapshot/
+// captureHealthSnapshot/captureDomeSerialLinkSnapshot (api_status_serializers.cpp)
+// rather than here, so the Console module's status executors
+// (src/console/console_module.cpp) read the exact same state through the
+// exact same function instead of a second, driftable copy (ADR 0034).
 static void buildWifiJson(char* buffer, size_t bufferSize) {
-    // Query WiFi connectivity status through the seam
-    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
-
-    WifiConfig activeWifi = {};
-    configCacheReadActiveWifi(&activeWifi);
-
-    formatWifiJson(buffer, bufferSize, wifiStatusApSsid(activeWifi.ap_ssid),
-                   connectivity.apIp, connectivity.staEnabled, connectivity.staConnected,
-                   connectivity.staIp, connectivity.staSsid, connectivity.wifiRssi,
-                   configCacheReadActiveWifiRecovery());
+    WifiStatusSnapshot snap = {};
+    captureWifiStatusSnapshot(&snap);
+    formatWifiJson(buffer, bufferSize, snap.apSsid, snap.apIp, snap.staEnabled, snap.staConnected,
+                   snap.staIp, snap.staSsid, snap.wifiRssi, snap.networkRecovery);
 }
 
 static void buildSerialJson(char* buffer, size_t bufferSize) {
-    bool domeLinkActive = domeConnected();
-    unsigned long hbRx;
-    unsigned long hbTx;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    hbRx = (unsigned long)robotState.domeHbRx;
-    hbTx = (unsigned long)robotState.bodyHbTx;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    formatSerialJson(buffer, bufferSize, domeLinkActive, hbRx, hbTx);
+    DomeSerialLinkSnapshot snap = {};
+    captureDomeSerialLinkSnapshot(&snap);
+    formatSerialJson(buffer, bufferSize, snap.active, snap.heartbeatRx, snap.heartbeatTx);
 }
 
 static void buildHealthJson(char* buffer, size_t bufferSize) {
-    FailsafeDiagnostics diag = {};
-    bool webControlEnabled;
-    bool wifiConnected;
-    bool wifiClientConnected;
-    bool fsReady;
-    unsigned long heapFree;
-    unsigned long heapMin;
-    unsigned long heapLargestBlock;
-    long wifiRssi;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    copyFailsafeDiagnosticsLocked(&diag);
-    webControlEnabled = robotState.webControlEnabled;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    // Query WiFi connectivity status through the seam
-    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
-    wifiConnected = connectivity.wifiConnected;
-    wifiClientConnected = connectivity.wifiClientConnected;
-    wifiRssi = connectivity.wifiRssi;
-
-    fsReady = webLittleFsMounted();
-    heapFree = ESP.getFreeHeap();
-    heapMin = ESP.getMinFreeHeap();
-    heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    formatHealthJson(buffer, bufferSize, diag.estop, diag.sbusSignalLost, diag.sbusHwFailsafe,
-                     webControlEnabled, wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin,
-                     heapLargestBlock, wifiRssi);
+    HealthSnapshot snap = {};
+    captureHealthSnapshot(&snap);
+    formatHealthJson(buffer, bufferSize, snap.estop, snap.sbusSignalLost, snap.sbusHwFailsafe,
+                     snap.webControlEnabled, snap.wifiConnected, snap.wifiClientConnected,
+                     snap.littleFsReady, snap.heapFree, snap.heapMin, snap.heapLargestBlock,
+                     snap.wifiRssi);
 }
 
 // GET /api/wifi - active connection diagnostics, read by the WiFi page
