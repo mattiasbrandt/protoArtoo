@@ -49,6 +49,10 @@
                                   // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
 
+// src/native_test_stubs.cpp's recorded side effect for requestStatusBroadcastNow(),
+// which configCommitApplied() (#226) calls on a successful persist.
+extern unsigned g_test_status_broadcast_count;
+
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
 // =============================================================================
@@ -987,6 +991,110 @@ void test_action_executor_not_ready_count_report() {
 }
 
 // =============================================================================
+// Component Toggle config dispatch (#226, ADR 0027/0033)
+// =============================================================================
+
+void test_component_toggle_read_reports_saved_and_active() {
+    ConfigSnapshot saved = {};
+    saved.system.enable_arm1 = true;
+    configCacheApply(saved);
+
+    // Active still reflects a boot where arm1 was off - the exact "staged,
+    // not yet rebooted into" divergence ADR 0027 describes.
+    ConfigSnapshot bootedOff = {};
+    configCacheSetActiveComponentToggles(bootedOff.system);
+
+    runQuery("system.config.enable_arm1");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.resultCalled, "a read answers begin/field/end, not result");
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("saved"));
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("active"));
+}
+
+void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
+    g_test_status_broadcast_count = 0;
+
+    runQuery("system.config.enable_arm2 value=true");
+
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a write answers a single result record");
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome,
+                              "ADR 0027: Component Toggle writes are always staged, never applied");
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_arm2, "the write must reach the config cache");
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, g_test_status_broadcast_count,
+                                  "a successful commit broadcasts status, matching the REST path");
+}
+
+// criterion 3's "value= (or the named keys)": the same write also succeeds
+// through api_config_apply.cpp's own param name, with no "value=" at all -
+// proving the schema check accepts either spelling verbatim, not just the
+// generic one.
+void test_component_toggle_write_accepts_the_named_key_not_only_value() {
+    runQuery("system.config.enable_aux1 enableAux1=true");
+
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_TRUE(snap.system.enable_aux1);
+}
+
+void test_component_toggle_write_rejects_an_unknown_argument() {
+    runQuery("system.config.enable_aux2 typo=true");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);  // consoleEmitArgFailure() begins+fields+ends
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("typo", capturedValue("argument"));
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_FALSE_MESSAGE(snap.system.enable_aux2, "a rejected write must not reach the cache");
+}
+
+void test_component_toggle_write_rejects_a_malformed_boolean() {
+    runQuery("system.config.enable_aux3 value=maybe");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("enableAux3", capturedValue("argument"));
+}
+
+// Mirrors test_action_executor_not_ready_count_report's shape for type=config
+// rows - informational, not a pass/fail assertion on the count itself.
+void test_config_executor_not_ready_count_report() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int configTypeCount = 0;
+    int notReadyCount = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_CONFIG) != 0) continue;
+        configTypeCount++;
+        runQuery(entries[i].name);
+        if (g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY) {
+            notReadyCount++;
+        }
+    }
+
+    printf("[#226 report] config-type catalog entries: %d, executor-not-ready: %d\n",
+           configTypeCount, notReadyCount);
+    TEST_ASSERT_TRUE(true);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -1044,6 +1152,13 @@ int main(int, char**) {
     RUN_TEST(test_action_marcduino_command_bad_prefix_answers_out_of_range);
     RUN_TEST(test_action_marcduino_command_quoted_value_dispatches_with_payload);
     RUN_TEST(test_action_marcduino_command_value_too_long_answers_out_of_range);
+
+    RUN_TEST(test_component_toggle_read_reports_saved_and_active);
+    RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
+    RUN_TEST(test_component_toggle_write_accepts_the_named_key_not_only_value);
+    RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
+    RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
+    RUN_TEST(test_config_executor_not_ready_count_report);
 
     return UNITY_END();
 }

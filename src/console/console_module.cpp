@@ -43,6 +43,13 @@
                                // - the existing validators the live RC trigger path already
                                // calls (#221 reuses them verbatim for the raw Marcduino console
                                // operations, rather than inventing a second set of format rules)
+#include "api_config.h"        // configCommitApplied() - the ADR 0034 Commit Step beside
+                               // configApply(), shared verbatim with handleConfigPost (#226)
+#include "api_config_apply.h"  // configApply(), ConfigApplyResult
+#include "config_cache.h"      // configCacheRead/Apply, configCacheReadActiveComponentToggle
+#include "console_config_fields.h"  // kComponentToggleFields[] - Component Toggle name<->field
+                                     // table (#226; see its own header for why this is
+                                     // hand-written C++ rather than registry-generated)
 
 static const char* TAG = "Console";
 
@@ -835,6 +842,178 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 }
 
 // =============================================================================
+// Private: config operation dispatch - Component Toggles (#226, ADR 0027/0033)
+//
+// No registry-driven schema here, unlike the status/action executors above:
+// docs/action-registry.yaml's `params:` key (and any `executor:` fix) would
+// change tools/generate_console_catalog.py's output, which also regenerates
+// data/console_help.txt - unconditionally fenced on this ticket. So this
+// dispatch validates against a hand-written table instead of
+// consoleValidateArgsAgainstSchema()'s registry-sourced ConsoleParamDescriptor
+// array, the same "hardcode the one schema this operation needs" precedent
+// consoleExecuteAction() already set for the two Marcduino targets above -
+// not a second tokenizer (criterion 2 is still satisfied: consoleParseArgs()/
+// ConsoleArgs are reused verbatim, only the schema check is local).
+// =============================================================================
+
+// ConfigApplyResult is ~2.5 KB (include/api_config_apply.h) - too large for
+// the Console task's 5120 B stack (src/main.cpp), smaller than the 8 KB web
+// server task the header's own warning was written for (pin fact 3). The web
+// handler (api_config.cpp) already keeps its own static instance rather than
+// a stack local; sharing that ONE instance across the web server task and
+// this module's two adapter tasks would recreate exactly the shared-single-
+// caller-buffer hazard #239 rejected for the log ring. Unlike #239's case,
+// there is no "read the underlying source directly" alternative here:
+// configApply()'s only contract is to fill a ConfigApplyResult out-parameter,
+// so a second static instance - scoped to this module, never shared with
+// api_config.cpp's - is the justified choice (pin fact 4).
+static ConfigApplyResult s_consoleConfigApplyResult;
+
+// Bridges a Console write onto the exact param name api_config_apply.cpp's
+// `boolFields[]` table already reads for this field. The wire grammar allows
+// both the generic `value=` shorthand (docs/console-protocol.md s.1: "system.
+// config.log-level value=debug") and the underlying named key (criterion 3:
+// "value= (or the named keys)"), so this ctx answers a lookup for `fieldKey`
+// with whichever the operator supplied, `value=` taking precedence when both
+// are present (arbitrary but documented here: the two are never both
+// meaningful at once for a single-field toggle).
+struct ScalarConfigArg {
+    const ConsoleArgs* args;
+    const char* fieldKey;
+};
+
+static const char* consoleScalarConfigParamGet(void* ctx, const char* name) {
+    const ScalarConfigArg* adapter = static_cast<const ScalarConfigArg*>(ctx);
+    if (strcmp(name, adapter->fieldKey) == 0) {
+        const char* viaValue = consoleArgsFind(*adapter->args, "value");
+        if (viaValue != nullptr) {
+            return viaValue;
+        }
+        return consoleArgsFind(*adapter->args, adapter->fieldKey);
+    }
+    return consoleArgsFind(*adapter->args, name);
+}
+
+// A single-field config write accepts exactly two argument keys - "value"
+// and the field's own named key - so this is a hand-written check rather
+// than consoleValidateArgsAgainstSchema() (whose ConsoleParamDescriptor
+// source is registry-driven and unreachable here, see the section header
+// comment above). Any other supplied key is unknown, matching criterion 2's
+// "unknown key -> invalid with the key named" for every other operation
+// type in this module.
+static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fieldKey,
+                                         const char** badKeyOut) {
+    for (size_t i = 0; i < args.count; ++i) {
+        if (strcmp(args.items[i].key, "value") != 0 &&
+            strcmp(args.items[i].key, fieldKey) != 0) {
+            *badKeyOut = args.items[i].key;
+            return false;
+        }
+    }
+    return true;
+}
+
+// system.config.enable_* (Component Toggles, ADR 0027/0033): a read with no
+// arguments renders "saved" (the config cache - what the next boot applies)
+// and "active" (what actually booted, include/config_cache.h's Active
+// Component Toggle snapshot) side by side, criterion 4's "read shows saved
+// vs active." A write always answers staged-until-reboot on success -
+// ADR 0027: "toggle changes are staged at reboot", unconditionally, not
+// contingent on whether the new value happens to differ from the currently
+// active one (that comparison is exactly what the read side already
+// answers). `entry` and `field` are both non-null on every call (the caller
+// resolves `field` before dispatching here).
+static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                          const ComponentToggleField* field,
+                                          ConsoleCommandSource source, char* rawArgs,
+                                          const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        const bool saved = snap.system.*(field->field);
+        const size_t bitIndex = (size_t)(field - kComponentToggleFields);
+        const bool active = configCacheReadActiveComponentToggle(bitIndex);
+
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "saved", saved ? "true" : "false");
+            sink->onRecordField(requestId, "active", active ? "true" : "false");
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+    if (parsedArgs.count == 0) {
+        // rawArgs was non-empty whitespace with no key=value pairs at all -
+        // malformed, not a silent read (isWrite already committed to the
+        // write branch above once rawArgs held a non-whitespace byte).
+        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
+        return;
+    }
+
+    const char* badKey = nullptr;
+    if (!consoleScalarConfigArgsValid(parsedArgs, field->paramKey, &badKey)) {
+        consoleEmitArgFailure(requestId, entry->name, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+
+    ConfigSnapshot working = {};
+    configCacheRead(&working);
+    const bool domeEnabledBefore = working.system.enable_dome_esc;
+
+    ScalarConfigArg adapter{&parsedArgs, field->paramKey};
+    ConfigParamSource params;
+    params.ctx = &adapter;
+    params.get = consoleScalarConfigParamGet;
+
+    configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
+    if (s_consoleConfigApplyResult.error.hasError) {
+        // The only failure configApply() can produce for a bool field is a
+        // malformed value (not true/false/1/0) - a type failure, matching
+        // consoleValidateArgsAgainstSchema()'s own OUT_OF_RANGE classification
+        // for "type/range/enum failure on a present key".
+        consoleEmitArgFailure(requestId, entry->name, field->paramKey, CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
+
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    ConfigCommitOutcome commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
+    if (!commit.persisted) {
+        // "a failed NVS write is an explicit error" (criterion) - status=err
+        // with the module's existing catch-all outcome; no dedicated
+        // persistence-failure reason exists in the hand-maintained
+        // ConsoleReason set (include/console_module.h) and none is added
+        // here for one call site (a future ticket adding real config rows
+        // beyond Component Toggles is the natural place to decide whether
+        // one earns its keep across every write path, not just this one).
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+// =============================================================================
 // Public API Implementation
 // =============================================================================
 
@@ -1117,13 +1296,33 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             break;
         }
 
-        case CONSOLE_OP_CONFIG:
-            // T2+: not yet implemented - return single result record (guard path)
+        case CONSOLE_OP_CONFIG: {
+            // Resolve the (possibly aliased) operation name to a Component
+            // Toggle field, mirroring how CONSOLE_OP_ACTION above resolves a
+            // RobotActionId - one dispatch point, add a row rather than edit
+            // this switch's control flow (#223's own rule, extended here to
+            // config rows: see consoleExecuteComponentToggle()'s header
+            // comment for why this row is hand-written rather than a
+            // catalog-driven table like g_statusExecutors).
+            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
+            const ComponentToggleField* toggleField =
+                (entry != nullptr) ? consoleFindComponentToggleField(entry->name) : nullptr;
+            if (toggleField != nullptr) {
+                consoleExecuteComponentToggle(request->requestId, entry, toggleField,
+                                              request->source, rawArgs, sink);
+                break;
+            }
+
+            // Every other type=config row not yet added as a row above (the
+            // remaining scalar entries) or genuinely out of this dispatch's
+            // shape (the grouped audio/rc-map writes, see the pinned
+            // coordinator comment's scope note) is not wired.
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
             }
             break;
+        }
 
         case CONSOLE_OP_EVENT:
             // Events are never executable - they are signals, not commands.
