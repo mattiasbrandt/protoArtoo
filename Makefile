@@ -85,6 +85,7 @@ help: ## Show available targets
 
 build: ## Compile firmware  (BUILD_ENV=artoo_esp32 by default)
 	$(PIO) run -e $(BUILD_ENV)
+	@python3 tools/check_framework_envelope.py --env $(BUILD_ENV) --quiet
 
 test: ## Run native unit tests
 	pio test -e native
@@ -108,6 +109,14 @@ check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metad
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	python3 tools/check_build_budgets.py
+
+# Runs automatically after `make build`. Separate target for checking a build
+# someone else produced, or for re-checking after a repair. The build budget
+# cannot substitute for this: a pristine (envelope-OFF) image is ~111 KB larger
+# and still comfortably inside its budget, which is exactly how the 2026-08-29
+# regression stayed invisible.
+check-envelope: ## Verify an env's custom_sdkconfig actually held in the built framework libs
+	python3 tools/check_framework_envelope.py --env $(BUILD_ENV)
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 
