@@ -92,20 +92,20 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     // Parse command (T1: system.status.health, help, operations, unknown)
     const char* commandName = cmd->name;
 
-    // Reconstruct meta-command arguments ("help <op>", "operations type=<t>")
-    // into one command line - consoleExecuteCommand()'s own parsing expects
-    // it (console_module.cpp:476-490's "operations " prefix check and the
-    // "help " prefix check just above it), but embedded-cli's default
-    // onCommand callback hands name and args separately. This used to
-    // reconstruct only for "help", so "operations type=action" reached the
-    // module as the bare string "operations" and its filter parse never
-    // fired (#219 R2). See include/console_cli_line.h for the scope fence -
-    // this covers ONLY "help" and "operations"; registry-entry operations
-    // with arguments are #221's and #226's contract, not extended here.
-    // Pulled out to a portable function (console_cli_line.cpp) specifically
-    // so this reconstruction is unit-testable without the Arduino/FreeRTOS
-    // dependencies the rest of this file carries - see
-    // test/test_native/test_console_cli_line/.
+    // Reconstruct the full command line ("operation key=value ...") from
+    // embedded-cli's split name/args pair - consoleExecuteCommand() expects
+    // one combined string (matching what the web adapter has always handed
+    // it, src/web/api_console.cpp) and splits it right back into a bare
+    // operation name plus a raw argument remainder as its own first step
+    // (consoleSplitCommandLine(), include/console_args.h) before tokenizing
+    // the remainder. This used to reconstruct only for "help"/"operations"
+    // (#219 R2's fix for "operations type=action" losing its filter), which
+    // meant every OTHER command's arguments were silently dropped before
+    // consoleExecuteCommand() ever saw them - #221 widens reconstruction to
+    // every command so that stops happening. Pulled out to a portable
+    // function (console_cli_line.cpp) specifically so this reconstruction is
+    // unit-testable without the Arduino/FreeRTOS dependencies the rest of
+    // this file carries - see test/test_native/test_console_cli_line/.
     static char operationNameBuf[128];
     const char* operationName =
         consoleBuildCommandLine(commandName, cmd->args, operationNameBuf, sizeof(operationNameBuf));

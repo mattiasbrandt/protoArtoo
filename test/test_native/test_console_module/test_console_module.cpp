@@ -557,16 +557,161 @@ void test_action_analog_target_answers_not_executable() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_EXECUTABLE, g_cap.reason);
 }
 
-// Payload-needing targets are genuinely "not ready yet" (#221/#226 own the
-// argument tokenizer, include/console_cli_line.h - fenced on #220).
-void test_action_payload_needing_target_answers_executor_not_ready() {
+// dome.action.dome-sequence is the one payload-needing target #221 leaves
+// unwired (no existing pure validator to reuse for DM:<NAME> forwarding -
+// see consoleExecuteAction()'s own comment, console_module.cpp) - still
+// genuinely "not ready yet". dome.action.marcduino-sequence/-command are
+// NOW wired (below) - #221 closes that gap for exactly these two.
+void test_action_dome_sequence_still_answers_executor_not_ready() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.dome-sequence");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// =============================================================================
+// Argument tokenizer + schema validation wired into real dispatch (#221,
+// ADR 0034, docs/console-protocol.md s.1.2). These run through
+// consoleExecuteCommand() with a real combined "operation args" line, the
+// same shape both adapters hand it, and dispatchRcTriggerActionTest()'s
+// native stub (rc_input_test_hooks.h) so the actual payload plumbed through
+// is observable, not just that dispatch happened.
+// =============================================================================
+
+// The fact-2 regression this ticket closes: a wired, zero-parameter action
+// given an argument no longer silently executes (the pre-#221 serial
+// behavior - arguments discarded, action ran anyway) or silently diverge
+// from the web adapter's answer. Both adapters now resolve the operation
+// (it exists), then reject the unrecognized key by name.
+void test_action_zero_param_action_rejects_unknown_argument() {
+    robotState.webControlEnabled = true;
+
+    runQuery("sound.action.random-humming foo=bar");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("foo", capturedValue("argument"));
+}
+
+// A status query takes no arguments (docs/console-protocol.md s.1.1) - the
+// same fact-2 divergence class, closed the same way: recognized operation,
+// named unknown key, not a silent drop-and-execute.
+void test_status_query_rejects_any_argument() {
+    runQuery("system.status.health extra=1");
+
+    // Named-key failures use begin/field(argument=<key>)/end - see
+    // consoleEmitArgFailure() (console_module.cpp) - not the single-record
+    // result shape guard paths without a key to name use.
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.endCalled);
+    TEST_ASSERT_FALSE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+}
+
+// Malformed argument syntax (unterminated quote) answers a distinct reason
+// from schema failures - the parser never got far enough to resolve a key.
+void test_malformed_quoted_argument_is_rejected() {
+    runQuery("sound.action.random-humming foo=\"unterminated");
+
+    TEST_ASSERT_FALSE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MALFORMED_ARGUMENT, g_cap.reason);
+}
+
+// dome.action.marcduino-sequence: valid 2-digit body-sequence payload
+// dispatches with the SAME validator the live RC trigger path uses
+// (rcPayloadValidForBodySequence(), include/rc_action_types.h) and the real
+// payload reaches dispatchRcTriggerActionTest() - not the pre-#221
+// hardcoded "".
+void test_action_marcduino_sequence_valid_value_dispatches_with_payload() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-sequence value=30");
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(DOME_ACTION_MARCDUINO_SEQ, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL_STRING("30", g_test_last_dispatch_payload);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// Out-of-range body-sequence number (not 30-36): rejected before dispatch,
+// naming the argument - not silently forwarded and not "temporarily
+// unavailable" (which the raw dispatch-outcome mapping would have answered
+// had this reached rcActionResultHasEffect()'s "no effect" path instead).
+void test_action_marcduino_sequence_invalid_value_answers_out_of_range() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-sequence value=99");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+}
+
+// dome.action.marcduino-command with no value= at all: missing-argument,
+// not executor-not-ready - the operation IS wired now, it just was not
+// given the argument it requires.
+void test_action_marcduino_command_missing_value_answers_missing_argument() {
     robotState.webControlEnabled = true;
 
     runQuery("dome.action.marcduino-command");
 
     TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+}
+
+// A value not starting with a body-owned prefix (:, $, #) fails the same
+// existing validator (rcPayloadValidForMarcduinoCommand()) the live RC
+// trigger path already enforces - "accept exactly what the existing
+// handlers accept ... no widening".
+void test_action_marcduino_command_bad_prefix_answers_out_of_range() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-command value=BADPREFIX");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// A quoted value (spaces, preserved verbatim after unescaping) with a valid
+// prefix reaches dispatch with the value exactly as typed.
+void test_action_marcduino_command_quoted_value_dispatches_with_payload() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-command value=\":OP 1\"");
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(DOME_ACTION_MARCDUINO_CMD, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL_STRING(":OP 1", g_test_last_dispatch_payload);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// A value too long to fit RcTriggerBinding::marcduinoPayload[16] (the live
+// RC mapping page's own field size) is rejected rather than silently
+// truncated or forwarded past the live path's own limit ("no widening").
+void test_action_marcduino_command_value_too_long_answers_out_of_range() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-command value=:0123456789ABCDEF");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
 // A config/status-only registry entry (no RobotActionId at all) stays
@@ -730,7 +875,7 @@ int main(int, char**) {
     RUN_TEST(test_action_estop_is_blocked_not_dispatched);
     RUN_TEST(test_action_web_control_disabled_is_blocked_not_dispatched);
     RUN_TEST(test_action_analog_target_answers_not_executable);
-    RUN_TEST(test_action_payload_needing_target_answers_executor_not_ready);
+    RUN_TEST(test_action_dome_sequence_still_answers_executor_not_ready);
     RUN_TEST(test_action_with_no_rc_bindable_target_answers_executor_not_ready);
     RUN_TEST(test_action_dispatch_outcome_queued_maps_to_ok_result);
     RUN_TEST(test_action_dispatch_outcome_queue_full_maps_to_err_result);
@@ -739,6 +884,16 @@ int main(int, char**) {
     RUN_TEST(test_action_dispatch_attributes_web_source);
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
     RUN_TEST(test_action_executor_not_ready_count_report);
+
+    RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);
+    RUN_TEST(test_status_query_rejects_any_argument);
+    RUN_TEST(test_malformed_quoted_argument_is_rejected);
+    RUN_TEST(test_action_marcduino_sequence_valid_value_dispatches_with_payload);
+    RUN_TEST(test_action_marcduino_sequence_invalid_value_answers_out_of_range);
+    RUN_TEST(test_action_marcduino_command_missing_value_answers_missing_argument);
+    RUN_TEST(test_action_marcduino_command_bad_prefix_answers_out_of_range);
+    RUN_TEST(test_action_marcduino_command_quoted_value_dispatches_with_payload);
+    RUN_TEST(test_action_marcduino_command_value_too_long_answers_out_of_range);
 
     return UNITY_END();
 }

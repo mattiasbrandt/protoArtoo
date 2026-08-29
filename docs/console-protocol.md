@@ -217,9 +217,12 @@ never type an ID.
 
   Other reasons name the specific failure: `line-too-long`,
   `secret-not-settable`, `unknown-operation`, `unknown-argument`,
-  `missing-argument`, `out-of-range`, `not-executable` (an event), and during
-  development only `executor-not-ready` (an operation whose executor is not yet
-  wired; the count must be zero when the feature is complete).
+  `missing-argument`, `out-of-range`, `malformed-argument` (a quoted value's
+  escaping/quoting/UTF-8 did not parse, or a bare word appeared where
+  `key=value` was required - section 1.2/1.3), `not-executable` (an event),
+  and during development only `executor-not-ready` (an operation whose
+  executor is not yet wired; the count must be zero when the feature is
+  complete).
 
 - `not-in-this-build` and `not-on-this-board` are the same tokens the browser
   already uses for Feature Availability; the Console never invents a synonym.

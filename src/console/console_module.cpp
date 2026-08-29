@@ -11,6 +11,9 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "console_catalog.h"
+#include "console_args.h"  // ConsoleArgs, consoleSplitCommandLine(), consoleParseArgs(),
+                           // consoleValidateArgsAgainstSchema() - the shared argument
+                           // contract (#221, ADR 0034, docs/console-protocol.md s.1.2)
 
 #include <string.h>
 #include <ctype.h>
@@ -34,6 +37,11 @@
 #include "api_actions.h"      // evaluateActionTestGuard(), robotActionIsWebTestable() - the
                               // existing guard core (#220), reused verbatim, not duplicated
 #include "rc_input.h"          // dispatchRcTriggerActionTest(), RcDispatchOutcome
+#include "rc_action_types.h"   // robotActionNeedsPayload(), rcPayloadValidForBodySequence(),
+                               // rcPayloadValidForMarcduinoCommand() - the existing validators
+                               // the live RC trigger path already calls (#221 reuses them
+                               // verbatim for the raw Marcduino console operations, rather
+                               // than inventing a second set of format rules)
 
 static const char* TAG = "Console";
 
@@ -549,19 +557,55 @@ static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationNa
 }
 
 // =============================================================================
-// Private: non-motion, non-parameterized action dispatch (#220, ADR 0034)
+// Private: non-motion action dispatch (#220/#221, ADR 0034)
 //
 // Every action entry that is RC-bindable (ACTION_REGISTRY[], canonical names
-// verbatim - src/web/action_registry.cpp), not analog, and not
-// payload-needing runs from here through dispatchRcTriggerActionTest()
-// (include/rc_input.h): the SAME dispatch core the REST /api/actions/test
-// route and the live RC trigger path share. Motion (analog) actions and
-// actions that need an argument stay CONSOLE_REASON_EXECUTOR_NOT_READY /
-// NOT_EXECUTABLE below, same as before this ticket - #222 (drive safety) and
-// #221/#226 (argument parsing, include/console_cli_line.h) own those, not
-// #220. There is exactly one guard core and one dispatch core; this section
-// only maps their results onto Console Records.
+// verbatim - src/web/action_registry.cpp) and not analog runs from here
+// through dispatchRcTriggerActionTest() (include/rc_input.h): the SAME
+// dispatch core the REST /api/actions/test route and the live RC trigger
+// path share. Motion (analog) actions stay CONSOLE_REASON_NOT_EXECUTABLE
+// below, unchanged - #222 (drive safety) wires them through the
+// drive/dome-speed backbone instead, never through this path. Of the
+// payload-needing targets (robotActionNeedsPayload()), only
+// DOME_ACTION_MARCDUINO_SEQ/CMD are validated and dispatched here (#221) -
+// see consoleExecuteAction()'s own comment for why dome.action.dome-sequence
+// stays CONSOLE_REASON_EXECUTOR_NOT_READY. There is exactly one guard core
+// and one dispatch core; this section only maps their results onto Console
+// Records.
 // =============================================================================
+
+// Multi-record "invalid" response naming the offending argument key - the
+// "with the key named" half of docs/console-protocol.md s.1.2 / #221
+// criterion 2 the single-record onRecordResult() sink call has no field
+// for. Reused by schema failures (unknown/missing/out-of-range) and the
+// Marcduino payload's own format check below.
+static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
+                                  const char* badKey, ConsoleReason reason,
+                                  const ConsoleRecordSink* sink) {
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "argument", badKey != nullptr ? badKey : "");
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, reason);
+    }
+}
+
+// Argument-parse failures (malformed quoting/escaping/UTF-8, or too many
+// key=value pairs) have no single offending key - consoleParseArgs() never
+// got far enough to resolve one - so this answers without a field record,
+// matching every other guard path's single-result shape (docs/console-
+// protocol.md s.3.1).
+static void consoleEmitArgParseError(uint32_t requestId, ConsoleArgParseStatus status,
+                                     const ConsoleRecordSink* sink) {
+    ConsoleReason reason = (status == CONSOLE_ARGS_PARSE_TOO_MANY) ? CONSOLE_REASON_LINE_TOO_LONG
+                                                                    : CONSOLE_REASON_MALFORMED_ARGUMENT;
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, reason);
+    }
+}
 
 // Resolve a catalog operation name to the RobotActionId it dispatches as,
 // reusing ACTION_REGISTRY[] (the same canonical-name<->RobotActionId table
@@ -600,20 +644,45 @@ static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, Conso
     return CONSOLE_OUTCOME_INTERNAL_ERROR;
 }
 
+// RcTriggerBinding::marcduinoPayload[16] (include/rc_action_types.h) is the
+// live RC mapping page's own payload field size - the "existing handler"
+// contract a Console-typed value is held to (no widening): a real RC
+// binding can never carry more than 15 characters + NUL, so neither can a
+// Console argument that reaches the same dispatch core.
+static const size_t kMarcduinoPayloadMax = 16;
+
 // Executes one resolved RC-bindable action through the existing guard core
 // (evaluateActionTestGuard(), include/api_actions.h - reused verbatim, not
 // duplicated) and the existing dispatch core, then answers with a single
 // type=result record (guard paths never begin/end a multi-record response,
-// matching every other guard path in this module).
-static void consoleExecuteAction(uint32_t requestId, RobotActionId target,
-                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+// matching every other guard path in this module) - except the two
+// Marcduino targets' own argument failures, which name the key (see
+// consoleEmitArgFailure() above).
+static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                 RobotActionId target, ConsoleCommandSource source,
+                                 const ConsoleArgs& args, const ConsoleRecordSink* sink) {
     bool webControlEnabled = false;
     taskENTER_CRITICAL(&robotStateMux);
     webControlEnabled = robotState.webControlEnabled;
     taskEXIT_CRITICAL(&robotStateMux);
 
     ActionTestGuardResult guard = evaluateActionTestGuard(target, webControlEnabled);
-    if (guard != ACTION_TEST_ALLOWED) {
+
+    // evaluateActionTestGuard() blocks every payload-needing target
+    // unconditionally - correct for its only other caller (REST
+    // /api/actions/test), which can never supply one. The Console now can,
+    // for the two Marcduino targets whose payload is validated below (#221)
+    // - every OTHER payload-needing target (dome.action.dome-sequence) is
+    // unchanged and still refused here: DM:<NAME> forwarding has no
+    // existing pure validator to reuse (its acceptance is decided deep in
+    // sequenceStart()/the dome link, not a function this module can call),
+    // and "no widening" means not inventing one - that stays
+    // CONSOLE_REASON_EXECUTOR_NOT_READY until a future ticket closes it.
+    bool isValidatedMarcduinoTarget =
+        (target == DOME_ACTION_MARCDUINO_SEQ || target == DOME_ACTION_MARCDUINO_CMD);
+
+    if (guard != ACTION_TEST_ALLOWED &&
+        !(guard == ACTION_TEST_ACTION_NOT_TESTABLE && isValidatedMarcduinoTarget)) {
         ConsoleOutcome outcome = CONSOLE_OUTCOME_BLOCKED;
         ConsoleReason reason = CONSOLE_REASON_BLOCKED_BY_STATE;
         if (guard == ACTION_TEST_ACTION_NOT_TESTABLE) {
@@ -623,9 +692,7 @@ static void consoleExecuteAction(uint32_t requestId, RobotActionId target,
             // robotActionIsAnalog() in scope. Motion/analog targets are
             // permanently outside this single-shot mechanism (#222 wires
             // them through the drive/dome-speed backbone instead, never
-            // through dispatchRcTriggerActionTest()); payload-needing
-            // targets are genuinely "not ready yet" pending #221/#226's
-            // argument tokenizer.
+            // through dispatchRcTriggerActionTest()).
             outcome = CONSOLE_OUTCOME_UNAVAILABLE;
             reason = robotActionIsAnalog(target) ? CONSOLE_REASON_NOT_EXECUTABLE
                                                  : CONSOLE_REASON_EXECUTOR_NOT_READY;
@@ -636,8 +703,67 @@ static void consoleExecuteAction(uint32_t requestId, RobotActionId target,
         return;
     }
 
+    // Argument validation happens HERE, after the guard has passed (or been
+    // bypassed for the two Marcduino targets) - not earlier in
+    // consoleExecuteCommand(), because a target the guard refuses outright
+    // (an analog motion target, say) must answer NOT_EXECUTABLE regardless
+    // of whether its registry schema has a required argument the operator
+    // did not supply; validating first would wrongly preempt that answer
+    // with MISSING_ARGUMENT for a target this mechanism was never going to
+    // run anyway.
+    char payload[kMarcduinoPayloadMax] = {};
+    if (isValidatedMarcduinoTarget) {
+        // No registry params: schema for these two targets - a raw
+        // Marcduino string does not fit a type/range/enum shape, and adding
+        // one would touch data/console_help.txt's generated offsets
+        // (fenced on this ticket). The key name ("value") and the format
+        // rule are hardcoded here instead, reusing the SAME validators the
+        // live RC trigger path already calls (include/rc_action_types.h) -
+        // "accept exactly what the existing handlers accept ... no
+        // widening" (#221 acceptance criterion).
+        const char* value = consoleArgsFind(args, "value");
+        if (value == nullptr) {
+            consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_MISSING_ARGUMENT,
+                                  sink);
+            return;
+        }
+        if (strlen(value) >= kMarcduinoPayloadMax) {
+            consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
+            return;
+        }
+        bool valid = (target == DOME_ACTION_MARCDUINO_SEQ) ? rcPayloadValidForBodySequence(value)
+                                                            : rcPayloadValidForMarcduinoCommand(value);
+        if (!valid) {
+            consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
+            return;
+        }
+        snprintf(payload, sizeof(payload), "%s", value);
+    } else {
+        // Every other action this mechanism dispatches (guard-allowed,
+        // non-analog, non-Marcduino): validate the full argument set
+        // against the catalog's schema (criterion 2, #221) - unknown key,
+        // missing required key, or type/range/enum failure on a present
+        // key, in that order. An empty schema (entry->params == NULL) means
+        // zero valid keys, so any supplied argument is unknown - this is
+        // the fact-2 fix: a wired action with no declared arguments no
+        // longer silently accepts (or, on the pre-#221 serial path,
+        // silently ignores) one it was given.
+        char badKey[40] = {};
+        ConsoleArgSchemaStatus schemaStatus =
+            consoleValidateArgsAgainstSchema(entry->params, args, badKey, sizeof(badKey));
+        if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+            ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                       ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                                   : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                       ? CONSOLE_REASON_MISSING_ARGUMENT
+                                       : CONSOLE_REASON_OUT_OF_RANGE;
+            consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
+            return;
+        }
+    }
+
     CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-    RcDispatchOutcome dispatchOutcome = dispatchRcTriggerActionTest(target, "", true, src);
+    RcDispatchOutcome dispatchOutcome = dispatchRcTriggerActionTest(target, payload, true, src);
 
     ConsoleReason reason = CONSOLE_REASON_NONE;
     ConsoleOutcome outcome = consoleMapDispatchOutcome(dispatchOutcome, &reason);
@@ -674,12 +800,39 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         return;
     }
 
-    const char* opName = request->operationName;
+    // The shared argument contract's first step (#221, criterion 1): split
+    // the combined line both adapters hand over (ConsoleRequest::operationName
+    // - a full "operation key=value ..." string, matching what the web
+    // adapter has always sent and what the widened consoleBuildCommandLine()
+    // now sends for serial too, include/console_cli_line.h) into a bare
+    // operation name and a raw, still-untokenized argument remainder. Copied
+    // into a local, mutable scratch buffer (sized to match the web adapter's
+    // own command buffer, src/web/api_console.cpp) so consoleSplitCommandLine()
+    // and consoleParseArgs() (include/console_args.h) can tokenize/unescape in
+    // place without requiring either adapter to hand over mutable storage.
+    // Local (stack), not static: consoleExecuteCommand() is called from both
+    // the serial task and the web request handler, both on Core 0 - a shared
+    // static buffer would let one adapter's in-flight command corrupt the
+    // other's if they ever overlapped (#229 owns proving/hardening
+    // cross-adapter concurrency; this function does not create a new
+    // instance of that hazard while #229 is pending).
+    char lineBuf[256];
+    snprintf(lineBuf, sizeof(lineBuf), "%s", request->operationName != nullptr ? request->operationName : "");
+    char* opName = nullptr;
+    char* rawArgs = nullptr;
+    consoleSplitCommandLine(lineBuf, &opName, &rawArgs);
 
     // Meta-command: help [operation]
-    if (opName != nullptr && strncmp(opName, "help", 4) == 0) {
-        // "help" or "help operation_name"
-        if (strlen(opName) == 4) {
+    if (opName != nullptr && strcmp(opName, "help") == 0) {
+        // help's argument is a bare operation name, not a key=value pair -
+        // meta-commands have their own grammar, distinct from registry
+        // operations (docs/console-protocol.md s.2) - so this reads rawArgs
+        // directly rather than through consoleParseArgs().
+        const char* targetOp = rawArgs;
+        while (*targetOp == ' ') {
+            ++targetOp;
+        }
+        if (*targetOp == '\0') {
             // "help" with no arguments - emit general help
             if (sink->onRecordBegin) {
                 sink->onRecordBegin(request->requestId, "help");
@@ -700,41 +853,33 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                                  CONSOLE_REASON_NONE);
             }
             return;
-        } else if (opName[4] == ' ') {
-            // "help operation_name"
-            const char* targetOp = opName + 5;
-            // Skip leading whitespace
-            while (*targetOp == ' ') {
-                ++targetOp;
-            }
-            if (*targetOp != '\0') {
-                consoleEmitHelpForOperation(request->requestId, targetOp, sink);
-                return;
-            }
         }
-        // Malformed help command
-        if (sink->onRecordResult) {
-            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
-                                CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_UNKNOWN_OPERATION);
-        }
+        consoleEmitHelpForOperation(request->requestId, targetOp, sink);
         return;
     }
 
     // Meta-command: operations [type=<type>]
-    if (opName != nullptr && (strcmp(opName, "operations") == 0 || strncmp(opName, "operations ", 11) == 0)) {
-        // List all operations in the catalog, optionally filtered by type
-        const char* filterType = nullptr;
+    if (opName != nullptr && strcmp(opName, "operations") == 0) {
+        ConsoleArgs parsedArgs = {};
+        ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+        if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+            consoleEmitArgParseError(request->requestId, parseStatus, sink);
+            return;
+        }
 
-        // Parse type filter if present (e.g., "operations type=action")
-        if (strlen(opName) > 10 && opName[10] == ' ') {
-            const char* args = opName + 11;
-            // Skip leading whitespace
-            while (*args == ' ') {
-                ++args;
-            }
-            // Check for "type=" prefix
-            if (strncmp(args, "type=", 5) == 0) {
-                filterType = args + 5;
+        const char* filterType = consoleArgsFind(parsedArgs, "type");
+
+        // "type" is the only key "operations" recognizes; any other
+        // supplied key is unknown rather than silently ignored (matching
+        // criterion 2's "unknown key -> invalid with the key named" for
+        // registry operations - applied here too so a typo like
+        // "operations tyep=action" is reported, not answered as if it were
+        // bare "operations").
+        for (size_t i = 0; i < parsedArgs.count; ++i) {
+            if (strcmp(parsedArgs.items[i].key, "type") != 0) {
+                consoleEmitArgFailure(request->requestId, "operations", parsedArgs.items[i].key,
+                                      CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+                return;
             }
         }
 
@@ -810,7 +955,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
     }
 
     // Check if operation is available on this board
-    if (!consoleIsAvailableOnBoard(request->operationName)) {
+    if (!consoleIsAvailableOnBoard(opName)) {
         // Unavailable operation: return single result record (guard path)
         if (sink->onRecordResult) {
             sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
@@ -820,15 +965,33 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
     }
 
     // Execute the operation based on its type
-    ConsoleOperationType opType = consoleGetOperationType(request->operationName);
+    ConsoleOperationType opType = consoleGetOperationType(opName);
 
     switch (opType) {
         case CONSOLE_OP_STATUS: {
-            ConsoleStatusExecutorFn executor = consoleFindStatusExecutor(request->operationName);
+            // Status queries take no arguments (docs/console-protocol.md
+            // s.1.1) - any supplied key is unknown rather than silently
+            // ignored, matching the same rule applied to `operations` above
+            // and to registry actions below.
+            if (rawArgs != nullptr && rawArgs[0] != '\0') {
+                ConsoleArgs parsedArgs = {};
+                ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+                if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+                    consoleEmitArgParseError(request->requestId, parseStatus, sink);
+                    break;
+                }
+                if (parsedArgs.count > 0) {
+                    consoleEmitArgFailure(request->requestId, opName, parsedArgs.items[0].key,
+                                          CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+                    break;
+                }
+            }
+
+            ConsoleStatusExecutorFn executor = consoleFindStatusExecutor(opName);
             if (executor != nullptr) {
                 // A real query: begin + fields (emitted by the executor) + end.
                 if (sink->onRecordBegin) {
-                    sink->onRecordBegin(request->requestId, request->operationName);
+                    sink->onRecordBegin(request->requestId, opName);
                 }
                 executor(request->requestId, sink);  // executor emits fields + calls onRecordEnd
                 break;
@@ -838,7 +1001,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // from the registry's fields:/is_query: false, #212) distinguishes
             // two different reasons nothing runs, so the operator sees which
             // one applies instead of one generic answer for both:
-            const ConsoleCatalogEntry* entry = consoleCatalogFindByName(request->operationName);
+            const ConsoleCatalogEntry* entry = consoleCatalogFindByName(opName);
             bool isQuery = (entry != nullptr) && entry->is_query;
             if (sink->onRecordResult) {
                 if (isQuery) {
@@ -862,12 +1025,28 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a
-            // parameterized or as-yet-unwired action #221-#227 own -
-            // unchanged from before this ticket.
-            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(request->operationName);
+            // not-yet-wired action #226/#227 own, or a motion target #222
+            // owns - unchanged from before this ticket.
+            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
-                consoleExecuteAction(request->requestId, target, request->source, sink);
+                // Tokenize the argument remainder ONCE here (#221 criterion
+                // 1: the one fixed-capacity representation every executor
+                // reads from). Schema validation happens inside
+                // consoleExecuteAction(), AFTER its guard check - not here -
+                // so a target the guard refuses outright (an analog motion
+                // target, say) still answers on the guard's own terms
+                // rather than a schema failure for arguments a dispatch
+                // that will never run does not need.
+                ConsoleArgs parsedArgs = {};
+                ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+                if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+                    consoleEmitArgParseError(request->requestId, parseStatus, sink);
+                    break;
+                }
+
+                consoleExecuteAction(request->requestId, entry, target, request->source, parsedArgs,
+                                     sink);
                 break;
             }
             if (sink->onRecordResult) {

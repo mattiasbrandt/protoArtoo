@@ -22,3 +22,8 @@ extern unsigned g_test_dispatch_action_calls;
 extern RobotActionId g_test_last_dispatch_target;
 extern CommandSource g_test_last_dispatch_source;
 extern RcDispatchOutcome g_test_dispatch_outcome;
+// The payload dispatchRcTriggerActionTest() was last called with (#221: the
+// Console now supplies a real, validated payload for DOME_ACTION_MARCDUINO_
+// SEQ/CMD instead of the pre-#221 hardcoded ""; native tests need to observe
+// what actually reached the dispatch core, not just that it was called).
+extern char g_test_last_dispatch_payload[32];

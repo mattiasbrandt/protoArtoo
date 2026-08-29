@@ -1,15 +1,21 @@
 // =============================================================================
 // test/test_native/test_console_cli_line/test_console_cli_line.cpp
 //
-// #219 R2 regression coverage: `operations type=<t>` did not filter on the
-// serial adapter because onCliCommand() (src/tasks/console_task.cpp) only
-// reconstructed embedded-cli's split name/args pair into one command line
-// for "help" - every other command, including "operations", reached
-// consoleExecuteCommand() with its arguments silently dropped. A native test
-// against consoleExecuteCommand() alone could not have caught this: it
-// passes the already-combined string by construction, never the split pair
-// an adapter actually hands it. That is the "verified through the module,
-// never through the adapter" class of defect this ticket keeps producing.
+// #219 R2 regression coverage, extended by #221: `operations type=<t>` did
+// not filter on the serial adapter because onCliCommand()
+// (src/tasks/console_task.cpp) only reconstructed embedded-cli's split
+// name/args pair into one command line for "help" - every other command,
+// including "operations", reached consoleExecuteCommand() with its
+// arguments silently dropped. A native test against consoleExecuteCommand()
+// alone could not have caught this: it passes the already-combined string
+// by construction, never the split pair an adapter actually hands it. That
+// is the "verified through the module, never through the adapter" class of
+// defect this ticket keeps producing - #221 widened reconstruction to every
+// command (not just "help"/"operations") for exactly this reason: the same
+// bug existed for registry operations with arguments (a wired action
+// executed with its arguments silently dropped on serial, see fact 2 in
+// #221's coordinator pin), and the fix belongs in the same real-adapter-path
+// class of test this file already established.
 //
 // This test closes that gap the way it is actually closable natively:
 // src/tasks/console_task.cpp itself is Arduino-only (unconditional
@@ -37,6 +43,9 @@ extern "C" {
 #include "console_cli_line.h"
 #include "console_module.h"
 #include "console_catalog.h"
+#include "robot_state.h"
+#include "rc_input_test_hooks.h"  // g_test_dispatch_* / g_test_last_dispatch_payload -
+                                  // observes the native stub of dispatchRcTriggerActionTest() (#220/#221)
 
 // -----------------------------------------------------------------------------
 // Recording sink - same shape as the other native console tests.
@@ -48,9 +57,14 @@ static int g_resultCount = 0;
 static ConsoleStatus g_lastResultStatus;
 static ConsoleOutcome g_lastResultOutcome;
 static ConsoleReason g_lastResultReason;
+static char g_lastFieldName[40];
+static char g_lastFieldValue[64];
 
 static void capBegin(uint32_t, const char*) { g_beginCount++; }
-static void capField(uint32_t, const char*, const char*) {}
+static void capField(uint32_t, const char* name, const char* value) {
+    snprintf(g_lastFieldName, sizeof(g_lastFieldName), "%s", name);
+    snprintf(g_lastFieldValue, sizeof(g_lastFieldValue), "%s", value);
+}
 static void capItem(uint32_t, const char*) { g_itemCount++; }
 static void capResult(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason) {
     g_resultCount++;
@@ -58,13 +72,26 @@ static void capResult(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, Co
     g_lastResultOutcome = outcome;
     g_lastResultReason = reason;
 }
-static void capEnd(uint32_t, ConsoleStatus, ConsoleOutcome, ConsoleReason) { g_endCount++; }
+static void capEnd(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason) {
+    g_endCount++;
+    g_lastResultStatus = status;
+    g_lastResultOutcome = outcome;
+    g_lastResultReason = reason;
+}
 
 static void resetCapture() {
     g_itemCount = 0;
     g_beginCount = 0;
     g_endCount = 0;
     g_resultCount = 0;
+    g_lastFieldName[0] = '\0';
+    g_lastFieldValue[0] = '\0';
+    robotState = RobotState{};
+    g_test_dispatch_action_calls = 0;
+    g_test_last_dispatch_target = ROBOT_ACTION_NONE;
+    g_test_last_dispatch_source = SRC_NONE;
+    g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+    g_test_last_dispatch_payload[0] = '\0';
 }
 
 // -----------------------------------------------------------------------------
@@ -204,22 +231,75 @@ void test_help_with_operation_still_works_through_the_real_adapter_path() {
 }
 
 // -----------------------------------------------------------------------------
-// The reconstruction function in isolation: the scope fence itself.
+// The reconstruction function in isolation: #221 widened it - every command
+// reconstructs now, not just the two meta-commands (inverts what this test
+// asserted before #221; see the file header).
 // -----------------------------------------------------------------------------
 
-void test_registry_entry_command_arguments_are_not_forwarded() {
-    // #221/#226 own this contract - consoleBuildCommandLine() must not widen
-    // reconstruction to non-meta-commands on its own.
+void test_registry_entry_command_arguments_are_now_forwarded() {
     char buf[128];
     const char* result =
         consoleBuildCommandLine("drive.action.move", "speed=200 steer=0", buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("drive.action.move", result);
+    TEST_ASSERT_EQUAL_STRING("drive.action.move speed=200 steer=0", result);
 }
 
 void test_meta_command_with_no_args_is_unchanged() {
     char buf[128];
     const char* result = consoleBuildCommandLine("operations", nullptr, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("operations", result);
+}
+
+// -----------------------------------------------------------------------------
+// The fact-2 fix itself, end-to-end through the real adapter path: a
+// payload-needing registry action typed with its argument reaches dispatch
+// with the real value - not silently dropped (the pre-#221 serial bug this
+// ticket's coordinator pin documents) and not answered unknown-operation
+// (the pre-#221 web-adapter divergence for the same typed line).
+// -----------------------------------------------------------------------------
+
+void test_marcduino_command_with_value_dispatches_through_the_real_adapter_path() {
+    robotState.webControlEnabled = true;
+
+    typeLine("dome.action.marcduino-command value=:OP1");
+
+    TEST_ASSERT_EQUAL_INT(0, g_beginCount);
+    TEST_ASSERT_EQUAL_INT(0, g_endCount);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_resultCount, "an action answers one type=result record");
+    TEST_ASSERT_EQUAL_INT(CONSOLE_STATUS_OK, g_lastResultStatus);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_OUTCOME_QUEUED, g_lastResultOutcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(DOME_ACTION_MARCDUINO_CMD, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL_STRING(":OP1", g_test_last_dispatch_payload);
+}
+
+// The web adapter's pre-#221 answer for this exact typed line was
+// unknown-operation (its combined-string catalog lookup never matched a
+// name carrying trailing arguments). Through the real serial parser, the
+// same missing-argument answer as test_console_module.cpp's direct-call
+// coverage proves both adapters now resolve and validate identically.
+void test_marcduino_command_missing_value_through_the_real_adapter_path() {
+    robotState.webControlEnabled = true;
+
+    typeLine("dome.action.marcduino-command");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL_INT(1, g_beginCount);
+    TEST_ASSERT_EQUAL_INT(1, g_endCount);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_OUTCOME_INVALID, g_lastResultOutcome);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_MISSING_ARGUMENT, g_lastResultReason);
+    TEST_ASSERT_EQUAL_STRING("value", g_lastFieldValue);
+}
+
+// An unrecognized key on a zero-argument-schema meta-command is named, not
+// silently ignored (the same rule criterion 2 applies to registry actions,
+// extended to "operations" - see console_module.cpp).
+void test_operations_unknown_key_is_named_through_the_real_adapter_path() {
+    typeLine("operations tyep=action");
+
+    TEST_ASSERT_EQUAL_INT(0, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_OUTCOME_INVALID, g_lastResultOutcome);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_lastResultReason);
+    TEST_ASSERT_EQUAL_STRING("tyep", g_lastFieldValue);
 }
 
 int main(int, char**) {
@@ -229,7 +309,10 @@ int main(int, char**) {
     RUN_TEST(test_operations_type_nonsense_is_invalid_through_the_real_adapter_path);
     RUN_TEST(test_bare_operations_still_lists_everything_through_the_real_adapter_path);
     RUN_TEST(test_help_with_operation_still_works_through_the_real_adapter_path);
-    RUN_TEST(test_registry_entry_command_arguments_are_not_forwarded);
+    RUN_TEST(test_registry_entry_command_arguments_are_now_forwarded);
+    RUN_TEST(test_marcduino_command_with_value_dispatches_through_the_real_adapter_path);
+    RUN_TEST(test_marcduino_command_missing_value_through_the_real_adapter_path);
+    RUN_TEST(test_operations_unknown_key_is_named_through_the_real_adapter_path);
     RUN_TEST(test_meta_command_with_no_args_is_unchanged);
     return UNITY_END();
 }
