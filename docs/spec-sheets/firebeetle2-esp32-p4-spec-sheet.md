@@ -1304,8 +1304,13 @@ Two items to verify on first build rather than assume:
 
 Things this sheet states from documentation but has not confirmed on hardware:
 
-1. ~~**Chip revision.**~~ Resolved: the board reports **v1.0**. Confirm again for
-   any additional unit, since DFRobot ships across the v1.x family.
+1. ~~**Chip revision.**~~ Resolved: the bench board reports **v1.3**, not v1.0 -
+   see the correction note at the top of this sheet and [Identifying the
+   revision](#identifying-the-revision) for the verbatim `esptool` output. A
+   **second DFR1172, read on 2026-08-29, also reports v1.3**, so both units this
+   project owns are v1.3. Keep confirming on any further unit: DFRobot ships
+   across the v1.x family, and a v3.x unit needs a different build entirely (see
+   [Selecting for the wrong revision](#selecting-for-the-wrong-revision)).
 2. **GPIO48-GPIO52 under load.** Espressif's "LDO power issues with high numbered
    GPIOs" warning is unquantified. Measure before committing a UART or any
    timing-critical signal there.
