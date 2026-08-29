@@ -186,3 +186,9 @@ RcActionResult rcDispatchAction(const RcActionPayload& input) {
 
     return res;
 }
+
+bool rcActionResultHasEffect(const RcActionResult& result) {
+    return result.audioTrack != 0 || result.audioDollarCmd[0] != '\0' || result.servoIndex >= 0 ||
+           result.domeTxCmd[0] != '\0' || result.marcduinoCmd[0] != '\0' || result.triggerEstop ||
+           result.setSleep || result.setStationary || result.setSpeedPreset;
+}

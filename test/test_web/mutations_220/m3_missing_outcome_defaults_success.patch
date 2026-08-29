@@ -1,0 +1,13 @@
+diff --git a/data/rc.js b/data/rc.js
+index 3ed4b43..1788a73 100644
+--- a/data/rc.js
++++ b/data/rc.js
+@@ -112,7 +112,7 @@
+     if (outcome === 'queued') return { kind: 'success', text: 'Dispatched' };
+     if (outcome === 'queue-full') return { kind: 'error', text: 'Queue full - try again' };
+     if (outcome === 'unavailable') return { kind: 'error', text: 'Unavailable right now' };
+-    return { kind: 'error', text: 'Unexpected response' };
++    return { kind: 'success', text: 'Dispatched' };
+   };
+   // ==== ACTION TEST OUTCOME (#220) END ====
+ 

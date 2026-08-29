@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "action_registry.h"
 #include "api_audio.h"
 #include "api_status.h"
 #include "audio_task.h"
@@ -37,6 +38,9 @@
 #include "console_catalog.h"
 #include "console_module.h"
 #include "rc_diagnostics_snapshot.h"
+#include "rc_input.h"
+#include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
+                                  // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
 
 // =============================================================================
@@ -102,6 +106,25 @@ static void runQuery(const char* operationName) {
     consoleExecuteCommand(&req, &sink);
 }
 
+// Like runQuery() but lets the test pick the adapter source - needed to
+// prove #220's SRC_SERIAL_CONSOLE vs SRC_WEB_CONSOLE attribution, which
+// runQuery()'s hardcoded CONSOLE_SOURCE_SERIAL cannot exercise.
+static void runCommandFrom(const char* operationName, ConsoleCommandSource source) {
+    memset(&g_cap, 0, sizeof(g_cap));
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = capBegin;
+    sink.onRecordField = capField;
+    sink.onRecordItem = capItem;
+    sink.onRecordResult = capResult;
+    sink.onRecordEnd = capEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = source;
+    req.operationName = operationName;
+    consoleExecuteCommand(&req, &sink);
+}
+
 static const char* capturedValue(const char* name) {
     for (int i = 0; i < g_cap.fieldCount; i++) {
         if (strcmp(g_cap.names[i], name) == 0) return g_cap.values[i];
@@ -160,6 +183,10 @@ void setUp() {
     robotState = RobotState{};
     ConfigSnapshot snap = {};
     configCacheApply(snap);
+    g_test_dispatch_action_calls = 0;
+    g_test_last_dispatch_target = ROBOT_ACTION_NONE;
+    g_test_last_dispatch_source = SRC_NONE;
+    g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
 }
 void tearDown() {}
 
@@ -468,6 +495,208 @@ void test_no_status_entry_is_executor_not_ready() {
 }
 
 // =============================================================================
+// Non-motion, non-parameterized action dispatch (#220, ADR 0034)
+// =============================================================================
+
+// RC token aliases resolve through the same operation and reach the exact
+// same RobotActionId as the canonical name - no second dispatch path
+// (docs/console-protocol.md s.1.1).
+void test_action_alias_resolves_same_target_as_canonical() {
+    robotState.webControlEnabled = true;
+
+    runQuery("sound.action.random-humming");
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(SOUND_ACTION_RANDOM_HUMMING, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+
+    runQuery("sound_rand_humming");  // RC token alias, rc_mapping.h
+    TEST_ASSERT_EQUAL_UINT(2u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(SOUND_ACTION_RANDOM_HUMMING, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// SYSTEM_ACTION_ESTOP is refused by the guard core before dispatch is ever
+// attempted - same behavior as /api/actions/test (ACTION_TEST_SAFETY_CRITICAL_BLOCKED).
+void test_action_estop_is_blocked_not_dispatched() {
+    robotState.webControlEnabled = true;
+
+    runQuery("system.action.estop");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_TRUE(g_cap.resultCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// Non-RC Control gate (ADR 0027/0034): webControlEnabled=false blocks the
+// same as the REST route, and the dispatch core is never reached.
+void test_action_web_control_disabled_is_blocked_not_dispatched() {
+    robotState.webControlEnabled = false;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// Analog motion targets are permanently outside this single-shot mechanism
+// (#222 wires them through the drive/dome-speed backbone) - distinct reason
+// from "not wired yet" so the operator does not expect a future fix here.
+void test_action_analog_target_answers_not_executable() {
+    robotState.webControlEnabled = true;
+
+    runQuery("drive.action.speed");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_EXECUTABLE, g_cap.reason);
+}
+
+// Payload-needing targets are genuinely "not ready yet" (#221/#226 own the
+// argument tokenizer, include/console_cli_line.h - fenced on #220).
+void test_action_payload_needing_target_answers_executor_not_ready() {
+    robotState.webControlEnabled = true;
+
+    runQuery("dome.action.marcduino-command");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// A config/status-only registry entry (no RobotActionId at all) stays
+// exactly as unready as before this ticket - #220 does not invent a target
+// for operations ACTION_REGISTRY never carried.
+void test_action_with_no_rc_bindable_target_answers_executor_not_ready() {
+    robotState.webControlEnabled = true;
+
+    runQuery("drive.action.move");  // #222's parameterized move action
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// The dispatch core's three outcomes map onto their documented Console
+// outcome + reason (docs/console-protocol.md s.3.3) - one switch, checked
+// per value so a future RcDispatchOutcome addition without a case here
+// fails the *build* (consoleMapDispatchOutcome has no default case), not
+// silently mis-maps.
+void test_action_dispatch_outcome_queued_maps_to_ok_result() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NONE, g_cap.reason);
+}
+
+void test_action_dispatch_outcome_queue_full_maps_to_err_result() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kQueueFull;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+void test_action_dispatch_outcome_blocked_by_state_maps_to_unavailable() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kBlockedByState;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+}
+
+// CommandSource provenance (#220 criterion 2): the serial and web adapters
+// must be distinguishable downstream, and neither may be confused with
+// SRC_WEB_API (the REST /api/actions/test route's own attribution).
+void test_action_dispatch_attributes_serial_source() {
+    robotState.webControlEnabled = true;
+
+    runCommandFrom("sound.action.random-humming", CONSOLE_SOURCE_SERIAL);
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(SRC_SERIAL_CONSOLE, g_test_last_dispatch_source);
+}
+
+void test_action_dispatch_attributes_web_source() {
+    robotState.webControlEnabled = true;
+
+    runCommandFrom("sound.action.random-humming", CONSOLE_SOURCE_WEB);
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(SRC_WEB_CONSOLE, g_test_last_dispatch_source);
+}
+
+// Sweeps every ACTION_REGISTRY entry that #220 claims to wire (RC-bindable,
+// not analog, not payload-needing, not the guarded estop) and proves none
+// of them answer executor-not-ready - the automated form of this ticket's
+// "executor-not-ready count for action entries" requirement, scoped to what
+// #220 actually owns (motion is #222's, parameterized actions are #221/#226's).
+void test_scoped_non_motion_actions_are_not_executor_not_ready() {
+    robotState.webControlEnabled = true;
+    int notReadyCount = 0;
+    int scopedCount = 0;
+
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        RobotActionId id = ACTION_REGISTRY[i].id;
+        if (id == SYSTEM_ACTION_ESTOP) continue;
+        if (robotActionIsAnalog(id)) continue;
+        if (robotActionNeedsPayload(id)) continue;
+
+        scopedCount++;
+        runQuery(ACTION_REGISTRY[i].name);
+        if (g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY) {
+            notReadyCount++;
+        }
+    }
+
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, scopedCount, "no in-scope action entries found");
+    TEST_ASSERT_EQUAL_MESSAGE(0, notReadyCount,
+                              "every non-motion, non-parameterized action must dispatch");
+}
+
+// Diagnostic (not an assertion beyond "ran"): reports the whole registry's
+// action-type executor-not-ready count so the ticket's closing comment can
+// cite a real number instead of an estimate. Everything outside #220's scope
+// (motion, parameterized actions, config/status entries with no
+// RobotActionId) is *expected* to still answer executor-not-ready here -
+// #221-#227 own those.
+void test_action_executor_not_ready_count_report() {
+    robotState.webControlEnabled = true;
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int actionTypeCount = 0;
+    int notReadyCount = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_ACTION) != 0) continue;
+        actionTypeCount++;
+        runQuery(entries[i].name);
+        if (g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY) {
+            notReadyCount++;
+        }
+    }
+
+    printf("[#220 report] action-type catalog entries: %d, executor-not-ready: %d\n",
+           actionTypeCount, notReadyCount);
+    TEST_ASSERT_TRUE(true);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -496,6 +725,20 @@ int main(int, char**) {
     RUN_TEST(test_event_stream_status_entry_answers_not_executable);
 
     RUN_TEST(test_no_status_entry_is_executor_not_ready);
+
+    RUN_TEST(test_action_alias_resolves_same_target_as_canonical);
+    RUN_TEST(test_action_estop_is_blocked_not_dispatched);
+    RUN_TEST(test_action_web_control_disabled_is_blocked_not_dispatched);
+    RUN_TEST(test_action_analog_target_answers_not_executable);
+    RUN_TEST(test_action_payload_needing_target_answers_executor_not_ready);
+    RUN_TEST(test_action_with_no_rc_bindable_target_answers_executor_not_ready);
+    RUN_TEST(test_action_dispatch_outcome_queued_maps_to_ok_result);
+    RUN_TEST(test_action_dispatch_outcome_queue_full_maps_to_err_result);
+    RUN_TEST(test_action_dispatch_outcome_blocked_by_state_maps_to_unavailable);
+    RUN_TEST(test_action_dispatch_attributes_serial_source);
+    RUN_TEST(test_action_dispatch_attributes_web_source);
+    RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
+    RUN_TEST(test_action_executor_not_ready_count_report);
 
     return UNITY_END();
 }

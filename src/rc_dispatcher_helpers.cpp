@@ -78,11 +78,11 @@ void rcDispatchAudioTrigger(const char* audioTrigger) {
 // Servo Command Queue Helpers
 // =============================================================================
 
-static bool queueServoSequence(uint8_t sequenceId) {
+static bool queueServoSequence(uint8_t sequenceId, CommandSource src) {
     ServoCommand cmd = {};
     cmd.type = SERVO_CMD_SEQUENCE;
     cmd.sequenceId = sequenceId;
-    cmd.source = SRC_SBUS;
+    cmd.source = src;
     cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
@@ -91,12 +91,13 @@ static bool queueServoSequence(uint8_t sequenceId) {
     return true;
 }
 
-static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs) {
+static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
+                              CommandSource src) {
     ServoCommand cmd = {};
     cmd.armId = armId;
     cmd.type = type;
     cmd.positionUs = positionUs;
-    cmd.source = SRC_SBUS;
+    cmd.source = src;
     cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         logQueueDrop(QUEUE_SERVO_CMD, "servo command");
@@ -109,45 +110,75 @@ static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t pos
 // Single Action Dispatch (for processTriggerAction and trigger loop)
 // =============================================================================
 
-void rcDispatchSingleAction(const RcActionResult& res) {
+RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSource src) {
+    bool queueFull = false;
+
     if (res.audioTrack != 0) {
-        if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS)) {
+        if (!audioQueuePlayTrack(res.audioTrack, src)) {
             PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
+            queueFull = true;
         }
     }
 
     if (res.audioDollarCmd[0] != '\0') {
-        if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS)) {
+        if (!audioQueueDollar(res.audioDollarCmd, src)) {
             PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
+            queueFull = true;
         }
     }
 
     if (res.servoIndex >= 0) {
         if (res.servoIsSequence) {
-            if (!queueServoSequence(res.servoSequenceId))
+            if (!queueServoSequence(res.servoSequenceId, src)) {
                 PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
                             (unsigned)res.servoSequenceId);
+                queueFull = true;
+            }
         } else {
             ServoCommandType cmd = res.servoOpen ? SERVO_CMD_OPEN : SERVO_CMD_CLOSE;
-            queueServoCommand((uint8_t)res.servoIndex, cmd, 0);
+            if (!queueServoCommand((uint8_t)res.servoIndex, cmd, 0, src)) {
+                queueFull = true;  // queueServoCommand() already logs the drop
+            }
         }
     }
 
     if (res.domeTxCmd[0] != '\0') {
         if (strncmp(res.domeTxCmd, "DM:", 3) == 0) {
-            if (!sequenceStart(res.domeTxCmd, SRC_SBUS))
+            if (!sequenceStart(res.domeTxCmd, src)) {
                 PA_LOG_WARN(TAG, "sequence start failed: %s", res.domeTxCmd);
+                queueFull = true;
+            }
         } else if (domeConnected()) {
-            if (!domeQueueTx(res.domeTxCmd))
+            if (!domeQueueTx(res.domeTxCmd)) {
                 PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
+                queueFull = true;
+            }
+        } else {
+            // Dome transport not connected: pre-#220 this was a silent drop
+            // with no log line at all (reachable by DROID_SEQ_* actions, the
+            // droid sequence's dome-forward portion). #220 needs a truthful
+            // outcome for the test/Console caller, so this now logs and
+            // counts the same as a queue-full - live RC behavior is
+            // otherwise unchanged (no side effect either way).
+            PA_LOG_WARN(TAG, "dome tx dropped: dome not connected: %s", res.domeTxCmd);
+            queueFull = true;
         }
     }
 
     if (res.marcduinoCmd[0] != '\0') {
         if (!parseMarcduinoCommand(res.marcduinoCmd)) {
             PA_LOG_DEBUG(TAG, "marcduino command not recognized: %s", res.marcduinoCmd);
+            // Not a queue-full - the payload itself failed validation. This
+            // branch is unreachable for #220's in-scope action set
+            // (DOME_ACTION_MARCDUINO_SEQ/CMD require an argument, fenced to
+            // #221/#226); folded into queueFull here only so the live RC
+            // path (which can reach it) still reports a non-silent outcome
+            // rather than a new, #220-unused outcome value.
+            queueFull = true;
         }
     }
+
+    return queueFull ? RcDispatchOutcome::kQueueFull : RcDispatchOutcome::kQueued;
 }
 
 // =============================================================================
@@ -176,8 +207,12 @@ void rcDispatchTriggerResults(const RcProcessorOutput& output,
                         robotActionIdToString(b.target), res.audioDollarCmd);
         }
 
-        // Dispatch audio, servo, dome, marcduino commands
-        rcDispatchSingleAction(res);
+        // Dispatch audio, servo, dome, marcduino commands. This loop is the
+        // live SBUS Tier-2 trigger path; always attributed to SRC_SBUS
+        // (unchanged from before #220's src parameter). The return value is
+        // not consumed here - the RC path had no outcome-reporting consumer
+        // before this ticket and still does not.
+        rcDispatchSingleAction(res, SRC_SBUS);
 
         // Handle system modes (estop, sleep, stationary, speed preset)
         if (res.triggerEstop) {

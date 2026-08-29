@@ -796,4 +796,26 @@ SemaphoreHandle_t paGetSerialMutex() {
     return (SemaphoreHandle_t)paStubMutexStorage();
 }
 
+// -----------------------------------------------------------------------------
+// Controller Console action dispatch (#220). rc_input.cpp (RcInputTask, pulseIn,
+// esp_task_wdt) is not in the native build, so dispatchRcTriggerActionTest()'s
+// real implementation is not reachable here. Recorded rather than performed,
+// same pattern as commandedSetStationary()/auxLedQueueSetColor() above: the
+// Console module's own guard + outcome-mapping logic (console_module.cpp) is
+// what test_console_module.cpp exercises for real; this stub only lets that
+// logic reach a controllable result instead of linking to nothing.
+#include "rc_input_test_hooks.h"
+unsigned g_test_dispatch_action_calls = 0;
+RobotActionId g_test_last_dispatch_target = ROBOT_ACTION_NONE;
+CommandSource g_test_last_dispatch_source = SRC_NONE;
+RcDispatchOutcome g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+
+RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* /*payload*/,
+                                              bool /*pressed*/, CommandSource src) {
+    g_test_dispatch_action_calls++;
+    g_test_last_dispatch_target = target;
+    g_test_last_dispatch_source = src;
+    return g_test_dispatch_outcome;
+}
+
 #endif

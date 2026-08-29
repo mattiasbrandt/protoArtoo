@@ -30,6 +30,10 @@
 #include "api_audio.h"
 #include "audio_task.h"
 #include "rc_diagnostics_snapshot.h"
+#include "action_registry.h"  // ACTION_REGISTRY[]: canonical name -> RobotActionId (#220)
+#include "api_actions.h"      // evaluateActionTestGuard(), robotActionIsWebTestable() - the
+                              // existing guard core (#220), reused verbatim, not duplicated
+#include "rc_input.h"          // dispatchRcTriggerActionTest(), RcDispatchOutcome
 
 static const char* TAG = "Console";
 
@@ -92,12 +96,17 @@ static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
     return false;
 }
 
+// Forward declaration: alias-aware catalog lookup (defined in the "Operation
+// Lookup and Execution" section below, alongside its other callers) - needed
+// here so "help <alias>" resolves the same way "help <canonical-name>" does.
+static const ConsoleCatalogEntry* consoleFindByNameOrAlias(const char* name);
+
 // Emit help for an operation as console records
 // Help text comes from the LittleFS file opened in setup().
 // If the file is unavailable, degrade gracefully.
 static void consoleEmitHelpForOperation(uint32_t requestId, const char* operationName,
                                        const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
     if (entry == nullptr) {
         // Operation not found in catalog
         if (sink->onRecordResult) {
@@ -251,23 +260,49 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
 // Private: Operation Lookup and Execution (uses catalog)
 // =============================================================================
 
+// Resolve an operator-typed name to its catalog entry, accepting either the
+// canonical dotted name or a registered RC token alias (docs/console-protocol.md
+// s.1.1: "existing short RC tokens remain accepted aliases ... an alias
+// resolves through the same operation and never creates a second path", #220).
+// consoleCatalogFindByName() (tools/generate_console_catalog.py, fenced on
+// this ticket) only matches the canonical name; every alias-aware lookup in
+// this module goes through this one wrapper instead of duplicating the
+// aliases[] scan, so there is exactly one resolution mechanism.
+static const ConsoleCatalogEntry* consoleFindByNameOrAlias(const char* name) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(name);
+    if (entry != nullptr || name == nullptr) {
+        return entry;
+    }
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].aliases == nullptr) continue;
+        for (const char* const* alias = entries[i].aliases; *alias != nullptr; ++alias) {
+            if (strcmp(*alias, name) == 0) {
+                return &entries[i];
+            }
+        }
+    }
+    return nullptr;
+}
+
 // Check if operation is recognized in the catalog
 static bool consoleIsKnownOperation(const char* operationName) {
     if (operationName == nullptr) return false;
-    return consoleCatalogFindByName(operationName) != nullptr;
+    return consoleFindByNameOrAlias(operationName) != nullptr;
 }
 
 // Check if operation is available on this board
 // (ADR 0029: catalog entries carry build_flags and board_capability; runtime checks them)
 static bool consoleIsAvailableOnBoard(const char* operationName) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
     if (!entry) return false;
     return entry->available_on_board;
 }
 
 // Get the operation type from its name
 static ConsoleOperationType consoleGetOperationType(const char* operationName) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
     if (!entry) return CONSOLE_OP_ACTION;
 
     // Map catalog type strings to enum
@@ -514,6 +549,105 @@ static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationNa
 }
 
 // =============================================================================
+// Private: non-motion, non-parameterized action dispatch (#220, ADR 0034)
+//
+// Every action entry that is RC-bindable (ACTION_REGISTRY[], canonical names
+// verbatim - src/web/action_registry.cpp), not analog, and not
+// payload-needing runs from here through dispatchRcTriggerActionTest()
+// (include/rc_input.h): the SAME dispatch core the REST /api/actions/test
+// route and the live RC trigger path share. Motion (analog) actions and
+// actions that need an argument stay CONSOLE_REASON_EXECUTOR_NOT_READY /
+// NOT_EXECUTABLE below, same as before this ticket - #222 (drive safety) and
+// #221/#226 (argument parsing, include/console_cli_line.h) own those, not
+// #220. There is exactly one guard core and one dispatch core; this section
+// only maps their results onto Console Records.
+// =============================================================================
+
+// Resolve a catalog operation name to the RobotActionId it dispatches as,
+// reusing ACTION_REGISTRY[] (the same canonical-name<->RobotActionId table
+// GET /api/actions and the RC mapping UI already use) rather than a second
+// name<->id table. Returns false when this operation has no RC-bindable
+// target at all (drive/dome-speed motion aside, that covers every config
+// and status entry, and every action #221-#227 still own).
+static bool consoleFindRobotActionId(const char* canonicalName, RobotActionId* out) {
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        if (strcmp(ACTION_REGISTRY[i].name, canonicalName) == 0) {
+            *out = ACTION_REGISTRY[i].id;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Maps the dispatch core's adapter-agnostic outcome onto a Console outcome +
+// reason. Only the three outcomes rcDispatchSingleAction()/
+// dispatchRcTriggerActionTest() can produce are handled; there is no default
+// case so a future RcDispatchOutcome addition fails this switch at compile
+// time instead of silently falling through to a wrong reason.
+static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, ConsoleReason* outReason) {
+    switch (outcome) {
+        case RcDispatchOutcome::kQueued:
+            *outReason = CONSOLE_REASON_NONE;
+            return CONSOLE_OUTCOME_QUEUED;
+        case RcDispatchOutcome::kQueueFull:
+            *outReason = CONSOLE_REASON_QUEUE_FULL;
+            return CONSOLE_OUTCOME_QUEUE_FULL;
+        case RcDispatchOutcome::kBlockedByState:
+            *outReason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
+            return CONSOLE_OUTCOME_UNAVAILABLE;
+    }
+    *outReason = CONSOLE_REASON_NONE;
+    return CONSOLE_OUTCOME_INTERNAL_ERROR;
+}
+
+// Executes one resolved RC-bindable action through the existing guard core
+// (evaluateActionTestGuard(), include/api_actions.h - reused verbatim, not
+// duplicated) and the existing dispatch core, then answers with a single
+// type=result record (guard paths never begin/end a multi-record response,
+// matching every other guard path in this module).
+static void consoleExecuteAction(uint32_t requestId, RobotActionId target,
+                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+    bool webControlEnabled = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    webControlEnabled = robotState.webControlEnabled;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    ActionTestGuardResult guard = evaluateActionTestGuard(target, webControlEnabled);
+    if (guard != ACTION_TEST_ALLOWED) {
+        ConsoleOutcome outcome = CONSOLE_OUTCOME_BLOCKED;
+        ConsoleReason reason = CONSOLE_REASON_BLOCKED_BY_STATE;
+        if (guard == ACTION_TEST_ACTION_NOT_TESTABLE) {
+            // This guard result conflates two different reasons nothing
+            // runs (matching the REST route's coarser HTTP shape); the
+            // Console can be more precise since #220 already has
+            // robotActionIsAnalog() in scope. Motion/analog targets are
+            // permanently outside this single-shot mechanism (#222 wires
+            // them through the drive/dome-speed backbone instead, never
+            // through dispatchRcTriggerActionTest()); payload-needing
+            // targets are genuinely "not ready yet" pending #221/#226's
+            // argument tokenizer.
+            outcome = CONSOLE_OUTCOME_UNAVAILABLE;
+            reason = robotActionIsAnalog(target) ? CONSOLE_REASON_NOT_EXECUTABLE
+                                                 : CONSOLE_REASON_EXECUTOR_NOT_READY;
+        }
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, outcome, reason);
+        }
+        return;
+    }
+
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    RcDispatchOutcome dispatchOutcome = dispatchRcTriggerActionTest(target, "", true, src);
+
+    ConsoleReason reason = CONSOLE_REASON_NONE;
+    ConsoleOutcome outcome = consoleMapDispatchOutcome(dispatchOutcome, &reason);
+    ConsoleStatus status = (outcome == CONSOLE_OUTCOME_QUEUED) ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR;
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, status, outcome, reason);
+    }
+}
+
+// =============================================================================
 // Public API Implementation
 // =============================================================================
 
@@ -724,7 +858,25 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             break;
         }
 
-        case CONSOLE_OP_ACTION:
+        case CONSOLE_OP_ACTION: {
+            // Resolve the (possibly aliased) operation name to its
+            // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
+            // means this action has no RC-bindable target yet - a
+            // parameterized or as-yet-unwired action #221-#227 own -
+            // unchanged from before this ticket.
+            const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(request->operationName);
+            RobotActionId target = ROBOT_ACTION_NONE;
+            if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
+                consoleExecuteAction(request->requestId, target, request->source, sink);
+                break;
+            }
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);
+            }
+            break;
+        }
+
         case CONSOLE_OP_CONFIG:
             // T2+: not yet implemented - return single result record (guard path)
             if (sink->onRecordResult) {

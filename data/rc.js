@@ -94,6 +94,28 @@
     { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow -> Normal -> Turbo', disabled: false, testable: true, safetyCritical: false },
   ];
 
+  // ==== ACTION TEST OUTCOME (#220) BEGIN ====
+  // Maps POST /api/actions/test's real outcome (docs/api.md; mirrors
+  // docs/console-protocol.md's outcome vocabulary) onto the picker's
+  // feedback pill. Pure and DOM-free on purpose - runActionTest() below is
+  // its only caller, and test/test_web/test_rc_action_test_outcome.js
+  // extracts this exact block (by the BEGIN/END markers, matching
+  // test/test_web/helpers/page_module_env.js's PART-1 extraction of
+  // page_bootstrap.js) and evaluates it standalone, since a click on a
+  // dynamically-rendered action-picker button is not reachable through the
+  // shared page-module test harness (querySelectorAll on rendered innerHTML
+  // is stubbed empty there - #220 does not attempt to fix that harness gap).
+  // An outcome this function does not recognize (a future addition, or an
+  // older/mismatched firmware) must not read as success - the whole point of
+  // #220 is that the picker stops claiming "Dispatched" on a dropped command.
+  const actionTestFeedbackForOutcome = (outcome) => {
+    if (outcome === 'queued') return { kind: 'success', text: 'Dispatched' };
+    if (outcome === 'queue-full') return { kind: 'error', text: 'Queue full - try again' };
+    if (outcome === 'unavailable') return { kind: 'error', text: 'Unavailable right now' };
+    return { kind: 'error', text: 'Unexpected response' };
+  };
+  // ==== ACTION TEST OUTCOME (#220) END ====
+
   // Live action targets — replaced on load from GET /api/actions.
   // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
   let actionTargets = HARDCODED_ACTION_TARGETS;
@@ -988,9 +1010,9 @@
       actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
       syncActionTestUi();
       try {
-        await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
+        const result = await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
         if (selectedChannel !== channelAtStart) return;
-        actionPickerFeedback = { token, kind: 'success', text: 'Dispatched' };
+        actionPickerFeedback = { token, ...actionTestFeedbackForOutcome(result?.data?.outcome) };
       } catch (error) {
         if (selectedChannel !== channelAtStart) return;
         actionPickerFeedback = { token, kind: 'error', text: window.PAApi.messageFor(error) };

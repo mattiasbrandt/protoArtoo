@@ -1,0 +1,13 @@
+diff --git a/data/rc.js b/data/rc.js
+index 3ed4b43..33da6dc 100644
+--- a/data/rc.js
++++ b/data/rc.js
+@@ -110,7 +110,7 @@
+   // #220 is that the picker stops claiming "Dispatched" on a dropped command.
+   const actionTestFeedbackForOutcome = (outcome) => {
+     if (outcome === 'queued') return { kind: 'success', text: 'Dispatched' };
+-    if (outcome === 'queue-full') return { kind: 'error', text: 'Queue full - try again' };
++    if (outcome === 'queue-full') return { kind: 'error', text: 'Unavailable right now' };
+     if (outcome === 'unavailable') return { kind: 'error', text: 'Unavailable right now' };
+     return { kind: 'error', text: 'Unexpected response' };
+   };
