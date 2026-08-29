@@ -6,8 +6,11 @@
 //
 // Architecture:
 //   - Vendor-free interface, no #include <WiFi.h> or vendor types in signatures
-//   - Two backends per ADR 0021 pattern:
-//     src/web/web_network_manager_native.cpp -- Arduino/esp_wifi device backend
+//   - One translation unit per composition, each guarded whole-file, no #else
+//     inside a backend (#188 coordinator ruling 4):
+//     src/web/web_network_manager_native.cpp -- Arduino/esp_wifi device backend (artoo-esp32)
+//     src/web/web_network_manager_hosted.cpp -- ESP-Hosted SDIO backend (FireBeetle 2, #189)
+//     src/web/web_network_manager_none.cpp   -- no network backend (ADR 0032 zero-backend)
 //     src/native_test_stubs.cpp              -- host-test backend
 //   - Event handling (translation, logging, server startup) is the backend's job
 //   - Boot posture application is the backend's job
