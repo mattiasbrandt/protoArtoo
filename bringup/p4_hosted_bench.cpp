@@ -32,9 +32,16 @@
  * Production's concurrent-stream cap is 3 (PA_ADMISSION_MAX_SSE_CLIENTS); this
  * sketch has no cap, so client counts above 3 are observation, not verdict.
  *
- * WiFi credentials NEVER committed (public repo). Build with explicit creds:
- *   PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
- *     make build BUILD_ENV=firebeetle2_hosted_bench
+ * WiFi credentials NEVER committed (public repo). Resolved in this order:
+ *   1. -DBENCH_SSID / -DBENCH_PASS build flags, e.g.
+ *      PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
+ *        make build BUILD_ENV=firebeetle2_hosted_bench
+ *   2. src/secrets.h (gitignored, 0600, written by `make setup-wifi`) - the
+ *      same PA_STA_* credentials the shipping firmware uses, so a bench run
+ *      associates with the real network without credentials on a command line
+ *      or in shell history.
+ *   3. A placeholder that cannot associate, so an unconfigured build fails
+ *      visibly rather than looking like a transport fault.
  *
  * Uses weak symbols to coexist with .dummy/sketch.cpp.o in custom_sdkconfig pass.
  */
@@ -50,12 +57,41 @@
 
 #include "esp32-hal-hosted.h"
 
-// Provisioned WiFi credentials - overridden by build flags, not committed
+// Provisioned WiFi credentials - never committed. Build flags win; otherwise
+// fall back to the operator's local src/secrets.h, then to a placeholder.
+// This file is built with build_src_filter excluding src/, so secrets.h is
+// reached by relative path rather than via the include path.
+#if defined(__has_include)
+#if __has_include("../src/secrets.h")
+#include "../src/secrets.h"
+#define BENCH_HAVE_LOCAL_SECRETS 1
+#endif
+#endif
+
 #ifndef BENCH_SSID
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_SSID)
+#define BENCH_SSID PA_STA_SSID
+#else
 #define BENCH_SSID "protoArtoo-bench"
 #endif
+#endif
+
 #ifndef BENCH_PASS
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_PASSWORD)
+#define BENCH_PASS PA_STA_PASSWORD
+#else
 #define BENCH_PASS "protoArtoo-bench"
+#endif
+#endif
+
+// An empty PA_STA_SSID is legal in secrets.h (STA is optional there) but is a
+// dead bench run: WiFi.begin("") cannot associate, and the resulting silence
+// looks exactly like the SDIO fault this harness exists to detect.
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_SSID)
+static_assert(sizeof(BENCH_SSID) > 1,
+              "src/secrets.h has an empty PA_STA_SSID; run `make setup-wifi` or "
+              "pass -DBENCH_SSID/-DBENCH_PASS. An empty SSID cannot associate and "
+              "would be misread as a Hosted transport failure.");
 #endif
 
 // Timing constants in milliseconds.
@@ -208,7 +244,14 @@ static void superviseLink() {
       portENTER_CRITICAL(&benchStateMux);
       benchState.hasConnectedOnce = true;
       portEXIT_CRITICAL(&benchStateMux);
-      Serial.println("[BENCH] WiFi reached WL_CONNECTED for the first time.");
+      // Print the address the harness is reachable at. Without it the
+      // "a client response is still required" instruction below is
+      // unactionable: the operator has an associated board and no way to
+      // address it short of scanning the network.
+      Serial.printf(
+        "[BENCH] WiFi reached WL_CONNECTED for the first time. ip=%s rssi=%ddBm "
+        "channel=%d\n",
+        WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel());
     }
     startHttpIfReady();
     return;
