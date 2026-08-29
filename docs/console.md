@@ -281,11 +281,17 @@ that goes, by design.
   (`drive.action.speed`, `drive.action.steer`, `dome.action.set-speed`)
   answer `unavailable reason=not-executable`. Drive the droid from the
   dashboard or RC for now.
-- **`config`-type commands** — reading or changing any setting through the
-  Console (`system.config.*`, `wifi.config.*`, `drive.config.*`, and the
-  rest) — answer `unavailable reason=executor-not-ready` regardless of
-  whether you supply a value. `operations type=config` lists them, but none
-  of them run yet. Change settings from the **Setup** page in the meantime.
+- **Most `config`-type commands** don't run here yet, but some now do.
+  Working today: the fifteen Component Toggles (`system.config.enable_drive`,
+  `system.config.enable_audio`, `system.config.enable_arm1` and the rest) —
+  changing one answers `staged-until-reboot`, and it takes effect at the next
+  restart, not immediately; `system.config.mood`; and four settings that take
+  effect straight away and answer `applied` —
+  `drive.config.speed-limit`, `aux.config.led-pin`, `aux.config.led-count`
+  and `rc.config.mode`. Every other `config` entry — WiFi settings among
+  them — answers `unavailable reason=executor-not-ready` whether or not you
+  supply a value. `operations type=config` lists them all, so you can see
+  which exist; change the rest from the **Setup** page in the meantime.
 - **Events** (`type=event` entries) are output only — logs and state
   changes you'll see printed on their own — never something you run; typing
   one answers `unavailable reason=not-executable`.
