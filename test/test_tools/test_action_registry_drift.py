@@ -146,6 +146,27 @@ class TestStatusQueryClassification(unittest.TestCase):
         self.assertFalse(any('test.status.aggregate' in e for e in errors),
                         f"Expected no error for non-query with is_query: false, got: {errors}")
 
+    def test_status_entry_item_based_query_no_fields(self):
+        """Passes for an explicit is_query: true, fields-less query (#239: item records, not scalar fields)."""
+        from tools.check_action_registry_drift import check_status_query_classification
+
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.status.logs',
+                    'type': 'status',
+                    'is_query': True
+                    # No fields: - item-based query (a list of item records,
+                    # e.g. recent log lines), not a scalar-field one.
+                }
+            ]
+        }
+        errors = []
+        check_status_query_classification(doc, errors)
+
+        self.assertFalse(any('test.status.logs' in e for e in errors),
+                        f"Expected no error for item-based query with is_query: true, got: {errors}")
+
     def test_status_entry_both_classifiers(self):
         """Fails when a type: status entry has both fields and is_query: false (contradictory)."""
         from tools.check_action_registry_drift import check_status_query_classification

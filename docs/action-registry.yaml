@@ -2994,8 +2994,24 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildStatusJson
-  is_query: false
+  # #239: reclassified from is_query: false (aggregate-field) to a real,
+  # independently dispatchable query - it never fit that classification;
+  # `executor: buildStatusJson` was drift (buildStatusJson is /api/status's
+  # builder and never emits a logs field; api_path here has always been
+  # /api/logs, its own standalone text/plain endpoint, src/web/api_logs.cpp).
+  # No fields: list: the answer is a sequence of item records (recent log
+  # lines), not scalar JSON keys, so it does not fit #223's fields:/JSON-key
+  # model either - see check_status_query_classification's third shape.
+  # executor: names the function the Console's dispatch table actually calls
+  # (src/console/console_module.cpp: consoleExecuteSystemStatusLogs), which
+  # is deliberately NOT the same function GET /api/logs uses
+  # (recentLogsBodyBuffer()/copyRecentLogs(), src/web/api_logs.cpp): that
+  # buffer is one shared allocation synchronised for exactly one caller, and
+  # the Console task is a second, concurrent caller on a different core, so
+  # it reads the ring directly instead (getLogBufferCount()/copyLogLineAt(),
+  # include/web_server.h).
+  executor: copyLogLineAt
+  is_query: true
 - name: system.status.wifi
   display_name: WiFi
   description: WiFi connection status, mode, IP addresses, and signal strength

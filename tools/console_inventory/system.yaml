@@ -958,15 +958,16 @@ rows:
   registry_sources:
   - internal
   registry_marcduino_cmd: null
-  anchor_kind: aggregate-field
+  anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
-  - include/api_status.h:93 - handleStatusGet declaration
-  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
-  - src/web/web_server.cpp:295 - logs array in buildStatusJson
-  executor_or_core: buildStatusJson
+  - src/web/web_seam_routes.cpp:41 - webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet)
+  - include/api_logs.h:14 - void handleLogsGet(WebRequest& req) declaration
+  - src/web/api_logs.cpp - handleLogsGet() definition; calls recentLogsBodyBuffer()/copyRecentLogs()
+  - include/web_server.h - getLogBufferCount()/copyLogLineAt() declarations
+  - src/console/console_module.cpp - consoleExecuteSystemStatusLogs() calls getLogBufferCount()/copyLogLineAt() directly, not recentLogsBodyBuffer()/copyRecentLogs() (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
+  executor_or_core: copyLogLineAt
   missing_metadata: []
-  notes: Aggregate-field in /api/status; built by buildStatusJson
+  notes: '#239: reclassified from aggregate-field to api. The prior evidence (web_server.cpp:295, "logs array in buildStatusJson") does not exist in the source - buildStatusJson() never emits a logs field. GET /api/logs is its own standalone text/plain endpoint (src/web/api_logs.cpp), not a field inside /api/status. Promoted to a real console query answering item records (docs/console-protocol.md s.3.1) rather than the fields:/JSON-key model #223 established for scalar aggregate rows; the REST handler and the Console executor deliberately read the log ring through two different functions (see evidence) instead of sharing recentLogsBodyBuffer(), which stays scoped to its one existing caller.'
 - name: system.status.mood
   type: status
   registry_api_path: null

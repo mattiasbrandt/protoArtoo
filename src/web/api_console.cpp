@@ -11,6 +11,16 @@
 //    status queries, single-record guard results) is small; hitting the
 //    capacity is handled explicitly (#240) rather than silently, as a
 //    safety net for whatever lands here next.
+//
+//    `system.status.logs` (#239) is the one exception this path still
+//    answers: its item count can exceed both the record-array cap and the
+//    value arena, but its source (the log ring) is live/mutable, so it
+//    cannot use the streaming path below the way `operations` does (see
+//    handleConsolePost()'s system.status.logs branch for why). Instead the
+//    bounded sink truncates it gracefully - keeping the NEWEST lines, never
+//    a silent per-value truncation, never an HTTP 500 - and reports the
+//    truncation on the JSON response envelope (`"truncated":true`), not as a
+//    new Console Record field. See webOnRecordItem_impl() for the mechanism.
 //  - Streaming path (`operations` and `operations type=<t>` only): the
 //    catalog listing has no fixed size (175 entries and growing) and cannot
 //    fit the bounded path's array or response buffer. See that path's own
@@ -32,12 +42,26 @@
 #include "../../include/console_args.h"  // consoleSplitCommandLine() - the `operations` routing
                                           // check below (#221)
 #include "../../include/web_json_slice_writer.h"
+#include "../../include/web_server.h"   // getLogBufferCount() - #239's system.status.logs
+                                         // peek, below
+#include "../../include/log_buffer.h"   // LOG_LINE_MAX - the per-item arena reserve #239 needs
+                                         // (pure header, no Arduino/FreeRTOS dependency)
 
 // Maximum number of records + value storage for a single BOUNDED response.
 // `operations` never uses this path (see fillOperationsResponse below) -
 // this cap sizes the small, fixed responses every other command produces.
 #define CONSOLE_RESPONSE_RECORDS_MAX 32
 #define CONSOLE_RECORD_VALUE_ARENA 2048
+
+// Worst-case bytes one item's value can consume in the arena. The longest
+// item value any query emits today is a log line (system.status.logs, #239),
+// up to LOG_LINE_MAX-1 bytes. Reserving this much before accepting an item
+// guarantees arenaStoreString() never has to silently truncate a value on
+// this path - an item this file refuses is visible on the wire
+// (webSink.itemsTruncated -> "truncated":true); one arenaStoreString() quietly
+// shortened would not be. Revisit if a future item-emitting query's values
+// can be longer than a log line.
+#define CONSOLE_ITEM_VALUE_RESERVE_BYTES LOG_LINE_MAX
 
 struct ConsoleRecord {
     const char* type;
@@ -61,8 +85,22 @@ struct ConsoleWebSink {
     // closed the group. handleConsolePost() checks this before building any
     // response, so a command that outgrows this path answers with an
     // explicit failure instead of a JSON body that looks complete but is
-    // missing its close (#240).
+    // missing its close (#240). system.status.logs (#239) never reaches this:
+    // its item count is bounded up front by itemsToSkip below, precisely so
+    // it degrades via itemsTruncated instead.
     bool overflowed;
+    // #239: system.status.logs-style graceful item truncation.
+    // itemsToSkip is set once, before consoleExecuteCommand() runs
+    // (handleConsolePost()'s system.status.logs branch), to the number of
+    // OLDEST items to discard so the KEPT items are the newest ones - a
+    // discarded item never touches records[]/valueArena, so skipping costs
+    // nothing, unlike storing-then-evicting an already-kept item would.
+    // itemsTruncated is set the moment any item is skipped this way, or an
+    // item is refused for arena headroom (webOnRecordItem_impl) - reported to
+    // the client on the JSON response envelope ("truncated":true), never as
+    // a new Console Record field; the wire protocol itself is unchanged.
+    size_t itemsToSkip;
+    bool itemsTruncated;
 };
 
 static ConsoleWebSink* g_currentWebSink = nullptr;
@@ -111,10 +149,32 @@ static void webOnRecordField_impl(uint32_t requestId, const char* name, const ch
 
 static void webOnRecordItem_impl(uint32_t requestId, const char* value) {
     if (g_currentWebSink == nullptr) return;
+
+    // #239: discard the oldest items first, before they ever reach the array
+    // or the arena - handleConsolePost()'s system.status.logs branch sets
+    // this to keep the response's items the newest ones, not whichever the
+    // executor's loop (oldest-first, src/console/console_module.cpp) happens
+    // to reach first.
+    if (g_currentWebSink->itemsToSkip > 0) {
+        g_currentWebSink->itemsToSkip--;
+        g_currentWebSink->itemsTruncated = true;
+        return;
+    }
+
     if (g_currentWebSink->recordCount >= CONSOLE_RESPONSE_RECORDS_MAX) {
         g_currentWebSink->overflowed = true;
         return;
     }
+
+    // #239: refuse rather than let arenaStoreString() truncate this value's
+    // bytes silently - a record slot may still be free while the arena is
+    // not, once item values run long (e.g. near-full-length log lines).
+    size_t arenaRemaining = CONSOLE_RECORD_VALUE_ARENA - g_currentWebSink->arenaUsed;
+    if (arenaRemaining < CONSOLE_ITEM_VALUE_RESERVE_BYTES) {
+        g_currentWebSink->itemsTruncated = true;
+        return;
+    }
+
     ConsoleRecord* rec = &g_currentWebSink->records[g_currentWebSink->recordCount++];
     rec->type = "item";
     rec->requestId = requestId;
@@ -358,6 +418,40 @@ void handleConsolePost(WebRequest& req) {
                 return;
             }
 
+            // system.status.logs (#239): the ring can hold up to
+            // LOG_RING_MAX_LINES (48, include/log_buffer.h) lines - more than
+            // the bounded path below can safely hold (webOnRecordItem_impl's
+            // two independent limits: CONSOLE_RESPONSE_RECORDS_MAX's record
+            // array, reserving 2 slots for begin/end, and
+            // CONSOLE_RECORD_VALUE_ARENA's value arena, reserving
+            // CONSOLE_ITEM_VALUE_RESERVE_BYTES per item worst-case). Peeking
+            // at the ring's current count here, before consoleExecuteCommand()
+            // runs, lets the sink discard the OLDEST lines up front (cheaply -
+            // a skipped line never touches records[]/valueArena) so the kept
+            // lines are the most recent ones, not whichever the executor's
+            // oldest-first loop happens to reach before running out of room.
+            //
+            // This does NOT stream like `operations` above: the log ring is
+            // live/mutable mid-response (unlike the compile-time catalog), so
+            // replaying consoleExecuteCommand() once per HTTP chunk could see
+            // a different ring state on each replay and corrupt
+            // sendChunked()'s offset-based framing (include/web_json_slice_writer.h:
+            // "the data a producer reads must be ... stable across the
+            // calls"). The documented fix for that - snapshotting the source
+            // into file-scope state before the send starts - is exactly the
+            // second buffer #239 already ruled out on RAM grounds
+            // (8,580 B free on artoo-esp32 at the ticket's base commit).
+            if (routeName != nullptr && strcmp(routeName, "system.status.logs") == 0) {
+                size_t total = getLogBufferCount();
+                size_t recordCap = CONSOLE_RESPONSE_RECORDS_MAX - 2;  // reserve begin+end
+                size_t arenaCap =
+                    (CONSOLE_RECORD_VALUE_ARENA - CONSOLE_ITEM_VALUE_RESERVE_BYTES) /
+                    CONSOLE_ITEM_VALUE_RESERVE_BYTES;  // one reserve's worth held back for
+                                                        // the begin record's own value
+                size_t cap = (arenaCap < recordCap) ? arenaCap : recordCap;
+                webSink.itemsToSkip = (total > cap) ? (total - cap) : 0;
+            }
+
             g_currentWebSink = &webSink;
 
             // Pass FULL command line to module (not just first token, which enables "help system.status.health")
@@ -388,9 +482,13 @@ void handleConsolePost(WebRequest& req) {
     // The bounded path's capacity was exceeded (#240): answer with an
     // explicit failure rather than a JSON body that dropped records -
     // possibly including the `end` that would have told the client the
-    // group was complete - with nothing on the wire to say so. No command
-    // on this path is known to reach 32 records today; this is the safety
-    // net for whatever does next, not a measured case.
+    // group was complete - with nothing on the wire to say so. This is
+    // still the safety net for whatever hits it unexpectedly; system.status.logs
+    // (#239) reaches this path's array/arena limits routinely (a 48-line ring
+    // is at or near full in normal operation) but never sets `overflowed` -
+    // see webOnRecordItem_impl() and handleConsolePost()'s system.status.logs
+    // branch above, which keep it under both limits deliberately and report
+    // the truncation on the response envelope below instead.
     if (webSink.overflowed) {
         req.send(500, "application/json",
                  "{\"ok\":false,\"error\":\"response too large for this adapter\"}");
@@ -420,6 +518,17 @@ void handleConsolePost(WebRequest& req) {
             recordObj["outcome"] = rec.outcome;
             if (rec.reason != nullptr) recordObj["reason"] = rec.reason;
         }
+    }
+
+    // #239: present exactly when the bounded sink had to drop or refuse an
+    // item (system.status.logs on a near-full ring) - absent on every other
+    // response, matching the "reason= present exactly when there is one"
+    // convention the Console Records themselves already use
+    // (consoleReasonIsPresent(), include/console_record.h). This lives on the
+    // JSON envelope, not as a new Console Record field: the wire protocol
+    // (docs/console-protocol.md) is unchanged by this fix.
+    if (webSink.itemsTruncated) {
+        responseDoc["truncated"] = true;
     }
 
     size_t bodySize = serializeJson(responseDoc, responseBody, sizeof(responseBody));
