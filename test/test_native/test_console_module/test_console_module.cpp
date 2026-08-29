@@ -48,22 +48,9 @@
 #include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
                                   // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
-
-// src/native_test_stubs.cpp's recorded side effect for requestStatusBroadcastNow(),
-// which configCommitApplied() (#226) calls on a successful persist.
-extern unsigned g_test_status_broadcast_count;
-
-// src/native_test_stubs.cpp's recorded Commanded Mode setter side effects
-// (#226's direct-executor dispatch calls these directly, same as the REST
-// handlers whose native tests these globals already back).
-extern bool g_test_commanded_stationary;
-extern bool g_test_commanded_sleep;
-extern unsigned g_test_commanded_sleep_calls;
-extern bool g_test_commanded_web_control;
-extern unsigned g_test_web_control_calls;
-extern bool g_test_commanded_rc_debug;
-extern unsigned g_test_commanded_rc_debug_calls;
-extern unsigned g_test_applied_mood;
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_*/g_test_applied_mood/
+                                         // g_test_status_broadcast_count - control/observe
+                                         // the commanded_modes.h setter stubs (#226)
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.

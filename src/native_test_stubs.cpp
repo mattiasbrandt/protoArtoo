@@ -92,6 +92,8 @@ bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true;
 // Side effects of the config write path, recorded rather than performed so a
 // test can assert that a POST reached them. Zeroed by the test's own setUp().
 #include "commanded_modes.h"
+#include "commanded_modes_test_hooks.h"  // extern declarations for the globals this
+                                         // section defines, type-checked against every consumer
 bool g_test_commanded_stationary = false;
 unsigned g_test_dome_on_cue_count = 0;
 unsigned g_test_status_broadcast_count = 0;
