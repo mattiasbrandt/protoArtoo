@@ -107,6 +107,33 @@ struct EmbeddedCli {
     void (*onCommand)(EmbeddedCli *cli, CliCommand *command);
 
     /**
+     * [PATCH: Catalog completion callback] Optional external source of Tab
+     * completion candidates. When set, it REPLACES bindings-based completion
+     * entirely for this cli instance (bindings and this source are never
+     * merged) and completes the CURRENT TOKEN of the command buffer - the
+     * substring after the last space, or the whole buffer if there is none -
+     * rather than the whole line. This is what lets one callback complete
+     * both an operation name (first token) and a later argument key (a
+     * later token) from the same mechanism, and it avoids the RAM cost of
+     * one CliCommandBinding (20 B) per candidate: a large candidate set (a
+     * project catalog) can be enumerated in place instead of copied into
+     * cli->bindings via embeddedCliAddBinding().
+     *
+     * Called with index = 0, 1, 2, ... until it returns NULL, which ends
+     * enumeration for that call. A completion scan calls this repeatedly and
+     * keeps referencing the FIRST matching candidate's pointer for the rest
+     * of the scan (to compute the shared prefix across candidates), so a
+     * returned pointer must stay valid and byte-identical for the remainder
+     * of one scan: a single shared scratch buffer overwritten on every call
+     * is NOT safe here. A stable pointer (e.g. into a project's flash-
+     * resident table) or an index-stable pool of scratch buffers both are.
+     * @param cli - pointer to cli that is calling this function
+     * @param index - zero-based candidate index for the current token
+     * @return candidate token text, or NULL when index is out of range
+     */
+    const char *(*getCompletionCandidate)(EmbeddedCli *cli, uint16_t index);
+
+    /**
      * Can be used for any application context
      */
     void *appContext;
@@ -249,6 +276,19 @@ bool embeddedCliAddBinding(EmbeddedCli *cli, CliCommandBinding binding);
  * @param cli
  */
 void embeddedCliResetInput(EmbeddedCli *cli);
+
+/**
+ * [PATCH: Catalog completion callback] Return the current, not-yet-submitted
+ * command buffer (NUL-terminated at its current length). Exposed so an
+ * external completion source (EmbeddedCli::getCompletionCandidate) can see
+ * what has been typed so far and decide what it is completing - an
+ * operation name (no space yet) or an argument key (a complete first token
+ * followed by a space).
+ * @param cli
+ * @return pointer to the internal buffer; its contents change on the next
+ * embeddedCliProcess() call, so do not retain the pointer past that.
+ */
+const char *embeddedCliGetCmdBuffer(const EmbeddedCli *cli);
 
 /**
  * Print specified string and account for currently entered but not submitted
