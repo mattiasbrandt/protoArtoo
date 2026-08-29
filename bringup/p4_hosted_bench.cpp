@@ -200,7 +200,16 @@ static struct {
   unsigned int recoveredCount = 0;     // number of ladder runs that reached IDLE again
   bool hasAttempted = false;
   bool lastAttemptSucceeded = false;
-  bool lastRejoinStaConnectAccepted = false;
+  // Rejoin step results, one field per esp_wifi_* call, captured separately
+  // per the 2026-08-29 device review: a single collapsed bool made a real
+  // hardware failure (staConnect=FAILED) undiagnosable. ESP_OK (0) is the
+  // "not yet run this boot" default, same convention as resetState's
+  // esp_err_t fields elsewhere in this file.
+  esp_err_t lastRejoinWifiInitResult = ESP_OK;
+  esp_err_t lastRejoinWifiSetModeResult = ESP_OK;
+  esp_err_t lastRejoinWifiSetConfigResult = ESP_OK;
+  esp_err_t lastRejoinWifiStartResult = ESP_OK;
+  esp_err_t lastRejoinWifiConnectResult = ESP_OK;
   uint32_t lastFailureAtMs = 0;
   uint32_t lastAttemptAtMs = 0;
   uint32_t lastRejoinAtMs = 0;
@@ -503,11 +512,19 @@ static void superviseLink() {
 // and fails during the outage). A bare WiFi.begin() short-circuits on that
 // stale state and never calls esp_wifi_start() again, so esp_wifi_connect()
 // would be sent to a driver that was never started on the freshly-rebooted
-// slave. So the rejoin step below bypasses that shortcut and mirrors the
-// vendor's own recovery sequence (examples/host_hosted_events/main/
-// station_example.c example_wifi_init_sta()) directly: raw esp_wifi_init()
-// + esp_wifi_set_mode() + esp_wifi_start(), then WiFi.STA.connect() (public,
-// not gated on the stale flags) to set fresh credentials and connect.
+// slave. The first cut of this rejoin bypassed WiFi.begin() but handed the
+// actual connect back to WiFi.STA.connect() - which is gated on that same
+// stale Arduino state (_esp_netif, connected()) and failed on hardware
+// (2026-08-29 device review: staConnect=FAILED, undiagnosable because
+// STAClass::connect()'s four return-false branches all log via a
+// compiled-out log_e()). The bypass has to be complete: the rejoin step
+// below mirrors the vendor's own recovery sequence
+// (examples/host_hosted_events/main/station_example.c
+// example_wifi_init_sta()) through raw ESP-IDF calls only, in the vendor's
+// exact order - esp_wifi_init() -> esp_wifi_set_mode() ->
+// esp_wifi_set_config() -> esp_wifi_start() -> esp_wifi_connect() - with
+// every esp_err_t captured and reported individually instead of collapsed
+// into one bool.
 //
 // Runs on its own task, not the Arduino loop() or the esp_event default-loop
 // task: hostedDeinitWiFi()/hostedInitWiFi() and the WiFi calls above can
@@ -612,22 +629,56 @@ static void hostedRecoveryTaskFn(void *arg) {
     }
 
     if (recovered) {
-      // See the banner above for why this is not just another WiFi.begin().
+      // See the banner above for why this bypasses WiFi.begin(). It also
+      // bypasses WiFi.STA.connect(): the 2026-08-29 device review found
+      // staConnect=FAILED undiagnosable (STAClass::connect()'s four
+      // return-false branches - libraries/WiFi/src/STA.cpp:333-361 for the
+      // no-arg overload this file used to route through - all log via
+      // log_e(), compiled out at this build's log level) and asked whether
+      // hostedDeinitWiFi()/hostedInitWiFi() tear down the STA netif first.
+      // Read, not assumed: esp32-hal-hosted.c and esp_hosted_api.c's
+      // esp_hosted_deinit()/esp_hosted_init() contain zero esp_netif
+      // references. Only WiFiGeneric.cpp's wifiLowLevelDeinit() destroys
+      // esp_netifs[ESP_IF_WIFI_STA], and this ladder never calls it - so
+      // STA.cpp's _esp_netif (created once at boot by wifiLowLevelInit())
+      // is never torn down and STAClass::connect()'s _esp_netif==NULL
+      // branch was not the failure. The actual bypass has to be complete:
+      // set the config and connect through raw ESP-IDF calls, in the
+      // vendor's own station_example.c example_wifi_init_sta() order
+      // (mode -> config -> start -> connect, not start -> config as the
+      // rejected version did), with every esp_err_t captured and reported
+      // individually so a future failure is diagnosable without a serial
+      // log level bump.
       wifi_init_config_t wifiInitCfg = WIFI_INIT_CONFIG_DEFAULT();
       const esp_err_t wifiInitResult = esp_wifi_init(&wifiInitCfg);
       const esp_err_t wifiModeResult = esp_wifi_set_mode(WIFI_MODE_STA);
+
+      // Mirrors STAClass::connect()'s own field population
+      // (libraries/WiFi/src/STA.cpp) so the config this bypass sends is
+      // the same shape Arduino would have sent, just not gated on
+      // Arduino's stale driver-started state.
+      wifi_config_t staConfig = {};
+      snprintf(reinterpret_cast<char *>(staConfig.sta.ssid), sizeof(staConfig.sta.ssid), "%s", BENCH_SSID);
+      snprintf(reinterpret_cast<char *>(staConfig.sta.password), sizeof(staConfig.sta.password), "%s", BENCH_PASS);
+      staConfig.sta.threshold.rssi = -127;
+      staConfig.sta.pmf_cfg.capable = true;
+      const esp_err_t wifiConfigResult = esp_wifi_set_config(WIFI_IF_STA, &staConfig);
+
       const esp_err_t wifiStartResult = esp_wifi_start();
-      const bool connectAccepted = WiFi.STA.connect(BENCH_SSID, BENCH_PASS);
+      const esp_err_t wifiConnectResult = esp_wifi_connect();
       const wl_status_t rejoinStatus = WiFi.status();
       const uint32_t rejoinAtMs = millis();
 
       Serial.printf(
         "[BENCH] RECOVERY transport restored after %u attempt(s); WiFi rejoin: wifiInit=%d(%s) "
-        "wifiSetMode=%d(%s) wifiStart=%d(%s) staConnect=%s immediateStatus=%d "
-        "(none of this is eventual association proof).\n",
+        "wifiSetMode=%d(%s) wifiSetConfig=%d(%s) wifiStart=%d(%s) wifiConnect=%d(%s) "
+        "immediateStatus=%d (none of this is eventual association proof; a WL_CONNECTED "
+        "value here is the stale-status lie this ticket already documented, not a usable "
+        "signal).\n",
         attemptsThisRun, static_cast<int>(wifiInitResult), esp_err_to_name(wifiInitResult), static_cast<int>(wifiModeResult),
-        esp_err_to_name(wifiModeResult), static_cast<int>(wifiStartResult), esp_err_to_name(wifiStartResult),
-        connectAccepted ? "accepted" : "FAILED", static_cast<int>(rejoinStatus)
+        esp_err_to_name(wifiModeResult), static_cast<int>(wifiConfigResult), esp_err_to_name(wifiConfigResult),
+        static_cast<int>(wifiStartResult), esp_err_to_name(wifiStartResult), static_cast<int>(wifiConnectResult),
+        esp_err_to_name(wifiConnectResult), static_cast<int>(rejoinStatus)
       );
 
       portENTER_CRITICAL(&benchStateMux);
@@ -639,7 +690,11 @@ static void hostedRecoveryTaskFn(void *arg) {
 
       portENTER_CRITICAL(&recoveryMux);
       recoveryState.recoveredCount++;
-      recoveryState.lastRejoinStaConnectAccepted = connectAccepted;
+      recoveryState.lastRejoinWifiInitResult = wifiInitResult;
+      recoveryState.lastRejoinWifiSetModeResult = wifiModeResult;
+      recoveryState.lastRejoinWifiSetConfigResult = wifiConfigResult;
+      recoveryState.lastRejoinWifiStartResult = wifiStartResult;
+      recoveryState.lastRejoinWifiConnectResult = wifiConnectResult;
       recoveryState.lastRejoinAtMs = rejoinAtMs;
       recoveryState.phase = RecoveryPhase::IDLE;
       portEXIT_CRITICAL(&recoveryMux);
@@ -889,7 +944,13 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   doc["recoveryRecoveredCount"] = recoverySnapshot.recoveredCount;
   doc["recoveryHasAttempted"] = recoverySnapshot.hasAttempted;
   doc["recoveryLastAttemptSucceeded"] = recoverySnapshot.lastAttemptSucceeded;
-  doc["recoveryLastRejoinStaConnectAccepted"] = recoverySnapshot.lastRejoinStaConnectAccepted;
+  // One field per rejoin-step esp_err_t (2026-08-29 device review: a single
+  // collapsed bool made a real hardware failure undiagnosable).
+  doc["recoveryLastRejoinWifiInitResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiInitResult);
+  doc["recoveryLastRejoinWifiSetModeResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiSetModeResult);
+  doc["recoveryLastRejoinWifiSetConfigResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiSetConfigResult);
+  doc["recoveryLastRejoinWifiStartResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiStartResult);
+  doc["recoveryLastRejoinWifiConnectResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiConnectResult);
   doc["recoveryLastFailureAtMs"] = recoverySnapshot.lastFailureAtMs;
   doc["recoveryLastAttemptAtMs"] = recoverySnapshot.lastAttemptAtMs;
   doc["recoveryLastRejoinAtMs"] = recoverySnapshot.lastRejoinAtMs;
@@ -1022,6 +1083,23 @@ static void registerHttpEndpoints() {
 // own NetworkEvents::initNetworkEvents() does exactly this, tolerating
 // ESP_ERR_INVALID_STATE the same way).
 static void registerHostedTransportRecovery() {
+  // Create the recovery task BEFORE registering the event handlers. Order is
+  // load-bearing: hostedTransportFailureHandler() only calls xTaskNotifyGive()
+  // when recoveryTaskHandle is non-null, and it only arms a fresh ladder
+  // (phase IDLE -> ARMED) once per failure - so a failure event that arrived
+  // in the window between "handler registered" and "task created" would set
+  // phase=ARMED, skip the notify (null handle), and then be permanently
+  // unrecoverable: no later event can re-arm from ARMED, only from IDLE.
+  // Unreachable today (this runs before WiFi.begin(), so no SDIO transport
+  // exists yet to fail), but the ordering cost of getting it right first is
+  // one function call, so there is no reason to leave the trap in place for
+  // whenever that stops being true. Flagged in the 2026-08-29 device review.
+  const BaseType_t taskResult = xTaskCreatePinnedToCore(hostedRecoveryTaskFn, "HostedRecovery", 4096, nullptr, 2, &recoveryTaskHandle, 0);
+  if (taskResult != pdPASS) {
+    Serial.println("[BENCH] Failed to create HostedRecovery task; transport-failure events will not be handled.");
+    recoveryTaskHandle = nullptr;
+  }
+
   const esp_err_t loopResult = esp_event_loop_create_default();
   if (loopResult != ESP_OK && loopResult != ESP_ERR_INVALID_STATE) {
     Serial.printf(
@@ -1044,12 +1122,6 @@ static void registerHostedTransportRecovery() {
   err = esp_event_handler_instance_register(ESP_HOSTED_EVENT, ESP_HOSTED_EVENT_TRANSPORT_UP, &hostedTransportUpHandler, nullptr, &transportUpInstance);
   if (err != ESP_OK) {
     Serial.printf("[BENCH] Failed to register ESP_HOSTED_EVENT_TRANSPORT_UP handler: %d (%s)\n", static_cast<int>(err), esp_err_to_name(err));
-  }
-
-  const BaseType_t taskResult = xTaskCreatePinnedToCore(hostedRecoveryTaskFn, "HostedRecovery", 4096, nullptr, 2, &recoveryTaskHandle, 0);
-  if (taskResult != pdPASS) {
-    Serial.println("[BENCH] Failed to create HostedRecovery task; transport-failure events will not be handled.");
-    recoveryTaskHandle = nullptr;
   }
 }
 
