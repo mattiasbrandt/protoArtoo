@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "api_console.h"
+#include "console_catalog.h"
 #include "console_module.h"
 #include "web_request_test_backend.h"
 
@@ -300,14 +301,13 @@ void test_operations_lists_catalog_entries_as_items() {
     runCommand(backend, "operations");
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 
-    // The web sink's response buffer (CONSOLE_RESPONSE_RECORDS_MAX = 32,
-    // api_console.cpp) caps how many of the catalog's 190 entries survive one
-    // HTTP response - a separate, pre-existing capacity limit (#216) that this
-    // ticket does not touch. So this only proves the shared item-building loop
-    // (console_module.cpp:437-463) reaches the sink at all and names a real
-    // entry; the full un-truncated 175/190-entry listing is proven on the
-    // serial adapter by the #215 device transcript, per the section 2.1
-    // "emitted in full without pagination" contract that only serial can carry.
+    // #240 removed the web sink's old CONSOLE_RESPONSE_RECORDS_MAX=32 cap for
+    // this command specifically: `operations` now streams through
+    // WebRequest::sendChunked() instead of the bounded array, so every catalog
+    // entry survives one HTTP response. test_operations_delivers_the_full_
+    // catalog_terminated_by_end() below asserts the exact count; this test
+    // keeps its narrower original job of proving the shared item-building loop
+    // (console_module.cpp:437-463) reaches the sink and names a real entry.
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
     TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "result"));
     size_t itemCount = countRecordsOfType(backend.sentBody, "item");
@@ -325,6 +325,65 @@ void test_operations_lists_catalog_entries_as_items() {
         }
     }
     TEST_ASSERT_TRUE_MESSAGE(foundMove, "operations list missing drive.action.move");
+}
+
+// -----------------------------------------------------------------------------
+// #240: the browser adapter silently truncated `operations` at 32 records
+// (144 of 175 catalog entries dropped, including the closing `end`) with no
+// error and a response that still looked like well-formed JSON. This drives
+// the REAL adapter (handleConsolePost -> consoleExecuteCommand -> the real,
+// in-image catalog) through WebRequestTestBackend's 64-byte chunk buffer
+// (test/stubs/include/web_request_test_backend.h:520), the same
+// offset-replay loop the device backend runs (src/web/web_request_psychic.cpp)
+// with its own 1024-byte chunk - so a filler that mishandled an offset split
+// at a chunk boundary would fail here too, not just at the full device size.
+// -----------------------------------------------------------------------------
+
+void test_operations_delivers_the_full_catalog_terminated_by_end() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    size_t expectedCount = consoleCatalogGetCount();
+    // Sanity check on the fixture itself: the whole point of this test is a
+    // catalog too large for the old 32-record cap to hold.
+    TEST_ASSERT_GREATER_THAN_UINT_MESSAGE(32, expectedCount,
+        "catalog fixture must exceed the old bounded-path cap to prove anything");
+
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(backend.sentBody, "end"),
+        "the group must be terminated by exactly one end record, not dropped");
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "result"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(expectedCount, countRecordsOfType(backend.sentBody, "item"),
+        "operations must deliver every catalog entry, not a truncated subset");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+
+    // The end record must be status=ok outcome=completed, matching a
+    // synchronous query - and it must be the LAST record (nothing after it
+    // in an already-closed group).
+    JsonArrayConst records = doc["records"].as<JsonArrayConst>();
+    JsonObjectConst lastRecord = records[records.size() - 1];
+    TEST_ASSERT_EQUAL_STRING("end", lastRecord["type"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("ok", lastRecord["status"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("completed", lastRecord["outcome"].as<const char*>());
+
+    // The exact defect measured on the live board (coordinator pin, #240):
+    // the truncated response only ever reached the `drive`/`dome` domains and
+    // never a `system.*` entry, which is what left browser Tab completion
+    // unable to complete `sys` -> `system.` while the serial adapter could.
+    bool foundSystemEntry = false;
+    for (JsonObjectConst rec : records) {
+        const char* type = rec["type"];
+        const char* value = rec["value"];
+        if (type && value && strcmp(type, "item") == 0 && strncmp(value, "system.", 7) == 0) {
+            foundSystemEntry = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(foundSystemEntry,
+        "operations must reach the system.* domain, not just the first ~30 catalog entries");
 }
 
 // Registry has exactly 14 status-type entries (docs/action-registry.yaml) -
@@ -508,6 +567,7 @@ int main(int, char**) {
     RUN_TEST(test_empty_command_is_rejected);
     RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);
     RUN_TEST(test_operations_lists_catalog_entries_as_items);
+    RUN_TEST(test_operations_delivers_the_full_catalog_terminated_by_end);
     RUN_TEST(test_operations_type_filter_lists_only_that_type);
     RUN_TEST(test_operations_unknown_type_filter_is_invalid);
     RUN_TEST(test_help_emits_catalog_availability_fields);
