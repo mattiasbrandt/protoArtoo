@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "api_console.h"
+#include "console_module.h"
 #include "web_request_test_backend.h"
 
 void setUp() {
@@ -275,6 +276,216 @@ void test_over_length_line_is_one_result_record_with_line_too_long() {
     TEST_ASSERT_EQUAL_STRING("line-too-long", rec["reason"].as<const char*>());
 }
 
+// -----------------------------------------------------------------------------
+// #219 D1 rework: `operations` puts every catalog entry on the wire as an item
+// record, and an unrecognized `type=` filter is rejected rather than silently
+// answering an empty success. The web adapter's item sink was already wired
+// (src/web/api_console.cpp:webOnRecordItem_impl), so this exercises the shared
+// module logic at console_module.cpp:437-463 that both adapters call through -
+// the serial adapter's own item stub is unreachable from a native test (it is
+// gated on `#ifdef ARDUINO` code never in the native build_src_filter) and is
+// proven instead by the #215 device transcript.
+// -----------------------------------------------------------------------------
+
+void test_operations_lists_catalog_entries_as_items() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    // The web sink's response buffer (CONSOLE_RESPONSE_RECORDS_MAX = 32,
+    // api_console.cpp) caps how many of the catalog's 190 entries survive one
+    // HTTP response - a separate, pre-existing capacity limit (#216) that this
+    // ticket does not touch. So this only proves the shared item-building loop
+    // (console_module.cpp:437-463) reaches the sink at all and names a real
+    // entry; the full un-truncated 175/190-entry listing is proven on the
+    // serial adapter by the #215 device transcript, per the section 2.1
+    // "emitted in full without pagination" contract that only serial can carry.
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "result"));
+    size_t itemCount = countRecordsOfType(backend.sentBody, "item");
+    TEST_ASSERT_TRUE_MESSAGE(itemCount > 0, "operations produced zero item records");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    bool foundMove = false;
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        const char* type = rec["type"];
+        if (!type || strcmp(type, "item") != 0) continue;
+        const char* value = rec["value"];
+        if (value && strstr(value, "drive.action.move") != nullptr) {
+            foundMove = true;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(foundMove, "operations list missing drive.action.move");
+}
+
+// Registry has exactly 14 status-type entries (docs/action-registry.yaml) -
+// few enough to fit under the web response cap with room for begin/end, so
+// this filtered case can assert the exact, complete count.
+void test_operations_type_filter_lists_only_that_type() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations type=status");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(14, countRecordsOfType(backend.sentBody, "item"),
+        "operations type=status must list every status entry, no more, no less");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        const char* type = rec["type"];
+        if (!type || strcmp(type, "item") != 0) continue;
+        const char* value = rec["value"];
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_TRUE_MESSAGE(strstr(value, "(status") != nullptr,
+            "operations type=status listed an entry that is not a status entry");
+    }
+}
+
+// Sub-point of D1: an unrecognized type= value must not answer an empty
+// success (status=ok outcome=completed with zero items is indistinguishable
+// from "no operations of this type exist").
+void test_operations_unknown_type_filter_is_invalid() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "operations type=bogus");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(backend.sentBody, "result"),
+        "an unrecognized type= filter must answer with one type=result record");
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "end"));
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObjectConst rec = doc["records"][0];
+    TEST_ASSERT_EQUAL_STRING("err", rec["status"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("invalid", rec["outcome"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("out-of-range", rec["reason"].as<const char*>());
+}
+
+// -----------------------------------------------------------------------------
+// #219 D3 rework: `help <op>` must render schema/availability from the
+// IN-IMAGE catalog table (ConsoleCatalogEntry) regardless of the FS-resident
+// help file's health - consoleEmitHelpForOperation() used to jump straight
+// from `type` to the file and never touch entry->aliases/params/available_*/
+// executor_ready at all, even though the catalog carries real data for 38
+// alias entries and 29 parameter entries.
+// -----------------------------------------------------------------------------
+
+// drive.action.move: no rc_token (no aliases), two required int16 params.
+void test_help_emits_catalog_availability_fields() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.move");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    char value[64] = {};
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "available_on_board", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "available_in_build", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "requires_web_control", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "executor_ready", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("true", value);
+}
+
+void test_help_emits_params_from_catalog_not_file() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.move");
+
+    char value[128] = {};
+    TEST_ASSERT_TRUE_MESSAGE(fieldValue(backend.sentBody, "params", value, sizeof(value)),
+        "help must render params from the in-image catalog");
+    TEST_ASSERT_EQUAL_STRING("speed:int16:required,steer:int16:required", value);
+
+    // No rc_token on this entry: the aliases field must be entirely absent,
+    // not present-and-empty (matches the reason= field's presence convention).
+    TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "aliases", value, sizeof(value)),
+        "drive.action.move has no rc_token alias and must not carry an aliases field");
+}
+
+// drive.action.speed: has rc_token "drive_speed" (one alias) and one param.
+void test_help_emits_aliases_from_catalog() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help drive.action.speed");
+
+    char value[64] = {};
+    TEST_ASSERT_TRUE_MESSAGE(fieldValue(backend.sentBody, "aliases", value, sizeof(value)),
+        "drive.action.speed has an rc_token alias that must reach help");
+    TEST_ASSERT_EQUAL_STRING("drive_speed", value);
+
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "params", value, sizeof(value)));
+    TEST_ASSERT_EQUAL_STRING("value:float:required", value);
+}
+
+// -----------------------------------------------------------------------------
+// #219 D4 rework: bare `help`'s detach_key field must be adapter-aware - the
+// serial adapter has a real detach convention (Ctrl-C); the browser adapter
+// does not and must not claim one. The web half is reachable through the real
+// handler (webOnRecordField_impl -> WebRequestTestBackend); the serial half
+// needs a direct consoleExecuteCommand() call with CONSOLE_SOURCE_SERIAL,
+// since src/tasks/console_task.cpp itself is native-unreachable.
+// -----------------------------------------------------------------------------
+
+static const int kDetachMaxFields = 8;
+static char g_detachNames[kDetachMaxFields][32];
+static char g_detachValues[kDetachMaxFields][64];
+static int g_detachFieldCount = 0;
+
+static void detachCapBegin(uint32_t, const char*) {}
+static void detachCapField(uint32_t, const char* name, const char* value) {
+    if (g_detachFieldCount >= kDetachMaxFields) return;
+    snprintf(g_detachNames[g_detachFieldCount], sizeof(g_detachNames[0]), "%s", name);
+    snprintf(g_detachValues[g_detachFieldCount], sizeof(g_detachValues[0]), "%s", value);
+    g_detachFieldCount++;
+}
+static void detachCapEnd(uint32_t, ConsoleStatus, ConsoleOutcome, ConsoleReason) {}
+
+static const char* detachFieldNamed(const char* name) {
+    for (int i = 0; i < g_detachFieldCount; i++) {
+        if (strcmp(g_detachNames[i], name) == 0) return g_detachValues[i];
+    }
+    return nullptr;
+}
+
+static void runBareHelpWithSource(ConsoleCommandSource source) {
+    g_detachFieldCount = 0;
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = detachCapBegin;
+    sink.onRecordField = detachCapField;
+    sink.onRecordEnd = detachCapEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = source;
+    req.operationName = "help";
+    consoleExecuteCommand(&req, &sink);
+}
+
+void test_bare_help_serial_source_carries_detach_key() {
+    runBareHelpWithSource(CONSOLE_SOURCE_SERIAL);
+    const char* value = detachFieldNamed("detach_key");
+    TEST_ASSERT_NOT_NULL_MESSAGE(value, "the serial source must carry a detach_key field");
+    TEST_ASSERT_EQUAL_STRING("Ctrl-C", value);
+}
+
+void test_bare_help_web_source_has_no_detach_key() {
+    runBareHelpWithSource(CONSOLE_SOURCE_WEB);
+    TEST_ASSERT_NULL_MESSAGE(detachFieldNamed("detach_key"),
+        "the web adapter has no detach convention and must not claim one");
+}
+
+// Same check through the real HTTP handler (belt-and-braces: proves the web
+// adapter's own source assignment in api_console.cpp, not just the module).
+void test_help_over_web_adapter_has_no_detach_key() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "help");
+    char value[64] = {};
+    TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "detach_key", value, sizeof(value)),
+        "POST /api/console must not claim a detach_key");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -288,5 +499,14 @@ int main(int, char**) {
     RUN_TEST(test_request_ids_are_shared_within_and_advance_between);
     RUN_TEST(test_empty_command_is_rejected);
     RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);
+    RUN_TEST(test_operations_lists_catalog_entries_as_items);
+    RUN_TEST(test_operations_type_filter_lists_only_that_type);
+    RUN_TEST(test_operations_unknown_type_filter_is_invalid);
+    RUN_TEST(test_help_emits_catalog_availability_fields);
+    RUN_TEST(test_help_emits_params_from_catalog_not_file);
+    RUN_TEST(test_help_emits_aliases_from_catalog);
+    RUN_TEST(test_bare_help_serial_source_carries_detach_key);
+    RUN_TEST(test_bare_help_web_source_has_no_detach_key);
+    RUN_TEST(test_help_over_web_adapter_has_no_detach_key);
     return UNITY_END();
 }

@@ -82,7 +82,9 @@ operations
 operations type=action
 ```
 
-- `help` - the command language in brief and how to list operations.
+- `help` - the command language in brief and how to list operations. On
+  serial, carries a `detach_key` field (Ctrl-C - see section 8); the browser
+  adapter has no detach convention and this field is absent there.
 - `help <operation>` - description, argument schema, aliases, current
   availability and its reason. See section 3.4 for the `help_file_status`
   field that reports help file availability.
@@ -91,15 +93,51 @@ operations type=action
   are listed with their reason - discovery shows what exists, not only what can
   run right now.
 
-### 2.1 Operations listing output volume
+### 2.1 Operations listing output volume - no paging (decided, #219 R1)
 
-The `operations` command lists ~190 entries, each 40-60 characters on average,
-totaling approximately 9 KB of output. At 115200 baud this is ~0.8 seconds of
-solid output. On both serial and web transports, the listing is emitted in full
-without pagination. Interleaving log lines do not block output; the command and
-its result are discrete. A reader expecting chunked output should buffer one
-`operations` result as a single logical block before splitting on record
-boundaries.
+The `operations` command lists all 190 catalog entries. Measured, not
+estimated, against the shipped catalog table and `artoo_esp32`'s actual build
+flags (four profiler/admission-trace entries answer `not-in-this-build` on
+that board, each with a longer item line):
+
+```
+entries: 190
+bytes on the wire: 10985
+seconds @115200 8N1 (10 bits/byte): 0.95
+```
+
+**Decision: no paging.** On both serial and web transports the listing is
+emitted in full, in one request. Justification:
+
+- The cost is wire time, not a safety cost. `operations` used to hold the
+  shared serial mutex for that whole window, blocking every other task's log
+  line (#219 R1) - that was the actual defect, and it is fixed by locking
+  per record line (section 3.1), not by paging. With the mutex held per
+  line, `operations`' ~1 s is Core 0 non-real-time wall-clock time; it never
+  touches Core 1 and never delays a log line by more than one record's
+  width. Paging would trade that one linear ~1 s wait for a slower,
+  stateful, multi-round-trip one, for no remaining safety benefit.
+- `operations` is an explicit, operator-typed discovery command, not
+  telemetry - it is not issued in a loop, and a bench operator reading a
+  catalog can wait under a second for it.
+- A paging protocol (chunk size, a `more` continuation, cursor state per
+  session) is real design and state to carry on an already resource-constrained
+  embedded console, for a command whose entire cost is under a second and
+  whose result usefully reassembles by Request ID either way (below).
+- This is a function of the byte count, not a fixed exemption: if the
+  catalog grows by an order of magnitude, or a board ships at a lower baud
+  rate, re-measure (sum each entry's rendered `< id=<n> type=item
+  value=<name> (<type>[, <reason>])\n` line length against the built
+  `src/console/console_catalog.cpp` and that env's actual build flags) and
+  revisit before assuming the answer still holds.
+
+**What "no paging" does NOT mean:** it does not mean the listing is atomic on
+the wire. Per section 3.1, records of one request may be separated by other
+lines - `operations`' 190 `item` records can have log lines from other tasks
+land between them, and a reader reassembles the group by Request ID, not by
+assuming contiguity. The invariant that does hold, unconditionally, is
+section 6's "no line is ever interleaved inside another": every record and
+every log line is whole on the wire, never split mid-line.
 
 ## 3. Results: Console Records
 
@@ -290,6 +328,13 @@ buffered command. No line is ever interleaved inside another.
   controller unchanged (`pio device monitor --raw`, or picocom); a plain
   terminal can still submit complete lines, with imperfect in-line editing.
 - Firmware echoes; host local echo should be off. The prompt is `> `.
+- On connect, before the first prompt, the firmware prints a one-line ready
+  banner naming the detach key: `Controller Console ready. Type 'help' for
+  commands, Ctrl-C to leave.` The firmware states the convention; it never
+  attempts to close a terminal it does not own, and there is no `quit`/`exit`
+  operation. Bare `help` carries the same key as a `detach_key` field
+  (section 2) - serial only, since the browser adapter has no detach
+  convention and must not claim one.
 - 115200 baud on both boards. Attach rules for each board (and the artoo-esp32
   reset-on-open caveat) are in `docs/troubleshooting.md`.
 

@@ -113,6 +113,65 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         sink->onRecordField(requestId, "type", entry->type);
     }
 
+    // Schema and availability fields come from the IN-IMAGE catalog table, not
+    // the FS-resident help file, so they render whether or not the help file
+    // is readable (#219 D3: help_file_status below covers only the prose -
+    // display_name/description/executor - not this). Field names match the
+    // catalog struct / docs/action-registry.yaml keys verbatim (snake_case) on
+    // purpose, distinct from the camelCase used by status-type queries whose
+    // field list mirrors a REST JSON schema (docs/console-protocol.md s.3.5) -
+    // these fields have no REST counterpart to mirror.
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "available_on_board",
+                           entry->available_on_board ? "true" : "false");
+        sink->onRecordField(requestId, "available_in_build",
+                           entry->available_in_build ? "true" : "false");
+        sink->onRecordField(requestId, "requires_web_control",
+                           entry->requires_web_control ? "true" : "false");
+        sink->onRecordField(requestId, "executor_ready",
+                           entry->executor_ready ? "true" : "false");
+    }
+
+    // Aliases: comma-joined into one field value. Neither adapter's record
+    // emitter quotes values today (docs/console-protocol.md s.7 asks for it,
+    // but consoleQuoteValue() is unused - a pre-existing gap out of scope
+    // here), so this stays comma-joined rather than space-separated to keep
+    // the value one whitespace-free token regardless.
+    if (entry->aliases != nullptr) {
+        char aliasesBuf[128] = {};
+        size_t used = 0;
+        for (const char* const* a = entry->aliases; *a != nullptr; ++a) {
+            size_t remaining = sizeof(aliasesBuf) - used;
+            if (remaining <= 1) break;
+            int n = snprintf(aliasesBuf + used, remaining, "%s%s", (used > 0) ? "," : "", *a);
+            if (n < 0) break;
+            used += ((size_t)n < remaining) ? (size_t)n : (remaining - 1);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "aliases", aliasesBuf);
+        }
+    }
+
+    // Params: name:type:required|optional per parameter, comma-joined - same
+    // one-token-per-value constraint as aliases above. Bounds/ranges are not
+    // in this table (they are part of the FS-resident help text, not the
+    // in-image catalog - see #233's rejected "bounds as strings" arm).
+    if (entry->params != nullptr) {
+        char paramsBuf[256] = {};
+        size_t used = 0;
+        for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
+            size_t remaining = sizeof(paramsBuf) - used;
+            if (remaining <= 1) break;
+            int n = snprintf(paramsBuf + used, remaining, "%s%s:%s:%s", (used > 0) ? "," : "",
+                            p->name, p->type, p->required ? "required" : "optional");
+            if (n < 0) break;
+            used += ((size_t)n < remaining) ? (size_t)n : (remaining - 1);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "params", paramsBuf);
+        }
+    }
+
     // Help text from file - addressed by offset+length
     char helpBuf[HELP_TEXT_MAX] = {};
     if (consoleGetHelpText(operationName, entry->help_offset, entry->help_length,
@@ -378,8 +437,13 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             if (sink->onRecordBegin) {
                 sink->onRecordBegin(request->requestId, "help");
             }
-            if (sink->onRecordField) {
-                sink->onRecordField(request->requestId, "detach_key", "Ctrl-C (serial) or close browser tab (web)");
+            // detach_key names how to leave the console (#219 D4). Serial only:
+            // the field used to hand the browser adapter a value it must not
+            // claim ("close browser tab (web)") - the criterion is explicit
+            // that the web adapter has no detach convention of its own. Present
+            // exactly when there is one, matching the reason= field's convention.
+            if (request->source == CONSOLE_SOURCE_SERIAL && sink->onRecordField) {
+                sink->onRecordField(request->requestId, "detach_key", CONSOLE_DETACH_KEY_SERIAL);
             }
             if (sink->onRecordField) {
                 sink->onRecordField(request->requestId, "hint", "Type 'operations' to list all commands");
@@ -425,6 +489,24 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             if (strncmp(args, "type=", 5) == 0) {
                 filterType = args + 5;
             }
+        }
+
+        // A type= filter must name one of the catalog's four types. Without this
+        // check an unrecognized value (typo, or a value from a future registry
+        // type) fell through to a filter that matches nothing and answered
+        // status=ok outcome=completed with zero items - indistinguishable on the
+        // wire from "no operations of this type exist", which hides the typo from
+        // the operator instead of naming it (#219 D1).
+        if (filterType != nullptr &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_ACTION) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_STATUS) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_CONFIG) != 0 &&
+            strcmp(filterType, CONSOLE_CATALOG_TYPE_EVENT) != 0) {
+            if (sink->onRecordResult) {
+                sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_OUT_OF_RANGE);
+            }
+            return;
         }
 
         size_t catalogCount = 0;

@@ -21,6 +21,14 @@ typedef enum {
     CONSOLE_SOURCE_WEB = 1,
 } ConsoleCommandSource;
 
+// The serial adapter's detach convention (Ctrl+C, docs/console-protocol.md
+// section 8; `pio device monitor --exit-char` default 3, not overridden in
+// platformio.ini). Named once so the ready banner (src/tasks/console_task.cpp)
+// and the bare `help` meta-command's detach_key field (console_module.cpp)
+// can't drift apart (#219 D4). The web adapter has no detach convention of its
+// own and must not claim this one - it gets no detach_key field at all.
+#define CONSOLE_DETACH_KEY_SERIAL "Ctrl-C"
+
 // =============================================================================
 // Operation Types (from registry)
 // =============================================================================
