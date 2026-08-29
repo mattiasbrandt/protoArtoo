@@ -886,7 +886,75 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // configApply()'s only contract is to fill a ConfigApplyResult out-parameter,
 // so a second static instance - scoped to this module, never shared with
 // api_config.cpp's - is the justified choice (pin fact 4).
+//
+// That still leaves TWO concurrent writers of this ONE instance: the serial
+// Console task (src/tasks/console_task.cpp, "Console", priority 2, pinned to
+// core 0 - src/main.cpp) and the browser Console's psychic server task
+// (src/web/api_console.cpp), which is explicitly pinned to core 0 too
+// (s_server.config.core_id = 0, src/web/web_request_psychic.cpp). A
+// preemption between the write (configApply()) and either read (the error
+// check, or configCommitApplied()'s replay of result.applied/result.actions)
+// lets one adapter's write corrupt the other's in-flight read - #206's own
+// binding text is explicit that this must not happen ("Serialized at the
+// module seam - browser and serial cannot race configuration persistence or
+// shared result state"). s_configWriteMutex below serializes every caller of
+// consoleWriteScalarConfigField() (Component Toggles and the plain scalar
+// fields both go through it) across the entire configApply() -> error check
+// -> configCommitApplied() window, so only one adapter's request ever has
+// this instance in flight at a time.
 static ConfigApplyResult s_consoleConfigApplyResult;
+
+// A blocking FreeRTOS mutex, not a portMUX critical section: the held window
+// can perform an NVS write (configCommitApplied()'s Preferences call, several
+// ms of flash I/O), and holding interrupts disabled for that long - what a
+// portMUX spinlock does - is unacceptable even confined to Core 0. Blocking
+// one non-realtime Console-adapter task while the OTHER adapter's NVS write
+// finishes is fine: it can never block Core 1 (DriveTask, RCInputTask, ...),
+// which never calls into this module. Static storage (no heap allocation),
+// matching src/main.cpp's own logSerialMutexStorage/logSerialMutex precedent
+// for exactly this "module-scoped mutex, created once at boot" shape.
+// Created from consoleModuleInit(), which setup() calls before either
+// adapter's task/server exists (src/main.cpp), so by the time any command
+// can reach consoleWriteScalarConfigField() the mutex already exists; the
+// null check at each use is the same defensive fallback
+// src/seq_store.cpp's lock() takes for the pre-init boot path.
+static StaticSemaphore_t s_configWriteMutexStorage;
+static SemaphoreHandle_t s_configWriteMutex = nullptr;
+
+// A take that cannot get the mutex within this bound answers "temporarily
+// unavailable" instead of proceeding - the failure mode this exists to
+// prevent is silent corruption, not merely delay, so a bounded wait that can
+// report busy is correct where an unbounded one would just hide the
+// contention behind a longer stall.
+static const TickType_t kConfigWriteMutexTimeoutTicks = pdMS_TO_TICKS(1000);
+
+// RAII scope guard: xSemaphoreGive() runs on every exit path exactly once,
+// including every early return in consoleWriteScalarConfigField() below - a
+// lock leaked on one path would permanently deadlock every future config
+// write on both adapters, a worse defect than the race this section closes.
+class ConfigWriteMutexGuard {
+public:
+    explicit ConfigWriteMutexGuard(SemaphoreHandle_t mutex) : mutex_(mutex), held_(false) {
+        if (mutex_ == nullptr) {
+            held_ = true;  // pre-init fallback: single-threaded boot path, proceed unlocked
+            return;
+        }
+        held_ = (xSemaphoreTake(mutex_, kConfigWriteMutexTimeoutTicks) == pdTRUE);
+    }
+    ~ConfigWriteMutexGuard() {
+        if (held_ && mutex_ != nullptr) {
+            xSemaphoreGive(mutex_);
+        }
+    }
+    bool acquired() const { return held_; }
+
+    ConfigWriteMutexGuard(const ConfigWriteMutexGuard&) = delete;
+    ConfigWriteMutexGuard& operator=(const ConfigWriteMutexGuard&) = delete;
+
+private:
+    SemaphoreHandle_t mutex_;
+    bool held_;
+};
 
 // Bridges a Console write onto the exact param name api_config_apply.cpp's
 // `boolFields[]` table already reads for this field. The wire grammar allows
@@ -974,8 +1042,34 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     params.ctx = &adapter;
     params.get = consoleScalarConfigParamGet;
 
-    configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
-    if (s_consoleConfigApplyResult.error.hasError) {
+    // Serialized against the other Console adapter (s_configWriteMutex's own
+    // declaration comment above has the full reasoning): a scoped guard so
+    // the lock releases as soon as this module's last read of
+    // s_consoleConfigApplyResult is done, in configCommitApplied(), rather
+    // than being held any longer than the shared static needs protecting.
+    bool applyHadError = false;
+    ConfigCommitOutcome commit = {};
+    {
+        ConfigWriteMutexGuard guard(s_configWriteMutex);
+        if (!guard.acquired()) {
+            // The other adapter is mid-write - report busy rather than
+            // proceeding unserialized into the shared static.
+            if (sink->onRecordResult) {
+                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                    CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+            }
+            return;
+        }
+
+        configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
+        applyHadError = s_consoleConfigApplyResult.error.hasError;
+        if (!applyHadError) {
+            CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+            commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
+        }
+    }  // guard released here, after the last read of s_consoleConfigApplyResult
+
+    if (applyHadError) {
         // configApply()'s only failure for a single supplied field is that
         // field's own type/range/enum check - OUT_OF_RANGE matches
         // consoleValidateArgsAgainstSchema()'s classification for the same
@@ -984,8 +1078,6 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
         return;
     }
 
-    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-    ConfigCommitOutcome commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
     if (!commit.persisted) {
         // "a failed NVS write is an explicit error" (criterion 3) - status=err
         // with the module's existing catch-all outcome; no dedicated
@@ -1514,6 +1606,14 @@ void consoleModuleInit(void) {
     // Console module initialization (before LittleFS and web server).
     // The help reader will be set separately via consoleModuleSetHelpReader()
     // after LittleFS is ready (see ADR 0034).
+
+    // Created once, before either adapter's task/server exists (setup()'s
+    // call order, src/main.cpp) - matches src/main.cpp's own paLogInit()
+    // guard for logSerialMutex, and src/seq_store.cpp's seqStoreInit() guard
+    // for its own module mutex.
+    if (s_configWriteMutex == nullptr) {
+        s_configWriteMutex = xSemaphoreCreateMutexStatic(&s_configWriteMutexStorage);
+    }
 
     size_t catalogCount = consoleCatalogGetCount();
     PA_LOG_DEBUG(TAG, "console module initialized, %u operations in catalog", catalogCount);

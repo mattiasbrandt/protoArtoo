@@ -30,11 +30,21 @@
 #include <string>
 #include <vector>
 
+#include <freertos/semphr.h>  // paStubMutexReset()/paStubMutexStorage()/PaStubMutex -
+                              // simulates the OTHER Console adapter holding
+                              // s_configWriteMutex (#226 defect 1 rework)
+
 #include "action_registry.h"
+#include "api_config_apply.h"  // configApply()/ConfigApplyResult/ConfigParamSource -
+                                 // drives the real Apply Core directly for defect 2's
+                                 // table-drift test, bypassing the Console dispatch layer
 #include "api_audio.h"
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
+                                    // proves the table matches configApply() by
+                                    // driving the real Apply Core, not a comment's promise
 #include "console_catalog.h"
 #include "console_module.h"
 #include "log_buffer.h"  // LogBuffer, logBufferInit()/logBufferAppend() - fills the ring
@@ -1080,8 +1090,61 @@ void test_component_toggle_write_rejects_a_malformed_boolean() {
     TEST_ASSERT_EQUAL_STRING("enableAux3", capturedValue("argument"));
 }
 
-// Mirrors test_action_executor_not_ready_count_report's shape for type=config
-// rows - informational, not a pass/fail assertion on the count itself.
+// =============================================================================
+// Component Toggle table drift check (#226 rework, defect 2)
+//
+// include/console_config_fields.h's kComponentToggleFields[] says, in prose,
+// that its paramKey values are "copied verbatim from api_config_apply.cpp's
+// boolFields[] array" and that a rename in one needs a matching edit in the
+// other. Nothing enforced that. This drives configApply() - the real Apply
+// Core, bypassing the Console dispatch layer entirely - directly with each
+// of the 15 entries' paramKey and asserts the named SystemConfig field
+// actually flips. A rename in either table without the other breaks this
+// immediately: configApply() answers "no supported config fields supplied"
+// for the renamed key, or the pointer-to-member reads/writes the wrong
+// field, and either way the assertion below fails.
+// =============================================================================
+
+namespace {
+// The same single-name ConfigParamSource shape test_api_config_apply.cpp's
+// mapGet()/makeSource() establish (ADR 0002 MapReader precedent,
+// include/api_param_source.h) - a single key/value pair, since each
+// Component Toggle write only ever supplies one.
+struct SingleParamCtx {
+    const char* key;
+    const char* value;
+};
+
+const char* singleParamGet(void* ctx, const char* name) {
+    auto* c = static_cast<SingleParamCtx*>(ctx);
+    return strcmp(name, c->key) == 0 ? c->value : nullptr;
+}
+}  // namespace
+
+void test_component_toggle_table_paramkeys_match_config_apply() {
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        const ComponentToggleField& field = kComponentToggleFields[i];
+
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        working.system.*(field.field) = false;  // known starting value
+
+        SingleParamCtx ctx{field.paramKey, "true"};
+        ConfigParamSource params;
+        params.ctx = &ctx;
+        params.get = singleParamGet;
+
+        ConfigApplyResult result = {};
+        configApply(params, &working, working.system.enable_dome_esc, &result);
+
+        char message[96];
+        snprintf(message, sizeof(message), "operation=%s paramKey=%s", field.operationName,
+                 field.paramKey);
+        TEST_ASSERT_FALSE_MESSAGE(result.error.hasError, message);
+        TEST_ASSERT_TRUE_MESSAGE(working.system.*(field.field), message);
+    }
+}
+
 // =============================================================================
 // Non-toggle scalar config rows (#226): applied live, not staged
 // =============================================================================
@@ -1152,6 +1215,80 @@ void test_scalar_config_write_rejects_an_unknown_argument() {
     TEST_ASSERT_EQUAL_STRING("bogus", capturedValue("argument"));
 }
 
+// =============================================================================
+// Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
+// is the sole reader/writer of s_consoleConfigApplyResult, and both Console
+// adapters (serial task, browser's psychic server task - both pinned to
+// Core 0) can call it concurrently. s_configWriteMutex serializes the whole
+// configApply() -> error check -> configCommitApplied() window; these tests
+// simulate the OTHER adapter holding it via the native mutex stub's exposed
+// singleton (paStubMutexStorage()) - consoleModuleInit() creates
+// s_configWriteMutex via xSemaphoreCreateMutexStatic(), which the stub always
+// backs with that same singleton, matching the precedent
+// test_console_serial_output.cpp already set for inspecting/driving
+// paGetSerialMutex()'s stub state the same way.
+// =============================================================================
+
+void test_config_write_reports_busy_when_the_mutex_is_already_held() {
+    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    paStubMutexReset();
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // simulate the OTHER Console adapter mid-write
+
+    runQuery("system.config.enable_arm1 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_arm1,
+                              "a write blocked by contention must never reach the config cache");
+
+    paStubMutexReset();  // release the simulated hold for later tests
+}
+
+// The other half of the same guarantee: a write that DOES acquire the mutex
+// must give it back exactly once, or every later write on both adapters
+// deadlocks forever - a worse defect than the race being fixed.
+void test_config_write_releases_the_mutex_after_a_successful_write() {
+    consoleModuleInit();
+    paStubMutexReset();
+
+    runQuery("system.config.enable_arm2 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the config-write mutex was left held after a write");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give during the write");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(m->takeCount, m->giveCount, "takes and gives are not balanced");
+    TEST_ASSERT_TRUE_MESSAGE(m->takeCount >= 1, "the write did not take the mutex at all");
+
+    paStubMutexReset();
+}
+
+// A rejected write (fails schema validation before ever reaching configApply())
+// must not touch the mutex at all - contention only matters once a write is
+// actually about to reach the shared static.
+void test_config_write_rejected_before_apply_never_touches_the_mutex() {
+    consoleModuleInit();
+    paStubMutexReset();
+
+    runQuery("system.config.enable_aux1 bogus=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "an argument-validation rejection reached the mutex");
+
+    paStubMutexReset();
+}
+
+// Mirrors test_action_executor_not_ready_count_report's shape for type=config
+// rows - informational, not a pass/fail assertion on the count itself.
 void test_config_executor_not_ready_count_report() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -1390,6 +1527,7 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_accepts_the_named_key_not_only_value);
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
+    RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
     RUN_TEST(test_drive_speed_limit_read_and_write);
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
     RUN_TEST(test_aux_led_pin_read_and_write);
@@ -1397,6 +1535,9 @@ int main(int, char**) {
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
     RUN_TEST(test_scalar_config_write_rejects_an_unknown_argument);
+    RUN_TEST(test_config_write_reports_busy_when_the_mutex_is_already_held);
+    RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);
+    RUN_TEST(test_config_write_rejected_before_apply_never_touches_the_mutex);
     RUN_TEST(test_config_executor_not_ready_count_report);
 
     RUN_TEST(test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts);
