@@ -423,9 +423,9 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
 // Log ring stand-in for the one main.cpp owns, which the native build does not
 // compile. Backed by the real log_buffer.cpp ring, so /api/logs tests exercise
 // the actual copy behavior rather than a canned string. Tests fill it through
-// g_test_log_buffer directly (declared in include/log_buffer_test_hooks.h, so
-// this definition and every test's use are compiler-checked against the same
-// types rather than each consumer re-declaring its own `extern`).
+// g_test_log_buffer directly (declared once in include/log_buffer_test_hooks.h,
+// so this definition and every test's use stay compiler-checked against the
+// same types instead of each consumer writing its own top-level declaration).
 #include "log_buffer.h"
 #include "log_buffer_test_hooks.h"
 #include <string.h>  // strncpy() - copyLogLineAt() below
