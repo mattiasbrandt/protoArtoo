@@ -12,17 +12,12 @@
 #include "../../include/config_store.h"
 #include "../../include/wifi_boot_decision.h"
 
-// No native network backend in this build. Today that means FireBeetle 2, whose
-// Hosted backend arrives with #189; it is also the ADR 0032 composition for a
-// Board Variant that declares no network backend at all - such a board runs every
-// droid function and simply never starts a web server.
-//
-// The guard is deliberately !PA_CAP_NATIVE_WIFI and NOT
-// (!PA_CAP_NATIVE_WIFI && !PA_CAP_HOSTED_WIFI): no Hosted implementation exists
-// yet, so tightening it would leave FireBeetle 2 with no definition and break the
-// firebeetle2 link. #189 narrows this guard when it adds
-// web_network_manager_hosted.cpp.
-#if !PA_CAP_NATIVE_WIFI
+// No network backend in this build. FireBeetle 2 now has its own Hosted
+// backend (web_network_manager_hosted.cpp, #189), so this file compiles only
+// for a Board Variant that declares neither PA_CAP_NATIVE_WIFI nor
+// PA_CAP_HOSTED_WIFI - the ADR 0032 zero-backend composition. Such a board
+// runs every droid function and simply never starts a web server.
+#if !PA_CAP_NATIVE_WIFI && !PA_CAP_HOSTED_WIFI
 
 void networkManagerInitialize() {
 }
@@ -51,4 +46,4 @@ bool networkManagerStationConnected() {
     return false;
 }
 
-#endif  // !PA_CAP_NATIVE_WIFI
+#endif  // !PA_CAP_NATIVE_WIFI && !PA_CAP_HOSTED_WIFI
