@@ -39,16 +39,15 @@
 #include "console_module.h"
 #include "log_buffer.h"  // LogBuffer, logBufferInit()/logBufferAppend() - fills the ring
                          // g_test_log_buffer below for system.status.logs (#239)
+#include "log_buffer_test_hooks.h"  // g_test_log_buffer/g_test_log_storage - the same
+                                    // log-ring stand-in test_api_logs.cpp fills
+                                    // (native_test_stubs.cpp; main.cpp's real ring is
+                                    // not compiled in [env:native])
 #include "rc_diagnostics_snapshot.h"
 #include "rc_input.h"
 #include "rc_input_test_hooks.h"  // g_test_dispatch_* - control/observe the
                                   // native stub of dispatchRcTriggerActionTest() (#220)
 #include "robot_state.h"
-
-// The same log-ring stand-in test_api_logs.cpp fills (native_test_stubs.cpp;
-// main.cpp's real ring is not compiled in [env:native]).
-extern LogBuffer g_test_log_buffer;
-extern char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX];
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
