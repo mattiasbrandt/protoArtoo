@@ -17,13 +17,24 @@
 
 #include <ArduinoJson.h>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "api_console.h"
 #include "console_catalog.h"
 #include "console_module.h"
+#include "log_buffer.h"             // LogBuffer, logBufferInit()/logBufferAppend(),
+                                    // LOG_RING_MAX_LINES - #239's overflow fixture
+#include "log_buffer_test_hooks.h"  // g_test_log_buffer/g_test_log_storage - the same
+                                    // log-ring stand-in test_api_logs.cpp and
+                                    // test_console_module.cpp fill
 #include "web_request_test_backend.h"
 
 void setUp() {
+    // Reset to empty before every test (#239) - matches test_api_logs.cpp's
+    // and test_console_module.cpp's own setUp(), so a log-ring test never
+    // sees another test's lines.
+    logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
 }
 
 void tearDown() {
@@ -553,6 +564,120 @@ void test_help_over_web_adapter_has_no_detach_key() {
         "POST /api/console must not claim a detach_key");
 }
 
+// -----------------------------------------------------------------------------
+// #239: system.status.logs over the browser adapter.
+//
+// The defect this guards: CONSOLE_RESPONSE_RECORDS_MAX is 32
+// (src/web/api_console.cpp), LOG_RING_MAX_LINES is 48 (include/log_buffer.h),
+// and the query emits begin + N items + end = N + 2 records - so a ring at
+// 31+ lines overflowed the bounded sink and answered HTTP 500 instead of the
+// log history. A 48-line ring is at or near full in normal operation (any
+// operator running at DEBUG log level), so this was the ordinary browser
+// case, not an edge case. These tests exercise the REAL web handler
+// (handleConsolePost -> consoleExecuteCommand -> the real ring), the same
+// path a live device request takes - not just the module with a test sink.
+// -----------------------------------------------------------------------------
+
+// All item values, in wire order (oldest-recorded first).
+static std::vector<std::string> collectItemValues(const char* body) {
+    std::vector<std::string> out;
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) return out;
+    for (JsonObjectConst rec : doc["records"].as<JsonArrayConst>()) {
+        const char* type = rec["type"];
+        if (type && strcmp(type, "item") == 0) {
+            const char* value = rec["value"];
+            out.push_back(value != nullptr ? value : "");
+        }
+    }
+    return out;
+}
+
+static bool responseIsTruncated(const char* body) {
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) return false;
+    return doc["truncated"] | false;
+}
+
+void test_logs_query_small_ring_is_not_truncated() {
+    for (size_t i = 0; i < 5; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line-%zu", i);
+        logBufferAppend(&g_test_log_buffer, line);
+    }
+
+    WebRequestTestBackend backend;
+    runCommand(backend, "system.status.logs");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
+    TEST_ASSERT_EQUAL_UINT(0, countRecordsOfType(backend.sentBody, "result"));
+    TEST_ASSERT_FALSE_MESSAGE(responseIsTruncated(backend.sentBody),
+        "a ring well under the cap must not be reported as truncated");
+
+    std::vector<std::string> items = collectItemValues(backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT(5, items.size());
+    TEST_ASSERT_EQUAL_STRING("line-0", items.front().c_str());
+    TEST_ASSERT_EQUAL_STRING("line-4", items.back().c_str());
+}
+
+// The defect itself: a ring over the old 32-record cap must answer 200 with
+// the recent history, never HTTP 500.
+void test_logs_query_full_ring_answers_200_not_500() {
+    for (size_t i = 0; i < LOG_RING_MAX_LINES; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line-%zu", i);
+        logBufferAppend(&g_test_log_buffer, line);
+    }
+
+    WebRequestTestBackend backend;
+    runCommand(backend, "system.status.logs");
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode,
+        "a full 48-line ring must not overflow the browser adapter (#239)");
+    TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(backend.sentBody, "end"),
+        "the group must be terminated, not dropped");
+}
+
+// The truncation must be visible on the wire, and it must keep the NEWEST
+// lines - a live diagnostic query is most useful showing what just happened,
+// not the oldest surviving entries.
+void test_logs_query_full_ring_is_truncated_and_keeps_the_newest_lines() {
+    for (size_t i = 0; i < LOG_RING_MAX_LINES; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line-%zu", i);
+        logBufferAppend(&g_test_log_buffer, line);
+    }
+
+    WebRequestTestBackend backend;
+    runCommand(backend, "system.status.logs");
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    TEST_ASSERT_TRUE_MESSAGE(responseIsTruncated(backend.sentBody),
+        "a ring this deep must report truncated:true, not answer silently");
+
+    std::vector<std::string> items = collectItemValues(backend.sentBody);
+    TEST_ASSERT_TRUE_MESSAGE(items.size() > 0, "truncation must not mean zero items");
+    TEST_ASSERT_TRUE_MESSAGE(items.size() < LOG_RING_MAX_LINES,
+        "this test only proves something if fewer than the full ring came back");
+
+    // Newest kept item must be the ring's actual newest line.
+    char newestExpected[32];
+    snprintf(newestExpected, sizeof(newestExpected), "line-%zu", LOG_RING_MAX_LINES - 1);
+    TEST_ASSERT_EQUAL_STRING(newestExpected, items.back().c_str());
+
+    // The oldest line in the ring must NOT be present - recency, not an
+    // arbitrary or oldest-first cutoff.
+    bool foundOldest = false;
+    for (const auto& v : items) {
+        if (v == "line-0") foundOldest = true;
+    }
+    TEST_ASSERT_FALSE_MESSAGE(foundOldest,
+        "truncation must drop the OLDEST lines, keeping the most recent ones");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -576,5 +701,9 @@ int main(int, char**) {
     RUN_TEST(test_bare_help_serial_source_carries_detach_key);
     RUN_TEST(test_bare_help_web_source_has_no_detach_key);
     RUN_TEST(test_help_over_web_adapter_has_no_detach_key);
+
+    RUN_TEST(test_logs_query_small_ring_is_not_truncated);
+    RUN_TEST(test_logs_query_full_ring_answers_200_not_500);
+    RUN_TEST(test_logs_query_full_ring_is_truncated_and_keeps_the_newest_lines);
     return UNITY_END();
 }
