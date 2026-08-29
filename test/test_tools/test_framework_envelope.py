@@ -17,10 +17,24 @@ sys.path.insert(0, str(ROOT / "tools"))
 import check_framework_envelope as cfe  # noqa: E402
 
 
+def references_shared_envelope() -> bool:
+    """Does artoo_esp32 reach any override through `${section.custom_sdkconfig}`?
+
+    Branch-dependent, and deliberately not asserted as a universal fact. The
+    shared [artoo_envelope] section lives on the branch that owns the Framework
+    Envelope work; a branch without it declares the env's overrides inline.
+    Expansion is a real property worth testing, so the test below asserts it
+    wherever a reference exists and skips where there is none.
+    """
+    return "custom_sdkconfig}" in cfe.section_body(cfe.read_ini(), "env:artoo_esp32")
+
+
 class DeclaredOverridesTest(unittest.TestCase):
     def test_env_overrides_include_the_expanded_envelope(self):
-        """The env references ${artoo_envelope.custom_sdkconfig}; the keys behind
-        that reference must be checked, not skipped as an unresolved token."""
+        """A `${section.custom_sdkconfig}` reference must be EXPANDED, not skipped
+        as an unresolved token."""
+        if not references_shared_envelope():
+            self.skipTest("artoo_esp32 declares its overrides inline on this branch")
         overrides = cfe.declared_overrides(cfe.read_ini(), "artoo_esp32")
         self.assertIn("CONFIG_BT_ENABLED", overrides, "envelope reference was not expanded")
         self.assertEqual("n", overrides["CONFIG_BT_ENABLED"])
@@ -63,10 +77,16 @@ class CheckTest(unittest.TestCase):
         """One silently re-selected key is still a failure - the 2026-08-29
         incident lost several at once, but a Kconfig `select` can lose just one."""
         overrides = cfe.declared_overrides(cfe.read_ini(), "artoo_esp32")
+        self.assertTrue(overrides, "artoo_esp32 declares no overrides to flip")
+        # Flip whichever key comes first rather than naming one: the declared set
+        # differs per branch, and a test that hardcodes a key present in only one
+        # platformio.ini layout goes red everywhere else without finding anything.
+        flipped = next(iter(overrides))
         lines = []
         for key, want in overrides.items():
-            if key == "CONFIG_BT_ENABLED":
-                lines.append(f"{key}=y\n")
+            if key == flipped:
+                # A value the checker cannot read as satisfied, whatever `want` is.
+                lines.append(f"{key}={'y' if want != 'y' else 'n'}\n")
             elif want == "n":
                 lines.append(f"# {key} is not set\n")
             else:
