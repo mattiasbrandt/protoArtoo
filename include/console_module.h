@@ -92,13 +92,23 @@ typedef enum {
 } ConsoleReason;
 
 // =============================================================================
-// Request Structure (T1 scope: only system.status.health)
+// Request Structure
 // =============================================================================
 typedef struct {
     uint32_t requestId;
     ConsoleCommandSource source;
-    const char* operationName;  // e.g. "system.status.health"
-    // For T1 (tracer), we only support status queries with no arguments.
+    // The full typed command line, e.g. "system.status.health" or
+    // "dome.action.marcduino-command value=:OP1" - both adapters hand over
+    // the combined "operation key=value ..." string (see
+    // include/console_cli_line.h and src/web/api_console.cpp), never
+    // pre-split. consoleExecuteCommand() splits it into a bare operation
+    // name plus a raw argument remainder as its own first step
+    // (consoleSplitCommandLine(), include/console_args.h), then tokenizes
+    // the remainder into a ConsoleArgs table (consoleParseArgs(), same
+    // header) exactly once - this is the one shared argument contract every
+    // executor reads from, on both adapters (#221, ADR 0034, docs/console-
+    // protocol.md s.1.2).
+    const char* operationName;
 } ConsoleRequest;
 
 // =============================================================================
