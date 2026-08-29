@@ -1262,44 +1262,6 @@ Two items to verify on first build rather than assume:
 - **`connectivity`.** Wi-Fi here is ESP-Hosted over SDIO, not native. The field
   is cosmetic in PlatformIO but the distinction is not.
 
-### Two of the four P4 envs are not the firmware
-
-This has now cost a flash cycle in two separate work streams, so it is recorded
-here rather than in either one's notes. `build_src_filter` decides, not the env
-name:
-
-| Env | What it compiles | Is it the firmware? |
-| --- | --- | --- |
-| `firebeetle2_bringup` | `bringup/p4_bringup.cpp` only; **excludes all of `src/`** | **No.** First-flash stub |
-| `firebeetle2_hosted_bench` | `bringup/p4_hosted_bench.cpp` only; **excludes all of `src/`** | **No.** ESP-Hosted bench harness |
-| `firebeetle2` | extends `firebeetle2_bringup` and compiles `src/` | **Yes** |
-| `firebeetle2_p4_rt_bench` | `src/` **plus** `bringup/p4_rt_bench.cpp` | Yes, plus RT harness |
-
-Flash one of the first two expecting the product and you get a board that boots,
-answers a couple of diagnostic routes, and serves nothing else — which reads as
-broken firmware when it is the wrong target.
-
-> [!IMPORTANT]
-> A new P4 env must also be added to `platforms.esp32p4.envs` in
-> `tools/build_budgets.json`. The Makefile reads that list to choose
-> `PLATFORMIO_CORE_DIR` (`$(HOME)/.platformio-p4` for P4 envs, per ADR 0028), so
-> an unregistered P4 env **silently builds against the artoo-esp32 core dir** —
-> wrong toolchain, no error.
-
-### `src/secrets.h` does not follow worktrees
-
-Wi-Fi credentials live in `src/secrets.h` (`PA_STA_SSID`, `PA_STA_PASSWORD`,
-`PA_AP_PASSWORD`), written by `make setup-wifi` (`tools/configure.py --wifi`).
-It is **gitignored**, so it exists only in the clone where it was generated and
-is **absent from every other worktree** — a build there silently falls back to
-whatever default the target defines. Copy the file in, or re-run
-`make setup-wifi`, before building in a fresh worktree.
-
-> [!NOTE]
-> **Wi-Fi credential persistence is disabled under ESP-Hosted.** There is no NVS
-> fallback: `WiFi.begin(ssid, pass)` must be called explicitly on every boot.
-> Provisioning the board once does not stick.
-
 ## ESP-IDF Notes
 
 - Current stable is **v6.0.2**; the v5.5 LTS line is at **v5.5.5**. pioarduino
