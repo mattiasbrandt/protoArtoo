@@ -14,6 +14,8 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
+
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
 #include "rc_input_active_config.h"
 
@@ -86,6 +88,21 @@ bool configCacheReadActiveDomeEnabled();
 // effect next boot. Tasks read their toggles once at startup, never per iteration.
 void configCacheSetActiveAudioEnabled(bool enabled);
 bool configCacheReadActiveAudioEnabled();
+
+// configCacheSetActiveComponentToggles / configCacheReadActiveComponentToggle:
+// the packed bitmask of every system.config.enable_* value actually running
+// since the last boot, as opposed to configCacheRead()'s SystemConfig fields
+// which reflect the latest persisted (possibly not-yet-applied) toggle write.
+// This is the general form of configCacheSetActiveDomeEnabled/AudioEnabled
+// above for all 15 Component Toggles at once - added for the Controller
+// Console's "read shows saved vs active" answer (#226) rather than 13 more
+// single-bool accessor pairs. Bit index matches
+// include/console_config_fields.h's kComponentToggleFields[] order; that
+// header owns the name<->index mapping, so this stays index-based and
+// name-agnostic. Set once by setup() from the boot config snapshot,
+// mirroring the two calls above.
+void configCacheSetActiveComponentToggles(const SystemConfig& system);
+bool configCacheReadActiveComponentToggle(size_t bitIndex);
 
 // =============================================================================
 // Log level accessor (lightweight, used by logging.h)
