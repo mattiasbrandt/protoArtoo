@@ -514,6 +514,12 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   (void)request;
   JsonDocument doc;
 
+  // Canonical runtime identity, same contract as the production firmware's
+  // /api/status. PA_FIRMWARE_VERSION is injected by tools/extract_version.py,
+  // which this env inherits even though build_src_filter excludes src/. The
+  // ESP-IDF app descriptor carries a different, framework-generated string and
+  // is not this project's version contract.
+  doc["firmwareVersion"] = PA_FIRMWARE_VERSION;
   doc["bootCount"] = benchBootCount;
   doc["resetReason"] = static_cast<int>(esp_reset_reason());
   doc["uptimeMs"] = benchUptimeMs();
@@ -750,6 +756,9 @@ void setup() {
 #endif
 
   Serial.println("\n[BENCH] protoArtoo P4 ESP-Hosted bench initialized.");
+  // Printed before anything else identifying: the pre-flight identity check for
+  // an acceptance run reads this line, not the ESP-IDF app descriptor.
+  Serial.printf("[BENCH] Firmware: %s\n", PA_FIRMWARE_VERSION);
   Serial.printf("[BENCH] Chip: %s\n", ESP.getChipModel());
   Serial.printf("[BENCH] Revision: %u\n", ESP.getChipRevision());
   Serial.printf("[BENCH] Boot count: %u\n", benchBootCount);
