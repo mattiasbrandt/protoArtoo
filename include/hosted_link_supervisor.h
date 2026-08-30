@@ -3,7 +3,7 @@
 //
 // Hosted Link Supervisor Step Core  --  pure phase-model decisions for the
 // bounded ESP-Hosted (ESP32-P4 + ESP32-C6 over SDIO) transport-failure
-// recovery ladder (#189 slice 2).
+// recovery ladder (#189).
 //
 // Device I/O -- hostedDeinitWiFi()/hostedInitWiFi(), the raw esp_wifi_*
 // rejoin, task creation, ESP_HOSTED_EVENT registration, and logging -- all

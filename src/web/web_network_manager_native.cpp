@@ -5,7 +5,7 @@
 // Implements WiFi event handling, registration, and boot posture application
 // using the Arduino WiFi API. The boot posture, connectivity query, and
 // event-translation logic are shared with the hosted backend via
-// web_network_manager_common.h (#189 slice 2 de-duplication); this file owns
+// web_network_manager_common.h (#189 de-duplication); this file owns
 // only the seam entry points and this backend's own Core-1-safe event cache.
 // =============================================================================
 

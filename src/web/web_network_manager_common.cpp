@@ -3,7 +3,7 @@
 //
 // Shared implementation for the network manager seam's Arduino-WiFi-API
 // radio backends. See include/web_network_manager_common.h for why this
-// file exists (#189 slice 2's de-duplication obligation).
+// file exists (#189's de-duplication obligation).
 // =============================================================================
 
 #include "../../include/web_network_manager_common.h"
@@ -126,7 +126,7 @@ void wifiNetworkManagerHandleEventCommon(WiFiEvent_t event, const char* logTag,
             // AP fallback here - wifiDecideBootPosture() has no connectivity
             // input, so there is nothing to re-decide on disconnect. A dead
             // SDIO transport under the hosted backend is a distinct condition
-            // handled by the #189 slice 2 supervisor
+            // handled by the #189 supervisor
             // (ESP_HOSTED_EVENT_TRANSPORT_FAILURE), not by this Arduino-level
             // disconnect event.
             PA_LOG_INFO(logTag, "WiFi connection lost");

@@ -722,7 +722,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         }
 
 #if PA_CAP_HOSTED_WIFI
-        // ESP-Hosted C6 link supervisor state (#189 slice 2). Board Capability
+        // ESP-Hosted C6 link supervisor state (#189). Board Capability
         // Gate, not runtime config -- absent entirely on boards with no
         // Hosted backend rather than emitted with placeholder values.
         {

@@ -4,18 +4,18 @@
 // ESP-Hosted (ESP32-P4 + ESP32-C6 over SDIO) backend for the network manager
 // seam (#188/#189). Implements WiFi event handling, registration, and boot
 // posture application on top of the same Arduino WiFi API the native backend
-// uses, plus (#189 slice 2) a bounded transport-failure recovery ladder for
+// uses, plus (#189) a bounded transport-failure recovery ladder for
 // the C6 co-processor.
 //
-// Boot posture (#189 slice 1): WiFi.mode()/WiFi.begin()/WiFi.softAP()
+// Boot posture (#189): WiFi.mode()/WiFi.begin()/WiFi.softAP()
 // transparently bring the SDIO transport up via hostedInitWiFi() inside the
 // Arduino core's wifiLowLevelInit() (WiFiGeneric.cpp, gated on
 // CONFIG_ESP_HOSTED_ENABLED) and post the same ARDUINO_EVENT_WIFI_* events as
 // the native radio, so the boot-time posture code is identical to the native
-// backend's -- shared via web_network_manager_common.h (#189 slice 2
+// backend's -- shared via web_network_manager_common.h (#189
 // de-duplication).
 //
-// Recovery (#189 slice 2): Arduino's own WiFi.begin() cannot restart a
+// Recovery (#189): Arduino's own WiFi.begin() cannot restart a
 // freshly-reset C6 because its _esp_wifi_started/connected() bookkeeping is
 // stale-true after the reboot and is not cleared by hostedDeinitWiFi()
 // (device-proven, #184 bench session). The rejoin below bypasses WiFi.begin()
@@ -70,7 +70,7 @@ static const char* TAG = "WebServer";
 static volatile bool g_staConnected = false;
 
 // ============================================================================
-// Hosted Transport-Failure Recovery Ladder (#189 slice 2)
+// Hosted Transport-Failure Recovery Ladder (#189)
 //
 // ESP-Hosted's SDIO driver posts ESP_HOSTED_EVENT_TRANSPORT_FAILURE
 // unconditionally when MAX_SDIO_WRITE_RETRY writes fail, then restarts the
@@ -378,7 +378,7 @@ static void hostedRegisterLinkSupervision() {
     }
 }
 
-// Read-only snapshot for /api/status (#189 slice 2).
+// Read-only snapshot for /api/status (#189).
 HostedLinkStatusSnapshot hostedLinkQueryStatus() {
     HostedLinkStatusSnapshot snap;
     portENTER_CRITICAL(&g_hostedLinkMux);

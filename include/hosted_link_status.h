@@ -2,7 +2,7 @@
 // include/hosted_link_status.h
 //
 // Read-only snapshot accessor for the ESP-Hosted C6 link supervisor's phase
-// and counters, exposed to /api/status (#189 slice 2). Only defined on
+// and counters, exposed to /api/status (#189). Only defined on
 // boards where PA_CAP_HOSTED_WIFI is set (src/web/web_network_manager_hosted.cpp);
 // web_server.cpp's call site is itself guarded by the same capability gate,
 // so this header carries no #if of its own -- it is unreachable, not

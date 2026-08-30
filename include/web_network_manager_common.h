@@ -7,10 +7,10 @@
 // STA credential resolution, boot posture application, connectivity query,
 // and ordinary Arduino WiFi event translation.
 //
-// #189 slice 1's critic pass found the two backends byte-identical except
-// comments (~90 shared lines, 16 differing -- all comments). #189 slice 2 is
-// where they genuinely diverge (hosted grows an ESP-Hosted-only
-// transport-failure recovery ladder, entirely in web_network_manager_hosted.cpp),
+// Review found the two backends byte-identical except comments (~90 shared
+// lines, 16 differing -- all comments). The bounded transport-failure recovery
+// ladder is where they genuinely diverge (an ESP-Hosted-only concern, living
+// entirely in web_network_manager_hosted.cpp -- #189),
 // so this file exists to carry the still-identical part once instead of
 // letting the copy grow a second, drifting version of the posture rules.
 //
@@ -36,7 +36,7 @@
 #include "wifi_boot_decision.h"
 
 // Resolve the STA credentials CLIENT_MODE (and the hosted recovery ladder's
-// post-recovery rejoin, #189 slice 2) actually use: the caller-supplied
+// post-recovery rejoin, #189) actually use: the caller-supplied
 // settings, falling back to the Developer WiFi Shortcut (secrets.h, ADR
 // 0015) only when no runtime SSID has ever been saved. Both the boot-time
 // apply and the mid-boot rejoin need the same answer, so this is the one

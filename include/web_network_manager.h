@@ -1,7 +1,7 @@
 // =============================================================================
 // include/web_network_manager.h
 //
-// Project-owned network manager seam (Slice 1 of #188). Handles WiFi event
+// Project-owned network manager seam (#188). Handles WiFi event
 // registration and boot posture application.
 //
 // Architecture:
