@@ -63,7 +63,7 @@ test: ## Run native unit tests
 # a counted failure instead of a vanished `cancelledByParent` entry.
 # tools/slice_verify.py runs the same invocation; keep the flags in sync.
 test-web: ## Run web behavioral tests (node:test)
-	node --test --test-timeout=10000 'test/test_web/test_*.js'
+	node --test --test-reporter=tap --test-timeout=10000 'test/test_web/test_*.js'
 
 test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
 	python3 -m unittest discover -s test/test_tools -q

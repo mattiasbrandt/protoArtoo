@@ -93,7 +93,12 @@ WEB_TEST_DIR = Path("test") / "test_web"
 WEB_TEST_GLOB = "test_*.js"
 # Keep flags in sync with `make test-web`. The gate invokes node directly so
 # base-commit worktrees that predate the make target verify identically.
-WEB_TEST_FLAGS = ["--test", "--test-timeout=10000"]
+# --test-reporter=tap is REQUIRED, not cosmetic: node's default reporter is
+# `spec` on a TTY and became the default everywhere in v26, which prints
+# "\u2139 tests 299" where TAP_COUNT_RE below needs "# tests 299". Without the
+# flag the summary is unparseable and this gate reports the whole web suite
+# and the mutation stage as failures on a tree whose tests all pass.
+WEB_TEST_FLAGS = ["--test", "--test-reporter=tap", "--test-timeout=10000"]
 TAP_COUNT_RE = re.compile(r"^# (tests|pass|fail|cancelled) (\d+)$", re.MULTILINE)
 
 LABEL_WIDTH = 29
