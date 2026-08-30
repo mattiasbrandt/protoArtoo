@@ -3,6 +3,31 @@
 Working spec for using the DFRobot FireBeetle 2 ESP32-P4 and DFR1237 IO
 expansion board as a controller candidate.
 
+## Before you buy one
+
+This sheet documents the FireBeetle 2 for protoArtoo development. It is not a
+recommendation to buy this board for a droid build — that question is still
+open, and this page does not answer it yet.
+
+We have bought two. One works. The other arrived with the image for its ESP32-C6
+radio written to the wrong place in flash, so that board cannot join WiFi at
+all, and you cannot tell which one you have until you power it up. DFRobot has
+publicly acknowledged the affected batch. Recovering a bad board means soldering
+to three unlabelled 2 mm pads and holding all three connected for the eight to
+twelve minutes the write takes — someone attempting exactly that, with a
+purpose-bought jig, a meter and a written procedure, could not keep contact.
+The radio cannot be reflashed through the board's USB port or over WiFi either;
+we tested the wire-free route and a factory radio refuses it.
+
+**If you are building a droid today, use the artoo-esp32 controller.** It is
+fully supported, it is what this project develops against day to day, and none
+of the above applies to it.
+
+This page will say something different once DFRobot ships corrected boards or a
+corrected factory image. Nothing else changes it — not a successful repair on
+our bench, and not more good boards arriving, because neither tells you what is
+in the box you would be opening.
+
 Sources re-verified 2026-08-07. The previous revision of this sheet (2026-05-19)
 was written against the ESP32-P4 datasheet DFRobot hosts on its wiki, which has
 since been superseded twice over. See [Chip Revision: v1.x vs
