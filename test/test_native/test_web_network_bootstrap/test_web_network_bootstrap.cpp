@@ -21,6 +21,7 @@ void setUp() {
     WifiConfig cfg = {};
     configCacheSetActiveWifi(cfg);
     configCacheSetActiveWifiRecovery(false);
+    configCacheSetActiveWifiBootPosture(WifiBootPosture::PROVISIONING);
     networkManagerResetTestState();
 }
 
@@ -66,10 +67,23 @@ void test_networkManagerApplyBootPosture_records_calls() {
     TEST_ASSERT_EQUAL_INT(WifiBootPosture::CLIENT_MODE, networkManagerGetLastPosture());
 }
 
+void test_webNetworkBootstrap_records_the_decided_posture_for_the_hosted_backend_guard() {
+    // The Hosted backend's post-recovery rejoin
+    // (src/web/web_network_manager_hosted.cpp) reads this cache to guard its
+    // STA-only rejoin against non-CLIENT_MODE postures -- the older
+    // configCacheReadActiveWifiRecovery() flag can only say "was it
+    // NETWORK_RECOVERY", not distinguish PROVISIONING/STANDALONE_AP_MODE from
+    // CLIENT_MODE (#189). An unprovisioned, non-recovery, no-developer-shortcut
+    // boot (the native test env has no secrets.h) decides PROVISIONING.
+    webNetworkBootstrap();
+    TEST_ASSERT_EQUAL_INT(WifiBootPosture::PROVISIONING, configCacheReadActiveWifiBootPosture());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_webNetworkBootstrap_runs_pure_decision_logic);
     RUN_TEST(test_networkManagerApplyBootPosture_records_calls);
+    RUN_TEST(test_webNetworkBootstrap_records_the_decided_posture_for_the_hosted_backend_guard);
     return UNITY_END();
 }
 

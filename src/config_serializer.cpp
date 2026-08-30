@@ -89,6 +89,9 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
     out->snd_sys_mode_t = r.readU16("snd_sys_mode_t", def.snd_sys_mode_t);
     out->snd_sys_drv_on = r.readU16("snd_sys_drv_on", def.snd_sys_drv_on);
     out->snd_sys_dome_on = r.readU16("snd_sys_dome_on", def.snd_sys_dome_on);
+    // "snd_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
+    // Preferences key length ceiling (#189).
+    out->snd_sys_net_down = r.readU16("snd_sys_netdown", def.snd_sys_net_down);
     out->snd_rand_min = r.readU16("snd_rand_min", def.snd_rand_min);
     out->snd_rand_max = r.readU16("snd_rand_max", def.snd_rand_max);
     out->snd_int_quiet = r.readU16("snd_int_quiet", def.snd_int_quiet);
@@ -431,6 +434,7 @@ bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
     ok = w.writeU16("snd_sys_mode_t", cfg.snd_sys_mode_t) && ok;
     ok = w.writeU16("snd_sys_drv_on", cfg.snd_sys_drv_on) && ok;
     ok = w.writeU16("snd_sys_dome_on", cfg.snd_sys_dome_on) && ok;
+    ok = w.writeU16("snd_sys_netdown", cfg.snd_sys_net_down) && ok;
     ok = w.writeU16("snd_rand_min", cfg.snd_rand_min) && ok;
     ok = w.writeU16("snd_rand_max", cfg.snd_rand_max) && ok;
     ok = w.writeU16("snd_int_quiet", cfg.snd_int_quiet) && ok;

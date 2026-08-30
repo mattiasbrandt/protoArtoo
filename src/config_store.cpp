@@ -55,6 +55,7 @@ constexpr AudioTrackKeyMapEntry AUDIO_TRACK_KEYS[] = {
     {"sys_mode_t", &AudioConfig::snd_sys_mode_t},
     {"sys_drv_on", &AudioConfig::snd_sys_drv_on},
     {"sys_dome_on", &AudioConfig::snd_sys_dome_on},
+    {"sys_net_down", &AudioConfig::snd_sys_net_down},
     {"rand_min", &AudioConfig::snd_rand_min},
     {"rand_max", &AudioConfig::snd_rand_max},
     {"snd_int_quiet", &AudioConfig::snd_int_quiet},
@@ -188,6 +189,7 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->audio.snd_sys_mode_t = 0;
     snap->audio.snd_sys_drv_on = 0;
     snap->audio.snd_sys_dome_on = 0;
+    snap->audio.snd_sys_net_down = 0;
     snap->audio.snd_rand_min = AUDIO_RAND_TRACK_MIN;
     snap->audio.snd_rand_max = AUDIO_RAND_TRACK_MAX;
     snap->audio.snd_int_quiet = AUDIO_RAND_INT_QUIET;
@@ -345,6 +347,7 @@ ConfigSnapshot configCache = {};
 WifiConfig activeWifiConfig = {};
 RcInputActiveConfig activeRcInputConfig = {};
 bool activeWifiRecovery = false;
+WifiBootPosture activeWifiBootPosture = WifiBootPosture::PROVISIONING;
 bool activeDomeEnabled = false;
 bool activeAudioEnabled = false;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
@@ -430,6 +433,22 @@ bool configCacheReadActiveWifiRecovery() {
     bool result;
     taskENTER_CRITICAL(&configCacheMux);
     result = activeWifiRecovery;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveWifiBootPosture(WifiBootPosture posture) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeWifiBootPosture = posture;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+WifiBootPosture configCacheReadActiveWifiBootPosture() {
+    WifiBootPosture result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeWifiBootPosture;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }

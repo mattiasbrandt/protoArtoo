@@ -31,6 +31,8 @@ enum AudioPlaybackSlot : uint8_t {
     AUDIO_SLOT_SYS_MODE_TURBO,
     AUDIO_SLOT_SYS_DRIVE_ON,
     AUDIO_SLOT_SYS_DOME_ON,
+    AUDIO_SLOT_SYS_NET_DOWN,  // Fires once, entering the terminal
+                              // HostedLinkPhase::Degraded (#189)
     AUDIO_SLOT_COUNT,
 };
 

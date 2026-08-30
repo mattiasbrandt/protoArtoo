@@ -52,7 +52,10 @@
 #include "esp_hosted.h"
 #include "esp_wifi.h"
 
+#include "../../include/audio_task.h"
 #include "../../include/config_cache.h"
+#include "../../include/dome_link.h"
+#include "../../include/hosted_link_degraded_announcement.h"
 #include "../../include/hosted_link_status.h"
 #include "../../include/hosted_link_supervisor.h"
 #include "../../include/logging.h"
@@ -121,12 +124,26 @@ static portMUX_TYPE g_hostedRejoinMux = portMUX_INITIALIZER_UNLOCKED;
 //
 // STA rejoin only: this mirrors the bench, which has no posture concept and
 // is STA-only. A C6 reset while the controller's boot posture was actually
-// AP/Provisioning/Standalone-AP is not addressed here -- hostedDeinitWiFi()/
-// hostedInitWiFi() still recover the transport itself in that case, but this
-// function's esp_wifi_set_mode(WIFI_MODE_STA) would not be the posture the
-// operator was in. Not invented here because it is not proven on hardware;
-// flagged on #189 rather than guessed at.
+// PROVISIONING/STANDALONE_AP_MODE/NETWORK_RECOVERY is guarded below:
+// hostedDeinitWiFi()/hostedInitWiFi() still recover the SDIO transport itself
+// in that case, but this function's esp_wifi_set_mode(WIFI_MODE_STA) would
+// force the operator out of a posture they were deliberately in -- an
+// unprovisioned controller's Provisioning AP would vanish, and a Standalone
+// AP host would be pulled into STA against nothing it asked for. The guard is
+// a no-op, not an AP-side rejoin: implementing recovery for those postures is
+// unproven on hardware and intentionally out of scope here (flagged on #189,
+// not guessed at).
 static void hostedRejoinAfterRecovery() {
+    const WifiBootPosture bootPosture = configCacheReadActiveWifiBootPosture();
+    if (bootPosture != WifiBootPosture::CLIENT_MODE) {
+        PA_LOG_INFO(TAG,
+                    "Hosted link transport recovered, but boot posture is not CLIENT_MODE "
+                    "(posture=%d); leaving it alone rather than forcing WIFI_MODE_STA -- the "
+                    "SDIO transport is already back up via hostedDeinitWiFi()/hostedInitWiFi()",
+                    (int)bootPosture);
+        return;
+    }
+
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     const char* ssid;
@@ -231,6 +248,31 @@ static void hostedRecoveryTaskFn(void* arg) {
                         "degraded state for the rest of this boot. No further automatic recovery "
                         "will be attempted (ADR 0032: no host restart to clear it).",
                         attemptsThisRun);
+
+            // Announce the terminal degraded state without the web UI -- the
+            // C6 *is* the transport, so /api/status alone is insufficient
+            // (#189). This runs exactly once per boot: this whole `else`
+            // arm is reached only on the attempt loop's `outcome.exhausted`
+            // break, which hostedLinkSupervisorRecordAttempt() (the pure step
+            // core) can only return once per boot -- once Degraded is set,
+            // hostedLinkSupervisorOnTransportFailure() refuses to re-arm a
+            // fresh run from it, and this task then parks forever on the next
+            // ulTaskNotifyTake() (see the comment below). No second latch is
+            // added here.
+            //
+            // Both calls are non-blocking (queue timeout 0) and safe from this
+            // task: audioQueuePlaySlot() returns early, without enqueueing,
+            // when sound is disabled at boot (audioOutputInactive() in
+            // src/tasks/audio_task.cpp reads the same staged-at-reboot audio
+            // toggle every other queue helper gates on), and domeQueueTx()
+            // just drops the command if the dome TX queue is full.
+            audioQueuePlaySlot(AUDIO_SLOT_SYS_NET_DOWN, SRC_INTERNAL);
+            if (!domeQueueTx(kHostedLinkDegradedDomeText)) {
+                PA_LOG_WARN(TAG,
+                            "Hosted link degraded announcement: dome TX queue full, "
+                            "\"%s\" dropped",
+                            kHostedLinkDegradedDomeText);
+            }
         }
 
         // Falls through to the top of the loop and parks on the next

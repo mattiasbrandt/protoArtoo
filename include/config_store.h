@@ -215,6 +215,11 @@ struct AudioConfig {
     uint16_t snd_sys_mode_t;
     uint16_t snd_sys_drv_on;
     uint16_t snd_sys_dome_on;
+    uint16_t snd_sys_net_down;  // C6 link degraded announcement (#189). NVS
+                                // key is "snd_sys_netdown" (see
+                                // config_serializer.cpp), 15 chars -- the
+                                // ESP-IDF Preferences key length limit -- while
+                                // this struct member keeps the descriptive name.
     uint16_t snd_rand_min;
     uint16_t snd_rand_max;
     uint16_t snd_int_quiet;
