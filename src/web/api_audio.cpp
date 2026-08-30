@@ -35,7 +35,7 @@
 // Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
 //                  startup doodoo failure disco mahna inlove macho gangnam
 //                  uptown celebr stayin harlem pbjtime
-//                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on
+//                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on sys_net_down
 //                  snd_cat_*_lo snd_cat_*_hi, rand_min rand_max
 // =============================================================================
 

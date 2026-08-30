@@ -1756,6 +1756,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_sys_netdown
+
 - name: sound.config.track-assignments
   display_name: Track Assignments
   description: Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)
