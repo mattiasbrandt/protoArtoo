@@ -5,10 +5,13 @@ exhaustion, and the flashing constraints that affect how you collect evidence.
 Written for both the operator and a troubleshooting agent: each section is a
 concrete, ordered procedure with exact commands and decision points.
 
-Base URL: `http://artoo.local` (or the device IP — `GET /api/wifi` → `staIp`, or
-`10.0.0.22` if mDNS is flaky). All HTTP probes work on the **seated** controller;
-esptool flash/write operations do **not**. USB serial monitoring remains readable
-with the reset caveat below.
+Base URL: `http://artoo.local` — the artoo-esp32 controller's default mDNS name
+(or the device IP — `GET /api/wifi` → `staIp`, or `10.0.0.22` if mDNS is
+flaky). A FireBeetle 2 controller answers at `http://firebeetle2.local`
+instead; the two boards default to different names so they never contest each
+other on the same LAN (#242). All HTTP probes work on the **seated**
+controller; esptool flash/write operations do **not**. USB serial monitoring
+remains readable with the reset caveat below.
 
 ---
 
