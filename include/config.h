@@ -432,9 +432,24 @@ constexpr uint8_t PA_LOG_LEVEL_DEBUG = 4;
 //   still reports failsafe activity.
 // - PA_LOG_LEVEL_INFO  (3): normal boot health, service bring-up, state transitions
 // - PA_LOG_LEVEL_DEBUG (4): verbose development logging, including lower-priority events
-// Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags. Defaults to DEBUG if unset.
+// Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags, per environment.
 // This is only the boot default until NVS config loads; the runtime level is the
 // operator's saved logLevel (Setup page).
-#ifndef PA_LOG_LEVEL
-#define PA_LOG_LEVEL 4
+//
+// Required, not defaulted (#244). This used to fall back to DEBUG when unset, so an
+// environment that forgot to declare it shipped verbose logging silently -- extra
+// serial output, timing cost and flash, with nothing to say why. Every environment
+// now declares its own value, and a missing one is a build error rather than a quiet
+// wrong image. Same reasoning as the PA_BOARD guard above.
+#if !defined(PA_LOG_LEVEL)
+  #error "PA_LOG_LEVEL must be defined by platformio.ini build_flags for this environment"
+#endif
+
+// Build Feature Flag (ADR 0029), always 0 or 1 and tested with #if. Required for the
+// same reason as PA_LOG_LEVEL: it is consumed as `#if PA_HEAP_PROFILE`
+// (include/api_profiler.h, src/web/api_profiler.cpp), and an undefined macro there
+// evaluates to 0 silently -- the profiler would simply vanish from a build that meant
+// to have it, with no diagnostic (#244).
+#if !defined(PA_HEAP_PROFILE)
+  #error "PA_HEAP_PROFILE must be defined (0 or 1) by platformio.ini build_flags for this environment"
 #endif
