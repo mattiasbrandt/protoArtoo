@@ -529,6 +529,15 @@ def run_sse_soak(
     baseline_boot_count = _require_field(baseline, "bootCount", int, "baseline /api/status")
     baseline_reset_reason = _require_field(baseline, "resetReason", int, "baseline /api/status")
     baseline_heap = _require_field(baseline, "largestFree8bitBlock", int, "baseline /api/status")
+    # hostedTransportUpEventCount is posted by the SDIO driver's own
+    # transport_active_cb() (bringup/p4_hosted_bench.cpp:574-589), independent
+    # of anything this sketch believes -- the corroborating signal #184 added
+    # after WiFi.status() was shown to report CONNECTED through a dead
+    # transport. Tracked the same way as bootCount: a required baseline plus
+    # a soft per-sample collection below.
+    baseline_transport_up_event_count = _require_field(
+        baseline, "hostedTransportUpEventCount", int, "baseline /api/status"
+    )
 
     # #184: "exactly 3 concurrent SSE clients... Higher counts may be run
     # and logged, but carry no verdict." Read narrowly: it is the ABOVE-cap
@@ -603,6 +612,9 @@ def run_sse_soak(
     heap_samples = _collect_field(reachable_samples, "largestFree8bitBlock", int, schema_anomalies)
     sse_clients_samples = _collect_field(reachable_samples, "sseClientsConnected", int, schema_anomalies)
     ladder_samples = [s.get("recoveryLadderState") for s in reachable_samples if "recoveryLadderState" in s]
+    transport_up_event_count_samples = _collect_field(
+        reachable_samples, "hostedTransportUpEventCount", int, schema_anomalies
+    )
 
     reasons: list[str] = []
 
@@ -625,6 +637,20 @@ def run_sse_soak(
     admission_reached_target = max_sse_clients_observed >= num_clients
 
     ladder_reached_degraded = "degraded" in ladder_samples
+
+    # transport_active_cb() only ever increments; a rise during the soak
+    # means the SDIO link independently reported at least one additional
+    # active transition (recovery ladder or otherwise) beyond the initial
+    # boot-time connect captured in the baseline -- not itself a FAIL
+    # condition (a ladder that fires and recovers without reaching
+    # 'degraded' is the ladder working as designed), but the corroborating
+    # count #184 named this field for.
+    transport_up_event_count_end = (
+        transport_up_event_count_samples[-1]
+        if transport_up_event_count_samples
+        else baseline_transport_up_event_count
+    )
+    transport_up_events_during_soak = transport_up_event_count_end - baseline_transport_up_event_count
 
     if immediate_stall:
         reasons.append(
@@ -708,6 +734,9 @@ def run_sse_soak(
         "admissionReachedTarget": admission_reached_target,
         "recoveryLadderReachedDegraded": ladder_reached_degraded,
         "recoveryLadderStatesObserved": sorted(set(s for s in ladder_samples if s is not None)),
+        "baselineHostedTransportUpEventCount": baseline_transport_up_event_count,
+        "finalHostedTransportUpEventCount": transport_up_event_count_end,
+        "hostedTransportUpEventCountAdvancedBy": transport_up_events_during_soak,
         "statusPollSampleCount": len(status_samples),
         "statusPollUnreachableCount": len(status_samples) - len(reachable_samples),
         "statusPollSchemaAnomalies": schema_anomalies[:50],
@@ -1185,6 +1214,7 @@ FIXTURE_STATUS_BODY = {
     "largestFree8bitBlock": 123456,
     "recoveryLadderState": "idle",
     "hostedTransportFailureCount": 0,
+    "hostedTransportUpEventCount": 0,
     "recoveryAttemptCount": 0,
     "recoveryRecoveredCount": 0,
 }
