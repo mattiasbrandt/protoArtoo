@@ -23,6 +23,27 @@ void test_pa_board_is_defined() {
     TEST_PASS();
 }
 
+// Verify that PA_LOG_LEVEL is defined per-env (checked at compile time via config.h
+// #error) and carries a value the logging tiers actually define.
+//
+// It used to default to DEBUG in config.h when unset, so an environment that forgot
+// to declare it shipped verbose logging silently -- extra serial output, timing cost
+// and flash, with no diagnostic. Every env now declares its own value (#244).
+void test_pa_log_level_is_defined_and_in_range() {
+    // If PA_LOG_LEVEL were undefined, config.h would have errored during inclusion.
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, PA_LOG_LEVEL);
+    TEST_ASSERT_LESS_OR_EQUAL_INT(4, PA_LOG_LEVEL);
+}
+
+// Verify that PA_HEAP_PROFILE is defined per-env and is a Build Feature Flag value.
+//
+// It is consumed as `#if PA_HEAP_PROFILE`, where an undefined macro evaluates to 0
+// silently -- the profiler would vanish from a build that meant to have it. ADR 0029
+// requires such flags to be 0 or 1 and tested with #if (#244).
+void test_pa_heap_profile_is_defined_as_zero_or_one() {
+    TEST_ASSERT_TRUE(PA_HEAP_PROFILE == 0 || PA_HEAP_PROFILE == 1);
+}
+
 // Verify that PA_BOARD has a valid value (artoo-esp32 for native tests)
 void test_pa_board_value_is_valid() {
     TEST_ASSERT_EQUAL_INT(PA_BOARD, PA_BOARD_ARTOO_ESP32);
@@ -93,5 +114,7 @@ int main() {
     RUN_TEST(test_aux_led_selection_to_gpio_mapping);
     RUN_TEST(test_drive_backend_capability_gate_is_declared);
     RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
+    RUN_TEST(test_pa_log_level_is_defined_and_in_range);
+    RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);
     return UNITY_END();
 }

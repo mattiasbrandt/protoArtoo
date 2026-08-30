@@ -41,6 +41,11 @@ class BoardMdnsHostDefault(unittest.TestCase):
         source = "\n".join(
             [
                 f"#define PA_BOARD {board_macro}",
+                # config.h requires these per-env, and #errors without them (#244).
+                # A probe stands in for a build environment, so it declares what any
+                # environment must.
+                "#define PA_LOG_LEVEL 2",
+                "#define PA_HEAP_PROFILE 0",
                 '#include "config.h"',
                 "#include <cstdio>",
                 "int main() { std::fputs(WIFI_MDNS_HOST, stdout); return 0; }",

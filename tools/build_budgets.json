@@ -24,7 +24,8 @@
         "firebeetle2_hosted_bench",
         "firebeetle2_p4_rt_bench",
         "firebeetle2_profiler"
-      ]
+      ],
+      "libs_dir": "esp32p4_es"
     },
     "esp32": {
       "core_dir": "~/.platformio",

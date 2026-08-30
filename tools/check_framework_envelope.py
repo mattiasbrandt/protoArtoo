@@ -106,6 +106,15 @@ def resolved_sdkconfig_path(env: str) -> Path:
     Each chip target gets its own PLATFORMIO_CORE_DIR (see the Makefile), so the
     path depends on which platform the env belongs to - reading the artoo core
     dir while checking a P4 env would silently check the wrong libs.
+
+    The libs directory is NOT always the platform name. The ESP32-P4 links
+    `esp32p4_es`, a silicon-revision variant selected by
+    CONFIG_ESP32P4_SELECTS_REV_LESS_V3, while a stale `esp32p4` sits beside it. This
+    function used to derive the directory from the platform key, so every P4 check
+    read a months-old file carrying stock values and reported overrides as violated
+    on a correctly built image. The registry declares the directory explicitly
+    (`libs_dir`) for the same reason it declares `core_dir`: it is a platform fact,
+    and guessing it produces a confident wrong answer.
     """
     budgets = json.loads(BUDGETS.read_text())
     platforms = budgets.get("platforms", {})
@@ -113,7 +122,8 @@ def resolved_sdkconfig_path(env: str) -> Path:
     chip, core_dir = "esp32", "~/.platformio"
     for name, spec in platforms.items():
         if env in spec.get("envs", []):
-            chip, core_dir = name, spec.get("core_dir", core_dir)
+            chip = spec.get("libs_dir", name)
+            core_dir = spec.get("core_dir", core_dir)
             break
 
     core = Path(os.path.expanduser(core_dir))

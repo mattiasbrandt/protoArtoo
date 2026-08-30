@@ -118,6 +118,10 @@ class FireBeetleRequiredPinGuards(unittest.TestCase):
             "\n".join(
                 [
                     "#define PA_BOARD PA_BOARD_FIREBEETLE2",
+                    # config.h requires these per-env and #errors without them
+                    # (#244); a probe stands in for a build environment.
+                    "#define PA_LOG_LEVEL 2",
+                    "#define PA_HEAP_PROFILE 0",
                     '#include "config.h"',
                     "",
                 ]
