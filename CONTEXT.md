@@ -406,6 +406,10 @@ _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 A per-Board-Variant display string, declared in `include/component_labels.inc`, naming where a Component Toggle's subsystem is physically connected on that specific board — e.g., artoo_esp32 shows "S1" for Drive. Shown to the operator as supplementary detail (such as a tooltip), never as the toggle's canonical name; a board may omit the label where no established legend exists (ADR 0033).
 _Avoid_: component name, toggle name, PCB silkscreen text as the toggle's identity
 
+**Builder Recommendation**:
+The project's purchase advice about a Board Variant: whether the developer docs tell a builder to buy that board. Purely a statement in builder-facing documentation — it changes no code, no Board Capability Gate, and no support level, and a board carries the same support whichever way it reads. It turns on things a Board Capability Gate deliberately cannot attest (ADR 0029): retail unit consistency, whether a defective unit has a realistic recovery path, and what that recovery costs a builder who is not an equipped expert.
+_Avoid_: recommended board (collides with the recommended ongoing WiFi mode), pass tier, support tier, certification
+
 **Board Capability Gate**:
 A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support — a single yes/no fact, or (per ADR 0029's 2026-08-26 amendment) a set of mutually-exclusive supported options with one default, such as a Board Variant's drive backend. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
 _Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
@@ -568,6 +572,7 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 > **Domain expert:** "No — loading, live updates, and saving/applying user actions are different proofs."
 
 ## Flagged Ambiguities
+- "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.
