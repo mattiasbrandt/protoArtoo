@@ -297,6 +297,15 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Preserve useful code comments. Remove or update them only when factually incorrect,
   stale after a code change, or duplicated by clearer nearby documentation.
 - LSP/lint fixes must be resolved by changing the flagged code, not by deleting nearby comments.
+- **Orchestration bookkeeping never ships in source.** A comment may cite a durable public
+  reference — an issue (`#189`), an ADR, a spec sheet, a `file:line` — and CONTRIBUTING.md's
+  "Code standards summary" asks for one where it helps. It may **not** carry the workflow step
+  that produced the code: no slice numbers (`#189 slice 3`), no wave, attempt, or worker
+  identifiers. A slice decomposition lives in one coordinator's dispatch plan, is not
+  recoverable from the repo, and means nothing to whoever holds the file later — the same reason
+  the phase-era `T<NN>` token was dropped from commit scopes, and why per-slice tracking belongs
+  in the issue checklist comment. Write what the code does and why it is that way, then cite the
+  issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
 
 ### Branch model
 
