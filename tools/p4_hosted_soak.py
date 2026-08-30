@@ -904,6 +904,29 @@ def run_c6_reset_recovery(
     baseline_boot_count = _require_field(baseline, "bootCount", int, "baseline /api/status")
     baseline_reset_reason = _require_field(baseline, "resetReason", int, "baseline /api/status")
     baseline_heap = _require_field(baseline, "largestFree8bitBlock", int, "baseline /api/status")
+    # Recovery-ladder baseline (#184, #197): this driver
+    # deliberately provokes ESP_HOSTED_EVENT_TRANSPORT_FAILURE via the C6
+    # reset it is about to trigger, so it is the one place in this harness
+    # where these fields carry the most evidence. Types read from
+    # bringup/p4_hosted_bench.cpp:937-957 -- recoveryLadderState is
+    # recoveryPhaseName()'s const char* (idle/armed/attempting/degraded),
+    # the rest are unsigned int counters, same shapes run_sse_soak() already
+    # validates for hostedTransportUpEventCount.
+    baseline_recovery_ladder_state = _require_field(
+        baseline, "recoveryLadderState", str, "baseline /api/status"
+    )
+    baseline_transport_failure_count = _require_field(
+        baseline, "hostedTransportFailureCount", int, "baseline /api/status"
+    )
+    baseline_transport_up_event_count = _require_field(
+        baseline, "hostedTransportUpEventCount", int, "baseline /api/status"
+    )
+    baseline_recovery_attempt_count = _require_field(
+        baseline, "recoveryAttemptCount", int, "baseline /api/status"
+    )
+    baseline_recovery_recovered_count = _require_field(
+        baseline, "recoveryRecoveredCount", int, "baseline /api/status"
+    )
 
     if baseline_reset_reason in BAD_RESET_REASONS:
         return {
@@ -955,6 +978,7 @@ def run_c6_reset_recovery(
     recovery_reasons: list[str] = []
     saw_unreachable = False
     poll_schema_anomalies: list[str] = []
+    ladder_status_samples: list[dict] = []
     last_status: Optional[dict] = None
     deadline = request_accepted_at + recovery_timeout_s
     while time.monotonic() < deadline:
@@ -968,6 +992,11 @@ def run_c6_reset_recovery(
             saw_unreachable = True
             time.sleep(poll_interval_s)
             continue
+
+        # Recorded on every reachable poll regardless of what the rest of
+        # this iteration decides (recording, not gating -- see the batch
+        # extraction after the loop for why no new FAIL branch reads these).
+        ladder_status_samples.append(last_status)
 
         boot_count_field = last_status.get("bootCount")
         if not isinstance(boot_count_field, int):
@@ -1002,6 +1031,61 @@ def run_c6_reset_recovery(
         time.sleep(poll_interval_s)
 
     recovered_at_s = time.monotonic() - request_accepted_at
+
+    # Batch-extract the recovery-ladder telemetry gathered above, the same
+    # way run_sse_soak() extracts its poll samples: soft per-field
+    # validation through poll_schema_anomalies, never a silent default that
+    # would misreport "ladder never fired" as "ladder field never sampled".
+    # Purely observational -- see the comment on recoveryLadderReachedDegraded
+    # below for why this does not gate the verdict.
+    recovery_ladder_state_samples = _collect_field(
+        ladder_status_samples, "recoveryLadderState", str, poll_schema_anomalies
+    )
+    transport_failure_count_samples = _collect_field(
+        ladder_status_samples, "hostedTransportFailureCount", int, poll_schema_anomalies
+    )
+    transport_up_event_count_samples = _collect_field(
+        ladder_status_samples, "hostedTransportUpEventCount", int, poll_schema_anomalies
+    )
+    recovery_attempt_count_samples = _collect_field(
+        ladder_status_samples, "recoveryAttemptCount", int, poll_schema_anomalies
+    )
+    recovery_recovered_count_samples = _collect_field(
+        ladder_status_samples, "recoveryRecoveredCount", int, poll_schema_anomalies
+    )
+
+    final_recovery_ladder_state = (
+        recovery_ladder_state_samples[-1] if recovery_ladder_state_samples else baseline_recovery_ladder_state
+    )
+    final_transport_failure_count = (
+        transport_failure_count_samples[-1] if transport_failure_count_samples else baseline_transport_failure_count
+    )
+    final_transport_up_event_count = (
+        transport_up_event_count_samples[-1]
+        if transport_up_event_count_samples
+        else baseline_transport_up_event_count
+    )
+    final_recovery_attempt_count = (
+        recovery_attempt_count_samples[-1] if recovery_attempt_count_samples else baseline_recovery_attempt_count
+    )
+    final_recovery_recovered_count = (
+        recovery_recovered_count_samples[-1]
+        if recovery_recovered_count_samples
+        else baseline_recovery_recovered_count
+    )
+    # #184's NO-GO/verdict contract for this driver is bootCount/resetReason/
+    # wifiConnected+hostedIsInitialized/SSE-resume/heap (all above and
+    # unchanged) -- it does not name 'recoveryLadderState reached degraded'
+    # as a FAIL condition of C6-RESET RECOVERY specifically. run_sse_soak()
+    # treats it as a FAIL because a ladder that goes terminal *during an
+    # otherwise-idle soak* is itself the anomaly; here the ladder is
+    # deliberately provoked, and a degraded outcome is already caught by
+    # the "did not observe wifiConnected + hostedIsInitialized again"
+    # reason above (a ladder that reaches degraded cannot also have
+    # restored the transport). Recorded per #197 for evidence, and
+    # intentionally not added as a second, redundant FAIL path -- flagged
+    # on the issue rather than decided here.
+    ladder_reached_degraded = "degraded" in recovery_ladder_state_samples
 
     if not recovery_reasons and not recovered:
         recovery_reasons.append(
@@ -1074,6 +1158,22 @@ def run_c6_reset_recovery(
         "finalLargestFree8bitBlock": post_heap,
         "heapTolerancePct": heap_tolerance_pct,
         "heapRecoveredWithinTolerance": heap_recovered,
+        "baselineRecoveryLadderState": baseline_recovery_ladder_state,
+        "finalRecoveryLadderState": final_recovery_ladder_state,
+        "recoveryLadderStatesObserved": sorted(set(recovery_ladder_state_samples)),
+        "recoveryLadderReachedDegraded": ladder_reached_degraded,
+        "baselineHostedTransportFailureCount": baseline_transport_failure_count,
+        "finalHostedTransportFailureCount": final_transport_failure_count,
+        "hostedTransportFailureCountAdvancedBy": final_transport_failure_count - baseline_transport_failure_count,
+        "baselineHostedTransportUpEventCount": baseline_transport_up_event_count,
+        "finalHostedTransportUpEventCount": final_transport_up_event_count,
+        "hostedTransportUpEventCountAdvancedBy": final_transport_up_event_count - baseline_transport_up_event_count,
+        "baselineRecoveryAttemptCount": baseline_recovery_attempt_count,
+        "finalRecoveryAttemptCount": final_recovery_attempt_count,
+        "recoveryAttemptCountAdvancedBy": final_recovery_attempt_count - baseline_recovery_attempt_count,
+        "baselineRecoveryRecoveredCount": baseline_recovery_recovered_count,
+        "finalRecoveryRecoveredCount": final_recovery_recovered_count,
+        "recoveryRecoveredCountAdvancedBy": final_recovery_recovered_count - baseline_recovery_recovered_count,
         "resetEvidenceBoundary": (last_status or {}).get(
             "resetEvidenceBoundary",
             "GPIO API results require external logic capture plus C6 UART reboot proof",
