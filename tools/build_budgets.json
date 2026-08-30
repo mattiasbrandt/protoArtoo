@@ -22,7 +22,8 @@
         "firebeetle2_bringup",
         "firebeetle2",
         "firebeetle2_hosted_bench",
-        "firebeetle2_p4_rt_bench"
+        "firebeetle2_p4_rt_bench",
+        "firebeetle2_profiler"
       ]
     },
     "esp32": {
