@@ -165,7 +165,7 @@ first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
 which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
 line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Four rules the Makefile cannot enforce for you:
+Six rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
@@ -180,6 +180,25 @@ Four rules the Makefile cannot enforce for you:
   coredump decode are in `docs/troubleshooting.md`.
 - ArduinoOTA starts on Core 0 when WiFi comes up (port 3232). `192.168.4.1` (the
   AP IP) is never the default `OTA_IP`.
+- **Only one of the four P4 environments is the firmware.** `tools/build_budgets.json`
+  -> `platforms.esp32p4.envs` registers four. `firebeetle2` is the product image.
+  `firebeetle2_bringup` and `firebeetle2_hosted_bench` set `build_src_filter = -<*>`
+  and compile a single `bringup/` translation unit, so they contain **none** of
+  `src/`; `firebeetle2_p4_rt_bench` is `+<*>` plus a harness TU, so it is the
+  firmware *and extra code*, not the shipping image. Flashing any of the three
+  while expecting the product yields a board that boots and serves almost nothing
+  — which **presents as broken firmware rather than as the wrong target**, and that
+  misreading is the expensive part. Corollary: a **new** P4 env must be added to
+  that registry, because `Makefile:46` reads it to choose `PLATFORMIO_CORE_DIR`;
+  an unregistered P4 env silently builds against the artoo-esp32 toolchain pool
+  and fails looking like a code problem.
+- **`src/secrets.h` does not follow worktrees.** It is gitignored, so a build in a
+  fresh worktree **silently falls back to placeholder credentials** instead of
+  failing. The resolution order is `-DBENCH_SSID`/`-DBENCH_PASS` -> `src/secrets.h`
+  -> placeholder; the middle term simply vanishes in a new tree. This produced an
+  uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
+  that had been built against the placeholder SSID. Copy it in when you create a
+  worktree, and never commit it.
 
 ## Verification and Reporting
 
