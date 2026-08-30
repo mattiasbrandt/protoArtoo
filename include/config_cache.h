@@ -16,6 +16,7 @@
 
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
 #include "rc_input_active_config.h"
+#include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
 
 // =============================================================================
 // Cache read-write (live runtime state)
@@ -70,6 +71,19 @@ void configCacheReadActiveWifi(WifiConfig* out);
 // configCacheSetActiveWifi().
 void configCacheSetActiveWifiRecovery(bool recovering);
 bool configCacheReadActiveWifiRecovery();
+
+// configCacheSetActiveWifiBootPosture / configCacheReadActiveWifiBootPosture:
+// the full four-way WifiBootPosture actually decided and applied at the last
+// WiFi bootstrap (#189). Distinct from configCacheReadActiveWifiRecovery(),
+// which only answers "was NETWORK_RECOVERY the posture" -- this is needed by
+// the Hosted backend's post-recovery rejoin guard (src/web/web_network_manager_hosted.cpp):
+// only CLIENT_MODE's rejoin bypasses WiFi.begin() and forces WIFI_MODE_STA over
+// raw esp_wifi_*; PROVISIONING/STANDALONE_AP_MODE/NETWORK_RECOVERY must be left
+// alone rather than forced into STA after a C6 transport recovery. Set once by
+// the WiFi bootstrap shell alongside configCacheSetActiveWifi()/
+// configCacheSetActiveWifiRecovery().
+void configCacheSetActiveWifiBootPosture(WifiBootPosture posture);
+WifiBootPosture configCacheReadActiveWifiBootPosture();
 
 // =============================================================================
 // Active component output toggles (staged at reboot per ADR 0027)

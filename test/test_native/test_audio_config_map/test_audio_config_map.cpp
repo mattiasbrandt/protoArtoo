@@ -23,6 +23,7 @@ void test_audioConfigMapBuild_maps_slot_tracks_and_ranges(void) {
     cfg.audio.snd_scream = 101;
     cfg.audio.snd_happy = 202;
     cfg.audio.snd_sys_boot = 303;
+    cfg.audio.snd_sys_net_down = 404;
     cfg.audio.snd_rand_min = 5;
     cfg.audio.snd_rand_max = 50;
     cfg.audio.snd_cat_gen_lo = 10;
@@ -34,6 +35,7 @@ void test_audioConfigMapBuild_maps_slot_tracks_and_ranges(void) {
     TEST_ASSERT_EQUAL_UINT16(101, out.slotTracks[AUDIO_SLOT_NAMED_SCREAM]);
     TEST_ASSERT_EQUAL_UINT16(202, out.slotTracks[AUDIO_SLOT_NAMED_HAPPY]);
     TEST_ASSERT_EQUAL_UINT16(303, out.slotTracks[AUDIO_SLOT_SYS_BOOT]);
+    TEST_ASSERT_EQUAL_UINT16(404, out.slotTracks[AUDIO_SLOT_SYS_NET_DOWN]);
     TEST_ASSERT_EQUAL_UINT16(5, out.randMin);
     TEST_ASSERT_EQUAL_UINT16(50, out.randMax);
     TEST_ASSERT_EQUAL_UINT16(10, out.categoryRanges[AUDIO_CATEGORY_GENERAL].lo);
@@ -63,6 +65,7 @@ void test_audioConfigMapNamedTracks_projects_from_playback_config(void) {
 void test_audioChirpKeyForSlot_known_and_none(void) {
     TEST_ASSERT_EQUAL_STRING("chr_scream", audioChirpKeyForSlot(AUDIO_SLOT_NAMED_SCREAM));
     TEST_ASSERT_EQUAL_STRING("chr_sys_dome_on", audioChirpKeyForSlot(AUDIO_SLOT_SYS_DOME_ON));
+    TEST_ASSERT_EQUAL_STRING("chr_sys_netdown", audioChirpKeyForSlot(AUDIO_SLOT_SYS_NET_DOWN));
     TEST_ASSERT_NULL(audioChirpKeyForSlot(AUDIO_SLOT_NONE));
 }
 

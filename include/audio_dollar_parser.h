@@ -160,6 +160,9 @@ inline const char* audioTrackNvsKey(const char* key) {
     if (__builtin_strcmp(key, "sys_mode_t") == 0) return "snd_sys_mode_t";
     if (__builtin_strcmp(key, "sys_drv_on") == 0) return "snd_sys_drv_on";
     if (__builtin_strcmp(key, "sys_dome_on") == 0) return "snd_sys_dome_on";
+    // NVS key drops the underscore before "down": 15 chars, the ESP-IDF
+    // Preferences key length ceiling (#189).
+    if (__builtin_strcmp(key, "sys_net_down") == 0) return "snd_sys_netdown";
     if (__builtin_strcmp(key, "snd_cat_gen_lo") == 0) return "snd_cat_gen_lo";
     if (__builtin_strcmp(key, "snd_cat_gen_hi") == 0) return "snd_cat_gen_hi";
     if (__builtin_strcmp(key, "snd_cat_chat_lo") == 0) return "snd_cat_chat_lo";

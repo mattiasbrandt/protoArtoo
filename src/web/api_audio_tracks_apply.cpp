@@ -62,7 +62,7 @@ void audioTracksApply(const ConfigParamSource& params, bool catalogSupported, Co
         strcmp(key, "pbjtime") == 0 || strcmp(key, "sys_boot") == 0 ||
         strcmp(key, "sys_mode_n") == 0 || strcmp(key, "sys_mode_s") == 0 ||
         strcmp(key, "sys_mode_t") == 0 || strcmp(key, "sys_drv_on") == 0 ||
-        strcmp(key, "sys_dome_on") == 0;
+        strcmp(key, "sys_dome_on") == 0 || strcmp(key, "sys_net_down") == 0;
 
     const char* bankRaw = configParamGet(params, "bank");
     const char* pageRaw = configParamGet(params, "page");

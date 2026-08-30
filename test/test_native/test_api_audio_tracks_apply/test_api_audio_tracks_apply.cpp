@@ -81,6 +81,24 @@ void test_audioTracksApply_zero_allowed_key_accepts_zero(void) {
     TEST_ASSERT_EQUAL_UINT16(0, snap.audio.snd_doodoo);
 }
 
+// A system slot must accept 0 (unassigned / silent) the same as every other
+// system slot -- the default NVS value is 0, and an operator must be able to
+// explicitly clear a previously-configured track back to "not set" (#189).
+void test_audioTracksApply_sys_net_down_accepts_zero_and_a_real_track(void) {
+    std::map<std::string, std::string> zero = {{"key", "sys_net_down"}, {"track", "0"}};
+    ConfigSnapshot snap = {};
+    AudioTracksApplyResult result;
+    audioTracksApply(makeSource(&zero), true, &snap, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT16(0, snap.audio.snd_sys_net_down);
+
+    std::map<std::string, std::string> assigned = {{"key", "sys_net_down"}, {"track", "17"}};
+    audioTracksApply(makeSource(&assigned), true, &snap, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT16(17, snap.audio.snd_sys_net_down);
+    TEST_ASSERT_EQUAL_STRING("chr_sys_netdown", result.chirpBindingKey);
+}
+
 void test_audioTracksApply_named_track_over_999_rejected(void) {
     std::map<std::string, std::string> m = {{"key", "scream"}, {"track", "1000"}};
     ConfigSnapshot snap = {};
@@ -203,6 +221,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_audioTracksApply_non_integer_track_rejected);
     RUN_TEST(test_audioTracksApply_named_track_zero_rejected);
     RUN_TEST(test_audioTracksApply_zero_allowed_key_accepts_zero);
+    RUN_TEST(test_audioTracksApply_sys_net_down_accepts_zero_and_a_real_track);
     RUN_TEST(test_audioTracksApply_named_track_over_999_rejected);
     RUN_TEST(test_audioTracksApply_named_track_success);
     RUN_TEST(test_audioTracksApply_interval_over_3600_rejected);

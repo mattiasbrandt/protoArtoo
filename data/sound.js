@@ -41,6 +41,7 @@
     { label: "Mode → Turbo", key: "sys_mode_t" },
     { label: "Drives engaged", key: "sys_drv_on" },
     { label: "Dome enabled", key: "sys_dome_on" },
+    { label: "Network Link Lost (auto)", key: "sys_net_down" },
   ];
 
   const NAMED_SLOT_TARGETS = NAMED_SOUNDS
