@@ -396,7 +396,21 @@ constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
 // -----------------------------------------------------------------------------
 // Keep the LAN hostname lowercase for resolver compatibility. AP mode does not
 // advertise mDNS; this hostname is used only when STA WiFi is active.
+//
+// Per Board Variant (#242): two controllers on one LAN must not contest the
+// same mDNS name, and Makefile's `OTA_IP ?= artoo.local` default must not be
+// able to resolve to the wrong board. artoo-esp32 keeps "artoo" unchanged --
+// existing bookmarks, that Makefile default, and docs/troubleshooting.md's
+// http://artoo.local all stay correct. This changes only the default; the
+// Droid Name override (system.mdns_use_name, see configResolvedMdnsHostname()
+// in src/config_store.cpp) is unaffected.
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
 constexpr char WIFI_MDNS_HOST[] = "artoo";
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+constexpr char WIFI_MDNS_HOST[] = "firebeetle2";
+#else
+  #error "PA_BOARD value not recognized in mDNS hostname selection"
+#endif
 #ifndef PA_FIRMWARE_VERSION
 constexpr char PA_FIRMWARE_VERSION[] = "v0.0.0-dev";
 #endif
