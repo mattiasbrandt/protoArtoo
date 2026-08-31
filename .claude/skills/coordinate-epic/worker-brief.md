@@ -57,11 +57,14 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - Never leave a green slice uncommitted.
 
 VERIFICATION (software-verified cap)
-- One PlatformIO build runs on this machine at a time. Wrap EVERY invocation
-  in `flock /tmp/protoartoo-pio.lock` - `pio run`, `pio test`, `make build`,
-  and the slice gate, which builds internally. Keep this worktree on one chip
-  target unless the ticket demands both: alternating targets in one worktree
-  rebuilds the shared framework packages, which every other worktree links.
+- One PlatformIO build runs on this machine at a time, and the tooling takes
+  the lock for you: run `make build`, `make test` and the slice gate plainly.
+  Do NOT put `flock` in front - that nests two locks on one file and is
+  refused (AGENTS.md "The build lock"). Other agents are building here at the
+  same time; the lock serialises you, so do not wait for a window. Keep this
+  worktree on one chip target unless the ticket demands both: alternating
+  targets in one worktree rebuilds the shared framework packages, which every
+  other worktree links.
 - A size that moves with no matching source change is a toolchain fault, not
   your slice. Report it and stop rather than working around it or re-measuring
   until a number looks right; the coordinator owns the repair. Chase a number
