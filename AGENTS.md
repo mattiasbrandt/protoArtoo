@@ -372,10 +372,20 @@ The gate binds on **what receives the push**, not on the act of pushing.
 | Push a `feature/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`, or `exp/` branch you own | Free — no approval |
 | `--force-with-lease` onto that same branch after a rebase | Free — no approval |
 | `gh issue develop` branch creation | Free — no approval |
+| Push a docs, chore, or agent-facing maintenance commit straight to `main` | Free — no approval |
 | Push to any shared integration branch (`phase/*` is retired history) | Explicit operator approval |
 | Open **or** merge a PR | Explicit operator approval |
 | Push a tag | Explicit operator approval |
-| Push to `main`, or self-merge any PR | Never, unconditionally |
+| Push substantive firmware work to `main` outside a PR | Never — it goes through a Mattias-approved PR |
+| Self-merge any PR | Never, unconditionally |
+
+**Docs and chore do not require a PR to `main`.** That is the post-release
+workflow (CONTEXT.md "Post-Release Main Workflow"), live since `v1.0.0` was
+tagged, and the Branch model table above says the same. What still needs a
+Mattias-approved PR is substantive firmware work — including an epic branch,
+which reaches `main` through one PR at closure. The last row is a separate rule
+and is not relaxed by any of this: no agent merges a PR, ever, whoever opened it
+and however small it is.
 
 Pushing worker branches is **encouraged**: commits that exist only in one local
 worktree have no backup, and origin is the backup. The repo is public, so branch
@@ -432,7 +442,9 @@ push to `main`. Mechanism and fallbacks: the docstring in
 
 ### Invariants
 
-- Never commit directly to `main`
+- Never land substantive firmware work directly on `main` — it goes through a
+  Mattias-approved PR. Docs, chore, and agent-facing maintenance commits may land
+  directly (CONTEXT.md "Post-Release Main Workflow")
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
 - Mattias approves every PR merge to `main`, unconditionally — no agent self-merge regardless of change size or risk
 - Merge method for ongoing feature-branch PRs is "Rebase and merge" (the one-time `phase/v1.0.0` exception is history in CONTRIBUTING.md)
