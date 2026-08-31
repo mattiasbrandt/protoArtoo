@@ -371,33 +371,43 @@ constexpr uint32_t WEB_DRIVE_TIMEOUT_MS = 500;  // Web drive command expiry
 constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 
 // -----------------------------------------------------------------------------
-// Task stacks
+// Task stacks (chip-target specific)
 // -----------------------------------------------------------------------------
-// SafetyMonitorTask is the one task stack that has to differ per chip target.
-// What forces it is the profiler image, not the shipping one, and the deepest
-// static call chain below safetyMonitorTask says so directly:
+// Three task stacks differ per chip target. The cause is not the boards, and it
+// is not a general "RISC-V frames are wider": the deepest call chain under each
+// of these tasks runs through newlib, whose float-formatting frames are much
+// wider on RISC-V (_svfprintf_r 800 -> 1152 B, _dtoa_r 160 -> 416) while the
+// P4's allocator frames are smaller and partly cancel it (#245).
 //
-//   artoo_esp32           2720 B     of 3072   ok
-//   firebeetle2           2768 B     of 3072   ok
-//   firebeetle2_profiler  3168 B     of 3072   DOES NOT FIT
+// SIZING RULE, applied to all three: the stack holds the measured worst-case
+// static chain plus 25%, rounded up to the next 512 bytes. Two things make that
+// a rule rather than a preference:
 //
-// The profiler image is the one an operator flashes while chasing a crash, so
-// it is the one that must not crash. 4096 clears its worst case by 928 bytes
-// and costs 1 KB out of the P4's 320 KB of DRAM. ESP32 keeps 3072 unchanged.
+//  - It reproduces, from the measurement alone, the size #245 arrived at by
+//    judgement: that chain is 3152 B, and 3152 * 1.25 = 3940 -> 4096.
+//  - 25% of each chain here is at least 800 B, which covers the interrupt cost
+//    the chain figures deliberately exclude. The RISC-V exception frame is
+//    RV_STK_FRMSZ = 160 B (37 words aligned to 16, riscv/rvruntime-frames.h),
+//    and vectors.S allocates it with save_general_regs on the *interrupted
+//    task's* stack before any switch to the ISR stack -- so a nested pair of
+//    interrupts costs 320 B here, on top of every number below.
 //
-// Where the divergence actually is, since it is narrower than it looks: the
-// task's own frame is 368 B on ESP32 against 400 on ESP32-P4, and on the
-// identical snprintf chain every log line takes, two newlib functions widen
-// sharply on RISC-V -- _svfprintf_r 800 -> 1152 B and _dtoa_r 160 -> 416 --
-// while the P4's allocator frames are smaller, several of them ROM-resident.
-// Those partly cancel: that whole chain costs +160 B on the P4, not +608.
-// So this is a specific divergence in float formatting rather than a general
-// "RISC-V frames are wider", and it is worth stating because the general
-// version of the claim would have justified raising every stack here.
+// Measured chains (tools/stack_usage_report.py against the linked firebeetle2
+// image, #248):
 //
-// Reproduce with `python3 tools/stack_usage_report.py --env <env>
-// --root safetyMonitorTask` over a build made with -fstack-usage; the tool's
-// docstring carries the build command. Evidence and method: issue #245.
+//   DomeTask       3280 B   -> 4100 -> 4608     was 3072, i.e. 208 B SHORT
+//   AuxLedTask     3984 B   -> 4980 -> 5120     was 4096, i.e. 112 B of margin
+//   SafetyMonitor  3152 B   -> 3940 -> 4096     profiler image, the deeper one
+//
+// Every chain is a LOWER bound: indirect calls are not followed. Read the margin
+// as cover for what the measurement cannot see, not as slack to spend.
+//
+// The ESP32 values below are unchanged, and that is a scope decision rather than
+// a clean bill of health -- #248 required the artoo image to stay put. The
+// Xtensa measurement is also much weaker than the RISC-V one: objdump emits
+// ~44% of that image's function bodies as data rather than instructions, so any
+// artoo chain crossing one is truncated. Those numbers can prove an overrun and
+// cannot prove a margin. See #248 for the artoo figures and that caveat.
 //
 // `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
 // only for the selected chip (see "Chip target mapping" above), not 0/1 Board
@@ -406,10 +416,14 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // board variant on either chip inherits the right size without a new case here.
 #if defined(PA_CHIP_TARGET_ESP32P4)
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
 #else
-  #error "SAFETY_MONITOR_STACK_BYTES has no value for this chip target"
+  #error "task stack sizes have no value for this chip target"
 #endif
 
 // DriveTask and DomeLinkTask, sized the same way and for the same reason (#250).

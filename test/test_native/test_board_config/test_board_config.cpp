@@ -68,6 +68,14 @@ void test_safety_monitor_stack_unchanged_on_esp32() {
     TEST_ASSERT_EQUAL_UINT32(3072U, SAFETY_MONITOR_STACK_BYTES);
 }
 
+// Same guard for the two stacks #248 raised on the P4. Both ESP32 branches must
+// stay at the values the shipping artoo image has always had; that is what keeps
+// those changes off it.
+void test_dome_and_aux_led_stacks_unchanged_on_esp32() {
+    TEST_ASSERT_EQUAL_UINT32(3072U, DOME_TASK_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(4096U, AUX_LED_TASK_STACK_BYTES);
+}
+
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
@@ -126,5 +134,6 @@ int main() {
     RUN_TEST(test_pa_log_level_is_defined_and_in_range);
     RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);
     RUN_TEST(test_safety_monitor_stack_unchanged_on_esp32);
+    RUN_TEST(test_dome_and_aux_led_stacks_unchanged_on_esp32);
     return UNITY_END();
 }
