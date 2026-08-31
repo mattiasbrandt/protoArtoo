@@ -20,6 +20,14 @@
 // this ticket. That query gets the two native-provable legs (registry fields
 // == record emitter names) plus a source citation for the third, called out
 // explicitly below rather than silently skipped.
+//
+// #222 adds drive.action.move and the three drive.action.speed-preset-*
+// executors (the drive motion section below). Both drive_arbiter.cpp and
+// src/web/api_drive.cpp are in [env:native]'s build_src_filter, so the
+// consent matrix is proven against the REAL driveArbiterSubmit()/Resolve()
+// state machine handleDrivePost() also drives (test_api_motion_routes.cpp),
+// not a stand-in - "queue/state evidence" per the ticket's own acceptance
+// criterion 4.
 // =============================================================================
 #include <unity.h>
 
@@ -47,6 +55,12 @@
                                     // driving the real Apply Core, not a comment's promise
 #include "console_catalog.h"
 #include "console_module.h"
+#include "drive_arbiter.h"  // driveArbiterInit/Reset/Submit/Resolve() - #222's motion
+                            // executors submit through the REAL arbiter, so its own
+                            // resolve() is the queue/state evidence these tests read
+#include "drive_speed_preset.h"  // SpeedPresetId - #222's speed-preset executors
+#include "failsafe_gate.h"  // failsafeInit() - driveArbiterSubmit()'s WEB_API path
+                            // clears FailsafeLayer::WEB_TIMEOUT through this module
 #include "log_buffer.h"  // LogBuffer, logBufferInit()/logBufferAppend() - fills the ring
                          // g_test_log_buffer below for system.status.logs (#239)
 #include "log_buffer_test_hooks.h"  // g_test_log_buffer/g_test_log_storage - the same
@@ -61,6 +75,28 @@
 #include "commanded_modes_test_hooks.h"  // g_test_commanded_*/g_test_applied_mood/
                                          // g_test_status_broadcast_count - control/observe
                                          // the commanded_modes.h setter stubs (#226)
+
+// Recorded side effects from src/native_test_stubs.cpp - the same externs
+// test_api_motion_routes.cpp declares for the REST side of the same handlers
+// (#222 reuses handleSpeedPresetPost()'s own persistence stub verbatim).
+extern unsigned long g_test_millis;
+extern bool g_test_speed_preset_persist_ok;
+extern SpeedPresetId g_test_persisted_speed_preset;
+
+// A drive command reaches the arbiter only through driveArbiterSubmit(), so
+// resolving it with the same config DriveTask would use is the queue/state
+// evidence #222's acceptance criterion 4 asks for - identical helper to
+// test_api_motion_routes.cpp's own (that file drives the REST handler
+// directly; this one is a separate native test binary, so it is redefined
+// here rather than shared across translation units).
+static DriveOutput resolvedDriveOutput() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    DriveArbiterConfig cfg = {};
+    cfg.speedLimitMax = snap.drive.speedLimitMax;
+    cfg.webDriveTimeoutMs = 60000;
+    return driveArbiterResolve(cfg, millis());
+}
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
@@ -218,6 +254,29 @@ void setUp() {
     g_test_commanded_rc_debug = false;
     g_test_commanded_rc_debug_calls = 0;
     g_test_applied_mood = 0;
+
+    // #222: drive.action.move submits through the REAL arbiter, so the
+    // arbiter must be initialized and reset per test the same way
+    // test_api_motion_routes.cpp's own setUp() does for the REST handler.
+    // Non-zero millis: the arbiter reads timestamp 0 as "never submitted",
+    // so a frozen zero clock would make every submission invisible to
+    // resolvedDriveOutput().
+    g_test_millis = 1000;
+    driveArbiterInit(&robotStateMux);
+    driveArbiterReset();
+    failsafeInit(&robotStateMux);
+    g_test_speed_preset_persist_ok = true;
+    g_test_persisted_speed_preset = SpeedPresetId::Normal;
+    // A non-zero speed cap, matching test_api_motion_routes.cpp's own
+    // setDriveConfig(300) default: the arbiter clamps output to
+    // speedLimitMax, and the blanket zero-config reset above would
+    // otherwise clamp every allowed drive.action.move test's output to 0
+    // regardless of what was submitted, making the clamp indistinguishable
+    // from a rejection.
+    ConfigSnapshot driveDefaults = {};
+    configCacheRead(&driveDefaults);
+    driveDefaults.drive.speedLimitMax = 300;
+    configCacheApply(driveDefaults);
 }
 void tearDown() {}
 
@@ -883,11 +942,14 @@ void test_action_marcduino_command_value_too_long_answers_out_of_range() {
 
 // A config/status-only registry entry (no RobotActionId at all) stays
 // exactly as unready as before this ticket - #220 does not invent a target
-// for operations ACTION_REGISTRY never carried.
+// for operations ACTION_REGISTRY never carried. dome.action.send-command has
+// cpp_enum: null (docs/action-registry.yaml) and is not in
+// g_directActionExecutors[] (console_module.cpp) - genuinely unwired, unlike
+// drive.action.move, which #222 wires below (see "Drive motion actions").
 void test_action_with_no_rc_bindable_target_answers_executor_not_ready() {
     robotState.webControlEnabled = true;
 
-    runQuery("drive.action.move");  // #222's parameterized move action
+    runQuery("dome.action.send-command");
 
     TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
@@ -1435,6 +1497,259 @@ void test_commanded_mode_set_mode_never_reaches_the_queued_dispatch() {
 }
 
 // =============================================================================
+// Drive motion actions (#222): drive.action.move
+//
+// Consent matrix proven against the exact rule handleDrivePost() applies
+// (src/web/api_drive.cpp): blocked = estop || stationary ||
+// (!sbusHealthy && !webControlEnabled). Every case here has a REST-side
+// twin in test_api_motion_routes.cpp (test_drive_is_rejected_while_estopped,
+// test_drive_is_rejected_when_stationary, test_drive_is_rejected_while_sbus_
+// lost_and_web_control_disabled, test_drive_is_allowed_while_sbus_lost_but_
+// web_control_enabled, test_drive_clamps_to_the_configured_speed_cap) - same
+// RobotState inputs, same driveArbiterResolve() evidence, different entry
+// point (consoleExecuteCommand() instead of handleDrivePost()).
+// =============================================================================
+
+void test_drive_move_blocked_while_estopped() {
+    robotState.webControlEnabled = true;
+    robotState.estop = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+    TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
+}
+
+void test_drive_move_blocked_while_stationary() {
+    robotState.webControlEnabled = true;
+    robotState.stationary = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+    TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
+}
+
+// Non-RC control gate (ADR 0027): a non-RC source commanding motion while
+// the RC link is unhealthy is exactly what this Commanded Mode consents to -
+// and only this. webControlEnabled=false with SBUS lost blocks; the same
+// state with webControlEnabled=true (below) does not.
+void test_drive_move_blocked_while_sbus_lost_and_web_control_disabled() {
+    robotState.webControlEnabled = false;
+    robotState.sbusSignalLost = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+    TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
+}
+
+void test_drive_move_allowed_while_sbus_lost_but_web_control_enabled() {
+    robotState.webControlEnabled = true;
+    robotState.sbusSignalLost = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT16(100, resolvedDriveOutput().speed);
+}
+
+// SBUS healthy and web control not enabled: consent is not needed because
+// the gate the pin describes ("a non-RC source commanding motion while the
+// RC link is unhealthy") does not apply - the RC link is fine.
+void test_drive_move_allowed_when_sbus_is_healthy_without_web_control() {
+    robotState.webControlEnabled = false;
+    robotState.sbusSignalLost = false;
+    robotState.sbusHwFailsafe = false;
+
+    runQuery("drive.action.move speed=50 steer=-25");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT16(50, resolvedDriveOutput().speed);
+    TEST_ASSERT_EQUAL_INT16(-25, resolvedDriveOutput().steer);
+}
+
+// A hardware SBUS failsafe is the same "RC link unhealthy" condition as a
+// lost signal (handleDrivePost()'s own sbusHealthy computation ORs both).
+void test_drive_move_blocked_while_sbus_hw_failsafe_and_web_control_disabled() {
+    robotState.webControlEnabled = false;
+    robotState.sbusHwFailsafe = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// driveArbiterResolve() applies its OWN clamp to cfg.speedLimitMax
+// (src/drive_arbiter.cpp) as a second, independent safety net - so reading
+// the output back through resolvedDriveOutput() at the SAME cap the command
+// was submitted under would pass even if consoleExecuteDirectDriveMove()'s
+// own clamp (mirroring handleDrivePost()'s) were deleted entirely, since the
+// arbiter's clamp alone would still produce the same 200/-200. To prove
+// THIS executor clamps its own submission (matching handleDrivePost()
+// verbatim, not merely relying on the arbiter's downstream net), the cap is
+// raised again before resolving: if consoleExecuteDirectDriveMove() had
+// submitted the raw 900/-900, the now-1000 cap would let it straight
+// through and this test would see 900/-900, not 200/-200.
+void test_drive_move_clamps_to_the_configured_speed_cap() {
+    robotState.webControlEnabled = true;
+    ConfigSnapshot snap = {};
+    snap.drive.speedLimitMax = 200;
+    configCacheApply(snap);
+
+    runQuery("drive.action.move speed=900 steer=-900");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot raised = {};
+    configCacheRead(&raised);
+    raised.drive.speedLimitMax = 1000;
+    configCacheApply(raised);
+
+    const DriveOutput resolved = resolvedDriveOutput();
+    TEST_ASSERT_EQUAL_INT16(200, resolved.speed);
+    TEST_ASSERT_EQUAL_INT16(-200, resolved.steer);
+}
+
+void test_drive_move_rejects_a_missing_argument() {
+    robotState.webControlEnabled = true;
+
+    runQuery("drive.action.move speed=100");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("steer", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
+}
+
+// The catalog's own schema (docs/action-registry.yaml: range [-1000, 1000])
+// rejects this before driveArbiterSubmit() is ever reached - distinct from
+// the speed-cap clamp above, which only applies to values already inside
+// the schema's range.
+void test_drive_move_rejects_an_out_of_range_argument() {
+    robotState.webControlEnabled = true;
+
+    runQuery("drive.action.move speed=5000 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
+}
+
+void test_drive_move_rejects_an_unknown_argument() {
+    robotState.webControlEnabled = true;
+
+    runQuery("drive.action.move speed=100 steer=0 turbo=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("turbo", capturedValue("argument"));
+}
+
+// Consent depends on RobotState, never on which adapter asked - the serial
+// terminal is "a trusted local source" for the SAME reason the web adapter
+// is: neither is the RC link (docs/console-implementation-specification.md).
+void test_drive_move_consent_is_identical_from_both_adapters() {
+    robotState.webControlEnabled = false;
+    robotState.sbusSignalLost = true;
+
+    runCommandFrom("drive.action.move speed=100 steer=0", CONSOLE_SOURCE_SERIAL);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+
+    runCommandFrom("drive.action.move speed=100 steer=0", CONSOLE_SOURCE_WEB);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+
+    robotState.webControlEnabled = true;
+
+    runCommandFrom("drive.action.move speed=100 steer=0", CONSOLE_SOURCE_SERIAL);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runCommandFrom("drive.action.move speed=100 steer=0", CONSOLE_SOURCE_WEB);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+}
+
+// =============================================================================
+// Drive motion actions (#222): drive.action.speed-preset-{slow,normal,turbo}
+//
+// applySpeedPresetPersisted() is the SAME function handleSpeedPresetPost()
+// calls (src/web/api_drive.cpp) - reused verbatim, observed here through the
+// same g_test_persisted_speed_preset/g_test_speed_preset_persist_ok stub
+// test_api_motion_routes.cpp already uses (src/native_test_stubs.cpp).
+// handleSpeedPresetPost() applies no estop/stationary/sbus-health gate, so
+// these executors add none - proven explicitly below, not just by omission.
+// =============================================================================
+
+void test_speed_preset_slow_applies_the_persisted_preset() {
+    runQuery("drive.action.speed-preset-slow preset=slow");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(SpeedPresetId::Slow, g_test_persisted_speed_preset);
+}
+
+void test_speed_preset_normal_applies_the_persisted_preset() {
+    runQuery("drive.action.speed-preset-normal preset=normal");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(SpeedPresetId::Normal, g_test_persisted_speed_preset);
+}
+
+void test_speed_preset_turbo_applies_the_persisted_preset() {
+    runQuery("drive.action.speed-preset-turbo preset=turbo");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(SpeedPresetId::Turbo, g_test_persisted_speed_preset);
+}
+
+// Each speed-preset action's own catalog schema pins `preset` to that
+// action's own name (docs/action-registry.yaml `values:` per entry) - a
+// mismatched value is a schema failure, not a silently-ignored argument.
+void test_speed_preset_rejects_a_mismatched_preset_value() {
+    runQuery("drive.action.speed-preset-slow preset=turbo");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_speed_preset_rejects_a_missing_argument() {
+    runQuery("drive.action.speed-preset-normal");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+void test_speed_preset_reports_a_failed_persist_as_an_explicit_error() {
+    g_test_speed_preset_persist_ok = false;
+
+    runQuery("drive.action.speed-preset-turbo preset=turbo");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INTERNAL_ERROR, g_cap.outcome);
+}
+
+// Explicit negative-space proof for the pin's scope note: speed-preset
+// writes reach applySpeedPresetPersisted() even under estop, stationary and
+// a disabled/unhealthy RC link at once - matching handleSpeedPresetPost(),
+// which never reads any of those three RobotState fields. A broader gate
+// than api_drive.cpp's own would fail this test.
+void test_speed_preset_has_no_motion_consent_gate() {
+    robotState.estop = true;
+    robotState.stationary = true;
+    robotState.webControlEnabled = false;
+    robotState.sbusSignalLost = true;
+
+    runQuery("drive.action.speed-preset-slow preset=slow");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(SpeedPresetId::Slow, g_test_persisted_speed_preset);
+}
+
+// =============================================================================
 // system.config.mood (#226 criterion 4: the config-typed view of active mood)
 // =============================================================================
 
@@ -1553,6 +1868,26 @@ int main(int, char**) {
     RUN_TEST(test_commanded_mode_rc_debug_missing_argument);
     RUN_TEST(test_commanded_mode_rc_debug_malformed_value);
     RUN_TEST(test_commanded_mode_set_mode_never_reaches_the_queued_dispatch);
+
+    RUN_TEST(test_drive_move_blocked_while_estopped);
+    RUN_TEST(test_drive_move_blocked_while_stationary);
+    RUN_TEST(test_drive_move_blocked_while_sbus_lost_and_web_control_disabled);
+    RUN_TEST(test_drive_move_allowed_while_sbus_lost_but_web_control_enabled);
+    RUN_TEST(test_drive_move_allowed_when_sbus_is_healthy_without_web_control);
+    RUN_TEST(test_drive_move_blocked_while_sbus_hw_failsafe_and_web_control_disabled);
+    RUN_TEST(test_drive_move_clamps_to_the_configured_speed_cap);
+    RUN_TEST(test_drive_move_rejects_a_missing_argument);
+    RUN_TEST(test_drive_move_rejects_an_out_of_range_argument);
+    RUN_TEST(test_drive_move_rejects_an_unknown_argument);
+    RUN_TEST(test_drive_move_consent_is_identical_from_both_adapters);
+
+    RUN_TEST(test_speed_preset_slow_applies_the_persisted_preset);
+    RUN_TEST(test_speed_preset_normal_applies_the_persisted_preset);
+    RUN_TEST(test_speed_preset_turbo_applies_the_persisted_preset);
+    RUN_TEST(test_speed_preset_rejects_a_mismatched_preset_value);
+    RUN_TEST(test_speed_preset_rejects_a_missing_argument);
+    RUN_TEST(test_speed_preset_reports_a_failed_persist_as_an_explicit_error);
+    RUN_TEST(test_speed_preset_has_no_motion_consent_gate);
 
     RUN_TEST(test_mood_config_read_reports_the_live_active_mood);
     RUN_TEST(test_mood_config_write_applies_a_valid_mood);
