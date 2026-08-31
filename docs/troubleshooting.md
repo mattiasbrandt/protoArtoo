@@ -155,6 +155,37 @@ and remains available as described below.
   coredump partition) needs this full USB flash + `uploadfs`; OTA does not rewrite
   the partition table.
 
+### OTA fails with `[ERROR]: No response from device` (host firewall)
+
+Applies to **both boards** — nothing in this path is board-dependent.
+
+The board is not the problem. `espota.py` prints `Waiting for device...` and then
+blocks on `sock.accept()` on a **TCP** listener it opens on the *host*, with a
+hardcoded 10 s timeout (`--timeout`/`OTA_TIMEOUT` do not extend this specific
+wait — that flag covers the invitation/result timeout, and
+`tools/ota_upload.py --transfer-timeout` patches a *different* hardcoded 10 s,
+the per-chunk transfer one). The device receives the OTA invitation, accepts
+it, and tries to connect back to that host port — `ArduinoOTA error: 2
+update=0 No Error` followed by `error: 4 update=12 Aborted` in the board's own
+log means the device could not open the TCP connection *back*, i.e.
+`OTA_CONNECT_ERROR`. On a host with a default-deny inbound firewall (e.g.
+`ufw` with `DEFAULT_INPUT_POLICY="DROP"`), that inbound connection is silently
+dropped, and by default espota chooses a **random** host port each run, so
+there is no single rule to add ahead of time.
+
+Fix: `make ota` (and every other `make *-ota` target, plus the `make`
+interactive wizard) pins that host port to a fixed value —
+`OTA_HOST_PORT`, default **32320** — via `tools/ota_upload.py --host-port`.
+Allow it once on your host:
+
+```bash
+sudo ufw allow from 10.0.0.0/24 to any port 32320 proto tcp   # match your LAN CIDR
+```
+
+Override the port with `OTA_HOST_PORT=<port>` (CLI or `user.mk`, see
+`user.mk.example`) only if 32320 is already taken on your machine — otherwise
+firewall the default instead of moving it, so the rule above keeps working.
+
 ### Serial monitor caveat
 
 Opening the USB serial port toggles DTR/RTS, which **resets the ESP32** (so a

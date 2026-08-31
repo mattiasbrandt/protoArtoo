@@ -24,3 +24,10 @@ BUILD_ENV   = protoArtoo
 # Linux: /dev/ttyUSB0 or /dev/ttyACM0
 # macOS: /dev/cu.usbserial-*
 UPLOAD_PORT = /dev/ttyUSB0
+
+# Local (host) TCP port espota listens on for the device's OTA connect-back.
+# Default: 32320. Only override if that port is already in use on your
+# machine. If your host has a default-deny inbound firewall, allow this port
+# from your robot's LAN instead of changing it — see docs/troubleshooting.md
+# ("OTA fails with 'No response from device'").
+OTA_HOST_PORT = 32320
