@@ -384,9 +384,19 @@ void setup() {
     xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // HWM first-iteration: 476 B free  --  WARN path allocates 128 B format buffer +
-    // printf; bumped to 3072 to ensure adequate headroom for all log paths.
-    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
+    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES in include/config.h
+    // carries the per-target frame evidence, the margin and how to reproduce it.
+    //
+    // What this comment used to say was wrong in both halves, and both errors
+    // flattered the result. The format buffer is 256 bytes, not 128
+    // (PA_LOG_SERIAL_LINE_MAX, include/logging.h) -- and the buffer is not what
+    // dominates anyway: it sits inside this task's own frame, which is under
+    // 400 bytes on either chip. The depth is in newlib below snprintf, which
+    // nothing had measured. So "bumped to 3072 for adequate headroom" was
+    // reasoned from half the buffer and none of the call chain, and on the
+    // ESP32-P4 3072 does not in fact cover it (#245).
+    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", SAFETY_MONITOR_STACK_BYTES,
+                            nullptr, 2, nullptr, 0);
 
     // Index Learned Sequences from LittleFS before the dispatcher can run one.
     // Mounts LittleFS (idempotent) and scans /seq/. Boot scan reuses the run

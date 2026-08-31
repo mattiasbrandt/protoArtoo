@@ -36,7 +36,10 @@ constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
 // Observer-only audit task. Logs state transitions and health warnings.
-// Core 0, priority 2, 2048-byte stack, 10 Hz.
+// Core 0, priority 2, 10 Hz. Stack size is chip-target specific and lives with
+// its evidence at SAFETY_MONITOR_STACK_BYTES in include/config.h; it is not
+// repeated here, because the figure this line used to name (2048) had been
+// stale since the task was created with a larger one.
 // Does NOT feed TWDT  --  this is not a real-time task.
 // Does NOT set failsafe flags  --  read-only access to RobotState.
 // -----------------------------------------------------------------------------

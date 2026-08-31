@@ -371,6 +371,41 @@ constexpr uint32_t WEB_DRIVE_TIMEOUT_MS = 500;  // Web drive command expiry
 constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 
 // -----------------------------------------------------------------------------
+// Task stacks
+// -----------------------------------------------------------------------------
+// SafetyMonitorTask is the one task stack that has to differ per chip target,
+// and the cause is newlib rather than anything about the boards. Its own frame
+// is within 32 B across the two (368 B on ESP32, 400 B on ESP32-P4, from
+// -fstack-usage), but every line it logs goes through snprintf, and the
+// float-formatting path there is much wider on RISC-V: _svfprintf_r 800 -> 1152
+// bytes and _dtoa_r 160 -> 416, +512 bytes over the identical source chain.
+// Every other function on that chain is within +-32 bytes, several of them
+// smaller on the P4, so the divergence is specific rather than general.
+//
+// Deepest static call chain from safetyMonitorTask, same measurement:
+// 2768 bytes in the shipping firebeetle2 image and 3168 in
+// firebeetle2_profiler -- 96 bytes MORE than the 3072 this task used to get on
+// both targets. 4096 clears the profiler image's worst case by 928 bytes and
+// costs 1 KB out of the P4's 320 KB of DRAM. ESP32 keeps 3072 unchanged.
+//
+// Reproduce with `python3 tools/stack_usage_report.py --env <env>
+// --root safetyMonitorTask` over a build made with -fstack-usage; the tool's
+// docstring carries the build command. Evidence and method: issue #245.
+//
+// `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
+// only for the selected chip (see "Chip target mapping" above), not 0/1 Board
+// Capability Gates, so `#if` on the undefined one would silently take the wrong
+// branch. Keying on the chip target rather than on PA_BOARD also means a second
+// board variant on either chip inherits the right size without a new case here.
+#if defined(PA_CHIP_TARGET_ESP32P4)
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
+#elif defined(PA_CHIP_TARGET_ESP32)
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
+#else
+  #error "SAFETY_MONITOR_STACK_BYTES has no value for this chip target"
+#endif
+
+// -----------------------------------------------------------------------------
 // NVS
 // -----------------------------------------------------------------------------
 constexpr char NVS_NAMESPACE[] = "proto";
