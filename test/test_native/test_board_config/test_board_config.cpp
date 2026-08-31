@@ -59,6 +59,15 @@ void test_chip_target_mapped_for_artoo_esp32() {
 #endif
 }
 
+// Pin the artoo-esp32 SafetyMonitorTask stack at the value the shipping image
+// has always had. The P4 branch of SAFETY_MONITOR_STACK_BYTES was raised to
+// 4096 on measured evidence (#245); this asserts the ESP32 branch did not move
+// with it, which is what keeps that change off the artoo image. Native tests
+// compile with PA_BOARD_ARTOO_ESP32, so this is the only branch reachable here.
+void test_safety_monitor_stack_unchanged_on_esp32() {
+    TEST_ASSERT_EQUAL_UINT32(3072U, SAFETY_MONITOR_STACK_BYTES);
+}
+
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
@@ -116,5 +125,6 @@ int main() {
     RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
     RUN_TEST(test_pa_log_level_is_defined_and_in_range);
     RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);
+    RUN_TEST(test_safety_monitor_stack_unchanged_on_esp32);
     return UNITY_END();
 }
