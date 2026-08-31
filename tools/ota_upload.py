@@ -13,6 +13,9 @@ import os
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ota_board_guard  # noqa: E402  (board-identity pre-flight guard, #252 Finding 1)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TIMEOUT_S = 60
@@ -109,11 +112,43 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--md5-target", action="store_true", help="Use MD5 password target mode.")
     parser.add_argument("--no-progress", action="store_true", help="Disable espota progress output.")
     parser.add_argument("--quiet", action="store_true", help="Disable espota debug output.")
+    parser.add_argument(
+        "--identity-port",
+        type=int,
+        default=ota_board_guard.DEFAULT_IDENTITY_PORT,
+        help="HTTP port for the pre-flight /api/identity board check (the "
+        "dashboard port, not --port/ArduinoOTA's 3232).",
+    )
+    parser.add_argument(
+        "--identity-timeout",
+        type=float,
+        default=ota_board_guard.DEFAULT_IDENTITY_TIMEOUT_SECONDS,
+        help="Seconds to wait for the pre-flight board check before refusing "
+        "to push.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+
+    # Board-identity guard, first thing, before any local build-artifact
+    # lookup or network write: a wrong-board OTA push is destructive, and
+    # nothing later in this function may run ahead of it (#252 Finding 1).
+    try:
+        reported_board = ota_board_guard.enforce_board_match(
+            args.env,
+            args.host,
+            port=args.identity_port,
+            timeout_seconds=args.identity_timeout,
+        )
+    except ota_board_guard.OtaBoardGuardError as error:
+        sys.stderr.write(f"{error}\n")
+        return 3
+    print(
+        f"OTA board check: {args.host} confirmed as board={reported_board!r}",
+        flush=True,
+    )
 
     espota_path = Path(args.espota_path) if args.espota_path else _default_espota_path()
     default_path = _filesystem_path(args.env) if args.spiffs else _firmware_path(args.env)
