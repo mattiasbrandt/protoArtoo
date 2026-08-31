@@ -380,7 +380,12 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
+    // 5632: the static worst-case chain is 4336 B on this image (#250), 240 B past the
+    // old 4096  --  Learned Sequence load on this task's own stack (seqStorePrepare ->
+    // protocolCheck -> pcFailAt -> snprintf float formatting -> first-use heap/log-mutex
+    // tail). Sized by the #248 rule, chain + 25% rounded up to the next 512 B
+    // (4336 * 1.25 = 5420 -> 5632); the ESP32-P4 chain (4448 B) lands on the same 5632.
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 5632, nullptr, 3, nullptr, 0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
