@@ -132,7 +132,7 @@ void domeTask(void* pvParameters) {
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+            PA_LOG_DEBUG(TAG, "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }

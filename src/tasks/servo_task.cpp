@@ -490,7 +490,7 @@ void servoTask(void* pvParameters) {
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("ServoTask", "stack HWM: %u words free",
+            PA_LOG_DEBUG("ServoTask", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
