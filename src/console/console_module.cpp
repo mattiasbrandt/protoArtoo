@@ -63,7 +63,12 @@
                                      // table (#226; see its own header for why this is
                                      // hand-written C++ rather than registry-generated)
 #include "drive_arbiter.h"     // driveArbiterSubmit(), DriveSource - the zero-frame release
-                               // disable-web-control already submits (src/web/api_drive.cpp)
+                               // disable-web-control already submits (src/web/api_drive.cpp),
+                               // and (#222) drive.action.move's own submission
+#include "drive_speed_preset.h"  // SpeedPresetId, applySpeedPresetPersisted() - #222's
+                                  // drive.action.speed-preset-{slow,normal,turbo} executors
+                                  // reuse this verbatim, the same function
+                                  // src/web/api_drive.cpp's handleSpeedPresetPost() calls
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
                                // real executor (registry drift note: the registry's own
                                // `executor:` field for system.config.mood says configApply,
@@ -1376,26 +1381,38 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 }
 
 // =============================================================================
-// Private: Commanded Mode direct executors (#226 criterion 4, generalizing
-// the pattern-setter role this ticket was asked to establish for a second
-// class of executor: a plain synchronous C function taking validated
-// Console arguments, checked before ACTION_REGISTRY[]/RobotActionId
-// resolution in the CONSOLE_OP_ACTION case below - never the queued RC
-// dispatch core the OTHER action executors use. "Commanded Modes ... go
-// only through commanded_modes setters" (criterion 4): stationary
-// (system.action.set-mode), sleep/wake, non-RC control (enable/disable-
-// web-control) and rc-debug all call their commanded_modes.h setter
-// directly here, reproducing exactly the side-effect sequence their REST
-// handler already runs (src/web/api_drive.cpp, src/web/api_system.cpp,
-// src/web/api_rc.cpp) rather than a second implementation of it - those
-// three files are outside this ticket's edit list, so this reads their
-// logic and calls the same shared functions, it does not import a Commit
-// Step from them.
+// Private: direct action executors - Commanded Modes (#226 criterion 4) and
+// drive motion (#222). One dispatch mechanism, two callers: a plain
+// synchronous C function taking validated Console arguments, checked before
+// ACTION_REGISTRY[]/RobotActionId resolution in the CONSOLE_OP_ACTION case
+// below - never the queued RC dispatch core the OTHER action executors use.
+//
+// #226's originating set: "Commanded Modes ... go only through
+// commanded_modes setters" (criterion 4) - stationary (system.action.set-
+// mode), sleep/wake, non-RC control (enable/disable-web-control) and
+// rc-debug all call their commanded_modes.h setter directly here,
+// reproducing exactly the side-effect sequence their REST handler already
+// runs (src/web/api_drive.cpp, src/web/api_system.cpp, src/web/api_rc.cpp)
+// rather than a second implementation of it - those three files are outside
+// #226's edit list, so this reads their logic and calls the same shared
+// functions, it does not import a Commit Step from them.
+//
+// #222 extends the SAME table (not a second pattern - the pinned
+// coordinator comment names this reuse explicitly) with drive.action.move
+// and the three drive.action.speed-preset-* entries: driveArbiterSubmit()
+// and applySpeedPresetPersisted() are the "shared setter" equivalent for
+// motion, reproducing src/web/api_drive.cpp's handleDrivePost() /
+// handleSpeedPresetPost() consent and clamp logic verbatim, the same
+// "read their logic, call their shared functions" rule #226 already
+// established for this section.
 //
 // An operation resolved here is never also looked up in ACTION_REGISTRY[]
 // even when it carries a cpp_enum/rc_token for RC-binding purposes
-// (system.action.set-mode does, for a momentary RC switch) - that binding
-// is unrelated to what the Console runs for the same canonical name.
+// (system.action.set-mode does, for a momentary RC switch; so does
+// drive.action.speed-preset-cycle, whose separate RC-trigger path through
+// dispatchRcTriggerActionTest() is unrelated to and unmodified by this
+// section) - that binding is unrelated to what the Console runs for the
+// same canonical name.
 // =============================================================================
 
 typedef void (*ConsoleDirectActionExecutorFn)(uint32_t requestId, const char* operationName,
@@ -1573,6 +1590,159 @@ static void consoleExecuteDirectRcDebug(uint32_t requestId, const char* operatio
     }
 }
 
+// =============================================================================
+// Private: drive motion executors (#222). Consent is applied EXACTLY where
+// src/web/api_drive.cpp applies it today for the same command - a non-RC
+// source commanding motion while the RC link is unhealthy, nothing broader.
+// Nothing here gates queries, configuration, or unrelated actions.
+// =============================================================================
+
+// drive.action.move: speed= steer=, the same two arguments POST /api/drive
+// reads (handleDrivePost, src/web/api_drive.cpp). Schema validation reuses
+// consoleValidateArgsAgainstSchema() against this operation's own catalog
+// params (int16, -1000..1000, both required - #221's shared argument
+// contract, the same helper consoleExecuteAction() already uses for
+// ACTION_REGISTRY[]-resolved targets). Consent and clamp are reproduced
+// verbatim from handleDrivePost() below, not reinvented: blocked = estop ||
+// stationary || (!sbusHealthy && !webControlEnabled). Submits through
+// driveArbiterSubmit() with DriveSource::WEB_API - the arbiter has no
+// console-specific source, and #226 already established reusing WEB_API for
+// a non-RC console-adjacent zero-frame release (disable-web-control above);
+// the effect here is identical regardless of which non-RC caller asked for
+// it, so this is that same reuse, not a new DriveSource variant.
+static void consoleExecuteDirectDriveMove(uint32_t requestId, const char* operationName,
+                                          const ConsoleArgs& args, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    (void)source;  // motion consent below reads RobotState, not which adapter asked
+
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    // parseDriveValue() (src/web/api_helpers.cpp) is the same int16 parser
+    // handleDrivePost() calls - the schema check above already confirmed
+    // both values are present and within the catalog's declared -1000..1000
+    // range as numeric text, so this can only fail on a disagreement between
+    // that range and int16's own bounds, which never occurs for -1000..1000;
+    // defensive, answered the same as any other out-of-range argument.
+    int16_t speed = 0;
+    int16_t steer = 0;
+    if (!parseDriveValue(consoleArgsFind(args, "speed"), &speed) ||
+        !parseDriveValue(consoleArgsFind(args, "steer"), &steer)) {
+        consoleEmitArgFailure(requestId, operationName, "speed", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    // Consent + clamp, read verbatim from handleDrivePost() (src/web/
+    // api_drive.cpp): config snapshot read before the critical section,
+    // exactly matching that handler's own ordering.
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool sbusHealthy = !robotState.sbusSignalLost && !robotState.sbusHwFailsafe;
+    const bool blocked = robotState.estop || robotState.stationary ||
+                         (!sbusHealthy && !robotState.webControlEnabled);
+    taskEXIT_CRITICAL(&robotStateMux);
+    const int16_t maxOut = cfg.drive.speedLimitMax;
+
+    if (blocked) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_BLOCKED_BY_STATE);
+        }
+        return;
+    }
+
+    // Widened to int on all three arguments, matching handleDrivePost()'s own
+    // comment: Arduino's constrain() is a macro on the device but a
+    // same-type template on the host, and the clamp has to be identical
+    // arithmetic in both builds for a host test to mean anything about the
+    // device.
+    const int16_t clampedSpeed = (int16_t)constrain((int)speed, (int)-maxOut, (int)maxOut);
+    const int16_t clampedSteer = (int16_t)constrain((int)steer, (int)-maxOut, (int)maxOut);
+    driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis());
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+// drive.action.speed-preset-{slow,normal,turbo}: each carries a single
+// `preset` argument the catalog's own enum schema pins to that action's own
+// name (e.g. drive.action.speed-preset-slow only accepts preset=slow), so
+// the schema check is sufficient validation - the preset itself is chosen by
+// which action name was called, not read back out of the argument.
+// applySpeedPresetPersisted() (include/drive_speed_preset.h) is the same
+// function handleSpeedPresetPost() (src/web/api_drive.cpp) calls, reused
+// verbatim. That REST handler applies NO estop/stationary/sbus-health gate -
+// it sets the drive speed CAP the arbiter clamps against, not a live drive
+// command - so this executor adds none either; a broader gate than
+// api_drive.cpp's own is out of #222's scope even where it might look safer.
+static void consoleExecuteDirectSpeedPreset(uint32_t requestId, const char* operationName,
+                                            SpeedPresetId preset, const ConsoleArgs& args,
+                                            const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    if (!applySpeedPresetPersisted(preset)) {
+        // Matches handleSpeedPresetPost()'s own failed-persist branch: a
+        // failed NVS write is an explicit error, not a silently accepted one.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDirectSpeedPresetSlow(uint32_t requestId, const char* operationName,
+                                                const ConsoleArgs& args, ConsoleCommandSource source,
+                                                const ConsoleRecordSink* sink) {
+    (void)source;
+    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Slow, args, sink);
+}
+
+static void consoleExecuteDirectSpeedPresetNormal(uint32_t requestId, const char* operationName,
+                                                  const ConsoleArgs& args, ConsoleCommandSource source,
+                                                  const ConsoleRecordSink* sink) {
+    (void)source;
+    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Normal, args, sink);
+}
+
+static void consoleExecuteDirectSpeedPresetTurbo(uint32_t requestId, const char* operationName,
+                                                 const ConsoleArgs& args, ConsoleCommandSource source,
+                                                 const ConsoleRecordSink* sink) {
+    (void)source;
+    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Turbo, args, sink);
+}
+
 struct ConsoleDirectActionExecutorEntry {
     const char* operationName;
     ConsoleDirectActionExecutorFn executor;
@@ -1585,6 +1755,10 @@ static const ConsoleDirectActionExecutorEntry g_directActionExecutors[] = {
     {"system.action.enable-web-control", consoleExecuteDirectEnableWebControl},
     {"system.action.disable-web-control", consoleExecuteDirectDisableWebControl},
     {"rc.action.toggle-debug", consoleExecuteDirectRcDebug},
+    {"drive.action.move", consoleExecuteDirectDriveMove},
+    {"drive.action.speed-preset-slow", consoleExecuteDirectSpeedPresetSlow},
+    {"drive.action.speed-preset-normal", consoleExecuteDirectSpeedPresetNormal},
+    {"drive.action.speed-preset-turbo", consoleExecuteDirectSpeedPresetTurbo},
 };
 static const size_t kDirectActionExecutorCount =
     sizeof(g_directActionExecutors) / sizeof(g_directActionExecutors[0]);

@@ -43,6 +43,14 @@ void paLogLineRaw(const char* /*line*/) {
 // was written against. A test that needs a non-zero timestamp sets this: the
 // drive arbiter treats timestamp 0 as "never submitted", so a handler's
 // submission is indistinguishable from no submission while the clock reads 0.
+//
+// include/drive_motion_test_hooks.h declares this global (and the
+// speed-preset pair defined further below, applySpeedPresetPersisted()'s own
+// stub) - one include here, type-checked against both definition sites in
+// this translation unit, rather than each consumer writing its own raw
+// declaration (matches the commanded_modes_test_hooks.h / log_buffer_test_hooks.h
+// precedent above and below).
+#include "drive_motion_test_hooks.h"
 unsigned long g_test_millis = 0;
 
 unsigned long millis() {
