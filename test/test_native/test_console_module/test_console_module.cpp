@@ -75,13 +75,12 @@
 #include "commanded_modes_test_hooks.h"  // g_test_commanded_*/g_test_applied_mood/
                                          // g_test_status_broadcast_count - control/observe
                                          // the commanded_modes.h setter stubs (#226)
-
-// Recorded side effects from src/native_test_stubs.cpp - the same externs
-// test_api_motion_routes.cpp declares for the REST side of the same handlers
-// (#222 reuses handleSpeedPresetPost()'s own persistence stub verbatim).
-extern unsigned long g_test_millis;
-extern bool g_test_speed_preset_persist_ok;
-extern SpeedPresetId g_test_persisted_speed_preset;
+#include "drive_motion_test_hooks.h"  // g_test_millis, g_test_speed_preset_persist_ok,
+                                       // g_test_persisted_speed_preset - control/observe
+                                       // the drive arbiter clock and speed-preset
+                                       // persistence stub (#222), the same stub
+                                       // test_api_motion_routes.cpp drives for the REST
+                                       // side of these handlers
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
