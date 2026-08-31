@@ -176,9 +176,15 @@ constexpr uint8_t PA_LOG_LEVEL_DEBUG = 4;
 //   still reports failsafe activity.
 // - PA_LOG_LEVEL_INFO  (3): normal boot health, service bring-up, state transitions
 // - PA_LOG_LEVEL_DEBUG (4): verbose development logging, including lower-priority events
-// Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags. Defaults to DEBUG if unset.
+// Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags, per environment.
 // This is only the boot default until NVS config loads; the runtime level is the
 // operator's saved logLevel (Setup page).
-#ifndef PA_LOG_LEVEL
-#define PA_LOG_LEVEL 4
+//
+// Required, not defaulted (#244). This used to fall back to DEBUG when unset, so an
+// environment that forgot to declare it shipped verbose logging silently -- extra
+// serial output, timing cost and flash, with nothing to say why. Every environment
+// declares its own value now (see [flags_base] in platformio.ini for why the base
+// cannot supply a default), and a missed declaration fails the build here instead.
+#if !defined(PA_LOG_LEVEL)
+  #error "PA_LOG_LEVEL must be defined by platformio.ini build_flags for this environment"
 #endif
