@@ -359,8 +359,13 @@ void setup() {
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
     if (bootCfg.system.enable_dome_esc) {
-        xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
-                                1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
+        // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain and the sizing rule. The note this line used
+        // to carry -- "sized from profiler HWM: 108 B free at 2048 B" -- was an
+        // artoo-esp32 reading, and on the ESP32-P4 the same source needs 3280 B,
+        // which is 208 B more than the 3072 that reading justified (#248).
+        xTaskCreatePinnedToCore(domeTask, "DomeTask", DOME_TASK_STACK_BYTES, nullptr, 4,
+                                nullptr, 1);
     }
 
     // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
@@ -373,8 +378,11 @@ void setup() {
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
+    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule.
     if (auxLedTaskReady) {
-        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 4096, nullptr, 2, nullptr, 0);
+        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", AUX_LED_TASK_STACK_BYTES, nullptr, 2,
+                                nullptr, 0);
     }
 
     // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.

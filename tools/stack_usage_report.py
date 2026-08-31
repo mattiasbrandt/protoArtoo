@@ -162,13 +162,16 @@ def split_insn(line: str):
 
 
 class Function:
-    __slots__ = ("addr", "name", "frame", "frame_kind", "calls", "indirect", "src")
+    __slots__ = ("addr", "name", "frame", "frame_kind", "calls", "indirect", "src",
+                 "decoded")
 
     def __init__(self, addr: int, name: str):
         self.addr = addr
         self.name = name
         self.frame = 0
-        self.frame_kind = "none"  # none | fixed | dynamic
+        # none = no adjustment seen | fixed | dynamic | undecoded
+        self.frame_kind = "none"
+        self.decoded = 0  # instructions objdump actually decoded in this body
         self.calls: list[tuple[int, str, str | None]] = []  # (target addr, insn, srcline)
         self.indirect: list[tuple[int, str, str | None]] = []  # (pc, insn text, srcline)
         self.src: str | None = None
@@ -187,6 +190,13 @@ class Image:
         self._disassemble(objdump)
         self._starts = sorted(self.funcs)
         self._drop_internal_branches()
+        for fn in self.funcs.values():
+            if fn.decoded == 0:
+                # objdump emitted this body as raw words rather than
+                # instructions. A frame of 0 here means "not read", not "leaf",
+                # and treating the two alike would silently drop a whole
+                # subtree. See the Xtensa .xt.prop note in the module docstring.
+                fn.frame_kind = "undecoded"
 
     def _drop_internal_branches(self) -> None:
         """Keep only tail jumps that are real calls: ones landing on a function
@@ -263,9 +273,13 @@ class Image:
             if im is None or cur is None:
                 continue
             pc, mnem, ops = im
+            cur.decoded += 1
             if prologue_left > 0:
-                prologue_left -= 1
-                self._maybe_frame(cur, mnem, ops)
+                if self._ends_prologue(mnem, ops):
+                    prologue_left = 0
+                else:
+                    prologue_left -= 1
+                    self._maybe_frame(cur, mnem, ops)
             if self.arch == "xtensa":
                 self._invalidate(XTENSA_NON_WRITING, r"a\d+", mnem, ops, pending_lit)
                 self._xtensa_flow(cur, pc, mnem, ops, srcline, pending_lit)
@@ -288,8 +302,40 @@ class Image:
             tracked.pop(m.group(1), None)
 
     # -- frame sizes --------------------------------------------------------
+    def _ends_prologue(self, mnem: str, ops: str) -> bool:
+        """First instruction after which a stack adjustment is no longer setup.
+
+        Bounds the accumulation in _maybe_frame: once the function has called
+        something or has started giving stack back, any later adjustment is an
+        alloca or the epilogue, and folding those in would inflate the frame.
+        """
+        sp = "a1" if self.arch == "xtensa" else "sp"
+        if mnem.startswith(("call", "jal", "ret", "retw", "j", "jr", "jx")):
+            return True
+        m = re.match(r"^" + sp + r",\s*(?:" + sp + r",\s*)?" + IMM_RE + r"$", ops)
+        if m and mnem.startswith(("addi", "addmi", "c.addi")):
+            return parse_imm(m.group(1)) > 0
+        return False
+
+
     def _maybe_frame(self, fn: Function, mnem: str, ops: str) -> None:
-        if fn.frame_kind != "none":
+        """Accumulate the prologue's stack-pointer adjustments into fn.frame.
+
+        A frame is NOT always one instruction. GCC splits an allocation that
+        does not fit the ISA's immediate, and RISC-V's `addi` immediate is 12
+        bits signed, so anything over 2032 bytes arrives in two steps:
+
+            domeLinkTask:  addi sp,sp,-224   ...13 register saves...
+                           addi sp,sp,-2032
+
+        Reading only the first gave 224 where -fstack-usage says 2256 -- a
+        2 KB under-read on a task whose stack this project sizes by hand.
+        Accumulating is what makes the two sources agree.
+
+        The caller stops feeding this at the first call or the first positive
+        adjustment, so an epilogue restore or an alloca cannot be folded in.
+        """
+        if fn.frame_kind == "dynamic":
             return
         if self.arch == "xtensa":
             # Windowed ABI: `entry a1, N` allocates the whole frame, N already
@@ -298,14 +344,16 @@ class Image:
             # the ENTRY operand agree exactly.
             m = re.match(r"^a1,\s*" + IMM_RE + r"$", ops)
             if mnem == "entry" and m:
-                fn.frame, fn.frame_kind = parse_imm(m.group(1)), "fixed"
+                fn.frame += parse_imm(m.group(1))
+                fn.frame_kind = "fixed"
                 return
             # CALL0-ABI / leaf functions adjust a1 directly.
             m = re.match(r"^a1,\s*a1,\s*" + IMM_RE + r"$", ops)
             if mnem in ("addi", "addi.n", "addmi") and m:
                 delta = parse_imm(m.group(1))
                 if delta < 0:
-                    fn.frame, fn.frame_kind = -delta, "fixed"
+                    fn.frame += -delta
+                    fn.frame_kind = "fixed"
                 return
             if mnem in ("add", "add.n", "sub") and ops.startswith("a1,"):
                 fn.frame_kind = "dynamic"
@@ -316,7 +364,8 @@ class Image:
         if mnem in ("addi", "c.addi16sp", "c.addi4spn") and m:
             delta = parse_imm(m.group(1))
             if delta < 0:
-                fn.frame, fn.frame_kind = -delta, "fixed"
+                fn.frame += -delta
+                fn.frame_kind = "fixed"
             return
         if mnem in ("add", "sub") and ops.startswith("sp,sp,"):
             fn.frame_kind = "dynamic"
@@ -474,13 +523,30 @@ class Walker:
                 return img, img.funcs[addr]
         return None
 
-    def depth(self, img: Image, fn: Function, stack: tuple[int, ...] = ()) -> tuple[int, list]:
+    def depth(self, img: Image, fn: Function, stack: tuple[int, ...] = ()):
+        """(bytes, chain, cut_below) for the deepest path from fn.
+
+        ``cut_below`` says whether this result was shortened by a recursion cut
+        anywhere beneath it. Only results with no cut below them are memoised.
+
+        That distinction is the whole point of the third element. A cut result
+        is valid ONLY for the call stack that produced it -- the same function
+        reached from somewhere else may complete the cycle differently, or not
+        enter it at all. Caching one and reusing it elsewhere made the report
+        depend on the order roots were passed on the command line: on the
+        firebeetle2 image `--root domeTask` alone gave 3008 bytes but 3296 when
+        safetyMonitorTask was walked first, and safetyMonitorTask gave 2768
+        alone against 2480 after domeTask. Both #245's table and #248's issue
+        body were measured with that bug present.
+        """
         if fn.addr in stack:
             self.cut_cycles.append(fn.name)
-            return 0, [("<recursion cut>", 0, None)]
+            return 0, [("<recursion cut>", 0, None)], True
         if fn.addr in self._memo:
-            return self._memo[fn.addr]
+            sub, chain = self._memo[fn.addr]
+            return sub, chain, False
         best_sub, best_chain, best_edge = 0, [], None
+        cut_below = False
         for target, insn, srcline in fn.calls:
             found = self.lookup(target)
             if found is None:
@@ -489,7 +555,11 @@ class Walker:
             timg, tfn = found
             if self.is_pruned(tfn):
                 continue
-            sub, chain = self.depth(timg, tfn, stack + (fn.addr,))
+            sub, chain, sub_cut = self.depth(timg, tfn, stack + (fn.addr,))
+            # Any cut anywhere among the branches can have suppressed the one
+            # that would have won, so the maximum itself is suspect, not just
+            # the branch that was cut.
+            cut_below = cut_below or sub_cut
             total = tfn.frame + sub
             if total > best_sub:
                 best_sub, best_chain, best_edge = total, chain, (tfn, insn, srcline)
@@ -498,10 +568,9 @@ class Walker:
         else:
             tfn, insn, srcline = best_edge
             result = (best_sub, [(tfn.name, tfn.frame, srcline, insn)] + best_chain)
-        # Memoised without the cycle stack: a cut only shortens a branch, and
-        # every non-cut result is stack-independent.
-        self._memo[fn.addr] = result
-        return result
+        if not cut_below:
+            self._memo[fn.addr] = result
+        return result[0], result[1], cut_below
 
     def callsite_table(self, img: Image, fn: Function) -> list[tuple]:
         rows = []
@@ -514,7 +583,7 @@ class Walker:
             if self.is_pruned(tfn):
                 rows.append((srcline or "?", tfn.name + " [pruned]", insn, None))
                 continue
-            sub, _ = self.depth(timg, tfn, (fn.addr,))
+            sub, _, _ = self.depth(timg, tfn, (fn.addr,))
             rows.append((srcline or "?", tfn.name, insn, tfn.frame + sub))
         return rows
 
@@ -631,7 +700,7 @@ def main(argv=None) -> int:
             status = 2
             continue
         for fn in sorted(cands, key=lambda f: f.addr):
-            sub, chain = walker.depth(img, fn)
+            sub, chain, _ = walker.depth(img, fn)
             print(f"ROOT {fn.name}  @0x{fn.addr:08x}  ({fn.src or 'no line info'})")
             print(f"  worst-case chain, deepest first call site kept:")
             print(f"    {'bytes':>7}  {'cumulative':>10}  function / call site")
@@ -691,6 +760,9 @@ def main(argv=None) -> int:
     ind = [(f.name, len(f.indirect)) for f in img.funcs.values() if f.indirect]
     print(f"  indirect call sites: {sum(n for _, n in ind)} across {len(ind)} functions")
     print(f"  jumps into another function's interior, not followed: {len(img.interior_jumps)}")
+    undec = [f for f in img.funcs.values() if f.frame_kind == "undecoded"]
+    print(f"  function bodies objdump emitted as data, frame unknown: {len(undec)}"
+          f" of {len(img.funcs)}")
     if walker.unresolved:
         uniq = sorted(set(walker.unresolved))
         print(f"  call targets with no symbol entry, not followed: "
