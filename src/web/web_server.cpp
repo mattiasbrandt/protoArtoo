@@ -796,7 +796,7 @@ void eventStreamTask(void*) {
     bool recoveryGestureCleared = false;
     for (;;) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
+            PA_LOG_DEBUG("WebEvents", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
@@ -870,7 +870,7 @@ void eventStreamTask(void*) {
                 }
             }
             if (!hwmUnderLoadLogged) {
-                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u words free",
+                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u bytes free",
                              (unsigned)uxTaskGetStackHighWaterMark(NULL));
                 hwmUnderLoadLogged = true;
             }

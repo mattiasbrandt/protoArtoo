@@ -602,7 +602,7 @@ void audioTask(void* pvParameters) {
 
     for (;;) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("AudioTask", "stack HWM: %u words free",
+            PA_LOG_DEBUG("AudioTask", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
