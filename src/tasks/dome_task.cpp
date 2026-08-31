@@ -116,8 +116,12 @@ void domeTaskInit() {
 void domeTask(void* pvParameters) {
     (void)pvParameters;
 
-    // Register with task watchdog
+    // Register with task watchdog, and feed immediately: the 3 s window starts
+    // at add, and everything between add and the loop's feed (the first-iteration
+    // HWM log in particular) runs inside it. A stalled log write in that window
+    // is exactly how this task tripped the TWDT on the ESP32-P4 (#245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
     DomeCommand cmd;
     float currentSpeed = 0.0f;

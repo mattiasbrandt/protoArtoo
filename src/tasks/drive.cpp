@@ -42,7 +42,10 @@ static HardwareSerial hoverSerial(1);
 void driveTask(void* pvParameters) {
     // Register with TWDT unconditionally  --  this task must feed the watchdog
     // regardless of enable state or the chip will reset after WATCHDOG_TIMEOUT_S.
+    // Feed immediately after add: the add-to-first-feed window must stay empty
+    // of anything that can stall (#245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
     // Feature toggle: when cfg_enable_drive is false, do not open
     // UART1 or send any frames. Task idles here feeding TWDT only.

@@ -262,6 +262,22 @@ void requestSystemRestart(uint32_t delayMs) {
 
 void setup() {
     Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // Serial is the USB-Serial-JTAG CDC (HWCDC). When the host stops draining
+    // the port while USB stays enumerated - a detached serial monitor is enough:
+    // SOF keepalives continue, so HWCDC's isPlugged() stays true and its
+    // `connected` flag never clears - every blocked write waits out HWCDC's
+    // bounded-progress cap of 20 x tx_timeout_ms. At the 100 ms default that is
+    // ~2 s per write call and ~4 s per paLogLine() (two writes), against a
+    // WATCHDOG_TIMEOUT_S of 3 s. That starved DomeTask's TWDT feed from inside
+    // one PA_LOG_DEBUG and reset the board (#245 defect 1, coredump-verified);
+    // every TWDT-subscribed task that logs is equally exposed. Zero makes the
+    // CDC transport strictly best-effort: a full TX ring drops bytes instead of
+    // blocking the caller. Nothing is lost from the authoritative record -
+    // paLogLine() appends to the log ring (/api/logs) regardless of what the
+    // serial write manages to send.
+    Serial.setTxTimeoutMs(0);
+#endif
     Serial.setDebugOutput(false);
     paLogInit();
     delay(200);
@@ -283,20 +299,26 @@ void setup() {
     configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
-    // Layer 4: Initialize Task Watchdog Timer
+    // Layer 4: Task Watchdog Timer.
     // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
-    // trigger_panic). IDF 4.x took (timeout_seconds, trigger_panic) directly.
-    // idle_core_mask=0: do not subscribe idle tasks; only DriveTask subscribes itself.
+    // trigger_panic). Both chip targets ship prebuilt IDF with CONFIG_ESP_TASK_WDT_INIT=y
+    // (5 s, panic, idle core 0 watched), so the system TWDT is already running before
+    // setup() and esp_task_wdt_init() returns ESP_ERR_INVALID_STATE; the reconfigure
+    // path below is the one that actually applies our config. (This comment used to
+    // claim init succeeds on artoo-esp32 - its sdkconfig says otherwise; confirmed on
+    // P4 hardware by the "TWDT already initialized" boot warning, #245.)
+    //
+    // idle_core_mask=0: per IDF task_wdt.c, esp_task_wdt_reconfigure() keeps
+    // explicitly-added task entries and unsubscribes the previous mask's idle tasks,
+    // so after this call the watched set is exactly the tasks that call
+    // esp_task_wdt_add(NULL) on themselves: DriveTask, ServoTask, RCInputTask (when
+    // spawned), SequenceDispatcherTask, and DomeTask (when spawned).
     const esp_task_wdt_config_t twdt_config = {
         .timeout_ms    = WATCHDOG_TIMEOUT_S * 1000U,
         .idle_core_mask = 0,
         .trigger_panic  = true,
     };
     esp_err_t twdt_init_result = esp_task_wdt_init(&twdt_config);
-    // On ESP32-P4 the system watchdog is pre-initialized, so esp_task_wdt_init() returns
-    // ESP_ERR_INVALID_STATE. Reconfigure the existing watchdog with our chosen timeout
-    // and idle-core settings. This ensures our safety-critical TWDT configuration applies
-    // on all targets. On artoo-esp32 init succeeds and this path is never taken.
     if (twdt_init_result == ESP_ERR_INVALID_STATE) {
         esp_err_t twdt_reconfig_result = esp_task_wdt_reconfigure(&twdt_config);
         if (twdt_reconfig_result != ESP_OK) {

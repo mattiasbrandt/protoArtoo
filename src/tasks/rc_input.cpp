@@ -393,7 +393,11 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 void rcInputTask(void* pvParameters) {
     // Register with TWDT unconditionally  --  this task feeds the watchdog
     // regardless of which RC mode is active or what channels are enabled.
+    // Feed immediately after add: the add-to-first-feed window must stay empty
+    // of anything that can stall (the first-iteration HWM log runs inside it,
+    // #245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
     rcInputProcessorInit(&s_rcProcessor);
     rcInputStepInit(&s_rcStepState);
