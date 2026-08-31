@@ -17,6 +17,7 @@
 #include <esp_heap_caps.h>
 
 #include "api_profiler.h"
+#include "heap_health.h"
 #include "logging.h"
 #include "robot_state.h"
 
@@ -91,10 +92,20 @@ void safetyMonitorTask(void* pvParameters) {
 
         profilerObserveOptionalSubsystems();
 
-        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics
+        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics.
+        // Low-heap keeps watching the Arduino internal figure (unchanged behavior).
         uint32_t freeHeap = ESP.getFreeHeap();
-        size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        float fragRatio = (freeHeap > 0) ? (1.0f - (float)largestBlock / (float)freeHeap) : 0.0f;
+        // Fragmentation pair: both terms come from ONE capability mask, and the mask
+        // that matters for safety is the internal 8-bit data heap. INTERNAL alone
+        // would count IRAM-only regions malloc cannot return for byte-addressable
+        // data (artoo-esp32); 8BIT alone includes PSRAM, which on the ESP32-P4 made
+        // largest (~33 MB) dwarf internal free (~114 KB), so frag read -287.92 and
+        // the <10 KB WARN below was structurally dead (#245 defect 2).
+        uint32_t dataHeapFree =
+            (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        uint32_t largestBlock =
+            (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        float fragRatio = heapFragRatio(dataHeapFree, largestBlock);
 
         bool nowLowHeap = (freeHeap < 20480);
         if (nowLowHeap && !lastLowHeap) {
@@ -127,9 +138,10 @@ void safetyMonitorTask(void* pvParameters) {
         static int periodicCount = 0;
         if (++periodicCount >= 60) {  // ~6 s at 10 Hz
             periodicCount = 0;
-            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
+            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu data_free=%lu largest=%u frag=%.2f",
                          (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
-                         (unsigned)largestBlock, (double)fragRatio);
+                         (unsigned long)dataHeapFree, (unsigned)largestBlock,
+                         (double)fragRatio);
         }
 
         profilerPeriodicCollect();
