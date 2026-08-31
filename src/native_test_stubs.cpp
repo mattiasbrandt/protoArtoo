@@ -47,8 +47,8 @@ void paLogLineRaw(const char* /*line*/) {
 // include/drive_motion_test_hooks.h declares this global (and the
 // speed-preset pair defined further below, applySpeedPresetPersisted()'s own
 // stub) - one include here, type-checked against both definition sites in
-// this translation unit, rather than each consumer re-declaring its own
-// `extern` (matches the commanded_modes_test_hooks.h / log_buffer_test_hooks.h
+// this translation unit, rather than each consumer writing its own raw
+// declaration (matches the commanded_modes_test_hooks.h / log_buffer_test_hooks.h
 // precedent above and below).
 #include "drive_motion_test_hooks.h"
 unsigned long g_test_millis = 0;
