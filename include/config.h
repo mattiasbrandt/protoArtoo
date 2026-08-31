@@ -414,18 +414,6 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // Capability Gates, so `#if` on the undefined one would silently take the wrong
 // branch. Keying on the chip target rather than on PA_BOARD also means a second
 // board variant on either chip inherits the right size without a new case here.
-#if defined(PA_CHIP_TARGET_ESP32P4)
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;
-#elif defined(PA_CHIP_TARGET_ESP32)
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
-#else
-  #error "task stack sizes have no value for this chip target"
-#endif
-
 // DriveTask and DomeLinkTask, sized the same way and for the same reason (#250).
 // Both exceed their old stacks on ESP32-P4; on ESP32 only DriveTask is at risk.
 //
@@ -450,14 +438,24 @@ constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
 // of free heap measured on the board, and a tight-heap build cannot pay that
 // for margins no measurement can currently confirm. Its numbers are recorded
 // on #250 instead.
+// One block for every per-chip task stack. #248 and #250 each added a pair and
+// arrived here by separate branches; keeping two adjacent, identical #if ladders
+// would mean a third ticket adds a third, and a reader has to check all of them
+// to answer "what is this task's stack on this chip".
 #if defined(PA_CHIP_TARGET_ESP32P4)
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
 #elif defined(PA_CHIP_TARGET_ESP32)
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 #else
-  #error "DRIVE_TASK_STACK_BYTES has no value for this chip target"
+  #error "task stack sizes have no value for this chip target"
 #endif
 
 // -----------------------------------------------------------------------------
