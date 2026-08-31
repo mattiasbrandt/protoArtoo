@@ -82,6 +82,18 @@
                                        // test_api_motion_routes.cpp drives for the REST
                                        // side of these handlers
 
+// Recorded side effects and controls from src/native_test_stubs.cpp - the
+// same globals test_api_audio_routes.cpp declares for the REST side of
+// sound.action.play-track/set-volume (#221 remainder); no shared header
+// exists for these (unlike the *_test_hooks.h headers above), matching that
+// file's own precedent rather than introducing one for two callers.
+extern bool g_test_audio_queue_ok;
+extern unsigned g_test_audio_play_track_calls;
+extern uint16_t g_test_audio_last_track;
+extern unsigned g_test_audio_volume_calls;
+extern uint8_t g_test_audio_last_volume;
+extern bool g_test_aux_led_queue_ok;  // aux.action.led-color/-effect's own queue stub
+
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
 // evidence #222's acceptance criterion 4 asks for - identical helper to
@@ -253,6 +265,17 @@ void setUp() {
     g_test_commanded_rc_debug = false;
     g_test_commanded_rc_debug_calls = 0;
     g_test_applied_mood = 0;
+
+    // #221 remainder: sound.action.play-track/set-volume and
+    // aux.action.led-color/-effect's own queue stubs - reset per test rather
+    // than relying on each test's own explicit set/restore, matching
+    // test_api_audio_routes.cpp's own setUp() for the same globals.
+    g_test_audio_queue_ok = true;
+    g_test_audio_play_track_calls = 0;
+    g_test_audio_last_track = 0;
+    g_test_audio_volume_calls = 0;
+    g_test_audio_last_volume = 0;
+    g_test_aux_led_queue_ok = true;
 
     // #222: drive.action.move submits through the REAL arbiter, so the
     // arbiter must be initialized and reset per test the same way
@@ -1778,6 +1801,407 @@ void test_mood_config_write_rejects_an_invalid_mood_id() {
 }
 
 // =============================================================================
+// #221 remainder: the named parameterized action executors reachable through
+// g_directActionExecutors[] (#222/#226's table, extended - not a second
+// dispatch mechanism). Each drives consoleExecuteCommand() with a real
+// "operation args" line, matching the marcduino/drive-motion tests' own
+// shape above, not a direct call to the static executor function.
+// =============================================================================
+
+// system.action.set-mood: shares applyMood() with system.config.mood above.
+void test_direct_set_mood_applies_valid_mood_and_broadcasts() {
+    runQuery("system.action.set-mood mood=13");
+
+    TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "an action write answers a single result");
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(13, g_test_applied_mood);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_direct_set_mood_rejects_an_invalid_mood_id() {
+    runQuery("system.action.set-mood mood=99");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_applied_mood);
+}
+
+void test_direct_set_mood_rejects_a_missing_argument() {
+    runQuery("system.action.set-mood");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+// The sleep gate handleMoodPost() applies but system.config.mood's own write
+// path (consoleExecuteMoodConfig() above) does not - a pre-existing
+// discrepancy between the two rows this new row does not paper over.
+void test_direct_set_mood_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("system.action.set-mood mood=13");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_applied_mood);
+}
+
+// system.action.set-identity: droidName=/mdnsUseName=, the same fields
+// handleIdentityPost() reads, applied through the shared
+// identitySetCommitApplied() Commit Step (include/api_identity.h).
+void test_direct_set_identity_applies_and_persists() {
+    runQuery("system.action.set-identity droidName=chopper mdnsUseName=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_STRING("chopper", snap.system.droid_name);
+    TEST_ASSERT_TRUE(snap.system.mdns_use_name);
+}
+
+// mdnsUseName is optional (docs/action-registry.yaml required: false) and
+// defaults to false when omitted, the same default handleIdentityPost()
+// applies.
+void test_direct_set_identity_defaults_mdns_to_false_when_omitted() {
+    runQuery("system.action.set-identity droidName=r2d2");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_FALSE(snap.system.mdns_use_name);
+}
+
+void test_direct_set_identity_rejects_an_invalid_name() {
+    runQuery("system.action.set-identity droidName=\"R2 D2\"");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_direct_set_identity_rejects_a_missing_name() {
+    runQuery("system.action.set-identity");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+// rc.action.test-bindable: token=<rc-token> - "arm1_toggle" is
+// SERVO_ACTION_ARM1_TOGGLE's own rc_token (src/rc_action_types.cpp,
+// docs/action-registry.yaml), a non-analog, non-payload target the guard
+// allows once web control is enabled - the same dispatch core/stub
+// test_action_alias_resolves_same_target_as_canonical exercises above,
+// reached here through the by-token path instead of the canonical name.
+void test_direct_test_bindable_dispatches_by_rc_token() {
+    robotState.webControlEnabled = true;
+
+    runQuery("rc.action.test-bindable token=arm1_toggle");
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(SERVO_ACTION_ARM1_TOGGLE, g_test_last_dispatch_target);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_direct_test_bindable_rejects_a_missing_token() {
+    runQuery("rc.action.test-bindable");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+void test_direct_test_bindable_rejects_an_unknown_token() {
+    runQuery("rc.action.test-bindable token=not_a_real_token");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// Matches REST's own guard exactly: evaluateActionTestGuard() blocks every
+// target (not just payload-needing ones) when web control is disabled -
+// requires_web_control: true (docs/action-registry.yaml).
+void test_direct_test_bindable_blocked_when_web_control_disabled() {
+    robotState.webControlEnabled = false;
+
+    runQuery("rc.action.test-bindable token=arm1_toggle");
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// Never widens to accept the Marcduino payload carve-out
+// consoleExecuteAction() grants dome.action.marcduino-sequence/-command
+// above: REST's /api/actions/test never accepted one either, so a
+// payload-needing target reached BY TOKEN answers the same as any other
+// guard-refused target, never EXECUTOR_NOT_READY's Marcduino exception.
+void test_direct_test_bindable_never_widens_to_a_payload_target() {
+    robotState.webControlEnabled = true;
+
+    runQuery("rc.action.test-bindable token=seq");  // dome_action_marcduino_sequence's rc_token
+
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// =============================================================================
+// sound.action.play-track / sound.action.set-volume (#221 remainder)
+// =============================================================================
+
+void test_sound_play_track_queues_and_carries_the_track_number() {
+    runQuery("sound.action.play-track track=42");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_play_track_calls);
+    TEST_ASSERT_EQUAL_UINT16(42, g_test_audio_last_track);
+}
+
+void test_sound_play_track_rejects_an_out_of_range_track() {
+    runQuery("sound.action.play-track track=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+}
+
+// The same sleep gate handleAudioPost()'s action=play branch applies.
+void test_sound_play_track_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.action.play-track track=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+}
+
+void test_sound_play_track_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.play-track track=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+void test_sound_set_volume_applies_and_persists() {
+    runQuery("sound.action.set-volume volume=17");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_volume_calls);
+    TEST_ASSERT_EQUAL_UINT8(17, g_test_audio_last_volume);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(17, snap.audio.audioVolume);
+}
+
+void test_sound_set_volume_rejects_an_out_of_range_level() {
+    runQuery("sound.action.set-volume volume=31");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
+void test_sound_set_volume_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.set-volume volume=10");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+// =============================================================================
+// aux.action.led-color / aux.action.led-effect (#221 remainder)
+// =============================================================================
+
+void test_aux_led_color_queues_a_valid_rgb_triple() {
+    robotState.auxLed.available = true;
+    robotState.auxLed.pin = 5;
+
+    runQuery("aux.action.led-color r=10 g=20 b=30");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT8(10, robotState.auxLed.r);
+    TEST_ASSERT_EQUAL_UINT8(20, robotState.auxLed.g);
+    TEST_ASSERT_EQUAL_UINT8(30, robotState.auxLed.b);
+}
+
+void test_aux_led_color_rejects_an_out_of_range_component() {
+    runQuery("aux.action.led-color r=10 g=300 b=30");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("g", capturedValue("argument"));
+}
+
+void test_aux_led_color_reports_component_disabled_when_pin_unset() {
+    robotState.auxLed.available = true;
+    robotState.auxLed.pin = 0;  // no pin selected: aux.config.led-pin's "disabled" state
+    // The native auxLedQueueSetColor() stub (src/native_test_stubs.cpp) only
+    // gates on g_test_aux_led_queue_ok, unlike the real implementation
+    // (src/tasks/aux_led.cpp, not in [env:native]'s build filter) which also
+    // refuses when the strip is unavailable - so this forces the same
+    // refusal the real availability gate would produce, to prove
+    // consoleAnswerAuxLedRefusal() picks COMPONENT_DISABLED over QUEUE_FULL
+    // from robotState.auxLed alone once the call has failed either way.
+    g_test_aux_led_queue_ok = false;
+
+    runQuery("aux.action.led-color r=1 g=1 b=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+}
+
+void test_aux_led_color_reports_queue_full_when_available_but_refused() {
+    robotState.auxLed.available = true;
+    robotState.auxLed.pin = 5;
+    g_test_aux_led_queue_ok = false;
+
+    runQuery("aux.action.led-color r=1 g=1 b=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+void test_aux_led_effect_queues_a_valid_effect() {
+    robotState.auxLed.available = true;
+    robotState.auxLed.pin = 5;
+
+    runQuery("aux.action.led-effect effect=pulse");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// Regression guard for the registry-generator defect this executor's own
+// comment documents: tools/generate_console_catalog.py's YAML loader turns
+// the registry's bare `off` value into the Python boolean False, so
+// g_enum_aux_action_led_effect_effect[] carries the literal string "False"
+// where "off" belongs (src/console/console_catalog.cpp). This executor
+// bypasses that enum for its value check (parseAuxLedEffect() directly), so
+// "off" - a legitimate value handleAuxLedEffectPost() accepts today - must
+// still be accepted here, not rejected as an unlisted enum value.
+void test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum() {
+    robotState.auxLed.available = true;
+    robotState.auxLed.pin = 5;
+
+    runQuery("aux.action.led-effect effect=off");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_aux_led_effect_rejects_an_unknown_effect_string() {
+    runQuery("aux.action.led-effect effect=strobe");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_aux_led_effect_rejects_an_unknown_argument() {
+    runQuery("aux.action.led-effect mode=pulse");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("mode", capturedValue("argument"));
+}
+
+// =============================================================================
+// servo.action.open/close/set-position (#221 remainder). servoCmdQueue's
+// enqueue always succeeds on native (the FreeRTOS queue stub's xQueueSend()
+// always returns pdTRUE regardless of the queue handle - test/stubs/include/
+// freertos/queue.h - and servo carries no purpose-built success/failure
+// toggle the way audio/aux-led do), so only the validation and success paths
+// are provable here; the queue-full branch is device behaviour, matching
+// this project's existing precedent for every other servoCmdQueue caller.
+// =============================================================================
+
+void test_servo_open_queues_with_the_resolved_arm_id() {
+    runQuery("servo.action.open target=aux2");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_open_accepts_both_as_the_broadcast_target() {
+    runQuery("servo.action.open target=both");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_close_rejects_an_unknown_target() {
+    runQuery("servo.action.close target=aux9");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// set-position's own catalog enum excludes "both" (docs/action-registry.yaml)
+// even though handleServoPost()'s parseArmId() would accept it for any
+// action - narrower than REST here is not "widening" and is the registry's
+// own declared shape, not invented in this dispatch code.
+void test_servo_set_position_rejects_both_though_open_close_accept_it() {
+    runQuery("servo.action.set-position target=both position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_servo_set_position_queues_with_a_valid_pulse_width() {
+    runQuery("servo.action.set-position target=arm1 position_us=1800");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_set_position_rejects_an_out_of_range_pulse_width() {
+    runQuery("servo.action.set-position target=arm1 position_us=100");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_servo_set_position_rejects_a_missing_target() {
+    runQuery("servo.action.set-position position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+// Deliberately unwired (see consoleExecuteServoCommand()'s own header
+// comment): the registry declares zero params for this row, but the real
+// /api/servo endpoint requires an arm for every action including "stop", and
+// armId=255 only broadcasts to arm1+arm2, never aux1..3 - a registry/
+// implementation decision this ticket does not invent.
+void test_servo_stop_still_answers_executor_not_ready() {
+    runQuery("servo.action.stop");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// dome.action.dome-sequence and the five dome.api.* rows stay
+// EXECUTOR_NOT_READY too (see the pinned coordinator comment on #221 and
+// this file's own test_action_dome_sequence_still_answers_executor_not_ready
+// above for dome.action.dome-sequence's reason); dome.api.* has no
+// consoleExecuteCommand()-reachable behavior to assert on at all - see the
+// worker status comment on #221 for why (chunked/paginated JSON reads with
+// no Console Record equivalent, not this ticket's pattern to invent).
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -1891,6 +2315,48 @@ int main(int, char**) {
     RUN_TEST(test_mood_config_read_reports_the_live_active_mood);
     RUN_TEST(test_mood_config_write_applies_a_valid_mood);
     RUN_TEST(test_mood_config_write_rejects_an_invalid_mood_id);
+
+    RUN_TEST(test_direct_set_mood_applies_valid_mood_and_broadcasts);
+    RUN_TEST(test_direct_set_mood_rejects_an_invalid_mood_id);
+    RUN_TEST(test_direct_set_mood_rejects_a_missing_argument);
+    RUN_TEST(test_direct_set_mood_blocked_while_sleeping);
+
+    RUN_TEST(test_direct_set_identity_applies_and_persists);
+    RUN_TEST(test_direct_set_identity_defaults_mdns_to_false_when_omitted);
+    RUN_TEST(test_direct_set_identity_rejects_an_invalid_name);
+    RUN_TEST(test_direct_set_identity_rejects_a_missing_name);
+
+    RUN_TEST(test_direct_test_bindable_dispatches_by_rc_token);
+    RUN_TEST(test_direct_test_bindable_rejects_a_missing_token);
+    RUN_TEST(test_direct_test_bindable_rejects_an_unknown_token);
+    RUN_TEST(test_direct_test_bindable_blocked_when_web_control_disabled);
+    RUN_TEST(test_direct_test_bindable_never_widens_to_a_payload_target);
+
+    RUN_TEST(test_sound_play_track_queues_and_carries_the_track_number);
+    RUN_TEST(test_sound_play_track_rejects_an_out_of_range_track);
+    RUN_TEST(test_sound_play_track_blocked_while_sleeping);
+    RUN_TEST(test_sound_play_track_reports_a_full_queue);
+    RUN_TEST(test_sound_set_volume_applies_and_persists);
+    RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);
+    RUN_TEST(test_sound_set_volume_reports_a_full_queue);
+
+    RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);
+    RUN_TEST(test_aux_led_color_rejects_an_out_of_range_component);
+    RUN_TEST(test_aux_led_color_reports_component_disabled_when_pin_unset);
+    RUN_TEST(test_aux_led_color_reports_queue_full_when_available_but_refused);
+    RUN_TEST(test_aux_led_effect_queues_a_valid_effect);
+    RUN_TEST(test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum);
+    RUN_TEST(test_aux_led_effect_rejects_an_unknown_effect_string);
+    RUN_TEST(test_aux_led_effect_rejects_an_unknown_argument);
+
+    RUN_TEST(test_servo_open_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_open_accepts_both_as_the_broadcast_target);
+    RUN_TEST(test_servo_close_rejects_an_unknown_target);
+    RUN_TEST(test_servo_set_position_rejects_both_though_open_close_accept_it);
+    RUN_TEST(test_servo_set_position_queues_with_a_valid_pulse_width);
+    RUN_TEST(test_servo_set_position_rejects_an_out_of_range_pulse_width);
+    RUN_TEST(test_servo_set_position_rejects_a_missing_target);
+    RUN_TEST(test_servo_stop_still_answers_executor_not_ready);
 
     return UNITY_END();
 }

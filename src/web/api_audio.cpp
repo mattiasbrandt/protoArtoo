@@ -711,6 +711,26 @@ void handleMoodPost(WebRequest& req) {
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
+// See include/api_audio.h for the full contract.
+AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source) {
+    AudioSetVolumeCommitOutcome outcome;
+    if (!audioQueueSetVolume(level, source)) {
+        return outcome;  // queued=false
+    }
+    outcome.queued = true;
+
+    // Persist as the new default volume so it survives reboot.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.audio.audioVolume = level;
+    configCacheApply(snap);
+    outcome.saved = saveConfigToNvs();
+
+    PA_LOG_INFO(TAG, "[AUDIO] volume level=%d saved=%s", (int)level,
+                outcome.saved ? "true" : "false");
+    return outcome;
+}
+
 // -----------------------------------------------------------------------------
 // CHIRP catalog
 // -----------------------------------------------------------------------------
@@ -923,21 +943,15 @@ void handleAudioPost(WebRequest& req) {
             return;
         }
 
-        // Apply immediately in AudioTask runtime
-        if (!audioQueueSetVolume((uint8_t)level, SRC_WEB_API)) {
+        // Commit Step (ADR 0034 criterion 1, include/api_audio.h): the same
+        // apply-then-persist sequence the Console's sound.action.set-volume
+        // executor now shares.
+        AudioSetVolumeCommitOutcome commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);
+        if (!commit.queued) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
         }
-        // Persist as the new default volume so it survives reboot
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        snap.audio.audioVolume = (uint8_t)level;
-        configCacheApply(snap);
-        bool saved = saveConfigToNvs();
-
-        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d saved=%s", (int)level,
-                    saved ? "true" : "false");
-        if (!saved) {
+        if (!commit.saved) {
             webSendJsonError(req, 500, "volume applied but NVS save failed");
             return;
         }

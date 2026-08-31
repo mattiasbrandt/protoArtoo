@@ -32,6 +32,7 @@
 #include "api_audio_mood_map_apply.h"
 #include "api_audio_tracks_apply.h"
 #include "audio_rx_status.h"
+#include "robot_state.h"  // CommandSource
 #include "web_request.h"
 
 // playState -> label, verbatim what formatAudioStatusJson() puts in its
@@ -115,6 +116,20 @@ struct AudioCategoryRangeCommitOutcome {
 };
 AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
     ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result);
+
+// Commit Step (ADR 0034 criterion 1) for sound.action.set-volume: the same
+// audioQueueSetVolume() + persist-as-default-on-reboot sequence
+// handleAudioPost()'s action=volume branch used to run inline, extracted so
+// the Console reaches the identical sequence instead of a second copy.
+// `queued` false means the live apply never reached AudioTask (the caller
+// reports "audio command queue full"); `saved` is only meaningful when
+// `queued` is true (the caller reports "volume applied but NVS save
+// failed").
+struct AudioSetVolumeCommitOutcome {
+    bool queued = false;
+    bool saved = false;
+};
+AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);
