@@ -110,7 +110,7 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
-#define PROF_TASK_MAX 9
+#define PROF_TASK_MAX 10
 
 struct TaskHwmEntry {
     const char* name;
@@ -119,9 +119,16 @@ struct TaskHwmEntry {
 };
 
 // Names must match xTaskCreatePinnedToCore() calls in main.cpp.
+//
+// Nothing enforces that, and it drifted: "SeqDisp" was missing until #250, so
+// /api/profiler silently reported nine of the ten tasks and the tenth could not
+// be measured at all. That is worse than an obviously absent endpoint, because
+// the response looks complete -- a task that is never listed reads the same as
+// a task that is disabled. If you add a task in main.cpp, add it here.
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
-    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask"
+    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
+    "SeqDisp"
 };
 
 static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];

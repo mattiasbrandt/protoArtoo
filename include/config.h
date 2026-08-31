@@ -412,6 +412,40 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
   #error "SAFETY_MONITOR_STACK_BYTES has no value for this chip target"
 #endif
 
+// DriveTask and DomeLinkTask, sized the same way and for the same reason (#250).
+// Both exceed their old stacks on ESP32-P4; on ESP32 only DriveTask is at risk.
+//
+//                   old    ESP32 chain    ESP32-P4 chain
+//   DriveTask      4096       4064            4368  <- P4 over by 272
+//   DomeLinkTask   6144       5856            7360  <- P4 over by 1216
+//
+// Sized by the #248 rule (worst-case chain + 25%, rounded up to the next 512).
+//
+// Why the two chips diverge here at all: DomeLinkTask's own frame is 2256 B on
+// RISC-V against far less on Xtensa, because GCC splits an allocation past
+// 2032 B into two `addi sp,sp,-N` instructions -- the same split that hid this
+// overrun until tools/stack_usage_report.py was taught to accumulate them.
+//
+// ⚠️ The ESP32 numbers above are LOWER BOUNDS, not margins. objdump emits 3371
+// of 7649 Xtensa function bodies as data via .xt.prop, so the tool cannot walk
+// them and counts their frames as zero (#250). DriveTask's apparent 32 B of
+// ESP32 headroom is therefore not headroom -- it is the floor of an unknown --
+// which is why the 50 Hz drive loop is raised on both chips rather than only
+// where an overrun is provable. DomeLinkTask's ESP32 figure is left at 6144
+// deliberately: raising every task by the rule costs 11,264 B against 42,692 B
+// of free heap measured on the board, and a tight-heap build cannot pay that
+// for margins no measurement can currently confirm. Its numbers are recorded
+// on #250 instead.
+#if defined(PA_CHIP_TARGET_ESP32P4)
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
+#elif defined(PA_CHIP_TARGET_ESP32)
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
+#else
+  #error "DRIVE_TASK_STACK_BYTES has no value for this chip target"
+#endif
+
 // -----------------------------------------------------------------------------
 // NVS
 // -----------------------------------------------------------------------------

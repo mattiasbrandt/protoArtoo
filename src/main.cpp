@@ -373,7 +373,11 @@ void setup() {
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
     // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
-    xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
+    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES in include/config.h carries
+    // the measured worst-case chain for both chips and why ESP32 is raised too even
+    // though its own figure reads as 32 B under (that figure is a lower bound).
+    xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
+                            nullptr, 1);
     if (rcPlan.taskEnabled) {
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
     }
@@ -401,9 +405,13 @@ void setup() {
 
     // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
-    // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
-    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
+    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES in include/config.h.
+    // The old note here -- "4096: profiler measured 988 B free at 3072 B ... HTTPClient
+    // call-chain needs 3 KB+" -- was reasoned from a high-water mark, which only ever
+    // reports the deepest path that actually ran. The static worst case is 5856 B on
+    // ESP32 and 7360 B on ESP32-P4, so 6144 never covered the P4 at all (#250).
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", DOME_LINK_TASK_STACK_BYTES,
+                            nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
     // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES in include/config.h
