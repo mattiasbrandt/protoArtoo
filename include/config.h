@@ -373,20 +373,27 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // -----------------------------------------------------------------------------
 // Task stacks
 // -----------------------------------------------------------------------------
-// SafetyMonitorTask is the one task stack that has to differ per chip target,
-// and the cause is newlib rather than anything about the boards. Its own frame
-// is within 32 B across the two (368 B on ESP32, 400 B on ESP32-P4, from
-// -fstack-usage), but every line it logs goes through snprintf, and the
-// float-formatting path there is much wider on RISC-V: _svfprintf_r 800 -> 1152
-// bytes and _dtoa_r 160 -> 416, +512 bytes over the identical source chain.
-// Every other function on that chain is within +-32 bytes, several of them
-// smaller on the P4, so the divergence is specific rather than general.
+// SafetyMonitorTask is the one task stack that has to differ per chip target.
+// What forces it is the profiler image, not the shipping one, and the deepest
+// static call chain below safetyMonitorTask says so directly:
 //
-// Deepest static call chain from safetyMonitorTask, same measurement:
-// 2768 bytes in the shipping firebeetle2 image and 3168 in
-// firebeetle2_profiler -- 96 bytes MORE than the 3072 this task used to get on
-// both targets. 4096 clears the profiler image's worst case by 928 bytes and
-// costs 1 KB out of the P4's 320 KB of DRAM. ESP32 keeps 3072 unchanged.
+//   artoo_esp32           2720 B     of 3072   ok
+//   firebeetle2           2768 B     of 3072   ok
+//   firebeetle2_profiler  3168 B     of 3072   DOES NOT FIT
+//
+// The profiler image is the one an operator flashes while chasing a crash, so
+// it is the one that must not crash. 4096 clears its worst case by 928 bytes
+// and costs 1 KB out of the P4's 320 KB of DRAM. ESP32 keeps 3072 unchanged.
+//
+// Where the divergence actually is, since it is narrower than it looks: the
+// task's own frame is 368 B on ESP32 against 400 on ESP32-P4, and on the
+// identical snprintf chain every log line takes, two newlib functions widen
+// sharply on RISC-V -- _svfprintf_r 800 -> 1152 B and _dtoa_r 160 -> 416 --
+// while the P4's allocator frames are smaller, several of them ROM-resident.
+// Those partly cancel: that whole chain costs +160 B on the P4, not +608.
+// So this is a specific divergence in float formatting rather than a general
+// "RISC-V frames are wider", and it is worth stating because the general
+// version of the claim would have justified raising every stack here.
 //
 // Reproduce with `python3 tools/stack_usage_report.py --env <env>
 // --root safetyMonitorTask` over a build made with -fstack-usage; the tool's

@@ -457,17 +457,21 @@ class Walker:
         return False
 
     def lookup(self, addr: int) -> tuple[Image, Function] | None:
-        # A call always lands on a function entry, so an exact start match is
-        # the only fully trustworthy resolution. Interior addresses are still
-        # accepted (tail jumps into a hot entry do occur) but only when they
-        # fall inside a real function body -- see Image.owner_of.
+        """The called function, or None when the target has no symbol entry.
+
+        Only an exact function-entry match counts. The image contains calls to
+        addresses carrying no symbol of their own -- `call8 400e2a40
+        <HTTPClient::generateCookieString(String*)+0xb0>` inside
+        heap_caps_realloc_base is one -- and attributing those to the preceding
+        symbol gives the callee somebody else's name AND somebody else's frame
+        size. That is worse than not knowing: it inflated this task's chain by
+        over a kilobyte through a heap function that appeared to call an HTTP
+        client. Unresolved targets are counted and listed instead, which makes
+        the affected totals lower bounds rather than wrong numbers.
+        """
         for img in self.images:
             if img.is_entry(addr):
                 return img, img.funcs[addr]
-        for img in self.images:
-            fn = img.owner_of(addr)
-            if fn is not None:
-                return img, fn
         return None
 
     def depth(self, img: Image, fn: Function, stack: tuple[int, ...] = ()) -> tuple[int, list]:
@@ -688,8 +692,10 @@ def main(argv=None) -> int:
     print(f"  indirect call sites: {sum(n for _, n in ind)} across {len(ind)} functions")
     print(f"  jumps into another function's interior, not followed: {len(img.interior_jumps)}")
     if walker.unresolved:
-        print(f"  call targets outside the loaded images: {len(walker.unresolved)}")
-        for name, addr in sorted(set(walker.unresolved))[:10]:
+        uniq = sorted(set(walker.unresolved))
+        print(f"  call targets with no symbol entry, not followed: "
+              f"{len(walker.unresolved)} ({len(uniq)} distinct)")
+        for name, addr in uniq[:10]:
             print(f"    {name} -> 0x{addr:08x}")
     if walker.cut_cycles:
         print(f"  recursion cut at: {sorted(set(walker.cut_cycles))}")

@@ -390,7 +390,7 @@ void setup() {
     // What this comment used to say was wrong in both halves, and both errors
     // flattered the result. The format buffer is 256 bytes, not 128
     // (PA_LOG_SERIAL_LINE_MAX, include/logging.h) -- and the buffer is not what
-    // dominates anyway: it sits inside this task's own frame, which is under
+    // dominates anyway: it sits inside this task's own frame, which is at most
     // 400 bytes on either chip. The depth is in newlib below snprintf, which
     // nothing had measured. So "bumped to 3072 for adequate headroom" was
     // reasoned from half the buffer and none of the call chain, and on the
