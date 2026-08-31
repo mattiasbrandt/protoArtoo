@@ -74,6 +74,18 @@
                                // `executor:` field for system.config.mood says configApply,
                                // which is wrong - see the status comment; not fixed here, that
                                // edit reaches the fenced data/console_help.txt)
+#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0034 Commit Step
+                               // beside handleServoPost() (#221 remainder), reused verbatim by
+                               // servo.action.open/close/set-position below
+#include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds
+                               // handleServoPost() enforces for its own position_us range
+#include "api_identity.h"      // identitySetCommitApplied() - the ADR 0034 Commit Step beside
+                               // handleIdentityPost() (#221 remainder), reused verbatim by
+                               // system.action.set-identity below
+#include "aux_led.h"           // AuxLedEffect, parseAuxLedEffect(), auxLedQueueSetColor/SetEffect()
+                               // - reused verbatim by aux.action.led-color/-effect below (#221
+                               // remainder); no extraction needed, both are already complete
+                               // single-call cores with no persist step
 
 static const char* TAG = "Console";
 
@@ -743,6 +755,33 @@ static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, Conso
 // Console argument that reaches the same dispatch core.
 static const size_t kMarcduinoPayloadMax = 16;
 
+// Maps evaluateActionTestGuard()'s result onto a Console outcome/reason and
+// answers a single result record - the shape every guard-refused action
+// answers with, shared by consoleExecuteAction() below (the ACTION_REGISTRY[]
+// canonical-name path) and consoleExecuteDirectTestBindable() (the by-token
+// path, #221 remainder) so the two mappings cannot drift apart. Only called
+// once `guard != ACTION_TEST_ALLOWED` is already known.
+static void consoleAnswerActionGuardResult(uint32_t requestId, ActionTestGuardResult guard,
+                                           RobotActionId target, const ConsoleRecordSink* sink) {
+    ConsoleOutcome outcome = CONSOLE_OUTCOME_BLOCKED;
+    ConsoleReason reason = CONSOLE_REASON_BLOCKED_BY_STATE;
+    if (guard == ACTION_TEST_ACTION_NOT_TESTABLE) {
+        // This guard result conflates two different reasons nothing runs
+        // (matching the REST route's coarser HTTP shape); the Console can be
+        // more precise since #220 already has robotActionIsAnalog() in
+        // scope. Motion/analog targets are permanently outside this
+        // single-shot mechanism (#222 wires them through the drive/
+        // dome-speed backbone instead, never through
+        // dispatchRcTriggerActionTest()).
+        outcome = CONSOLE_OUTCOME_UNAVAILABLE;
+        reason = robotActionIsAnalog(target) ? CONSOLE_REASON_NOT_EXECUTABLE
+                                             : CONSOLE_REASON_EXECUTOR_NOT_READY;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, outcome, reason);
+    }
+}
+
 // Executes one resolved RC-bindable action through the existing guard core
 // (evaluateActionTestGuard(), include/api_actions.h - reused verbatim, not
 // duplicated) and the existing dispatch core, then answers with a single
@@ -775,23 +814,7 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 
     if (guard != ACTION_TEST_ALLOWED &&
         !(guard == ACTION_TEST_ACTION_NOT_TESTABLE && isValidatedMarcduinoTarget)) {
-        ConsoleOutcome outcome = CONSOLE_OUTCOME_BLOCKED;
-        ConsoleReason reason = CONSOLE_REASON_BLOCKED_BY_STATE;
-        if (guard == ACTION_TEST_ACTION_NOT_TESTABLE) {
-            // This guard result conflates two different reasons nothing
-            // runs (matching the REST route's coarser HTTP shape); the
-            // Console can be more precise since #220 already has
-            // robotActionIsAnalog() in scope. Motion/analog targets are
-            // permanently outside this single-shot mechanism (#222 wires
-            // them through the drive/dome-speed backbone instead, never
-            // through dispatchRcTriggerActionTest()).
-            outcome = CONSOLE_OUTCOME_UNAVAILABLE;
-            reason = robotActionIsAnalog(target) ? CONSOLE_REASON_NOT_EXECUTABLE
-                                                 : CONSOLE_REASON_EXECUTOR_NOT_READY;
-        }
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, outcome, reason);
-        }
+        consoleAnswerActionGuardResult(requestId, guard, target, sink);
         return;
     }
 
@@ -1743,6 +1766,506 @@ static void consoleExecuteDirectSpeedPresetTurbo(uint32_t requestId, const char*
     consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Turbo, args, sink);
 }
 
+// =============================================================================
+// Private: the remaining named candidates from #221's remainder scope (see
+// the pinned coordinator comment on #221) - each reaches its domain core the
+// same way #226 established and #222 reused: schema-validated via the
+// catalog's own params (consoleValidateArgsAgainstSchema(), #221 criterion
+// 2), then the SAME function/Commit Step the REST handler calls, never a
+// second implementation. No new dispatch mechanism - these rows are added to
+// g_directActionExecutors[] below, the one table #222/#226 already extend.
+// =============================================================================
+
+// system.action.set-mood: mood=<10|11|13|14> - the same applyMood() core
+// system.config.mood already calls (consoleExecuteMoodConfig() above; both
+// rows model the identical active-mood mechanism) but reproducing
+// handleMoodPost()'s OWN gate too (src/web/api_audio.cpp): sleep blocks it,
+// unlike system.config.mood's write path, which carries no such gate today
+// (a pre-existing discrepancy between the two rows, not introduced or fixed
+// here - reported on the ticket, not silently closed by loosening this new
+// row to match). requestStatusBroadcastNow() is reproduced too, the same
+// broadcast handleMoodPost() makes after applying.
+static void consoleExecuteDirectSetMood(uint32_t requestId, const char* operationName,
+                                        const ConsoleArgs& args, ConsoleCommandSource source,
+                                        const ConsoleRecordSink* sink) {
+    (void)source;
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (sleeping) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+        }
+        return;
+    }
+
+    // Schema already confirmed "mood" is one of the catalog's own enum
+    // strings ("10"/"11"/"13"/"14"); consoleMoodIdValid() (defined above,
+    // system.config.mood's own validator) is reused verbatim as defensive
+    // depth, the same "reparse after schema" precedent drive.action.move
+    // set for its own numeric arguments.
+    char* end = nullptr;
+    long mood = strtol(consoleArgsFind(args, "mood"), &end, 10);
+    if (*end != '\0' || mood < 0 || mood > 255 || !consoleMoodIdValid((uint8_t)mood)) {
+        consoleEmitArgFailure(requestId, operationName, "mood", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    applyMood((uint8_t)mood);
+    requestStatusBroadcastNow();
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
+    }
+}
+
+// system.action.set-identity: droidName=, mdnsUseName=<optional bool,
+// default false> - the same two fields handleIdentityPost() reads (src/web/
+// api_identity.cpp). normalizeDroidName() and parseBoolValue() (include/
+// api_helpers.h) are the SAME pure validators that handler calls, reused
+// verbatim; identitySetCommitApplied() is the extracted ADR 0034 Commit Step
+// (include/api_identity.h) both now share.
+static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* operationName,
+                                            const ConsoleArgs& args, ConsoleCommandSource source,
+                                            const ConsoleRecordSink* sink) {
+    (void)source;
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    char normalized[DROID_NAME_MAX_LEN + 1] = {};
+    if (!normalizeDroidName(consoleArgsFind(args, "droidName"), normalized, sizeof(normalized))) {
+        consoleEmitArgFailure(requestId, operationName, "droidName", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    bool mdnsUseName = false;
+    const char* mdnsRaw = consoleArgsFind(args, "mdnsUseName");
+    if (mdnsRaw != nullptr && !parseBoolValue(mdnsRaw, &mdnsUseName)) {
+        consoleEmitArgFailure(requestId, operationName, "mdnsUseName", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    ConfigSnapshot working = {};
+    configCacheRead(&working);
+    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
+    working.system.mdns_use_name = mdnsUseName;
+
+    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, commit.persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
+                            commit.persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
+// rc.action.test-bindable: token=<rc-token>, e.g. "arm1_toggle" - dispatches
+// ANY RC-bindable action by its RC token (parseRobotActionId()'s grammar,
+// include/rc_action_types.h - NOT the canonical console name
+// consoleFindRobotActionId() resolves elsewhere in this file) through the
+// SAME guard and dispatch core POST /api/actions/test uses
+// (handleActionsTestPost(), src/web/api_actions.cpp) - reused verbatim, not
+// duplicated. Unlike consoleExecuteAction() above, this never carves out the
+// two Marcduino payload-needing targets: REST's /api/actions/test never
+// accepted a payload either ("" is always what it dispatches), so "no
+// widening" means this generic by-token tester does not gain one just
+// because the Console's OWN typed dispatch of
+// dome.action.marcduino-sequence/-command elsewhere does.
+static void consoleExecuteDirectTestBindable(uint32_t requestId, const char* operationName,
+                                             const ConsoleArgs& args, ConsoleCommandSource source,
+                                             const ConsoleRecordSink* sink) {
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < args.count; ++i) {
+        if (strcmp(args.items[i].key, "token") != 0) {
+            badKey = args.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const char* token = consoleArgsFind(args, "token");
+    if (token == nullptr || token[0] == '\0') {
+        consoleEmitArgFailure(requestId, operationName, "token", CONSOLE_REASON_MISSING_ARGUMENT, sink);
+        return;
+    }
+
+    RobotActionId target = ROBOT_ACTION_NONE;
+    if (!parseRobotActionId(token, &target)) {
+        consoleEmitArgFailure(requestId, operationName, "token", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    bool webControlEnabled = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    webControlEnabled = robotState.webControlEnabled;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    ActionTestGuardResult guard = evaluateActionTestGuard(target, webControlEnabled);
+    if (guard != ACTION_TEST_ALLOWED) {
+        consoleAnswerActionGuardResult(requestId, guard, target, sink);
+        return;
+    }
+
+    RcDispatchOutcome dispatchOutcome =
+        dispatchRcTriggerActionTest(target, "", true, consoleCommandSourceFor(source));
+    ConsoleReason reason = CONSOLE_REASON_NONE;
+    ConsoleOutcome outcome = consoleMapDispatchOutcome(dispatchOutcome, &reason);
+    ConsoleStatus status = (outcome == CONSOLE_OUTCOME_QUEUED) ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR;
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, status, outcome, reason);
+    }
+}
+
+// sound.action.play-track: track=<1..999> - the same audioQueuePlayTrack()
+// call handleAudioPost()'s action=play branch makes (src/web/api_audio.cpp);
+// no persist step exists to extract, so this calls the queue function
+// directly, matching #222's "reuse the existing shared function verbatim"
+// shape rather than #226's Commit-Step-extraction shape. Its own sleep gate
+// is reproduced verbatim - robotState.sleepMode read directly under critical
+// section, the same field isSleepModeActive() (private to api_audio.cpp's
+// anonymous namespace) reads, matching the drive.action.move precedent of
+// reading RobotState directly rather than exporting a REST-private helper.
+static void consoleExecuteSoundPlayTrack(uint32_t requestId, const char* operationName,
+                                         const ConsoleArgs& args, ConsoleCommandSource source,
+                                         const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (sleeping) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+        }
+        return;
+    }
+
+    char* end = nullptr;
+    long track = strtol(consoleArgsFind(args, "track"), &end, 10);
+    if (*end != '\0' || track < 1 || track > 999) {
+        consoleEmitArgFailure(requestId, operationName, "track", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    if (!audioQueuePlayTrack((uint16_t)track, consoleCommandSourceFor(source))) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+// sound.action.set-volume: volume=<0..30> - the same audioQueueSetVolume() +
+// persist-as-default sequence handleAudioPost()'s action=volume branch makes
+// (src/web/api_audio.cpp); audioSetVolumeCommitApplied() (include/
+// api_audio.h) is the extracted ADR 0034 Commit Step both now share.
+static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operationName,
+                                         const ConsoleArgs& args, ConsoleCommandSource source,
+                                         const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    char* end = nullptr;
+    long level = strtol(consoleArgsFind(args, "volume"), &end, 10);
+    if (*end != '\0' || level < 0 || level > 30) {
+        consoleEmitArgFailure(requestId, operationName, "volume", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    AudioSetVolumeCommitOutcome commit =
+        audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
+    if (!commit.queued) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+    if (!commit.saved) {
+        // "a failed NVS write is an explicit error" (criterion 3), matching
+        // consoleWriteScalarConfigField()'s own !commit.persisted branch
+        // above - no dedicated persistence-failure reason exists in the
+        // hand-maintained ConsoleReason set.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
+    }
+}
+
+// aux.action.led-color: r=/g=/b=<0..255> - the same auxLedQueueSetColor()
+// call handleAuxLedColorPost() makes (src/web/api_aux_led.cpp), reused
+// verbatim (a single complete queue call, no persist - no extraction
+// needed). The two refusal reasons handleAuxLedColorPost()'s own
+// sendAuxLedQueueRefusal() distinguishes - strip unavailable vs. queue full -
+// are reproduced the same way: robotState.auxLed.available/pin read
+// directly (isAuxLedAvailable() is private to api_aux_led.cpp's anonymous
+// namespace), matching the drive.action.move precedent of reading RobotState
+// directly rather than exporting a REST-private helper. "Unavailable"
+// (pin==0, no strip configured) maps to CONSOLE_REASON_COMPONENT_DISABLED -
+// "the owning Component Toggle is off" (docs/console-protocol.md s.6), the
+// exact fit for an AUX LED pin unset via aux.config.led-pin.
+static bool consoleAuxLedAvailable() {
+    bool available = false;
+    uint8_t pin = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    available = robotState.auxLed.available;
+    pin = robotState.auxLed.pin;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return available && pin != 0;
+}
+
+static void consoleAnswerAuxLedRefusal(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (!consoleAuxLedAvailable()) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                CONSOLE_REASON_COMPONENT_DISABLED);
+        }
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                            CONSOLE_REASON_QUEUE_FULL);
+    }
+}
+
+static void consoleExecuteAuxLedColor(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    long rgb[3] = {0, 0, 0};
+    const char* keys[3] = {"r", "g", "b"};
+    for (int i = 0; i < 3; ++i) {
+        char* end = nullptr;
+        rgb[i] = strtol(consoleArgsFind(args, keys[i]), &end, 10);
+        if (*end != '\0' || rgb[i] < 0 || rgb[i] > 255) {
+            consoleEmitArgFailure(requestId, operationName, keys[i], CONSOLE_REASON_OUT_OF_RANGE, sink);
+            return;
+        }
+    }
+
+    if (!auxLedQueueSetColor((uint8_t)rgb[0], (uint8_t)rgb[1], (uint8_t)rgb[2],
+                             consoleCommandSourceFor(source))) {
+        consoleAnswerAuxLedRefusal(requestId, sink);
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+// aux.action.led-effect: effect=<off|solid|blink|pulse> - the same
+// auxLedQueueSetEffect() call handleAuxLedEffectPost() makes (src/web/
+// api_aux_led.cpp). Bypasses consoleValidateArgsAgainstSchema()'s enum check
+// for this one param: tools/generate_console_catalog.py's YAML loader reads
+// the registry's bare `off` value as the Python boolean False (YAML 1.1's
+// implicit off/on/yes/no typing), so the generated
+// g_enum_aux_action_led_effect_effect[] array literally contains the string
+// "False" where "off" belongs (src/console/console_catalog.cpp) - a
+// registry-generator defect, reported on the ticket rather than papered over
+// by accepting the wrong literal here or by regenerating the catalog (that
+// regeneration reshuffles every subsequent help_offset in the same
+// generated file, out of this slice). parseAuxLedEffect() (include/
+// aux_led.h) is the SAME validator handleAuxLedEffectPost() calls, reused
+// verbatim instead - the "hardcode the one schema this operation needs"
+// precedent the two Marcduino targets already set above.
+static void consoleExecuteAuxLedEffect(uint32_t requestId, const char* operationName,
+                                       const ConsoleArgs& args, ConsoleCommandSource source,
+                                       const ConsoleRecordSink* sink) {
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < args.count; ++i) {
+        if (strcmp(args.items[i].key, "effect") != 0) {
+            badKey = args.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const char* raw = consoleArgsFind(args, "effect");
+    if (raw == nullptr) {
+        consoleEmitArgFailure(requestId, operationName, "effect", CONSOLE_REASON_MISSING_ARGUMENT, sink);
+        return;
+    }
+    AuxLedEffect effect = AUX_LED_EFFECT_OFF;
+    if (!parseAuxLedEffect(raw, &effect)) {
+        consoleEmitArgFailure(requestId, operationName, "effect", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    if (!auxLedQueueSetEffect(effect, consoleCommandSourceFor(source))) {
+        consoleAnswerAuxLedRefusal(requestId, sink);
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+// servo.action.open/close/set-position: target=<arm1|arm2|aux1|aux2|aux3
+// [|both]>, set-position also carries position_us=<500..2500>.
+// parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
+// target<->id mapping and the SAME queue submission handleServoPost() uses,
+// reused verbatim - the ADR 0034 Commit Step beside that handler. Deliberately
+// NOT wired here: servo.action.stop, which the registry declares with zero
+// params even though the underlying /api/servo endpoint requires an `arm`
+// for every action including "stop", and armId=255 only broadcasts to
+// arm1+arm2 (robot_state.h's own field comment) - never aux1..3. Answering
+// "stop" with a hardcoded broadcast id would silently leave three of five
+// servos moving on an operator's "stop" call; that is a registry/
+// implementation decision this ticket does not invent, so
+// servo.action.stop stays CONSOLE_REASON_EXECUTOR_NOT_READY (reported on
+// the ticket).
+static void consoleExecuteServoCommand(uint32_t requestId, const char* operationName,
+                                       ServoCommandType type, const ConsoleArgs& args,
+                                       ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    // Schema already confirmed "target" is one of the catalog's own enum
+    // values; parseArmId() can only fail here on a disagreement between
+    // that enum and its own accepted set, which never occurs for the
+    // lowercase names the registry declares - defensive, the same
+    // "reparse after schema" precedent drive.action.move set.
+    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
+    if (armId < 0) {
+        consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    uint16_t positionUs = 0;  // dead for OPEN/CLOSE (src/tasks/servo_task.cpp never reads it)
+    if (type == SERVO_CMD_POSITION) {
+        char* end = nullptr;
+        long parsed = strtol(consoleArgsFind(args, "position_us"), &end, 10);
+        if (*end != '\0' || parsed < SERVO_PULSE_MIN_US || parsed > SERVO_PULSE_MAX_US) {
+            consoleEmitArgFailure(requestId, operationName, "position_us", CONSOLE_REASON_OUT_OF_RANGE,
+                                  sink);
+            return;
+        }
+        positionUs = (uint16_t)parsed;
+    }
+
+    ServoSubmitOutcome outcome =
+        servoSubmitCommand((uint8_t)armId, type, positionUs, consoleCommandSourceFor(source));
+    if (!outcome.ok) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteServoOpen(uint32_t requestId, const char* operationName,
+                                    const ConsoleArgs& args, ConsoleCommandSource source,
+                                    const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_OPEN, args, source, sink);
+}
+
+static void consoleExecuteServoClose(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_CLOSE, args, source, sink);
+}
+
+static void consoleExecuteServoSetPosition(uint32_t requestId, const char* operationName,
+                                           const ConsoleArgs& args, ConsoleCommandSource source,
+                                           const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_POSITION, args, source, sink);
+}
+
 struct ConsoleDirectActionExecutorEntry {
     const char* operationName;
     ConsoleDirectActionExecutorFn executor;
@@ -1759,6 +2282,16 @@ static const ConsoleDirectActionExecutorEntry g_directActionExecutors[] = {
     {"drive.action.speed-preset-slow", consoleExecuteDirectSpeedPresetSlow},
     {"drive.action.speed-preset-normal", consoleExecuteDirectSpeedPresetNormal},
     {"drive.action.speed-preset-turbo", consoleExecuteDirectSpeedPresetTurbo},
+    {"system.action.set-mood", consoleExecuteDirectSetMood},
+    {"system.action.set-identity", consoleExecuteDirectSetIdentity},
+    {"rc.action.test-bindable", consoleExecuteDirectTestBindable},
+    {"sound.action.play-track", consoleExecuteSoundPlayTrack},
+    {"sound.action.set-volume", consoleExecuteSoundSetVolume},
+    {"aux.action.led-color", consoleExecuteAuxLedColor},
+    {"aux.action.led-effect", consoleExecuteAuxLedEffect},
+    {"servo.action.open", consoleExecuteServoOpen},
+    {"servo.action.close", consoleExecuteServoClose},
+    {"servo.action.set-position", consoleExecuteServoSetPosition},
 };
 static const size_t kDirectActionExecutorCount =
     sizeof(g_directActionExecutors) / sizeof(g_directActionExecutors[0]);

@@ -25,15 +25,9 @@ extern QueueHandle_t servoCmdQueue;
 
 static const char* TAG = "SERVO_API";
 
-namespace {
-
-// Map arm name string to arm ID.
-//
-// int16_t, not int8_t: the broadcast id is 255, which an int8_t return
-// truncates to -1 -- the invalid-arm sentinel. That is how "both" came to be
-// rejected as an invalid arm on an endpoint whose own error message offers it,
-// even though ServoTask has always accepted 255 (robot_state.h). A wider
-// return keeps the sentinel and the id distinguishable.
+// See include/api_servo.h for the full contract - exported so the Controller
+// Console's servo.action.* executors (src/console/console_module.cpp) reuse
+// the same target<->id mapping.
 int16_t parseArmId(const char* arm) {
     if (strcmp(arm, "arm1") == 0 || strcmp(arm, "ARM1") == 0)
         return 0;
@@ -49,6 +43,26 @@ int16_t parseArmId(const char* arm) {
         return 255;
     return -1;  // Invalid
 }
+
+// See include/api_servo.h for the full contract. `cmd` is zero-initialised
+// here (the pre-port handler left an uninitialised local's `sequenceId`
+// field, dead for every type but SERVO_CMD_SEQUENCE - src/tasks/
+// servo_task.cpp never reads it for OPEN/CLOSE/POSITION - so this closes
+// that latent UB without changing anything ServoTask observes).
+ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
+                                       CommandSource source) {
+    ServoSubmitOutcome outcome;
+    ServoCommand cmd = {};
+    cmd.armId = armId;
+    cmd.type = type;
+    cmd.positionUs = positionUs;
+    cmd.source = source;
+    cmd.timestampMs = millis();
+    outcome.ok = (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE);
+    return outcome;
+}
+
+namespace {
 
 // Map action string to command type and get position
 bool parseAction(const char* action, ServoCommandType& type, uint16_t& positionUs) {
@@ -91,19 +105,15 @@ void handleServoPost(WebRequest& req) {
         return;
     }
 
-    ServoCommand cmd;
-    cmd.armId = (uint8_t)armId;
-    cmd.source = SRC_WEB_API;
-    cmd.timestampMs = millis();
-
-    // Parse action
-    if (!parseAction(action, cmd.type, cmd.positionUs)) {
+    ServoCommandType type;
+    uint16_t positionUs = 0;
+    if (!parseAction(action, type, positionUs)) {
         webSendJsonError(req, 400, "Invalid action. Use: open, close, stop, or position");
         return;
     }
 
     // Handle position action with positionUs parameter
-    if (cmd.type == SERVO_CMD_POSITION && strcmp(action, "position") == 0) {
+    if (type == SERVO_CMD_POSITION && strcmp(action, "position") == 0) {
         char positionRaw[16] = {};
         if (!req.param("positionUs", positionRaw, sizeof(positionRaw))) {
             webSendJsonError(req, 400, "Missing positionUs parameter for position action");
@@ -122,11 +132,14 @@ void handleServoPost(WebRequest& req) {
             webSendJsonError(req, 400, errMsg);
             return;
         }
-        cmd.positionUs = (uint16_t)parsed;
+        positionUs = (uint16_t)parsed;
     }
 
-    // Send command to servo task queue (non-blocking)
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+    // Commit Step (ADR 0034 criterion 1, include/api_servo.h): the same
+    // servoCmdQueue submission both this handler and the Console's
+    // servo.action.* executors now make.
+    ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, type, positionUs, SRC_WEB_API);
+    if (!outcome.ok) {
         webSendJsonError(req, 503, "Servo command queue full");
         return;
     }
