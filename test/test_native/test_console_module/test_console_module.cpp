@@ -82,17 +82,11 @@
                                        // test_api_motion_routes.cpp drives for the REST
                                        // side of these handlers
 
-// Recorded side effects and controls from src/native_test_stubs.cpp - the
-// same globals test_api_audio_routes.cpp declares for the REST side of
-// sound.action.play-track/set-volume (#221 remainder); no shared header
-// exists for these (unlike the *_test_hooks.h headers above), matching that
-// file's own precedent rather than introducing one for two callers.
-extern bool g_test_audio_queue_ok;
-extern unsigned g_test_audio_play_track_calls;
-extern uint16_t g_test_audio_last_track;
-extern unsigned g_test_audio_volume_calls;
-extern uint8_t g_test_audio_last_volume;
-extern bool g_test_aux_led_queue_ok;  // aux.action.led-color/-effect's own queue stub
+#include "audio_test_hooks.h"    // g_test_audio_queue_ok/play_track/volume - shared with
+                                  // test_api_audio_routes.cpp for sound.action.play-track/
+                                  // set-volume's own queue stub (#221 remainder)
+#include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
+                                  // own queue stub (#221 remainder)
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state

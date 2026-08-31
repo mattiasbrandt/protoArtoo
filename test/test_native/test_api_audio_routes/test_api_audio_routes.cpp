@@ -27,6 +27,9 @@
 
 #include "api_audio.h"
 #include "audio_driver.h"
+#include "audio_test_hooks.h"  // g_test_audio_queue_ok/play_track/volume - shared with
+                                // test_console_module.cpp's #221 remainder sound.action.*
+                                // executors, the same stub this file already drove
 #include "config_cache.h"
 #include "robot_state.h"
 #include "web_request_test_backend.h"
@@ -34,12 +37,7 @@
 // Recorded side effects and controls from src/native_test_stubs.cpp.
 extern uint8_t g_test_audio_capabilities;
 extern const char* g_test_audio_driver_name;
-extern bool g_test_audio_queue_ok;
-extern unsigned g_test_audio_play_track_calls;
-extern uint16_t g_test_audio_last_track;
 extern unsigned g_test_audio_stop_calls;
-extern unsigned g_test_audio_volume_calls;
-extern uint8_t g_test_audio_last_volume;
 extern unsigned g_test_audio_dollar_calls;
 extern unsigned g_test_audio_query_calls;
 extern unsigned g_test_audio_refresh_catalog_calls;
