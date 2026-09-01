@@ -49,7 +49,9 @@ static const char* TAG = "RCInputTask";
 
 // SBUS receiver objects  --  RMT-based, no hardware UART consumed.
 // GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
-// SBUS1 and SBUS2 each occupy one RMT channel (3 memory blocks each).
+// SBUS1 and SBUS2 each occupy one RMT RX channel. The memory blocks per
+// channel are derived from the chip's RMT geometry, not fixed at 3 -- see
+// include/sbus_rmt_budget.h (#255).
 // UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
 static SbusDecoder sbus_drive;
 static SbusDecoder sbus_dome;
