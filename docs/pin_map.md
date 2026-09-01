@@ -82,7 +82,14 @@ S3 — Dome Control
 **Notes:**
 - GPIO 34 (S3 RX) and GPIO 35 (S2 RX) are ESP32 input-only pins — they cannot be used as outputs.
 - SBUS1 (GPIO 15) and SBUS2 (GPIO 13) use the ESP32 RMT peripheral, not hardware UARTs,
-  so all four serial functions (hoverboard, audio, dome link, SBUS) can operate simultaneously.
+  so SBUS costs no UART controller on this board.
+- **S2 and S3 are not simultaneous.** This chip has three HP UART controllers
+  (`SOC_UART_HP_NUM = 3`): UART0 is S0, UART1 is S1, and the single remaining controller
+  serves both S3 (dome link, TX and RX) and S2's RX. Ownership alternates via
+  `domeUartAcquire()` / `domeUartRelease()`, so audio status queries only run while the dome
+  link is on its WiFi fallback; S2's TX is a software bit-bang for the same reason. Both are
+  consequences of the controller count, not of the PCB wiring — see
+  `PA_CAP_DEDICATED_AUDIO_UART` in `include/config.h`, which is 0 here and 1 on FireBeetle 2.
 
 **Dome Control slip ring wiring (cross-connection required):**
 
@@ -109,11 +116,26 @@ The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Stan
 | Silkscreen | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
 |--------|----------|---------|---------|------|----------|-------|
 | main field rows `20` + `21` | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
-| main field rows `22` + `23` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
-| main field rows `34` + `36` | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
+| main field rows `22` + `23` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Owned by DomeLinkTask for the whole boot; not shared |
+| main field rows `34` + `36` | Audio module (UART3) | 34 | 36 | 9600 | DY-SV5W binary | Hardware UART both directions |
 
-**Audio and Dome Arbiter:**
-Both audio RX and dome link use HardwareSerial(2) (GPIO22/23 for dome, GPIO36 for audio RX). They share the UART2 peripheral and are arbitrated by `domeUartAcquire()` / `domeUartRelease()` with the `DomeUartOwner` enum (`include/robot_state.h:66-70`, live field at `:194`). When dome control holds the lane, audio module state queries return cached values instead of querying over UART2 (`audio_dy_sv5w.cpp:32-33`).
+**No audio/dome UART sharing on this board (#254).** The ESP32-P4 has five HP UARTs, so each
+consumer gets its own controller: `UART0` console, `UART1` drive, `UART2` dome, `UART3` audio,
+`UART4` unclaimed by the firmware (borrowed by `bringup/p4_rt_bench.cpp`). The allocation is
+declared in `include/config.h` as `UART_PORT_DRIVE` / `UART_PORT_DOME` / `UART_PORT_AUDIO`, and
+`PA_CAP_DEDICATED_AUDIO_UART` is 1 here.
+
+Consequences specific to this board, all of which are the artoo-esp32 behaviour NOT being inherited:
+
+- Audio TX on GPIO34 is a real hardware UART, not the `softUartTxByte()` bit-bang.
+- The `domeUartAcquire()` / `domeUartRelease()` ownership handoff does not run. `DomeUartOwner`
+  still exists and `/api/status` still reports `dome_link.uart_owner`, but on this board the dome
+  link simply holds it from boot.
+- Audio status queries work while the dome link is on serial -- the posture epic #182 calls primary
+  for this board. On artoo-esp32 that combination starves audio RX by design.
+
+Binding a UART to GPIO34/36 costs no pin: `UART0`-`UART4` route TX/RX to any GPIO through the GPIO
+matrix (spec sheet "UART Lane Plan"), so audio uses the two pins it already had.
 
 ---
 
@@ -138,7 +160,7 @@ Both audio RX and dome link use HardwareSerial(2) (GPIO22/23 for dome, GPIO36 fo
 | 32   | ARM5          | Spare servo output (AUX3)             | LEDC PWM  |
 | 33   | S3 TX         | Dome serial TX                        | UART2     |
 | 34   | S3 RX         | Dome serial RX (input-only)           | UART2     |
-| 35   | S2 RX         | Audio module RX (input-only)          | Soft UART |
+| 35   | S2 RX         | Audio module RX (input-only)          | UART2     |
 
 ### RC Receiver Wiring Modes
 
@@ -309,8 +331,8 @@ The other connectors, with their silkscreen labels:
 | 31 | main field, row `31` | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
 | 32 | main field, row `32` | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
-| 34 | main field, row `34` | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
-| 36 | main field, row `36` | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
+| 34 | main field, row `34` | Audio module TX (UART3) | UART3 | — | P3 strapping (JTAG source); hardware UART via GPIO matrix (#254) |
+| 36 | main field, row `36` | Audio module RX (UART3) | UART3 | — | P3 strapping (ROM print); audio's own controller, not shared (#254) |
 | 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
 | 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
 | 4 | main field, row `4` | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
@@ -325,7 +347,7 @@ The other connectors, with their silkscreen labels:
 | 20 | main field, row `20` | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
 | 21 | main field, row `21` | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
 | 22 | main field, row `22` | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
-| 23 | main field, row `23` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
+| 23 | main field, row `23` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; dome link owns it from boot |
 | 7 | `I2C` block, pin `7/D` | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
 | 8 | `I2C` block, pin `8/C` | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
 

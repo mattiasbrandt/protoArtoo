@@ -3,9 +3,16 @@
 //
 // AudioDriver implementation for the CHIRP Audio Trigger board.
 //
-// TX commands are sent over software UART on PIN_AUDIO_TX (GPIO 26) at 9600 baud.
-// RX responses are read from HardwareSerial(2) on PIN_AUDIO_RX (GPIO 35) for
-// manifest, catalog, and status queries.
+// TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud.
+// RX responses are read from UART_PORT_AUDIO on PIN_AUDIO_RX for manifest,
+// catalog, and status queries.
+//
+// Written for the artoo-esp32 posture, where UART_PORT_AUDIO IS the dome link's
+// controller and there is no spare TX, so this driver carries its own
+// domeUartOwnedBy(DOME_UART_DOME) guards. No P4 environment selects this
+// backend, so those guards have never run on a board with
+// PA_CAP_DEDICATED_AUDIO_UART and are left as they are deliberately: adding a
+// capability branch that no build compiles would ship untested code (#254).
 //
 // CHIRP must be pre-configured to 9600 baud via CHIRP.INI on the SD card root:
 //   #BAUD_RATE 9600
@@ -33,7 +40,7 @@
 #include "config.h"
 #include "logging.h"
 
-static HardwareSerial s_chirpSerial(2);
+static HardwareSerial s_chirpSerial(UART_PORT_AUDIO);
 static const char* TAG = "ChirpDrv";
 static uint32_t s_lastNoRspDiagMs = 0;
 static constexpr uint32_t CHIRP_GNME_WAIT_MS = 450u;
@@ -334,7 +341,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     if (!gotValidGmanLine) {
         if (rxBytes == 0) {
             PA_LOG_WARN(TAG,
-                        "No CHIRP RX bytes during GMAN query. Verify CHIRP TX->S2 RX (GPIO35), common GND, and baud=9600.");
+                        "No CHIRP RX bytes during GMAN query. Verify CHIRP TX -> PIN_AUDIO_RX, common GND, and baud=9600.");
         } else {
             PA_LOG_WARN(TAG,
                         "CHIRP RX activity seen (%u bytes) but no valid GMAN frame.",

@@ -4,9 +4,12 @@
 // Concrete AudioDriver implementation for the CHIRP Audio Trigger board.
 //
 // CHIRP is an RP2350-based multi-stream audio board with an ASCII UART command
-// protocol. TX commands are sent over software UART on PIN_AUDIO_TX (GPIO 26) at
-// 9600 baud. RX status/manifest responses are read via HardwareSerial(2) on
-// PIN_AUDIO_RX (GPIO 35).
+// protocol. TX commands are sent over software UART on PIN_AUDIO_TX at 9600
+// baud. RX status/manifest responses are read via UART_PORT_AUDIO on
+// PIN_AUDIO_RX.
+//
+// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
+// dome link; see the file header of src/drivers/audio_chirp.cpp.
 //
 // NOTE: CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
@@ -34,7 +37,7 @@ class AudioDriverChirp : public AudioDriver {
     void setIO(const AudioSerialIO& io) { m_io = io; }
 
     // Configures soft-UART TX and sends initial volume. Reads GMAN bank
-    // descriptors only when shared UART2 RX is available to audio.
+    // descriptors only when the shared controller's RX is available to audio.
     bool begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.
@@ -81,7 +84,8 @@ class AudioDriverChirp : public AudioDriver {
     uint16_t m_catalogCapacity = 0;  // allocated m_catalog entry count (right-sized)
     uint8_t m_catalogBankCount = 0;
     // Catalog storage is heap-allocated on first discovery and reused after.
-    // When CHIRP RX is unavailable (e.g. the dome link owns UART2) discovery
+    // When CHIRP RX is unavailable (e.g. the dome link owns the shared
+    // controller) discovery
     // never runs, so these stay null and the ~16 KB they would hold statically
     // stays as free, contiguous heap  --  easing DRAM fragmentation.
     AudioCatalogEntry* m_catalog = nullptr;
