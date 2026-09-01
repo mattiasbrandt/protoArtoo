@@ -1321,8 +1321,14 @@ Convenience aliases the variant defines, beyond what the silkscreen shows:
 | `SS` | 31 | | `A6` | 50 |
 | `T0`-`T3` | 4, 5, 7, 8 | | `A7` | 52 |
 
-Note `A4` maps to GPIO51 in both the silkscreen and the variant, but the variant
-adds `A5`-`A7` on GPIO49/GPIO50/GPIO52, which the silkscreen does not label.
+> [!WARNING]
+> **Every alias in this table is code-only.** ~~Note `A4` maps to GPIO51 in both
+> the silkscreen and the variant~~ -- retracted 2026-09-01, it is not on the
+> silkscreen either. The DFR1237's main GPIO field prints a **plain number on
+> every row and no aliases at all** (operator-confirmed against the board), so
+> none of `A0`-`A7` is findable on it. The `SPI`, `UART` and `I2C` blocks are the
+> exception: those do print slash labels (`28/SCK`, `29/MO`, `30/MI`, `37/T`,
+> `38/R`, `8/C`, `7/D`).
 
 ## PlatformIO Notes
 

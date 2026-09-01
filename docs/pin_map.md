@@ -311,8 +311,8 @@ The other connectors, with their silkscreen labels:
 | 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 34 | main field, row `34` | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
 | 36 | main field, row `36` | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
-| 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
-| 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
+| 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
+| 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
 | 4 | main field, row `4` | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
 | 5 | main field, row `5` | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
 | 51 | main field, row `51` | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
