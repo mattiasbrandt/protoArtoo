@@ -108,8 +108,8 @@ The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Stan
 
 | Silkscreen | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
 |--------|----------|---------|---------|------|----------|-------|
-| main field rows `20/A0` + `21/A1` | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
-| main field rows `22/A2` + `23/A3` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
+| main field rows `20` + `21` | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
+| main field rows `22` + `23` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
 | main field rows `34` + `36` | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
 
 **Audio and Dome Arbiter:**
@@ -227,12 +227,17 @@ The main GPIO field is **17 rows x 3 columns**, with the column header silkscree
 - **A 3-pin servo / ESC lead plugs onto ONE ROW**, spanning the three columns: signal into `IO`,
   power into `3V3`, ground into `GND`. You do **not** plug it across three GPIOs -- each row is one
   GPIO with its own power and ground beside it. This is the whole point of the three-column field.
-- Some GPIO numbers carry a second label: `20/A0`, `21/A1`, `22/A2`, `23/A3`, `51/A4` are the
-  analog pins. GPIO49, 50 and 52 have **no** alias printed, even though the Arduino variant defines
-  `A5`-`A7` for them.
-- GPIO32/GPIO33 are the P4's I3C SCL/SDA pair. The spec sheet records them as silkscreened `I3C`
-  from the schematic net names; that specific marking has **not** been confirmed against the
-  physical board, unlike the `IO`/`3V3`/`GND` headers and the row numbers, which have.
+- **Every row in this field is a plain GPIO number. No row carries an alias.** Operator-confirmed
+  against the board, 2026-09-01. The `A0`-`A4` analog aliases and the `I3C` markings that appear in
+  the DFR1237 schematic (`20/A0`, `32/I3C/SCL`, ...) are **KiCad net names**, and the Arduino variant
+  adds `A5`-`A7` on GPIO49/50/52 on top of that. **None of them is printed on this field.** Use the
+  bare number when working with the board in hand; the alias columns in the tables below are for
+  reading code, not for finding a pin.
+- **GPIO32/GPIO33 carry no special marking on this board.** They are the P4's I3C SCL/SDA pair in
+  silicon, and the schematic net names read `32/I3C/SCL` / `33/I3C/SDA` -- but on the physical
+  DFR1237 they are ordinary numbered rows like any other (operator-confirmed, 2026-09-01). The spec
+  sheet previously called them "silkscreened I3C"; that was a net name mistaken for a board marking
+  and has been corrected.
 
 > [!CAUTION]
 > **The middle column is `3V3`, not 5 V.** Standard hobby servos and ESCs expect 5 V-6 V, and pulling
@@ -302,25 +307,25 @@ The other connectors, with their silkscreen labels:
 | 29 | `SPI` block, pin `29/MO` | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
 | 30 | `SPI` block, pin `30/MI` | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
 | 31 | main field, row `31` | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
-| 32 | main field, row `32` (I3C) | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
-| 33 | main field, row `33` (I3C) | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 32 | main field, row `32` | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 34 | main field, row `34` | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
 | 36 | main field, row `36` | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
 | 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
 | 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
 | 4 | main field, row `4` | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
 | 5 | main field, row `5` | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
-| 51 | main field, row `51/A4` | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 51 | main field, row `51` | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
 | 48 | main field, row `48` | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load** (see Known Issue below); P2 with LDO caution |
 
 6 board bring-up interface lanes:
 
 | GPIO | Silkscreen (what is printed on the board) | Function | Peripheral | Arduino alias | Notes |
 |------|-------------------------------------------|----------|------------|---------------|-------|
-| 20 | main field, row `20/A0` | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
-| 21 | main field, row `21/A1` | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
-| 22 | main field, row `22/A2` | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
-| 23 | main field, row `23/A3` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
+| 20 | main field, row `20` | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
+| 21 | main field, row `21` | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
+| 22 | main field, row `22` | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
+| 23 | main field, row `23` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
 | 7 | `I2C` block, pin `7/D` | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
 | 8 | `I2C` block, pin `8/C` | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
 

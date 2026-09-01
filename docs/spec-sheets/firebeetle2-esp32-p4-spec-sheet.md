@@ -936,8 +936,14 @@ Sourced from the DFR1172 wiki pin tables and cross-checked against Espressif's
 ## IO Expansion Header Map
 
 Taken from the DFR1237 KiCad schematic, which supersedes the OCR-derived list in
-the previous revision of this sheet. All labels below are the actual net names on
-the board.
+the previous revision of this sheet.
+
+> [!WARNING]
+> **These are net names, not silkscreen.** The distinction was blurred by the
+> phrase "the actual net names on the board" that stood here until 2026-09-01, and
+> it produced two wrong claims further down (`A0`-`A3` and `I3C`, both retracted
+> below). The physical board's main GPIO field prints **plain numbers only**;
+> `docs/pin_map.md` is the silkscreen-first view.
 
 ### Module sockets
 
@@ -996,10 +1002,18 @@ the board.
 Two things the previous revision of this sheet missed, both visible in the
 schematic and both consequential:
 
-- **GPIO20-GPIO23 are silkscreened A0-A3, and GPIO51 is A4.** They are the
-  board's analog pins.
-- **GPIO32/GPIO33 are silkscreened I3C SCL/SDA.** They are the P4's IO MUX I3C
-  master pins, not generic GPIOs.
+- **GPIO20-GPIO23 are the board's analog pins, and GPIO51 is the fifth** -- a
+  silicon/variant fact that still holds. ~~are silkscreened A0-A3 ... GPIO51 is A4~~
+  **The silkscreen half is retracted 2026-09-01: it is wrong.** `20/A0` and the
+  rest are KiCad **net names**; the physical DFR1237's main field prints **plain
+  numbers only, on every row, with no aliases at all** (operator-confirmed).
+- **GPIO32/GPIO33 are the P4's IO MUX I3C master pins**, not generic GPIOs -- a
+  silicon fact, and it still holds. ~~are silkscreened I3C SCL/SDA~~ **The
+  silkscreen half is retracted 2026-09-01: it is wrong.** `32/I3C/SCL` and
+  `33/I3C/SDA` are KiCad **net names**; on the physical DFR1237 these two sit in
+  the main field as ordinary numbered rows with **no special label**
+  (operator-confirmed against the board). Net names are not silkscreen, and this
+  sheet conflated them.
 
 The `SPI`, `UART`, and `I2C` groupings are still convenience labels; ESP32-P4
 routes most digital peripherals through the GPIO matrix. But the analog and I3C
