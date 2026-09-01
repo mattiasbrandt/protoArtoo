@@ -69,7 +69,16 @@ PIO_CORE_DIR = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_C
 # an artoo-esp32 env (chirp, mp3trigger, dysv5w, check*) keep bare `pio` on
 # purpose: they must stay on the artoo-esp32 core dir even when BUILD_ENV points
 # at P4.
-PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) pio
+PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) $(FLOCK) pio
+
+# Only one PlatformIO build may run on this machine at a time (AGENTS.md "The
+# build lock"). Every pio invocation below goes through the lock rather than
+# relying on the caller to type `flock` in front of make, and tools/pio_lock.py
+# holds the lock for exactly as long as the command it execs. Deliberately not
+# `?=`: a lock that is one `make FLOCK= build` away from being off is a habit
+# again. The escape hatch for a contiguous multi-command window is
+# `PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
@@ -100,7 +109,7 @@ build: ## Compile firmware  (BUILD_ENV=artoo_esp32 by default)
 	@python3 tools/check_framework_envelope.py --env $(BUILD_ENV) --quiet
 
 test: ## Run native unit tests
-	pio test -e native
+	$(FLOCK) pio test -e native
 
 # Canonical web-suite invocation. The quoted glob is expanded by node itself:
 # `node --test test/test_web/` (directory form) fails with MODULE_NOT_FOUND
@@ -114,7 +123,7 @@ test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
 	python3 -m unittest discover -s test/test_tools -q
 
 check: ## Static analysis with cppcheck
-	pio check -e artoo_esp32
+	$(FLOCK) pio check -e artoo_esp32
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
@@ -152,24 +161,24 @@ uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB via UPLOAD_POR
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
 flash-chirp: test ## Flash CHIRP build via USB
-	pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
+	$(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
 
 flash-monitor: test ## Flash default build via USB then capture boot log
 	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
-	pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
+	$(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
-	pio run -e artoo_esp32_chirp_ota
+	$(FLOCK) pio run -e artoo_esp32_chirp_ota
 	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
 
 ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
-	pio run -e artoo_esp32_mp3trigger_ota
+	$(FLOCK) pio run -e artoo_esp32_mp3trigger_ota
 	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
@@ -177,19 +186,19 @@ ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
 # has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
 
 flash-dysv5w: test ## Flash DY-SV5W build via USB
-	pio run -e artoo_esp32_dysv5w -t upload --upload-port $(UPLOAD_PORT)
+	$(FLOCK) pio run -e artoo_esp32_dysv5w -t upload --upload-port $(UPLOAD_PORT)
 
 ota-dysv5w: test ## Flash DY-SV5W build via OTA
-	pio run -e artoo_esp32_dysv5w_ota
+	$(FLOCK) pio run -e artoo_esp32_dysv5w_ota
 	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Compile-check only ───────────────────────────────────────────────────────
 
 check-chirp: ## Compile-check CHIRP backend  (no flash)
-	pio run -e artoo_esp32_chirp_check
+	$(FLOCK) pio run -e artoo_esp32_chirp_check
 
 check-mp3trigger: ## Compile-check MP3Trigger backend  (no flash)
-	pio run -e artoo_esp32_mp3trigger_check
+	$(FLOCK) pio run -e artoo_esp32_mp3trigger_check
 
 # ── Setup & tools ────────────────────────────────────────────────────────────
 

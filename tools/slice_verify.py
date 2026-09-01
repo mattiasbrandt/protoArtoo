@@ -49,12 +49,21 @@ checked against the commit and gate version it claims to describe. Every
 subprocess runs under a timeout so a hung build or test fails the gate loudly
 instead of hanging it.
 
-Exit code 0 only when every check passes. Dependency-free: stdlib + git + pio.
+The phases that invoke pio hold the machine-wide build lock (tools/pio_lock.py,
+AGENTS.md "The build lock"), so a gate run and another agent's build serialise
+instead of colliding. It is taken per pio phase rather than for the whole run,
+so the web suite and the mutation stage do not queue other agents behind them.
+Run the gate plainly: an outer `flock` on the same file is now the nested case,
+and is refused rather than waited on.
+
+Exit code 0 only when every check passes. Dependency-free: stdlib + git + pio,
+plus tools/pio_lock.py beside this script.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -64,6 +73,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 import glob
+
+# Sibling module in tools/, which is on sys.path for both entry points: this
+# script run directly, and the tooling tests that import it.
+import pio_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / ".pio" / "slice-verify-cache.json"
@@ -126,16 +139,30 @@ def _text(data: str | bytes | None) -> str:
 
 
 def run(
-    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT,
-    env: dict | None = None
+    cmd: list[str],
+    cwd: Path = ROOT,
+    timeout: int = DEFAULT_TIMEOUT,
+    env: dict | None = None,
+    lock: bool = False,
 ) -> subprocess.CompletedProcess:
-    try:
-        return subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env
-        )
-    except subprocess.TimeoutExpired as exc:
-        stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
-        return subprocess.CompletedProcess(cmd, 124, _text(exc.stdout), stderr)
+    """Run a command under a timeout; `lock` holds the build lock across it.
+
+    The wait for the lock sits outside the subprocess timeout on purpose:
+    queueing behind another agent's build must not eat into the time this
+    build is allowed to take before it counts as hung.
+
+    `env` carries the per-chip PLATFORMIO_CORE_DIR so a pio phase does not
+    inherit whichever toolchain pool the caller's shell happened to point at.
+    """
+    with pio_lock.build_lock(cmd) if lock else contextlib.nullcontext():
+        try:
+            return subprocess.run(
+                cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
+            return subprocess.CompletedProcess(cmd, 124, _text(exc.stdout), stderr)
 
 
 def load_budgets() -> dict | None:
@@ -267,7 +294,12 @@ def parse_native_summary(output: str) -> tuple[int, int] | None:
 
 
 def run_native_tests(cwd: Path) -> tuple[int, tuple[int, int] | None, str]:
-    proc = run(["pio", "test", "-e", "native"], cwd=cwd, timeout=NATIVE_TEST_TIMEOUT)
+    proc = run(
+        ["pio", "test", "-e", "native"],
+        cwd=cwd,
+        timeout=NATIVE_TEST_TIMEOUT,
+        lock=True,
+    )
     output = proc.stdout + proc.stderr
     return proc.returncode, parse_native_summary(output), output
 
@@ -579,10 +611,14 @@ def check_deleted_tests(base_sha: str) -> CheckResult:
 
 
 def check_command_exit(
-    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT, env: dict | None = None
+    label: str,
+    cmd: list[str],
+    timeout: int = DEFAULT_TIMEOUT,
+    env: dict | None = None,
+    lock: bool = False,
 ) -> CheckResult:
     info(f"running {' '.join(cmd)}...")
-    proc = run(cmd, timeout=timeout, env=env)
+    proc = run(cmd, timeout=timeout, env=env, lock=lock)
     notes: list[str] = []
     if proc.returncode != 0:
         notes.append(f"{' '.join(cmd)} failed; tail:")
@@ -753,6 +789,9 @@ def working_tree_dirty() -> bool:
 
 
 def env_fingerprint() -> str:
+    # `pio --version` reads a version string and builds nothing, so it stays
+    # outside the build lock: queueing a provenance line behind another
+    # agent's build would delay the block for no gain in serialisation.
     def first_line(cmd: list[str]) -> str:
         proc = run(cmd, timeout=60)
         text = (proc.stdout or proc.stderr).strip()
@@ -881,11 +920,15 @@ def main() -> int:
         check_deleted_tests(base_sha),
     ]
 
-    # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell
+    # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell,
+    # and under the machine-wide build lock (AGENTS.md "The build lock").
     pio_env = os.environ.copy()
     pio_env["PLATFORMIO_CORE_DIR"] = get_platformio_core_dir("artoo_esp32")
     results.extend([
-        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"], env=pio_env),
+        check_command_exit(
+            "pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"],
+            env=pio_env, lock=True,
+        ),
         check_build_budget("artoo_esp32"),
         check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
