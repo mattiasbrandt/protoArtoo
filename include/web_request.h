@@ -138,7 +138,8 @@ constexpr size_t kDefaultMaxBodyBytes = 4096;
 //
 // maxBodyBytes bounds the raw body this route will buffer. It is per-route
 // rather than global because one route legitimately carries far more than the
-// rest -- POST /api/seq saves up to SEQ_FILE_MAX_BYTES (12 KB) -- and raising
+// rest -- POST /api/seq saves up to SEQ_FILE_MAX_BYTES, which is chip-target
+// specific (12 KB on ESP32, 24 KB on ESP32-P4; seq_store_util.h) -- and raising
 // the default for everything to accommodate it would hand every other route
 // the same allocation ceiling for nothing. A body over the limit is not
 // buffered, so body() reports null and the handler answers 413 from

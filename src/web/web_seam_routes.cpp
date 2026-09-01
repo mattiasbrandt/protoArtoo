@@ -122,9 +122,10 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost);
 
     // Learned Sequences. POST /api/seq names its own body bound because a
-    // saved sequence runs to SEQ_FILE_MAX_BYTES, three times what the default
-    // allows -- and the store enforces that same number, so the route and the
-    // thing it writes to agree on one limit.
+    // saved sequence runs to SEQ_FILE_MAX_BYTES, several times what the default
+    // allows (the cap is chip-target specific, seq_store_util.h) -- and the
+    // store enforces that same number, so the route and the thing it writes to
+    // agree on one limit.
     webRegisterRoute("/api/seq/list", WebMethod::kGet, handleSeqListGet);
     webRegisterRoute("/api/seq/builtins", WebMethod::kGet, handleSeqBuiltinsGet);
     webRegisterRoute("/api/seq/test", WebMethod::kPost, handleSeqTestPost);
