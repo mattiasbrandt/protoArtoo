@@ -250,7 +250,17 @@ Nothing is pushed to origin until the operator explicitly says so.
 The device is a single shared resource and may be bench-mode (controller
 HTTP/SSE/serial/OTA only - no droid-component verification; see
 AGENTS.md verification labels). Ask the operator before every device
-session. One image at a time; before any acceptance run, confirm
+session.
+
+**Bench-mode is not a blocked epic.** AGENTS.md's verification labels describe
+evidence, they do not gate closure, and `full-hardware-verified` - "verified on
+integrated droid hardware" - is not a bar an epic must clear. Do not plan a
+droid-hardware verification ticket as the epic's final gate: it reads correct on
+paper and is impractical in fact, and the faults it would catch surface in the
+first minutes of real operation anyway. Close the epic on the strongest evidence
+the available hardware produced, name what is unproven, and put any real-but-
+unmeasurable risk in the file that owns that hardware truth rather than in a ticket
+nobody can action. One image at a time; before any acceptance run, confirm
 `firmwareVersion` matches the intended commit - a `-dirty` or stale image
 invalidates the run. If the fix changed `data/`, the FS image must be
 uploaded too, and `fs-version.json` must match.

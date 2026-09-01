@@ -24,6 +24,15 @@ _Avoid_: software verified, bench verified
 The behavior was tested on the integrated droid hardware for the affected subsystem.
 _Avoid_: bench verified, controller upload verified
 
+**Verification Label**:
+A description of the evidence a piece of work actually has - never a gate on closing
+it. Work closes on the strongest evidence the available hardware can produce, and
+`full-hardware-required` records the remaining droid-only exposure rather than
+blocking. Droid confirmation is a desirable outcome for a hobby-scale project, not a
+precondition (operator decision, 2026-09-01; see AGENTS.md "Verification and
+Reporting").
+_Avoid_: hardware gate, droid gate, blocked pending hardware verification
+
 **Public Verification Wording**:
 Short evidence phrasing in public docs that describes what was actually tested without exposing internal process labels.
 _Avoid_: software-verified, controller-upload-verified, full-hardware-verified

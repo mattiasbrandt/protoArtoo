@@ -293,7 +293,29 @@ Classify verification status explicitly — use only these labels:
 - `controller-upload-verified` — flashed to ESP32 controller; smoke checks passed
 - `full-hardware-verified` — verified on integrated droid hardware
 - `partial` — some evidence exists; controller or hardware checks still open
-- `full-hardware-required` — physical hardware needed before closure
+- `full-hardware-required` — the remaining exposure is droid-only; recorded, not scheduled
+
+**These labels describe evidence. They are not a gate** (operator decision,
+2026-09-01). protoArtoo is a small open-source hobby project, and integrated-droid
+confirmation is a desirable outcome, not a precondition for closing work.
+
+- A ticket, a PR, or an epic **closes on the strongest evidence the available
+  hardware can produce**. `full-hardware-required` names what is still unproven so
+  the next person knows where to look; it never blocks closure on its own.
+- **Do not write a droid-hardware verification ticket as a gate.** Whatever real
+  droid operation turns up is ordinary follow-up work, filed when it appears. A
+  fault in drive, dome, servos, sound, SBUS or battery sense shows itself in the
+  first minutes of driving; a gate does not find it earlier, it only delays the
+  close. #193 was exactly this ticket and was dropped `not planned`.
+- **Where a risk is real but unmeasurable, document it, do not schedule it.** Put
+  it in the file that owns the hardware truth — the `GPIO48-52` LDO watch item
+  lives in `docs/pin_map.md`, "Known Issue: GPIO 48-52 LDO Rails (Unmeasured)" —
+  with how the fault would present and how to diagnose it. A durable note beats a
+  ticket nobody can action.
+- **This does not relax the safety invariants.** The contracts in "Safety-Critical
+  Rules" are still proven to the maximum the available hardware allows, and a gap
+  is named explicitly rather than assumed away. Not being able to reach the droid
+  is a reason to record a limit, never a reason to skip a check the bench can run.
 
 Never use "bench verified" or "bench-tested" — too ambiguous. Public docs use plain
 evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller").

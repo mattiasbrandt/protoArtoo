@@ -278,6 +278,12 @@ persistence, or JSON/API contracts are touched (see `AGENTS.md`
 - [ ] Public-facing docs use evidence phrases such as "Automated checks are passing"
   or "Tested on an ESP32 controller" rather than internal verification labels
 
+These labels describe evidence, not readiness to merge. A PR is not held open for
+droid-hardware confirmation: state what is unproven with `partial` or
+`full-hardware-required` and land it. Anything real droid operation turns up is
+ordinary follow-up work. Safety invariants are still proven to the maximum the
+available hardware allows, and any gap is named.
+
 Do not use "bench verified" or "bench-tested" as a status. It is ambiguous: a
 green build is `software-verified`; an ESP32 upload plus runtime smoke check is
 `controller-upload-verified`; integrated subsystem testing is
