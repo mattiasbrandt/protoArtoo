@@ -251,6 +251,37 @@ The main GPIO field is **17 rows x 3 columns**, with the column header silkscree
 > an accident of it. It is also why the `3V3`-not-5 V caution above matters so much -- the layout
 > invites exactly the plug-and-go wiring that the rail cannot actually power.
 
+### What can and cannot be reassigned in code
+
+The research pass that selected this board noted that pin assignments can be re-aligned in firmware
+to suit the build. That is true, and it is one of the board's real strengths -- but it applies to
+**rows, not columns**, and the difference is the difference between a config change and a damaged
+board.
+
+| | Reassignable in code? | Why |
+|---|---|---|
+| **Which GPIO row carries which function** (drive TX, a servo, an RC channel) | ✅ **Yes, freely, within the taxonomy below** | ESP32-P4 routes most peripherals through the GPIO matrix, so UART, LEDC PWM and RMT can be pointed at almost any exposed pin |
+| **The `IO` / `3V3` / `GND` columns** | ⛔ **No. Not at all.** | `IO` is the GPIO net; `3V3` and `GND` are **power and ground planes** -- copper, not pins. The spec sheet lists them as rails (`J14`/`J15`). No firmware change can make the `3V3` column deliver 5 V, or turn the `GND` column into a signal |
+
+So the `3V3`-not-5 V caution above is **not** a firmware problem and has no firmware fix. It is
+what the copper does. A servo still needs its power from a BEC.
+
+Row reassignment is bounded by the spec sheet's suitability taxonomy, not free everywhere:
+
+- **P2** -- any GPIO via the matrix, usable without restriction. Move these freely.
+- **P1** -- fixed IO MUX pins, or pins with peripheral-specific hardware (the GPIO32/33 I3C pair).
+  Reassignable here only because protoArtoo does not use I3C.
+- **P3** -- usable, but conflicts with an important function: strapping (GPIO34-GPIO38),
+  JTAG (GPIO2-GPIO5), UART0 (GPIO37/GPIO38), USB Serial/JTAG (GPIO24/GPIO25). Several production
+  pins already sit here deliberately; moving something *onto* a P3 pin needs the conflict understood
+  first.
+
+> [!WARNING]
+> **Reassignment permutes, it does not create.** Measured 2026-08-23: this board routes **15 usable
+> GPIOs against a demand of 14** once the "pairs to avoid" rules are honoured -- **one spare, and it
+> is itself an avoid-list pin**. You can rearrange which row does what; you cannot free up a pin that
+> is not there. Treat any proposal that needs an extra GPIO as a design change, not a remap.
+
 The other connectors, with their silkscreen labels:
 
 | Silkscreen block | Pins as printed | Schematic refdes |
