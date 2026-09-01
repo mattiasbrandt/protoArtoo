@@ -27,8 +27,10 @@
 
 #include "sbus_decoder.h"
 #include "sbus_decode_helpers.h"
+#include "sbus_rmt_budget.h"
 
 #include <esp_log.h>
+#include <soc/soc_caps.h>
 #include <string.h>
 
 static const char* TAG = "SbusDecoder";
@@ -40,9 +42,61 @@ static const char* TAG = "SbusDecoder";
 // 1 us per tick  --  10 ticks per SBUS bit at 100 kbaud.
 static constexpr uint32_t kResolutionHz = 1'000'000;
 
-// 3 RMT memory blocks per channel; worst-case SBUS frame ~= 150 symbols.
-// Classic ESP32 has 8 blocks total; 2 decoders use 6, leaving 2 free.
-static constexpr size_t kMemBlockSymbols = 192;
+// --- RMT memory-block budget, derived per chip (#255) ------------------------
+//
+// Two decoders have to coexist: SBUS1 (drive) and SBUS2 (dome), both created in
+// src/tasks/rc_input.cpp. A literal block count here is a defect waiting for the
+// next chip. 192 symbols is 3 blocks on the classic ESP32 (64 words per block,
+// 8 RX-capable channels) but 4 on the ESP32-P4 (48 words, 4 channels) -- so the
+// first decoder claimed every RX-capable channel and the second one's begin()
+// returned ESP_ERR_NOT_FOUND, degrading the controller to a single receiver.
+//
+// The policy and the reasoning behind it are in include/sbus_rmt_budget.h; what
+// follows is only its instantiation, so the two can be read -- and tested --
+// apart. Derived values:
+//
+//   artoo-esp32   3 blocks x 64 = 192 symbols   (unchanged: no ping-pong, so
+//                                                the whole frame must be resident)
+//   ESP32-P4      2 blocks x 48 =  96 symbols
+//
+// Consequence worth meeting here rather than in a ticket: the driver puts its RX
+// threshold at half the channel's memory, so on the P4 ping_pong_symbols halves
+// from 96 to 48. The threshold ISR then fires about 3 times per worst-case frame
+// instead of 1, and the deadline to copy one half out before the writer wraps
+// into it drops from ~1.9 ms to ~0.96 ms (worst case is 150 symbols over the
+// ~3 ms on-wire frame, i.e. 20 us per symbol). Both are comfortable; both are
+// what an ISR-cadence measurement should be looking at.
+static constexpr size_t kConcurrentDecoders = 2;
+
+// SOC_RMT_SUPPORT_RX_PINGPONG is defined only on chips that have the feature,
+// so testing it with #if on a possibly-undefined macro (undefined -> 0) is
+// deliberate, and is how ESP-IDF's own rmt_rx.c tests it. Do not convert this to
+// #ifdef: it is the value that matters, not merely the definedness.
+static constexpr SbusRmtGeometry kRmtGeometry = {
+    SOC_RMT_MEM_WORDS_PER_CHANNEL,
+    SOC_RMT_RX_CANDIDATES_PER_GROUP,
+#if SOC_RMT_SUPPORT_RX_PINGPONG
+    true,
+#else
+    false,
+#endif
+};
+
+static constexpr size_t kMemBlockSymbols = sbusRmtMemBlockSymbols(
+    kRmtGeometry, kConcurrentDecoders, SbusDecoder::kWorstCaseFrameSymbols);
+
+// A chip whose RMT geometry cannot host both decoders must fail the build here,
+// not degrade to one receiver at runtime behind a single log line. This also
+// rules out a subtler failure the IDF allocator does not catch: it tests a
+// candidate slot with an unbounded `channel_mask << j`, so a request that runs
+// off the end of the RX window succeeds and programs a channel whose memory
+// extends past the last real block. Two 3-block decoders on the P4 do exactly
+// that; requiring decoders * blocks <= SOC_RMT_RX_CANDIDATES_PER_GROUP rejects it.
+static_assert(sbusRmtBudgetFits(kRmtGeometry, kConcurrentDecoders,
+                                SbusDecoder::kWorstCaseFrameSymbols),
+              "RMT RX budget does not fit this chip: two SBUS decoders cannot both "
+              "be placed within SOC_RMT_RX_CANDIDATES_PER_GROUP, or a chip without "
+              "ping-pong cannot hold a worst-case frame");
 
 // Ignore pulses shorter than 3 us (glitch filter).
 static constexpr uint32_t kGlitchNs = 3'000;
@@ -218,8 +272,9 @@ bool SbusDecoder::read() {
 // _onRecvDone  --  ISR callback (IRAM_ATTR)
 //
 // Called by the RMT driver when the receive window closes  --  either the signal
-// held one level for > kFrameGapNs (normal frame end) or the symbol buffer
-// filled up (should not happen for normal SBUS traffic with kMemBlockSymbols=192).
+// held one level for > kFrameGapNs (normal frame end) or the buffer passed to
+// rmt_receive() filled up -- that bound is kSymBufSize (192 symbols), not the
+// RMT block count, and normal SBUS traffic stays well under it.
 //
 // Immediately re-arms receive on the other buffer so no frame is missed while
 // the task is parsing the completed buffer.
