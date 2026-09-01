@@ -5,10 +5,13 @@ exhaustion, and the flashing constraints that affect how you collect evidence.
 Written for both the operator and a troubleshooting agent: each section is a
 concrete, ordered procedure with exact commands and decision points.
 
-Base URL: `http://artoo.local` (or the device IP — `GET /api/wifi` → `staIp`, or
-`10.0.0.22` if mDNS is flaky). All HTTP probes work on the **seated** controller;
-esptool flash/write operations do **not**. USB serial monitoring remains readable
-with the reset caveat below.
+Base URL: `http://artoo.local` — the artoo-esp32 controller's default mDNS name
+(or the device IP — `GET /api/wifi` → `staIp`, or `10.0.0.22` if mDNS is
+flaky). A FireBeetle 2 controller answers at `http://firebeetle2.local`
+instead; the two boards default to different names so they never contest each
+other on the same LAN (#242). All HTTP probes work on the **seated**
+controller; esptool flash/write operations do **not**. USB serial monitoring
+remains readable with the reset caveat below.
 
 ---
 
@@ -151,6 +154,37 @@ and remains available as described below.
   A partition-table change (e.g. the
   coredump partition) needs this full USB flash + `uploadfs`; OTA does not rewrite
   the partition table.
+
+### OTA fails with `[ERROR]: No response from device` (host firewall)
+
+Applies to **both boards** — nothing in this path is board-dependent.
+
+The board is not the problem. `espota.py` prints `Waiting for device...` and then
+blocks on `sock.accept()` on a **TCP** listener it opens on the *host*, with a
+hardcoded 10 s timeout (`--timeout`/`OTA_TIMEOUT` do not extend this specific
+wait — that flag covers the invitation/result timeout, and
+`tools/ota_upload.py --transfer-timeout` patches a *different* hardcoded 10 s,
+the per-chunk transfer one). The device receives the OTA invitation, accepts
+it, and tries to connect back to that host port — `ArduinoOTA error: 2
+update=0 No Error` followed by `error: 4 update=12 Aborted` in the board's own
+log means the device could not open the TCP connection *back*, i.e.
+`OTA_CONNECT_ERROR`. On a host with a default-deny inbound firewall (e.g.
+`ufw` with `DEFAULT_INPUT_POLICY="DROP"`), that inbound connection is silently
+dropped, and by default espota chooses a **random** host port each run, so
+there is no single rule to add ahead of time.
+
+Fix: `make ota` (and every other `make *-ota` target, plus the `make`
+interactive wizard) pins that host port to a fixed value —
+`OTA_HOST_PORT`, default **32320** — via `tools/ota_upload.py --host-port`.
+Allow it once on your host:
+
+```bash
+sudo ufw allow from 10.0.0.0/24 to any port 32320 proto tcp   # match your LAN CIDR
+```
+
+Override the port with `OTA_HOST_PORT=<port>` (CLI or `user.mk`, see
+`user.mk.example`) only if 32320 is already taken on your machine — otherwise
+firewall the default instead of moving it, so the rule above keeps working.
 
 ### Serial monitor caveat
 

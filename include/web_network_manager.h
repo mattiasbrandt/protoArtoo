@@ -1,13 +1,16 @@
 // =============================================================================
 // include/web_network_manager.h
 //
-// Project-owned network manager seam (Slice 1 of #188). Handles WiFi event
+// Project-owned network manager seam (#188). Handles WiFi event
 // registration and boot posture application.
 //
 // Architecture:
 //   - Vendor-free interface, no #include <WiFi.h> or vendor types in signatures
-//   - Two backends per ADR 0021 pattern:
-//     src/web/web_network_manager_native.cpp -- Arduino/esp_wifi device backend
+//   - One translation unit per composition, each guarded whole-file, no #else
+//     inside a backend (#188 coordinator ruling 4):
+//     src/web/web_network_manager_native.cpp -- Arduino/esp_wifi device backend (artoo-esp32)
+//     src/web/web_network_manager_hosted.cpp -- ESP-Hosted SDIO backend (FireBeetle 2, #189)
+//     src/web/web_network_manager_none.cpp   -- no network backend (ADR 0032 zero-backend)
 //     src/native_test_stubs.cpp              -- host-test backend
 //   - Event handling (translation, logging, server startup) is the backend's job
 //   - Boot posture application is the backend's job
@@ -16,8 +19,20 @@
 // =============================================================================
 #pragma once
 
+#include "config.h"
 #include "config_store.h"
 #include "wifi_boot_decision.h"
+
+// At most one network backend may be selected (ADR 0029). A Board Variant
+// declaring both PA_CAP_NATIVE_WIFI and PA_CAP_HOSTED_WIFI would compile two
+// definitions of every seam function below and fail at link with a
+// duplicate-symbol error that names none of this -- catching it here instead
+// gives the maintainer adding a board the actual invariant, not a linker
+// puzzle. Zero backends stays legal (ADR 0032, zero-backend composition):
+// this is *at most* one, not *exactly* one.
+static_assert(!(PA_CAP_NATIVE_WIFI && PA_CAP_HOSTED_WIFI),
+              "at most one network backend capability (PA_CAP_NATIVE_WIFI, PA_CAP_HOSTED_WIFI) "
+              "may be enabled per board");
 
 // Initialize network manager: register WiFi event handler and prepare for
 // bootstrap. Called once at boot from webServerInit() (web_server.cpp).

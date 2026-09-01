@@ -3,6 +3,31 @@
 Working spec for using the DFRobot FireBeetle 2 ESP32-P4 and DFR1237 IO
 expansion board as a controller candidate.
 
+## Before you buy one
+
+This sheet documents the FireBeetle 2 for protoArtoo development. It is not a
+recommendation to buy this board for a droid build — that question is still
+open, and this page does not answer it yet.
+
+We have bought two. One works. The other arrived with the image for its ESP32-C6
+radio written to the wrong place in flash, so that board cannot join WiFi at
+all, and you cannot tell which one you have until you power it up. DFRobot has
+publicly acknowledged the affected batch. Recovering a bad board means soldering
+to three unlabelled 2 mm pads and holding all three connected for the eight to
+twelve minutes the write takes — someone attempting exactly that, with a
+purpose-bought jig, a meter and a written procedure, could not keep contact.
+The radio cannot be reflashed through the board's USB port or over WiFi either;
+we tested the wire-free route and a factory radio refuses it.
+
+**If you are building a droid today, use the artoo-esp32 controller.** It is
+fully supported, it is what this project develops against day to day, and none
+of the above applies to it.
+
+This page will say something different once DFRobot ships corrected boards or a
+corrected factory image. Nothing else changes it — not a successful repair on
+our bench, and not more good boards arriving, because neither tells you what is
+in the box you would be opening.
+
 Sources re-verified 2026-08-07. The previous revision of this sheet (2026-05-19)
 was written against the ESP32-P4 datasheet DFRobot hosts on its wiki, which has
 since been superseded twice over. See [Chip Revision: v1.x vs
@@ -369,6 +394,34 @@ from the main-board schematic; nothing in the normal path depends on it.
 > of the link failure. Left recorded because the paper contradiction is real and
 > will confuse the next reader otherwise.
 
+> [!NOTE]
+> **The C6 reset net, read from the main-board schematic 2026-08-29.** This
+> supersedes every inference about how GPIO54 reaches the C6. Source: page 7 and
+> page 1 of `[DFR1172][M027.00980](V1.0.0).PDF`, the main-board schematic bundled
+> in the DFR1237 schematics ZIP. The PDF is raster (Microsoft Print To PDF, zero
+> extractable text), but it renders legibly - `pdftoppm -r 1200` with a crop is
+> enough to read pin numbers and net labels.
+>
+> | Hop | Evidence |
+> | --- | --- |
+> | ESP32-P4 (`U1`) **pin 98** carries the net **`C6_EN`** | page 1; pin 98's function label reads `GPIO54/ADC13/ANA_COMP1/MAC_RXER/FLASH_D` |
+> | `C6_EN` continues as **`C6_RST`** | page 7, off-sheet label |
+> | `C6_RST` lands on **ESP32-C6-MINI-1-N4 (`U3`) pin 8 = `EN`** | page 7 |
+> | The same net is a **test pad** labelled `C6_RST` | page 7, six-pad array |
+>
+> **So the `C6_RST` test pad, the `C6_EN` net and P4 GPIO54 are one net, and it
+> terminates on the C6 module's single `EN` pin.** A scope on that pad observes
+> exactly what GPIO54 drives - no assumption required.
+>
+> **Reset-net passives (same page):** `R16` **10 k / 1 %** pull-up to `ESP_3V3`
+> and `C43` **100 nF / 16 V** to GND, i.e. tau = **1 ms**. A 100 ms assert is
+> 100x tau, so a driven pulse is unambiguous and the release edge settles in
+> about 5 ms. Anything slower than that at the pad is a circuit fault, not RC.
+>
+> This is also the missing half of the polarity note above: the host drives a
+> passive RC-held `EN` directly, so "release" is simply letting `R16` pull it up.
+
+
 GPIO14/GPIO15 doubling as the `LP_UART` IO MUX pads is why LP UART is impractical
 on this board while Wi-Fi is in use, and GPIO16-GPIO19 being `ADC1_CHANNEL0-3` is
 why only GPIO20-GPIO23 remain as reachable ADC1 inputs.
@@ -529,6 +582,27 @@ with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 > to force download mode, plus `TXD` → pad 2 (`ESP32C6_RX`) and `RXD` → pad 3
 > (`ESP32C6_TX`). This configuration is verified by `esptool chip-id` and by full 4 MB
 > read-back. Without pad 1 grounded, the chip boots from flash instead.
+
+> [!NOTE]
+> **The six pads, from the schematic (2026-08-29).** Page 7 of the main-board
+> schematic draws the pad array as six nets. This is the authoritative *set* and
+> their net names; the *physical left-to-right order* above still comes from
+> continuity on the bench, because a schematic symbol's pin order is not a
+> layout.
+>
+> | Schematic net | Goes to | Wiki figure calls it |
+> | --- | --- | --- |
+> | `C6_RX0` | C6 pin 30 `RXD0` | `ESP32C6_RX` |
+> | `C6_TX0` | C6 pin 31 `TXD0` | `ESP32C6_TX` |
+> | `C6_IO9` | C6 pin 23 `IO9`, pulled up by `R17` 10 k to `ESP_3V3` | `ESP32C6_IO9/BOOT` |
+> | `C6_RST` | C6 pin 8 `EN` - **and P4 GPIO54** | `ESP32C6_RST` |
+> | `ESP_3V3` | board 3V3 rail | `3V3` |
+> | GND | ground | `GND` |
+>
+> Two consequences worth having: `C6_IO9` shares `R17` with `C6_IO8` (both
+> strapping pins, both pulled high), which is why grounding pad 1 forces download
+> mode; and `C6_RST` is the **only** pad that is also a P4 GPIO, making it the
+> one point where host-driven behaviour can be observed directly.
 
 The host P4 must be prevented from driving GPIO54 (the C6 reset line); parking
 it in ROM bootloader does this without holding buttons:
@@ -715,8 +789,13 @@ it (`cores/esp32/esp32-hal-hosted.h`), so it is tractable rather than scary:
 
 Points that matter for a fielded device:
 
-- **The C6 is updated over SDIO, not over wires.** No ESP-Prog, no jumpers, no
-  disassembly. That removes the worst version of this problem.
+- **The C6 is updated over SDIO, not over wires - but NOT on a factory unit.**
+  ~~No ESP-Prog, no jumpers, no disassembly. That removes the worst version of
+  this problem.~~ **Refuted by measurement, 2026-08-29 - see "Known Issue: the
+  factory C6 refuses the OTA RPCs" below.** The mechanism exists and is correct;
+  the *factory* slave image does not implement the RPCs it needs, so on a board
+  as shipped there is no wire-free path. Do not plan an update story around this
+  bullet without reading that note first.
 - **Version skew is detected, not silently tolerated.** `hostedHasUpdate()` warns
   in both directions: host-newer prints an update URL, host-older prints
   "Version on Host is OLDER than version on co-processor".
@@ -733,10 +812,18 @@ Points that matter for a fielded device:
 
 ### What to prove before relying on it
 
-> [!IMPORTANT]
-> Item 0, ahead of all of these: **the link has not yet been observed to come up
-> on this board at all.** See "Measured: first boot does not bring the link up".
-> Everything below assumes a working transport and remains unmeasured here.
+> [!NOTE]
+> **Updated 2026-09-01 - item 0 is discharged and items 1-4 are partly answered.**
+> ~~the link has not yet been observed to come up on this board at all~~ - the
+> link comes up on board 2, and the shipping protoArtoo `firebeetle2` image has
+> served HTTP, SSE and the web UI over it. Against the list below:
+>
+> | # | Status |
+> | --- | --- |
+> | 1 | **Partly measured.** 3 concurrent SSE clients held 25 min with zero drops; a multi-hour soak and reconnect storm are still outstanding |
+> | 2 | Not measured |
+> | 3 | **Measured, and it needed a fix.** Recovery works *only* with `CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE` absent - see the configuration note above. The host does **not** need a reboot |
+> | 4 | **Answered: no.** Slave OTA does not work on a factory unit at all - see the Known Issue below |
 
 Bandwidth is not the risk; the transport is fast. The things worth measuring on
 this board specifically:
@@ -748,6 +835,62 @@ this board specifically:
 3. Recovery after a C6 reset or SDIO link fault - does the host stack come back,
    or does it need a reboot?
 4. Whether host application OTA and slave OTA can coexist in one update flow.
+
+### Known Issue: the factory C6 refuses the OTA RPCs (unresolvable here)
+
+> [!CAUTION]
+> **Measured on hardware 2026-08-29; recorded rather than scheduled, because no
+> board on this bench can take it further.**
+>
+> Streaming a slave image through
+> `hostedBeginUpdate()`/`hostedWriteUpdate()`/`hostedEndUpdate()`/`hostedActivateUpdate()`
+> **fails at offset 0** on a C6 running the shipped factory image:
+>
+> ```
+> rpc_core: Response not received for [0x111](Req_OTAWrite)
+> ```
+>
+> The download succeeds; the write never lands. Nothing is written, and the
+> slave's otadata still selects the factory slot. It is the same unanswered-RPC
+> signature as `Req_GetCoprocessorFwVersion`, so the reading is that **the factory
+> slave does not implement the OTA RPCs**, not that the transport is broken - the
+> same link carries WiFi, HTTP and SSE normally.
+>
+> **What this costs a builder:** the argument *"one wired bootstrap, then
+> wire-free forever"* does not hold on a unit as shipped. Updating the C6 needs a
+> slave image that already speaks the OTA RPCs, which has to arrive some other
+> way.
+>
+> **Why it is not scheduled:** proving a fix needs a C6 running an OTA-capable
+> slave image, and neither board here can provide one - board 2's C6 is factory
+> and refuses the RPC, and board 1's is misprovisioned (below). Per `AGENTS.md`,
+> a real but unmeasurable risk is documented, not carried as a ticket nobody can
+> action.
+
+### Known Issue: retail C6 provisioning is inconsistent, and recovery is marginal
+
+> [!CAUTION]
+> **n=2, and one of the two shipped broken.** Board 1 arrived with a complete
+> merged ESP32-C6 image flashed at **`0x10000` instead of `0x0`**, so its
+> bootloader is absent from where the ROM looks. Board 2 provisions correctly.
+> DFRobot has publicly acknowledged the Oct 31 2025 batch.
+>
+> **Recovery is a wire reflash, and it is genuinely hard.** The C6 programming
+> pads are three unlabelled **2 mm** bare pads. An experienced operator with a
+> purpose-bought jig, a meter, a verified 4 MB backup and a written runbook could
+> not hold contact long enough: pad 3 dropped inside 15 s, against the 8-12
+> minutes a full write needs.
+>
+> **What this costs a builder:** a wire reflash is acceptable as a developer
+> bring-up expedient, but it is not a builder path - it violates the solder-free,
+> web-flashable promise. This is why the board is **not recommended to builders
+> yet** (see "Before you buy one"); the stated revision trigger is a
+> DFRobot-supplied fix - a corrected factory image or pre-flashed boards - and
+> explicitly *not* more good units arriving, since absence cannot be proven.
+>
+> **Board 2's own C6 flash contents are UNKNOWN** and are staying that way:
+> reading them needs the same 2 mm pad contact, and board 2 is deliberately not
+> getting pad work.
 
 ### Issue-tracker signals (espressif/esp-hosted-mcu, checked 2026-08-21)
 
@@ -793,8 +936,14 @@ Sourced from the DFR1172 wiki pin tables and cross-checked against Espressif's
 ## IO Expansion Header Map
 
 Taken from the DFR1237 KiCad schematic, which supersedes the OCR-derived list in
-the previous revision of this sheet. All labels below are the actual net names on
-the board.
+the previous revision of this sheet.
+
+> [!WARNING]
+> **These are net names, not silkscreen.** The distinction was blurred by the
+> phrase "the actual net names on the board" that stood here until 2026-09-01, and
+> it produced two wrong claims further down (`A0`-`A3` and `I3C`, both retracted
+> below). The physical board's main GPIO field prints **plain numbers only**;
+> `docs/pin_map.md` is the silkscreen-first view.
 
 ### Module sockets
 
@@ -826,9 +975,18 @@ the board.
 
 ### Connectors
 
+> [!IMPORTANT]
+> **These `J*` designators are KiCad schematic reference designators and are NOT printed on the
+> board.** Verified against the physical DFR1237, 2026-09-01. Use the **silkscreen** column when
+> working with a board in hand: the main GPIO field is headed `IO` / `3V3` / `GND` with the GPIO
+> number printed once per row down the left edge, and the peripheral blocks are labelled `SPI`,
+> `UART`, `I2C`, `RST GND` and `VIN:5V GND`. `docs/pin_map.md` carries the full silkscreen-first
+> wiring view.
+
+
 | Ref | Type | Contents |
 | --- | --- | --- |
-| `J3` / `J5` / `J6` | 3 x 17-pin main GPIO field | Signal row `J3`, `+3V3` row `J5`, `GND` row `J6` |
+| `J3` / `J5` / `J6` | main GPIO field: **17 rows x 3 columns** | Signal column `J3`, `+3V3` column `J5`, `GND` column `J6`. **Silkscreened `IO` / `3V3` / `GND`** above the columns; the refdes are not printed. One GPIO per row, so a 3-pin lead plugs onto a single row |
 | `J2` | 5-pin SPI | `30/MI`, `29/MO`, `28/SCK`, `GND`, `+3V3` |
 | `J9` | 4-pin UART | `TX`, `RX`, `GND`, `+3V3` |
 | `J1` | 3-pin I2C | `7/SDA` + power/ground |
@@ -844,10 +1002,18 @@ the board.
 Two things the previous revision of this sheet missed, both visible in the
 schematic and both consequential:
 
-- **GPIO20-GPIO23 are silkscreened A0-A3, and GPIO51 is A4.** They are the
-  board's analog pins.
-- **GPIO32/GPIO33 are silkscreened I3C SCL/SDA.** They are the P4's IO MUX I3C
-  master pins, not generic GPIOs.
+- **GPIO20-GPIO23 are the board's analog pins, and GPIO51 is the fifth** -- a
+  silicon/variant fact that still holds. ~~are silkscreened A0-A3 ... GPIO51 is A4~~
+  **The silkscreen half is retracted 2026-09-01: it is wrong.** `20/A0` and the
+  rest are KiCad **net names**; the physical DFR1237's main field prints **plain
+  numbers only, on every row, with no aliases at all** (operator-confirmed).
+- **GPIO32/GPIO33 are the P4's IO MUX I3C master pins**, not generic GPIOs -- a
+  silicon fact, and it still holds. ~~are silkscreened I3C SCL/SDA~~ **The
+  silkscreen half is retracted 2026-09-01: it is wrong.** `32/I3C/SCL` and
+  `33/I3C/SDA` are KiCad **net names**; on the physical DFR1237 these two sit in
+  the main field as ordinary numbered rows with **no special label**
+  (operator-confirmed against the board). Net names are not silkscreen, and this
+  sheet conflated them.
 
 The `SPI`, `UART`, and `I2C` groupings are still convenience labels; ESP32-P4
 routes most digital peripherals through the GPIO matrix. But the analog and I3C
@@ -947,7 +1113,7 @@ fine; relevant if maximum SPI clock is ever needed.
 | GPIOs | Why |
 | --- | --- |
 | GPIO3 | Onboard LED |
-| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 ESP-Hosted SDIO link |
+| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 ESP-Hosted SDIO link. **GPIO54 is reachable for measurement** - not on a header, but on the `C6_RST` test pad, which the schematic confirms is the same net (see the C6 reset net table above) |
 | GPIO9, GPIO12 | Onboard microphone |
 | GPIO39-GPIO45 | Onboard TF card SDIO plus power enable |
 | GPIO24, GPIO25 | USB Serial/JTAG (`USB1P1_N0`/`P0`) |
@@ -1155,8 +1321,14 @@ Convenience aliases the variant defines, beyond what the silkscreen shows:
 | `SS` | 31 | | `A6` | 50 |
 | `T0`-`T3` | 4, 5, 7, 8 | | `A7` | 52 |
 
-Note `A4` maps to GPIO51 in both the silkscreen and the variant, but the variant
-adds `A5`-`A7` on GPIO49/GPIO50/GPIO52, which the silkscreen does not label.
+> [!WARNING]
+> **Every alias in this table is code-only.** ~~Note `A4` maps to GPIO51 in both
+> the silkscreen and the variant~~ -- retracted 2026-09-01, it is not on the
+> silkscreen either. The DFR1237's main GPIO field prints a **plain number on
+> every row and no aliases at all** (operator-confirmed against the board), so
+> none of `A0`-`A7` is findable on it. The `SPI`, `UART` and `I2C` blocks are the
+> exception: those do print slash labels (`28/SCK`, `29/MO`, `30/MI`, `37/T`,
+> `38/R`, `8/C`, `7/D`).
 
 ## PlatformIO Notes
 
@@ -1304,16 +1476,28 @@ Two items to verify on first build rather than assume:
 
 Things this sheet states from documentation but has not confirmed on hardware:
 
-1. ~~**Chip revision.**~~ Resolved: the board reports **v1.0**. Confirm again for
-   any additional unit, since DFRobot ships across the v1.x family.
+1. ~~**Chip revision.**~~ Resolved: the bench board reports **v1.3**, not v1.0 -
+   see the correction note at the top of this sheet and [Identifying the
+   revision](#identifying-the-revision) for the verbatim `esptool` output. A
+   **second DFR1172, read on 2026-08-29, also reports v1.3**, so both units this
+   project owns are v1.3. Keep confirming on any further unit: DFRobot ships
+   across the v1.x family, and a v3.x unit needs a different build entirely (see
+   [Selecting for the wrong revision](#selecting-for-the-wrong-revision)).
 2. **GPIO48-GPIO52 under load.** Espressif's "LDO power issues with high numbered
    GPIOs" warning is unquantified. Measure before committing a UART or any
    timing-critical signal there.
 3. **PlatformIO flash mode.** `qio` vs `dio` per the note above.
-4. **GPIO6.** The wiki lists it as a C6 wakeup line; the Arduino variant does
-   not. Read the main-board schematic or probe it.
-5. **Main-board schematic.** DFRobot ships it only as a raster PDF. If precise
-   net-level truth is needed for GPIO6, the mic, or the TF power switch, ask
-   DFRobot for source CAD.
+4. ~~**GPIO6.**~~ **Resolved 2026-08-29 by reading the main-board schematic.**
+   `C6_WAKEUP` is on ESP32-P4 **pin 6** (`GPIO6/SPI2_HOLD`, page 1) and lands on
+   **ESP32-C6-MINI-1 pin 5 = `IO2`** (page 7). The wakeup line **is** physically
+   routed. The Arduino variant still does not define it, and nothing in the
+   normal boot or link-bring-up path depends on it (it is the host-wakeup input,
+   used only under `ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED`), so this changes no
+   firmware - it closes the question.
+5. **Main-board schematic.** DFRobot ships it only as a raster PDF (Microsoft
+   Print To PDF; `pdftotext` yields zero characters). **It is nonetheless
+   readable**: render it with `pdftoppm -r 1200` and crop. Done 2026-08-29 for
+   the C6 reset net and GPIO6 above. Source CAD is still worth asking DFRobot
+   for if net-level truth is needed at scale, but the raster is not a dead end.
 6. **Mounting-hole coordinates.** M3 diameter is confirmed; positions are not.
    Use the physical board or DFRobot CAD for enclosure work.

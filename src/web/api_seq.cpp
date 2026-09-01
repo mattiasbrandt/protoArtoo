@@ -48,6 +48,27 @@ constexpr size_t kSeqListMaxBytes = 4096;
 constexpr size_t kSeqDocumentMaxBytes = SEQ_FILE_MAX_BYTES;
 constexpr size_t kSeqErrorMaxBytes = 512;
 
+// GET /api/seq/last-run shares kSeqDocumentMaxBytes, and both of its inputs are
+// chip-target specific: the run-evidence ring dimensions set the payload, the
+// per-file cap sets the ceiling. Raising one without the other would refuse a
+// legitimate response with a 500 (webSendJsonDocument rejects at or above the
+// ceiling) and the failure would only appear on a run long enough to fill the
+// ring. Bound the payload here so the two move together or the build fails.
+//
+// Worst case: every retained TX entry and every cleanup entry at full width,
+// each JSON-escaped to twice its length (a command may legitimately contain a
+// quote or a backslash), plus quotes and a separator; the name and reason the
+// same way; and 512 bytes for the fixed keys, the scope and ring-panel arrays
+// and the warnings object, which are all small and fixed in number.
+constexpr size_t kSeqLastRunWorstCaseBytes =
+    (size_t)SEQ_EVID_TX_CAP * (2u * (SEQ_EVID_CMD_LEN - 1u) + 3u) +
+    (size_t)SEQ_EVID_CLEANUP_CAP * (2u * (SEQ_EVID_CMD_LEN - 1u) + 3u) +
+    2u * (SEQ_EVID_NAME_LEN - 1u) + 2u * (SEQ_EVID_REASON_LEN - 1u) + 512u;
+static_assert(kSeqLastRunWorstCaseBytes < kSeqDocumentMaxBytes,
+              "the run-evidence ring can build a /api/seq/last-run payload this"
+              " route would refuse: raise the per-file cap for this chip target"
+              " or shrink the ring");
+
 // Longest name the store indexes (SeqIndexEntry::name), plus a terminator.
 // Sized larger than the field it validates against so an over-long name still
 // reaches the DM:* check as an over-long string rather than a valid-looking
@@ -328,7 +349,11 @@ void handleSeqTestPost(WebRequest& req) {
 // anything went wrong (body-local queue-full/retry counts). Lets agents diff
 // against the parity tables instead of the operator visually diffing every run.
 void handleSeqLastRunGet(WebRequest& req) {
-    static SeqRunEvidence ev;  // ~5 KB snapshot target; static avoids a large stack frame
+    // Snapshot target. Static rather than stack: the record is 2204 B on ESP32
+    // and 8284 B on ESP32-P4 (the ring is sized per chip target,
+    // sequence_run_evidence.h), and neither backend's server task has that to
+    // spare. This is the second of the two copies that header prices.
+    static SeqRunEvidence ev;
     const bool have = seqEvidenceSnapshot(ev);
 
     JsonDocument doc;

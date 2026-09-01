@@ -18,19 +18,83 @@
 
 #include <stdint.h>
 
+#include "config.h"           // PA_CHIP_TARGET_* (chip-target selection)
+#include "protocol_check.h"   // PC_CMD_MAX, PC_MAX_STEPS -- the model's own ceilings
 #include "sequence_engine.h"  // SeqAction
 
-// Bounded buffers. The record is held as TWO static copies (the live record on
-// the dispatcher task + a snapshot the API handler serializes from), so every
-// byte here costs ~2x static RAM. On this heap-constrained ESP32 (steady-state
-// free heap is tight  --  see the 2026-06-18 heap-exhaustion fix) the ring is sized
-// at the operator-sanctioned minimum of 32 entries, each capped at 48 bytes
-// (longer than any real dome command, e.g. "@HPS101/HPR02/HPT02|36"). Truncation
-// is signalled via txOmittedRecentCount / cleanupTruncated so partial capture is
-// never silent. ~2.2 KB per copy vs ~5.3 KB at 64x64.
-#define SEQ_EVID_CMD_LEN      48
-#define SEQ_EVID_TX_CAP       32   // recent TX ring depth
-#define SEQ_EVID_CLEANUP_CAP  12   // terminal/abort cleanup commands (separate)
+// Bounded buffers, sized per chip target. The record is held as TWO static
+// copies -- the live record on the dispatcher task (sequence_run_evidence.cpp)
+// and the snapshot GET /api/seq/last-run serializes from (api_seq.cpp) -- so
+// every byte here costs 2x static DRAM.
+//
+// ESP32 (artoo-esp32): the operator-sanctioned minimum, unchanged. Steady-state
+// free heap is tight -- see the 2026-06-18 heap-exhaustion fix -- so the ring is
+// 32 entries of 48 bytes, 2204 B per copy against ~5.3 KB at 64x64. Both
+// dimensions truncate, and that is the price this board pays.
+//
+// ESP32-P4: sized from the sequence model's own ceilings instead of from a heap
+// floor, so a run that does not loop is captured WHOLE. This is the point of the
+// record -- machine-verifiable evidence of what the body actually sent -- and on
+// a board with the DRAM to hold it there is no reason to hand an agent a
+// truncated answer.
+//
+//   SEQ_EVID_CMD_LEN      64  = PC_CMD_MAX + 1 (protocol_check.h). It is also
+//                               the payload width SeqStep and SeqAction already
+//                               carry (sequence_engine.h, "matches DomeTxCmd.buf"),
+//                               so no command the format can hold is truncated.
+//                               48 clipped 16 characters off a full-length
+//                               Marcduino text command such as @1M<message>.
+//   SEQ_EVID_TX_CAP      112  = PC_MAX_STEPS (96) + the engine's terminal drain
+//                               queue (SeqEngineState::finalQ, 16 entries).
+//                               One run executes ONE branch, and one of its
+//                               steps is the STEP_END sentinel, so a non-looping
+//                               run emits at most 95 authored commands followed
+//                               by at most 16 cleanup actions: 111 <= 112.
+//   SEQ_EVID_CLEANUP_CAP  16  = finalQ depth exactly. Cleanup is only ever
+//                               recorded while the engine is finishing, and
+//                               everything it serves then comes out of finalQ
+//                               (sequence_dispatcher.cpp drainBestEffort and the
+//                               seqEngineFinishing() tick path).
+//
+// A STEP_LOOP body still repeats without a static bound (period >= 100 ms across
+// a duration <= 120 s), so truncation stays possible on BOTH chips and stays
+// signalled via txOmittedRecentCount / cleanupTruncated -- never silent.
+//
+// Cost, measured with sizeof() on a 32-bit host: 8284 B per copy on ESP32-P4
+// against 2204 B on ESP32, i.e. +12160 B of static DRAM across the two copies.
+// The firebeetle2 image sat at 80030 B of static RAM before this change against
+// a 100000 B budget (tools/build_budgets.json), and the P4's DRAM limit is
+// 327680 B.
+//
+// `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
+// only for the selected chip, not 0/1 Board Capability Gates, so `#if` on the
+// undefined one would silently take the wrong branch. See config.h's "Chip
+// target mapping". Keying on the chip target rather than on PA_BOARD means a
+// second board variant on either chip inherits the right sizes for free.
+#if defined(PA_CHIP_TARGET_ESP32P4)
+  #define SEQ_EVID_CMD_LEN      64
+  #define SEQ_EVID_TX_CAP      112   // recent TX ring depth
+  #define SEQ_EVID_CLEANUP_CAP  16   // terminal/abort cleanup commands (separate)
+#elif defined(PA_CHIP_TARGET_ESP32)
+  #define SEQ_EVID_CMD_LEN      48
+  #define SEQ_EVID_TX_CAP       32   // recent TX ring depth
+  #define SEQ_EVID_CLEANUP_CAP  12   // terminal/abort cleanup commands (separate)
+#else
+  #error "sequence run-evidence ring dimensions have no value for this chip target"
+#endif
+
+// Both dimensions are chip-target specific, so the invariants the code around
+// them relies on are asserted here rather than re-derived at each use site.
+static_assert(SEQ_EVID_TX_CAP <= 256,
+              "SeqRunEvidence::txHead is a uint8_t indexing modulo SEQ_EVID_TX_CAP");
+static_assert(SEQ_EVID_CLEANUP_CAP <= 255,
+              "SeqRunEvidence::cleanupCount is a uint8_t");
+static_assert(SEQ_EVID_CMD_LEN <= PC_CMD_MAX + 1,
+              "a TX entry wider than the model's own command ceiling is dead space");
+
+// Not chip-target specific: both are already wider than the field they capture.
+// A recorded name comes from SeqDraft::name / SeqIndexEntry::name (24 bytes) and
+// a reason is a short internal string, so neither truncates on either board.
 #define SEQ_EVID_NAME_LEN     32
 #define SEQ_EVID_REASON_LEN   24
 

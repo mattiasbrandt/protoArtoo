@@ -13,7 +13,7 @@
 // -----------------------------------------------------------------------------
 // rcInputTask()
 // FreeRTOS task function  --  pin to Core 1 via xTaskCreatePinnedToCore().
-// Stack: 4096 bytes. Priority: 5.
+// Stack: RC_INPUT_TASK_STACK_BYTES (include/config.h). Priority: 5.
 // Implements Layers 1 (hardware failsafe) and 2 (software watchdog) failsafe.
 // -----------------------------------------------------------------------------
 void rcInputTask(void* pvParameters);

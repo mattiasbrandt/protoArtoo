@@ -125,6 +125,24 @@ void test_configResolvedMdnsHostname_uses_identity_name() {
     TEST_ASSERT_EQUAL_STRING("r2-unit", hostname);
 }
 
+// Test: with the Droid Name override off (the SBUS-safe boot default), the
+// resolved mDNS hostname falls back to the board's WIFI_MDNS_HOST default.
+// Native tests always build PA_BOARD_ARTOO_ESP32 (#242), so this pins
+// artoo-esp32's board-specific default -- "artoo", unchanged by moving the
+// constant into its board section. See test_tools/test_board_mdns_host.py
+// for the cross-board proof that firebeetle2 gets a different default.
+void test_configResolvedMdnsHostname_falls_back_to_board_default() {
+    SystemConfig system = {};
+    system.mdns_use_name = false;
+    snprintf(system.droid_name, sizeof(system.droid_name), "%s", "r2-unit");
+
+    char hostname[33] = {};
+    configResolvedMdnsHostname(system, hostname, sizeof(hostname));
+
+    TEST_ASSERT_EQUAL_STRING(WIFI_MDNS_HOST, hostname);
+    TEST_ASSERT_EQUAL_STRING("artoo", hostname);
+}
+
 // Test: configValidate rejects out-of-range speed limit
 void test_configValidate_speed_limit_out_of_range() {
     ConfigValidationResult result = configValidate(ConfigKey::SPEED_LIMIT_MAX, SPEED_LIMIT_MAX + 1);
@@ -1292,6 +1310,7 @@ int main() {
     RUN_TEST(test_configLoad_save_identity_accepts_lowercase);
     RUN_TEST(test_configLoad_save_identity_rejects_uppercase_to_default);
     RUN_TEST(test_configResolvedMdnsHostname_uses_identity_name);
+    RUN_TEST(test_configResolvedMdnsHostname_falls_back_to_board_default);
     RUN_TEST(test_configValidate_speed_limit_out_of_range);
     RUN_TEST(test_configValidate_speed_limit_valid);
     RUN_TEST(test_configValidate_sbus_timeout_out_of_range);

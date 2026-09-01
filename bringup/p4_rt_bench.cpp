@@ -56,13 +56,35 @@ static constexpr gpio_num_t BENCH_TX_SBUS = GPIO_NUM_52;
 // Precondition: LEDC outputs must be disabled at boot (servo task skips init).
 static constexpr gpio_num_t BENCH_RX_DRIVE = GPIO_NUM_51;
 
-// Bench UART controllers (configured to route to bench GPIO via GPIO matrix)
-// UART allocation: UART0=console, UART1=drive (src/tasks/drive.cpp:33),
-// UART2=dome/audio (dome_link.cpp:50, audio_dy_sv5w.cpp:53, audio_chirp.cpp:36),
-// UART3=UNUSED (bench harness SBUS), UART4=bench drive RX.
-// Do NOT use UART2; it is shared by dome/audio arbiter domeUartAcquire()/Release().
-static constexpr uart_port_t UART_BENCH_SBUS = UART_NUM_3;   // TX on GPIO52 (UART3 is unused by firmware)
-static constexpr uart_port_t UART_BENCH_DRIVE = UART_NUM_4;  // RX on GPIO51
+// Bench UART controller (routed to the bench GPIO via the GPIO matrix).
+//
+// This env compiles the whole firmware, so the bench may only borrow a
+// controller the firmware does not own. That allocation is declared once, in
+// include/config.h, and is now four of the P4's five HP UARTs:
+//
+//   UART0            IDF console
+//   UART_PORT_DRIVE  drive backend        (src/tasks/drive.cpp)
+//   UART_PORT_DOME   dome link            (src/tasks/dome_link.cpp)
+//   UART_PORT_AUDIO  audio module, TX+RX  (src/drivers/audio_dy_sv5w.cpp)
+//
+// #254 gave audio its own controller, which took UART3 -- the one this harness
+// used to borrow for its SBUS generator. Exactly one HP UART is left, so both
+// bench lanes now share it. That is safe because they are strictly sequential:
+// phase 2 calls uart_driver_delete() before phase 3 installs the RX driver, and
+// the two never overlap. The static_asserts below make a future reallocation a
+// build error here rather than an ESP_ERR_INVALID_STATE at phase 1.
+static constexpr uart_port_t UART_BENCH = UART_NUM_4;
+static constexpr uart_port_t UART_BENCH_SBUS = UART_BENCH;   // phases 1-2, TX on GPIO52
+static constexpr uart_port_t UART_BENCH_DRIVE = UART_BENCH;  // phase 3, RX on GPIO51
+
+static_assert(UART_BENCH != 0,
+    "the bench UART must not be the console lane");
+static_assert(UART_BENCH != UART_PORT_DRIVE && UART_BENCH != UART_PORT_DOME &&
+                  UART_BENCH != UART_PORT_AUDIO,
+    "the bench UART collides with a controller the firmware owns: pick a free one, "
+    "or free one up, before this harness can run alongside the shipping image");
+static_assert(UART_BENCH <= UART_PORT_MAX,
+    "the bench UART names a controller this chip target does not have");
 
 // ============================================================================
 // Phase timings (chosen generously to allow full settle between phases)
@@ -257,7 +279,12 @@ void benchPhase2SbusGeneratorOff() {
     Serial.println("[BENCH P2] SBUS generator OFF - watching for failsafe re-arm...");
     Serial.flush();
 
-    // Deinitialize UART to stop sending
+    // Deinitialize UART to stop sending. Phase 3 reuses this same controller for
+    // drive RX (see UART_BENCH above), so hand it on in a known state: clear the
+    // TXD inversion phase 1 set for SBUS. uart_param_config() does not reset it
+    // (esp_driver_uart/src/uart.c) and neither does uart_hal_init(), so without
+    // this the carried-over inversion would be a silent property of phase 3.
+    uart_set_line_inverse(UART_BENCH_SBUS, UART_SIGNAL_INV_DISABLE);
     uart_driver_delete(UART_BENCH_SBUS);
 
     // Wait for SBUS watchdog to trigger (sbusTimeoutMs from NVS, typically 5000 ms)
@@ -309,7 +336,7 @@ void benchPhase3DriveFrameCadence() {
     Serial.println("[BENCH P3] Sampling PIN_DRIVE_TX (GPIO20) received on BENCH_RX_DRIVE (GPIO51)");
     Serial.flush();
 
-    // Initialize UART4 RX on GPIO51 to receive drive frames from GPIO20
+    // Initialize the bench UART for RX on GPIO51 to receive drive frames from GPIO20
     uart_config_t uart_cfg = {};
     uart_cfg.baud_rate = 115200;  // Drive backend (hoverboard) baud
     uart_cfg.data_bits = UART_DATA_8_BITS;
@@ -342,7 +369,8 @@ void benchPhase3DriveFrameCadence() {
         return;
     }
 
-    Serial.println("[BENCH P3] UART4 configured for drive RX. Sampling intervals...");
+    Serial.printf("[BENCH P3] UART%u configured for drive RX. Sampling intervals...\n",
+                  (unsigned)UART_BENCH_DRIVE);
     Serial.flush();
 
     uint32_t startMs = millis();

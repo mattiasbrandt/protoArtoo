@@ -32,8 +32,11 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - Endpoints that support JSON body read `plain` request payload and parse JSON.
 - Success payload is usually `{"ok":true}` unless the endpoint returns a full JSON object.
 - Errors are returned as JSON with `ok:false` + `error` in most routes.
-- Base URL examples below use `http://artoo.local`.
-- The controller hostname is lowercase `artoo`; use `artoo.local` on STA networks.
+- Base URL examples below use `http://artoo.local`, the artoo-esp32 controller's
+  default hostname. A FireBeetle 2 controller's default mDNS hostname is
+  `firebeetle2` (`http://firebeetle2.local`) instead, so the two boards never
+  contest the same name on one LAN (#242). Both defaults are overridden by the
+  operator-set Droid Name when `mdnsUseName` is enabled — see Identity below.
 - If mDNS is unavailable on your host network, use the current device IP from `GET /api/wifi` (`staIp`) or your network lease table.
 
 ## Error Contract

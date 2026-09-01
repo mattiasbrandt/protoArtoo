@@ -163,4 +163,8 @@ void webNetworkBootstrap() {
     // for a Staged Network Switch (ADR 0015).
     configCacheSetActiveWifi(wifiSettings);
     configCacheSetActiveWifiRecovery(posture == WifiBootPosture::NETWORK_RECOVERY);
+    // The Hosted backend's post-recovery rejoin needs the full four-way
+    // posture, not just "was it recovery", to guard its STA-only rejoin
+    // against non-CLIENT_MODE postures (#189).
+    configCacheSetActiveWifiBootPosture(posture);
 }

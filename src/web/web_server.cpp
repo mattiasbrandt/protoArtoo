@@ -42,6 +42,14 @@
 #include "../../include/web_network_manager.h"
 #include "../../include/wifi_recovery_gesture.h"
 
+// hosted_link_status.h is only meaningful (and only defined, by
+// web_network_manager_hosted.cpp) on boards with the ESP-Hosted backend; the
+// call site in buildStatusJson() below is guarded by the same capability
+// gate, so a board without it never references the undefined symbol.
+#if PA_CAP_HOSTED_WIFI
+#include "../../include/hosted_link_status.h"
+#endif
+
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
 // release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
@@ -728,6 +736,27 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
         }
 
+#if PA_CAP_HOSTED_WIFI
+        // ESP-Hosted C6 link supervisor state (#189). Board Capability
+        // Gate, not runtime config -- absent entirely on boards with no
+        // Hosted backend rather than emitted with placeholder values.
+        {
+            HostedLinkStatusSnapshot hl = hostedLinkQueryStatus();
+            char hlBuf[256];
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"hostedLink\":{\"phase\":\"%s\",\"terminal\":%s,"
+                     "\"transportFailureCount\":%u,\"transportUpEventCount\":%u,"
+                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u,"
+                     "\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu}",
+                     hostedLinkPhaseName(hl.phase),
+                     hl.phase == HostedLinkPhase::Degraded ? "true" : "false",
+                     hl.transportFailureEventCount, hl.transportUpEventCount, hl.attemptCount,
+                     hl.totalAttemptCount, hl.recoveredCount, (unsigned long)hl.lastFailureAtMs,
+                     (unsigned long)hl.lastAttemptAtMs, (unsigned long)hl.degradedAtMs);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+        }
+#endif
+
         ok = appendJsonChunk(pos, remaining, "}") && ok;
     }
 
@@ -782,7 +811,7 @@ void eventStreamTask(void*) {
     bool recoveryGestureCleared = false;
     for (;;) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
+            PA_LOG_DEBUG("WebEvents", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
@@ -856,7 +885,7 @@ void eventStreamTask(void*) {
                 }
             }
             if (!hwmUnderLoadLogged) {
-                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u words free",
+                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u bytes free",
                              (unsigned)uxTaskGetStackHighWaterMark(NULL));
                 hwmUnderLoadLogged = true;
             }
@@ -1013,12 +1042,15 @@ void webServerInit() {
     networkManagerInitialize();
 
     if (!eventTaskStarted) {
-        // Keep 6144 bytes for status/rc/log SSE work and JSON serialization headroom.
-        // A previous 2048-byte reduction overflowed on client connect; 4096 also
-        // overflowed (DoubleException in _dtoa_r float formatting) once
+        // Size is chip-target specific; WEB_EVENTS_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The 6144 this used to hard-code was sized from
+        // an ESP32 DoubleException in _dtoa_r after a 4096 overflow, once
         // requestStatusBroadcastNow() call sites grew from rare hardware edges to
-        // every web write handler, raising buildStatusJson() call frequency here.
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 6144, nullptr, 1, nullptr, 0);
+        // every web write handler. On ESP32-P4 _dtoa_r is 416 B not 160 B and the
+        // static chain through buildStatusJson is 5808 B -- 336 B past 6144 -- so
+        // 5808 * 1.25 = 7260 -> 7680 (#256).
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", WEB_EVENTS_TASK_STACK_BYTES,
+                                nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

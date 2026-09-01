@@ -266,6 +266,7 @@ void test_tracks_get_serializes_every_field_from_the_config_snapshot() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.audio.snd_scream = 11;
+    snap.audio.snd_sys_net_down = 17;
     snap.audio.snd_cat_snarky_lo = 220;
     snap.audio.snd_cat_snarky_hi = 229;
     snap.audio.snd_rand_min = 3;
@@ -280,6 +281,7 @@ void test_tracks_get_serializes_every_field_from_the_config_snapshot() {
     TEST_ASSERT_TRUE(backend.sentChunked);
     TEST_ASSERT_TRUE(bodyIsComplete());
     TEST_ASSERT_TRUE(bodyContains("\"scream\":11"));
+    TEST_ASSERT_TRUE(bodyContains("\"sys_net_down\":17"));
     // The wire name is the short form even though the config member is snarky.
     TEST_ASSERT_TRUE(bodyContains("\"snd_cat_snrk_lo\":220"));
     TEST_ASSERT_TRUE(bodyContains("\"snd_cat_snrk_hi\":229"));
@@ -310,6 +312,7 @@ void test_tracks_get_matches_the_pre_port_payload_byte_for_byte() {
         "\"celebr\":0,\"stayin\":0,\"harlem\":0,\"pbjtime\":0,"
         "\"sys_boot\":0,\"sys_mode_n\":0,\"sys_mode_s\":0,"
         "\"sys_mode_t\":0,\"sys_drv_on\":0,\"sys_dome_on\":0,"
+        "\"sys_net_down\":0,"
         "\"snd_cat_gen_lo\":0,\"snd_cat_gen_hi\":0,"
         "\"snd_cat_chat_lo\":0,\"snd_cat_chat_hi\":0,"
         "\"snd_cat_hap_lo\":0,\"snd_cat_hap_hi\":0,"

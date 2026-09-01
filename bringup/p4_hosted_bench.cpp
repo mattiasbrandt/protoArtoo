@@ -32,9 +32,16 @@
  * Production's concurrent-stream cap is 3 (PA_ADMISSION_MAX_SSE_CLIENTS); this
  * sketch has no cap, so client counts above 3 are observation, not verdict.
  *
- * WiFi credentials NEVER committed (public repo). Build with explicit creds:
- *   PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
- *     make build BUILD_ENV=firebeetle2_hosted_bench
+ * WiFi credentials NEVER committed (public repo). Resolved in this order:
+ *   1. -DBENCH_SSID / -DBENCH_PASS build flags, e.g.
+ *      PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
+ *        make build BUILD_ENV=firebeetle2_hosted_bench
+ *   2. src/secrets.h (gitignored, 0600, written by `make setup-wifi`) - the
+ *      same PA_STA_* credentials the shipping firmware uses, so a bench run
+ *      associates with the real network without credentials on a command line
+ *      or in shell history.
+ *   3. A placeholder that cannot associate, so an unconfigured build fails
+ *      visibly rather than looking like a transport fault.
  *
  * Uses weak symbols to coexist with .dummy/sketch.cpp.o in custom_sdkconfig pass.
  */
@@ -42,6 +49,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PsychicHttp.h>
+#include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <esp_err.h>
 #include <esp_system.h>
@@ -50,12 +58,50 @@
 
 #include "esp32-hal-hosted.h"
 
-// Provisioned WiFi credentials - overridden by build flags, not committed
+// esp_hosted.h: ESP_HOSTED_EVENT base + event ID enum (#184 transport-failure
+// recovery ladder). esp_wifi.h: raw esp_wifi_init/set_mode/start, needed
+// because Arduino's own WiFi.begin() cannot restart the WiFi driver on a
+// freshly-rebooted co-processor - see the recovery ladder section below.
+#include "esp_hosted.h"
+#include "esp_wifi.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+// Provisioned WiFi credentials - never committed. Build flags win; otherwise
+// fall back to the operator's local src/secrets.h, then to a placeholder.
+// This file is built with build_src_filter excluding src/, so secrets.h is
+// reached by relative path rather than via the include path.
+#if defined(__has_include)
+#if __has_include("../src/secrets.h")
+#include "../src/secrets.h"
+#define BENCH_HAVE_LOCAL_SECRETS 1
+#endif
+#endif
+
 #ifndef BENCH_SSID
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_SSID)
+#define BENCH_SSID PA_STA_SSID
+#else
 #define BENCH_SSID "protoArtoo-bench"
 #endif
+#endif
+
 #ifndef BENCH_PASS
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_PASSWORD)
+#define BENCH_PASS PA_STA_PASSWORD
+#else
 #define BENCH_PASS "protoArtoo-bench"
+#endif
+#endif
+
+// An empty PA_STA_SSID is legal in secrets.h (STA is optional there) but is a
+// dead bench run: WiFi.begin("") cannot associate, and the resulting silence
+// looks exactly like the SDIO fault this harness exists to detect.
+#if defined(BENCH_HAVE_LOCAL_SECRETS) && defined(PA_STA_SSID)
+static_assert(sizeof(BENCH_SSID) > 1,
+              "src/secrets.h has an empty PA_STA_SSID; run `make setup-wifi` or "
+              "pass -DBENCH_SSID/-DBENCH_PASS. An empty SSID cannot associate and "
+              "would be misread as a Hosted transport failure.");
 #endif
 
 // Timing constants in milliseconds.
@@ -64,6 +110,14 @@ static constexpr uint32_t WIFI_CHECK_INTERVAL_MS = 5000;
 static constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
 static constexpr uint32_t RESET_RESPONSE_GRACE_MS = 1000;
 static constexpr uint32_t RESET_PULSE_MS = 100;
+
+// Recovery ladder bounds (#184). Each attempt's own SDIO card-init timeout
+// (sdio_drv.c CARD_INIT_TIMEOUT_MS = 1500ms, with internal retries) needs to
+// fully settle before the next attempt starts, so the interval is well above
+// that; five attempts over roughly 25-35s is long enough to ride out a
+// transient co-processor glitch without looking like the harness has wedged.
+static constexpr unsigned int RECOVERY_MAX_ATTEMPTS = 5;
+static constexpr uint32_t RECOVERY_ATTEMPT_INTERVAL_MS = 5000;
 
 // benchBootCount is RTC_DATA_ATTR so it survives a CPU reset (not power cycle).
 RTC_DATA_ATTR static unsigned int benchBootCount = 0;
@@ -122,6 +176,49 @@ static struct {
 static portMUX_TYPE benchStateMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE resetMux = portMUX_INITIALIZER_UNLOCKED;
 
+enum class RecoveryPhase : uint8_t {
+  IDLE,
+  ARMED,
+  ATTEMPTING,
+  DEGRADED,
+};
+
+// State for the bounded ESP_HOSTED_EVENT_TRANSPORT_FAILURE recovery ladder
+// (#184). IDLE: no failure outstanding. ARMED: a failure was observed and the
+// recovery task has been notified but has not started its first attempt yet
+// (a window of a few ticks). ATTEMPTING: a deinit/re-init cycle is in flight -
+// superviseLink() must not touch WiFi/Hosted while this holds, see its guard
+// clause below. DEGRADED: the ladder exhausted RECOVERY_MAX_ATTEMPTS; terminal
+// for this boot by design (ADR 0032 forbids restarting the host to clear it,
+// and the ladder itself must not retry forever).
+static struct {
+  RecoveryPhase phase = RecoveryPhase::IDLE;
+  unsigned int transportFailureEventCount = 0;
+  unsigned int transportUpEventCount = 0;
+  unsigned int attemptCount = 0;       // attempts made in the current/most-recent ladder run
+  unsigned int totalAttemptCount = 0;  // lifetime attempts across all ladder runs
+  unsigned int recoveredCount = 0;     // number of ladder runs that reached IDLE again
+  bool hasAttempted = false;
+  bool lastAttemptSucceeded = false;
+  // Rejoin step results, one field per esp_wifi_* call, captured separately
+  // per the 2026-08-29 device review: a single collapsed bool made a real
+  // hardware failure (staConnect=FAILED) undiagnosable. ESP_OK (0) is the
+  // "not yet run this boot" default, same convention as resetState's
+  // esp_err_t fields elsewhere in this file.
+  esp_err_t lastRejoinWifiInitResult = ESP_OK;
+  esp_err_t lastRejoinWifiSetModeResult = ESP_OK;
+  esp_err_t lastRejoinWifiSetConfigResult = ESP_OK;
+  esp_err_t lastRejoinWifiStartResult = ESP_OK;
+  esp_err_t lastRejoinWifiConnectResult = ESP_OK;
+  uint32_t lastFailureAtMs = 0;
+  uint32_t lastAttemptAtMs = 0;
+  uint32_t lastRejoinAtMs = 0;
+  uint32_t degradedAtMs = 0;
+} recoveryState;
+
+static portMUX_TYPE recoveryMux = portMUX_INITIALIZER_UNLOCKED;
+static TaskHandle_t recoveryTaskHandle = nullptr;
+
 // HTTP server and SSE source.
 PsychicHttpServer http;
 PsychicEventSource events;
@@ -144,6 +241,20 @@ static const char *resetPhaseName(ResetPhase phase) {
       return "responseGrace";
     case ResetPhase::LOW_ASSERTED:
       return "lowAsserted";
+  }
+  return "unknown";
+}
+
+static const char *recoveryPhaseName(RecoveryPhase phase) {
+  switch (phase) {
+    case RecoveryPhase::IDLE:
+      return "idle";
+    case RecoveryPhase::ARMED:
+      return "armed";
+    case RecoveryPhase::ATTEMPTING:
+      return "attempting";
+    case RecoveryPhase::DEGRADED:
+      return "degraded";
   }
   return "unknown";
 }
@@ -179,8 +290,115 @@ static void startHttpIfReady() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// One-shot ESP32-C6 slave OTA over the live SDIO link (#189 probe).
+//
+// Disabled unless C6_OTA_URL is defined at build time, e.g.
+//   PLATFORMIO_BUILD_FLAGS='-DC6_OTA_URL=\"http://10.0.0.44:8000/esp32c6-v2.12.11.bin\"'
+// Serve the hash-verified artifact from tasks/c6-backup/c6-reflash-kit/ rather
+// than hostedGetUpdateURL(): the bytes are then known, and no TLS stack is
+// needed on the bench.
+//
+// Safety: the slave keeps a dual-OTA layout, so a failed or abandoned write
+// leaves otadata pointing at the intact factory slot. A slave older than 2.6.0
+// may not implement the OTA RPCs at all, in which case begin/write simply
+// fails and NOTHING is written - which is itself the answer.
+// ---------------------------------------------------------------------------
+#ifdef C6_OTA_URL
+static void runC6SlaveOtaOnce() {
+  static bool attempted = false;
+  if (attempted) {
+    return;
+  }
+  attempted = true;
+
+  uint32_t maj = 0, min = 0, pat = 0;
+  hostedGetSlaveVersion(&maj, &min, &pat);
+  Serial.printf("[C6OTA] start url=%s slaveVersionBefore=%lu.%lu.%lu\n", C6_OTA_URL,
+                (unsigned long)maj, (unsigned long)min, (unsigned long)pat);
+
+  HTTPClient http;
+  if (!http.begin(C6_OTA_URL)) {
+    Serial.println("[C6OTA] FAIL http.begin");
+    return;
+  }
+  const int code = http.GET();
+  const int total = http.getSize();
+  if (code != HTTP_CODE_OK || total <= 0) {
+    Serial.printf("[C6OTA] FAIL httpCode=%d size=%d\n", code, total);
+    http.end();
+    return;
+  }
+  Serial.printf("[C6OTA] fetching %d bytes\n", total);
+
+  if (!hostedBeginUpdate()) {
+    Serial.println("[C6OTA] FAIL hostedBeginUpdate - slave likely predates the OTA RPCs. Nothing written.");
+    http.end();
+    return;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  static uint8_t chunk[4096];
+  int remaining = total;
+  int written = 0;
+  bool ok = true;
+  uint32_t lastLogAt = 0;
+
+  while (remaining > 0 && http.connected()) {
+    const size_t avail = stream->available();
+    if (avail == 0) {
+      delay(1);
+      continue;
+    }
+    const int n = stream->readBytes(chunk, avail > sizeof(chunk) ? sizeof(chunk) : avail);
+    if (n <= 0) {
+      continue;
+    }
+    if (!hostedWriteUpdate(chunk, (uint32_t)n)) {
+      Serial.printf("[C6OTA] FAIL hostedWriteUpdate at offset %d\n", written);
+      ok = false;
+      break;
+    }
+    written += n;
+    remaining -= n;
+    if (millis() - lastLogAt > 2000) {
+      lastLogAt = millis();
+      Serial.printf("[C6OTA] %d/%d bytes\n", written, total);
+    }
+  }
+  http.end();
+
+  if (!ok || written != total) {
+    Serial.printf("[C6OTA] ABORT written=%d expected=%d - otadata still points at the factory slot\n", written, total);
+    return;
+  }
+  Serial.printf("[C6OTA] wrote %d bytes; calling hostedEndUpdate\n", written);
+  if (!hostedEndUpdate()) {
+    Serial.println("[C6OTA] FAIL hostedEndUpdate");
+    return;
+  }
+  Serial.println("[C6OTA] hostedEndUpdate OK; activating (slave reboots, SDIO link drops by design)");
+  const bool activated = hostedActivateUpdate();
+  Serial.printf("[C6OTA] hostedActivateUpdate=%s. Reboot the P4 and re-read hostedSlaveVersion.\n",
+                activated ? "true" : "false");
+}
+#endif  // C6_OTA_URL
+
 static void superviseLink() {
   const uint32_t now = millis();
+
+  RecoveryPhase recoveryPhaseNow;
+  portENTER_CRITICAL(&recoveryMux);
+  recoveryPhaseNow = recoveryState.phase;
+  portEXIT_CRITICAL(&recoveryMux);
+  if (recoveryPhaseNow == RecoveryPhase::ATTEMPTING) {
+    // A recovery attempt owns the Hosted/WiFi layer right now
+    // (hostedDeinitWiFi()/hostedInitWiFi() are mid-flight, see the recovery
+    // ladder section below); do not race it with an independent WiFi.begin()
+    // from this periodic supervisor.
+    return;
+  }
+
   uint32_t lastWiFiCheckMs;
   bool wasConnected;
   bool hasConnectedOnce;
@@ -208,9 +426,19 @@ static void superviseLink() {
       portENTER_CRITICAL(&benchStateMux);
       benchState.hasConnectedOnce = true;
       portEXIT_CRITICAL(&benchStateMux);
-      Serial.println("[BENCH] WiFi reached WL_CONNECTED for the first time.");
+      // Print the address the harness is reachable at. Without it the
+      // "a client response is still required" instruction below is
+      // unactionable: the operator has an associated board and no way to
+      // address it short of scanning the network.
+      Serial.printf(
+        "[BENCH] WiFi reached WL_CONNECTED for the first time. ip=%s rssi=%ddBm "
+        "channel=%d\n",
+        WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel());
     }
     startHttpIfReady();
+#ifdef C6_OTA_URL
+    runC6SlaveOtaOnce();
+#endif
     return;
   }
 
@@ -248,6 +476,246 @@ static void superviseLink() {
     "[BENCH] RETRY %u WiFi.begin immediateStatus=%d; this is not eventual association proof.\n",
     retryCount, static_cast<int>(newStatus)
   );
+}
+
+// ============================================================================
+// Hosted Transport-Failure Recovery Ladder
+//
+// ESP-Hosted's SDIO driver posts ESP_HOSTED_EVENT_TRANSPORT_FAILURE
+// unconditionally when MAX_SDIO_WRITE_RETRY writes fail
+// (managed_components/espressif__esp_hosted/host/drivers/transport/sdio/
+// sdio_drv.c:748-780), then restarts the host under
+// #if H_TRANSPORT_RESTART_ON_FAILURE. This env's custom_sdkconfig
+// (platformio.ini, [env:firebeetle2_hosted_bench]) leaves that symbol
+// undefined, so the event fires and the host survives - but nothing
+// reconnects on its own (bench session 2026-08-29, "Confirmed on hardware").
+// This is that missing subscriber.
+//
+// The transport half mirrors the vendor's own reference sequence
+// (examples/host_hosted_events/main/main.c): tear the transport down and
+// bring it back up. hostedInitWiFi() -> hostedInit() calls esp_hosted_init()
+// then esp_hosted_connect_to_slave(), and with
+// CONFIG_ESP_HOSTED_SLAVE_RESET_ON_EVERY_HOST_BOOTUP=y (this env's config)
+// that path always resets the slave over GPIO54 first
+// (sdio_drv.c ensure_slave_bus_ready(), "Always reset slave on host boot
+// up") before re-running card init - so a plain deinit+init cycle already
+// performs the "reset slave over GPIO54" step; nothing here writes GPIO54
+// directly, avoiding any conflict with /api/c6/reset's own raw GPIO use.
+//
+// The WiFi half is NOT just another WiFi.begin() call. The C6 physically
+// rebooted, so its WiFi driver was never (re)started this session - but
+// Arduino's own driver-started bookkeeping (WiFiGeneric.cpp
+// espWiFiStart()/_esp_wifi_started, STA.cpp ESP_NETIF_STARTED_BIT) is
+// stale-true from before the failure (read on disk: neither flag is ever
+// cleared by hostedDeinitWiFi()/hostedInitWiFi(), only by the WiFi.mode(
+// WIFI_MODE_NULL) teardown path, which itself talks to the dead transport
+// and fails during the outage). A bare WiFi.begin() short-circuits on that
+// stale state and never calls esp_wifi_start() again, so esp_wifi_connect()
+// would be sent to a driver that was never started on the freshly-rebooted
+// slave. The first cut of this rejoin bypassed WiFi.begin() but handed the
+// actual connect back to WiFi.STA.connect() - which is gated on that same
+// stale Arduino state (_esp_netif, connected()) and failed on hardware
+// (2026-08-29 device review: staConnect=FAILED, undiagnosable because
+// STAClass::connect()'s four return-false branches all log via a
+// compiled-out log_e()). The bypass has to be complete: the rejoin step
+// below mirrors the vendor's own recovery sequence
+// (examples/host_hosted_events/main/station_example.c
+// example_wifi_init_sta()) through raw ESP-IDF calls only, in the vendor's
+// exact order - esp_wifi_init() -> esp_wifi_set_mode() ->
+// esp_wifi_set_config() -> esp_wifi_start() -> esp_wifi_connect() - with
+// every esp_err_t captured and reported individually instead of collapsed
+// into one bool.
+//
+// Runs on its own task, not the Arduino loop() or the esp_event default-loop
+// task: hostedDeinitWiFi()/hostedInitWiFi() and the WiFi calls above can
+// block for seconds (CARD_INIT_TIMEOUT_MS retries, RPC teardown/setup), and
+// blocking loop() for that long would stall SSE emission during the exact
+// window the SSE soak cares about most. The event handler only sets state
+// and notifies; all the blocking work happens in hostedRecoveryTaskFn().
+// ============================================================================
+
+static void hostedTransportFailureHandler(void *arg, esp_event_base_t base, int32_t id, void *eventData) {
+  (void)arg;
+  (void)base;
+  (void)id;
+  (void)eventData;
+
+  bool shouldNotify = false;
+  unsigned int failureCount = 0;
+  RecoveryPhase phaseNow = RecoveryPhase::IDLE;
+
+  portENTER_CRITICAL(&recoveryMux);
+  recoveryState.transportFailureEventCount++;
+  recoveryState.lastFailureAtMs = millis();
+  failureCount = recoveryState.transportFailureEventCount;
+  if (recoveryState.phase == RecoveryPhase::IDLE) {
+    // Only arm a fresh ladder from IDLE. If ARMED/ATTEMPTING, a run is
+    // already in flight and this failure is folded into it. If DEGRADED,
+    // the ladder is exhausted and stays terminal by design - see the banner
+    // above.
+    recoveryState.phase = RecoveryPhase::ARMED;
+    recoveryState.attemptCount = 0;
+    shouldNotify = true;
+  }
+  phaseNow = recoveryState.phase;
+  portEXIT_CRITICAL(&recoveryMux);
+
+  Serial.printf(
+    "[BENCH] HOSTED_EVENT transport-failure #%u phase=%s%s\n",
+    failureCount, recoveryPhaseName(phaseNow),
+    shouldNotify ? "; recovery task notified" : "; folded into the run already in flight, or degraded and terminal"
+  );
+
+  if (shouldNotify && recoveryTaskHandle != nullptr) {
+    xTaskNotifyGive(recoveryTaskHandle);
+  }
+}
+
+static void hostedTransportUpHandler(void *arg, esp_event_base_t base, int32_t id, void *eventData) {
+  (void)arg;
+  (void)base;
+  (void)id;
+  (void)eventData;
+  // Secondary, purely observational counter: ESP_HOSTED_EVENT_TRANSPORT_UP
+  // is posted by the SDIO driver itself (esp_hosted_api.c
+  // transport_active_cb()) whenever the transport reaches
+  // TRANSPORT_RX_ACTIVE, independent of anything this sketch believes. It
+  // corroborates the ladder's own attempt outcome without being derived from
+  // WiFi.status(), which the 2026-08-29 bench run proved keeps reporting
+  // CONNECTED through a dead transport.
+  portENTER_CRITICAL(&recoveryMux);
+  recoveryState.transportUpEventCount++;
+  portEXIT_CRITICAL(&recoveryMux);
+}
+
+static void hostedRecoveryTaskFn(void *arg) {
+  (void)arg;
+
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    portENTER_CRITICAL(&recoveryMux);
+    recoveryState.phase = RecoveryPhase::ATTEMPTING;
+    portEXIT_CRITICAL(&recoveryMux);
+
+    bool recovered = false;
+    unsigned int attemptsThisRun = 0;
+
+    for (unsigned int attempt = 1; attempt <= RECOVERY_MAX_ATTEMPTS && !recovered; attempt++) {
+      vTaskDelay(pdMS_TO_TICKS(RECOVERY_ATTEMPT_INTERVAL_MS));
+
+      Serial.printf("[BENCH] RECOVERY attempt %u/%u: hostedDeinitWiFi + hostedInitWiFi\n", attempt, RECOVERY_MAX_ATTEMPTS);
+
+      const bool deinitOk = hostedDeinitWiFi();
+      const bool initOk = hostedInitWiFi();
+      const bool transportUp = hostedIsInitialized();
+      const uint32_t outcomeAtMs = millis();
+      attemptsThisRun = attempt;
+
+      Serial.printf(
+        "[BENCH] RECOVERY attempt %u/%u result: deinit=%s init=%s hostedIsInitialized=%s\n",
+        attempt, RECOVERY_MAX_ATTEMPTS, deinitOk ? "ok" : "FAIL", initOk ? "ok" : "FAIL", transportUp ? "true" : "false"
+      );
+
+      portENTER_CRITICAL(&recoveryMux);
+      recoveryState.attemptCount = attempt;
+      recoveryState.totalAttemptCount++;
+      recoveryState.hasAttempted = true;
+      recoveryState.lastAttemptSucceeded = transportUp;
+      recoveryState.lastAttemptAtMs = outcomeAtMs;
+      portEXIT_CRITICAL(&recoveryMux);
+
+      recovered = transportUp;
+    }
+
+    if (recovered) {
+      // See the banner above for why this bypasses WiFi.begin(). It also
+      // bypasses WiFi.STA.connect(): the 2026-08-29 device review found
+      // staConnect=FAILED undiagnosable (STAClass::connect()'s four
+      // return-false branches - libraries/WiFi/src/STA.cpp:333-361 for the
+      // no-arg overload this file used to route through - all log via
+      // log_e(), compiled out at this build's log level) and asked whether
+      // hostedDeinitWiFi()/hostedInitWiFi() tear down the STA netif first.
+      // Read, not assumed: esp32-hal-hosted.c and esp_hosted_api.c's
+      // esp_hosted_deinit()/esp_hosted_init() contain zero esp_netif
+      // references. Only WiFiGeneric.cpp's wifiLowLevelDeinit() destroys
+      // esp_netifs[ESP_IF_WIFI_STA], and this ladder never calls it - so
+      // STA.cpp's _esp_netif (created once at boot by wifiLowLevelInit())
+      // is never torn down and STAClass::connect()'s _esp_netif==NULL
+      // branch was not the failure. The actual bypass has to be complete:
+      // set the config and connect through raw ESP-IDF calls, in the
+      // vendor's own station_example.c example_wifi_init_sta() order
+      // (mode -> config -> start -> connect, not start -> config as the
+      // rejected version did), with every esp_err_t captured and reported
+      // individually so a future failure is diagnosable without a serial
+      // log level bump.
+      wifi_init_config_t wifiInitCfg = WIFI_INIT_CONFIG_DEFAULT();
+      const esp_err_t wifiInitResult = esp_wifi_init(&wifiInitCfg);
+      const esp_err_t wifiModeResult = esp_wifi_set_mode(WIFI_MODE_STA);
+
+      // Mirrors STAClass::connect()'s own field population
+      // (libraries/WiFi/src/STA.cpp) so the config this bypass sends is
+      // the same shape Arduino would have sent, just not gated on
+      // Arduino's stale driver-started state.
+      wifi_config_t staConfig = {};
+      snprintf(reinterpret_cast<char *>(staConfig.sta.ssid), sizeof(staConfig.sta.ssid), "%s", BENCH_SSID);
+      snprintf(reinterpret_cast<char *>(staConfig.sta.password), sizeof(staConfig.sta.password), "%s", BENCH_PASS);
+      staConfig.sta.threshold.rssi = -127;
+      staConfig.sta.pmf_cfg.capable = true;
+      const esp_err_t wifiConfigResult = esp_wifi_set_config(WIFI_IF_STA, &staConfig);
+
+      const esp_err_t wifiStartResult = esp_wifi_start();
+      const esp_err_t wifiConnectResult = esp_wifi_connect();
+      const wl_status_t rejoinStatus = WiFi.status();
+      const uint32_t rejoinAtMs = millis();
+
+      Serial.printf(
+        "[BENCH] RECOVERY transport restored after %u attempt(s); WiFi rejoin: wifiInit=%d(%s) "
+        "wifiSetMode=%d(%s) wifiSetConfig=%d(%s) wifiStart=%d(%s) wifiConnect=%d(%s) "
+        "immediateStatus=%d (none of this is eventual association proof; a WL_CONNECTED "
+        "value here is the stale-status lie this ticket already documented, not a usable "
+        "signal).\n",
+        attemptsThisRun, static_cast<int>(wifiInitResult), esp_err_to_name(wifiInitResult), static_cast<int>(wifiModeResult),
+        esp_err_to_name(wifiModeResult), static_cast<int>(wifiConfigResult), esp_err_to_name(wifiConfigResult),
+        static_cast<int>(wifiStartResult), esp_err_to_name(wifiStartResult), static_cast<int>(wifiConnectResult),
+        esp_err_to_name(wifiConnectResult), static_cast<int>(rejoinStatus)
+      );
+
+      portENTER_CRITICAL(&benchStateMux);
+      benchState.wifiBeginAttemptCount++;
+      benchState.wifiRetryCount++;
+      benchState.lastWiFiBeginStatus = rejoinStatus;
+      benchState.lastWiFiBeginAtMs = rejoinAtMs;
+      portEXIT_CRITICAL(&benchStateMux);
+
+      portENTER_CRITICAL(&recoveryMux);
+      recoveryState.recoveredCount++;
+      recoveryState.lastRejoinWifiInitResult = wifiInitResult;
+      recoveryState.lastRejoinWifiSetModeResult = wifiModeResult;
+      recoveryState.lastRejoinWifiSetConfigResult = wifiConfigResult;
+      recoveryState.lastRejoinWifiStartResult = wifiStartResult;
+      recoveryState.lastRejoinWifiConnectResult = wifiConnectResult;
+      recoveryState.lastRejoinAtMs = rejoinAtMs;
+      recoveryState.phase = RecoveryPhase::IDLE;
+      portEXIT_CRITICAL(&recoveryMux);
+    } else {
+      Serial.printf(
+        "[BENCH] RECOVERY ladder exhausted after %u attempts; settling in a degraded state for "
+        "the rest of this boot. No further automatic recovery will be attempted.\n",
+        RECOVERY_MAX_ATTEMPTS
+      );
+
+      portENTER_CRITICAL(&recoveryMux);
+      recoveryState.phase = RecoveryPhase::DEGRADED;
+      recoveryState.degradedAtMs = millis();
+      portEXIT_CRITICAL(&recoveryMux);
+
+      // Falls through to the top of the loop and parks on the next
+      // ulTaskNotifyTake(); the event handler refuses to re-arm from
+      // DEGRADED, so this task now blocks forever - the "must not retry
+      // forever" bound.
+    }
+  }
 }
 
 // ============================================================================
@@ -373,6 +841,12 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   (void)request;
   JsonDocument doc;
 
+  // Canonical runtime identity, same contract as the production firmware's
+  // /api/status. PA_FIRMWARE_VERSION is injected by tools/extract_version.py,
+  // which this env inherits even though build_src_filter excludes src/. The
+  // ESP-IDF app descriptor carries a different, framework-generated string and
+  // is not this project's version contract.
+  doc["firmwareVersion"] = PA_FIRMWARE_VERSION;
   doc["bootCount"] = benchBootCount;
   doc["resetReason"] = static_cast<int>(esp_reset_reason());
   doc["uptimeMs"] = benchUptimeMs();
@@ -451,6 +925,36 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   doc["resetResponseGraceMs"] = RESET_RESPONSE_GRACE_MS;
   doc["resetPulseMs"] = RESET_PULSE_MS;
   doc["resetEvidenceBoundary"] = "GPIO API results require external logic capture plus C6 UART reboot proof";
+
+  // Hosted transport-failure recovery ladder (#184). Every field here comes
+  // from the Hosted event stream or this ladder's own attempt bookkeeping,
+  // never from WiFi.status() - see the recovery ladder section for why.
+  decltype(recoveryState) recoverySnapshot;
+  portENTER_CRITICAL(&recoveryMux);
+  recoverySnapshot = recoveryState;
+  portEXIT_CRITICAL(&recoveryMux);
+
+  doc["hostedTransportFailureCount"] = recoverySnapshot.transportFailureEventCount;
+  doc["hostedTransportUpEventCount"] = recoverySnapshot.transportUpEventCount;
+  doc["recoveryLadderState"] = recoveryPhaseName(recoverySnapshot.phase);
+  doc["recoveryAttemptCount"] = recoverySnapshot.attemptCount;
+  doc["recoveryTotalAttemptCount"] = recoverySnapshot.totalAttemptCount;
+  doc["recoveryMaxAttempts"] = RECOVERY_MAX_ATTEMPTS;
+  doc["recoveryAttemptIntervalMs"] = RECOVERY_ATTEMPT_INTERVAL_MS;
+  doc["recoveryRecoveredCount"] = recoverySnapshot.recoveredCount;
+  doc["recoveryHasAttempted"] = recoverySnapshot.hasAttempted;
+  doc["recoveryLastAttemptSucceeded"] = recoverySnapshot.lastAttemptSucceeded;
+  // One field per rejoin-step esp_err_t (2026-08-29 device review: a single
+  // collapsed bool made a real hardware failure undiagnosable).
+  doc["recoveryLastRejoinWifiInitResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiInitResult);
+  doc["recoveryLastRejoinWifiSetModeResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiSetModeResult);
+  doc["recoveryLastRejoinWifiSetConfigResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiSetConfigResult);
+  doc["recoveryLastRejoinWifiStartResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiStartResult);
+  doc["recoveryLastRejoinWifiConnectResult"] = static_cast<int>(recoverySnapshot.lastRejoinWifiConnectResult);
+  doc["recoveryLastFailureAtMs"] = recoverySnapshot.lastFailureAtMs;
+  doc["recoveryLastAttemptAtMs"] = recoverySnapshot.lastAttemptAtMs;
+  doc["recoveryLastRejoinAtMs"] = recoverySnapshot.lastRejoinAtMs;
+  doc["recoveryDegradedAtMs"] = recoverySnapshot.degradedAtMs;
 
   doc["chipModel"] = ESP.getChipModel();
   doc["chipRevision"] = ESP.getChipRevision();
@@ -572,6 +1076,55 @@ static void registerHttpEndpoints() {
   http.on("/api/events", &events);
 }
 
+// Subscribes to the Hosted transport-failure recovery ladder (#184). Must run
+// before WiFi.begin(): registering first guarantees the handler cannot miss
+// an early event, and esp_event_loop_create_default() here is defensive/
+// idempotent - WiFi.begin() would create the default loop anyway (Arduino's
+// own NetworkEvents::initNetworkEvents() does exactly this, tolerating
+// ESP_ERR_INVALID_STATE the same way).
+static void registerHostedTransportRecovery() {
+  // Create the recovery task BEFORE registering the event handlers. Order is
+  // load-bearing: hostedTransportFailureHandler() only calls xTaskNotifyGive()
+  // when recoveryTaskHandle is non-null, and it only arms a fresh ladder
+  // (phase IDLE -> ARMED) once per failure - so a failure event that arrived
+  // in the window between "handler registered" and "task created" would set
+  // phase=ARMED, skip the notify (null handle), and then be permanently
+  // unrecoverable: no later event can re-arm from ARMED, only from IDLE.
+  // Unreachable today (this runs before WiFi.begin(), so no SDIO transport
+  // exists yet to fail), but the ordering cost of getting it right first is
+  // one function call, so there is no reason to leave the trap in place for
+  // whenever that stops being true. Flagged in the 2026-08-29 device review.
+  const BaseType_t taskResult = xTaskCreatePinnedToCore(hostedRecoveryTaskFn, "HostedRecovery", 4096, nullptr, 2, &recoveryTaskHandle, 0);
+  if (taskResult != pdPASS) {
+    Serial.println("[BENCH] Failed to create HostedRecovery task; transport-failure events will not be handled.");
+    recoveryTaskHandle = nullptr;
+  }
+
+  const esp_err_t loopResult = esp_event_loop_create_default();
+  if (loopResult != ESP_OK && loopResult != ESP_ERR_INVALID_STATE) {
+    Serial.printf(
+      "[BENCH] esp_event_loop_create_default failed: %d (%s)\n", static_cast<int>(loopResult), esp_err_to_name(loopResult)
+    );
+  }
+
+  static esp_event_handler_instance_t transportFailureInstance;
+  static esp_event_handler_instance_t transportUpInstance;
+
+  esp_err_t err = esp_event_handler_instance_register(
+    ESP_HOSTED_EVENT, ESP_HOSTED_EVENT_TRANSPORT_FAILURE, &hostedTransportFailureHandler, nullptr, &transportFailureInstance
+  );
+  if (err != ESP_OK) {
+    Serial.printf(
+      "[BENCH] Failed to register ESP_HOSTED_EVENT_TRANSPORT_FAILURE handler: %d (%s)\n", static_cast<int>(err), esp_err_to_name(err)
+    );
+  }
+
+  err = esp_event_handler_instance_register(ESP_HOSTED_EVENT, ESP_HOSTED_EVENT_TRANSPORT_UP, &hostedTransportUpHandler, nullptr, &transportUpInstance);
+  if (err != ESP_OK) {
+    Serial.printf("[BENCH] Failed to register ESP_HOSTED_EVENT_TRANSPORT_UP handler: %d (%s)\n", static_cast<int>(err), esp_err_to_name(err));
+  }
+}
+
 static void updateHeartbeatLed() {
 #if defined(LED_BUILTIN)
   static uint32_t lastToggleAtMs = 0;
@@ -609,6 +1162,9 @@ void setup() {
 #endif
 
   Serial.println("\n[BENCH] protoArtoo P4 ESP-Hosted bench initialized.");
+  // Printed before anything else identifying: the pre-flight identity check for
+  // an acceptance run reads this line, not the ESP-IDF app descriptor.
+  Serial.printf("[BENCH] Firmware: %s\n", PA_FIRMWARE_VERSION);
   Serial.printf("[BENCH] Chip: %s\n", ESP.getChipModel());
   Serial.printf("[BENCH] Revision: %u\n", ESP.getChipRevision());
   Serial.printf("[BENCH] Boot count: %u\n", benchBootCount);
@@ -617,6 +1173,9 @@ void setup() {
 
   Serial.println("[BENCH] Registering HTTP endpoints; server start remains deferred until WL_CONNECTED.");
   registerHttpEndpoints();
+
+  Serial.println("[BENCH] Registering ESP_HOSTED_EVENT transport-failure recovery ladder.");
+  registerHostedTransportRecovery();
 
   Serial.printf("[BENCH] WiFi.begin(\"%s\", <pass>)...\n", BENCH_SSID);
   const wl_status_t firstWiFiStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
@@ -653,19 +1212,27 @@ void loop() {
   static uint32_t lastStatusLog = 0;
   const uint32_t now = millis();
   if (now - lastStatusLog >= 30000) {
-    // Take a consistent snapshot of benchState to avoid torn reads in the log.
+    // Take a consistent snapshot of benchState/recoveryState to avoid torn reads in the log.
     decltype(benchState) benchSnapshot;
     portENTER_CRITICAL(&benchStateMux);
     benchSnapshot = benchState;
     portEXIT_CRITICAL(&benchStateMux);
 
+    decltype(recoveryState) recoverySnapshot;
+    portENTER_CRITICAL(&recoveryMux);
+    recoverySnapshot = recoveryState;
+    portEXIT_CRITICAL(&recoveryMux);
+
     Serial.printf(
       "[BENCH] STATUS uptime=%lus boot=%u wifi=%s everConnected=%s faults=%u retries=%u "
-      "httpAttempted=%s httpStarted=%s sseClients=%u sseFrames=%lu freeHeap=%lu bytes\n",
+      "httpAttempted=%s httpStarted=%s sseClients=%u sseFrames=%lu freeHeap=%lu bytes "
+      "recovery=%s transportFailures=%u attempts=%u recovered=%u\n",
       static_cast<unsigned long>(benchUptimeMs() / 1000), benchBootCount, benchSnapshot.wifiConnected ? "CONNECTED" : "DISCONNECTED",
       benchSnapshot.hasConnectedOnce ? "true" : "false", benchSnapshot.linkFaultCount, benchSnapshot.wifiRetryCount,
       benchSnapshot.httpStartAttempted ? "true" : "false", benchSnapshot.httpStarted ? "true" : "false", benchSnapshot.sseClientCount,
-      static_cast<unsigned long>(benchSnapshot.sseFrameCount), static_cast<unsigned long>(ESP.getFreeHeap())
+      static_cast<unsigned long>(benchSnapshot.sseFrameCount), static_cast<unsigned long>(ESP.getFreeHeap()),
+      recoveryPhaseName(recoverySnapshot.phase), recoverySnapshot.transportFailureEventCount, recoverySnapshot.totalAttemptCount,
+      recoverySnapshot.recoveredCount
     );
     lastStatusLog = now;
   }

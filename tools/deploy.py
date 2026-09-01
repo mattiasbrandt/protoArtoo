@@ -20,6 +20,10 @@ import threading
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OTA_TIMEOUT_SECONDS = "60"
 OTA_TRANSFER_TIMEOUT_SECONDS = "60"
+# Local (host) TCP port espota listens on for the device's OTA connect-back.
+# Mirrors the Makefile's OTA_HOST_PORT default (#252 Finding 2) so the wizard
+# and `make ota` behave identically on a default-deny inbound firewall.
+OTA_HOST_PORT_DEFAULT = "32320"
 
 # ── ANSI helpers ─────────────────────────────────────────────────────────────
 
@@ -217,6 +221,7 @@ def main() -> int:
     # ── Q3: Connection details ──
     ota_ip     = _user_mk("OTA_IP",      "artoo.local")
     upload_port = _user_mk("UPLOAD_PORT", "/dev/ttyUSB0")
+    ota_host_port = _user_mk("OTA_HOST_PORT", OTA_HOST_PORT_DEFAULT)
 
     if action in ("ota", "uploadfs"):
         ota_ip = _text("OTA target (IP or mDNS host):", default=ota_ip) or ota_ip
@@ -307,6 +312,8 @@ def main() -> int:
             OTA_TIMEOUT_SECONDS,
             "--transfer-timeout",
             OTA_TRANSFER_TIMEOUT_SECONDS,
+            "--host-port",
+            ota_host_port,
         ])
         if rc != 0:
             print()

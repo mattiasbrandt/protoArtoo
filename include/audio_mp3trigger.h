@@ -3,11 +3,14 @@
 //
 // Concrete AudioDriver for the SparkFun MP3 Trigger v2.x (DEV-13720).
 //
-// TX commands are sent over software UART on PIN_AUDIO_TX (GPIO 26) at 9600
-// baud  --  the same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP.
-// RX query responses are read via HardwareSerial(2) on PIN_AUDIO_RX (GPIO 35),
-// opened RX-only (TX pin = -1). UART2 is shared with dome link (S3) and SBUS2;
-// queryModuleState() returns cached state when UART2 is contended (the dome link shares UART2).
+// TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud  --  the
+// same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP. RX query
+// responses are read via UART_PORT_AUDIO on PIN_AUDIO_RX, opened RX-only
+// (TX pin = -1).
+//
+// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
+// dome link and there is no spare TX. No P4 environment selects this backend.
+// AudioTask, not this driver, holds the claim (audioUartClaim()).
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):
@@ -82,9 +85,10 @@ class AudioDriverMp3Trigger : public AudioDriver {
     }
 
     // Query module state via S0 (link check) and S1 (track count).
-    // UART2 contention-aware  --  returns cached state when dome ctrl or
-    // dual_sbus is active. playState and device are always 0xFF (not queryable
-    // in this protocol). currentTrack is cached from the last playTrack() call.
+    // Assumes the caller holds the audio UART claim; this driver does no
+    // contention check of its own. playState and device are always 0xFF (not
+    // queryable in this protocol). currentTrack is cached from the last
+    // playTrack() call.
     // Only call from AudioTask (Core 0).
     bool queryModuleState(AudioModuleState& out) override;
 

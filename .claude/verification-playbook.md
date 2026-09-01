@@ -8,7 +8,12 @@ Use this checklist when reporting completion.
 - `controller-upload-verified`: Flashed to ESP32 controller; smoke checks passed.
 - `full-hardware-verified`: Verified on integrated droid hardware.
 - `partial`: Some checks passed, but key checks are deferred.
-- `full-hardware-required`: Validation requires full droid hardware integration and remains pending.
+- `full-hardware-required`: The remaining exposure is droid-only; recorded, not scheduled.
+
+These labels report evidence; they never gate completion. Report the strongest label
+the available hardware supports, name what is still unproven, and finish. Do not
+propose a droid-hardware verification ticket as a precondition - see AGENTS.md
+"Verification and Reporting".
 
 ## Risk-based backend checks
 

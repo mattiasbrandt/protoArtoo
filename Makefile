@@ -10,6 +10,7 @@
 #   make ota OTA_IP=192.168.4.1
 #   make flash UPLOAD_PORT=/dev/ttyUSB1
 #   make ota BUILD_ENV=artoo_esp32_chirp
+#   make ota OTA_HOST_PORT=32000   (only if 32320 is taken; firewall it instead if you can)
 # =============================================================================
 
 OTA_IP      ?= artoo.local
@@ -17,6 +18,17 @@ BUILD_ENV   ?= artoo_esp32
 UPLOAD_PORT ?= /dev/ttyUSB0
 OTA_TIMEOUT ?= 60
 OTA_TRANSFER_TIMEOUT ?= 60
+
+# Local (host) TCP port espota listens on for the device's OTA connect-back.
+# Espota picks a random port by default; a default-deny inbound firewall then
+# drops the device's connection and the failure surfaces as the misleading
+# "[ERROR]: No response from device" — the device accepted the push fine, the
+# host just never answered on the port it invited the device to use. Pinning
+# one fixed port lets a single firewall rule allow it permanently instead of
+# reopening a moving target on every OTA push. See docs/troubleshooting.md
+# ("OTA fails with 'No response from device'") for the rule to add.
+# Shared by every target that calls tools/ota_upload.py — both boards need it.
+OTA_HOST_PORT ?= 32320
 
 # ── Toolchain isolation: artoo-esp32 vs ESP32-P4 ─────────────────────────────
 # The two chip targets pin different pioarduino platform versions, and those
@@ -125,7 +137,7 @@ flash: test ## Flash via USB  (UPLOAD_PORT=/dev/ttyUSB0)
 
 ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 	$(PIO) run -e $(BUILD_ENV)_ota
-	python3 tools/ota_upload.py --env $(BUILD_ENV)_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	python3 tools/ota_upload.py --env $(BUILD_ENV)_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # Filesystem upload transport. artoo-esp32 envs upload over OTA through their
 # `_ota` env. ESP32-P4 envs have no `_ota` env - there is no OTA transport
@@ -152,13 +164,13 @@ flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
 
 ota-chirp: test ## Flash CHIRP build via OTA
 	pio run -e artoo_esp32_chirp_ota
-	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
 
 ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
 	pio run -e artoo_esp32_mp3trigger_ota
-	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
 # Same driver as the default artoo_esp32 env — these targets exist so DY-SV5W
@@ -169,7 +181,7 @@ flash-dysv5w: test ## Flash DY-SV5W build via USB
 
 ota-dysv5w: test ## Flash DY-SV5W build via OTA
 	pio run -e artoo_esp32_dysv5w_ota
-	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
 
 # ── Compile-check only ───────────────────────────────────────────────────────
 

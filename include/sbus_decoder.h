@@ -22,11 +22,29 @@
 //
 // RMT configuration:
 //   resolution_hz = 1 MHz  --  1 us/tick.
-//   signal_range_max_ns = 1 ms  --  robust frame delimiter for standard/fast variants.
-//   mem_block_symbols = 192  --  3 RMT memory blocks; worst-case frame ~= 150 symbols.
+//   signal_range_max_ns = 300 us  --  inter-frame gap marker (kFrameGapNs).
+//   mem_block_symbols  --  derived per chip, not a literal. The policy lives in
+//     include/sbus_rmt_budget.h; src/drivers/sbus_decoder.cpp instantiates it
+//     from the SOC_RMT_* capabilities and static_asserts the result.
 //
-// RMT channel budget (classic ESP32 has 8 channels / 8 memory blocks):
-//   SBUS1 decoder: 3 blocks. SBUS2 decoder: 3 blocks. 2 blocks remain free.
+// RMT channel budget. The two chips differ in every dimension that matters, and
+// the classic-ESP32 numbers do not carry over -- assuming they did is what left
+// the P4's second decoder unable to initialise (#255):
+//
+//                                     artoo-esp32        ESP32-P4
+//   memory words per channel               64               48
+//   RX-capable channels                     8                4
+//   RX ping-pong support                   no              yes
+//   blocks per decoder                      3                2
+//   mem_block_symbols                     192               96
+//   two decoders occupy            6 of 8 blocks    4 of 4 channels
+//   ping_pong_symbols                     n/a               48
+//
+// On the P4 the block count does not bound the frame: the driver reassembles
+// ping-pong halves into the buffer passed to rmt_receive(), so kSymBufSize is
+// the real bound there and the block count is an ISR-latency knob. On the
+// classic ESP32 there is no ping-pong, the block count IS the bound, and 3
+// blocks (192 symbols) must stay.
 //
 // SbusDecoder API:
 //   .begin(rxPin)   --  initialize RMT channel; returns false if no channel free
@@ -90,6 +108,12 @@ public:
     // SBUS frame length in bytes (header + 22 data + flags + footer)
     static constexpr int kFrameLen = 25;
 
+    // Worst-case frame length in RMT symbols. All-alternating bit levels make
+    // every bit its own pulse, and one rmt_symbol_word_t carries two
+    // (level, duration) pairs: 25 x 12 = 300 bits -> 150 symbols.
+    static constexpr size_t kWorstCaseFrameSymbols =
+        (size_t)kFrameLen * (size_t)kBitsPerByte / 2;
+
     SbusDecoder();
 
     // Initialize RMT channel on rxPin. Returns false if no RMT channel is
@@ -120,10 +144,18 @@ public:
 
 private:
 #ifdef ARDUINO_ARCH_ESP32
-    // Symbol buffer capacity per decoder instance.
-    // Worst-case SBUS frame (all-alternating bits): 300 bits -> ~150 rmt_symbol_word_t.
-    // 192 = 3 RMT memory blocks provides a safe margin.
+    // Symbol buffer capacity per decoder instance, in rmt_symbol_word_t.
+    //
+    // This is the buffer handed to rmt_receive(), and on a ping-pong chip it --
+    // not mem_block_symbols -- is what bounds the longest frame that can be
+    // assembled. Deliberately NOT tied to the RMT block budget: the two were
+    // numerically equal on the classic ESP32, and that coincidence is exactly
+    // what hid the P4 sizing defect (#255). 192 against a 150-symbol worst case
+    // is ~28% margin; the cost is 2 x 192 x 4 B = 1536 B of .bss per decoder.
     static constexpr size_t kSymBufSize = 192;
+
+    static_assert(kSymBufSize >= kWorstCaseFrameSymbols,
+                  "SBUS symbol buffer must hold a worst-case frame");
 
     // Double-buffered storage: ISR writes one buffer while the task reads the other.
     struct RxBuf {

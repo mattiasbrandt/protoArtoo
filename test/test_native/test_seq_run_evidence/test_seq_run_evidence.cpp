@@ -8,11 +8,13 @@
 // counts drops/retries, and lets an abort outcome win over the COMPLETED
 // fallback.
 // =============================================================================
+#include <stdio.h>
 #include <string.h>
 
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include "protocol_check.h"  // PC_CMD_MAX -- the longest command the format holds
 #include "seq_last_run_json.h"
 #include "sequence_run_evidence.h"
 
@@ -145,6 +147,70 @@ static void test_cleanup_overflow_truncation() {
     TEST_ASSERT_TRUE(ev.cleanupTruncated);
 }
 
+// The property the ESP32-P4 ring dimensions are sized to buy (#256): a run that
+// fills the ring exactly is retained in full, with nothing overwritten and no
+// omission reported. Written against the constants rather than a literal, so it
+// states the rule on whichever board it is built for.
+static void test_a_run_that_exactly_fills_the_ring_is_captured_whole() {
+    seqEvidenceBegin("X", 0, 0, 0);
+    char first[SEQ_EVID_CMD_LEN] = {};
+    for (uint16_t i = 0; i < SEQ_EVID_TX_CAP; ++i) {
+        char cmd[16];
+        snprintf(cmd, sizeof(cmd), ":OP%02u", (unsigned)(i % 100u));
+        if (i == 0) {
+            strncpy(first, cmd, sizeof(first) - 1);
+        }
+        seqEvidenceRecordTx(dome(cmd), false);
+    }
+    SeqRunEvidence ev;
+    seqEvidenceSnapshot(ev);
+    TEST_ASSERT_EQUAL_UINT16(SEQ_EVID_TX_CAP, ev.txTotalCount);
+    TEST_ASSERT_EQUAL_UINT16(0, ev.txOmittedRecentCount);
+    // The oldest slot still holds the first command emitted: nothing wrapped.
+    TEST_ASSERT_EQUAL_STRING(first, ev.tx[0]);
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateSeqLastRunJson(doc, ev, true));
+    TEST_ASSERT_FALSE(doc["tx"]["truncated"].as<bool>());
+    TEST_ASSERT_EQUAL_UINT16(SEQ_EVID_TX_CAP, doc["tx"]["retained"].as<unsigned>());
+}
+
+// A TX entry retains a command up to its own width. PC_CMD_MAX is the longest
+// command the sequence format can hold, so on a board whose entry is that wide
+// nothing is clipped, and on a narrower one the clip lands exactly at the width
+// -- which is the loss the ESP32-P4 entry width was raised to remove.
+static void test_command_capture_is_bounded_by_the_entry_width() {
+    char longCmd[PC_CMD_MAX + 1];
+    memset(longCmd, 'A', PC_CMD_MAX);
+    longCmd[0] = '@';
+    longCmd[1] = '1';
+    longCmd[2] = 'M';
+    longCmd[PC_CMD_MAX] = '\0';
+
+    seqEvidenceBegin("X", 0, 0, 0);
+    seqEvidenceRecordTx(dome(longCmd), false);
+    SeqRunEvidence ev;
+    seqEvidenceSnapshot(ev);
+
+    const size_t expected = (size_t)PC_CMD_MAX < (size_t)SEQ_EVID_CMD_LEN
+                                ? (size_t)PC_CMD_MAX
+                                : (size_t)(SEQ_EVID_CMD_LEN - 1);
+    TEST_ASSERT_EQUAL_size_t(expected, strlen(ev.tx[0]));
+    TEST_ASSERT_EQUAL_STRING_LEN(longCmd, ev.tx[0], expected);
+}
+
+static void test_artoo_esp32_keeps_its_own_ring_dimensions() {
+    // #256 made these per chip target, and this binary always builds
+    // PA_BOARD_ARTOO_ESP32 (platformio.ini env:native). The artoo-esp32 record
+    // must stay 2204 B per copy: that board has no static DRAM to give and the
+    // two copies double every byte. The ESP32-P4 half is proven by
+    // test/test_tools/test_board_chip_sized_constants.py.
+    TEST_ASSERT_EQUAL_INT(48, SEQ_EVID_CMD_LEN);
+    TEST_ASSERT_EQUAL_INT(32, SEQ_EVID_TX_CAP);
+    TEST_ASSERT_EQUAL_INT(12, SEQ_EVID_CLEANUP_CAP);
+    TEST_ASSERT_EQUAL_size_t(2204u, sizeof(SeqRunEvidence));
+}
+
 static void test_end_completed_and_drop_delta() {
     seqEvidenceBegin("X", 0, 100, 7);          // body queue-full baseline = 7
     seqEvidenceRecordTx(dome(":OP01"), false);
@@ -225,6 +291,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_cleanup_separate_from_general_stream);
     RUN_TEST(test_tx_ring_omitted_recent_and_truncation);
     RUN_TEST(test_cleanup_overflow_truncation);
+    RUN_TEST(test_a_run_that_exactly_fills_the_ring_is_captured_whole);
+    RUN_TEST(test_command_capture_is_bounded_by_the_entry_width);
+    RUN_TEST(test_artoo_esp32_keeps_its_own_ring_dimensions);
     RUN_TEST(test_end_completed_and_drop_delta);
     RUN_TEST(test_retry_count);
     RUN_TEST(test_abort_outcome_wins_over_completed_fallback);

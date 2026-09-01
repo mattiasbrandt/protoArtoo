@@ -96,6 +96,7 @@ sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound
 sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood|configApply|
 sound.config.startup-track|Startup Boot Sound Track ($B)|Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event|audioTracksApply|
 sound.config.boot-complete-track|Boot Complete System Track|Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)|audioTracksApply|
+sound.config.network-down-track|Network Link Lost System Track|Automatic system-event sound fired once when the ESP-Hosted C6 link supervisor exhausts its recovery ladder and settles into the terminal degraded state (#189)|audioTracksApply|
 sound.config.track-assignments|Track Assignments|Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)|audioTracksApply|
 sound.config.system-track-assignments|System Sound Assignments|System-event sound track assignments (T09), including automatic boot-complete playback|audioTracksApply|
 sound.config.category-ranges|Category Ranges|Min/max track ranges for RC random-by-category sound actions (T07/T10)|audioCategoryRangeApply|
@@ -148,7 +149,7 @@ system.config.enable_audio|S2 — Sound|Use the sound module connected to S2|con
 system.config.enable_protor2link|S3 — Dome Control|Use the dome controller connected to S3|configApply|
 system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem|captureHealthSnapshot|
 system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
-system.status.logs|Logs|Recent firmware log lines|buildStatusJson|
+system.status.logs|Logs|Recent firmware log lines|copyLogLineAt|
 system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|captureWifiStatusSnapshot|
 dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|

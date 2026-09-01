@@ -24,6 +24,15 @@ _Avoid_: software verified, bench verified
 The behavior was tested on the integrated droid hardware for the affected subsystem.
 _Avoid_: bench verified, controller upload verified
 
+**Verification Label**:
+A description of the evidence a piece of work actually has - never a gate on closing
+it. Work closes on the strongest evidence the available hardware can produce, and
+`full-hardware-required` records the remaining droid-only exposure rather than
+blocking. Droid confirmation is a desirable outcome for a hobby-scale project, not a
+precondition (operator decision, 2026-09-01; see AGENTS.md "Verification and
+Reporting").
+_Avoid_: hardware gate, droid gate, blocked pending hardware verification
+
 **Public Verification Wording**:
 Short evidence phrasing in public docs that describes what was actually tested without exposing internal process labels.
 _Avoid_: software-verified, controller-upload-verified, full-hardware-verified
@@ -410,6 +419,10 @@ _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 A per-Board-Variant display string, declared in `include/component_labels.inc`, naming where a Component Toggle's subsystem is physically connected on that specific board — e.g., artoo_esp32 shows "S1" for Drive. Shown to the operator as supplementary detail (such as a tooltip), never as the toggle's canonical name; a board may omit the label where no established legend exists (ADR 0033).
 _Avoid_: component name, toggle name, PCB silkscreen text as the toggle's identity
 
+**Builder Recommendation**:
+The project's purchase advice about a Board Variant: whether the developer docs tell a builder to buy that board. Purely a statement in builder-facing documentation — it changes no code, no Board Capability Gate, and no support level, and a board carries the same support whichever way it reads. It turns on things a Board Capability Gate deliberately cannot attest (ADR 0029): retail unit consistency, whether a defective unit has a realistic recovery path, and what that recovery costs a builder who is not an equipped expert.
+_Avoid_: recommended board (collides with the recommended ongoing WiFi mode), pass tier, support tier, certification
+
 **Board Capability Gate**:
 A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support — a single yes/no fact, or (per ADR 0029's 2026-08-26 amendment) a set of mutually-exclusive supported options with one default, such as a Board Variant's drive backend. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
 _Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
@@ -435,8 +448,10 @@ The droid's defined functions — RC drive, dome, sound, servos, and every safet
 _Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
 
 **Bench-Mode**:
-The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
-_Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
+The development posture where a controller board is powered by the computer's USB cable with **nothing else connected to it** — no droid hardware and no test gear. It exercises what the board can show over that cable: boot, task startup, the serial log, HTTP, SSE, OTA, configuration persistence, and whatever the firmware can report about itself.
+
+Attaching anything — a jumper, a probe, a meter — is a **special case, not standard practice**: an exceptional measure the operator calls in a dire situation. It is never a routine capability, never something a ticket may plan around, and **never a route an agent proposes to unblock work**. If a ticket cannot proceed without a measurement, the answer is that the work belongs to the droid gate — not that someone should attach a jumper. So a check that needs a signal on a pin (SBUS input, a UART lane, I2C, WS2812B output, PWM levels or edge quality) **is not scoped as Bench-Mode work**: it belongs to the droid gate, and a criterion that assumes gear on the bench is mis-written. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
+_Avoid_: bench verified, bench tested, bench-attachable peripherals, scoping pin-level electrical checks as bench work, treating an exceptional measurement as a routine one, using bench work as integrated-hardware evidence
 
 **Bench Runbook**:
 One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
@@ -623,6 +638,8 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 > **Domain expert:** "No — loading, live updates, and saving/applying user actions are different proofs."
 
 ## Flagged Ambiguities
+- "bench" was read as *"USB plus whatever test gear you can attach"* — a spare receiver, a signal generator, a loopback, a breakout, a bench servo/ESC, a scope or logic analyser were all listed as in scope. That is not feasible or practical on this project's bench, where a board is powered by the computer's USB cable and nothing else is connected. Resolved by defining **Bench-Mode** as USB-only with nothing attached. Connecting a jumper or probe is possible but is an exceptional measure the operator calls in a dire situation — never a routine capability, and never something a ticket may plan around — so a pin-level electrical check is scoped as droid-gate work by definition rather than by argument. The wrong reading had propagated from this glossary into six tickets and repeatedly produced bench tickets that quietly required hardware nobody could attach.
+- "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.

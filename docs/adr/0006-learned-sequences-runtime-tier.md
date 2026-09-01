@@ -17,6 +17,13 @@ Sequences still run through the body-owned sequence engine, but panel authoring 
 Protocol Check now use dome panel intent commands (`:OP`, `:CL`, `:OF`) rather than
 `:SM` slot/pulse commands.
 
+Amended by #256: decision 7's capacity numbers were sized against the artoo-esp32
+controller's heap and are now per chip target. The 16-file cap is unchanged on
+every board; the per-file cap and the free-space floor are 12 KB / 24 KB on
+artoo-esp32 (the original values, unchanged) and 24 KB / 48 KB on the ESP32-P4,
+where the cap is derived from the format's own 96+96-step ceiling rather than
+from a heap floor. `include/seq_store_util.h` carries the derivation.
+
 ## Context
 
 ADR 0004 locked the body as **Catalog Authority** and shipped Factory Sequences as C++

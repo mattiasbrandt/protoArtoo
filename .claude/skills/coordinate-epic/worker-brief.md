@@ -89,16 +89,36 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - Status comment mechanics (all agents share one GitHub identity, so
   --edit-last can overwrite the coordinator's comments - never use it):
   1. Before your first slice, create your status comment with a marker first
-     line: gh issue comment {ISSUE} --body "<!-- worker-status-{ISSUE} -->..."
+     line, writing the body to a file and passing it with --body-file:
+     gh issue comment {ISSUE} --body-file <file>
   2. Find its id once: gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
      --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE} -->")) | .id'
-  3. Update that id thereafter: gh api -X PATCH
-     repos/{owner}/{repo}/issues/comments/<id> -f body="..."
+  3. Update that id thereafter, from a file:
+     python3 -c "import json,pathlib,sys; print(json.dumps({'body': pathlib.Path(sys.argv[1]).read_text()}))" <file> > /tmp/patch.json
+     gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input /tmp/patch.json
+  4. READ THE COMMENT BACK and check its length. A bad write returns HTTP 200.
+- NEVER pass a file to gh with -f body="@<file>". -f is raw: it writes the
+  literal string "@/path/to/file" as the comment body and DESTROYS whatever was
+  there, silently, with a 200 response. (@-expansion is -F/--field behaviour,
+  not -f.) This has already cost this repo a worker's full slice report plus the
+  previous slice's report in the same comment. A status report with fenced gate
+  blocks is multi-KB and cannot go on a command line safely, so the file route
+  above is the only correct one - use --body-file or --input, never -f with @.
 - The issue BODY belongs to the coordinator: never edit it and never tick
   acceptance checkboxes - the critic ticks them on verified acceptance.
 - Never leave a green slice uncommitted.
 
 VERIFICATION (software-verified cap)
+- One PlatformIO build runs on this machine at a time. Wrap EVERY invocation
+  in `flock /tmp/protoartoo-pio.lock` - `pio run`, `pio test`, `make build`,
+  and the slice gate, which builds internally. Keep this worktree on one chip
+  target unless the ticket demands both: alternating targets in one worktree
+  rebuilds the shared framework packages, which every other worktree links.
+- A size that moves with no matching source change is a toolchain fault, not
+  your slice. Report it and stop rather than working around it or re-measuring
+  until a number looks right; the coordinator owns the repair. Chase a number
+  that disagrees with your brief instead of taking whichever reads better -
+  three of this epic's most valuable findings came from exactly that.
 - Slice gate: after committing each slice, run
   `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
   below, if any, and --mutations with your mutation patches when your diff

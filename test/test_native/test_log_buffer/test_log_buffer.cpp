@@ -173,6 +173,13 @@ void test_totalWritten_exceeds_capacity_on_wraparound() {
 
 // --- logRingLinesForLevel ---
 
+// The ladder became chip-target specific in #256 and this binary always builds
+// PA_BOARD_ARTOO_ESP32 (platformio.ini env:native), so these literals pin the
+// artoo-esp32 rungs. Every one was sized for that board's heap and none may move
+// when the ESP32-P4 arm changes: the ring and the /api/logs body buffer are
+// allocated at boot from these depths, and the board has 42692 B of free heap to
+// pay from. The ESP32-P4 rungs are proven by
+// test/test_tools/test_board_chip_sized_constants.py.
 void test_ring_lines_for_each_level() {
     TEST_ASSERT_EQUAL_size_t(16, logRingLinesForLevel(1));
     TEST_ASSERT_EQUAL_size_t(20, logRingLinesForLevel(2));
@@ -183,6 +190,63 @@ void test_ring_lines_for_each_level() {
 void test_ring_lines_out_of_range_clamped() {
     TEST_ASSERT_EQUAL_size_t(16, logRingLinesForLevel(0));
     TEST_ASSERT_EQUAL_size_t(LOG_RING_MAX_LINES, logRingLinesForLevel(9));
+}
+
+// The ladder's contract, independent of which board it was built for: depth
+// never falls as verbosity rises, every rung is one of the declared constants,
+// and the deepest rung is what bounds the sized ring. The last one matters
+// because LOG_RING_MAX_LINES also sizes the native test storage and the
+// /api/logs body buffer -- a ladder rung above it would overrun both.
+void test_ring_ladder_never_loses_depth_as_verbosity_rises() {
+    size_t previous = 0;
+    for (uint8_t level = 1; level <= 4; ++level) {
+        const size_t depth = logRingLinesForLevel(level);
+        TEST_ASSERT_GREATER_OR_EQUAL_size_t(previous, depth);
+        TEST_ASSERT_LESS_OR_EQUAL_size_t(LOG_RING_MAX_LINES, depth);
+        previous = depth;
+    }
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_MAX_LINES, logRingLinesForLevel(4));
+}
+
+// Each rung is reachable through the level knob, so a rung nobody maps to is a
+// dead constant. This is the coupling between the header's ladder and the
+// function that reads it: renaming or reordering one without the other leaves a
+// declared depth the operator can never select.
+void test_every_declared_rung_is_selectable_by_a_level() {
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_LINES_ERROR, logRingLinesForLevel(1));
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_LINES_WARN, logRingLinesForLevel(2));
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_LINES_INFO, logRingLinesForLevel(3));
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_LINES_DEBUG, logRingLinesForLevel(4));
+}
+
+// The behaviour the depth actually buys: a ring at the level's depth retains
+// exactly that many lines and drops the oldest beyond it. Exercised through the
+// real ring at the production default depth (WARN), which is what both boards
+// ship with (platformio.ini sets PA_LOG_LEVEL=2 for artoo_esp32 and firebeetle2).
+void test_ring_at_the_production_depth_retains_that_many_lines() {
+    const size_t depth = logRingLinesForLevel(2);
+    static char sized[LOG_RING_MAX_LINES][LOG_LINE_MAX];
+    LogBuffer ring = {};
+    memset(sized, 0, sizeof(sized));
+    logBufferInit(&ring, sized, depth);
+
+    for (size_t i = 0; i < depth + 5; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line%zu", i);
+        logBufferAppend(&ring, line);
+    }
+    TEST_ASSERT_EQUAL_size_t(depth, ring.count);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)(depth + 5), ring.totalWritten);
+
+    static char out[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
+    logBufferCopy(&ring, out, sizeof(out));
+    // The five oldest are gone and the newest is present: the retained window is
+    // the depth, not an accident of the copy buffer.
+    TEST_ASSERT_NULL(strstr(out, "line0\n"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "line5\n"));
+    char newest[32];
+    snprintf(newest, sizeof(newest), "line%zu\n", depth + 4);
+    TEST_ASSERT_NOT_NULL(strstr(out, newest));
 }
 
 // --- formatConfigJson (drive-settings slice only; full config coverage is in test_json_formatters) ---
@@ -240,6 +304,9 @@ int main() {
 
     RUN_TEST(test_ring_lines_for_each_level);
     RUN_TEST(test_ring_lines_out_of_range_clamped);
+    RUN_TEST(test_ring_ladder_never_loses_depth_as_verbosity_rises);
+    RUN_TEST(test_every_declared_rung_is_selectable_by_a_level);
+    RUN_TEST(test_ring_at_the_production_depth_retains_that_many_lines);
 
     RUN_TEST(test_formatConfigJson_contains_speedLimitMax);
     RUN_TEST(test_formatConfigJson_contains_webDriveTimeoutMs);

@@ -157,6 +157,13 @@ make
 `user.mk`. All power-user shortcuts read from that file. All PlatformIO output streams
 live; errors are highlighted if something goes wrong.
 
+**Host firewall:** every OTA target pins the device's connect-back to host
+port `OTA_HOST_PORT` (default `32320`, overridable in `user.mk`). If your
+build machine has a default-deny inbound firewall, allow that port from your
+robot's LAN or `make ota` fails with `[ERROR]: No response from device` —
+see [`docs/troubleshooting.md`](./docs/troubleshooting.md#ota-fails-with-error-no-response-from-device-host-firewall)
+for the rule and why it's needed.
+
 `make setup-wifi` is a **developer convenience only** (writes `src/secrets.h`,
 gitignored) — it lets a self-built firmware image skip straight to a known
 WiFi posture during local development. It is never required for a downloaded

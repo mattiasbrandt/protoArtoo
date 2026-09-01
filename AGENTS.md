@@ -165,7 +165,7 @@ first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
 which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
 line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Four rules the Makefile cannot enforce for you:
+Six rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
@@ -180,6 +180,25 @@ Four rules the Makefile cannot enforce for you:
   coredump decode are in `docs/troubleshooting.md`.
 - ArduinoOTA starts on Core 0 when WiFi comes up (port 3232). `192.168.4.1` (the
   AP IP) is never the default `OTA_IP`.
+- **Only one of the four P4 environments is the firmware.** `tools/build_budgets.json`
+  -> `platforms.esp32p4.envs` registers four. `firebeetle2` is the product image.
+  `firebeetle2_bringup` and `firebeetle2_hosted_bench` set `build_src_filter = -<*>`
+  and compile a single `bringup/` translation unit, so they contain **none** of
+  `src/`; `firebeetle2_p4_rt_bench` is `+<*>` plus a harness TU, so it is the
+  firmware *and extra code*, not the shipping image. Flashing any of the three
+  while expecting the product yields a board that boots and serves almost nothing
+  — which **presents as broken firmware rather than as the wrong target**, and that
+  misreading is the expensive part. Corollary: a **new** P4 env must be added to
+  that registry, because `Makefile:46` reads it to choose `PLATFORMIO_CORE_DIR`;
+  an unregistered P4 env silently builds against the artoo-esp32 toolchain pool
+  and fails looking like a code problem.
+- **`src/secrets.h` does not follow worktrees.** It is gitignored, so a build in a
+  fresh worktree **silently falls back to placeholder credentials** instead of
+  failing. The resolution order is `-DBENCH_SSID`/`-DBENCH_PASS` -> `src/secrets.h`
+  -> placeholder; the middle term simply vanishes in a new tree. This produced an
+  uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
+  that had been built against the placeholder SSID. Copy it in when you create a
+  worktree, and never commit it.
 
 ## Verification and Reporting
 
@@ -274,7 +293,29 @@ Classify verification status explicitly — use only these labels:
 - `controller-upload-verified` — flashed to ESP32 controller; smoke checks passed
 - `full-hardware-verified` — verified on integrated droid hardware
 - `partial` — some evidence exists; controller or hardware checks still open
-- `full-hardware-required` — physical hardware needed before closure
+- `full-hardware-required` — the remaining exposure is droid-only; recorded, not scheduled
+
+**These labels describe evidence. They are not a gate** (operator decision,
+2026-09-01). protoArtoo is a small open-source hobby project, and integrated-droid
+confirmation is a desirable outcome, not a precondition for closing work.
+
+- A ticket, a PR, or an epic **closes on the strongest evidence the available
+  hardware can produce**. `full-hardware-required` names what is still unproven so
+  the next person knows where to look; it never blocks closure on its own.
+- **Do not write a droid-hardware verification ticket as a gate.** Whatever real
+  droid operation turns up is ordinary follow-up work, filed when it appears. A
+  fault in drive, dome, servos, sound, SBUS or battery sense shows itself in the
+  first minutes of driving; a gate does not find it earlier, it only delays the
+  close. #193 was exactly this ticket and was dropped `not planned`.
+- **Where a risk is real but unmeasurable, document it, do not schedule it.** Put
+  it in the file that owns the hardware truth — the `GPIO48-52` LDO watch item
+  lives in `docs/pin_map.md`, "Known Issue: GPIO 48-52 LDO Rails (Unmeasured)" —
+  with how the fault would present and how to diagnose it. A durable note beats a
+  ticket nobody can action.
+- **This does not relax the safety invariants.** The contracts in "Safety-Critical
+  Rules" are still proven to the maximum the available hardware allows, and a gap
+  is named explicitly rather than assumed away. Not being able to reach the droid
+  is a reason to record a limit, never a reason to skip a check the bench can run.
 
 Never use "bench verified" or "bench-tested" — too ambiguous. Public docs use plain
 evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller").
@@ -297,6 +338,15 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Preserve useful code comments. Remove or update them only when factually incorrect,
   stale after a code change, or duplicated by clearer nearby documentation.
 - LSP/lint fixes must be resolved by changing the flagged code, not by deleting nearby comments.
+- **Orchestration bookkeeping never ships in source.** A comment may cite a durable public
+  reference — an issue (`#189`), an ADR, a spec sheet, a `file:line` — and CONTRIBUTING.md's
+  "Code standards summary" asks for one where it helps. It may **not** carry the workflow step
+  that produced the code: no slice numbers (`#189 slice 3`), no wave, attempt, or worker
+  identifiers. A slice decomposition lives in one coordinator's dispatch plan, is not
+  recoverable from the repo, and means nothing to whoever holds the file later — the same reason
+  the phase-era `T<NN>` token was dropped from commit scopes, and why per-slice tracking belongs
+  in the issue checklist comment. Write what the code does and why it is that way, then cite the
+  issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
 
 ### Branch model
 

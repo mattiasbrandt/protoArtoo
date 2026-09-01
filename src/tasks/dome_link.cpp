@@ -8,14 +8,21 @@
 // concrete transport functions below. All transport-selection policy
 // lives in dome_link_arbiter.cpp / include/dome_link_arbiter.h.
 //
-// Transport model:
-//   - Primary: UART2 over slip ring (GPIO 33 TX / GPIO 34 RX)
+// Transport model (ADR 0003):
+//   - Primary: UART_PORT_DOME over slip ring, on PIN_DOME_TX / PIN_DOME_RX
+//     (GPIO 33 / 34 on artoo-esp32, GPIO 22 / 23 on firebeetle2)
 //   - Fallback: WiFi (UDP heartbeat + HTTP command forwarding)
 //
-// UART2 ownership model:
-//   - UART transport active: DomeLinkTask owns UART2 on S3 pins.
-//   - WiFi transport active: UART2 is released/reconfigured for audio RX
-//     (GPIO 35) so audio status queries can reclaim the peripheral.
+// UART controller ownership model -- board-dependent, PA_CAP_DEDICATED_AUDIO_UART:
+//   - Capability 0 (artoo-esp32): the audio module's RX shares this
+//     controller, so ownership alternates. UART transport active ->
+//     DomeLinkTask owns it on the dome pins; WiFi transport active ->
+//     releaseUartToAudioRx() re-opens it RX-only on PIN_AUDIO_RX so audio
+//     status queries can run. Three HP UARTs force this; it is not a choice.
+//   - Capability 1 (firebeetle2): audio has UART_PORT_AUDIO to itself, so
+//     DomeLinkTask holds UART_PORT_DOME for the whole boot and the handoff is
+//     compiled out. In the posture epic #182 calls primary for this board --
+//     dome link on serial -- that is what lets audio queries run at all (#254).
 //
 // Real-time safety:
 //   - Non-blocking queue receive and bounded poll loop
@@ -47,7 +54,7 @@
 
 static const char* TAG = "DomeLink";
 
-static HardwareSerial s_domeSerial(2);
+static HardwareSerial s_domeSerial(UART_PORT_DOME);
 static WiFiUDP s_domeUdp;
 static bool s_uartOwned = false;
 static IPAddress s_lastMdnsResolvedIp;
@@ -164,17 +171,24 @@ static bool acquireDomeUart() {
     s_uartOwned = true;
     domeUartAcquire(DOME_UART_DOME);
 
-    PA_LOG_DEBUG(TAG, "UART2 ownership -> dome link (GPIO%d/GPIO%d)", PIN_DOME_TX, PIN_DOME_RX);
+    PA_LOG_DEBUG(TAG, "UART%u ownership -> dome link (GPIO%d/GPIO%d)", (unsigned)UART_PORT_DOME,
+                 PIN_DOME_TX, PIN_DOME_RX);
     return true;
 }
 
+#if !PA_CAP_DEDICATED_AUDIO_UART
+// Hand the shared controller to the audio module's RX while the dome link is
+// on WiFi. Compiled only where the two consumers actually share one: on a board
+// with PA_CAP_DEDICATED_AUDIO_UART there is nothing to hand over, and leaving
+// this defined would be an unused static function under -Werror.
 static void releaseUartToAudioRx() {
     if (!s_uartOwned) {
         return;
     }
 
     s_domeSerial.end();
-    // Reconfigure UART2 RX to audio module status pin so AudioTask queries can run.
+    // Reconfigure the shared controller's RX onto the audio module's status pin
+    // so AudioTask queries can run.
     s_domeSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     s_uartOwned = false;
     domeUartRelease(DOME_UART_DOME);
@@ -182,8 +196,10 @@ static void releaseUartToAudioRx() {
     // DOME_UART_AUDIO before each query and releases after  --  pre-acquiring
     // here caused a spurious duplicate-acquire WARN on every audio poll cycle.
 
-    PA_LOG_DEBUG(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
+    PA_LOG_DEBUG(TAG, "UART%u ownership -> audio RX (GPIO%d)", (unsigned)UART_PORT_DOME,
+                 PIN_AUDIO_RX);
 }
+#endif  // !PA_CAP_DEDICATED_AUDIO_UART
 
 static bool readConfiguredPeerIp(IPAddress* out) {
     if (out == nullptr) {
@@ -845,9 +861,17 @@ void domeLinkTask(void* pvParameters) {
             PA_LOG_DEBUG(TAG, "UART probe: sent #PAHB, waiting %u ms for #APHB",
                          (unsigned)kDomeLinkUartProbeWindowMs);
         }
+#if !PA_CAP_DEDICATED_AUDIO_UART
+        // The arbiter still decides WHEN the shared controller would go back to
+        // audio -- it is a pure function and stays board-agnostic, so its
+        // timeline tests cover one behaviour on both boards. Whether there is
+        // anything to hand over is the board's fact, and it is answered here
+        // (#254). On a board with a dedicated audio UART this action is simply
+        // not executed: the dome link keeps UART_PORT_DOME for the whole boot.
         if (act.releaseUartToAudio) {
             releaseUartToAudioRx();
         }
+#endif
 
         setTransportState(act.txRoute);
         if (act.txRoute == DOME_LINK_TRANSPORT_WIFI &&

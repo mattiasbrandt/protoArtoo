@@ -3,22 +3,28 @@
 //
 // DomeLinkTask  --  bidirectional Marcduino serial link to the dome controller.
 //
-// Physical link: UART2 (Serial2), 9600 baud 8N1, GPIO 33 TX / GPIO 34 RX.
-// PCB header: S3 ("Dome Control"). Connected over slip ring to AstroPixelsPlus.
+// Physical link: UART_PORT_DOME (Serial2), 9600 baud 8N1, on PIN_DOME_TX /
+// PIN_DOME_RX. Both are per Board Variant (include/config.h); on artoo-esp32
+// that is PCB header S3 ("Dome Control"), GPIO 33 TX / GPIO 34 RX. Connected
+// over slip ring to AstroPixelsPlus.
 //
 // Responsibilities:
-//   TX  --  drain domeTxQueue and write ASCII commands to UART2; send #PAHB\r
-//        heartbeat to dome at 1 Hz.
-//   RX  --  read CR-terminated lines from UART2; intercept #APHB heartbeat;
-//        route remaining commands through the Marcduino body parser
+//   TX  --  drain domeTxQueue and write ASCII commands to the dome UART; send
+//        #PAHB\r heartbeat to dome at 1 Hz.
+//   RX  --  read CR-terminated lines from the dome UART; intercept #APHB
+//        heartbeat; route remaining commands through the Marcduino body parser
 //        (parseMarcduinoCommand) which dispatches to AudioTask / ServoTask.
+//   DomeLinkTask is the sole writer for dome-bound Marcduino TX; callers must
+//   enqueue via domeQueueTx() and never write the dome UART directly.
 //
-// UART2 ownership contract (S2 audio RX + S3 dome link share UART2 hardware):
-//   - When active transport is UART, DomeLinkTask owns UART2 on GPIO33/34.
-//   - When active transport is WiFi fallback, DomeLinkTask releases UART2 so
-//     audio status/query paths can reclaim RX on GPIO35.
-//   - DomeLinkTask is still the sole writer for dome-bound Marcduino TX; callers
-//     must enqueue via domeQueueTx() and never write Serial2 directly.
+// UART ownership contract -- board-dependent, keyed on PA_CAP_DEDICATED_AUDIO_UART:
+//   - Capability 0 (artoo-esp32, three HP UARTs): the audio module's RX shares
+//     this controller. DomeLinkTask owns it while the active transport is
+//     UART, and releases it to audio RX on PIN_AUDIO_RX while the transport is
+//     WiFi fallback. Arbitrated through domeUartAcquire()/domeUartRelease().
+//   - Capability 1 (firebeetle2, five HP UARTs): audio has UART_PORT_AUDIO to
+//     itself, so there is nothing to hand over. DomeLinkTask owns
+//     UART_PORT_DOME for the whole boot and the handoff does not run (#254).
 //
 // Queue sends from real-time tasks must use domeQueueTx() (timeout 0).
 //
@@ -33,6 +39,11 @@
 #include <stdint.h>
 #include <string.h>
 
+// config.h is reached transitively through robot_state.h, but the audio-claim
+// helpers below are gated on PA_CAP_DEDICATED_AUDIO_UART, so name the
+// dependency directly rather than letting a header reshuffle silently turn a
+// #if into "capability absent".
+#include "config.h"
 #include "robot_state.h"
 
 // Status of the dome layout cache
@@ -96,3 +107,38 @@ bool domeLayoutCacheRefreshRequested();
 bool domeUartAcquire(DomeUartOwner requester);
 void domeUartRelease(DomeUartOwner requester);
 bool domeUartOwnedBy(DomeUartOwner owner);
+
+// -----------------------------------------------------------------------------
+// Audio-side claim on the UART controller an audio query needs.
+//
+// The arbiter above exists because two consumers share one controller. Whether
+// they do is a Board Variant fact, so the audio backends ask through these two
+// helpers rather than each calling domeUartAcquire() directly:
+//
+//   - Capability 0: borrow the dome link's controller. The claim can be
+//     DENIED, and a denied claim is what AUDIO_RX_BLOCKED_BY_DOME_UART reports.
+//   - Capability 1: audio owns UART_PORT_AUDIO outright, so the claim always
+//     succeeds and no shared state is touched. Without this, the P4 in the
+//     posture epic #182 calls primary -- dome link on its own serial UART --
+//     would have every audio status query denied by an arbiter guarding a
+//     controller audio no longer needs (#254).
+//
+// Paired: every audioUartClaim() that returns true owes an audioUartRelease().
+// -----------------------------------------------------------------------------
+inline bool audioUartClaim() {
+#if PA_CAP_DEDICATED_AUDIO_UART
+    return true;
+#else
+    return domeUartAcquire(DOME_UART_AUDIO);
+#endif
+}
+
+inline void audioUartRelease() {
+#if PA_CAP_DEDICATED_AUDIO_UART
+    // Nothing was borrowed, so there is nothing to give back. Releasing here
+    // would clear robotState.domeUartOwner out from under the dome link, which
+    // holds the controller permanently on this board.
+#else
+    domeUartRelease(DOME_UART_AUDIO);
+#endif
+}

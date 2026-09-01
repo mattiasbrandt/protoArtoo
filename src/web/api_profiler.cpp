@@ -110,7 +110,7 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
-#define PROF_TASK_MAX 9
+#define PROF_TASK_MAX 10
 
 struct TaskHwmEntry {
     const char* name;
@@ -119,9 +119,16 @@ struct TaskHwmEntry {
 };
 
 // Names must match xTaskCreatePinnedToCore() calls in main.cpp.
+//
+// Nothing enforces that, and it drifted: "SeqDisp" was missing until #250, so
+// /api/profiler silently reported nine of the ten tasks and the tenth could not
+// be measured at all. That is worse than an obviously absent endpoint, because
+// the response looks complete -- a task that is never listed reads the same as
+// a task that is disabled. If you add a task in main.cpp, add it here.
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
-    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask"
+    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
+    "SeqDisp"
 };
 
 static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];
@@ -164,6 +171,20 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
     s_inFailedAllocCb = true;
     s_lastFailSize = (uint32_t)requested_size;
     s_lastFailCaps = caps;
+
+    // Backtrace capture is Xtensa-only. ESP-IDF DECLARES esp_backtrace_get_start()
+    // and esp_backtrace_get_next_frame() in esp_debug_helpers.h for every target, but
+    // only IMPLEMENTS them for Xtensa -- they are hand-written assembly that walks
+    // register windows, which RISC-V does not have. So on the ESP32-P4 the calls
+    // compile cleanly and the link fails with "undefined reference"; verified against
+    // the framework archives, where the symbol is defined once for esp32 and zero
+    // times for esp32p4_es.
+    //
+    // The rest of the record -- the failure count, requested size and caps -- is
+    // architecture-neutral and still the most useful part, so RISC-V keeps it and
+    // simply reports a zero-depth backtrace. /api/profiler already renders a depth of
+    // 0 as an empty list, so no consumer changes.
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
     esp_backtrace_frame_t frame;
     esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
     uint8_t depth = 0;
@@ -175,6 +196,9 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
         }
     }
     s_lastFailBtDepth = depth;
+#else
+    s_lastFailBtDepth = 0;
+#endif
     s_inFailedAllocCb = false;
 }
 
