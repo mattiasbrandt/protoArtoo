@@ -41,21 +41,30 @@ PROBE_HEADER_SET = (
     "seq_store_index.h",
     "seq_store_util.h",
     "sequence_engine.h",
+    "sequence_run_evidence.h",
 )
 
 # What each board must produce. Order matches the printf in _probe_source().
 EXPECTED_BY_BOARD = {
-    # Pre-#256 values, unchanged. Both were sized against this board's heap, and
-    # both must stay exactly where they are.
+    # Pre-#256 values, unchanged. Every one was sized against this board's heap,
+    # and every one must stay exactly where it is.
     "PA_BOARD_ARTOO_ESP32": {
         "seq_file_max_bytes": 12 * 1024,
         "seq_fs_free_floor": 24 * 1024,
+        "evid_cmd_len": 48,
+        "evid_tx_cap": 32,
+        "evid_cleanup_cap": 12,
+        "evid_record_bytes": 2204,
     },
-    # Re-derived from the sequence format's own ceiling. See the derivation in
-    # include/seq_store_util.h.
+    # Re-derived from the sequence model's own ceilings. See the derivations in
+    # include/seq_store_util.h and include/sequence_run_evidence.h.
     "PA_BOARD_FIREBEETLE2": {
         "seq_file_max_bytes": 24 * 1024,
         "seq_fs_free_floor": 48 * 1024,
+        "evid_cmd_len": 64,
+        "evid_tx_cap": 112,
+        "evid_cleanup_cap": 16,
+        "evid_record_bytes": 8284,
     },
 }
 
@@ -64,6 +73,14 @@ EXPECTED_BY_BOARD = {
 # (63). Measured against ArduinoJson 7.4.3 with the format's own serializer
 # shape; see the table in include/seq_store_util.h.
 FORMAT_MAX_SEQUENCE_JSON_BYTES = 18843
+
+# The model ceilings the ESP32-P4 run-evidence derivation is taken from, restated
+# here so a change to protocol_check.h or sequence_engine.h that invalidates the
+# derivation fails the assertion that depends on it instead of silently rebasing
+# onto the new value.
+PC_MAX_STEPS = 96          # protocol_check.h
+PC_CMD_MAX = 63            # protocol_check.h
+ENGINE_FINAL_QUEUE = 16    # SeqEngineState::finalQ, sequence_engine.h
 
 
 class BoardChipSizedConstants(unittest.TestCase):
@@ -86,10 +103,13 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "#define PA_LOG_LEVEL 2",
                 "#define PA_HEAP_PROFILE 0",
                 '#include "seq_store_util.h"',
+                '#include "sequence_run_evidence.h"',
                 "#include <cstdio>",
                 "int main() {",
-                '    std::printf("%zu %zu\\n",',
-                "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR);",
+                '    std::printf("%zu %zu %d %d %d %zu\\n",',
+                "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
+                "        (int)SEQ_EVID_CMD_LEN, (int)SEQ_EVID_TX_CAP,",
+                "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence));",
                 "    return 0;",
                 "}",
                 "",
@@ -120,10 +140,17 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 2, run_result.stdout)
+        self.assertEqual(len(fields), 6, run_result.stdout)
         values = {
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
+            "evid_cmd_len": fields[2],
+            "evid_tx_cap": fields[3],
+            "evid_cleanup_cap": fields[4],
+            # SeqRunEvidence is scalars and fixed arrays only -- no pointers --
+            # so the host's word size does not change its layout and this figure
+            # is the one the device pays, twice.
+            "evid_record_bytes": fields[5],
         }
         self._cache[board_macro] = values
         return values
@@ -164,6 +191,34 @@ class BoardChipSizedConstants(unittest.TestCase):
         v = self._values("PA_BOARD_ARTOO_ESP32")
         self.assertLess(v["seq_file_max_bytes"], FORMAT_MAX_SEQUENCE_JSON_BYTES)
 
+    def test_p4_evidence_ring_covers_a_whole_non_looping_run(self):
+        """96 authored steps less the STEP_END sentinel, plus the drain queue.
+
+        One run executes one branch, so PC_MAX_STEPS - 1 is the most commands
+        its authored steps can emit, followed by at most finalQ cleanup actions.
+        A ring that holds both captures every non-looping run whole.
+        """
+        v = self._values("PA_BOARD_FIREBEETLE2")
+        self.assertGreaterEqual(
+            v["evid_tx_cap"], (PC_MAX_STEPS - 1) + ENGINE_FINAL_QUEUE)
+        self.assertGreaterEqual(v["evid_cleanup_cap"], ENGINE_FINAL_QUEUE)
+
+    def test_p4_evidence_entry_holds_the_longest_command_whole(self):
+        v = self._values("PA_BOARD_FIREBEETLE2")
+        self.assertGreaterEqual(v["evid_cmd_len"], PC_CMD_MAX + 1)
+
+    def test_artoo_evidence_ring_still_truncates(self):
+        """The inherited constraint itself, asserted so it is not read as a bug.
+
+        artoo-esp32 holds the record twice in static DRAM and has none to give,
+        so both dimensions stay below the model's ceilings and the record says
+        so through txOmittedRecentCount / cleanupTruncated. That is the price
+        this ticket removes only on the board that can afford to pay it.
+        """
+        v = self._values("PA_BOARD_ARTOO_ESP32")
+        self.assertLess(v["evid_cmd_len"], PC_CMD_MAX + 1)
+        self.assertLess(v["evid_tx_cap"], (PC_MAX_STEPS - 1) + ENGINE_FINAL_QUEUE)
+
     def test_free_floor_covers_a_second_full_size_file_on_both_boards(self):
         for board in EXPECTED_BY_BOARD:
             with self.subTest(board=board):
@@ -179,7 +234,9 @@ class BoardChipSizedConstants(unittest.TestCase):
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")
         self.assertNotEqual(artoo, firebeetle)
-        for key in ("seq_file_max_bytes", "seq_fs_free_floor"):
+        for key in ("seq_file_max_bytes", "seq_fs_free_floor",
+                    "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
+                    "evid_record_bytes"):
             with self.subTest(key=key):
                 self.assertGreater(
                     firebeetle[key], artoo[key],
@@ -197,6 +254,8 @@ class BoardChipSizedConstants(unittest.TestCase):
         for header, needle in (
             ("seq_store_util.h",
              "the Learned Sequence per-file cap has no value for this chip target"),
+            ("sequence_run_evidence.h",
+             "sequence run-evidence ring dimensions have no value for this chip target"),
         ):
             with self.subTest(header=header):
                 text = (INCLUDE_DIR / header).read_text(encoding="utf-8")
