@@ -37,6 +37,7 @@ PROBE_HEADER_SET = (
     "board_capabilities.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
+    "log_buffer.h",
     "protocol_check.h",
     "seq_store_index.h",
     "seq_store_util.h",
@@ -55,6 +56,9 @@ EXPECTED_BY_BOARD = {
         "evid_tx_cap": 32,
         "evid_cleanup_cap": 12,
         "evid_record_bytes": 2204,
+        "log_line_max": 128,
+        "log_ladder": (16, 20, 24, 48),
+        "log_ring_max_lines": 48,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -65,8 +69,19 @@ EXPECTED_BY_BOARD = {
         "evid_tx_cap": 112,
         "evid_cleanup_cap": 16,
         "evid_record_bytes": 8284,
+        # LOG_LINE_MAX is deliberately shared -- its rationale was never a heap
+        # argument. Only the depth ladder is per chip.
+        "log_line_max": 128,
+        "log_ladder": (32, 64, 96, 112),
+        "log_ring_max_lines": 112,
     },
 }
+
+# Boot-path log sites per level, measured from the call closure of setup() plus
+# the web bring-up entered from the WiFi event callback, with the task entry
+# points excluded. The ESP32-P4 ladder is this count rounded up to the next
+# multiple of 16 (include/log_buffer.h carries the table and the method).
+BOOT_PATH_LOG_SITES = (20, 55, 96, 104)
 
 # The largest JSON the Learned Sequence format can produce: PC_MAX_STEPS (96)
 # steps in each of the two branches, every step a dome command at PC_CMD_MAX
@@ -104,12 +119,16 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "#define PA_HEAP_PROFILE 0",
                 '#include "seq_store_util.h"',
                 '#include "sequence_run_evidence.h"',
+                '#include "log_buffer.h"',
                 "#include <cstdio>",
                 "int main() {",
-                '    std::printf("%zu %zu %d %d %d %zu\\n",',
+                '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
                 "        (int)SEQ_EVID_CMD_LEN, (int)SEQ_EVID_TX_CAP,",
-                "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence));",
+                "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence),",
+                "        LOG_LINE_MAX, LOG_RING_LINES_ERROR, LOG_RING_LINES_WARN,",
+                "        LOG_RING_LINES_INFO, LOG_RING_LINES_DEBUG,",
+                "        LOG_RING_MAX_LINES);",
                 "    return 0;",
                 "}",
                 "",
@@ -140,7 +159,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 6, run_result.stdout)
+        self.assertEqual(len(fields), 12, run_result.stdout)
         values = {
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
@@ -151,6 +170,9 @@ class BoardChipSizedConstants(unittest.TestCase):
             # so the host's word size does not change its layout and this figure
             # is the one the device pays, twice.
             "evid_record_bytes": fields[5],
+            "log_line_max": fields[6],
+            "log_ladder": tuple(fields[7:11]),
+            "log_ring_max_lines": fields[11],
         }
         self._cache[board_macro] = values
         return values
@@ -228,6 +250,66 @@ class BoardChipSizedConstants(unittest.TestCase):
                     "the outgoing copy coexists with .tmp.json until the rename",
                 )
 
+    def test_p4_log_ladder_retains_the_whole_boot_at_every_level(self):
+        """Every rung holds at least the measured boot-path site count.
+
+        That is the ESP32-P4 rule: a post-boot /api/logs fetch answers what
+        happened at boot without a serial capture, which is the only channel a
+        board still bringing up its network backend reliably has.
+        """
+        ladder = self._values("PA_BOARD_FIREBEETLE2")["log_ladder"]
+        for level, (rung, sites) in enumerate(zip(ladder, BOOT_PATH_LOG_SITES), 1):
+            with self.subTest(level=level):
+                self.assertGreaterEqual(rung, sites)
+                # Rounded up to the next multiple of 16, so no rung may exceed
+                # the count by a whole step -- that would be slack, not margin.
+                self.assertLess(rung, sites + 16)
+
+    def test_artoo_log_ladder_cannot_retain_the_whole_boot(self):
+        """The inherited constraint itself, asserted so it is not read as a bug.
+
+        artoo-esp32's deepest rung is 48 lines against 104 boot-path sites at
+        DEBUG, so its ring cannot hold a whole verbose boot. That is the price
+        of 42692 B of free heap, and it is why the ladder had to become per chip
+        rather than simply be deepened for everyone.
+        """
+        ladder = self._values("PA_BOARD_ARTOO_ESP32")["log_ladder"]
+        self.assertLess(ladder[-1], BOOT_PATH_LOG_SITES[-1])
+
+    def test_p4_deepest_rung_costs_no_more_heap_share_than_artoos(self):
+        """Depth is bought with heap, and over-sizing is the dangerous direction.
+
+        A rung costs 2 x depth x LOG_LINE_MAX: the ring plus the /api/logs body
+        buffer allocated beside it. Hold the ESP32-P4's deepest rung to no larger
+        a share of its measured internal free heap than artoo-esp32's deepest
+        rung takes of its own.
+        """
+        artoo_free_heap = 42692            # config.h task-stack block
+        p4_free_heap_after_this_ticket = 102000  # ~114 KB (#245) less 12160 B of
+                                                 # static growth from the evidence ring
+        artoo = self._values("PA_BOARD_ARTOO_ESP32")
+        p4 = self._values("PA_BOARD_FIREBEETLE2")
+        artoo_share = (2 * artoo["log_ring_max_lines"] * artoo["log_line_max"]
+                       / artoo_free_heap)
+        p4_share = (2 * p4["log_ring_max_lines"] * p4["log_line_max"]
+                    / p4_free_heap_after_this_ticket)
+        self.assertLessEqual(p4_share, artoo_share)
+        # And it must still be a real increase in retained history, or the
+        # per-chip split bought nothing.
+        self.assertGreater(p4["log_ring_max_lines"], artoo["log_ring_max_lines"])
+
+    def test_log_ladder_is_monotone_and_ends_at_the_ring_ceiling(self):
+        for board in EXPECTED_BY_BOARD:
+            with self.subTest(board=board):
+                v = self._values(board)
+                ladder = v["log_ladder"]
+                self.assertEqual(sorted(ladder), list(ladder),
+                                 "depth must not fall as verbosity rises")
+                self.assertEqual(ladder[-1], v["log_ring_max_lines"],
+                                 "LOG_RING_MAX_LINES bounds the sized ring and the"
+                                 " native test storage, so it must equal the"
+                                 " deepest rung")
+
     # -- 3. the regression: the two boards must not converge ------------------
 
     def test_the_two_boards_do_not_converge(self):
@@ -236,7 +318,7 @@ class BoardChipSizedConstants(unittest.TestCase):
         self.assertNotEqual(artoo, firebeetle)
         for key in ("seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
-                    "evid_record_bytes"):
+                    "evid_record_bytes", "log_ring_max_lines"):
             with self.subTest(key=key):
                 self.assertGreater(
                     firebeetle[key], artoo[key],
@@ -256,6 +338,8 @@ class BoardChipSizedConstants(unittest.TestCase):
              "the Learned Sequence per-file cap has no value for this chip target"),
             ("sequence_run_evidence.h",
              "sequence run-evidence ring dimensions have no value for this chip target"),
+            ("log_buffer.h",
+             "the log ring depth ladder has no value for this chip target"),
         ):
             with self.subTest(header=header):
                 text = (INCLUDE_DIR / header).read_text(encoding="utf-8")

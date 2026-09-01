@@ -10,14 +10,18 @@
 #include <stdio.h>
 #include <string.h>
 
+// The rungs are chip-target specific (log_buffer.h). Naming them here rather
+// than repeating literals keeps the ladder in one place: the header carries the
+// per-chip numbers and the measurement they came from, and this function only
+// maps a level onto them.
 size_t logRingLinesForLevel(uint8_t level) {
     switch (level) {
         case 2:
-            return 20;
+            return LOG_RING_LINES_WARN;
         case 3:
-            return 24;
+            return LOG_RING_LINES_INFO;
         default:
-            return level <= 1 ? 16 : LOG_RING_MAX_LINES;
+            return level <= 1 ? LOG_RING_LINES_ERROR : LOG_RING_LINES_DEBUG;
     }
 }
 
