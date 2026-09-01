@@ -106,11 +106,11 @@ Easiest fix: swap the two signal crimp pins in one connector housing before rout
 
 The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Standard transports follow the spec sheet's "Recommended allocation" to minimize conflicts with RC receiver channels and other production peripherals.
 
-| Header | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
+| Silkscreen | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
 |--------|----------|---------|---------|------|----------|-------|
-| J3 | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
-| J3 | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
-| J3 | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
+| main field rows `20/A0` + `21/A1` | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
+| main field rows `22/A2` + `23/A3` | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
+| main field rows `34` + `36` | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
 
 **Audio and Dome Arbiter:**
 Both audio RX and dome link use HardwareSerial(2) (GPIO22/23 for dome, GPIO36 for audio RX). They share the UART2 peripheral and are arbitrated by `domeUartAcquire()` / `domeUartRelease()` with the `DomeUartOwner` enum (`include/robot_state.h:66-70`, live field at `:194`). When dome control holds the lane, audio module state queries return cached values instead of querying over UART2 (`audio_dy_sv5w.cpp:32-33`).
@@ -200,37 +200,98 @@ divider must be wired to a spare ADC1 pin (GPIO 36 or 39 are available).
 
 All GPIO assignments are transcribed from `include/config.h`'s firebeetle2 block and verified against the DFR1237 shield routing and the spec sheet's "Exposed GPIO" allocation table.
 
+### How the DFR1237 is physically laid out (read this before wiring anything)
+
+> [!IMPORTANT]
+> **There is no `J3` printed on the board.** `J3`, `J5`, `J6`, `J1`, `J2`, `J4`, `J7`, `J9` are
+> KiCad **schematic reference designators** from the DFR1237 schematic. They are not on the
+> silkscreen, and you cannot use them to find anything with the board in your hand. Operator-confirmed
+> against the physical board, 2026-09-01. Earlier revisions put `J3` in a "Header" column on 15 of
+> the 20 production rows and on all 3 serial-port rows -- one repeated value carrying no locating
+> information at all. The **Silkscreen** column below is what is actually printed.
+
+The main GPIO field is **17 rows x 3 columns**, with the column header silkscreened:
+
+```
+        IO   3V3  GND        <- printed above the field
+   4  [ o ]  [ o ]  [ o ]    <- one row per GPIO
+   5  [ o ]  [ o ]  [ o ]
+  20  [ o ]  [ o ]  [ o ]
+  ...
+  52  [ o ]  [ o ]  [ o ]
+```
+
+- The **GPIO number is printed once per row, down the left edge**, in this order top to bottom:
+  `4`, `5`, `20`, `21`, `22`, `23`, `31`, `32`, `33`, `34`, `35`, `36`, `48`, `49`, `50`, `51`, `52`.
+  (Matches the schematic's signal order exactly.)
+- **A 3-pin servo / ESC lead plugs onto ONE ROW**, spanning the three columns: signal into `IO`,
+  power into `3V3`, ground into `GND`. You do **not** plug it across three GPIOs -- each row is one
+  GPIO with its own power and ground beside it. This is the whole point of the three-column field.
+- Some GPIO numbers carry a second label: `20/A0`, `21/A1`, `22/A2`, `23/A3`, `51/A4` are the
+  analog pins. GPIO49, 50 and 52 have **no** alias printed, even though the Arduino variant defines
+  `A5`-`A7` for them.
+- GPIO32/GPIO33 are the P4's I3C SCL/SDA pair. The spec sheet records them as silkscreened `I3C`
+  from the schematic net names; that specific marking has **not** been confirmed against the
+  physical board, unlike the `IO`/`3V3`/`GND` headers and the row numbers, which have.
+
+> [!CAUTION]
+> **The middle column is `3V3`, not 5 V.** Standard hobby servos and ESCs expect 5 V-6 V, and pulling
+> servo stall current through the board's 3.3 V regulator can brown out the controller mid-operation
+> -- which on this project means the drive lane too. **Power servos and ESCs from a separate BEC**,
+> and bring only the signal wire and a common ground to this field. Whether the board's `VIN` pin can
+> source 5 V for this instead is `UNKNOWN` and is not to be assumed: no source in this repo answers
+> it, and it needs the DFR1237 schematic PDF read or a meter on the pin.
+
+> [!NOTE]
+> **This layout is one of the reasons the FireBeetle 2 was chosen** (operator, 2026-09-01). Most of
+> this droid's components -- servos, ESCs, RC channels -- terminate in a 3-pin lead, and a
+> row-per-GPIO `IO`/`3V3`/`GND` field means each one plugs onto its own row without a breakout, an
+> adapter harness, or splicing a power rail. Keep that in mind before proposing a pin reallocation
+> that moves a 3-pin component off this field: the wiring ergonomics are a feature of the board, not
+> an accident of it. It is also why the `3V3`-not-5 V caution above matters so much -- the layout
+> invites exactly the plug-and-go wiring that the rail cannot actually power.
+
+The other connectors, with their silkscreen labels:
+
+| Silkscreen block | Pins as printed | Schematic refdes |
+|---|---|---|
+| `SPI` | `30/MI`, `29/MO`, `28/SCK`, `GND`, `3V3` | `J2` |
+| `UART` | `37/T`, `38/R`, `GND`, `3V3` | `J9` |
+| `I2C` | `8/C` (SCL), `7/D` (SDA), `3V3`, `GND` | `J1` / `J7` |
+| `RST GND` | reset and ground | `J4` |
+| `VIN:5V GND` | 5 V input and ground | `J4` |
+
 **Production Pin Inventory (20 pins total):**
 
 14 firmware-design outputs (safety-critical, #190):
 
-| GPIO | Header (J*) | Function | Peripheral | Arduino alias | Notes |
-|------|-------------|----------|------------|---------------|-------|
-| 28 | J2 (SPI) | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; SPI header |
-| 29 | J2 (SPI) | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
-| 30 | J2 (SPI) | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
-| 31 | J3 | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
-| 32 | J3 | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
-| 33 | J3 | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
-| 34 | J3 | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
-| 36 | J3 | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
-| 49 | J3 | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
-| 50 | J3 | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
-| 4 | J3 | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
-| 5 | J3 | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
-| 51 | J3 | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
-| 48 | J3 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load** (see Known Issue below); P2 with LDO caution |
+| GPIO | Silkscreen (what is printed on the board) | Function | Peripheral | Arduino alias | Notes |
+|------|-------------------------------------------|----------|------------|---------------|-------|
+| 28 | `SPI` block, pin `28/SCK` | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; SPI header |
+| 29 | `SPI` block, pin `29/MO` | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
+| 30 | `SPI` block, pin `30/MI` | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
+| 31 | main field, row `31` | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
+| 32 | main field, row `32` (I3C) | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 33 | main field, row `33` (I3C) | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 34 | main field, row `34` | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
+| 36 | main field, row `36` | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
+| 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
+| 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
+| 4 | main field, row `4` | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
+| 5 | main field, row `5` | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
+| 51 | main field, row `51/A4` | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 48 | main field, row `48` | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load** (see Known Issue below); P2 with LDO caution |
 
 6 board bring-up interface lanes:
 
-| GPIO | Header | Function | Peripheral | Arduino alias | Notes |
-|------|--------|----------|------------|---------------|-------|
-| 20 | J3 | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
-| 21 | J3 | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
-| 22 | J3 | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
-| 23 | J3 | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
-| 7 | J1 (I2C) | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
-| 8 | J7 (I2C) | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
+| GPIO | Silkscreen (what is printed on the board) | Function | Peripheral | Arduino alias | Notes |
+|------|-------------------------------------------|----------|------------|---------------|-------|
+| 20 | main field, row `20/A0` | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
+| 21 | main field, row `21/A1` | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
+| 22 | main field, row `22/A2` | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
+| 23 | main field, row `23/A3` | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
+| 7 | `I2C` block, pin `7/D` | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
+| 8 | `I2C` block, pin `8/C` | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
 
 ---
 

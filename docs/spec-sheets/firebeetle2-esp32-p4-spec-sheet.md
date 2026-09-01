@@ -969,9 +969,18 @@ the board.
 
 ### Connectors
 
+> [!IMPORTANT]
+> **These `J*` designators are KiCad schematic reference designators and are NOT printed on the
+> board.** Verified against the physical DFR1237, 2026-09-01. Use the **silkscreen** column when
+> working with a board in hand: the main GPIO field is headed `IO` / `3V3` / `GND` with the GPIO
+> number printed once per row down the left edge, and the peripheral blocks are labelled `SPI`,
+> `UART`, `I2C`, `RST GND` and `VIN:5V GND`. `docs/pin_map.md` carries the full silkscreen-first
+> wiring view.
+
+
 | Ref | Type | Contents |
 | --- | --- | --- |
-| `J3` / `J5` / `J6` | 3 x 17-pin main GPIO field | Signal row `J3`, `+3V3` row `J5`, `GND` row `J6` |
+| `J3` / `J5` / `J6` | main GPIO field: **17 rows x 3 columns** | Signal column `J3`, `+3V3` column `J5`, `GND` column `J6`. **Silkscreened `IO` / `3V3` / `GND`** above the columns; the refdes are not printed. One GPIO per row, so a 3-pin lead plugs onto a single row |
 | `J2` | 5-pin SPI | `30/MI`, `29/MO`, `28/SCK`, `GND`, `+3V3` |
 | `J9` | 4-pin UART | `TX`, `RX`, `GND`, `+3V3` |
 | `J1` | 3-pin I2C | `7/SDA` + power/ground |
