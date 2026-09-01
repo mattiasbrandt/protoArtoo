@@ -21,6 +21,7 @@ FireBeetle 2 assignments transcribed from `include/config.h`'s firebeetle2 block
   - [Serial Ports (FireBeetle 2)](#serial-ports-firebeetle-2)
   - [FireBeetle 2: GPIO Assignment Summary](#firebeetle-2-gpio-assignment-summary)
   - [GPIO Budget and Exposed Pin Constraints](#gpio-budget-and-exposed-pin-constraints)
+  - [Known Issue: GPIO 48-52 LDO Rails (Unmeasured)](#known-issue-gpio-48-52-ldo-rails-unmeasured)
 
 ---
 
@@ -218,7 +219,7 @@ All GPIO assignments are transcribed from `include/config.h`'s firebeetle2 block
 | 4 | J3 | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
 | 5 | J3 | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
 | 51 | J3 | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
-| 48 | J3 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load (#191)**; P2 with LDO caution |
+| 48 | J3 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load** (see Known Issue below); P2 with LDO caution |
 
 6 board bring-up interface lanes:
 
@@ -248,11 +249,54 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 | **GPIO 52** | **Genuinely free** | **1 pin only** | ADC2_CHANNEL3, Arduino A7, P2 with LDO caution; **the sole free GPIO on this board** |
 
 **Production implications:**
-- GPIO 48–52 remain **unmeasured under load** (#191 — characterization pending). Four production outputs sit in this LDO-caution range; design decisions and operation validation must treat them as a group.
-- GPIO 52 is dual-purpose: the sole free GPIO and a reserved ADC fallback for battery sense (should I2C battery charger decisions reverse, #191 notes).
+- GPIO 48–52 remain **unmeasured under load** — see [Known Issue: GPIO 48-52 LDO Rails](#known-issue-gpio-48-52-ldo-rails-unmeasured). Four production outputs sit in this LDO-caution range; design decisions and operation validation must treat them as a group.
+- GPIO 52 is dual-purpose: the sole free GPIO and a reserved ADC fallback for battery sense (should I2C battery charger decisions reverse).
 - No headroom for additional peripherals without removing an existing lane.
 
 See spec sheet "Exposed GPIO table" (lines 906–929) and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
+
+---
+
+## Known Issue: GPIO 48-52 LDO Rails (Unmeasured)
+
+**Status:** open, unquantified, no instrumented measurement planned. Carried forward from #191
+(closed 2026-08-31, not planned) and #193 (droid-hardware gate, dropped 2026-09-01). The risk
+outlived both tickets, so it lives here.
+
+**The claim.** Espressif's own P4 variant header says *"Use GPIOs 36 or lower on the P4 DevKit to
+avoid LDO power issues with high numbered GPIOs"* (`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`,
+"Exposed GPIO table" region). GPIO 48 sits on `VDD_IO_5` and GPIO 49-52 on `VDD_IO_6`, both fed by
+internal LDO regulators. The spec sheet's open question #2 calls the warning **unquantified**, and
+it remains so: confirming or dismissing it needs an oscilloscope or logic analyser, and this bench
+has neither (operator decision, 2026-08-31).
+
+**What sits on those pins** (`include/config.h`, firebeetle2 servo block):
+
+| GPIO | Rail | Signal |
+|------|------|--------|
+| 48 | `VDD_IO_5` | `PIN_DOME_ESC` — dome rotation ESC |
+| 49 | `VDD_IO_6` | `PIN_ARM1_SERVO` |
+| 50 | `VDD_IO_6` | `PIN_ARM2_SERVO` |
+| 51 | `VDD_IO_6` | `PIN_ARM5_SERVO` (AUX3) |
+| 52 | `VDD_IO_6` | deliberately unassigned — the board's sole free GPIO |
+
+**How it would present.** A servo or ESC decodes *pulse width*. A sagging logic level or a slow
+edge shifts where the receiver perceives the edge, so the decoded width drifts. It shows up as
+**arm servo twitch or jitter, and erratic dome ESC throttle** — never as a firmware error, and
+never visible to any software check in this project. Do not look for it in logs.
+
+**If it appears on real droid hardware:**
+
+1. Run the same firmware on the `artoo-esp32` target as a control. If the P4 is jittery where the
+   artoo-esp32 is clean, `VDD_IO_5`/`VDD_IO_6` LDO behaviour is the first hypothesis — not the
+   servo, not the PWM code, not the mechanics.
+2. Fallback: drop peripheral demand to fit. GPIO 52 is held unassigned precisely to leave that
+   room.
+3. A dirty result means instrumented measurement has become necessary and must be sourced. It does
+   **not** mean the pins are fine.
+
+This is a watch item, not a blocker. Behavioural evidence is weaker than the scope trace #191
+wanted; it is the evidence that exists.
 
 ---
 
