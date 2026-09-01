@@ -789,8 +789,13 @@ it (`cores/esp32/esp32-hal-hosted.h`), so it is tractable rather than scary:
 
 Points that matter for a fielded device:
 
-- **The C6 is updated over SDIO, not over wires.** No ESP-Prog, no jumpers, no
-  disassembly. That removes the worst version of this problem.
+- **The C6 is updated over SDIO, not over wires - but NOT on a factory unit.**
+  ~~No ESP-Prog, no jumpers, no disassembly. That removes the worst version of
+  this problem.~~ **Refuted by measurement, 2026-08-29 - see "Known Issue: the
+  factory C6 refuses the OTA RPCs" below.** The mechanism exists and is correct;
+  the *factory* slave image does not implement the RPCs it needs, so on a board
+  as shipped there is no wire-free path. Do not plan an update story around this
+  bullet without reading that note first.
 - **Version skew is detected, not silently tolerated.** `hostedHasUpdate()` warns
   in both directions: host-newer prints an update URL, host-older prints
   "Version on Host is OLDER than version on co-processor".
@@ -807,10 +812,18 @@ Points that matter for a fielded device:
 
 ### What to prove before relying on it
 
-> [!IMPORTANT]
-> Item 0, ahead of all of these: **the link has not yet been observed to come up
-> on this board at all.** See "Measured: first boot does not bring the link up".
-> Everything below assumes a working transport and remains unmeasured here.
+> [!NOTE]
+> **Updated 2026-09-01 - item 0 is discharged and items 1-4 are partly answered.**
+> ~~the link has not yet been observed to come up on this board at all~~ - the
+> link comes up on board 2, and the shipping protoArtoo `firebeetle2` image has
+> served HTTP, SSE and the web UI over it. Against the list below:
+>
+> | # | Status |
+> | --- | --- |
+> | 1 | **Partly measured.** 3 concurrent SSE clients held 25 min with zero drops; a multi-hour soak and reconnect storm are still outstanding |
+> | 2 | Not measured |
+> | 3 | **Measured, and it needed a fix.** Recovery works *only* with `CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE` absent - see the configuration note above. The host does **not** need a reboot |
+> | 4 | **Answered: no.** Slave OTA does not work on a factory unit at all - see the Known Issue below |
 
 Bandwidth is not the risk; the transport is fast. The things worth measuring on
 this board specifically:
@@ -822,6 +835,62 @@ this board specifically:
 3. Recovery after a C6 reset or SDIO link fault - does the host stack come back,
    or does it need a reboot?
 4. Whether host application OTA and slave OTA can coexist in one update flow.
+
+### Known Issue: the factory C6 refuses the OTA RPCs (unresolvable here)
+
+> [!CAUTION]
+> **Measured on hardware 2026-08-29; recorded rather than scheduled, because no
+> board on this bench can take it further.**
+>
+> Streaming a slave image through
+> `hostedBeginUpdate()`/`hostedWriteUpdate()`/`hostedEndUpdate()`/`hostedActivateUpdate()`
+> **fails at offset 0** on a C6 running the shipped factory image:
+>
+> ```
+> rpc_core: Response not received for [0x111](Req_OTAWrite)
+> ```
+>
+> The download succeeds; the write never lands. Nothing is written, and the
+> slave's otadata still selects the factory slot. It is the same unanswered-RPC
+> signature as `Req_GetCoprocessorFwVersion`, so the reading is that **the factory
+> slave does not implement the OTA RPCs**, not that the transport is broken - the
+> same link carries WiFi, HTTP and SSE normally.
+>
+> **What this costs a builder:** the argument *"one wired bootstrap, then
+> wire-free forever"* does not hold on a unit as shipped. Updating the C6 needs a
+> slave image that already speaks the OTA RPCs, which has to arrive some other
+> way.
+>
+> **Why it is not scheduled:** proving a fix needs a C6 running an OTA-capable
+> slave image, and neither board here can provide one - board 2's C6 is factory
+> and refuses the RPC, and board 1's is misprovisioned (below). Per `AGENTS.md`,
+> a real but unmeasurable risk is documented, not carried as a ticket nobody can
+> action.
+
+### Known Issue: retail C6 provisioning is inconsistent, and recovery is marginal
+
+> [!CAUTION]
+> **n=2, and one of the two shipped broken.** Board 1 arrived with a complete
+> merged ESP32-C6 image flashed at **`0x10000` instead of `0x0`**, so its
+> bootloader is absent from where the ROM looks. Board 2 provisions correctly.
+> DFRobot has publicly acknowledged the Oct 31 2025 batch.
+>
+> **Recovery is a wire reflash, and it is genuinely hard.** The C6 programming
+> pads are three unlabelled **2 mm** bare pads. An experienced operator with a
+> purpose-bought jig, a meter, a verified 4 MB backup and a written runbook could
+> not hold contact long enough: pad 3 dropped inside 15 s, against the 8-12
+> minutes a full write needs.
+>
+> **What this costs a builder:** a wire reflash is acceptable as a developer
+> bring-up expedient, but it is not a builder path - it violates the solder-free,
+> web-flashable promise. This is why the board is **not recommended to builders
+> yet** (see "Before you buy one"); the stated revision trigger is a
+> DFRobot-supplied fix - a corrected factory image or pre-flashed boards - and
+> explicitly *not* more good units arriving, since absence cannot be proven.
+>
+> **Board 2's own C6 flash contents are UNKNOWN** and are staying that way:
+> reading them needs the same 2 mm pad contact, and board 2 is deliberately not
+> getting pad work.
 
 ### Issue-tracker signals (espressif/esp-hosted-mcu, checked 2026-08-21)
 
