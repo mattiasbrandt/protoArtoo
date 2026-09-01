@@ -31,8 +31,8 @@ void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
-    // manifest -- 3 capabilities, 3 flags -- that worst case is 298 B of JSON,
-    // leaving 383 - 298 = 85 B of headroom.
+    // manifest -- 4 capabilities, 3 flags -- that worst case is 334 B of JSON,
+    // leaving 383 - 334 = 49 B of headroom.
     // Each row emits ,"<name>":false, so it costs name_len + 9 bytes at worst
     // (name_len + 8 for the first row in an object, which has no leading comma).
     // Every capability or flag added grows this payload toward the ceiling.

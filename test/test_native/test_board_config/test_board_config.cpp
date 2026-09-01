@@ -111,6 +111,30 @@ void test_drive_backend_capability_gate_is_declared() {
     TEST_ASSERT_EQUAL_INT(1, PA_CAP_DRIVE_BACKEND_HOVERBOARD);
 }
 
+// artoo-esp32 has three HP UART controllers and genuinely needs the share:
+// UART0 console, UART1 drive, and one controller left for both the dome link
+// and the audio module's RX. Pin the capability at 0 so a change made for the
+// ESP32-P4 cannot flip this board onto a path its silicon cannot support --
+// audio would try to open a controller that does not exist and go silent
+// (#254). Native tests compile with PA_BOARD_ARTOO_ESP32, so this is the only
+// branch reachable here; the P4 values are proven by the cross-board compiler
+// probe in test/test_tools/test_board_uart_allocation.py.
+void test_dedicated_audio_uart_capability_absent_on_artoo_esp32() {
+    TEST_ASSERT_EQUAL_INT(0, PA_CAP_DEDICATED_AUDIO_UART);
+}
+
+// The allocation that capability describes, on this board: the audio module
+// shares the dome link's controller, and the drive lane shares with neither.
+void test_uart_controller_allocation_on_artoo_esp32() {
+    TEST_ASSERT_EQUAL_UINT8(1, UART_PORT_DRIVE);
+    TEST_ASSERT_EQUAL_UINT8(2, UART_PORT_DOME);
+    TEST_ASSERT_EQUAL_UINT8(UART_PORT_DOME, UART_PORT_AUDIO);
+    TEST_ASSERT_NOT_EQUAL(UART_PORT_DRIVE, UART_PORT_DOME);
+
+    // Highest controller index the classic ESP32 exposes (SOC_UART_HP_NUM = 3).
+    TEST_ASSERT_EQUAL_UINT8(2, UART_PORT_MAX);
+}
+
 // Every pin required by FireBeetle production consumers is also required on
 // the shipping artoo-esp32 board. Expanding the production-owned inventory here
 // prevents a newly guarded consumer from bypassing native coverage.
@@ -130,6 +154,8 @@ int main() {
     RUN_TEST(test_servo_and_led_config_available);
     RUN_TEST(test_aux_led_selection_to_gpio_mapping);
     RUN_TEST(test_drive_backend_capability_gate_is_declared);
+    RUN_TEST(test_dedicated_audio_uart_capability_absent_on_artoo_esp32);
+    RUN_TEST(test_uart_controller_allocation_on_artoo_esp32);
     RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
     RUN_TEST(test_pa_log_level_is_defined_and_in_range);
     RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);

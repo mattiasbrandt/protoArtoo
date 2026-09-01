@@ -3,7 +3,7 @@
 // This file is an unguarded X-macro manifest, intentionally included repeatedly.
 // Define PA_BUILD_FLAG(name) before including it. Adding #pragma once here
 // breaks the mechanism: the manifest is included from two sites with different
-// macro definitions (include/config.h:73 for static_assert validation,
+// macro definitions (include/config.h:93 for static_assert validation,
 // src/web/api_identity_serializers.cpp:85 for JSON emission), and both land
 // in the same translation unit for that .cpp file. #pragma once would make the
 // second expansion a no-op, so the identity JSON manifest would be silently empty.

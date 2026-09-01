@@ -3,11 +3,21 @@
 //
 // AudioDriver implementation for the SparkFun MP3 Trigger v2.x.
 //
-// TX commands are sent over software UART on PIN_AUDIO_TX (GPIO 26) at 9600
-// baud via audio_soft_uart_tx.h. RX query responses are read from
-// HardwareSerial(2) on PIN_AUDIO_RX (GPIO 35), opened RX-only (TX pin = -1).
-// UART2 is shared with dome link (S3) and SBUS2; queryModuleState() checks for
-// contention and returns cached state when UART2 is not available.
+// TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud via
+// audio_soft_uart_tx.h. RX query responses are read from UART_PORT_AUDIO on
+// PIN_AUDIO_RX, opened RX-only (TX pin = -1).
+//
+// No P4 environment selects this backend, so it has never run on a board with
+// PA_CAP_DEDICATED_AUDIO_UART; it is written for the artoo-esp32 posture, where
+// UART_PORT_AUDIO IS the dome link's controller and audio has no spare TX. It
+// is correct there and is left alone deliberately -- adding a capability branch
+// no build compiles would ship untested code (#254).
+//
+// This driver does NOT itself check for contention. That is AudioTask's job:
+// it calls audioUartClaim() before queryModuleState() and only calls in on
+// success, reporting a refusal as AUDIO_RX_BLOCKED_BY_DOME_UART. Earlier
+// revisions of this comment claimed the check lived here, which was never true
+// on any commit of this file.
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):
@@ -51,7 +61,7 @@
 #include "logging.h"
 
 static const char* TAG = "Mp3TrgDrv";
-static HardwareSerial s_mp3Serial(2);
+static HardwareSerial s_mp3Serial(UART_PORT_AUDIO);
 
 // Production IO adapters
 static void mp3WriteByte(uint8_t b)    { softUartTxByte(b); }
@@ -207,11 +217,11 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 
 // -----------------------------------------------------------------------------
 // queryModuleState()
-// UART2 contention check identical to AudioDriverDySv5w and AudioDriverChirp.
-// Returns cached state when dome ctrl is active. SBUS2 is RMT-based; it no
-// longer contends UART2.
+// Assumes the caller already holds the controller -- AudioTask claims it with
+// audioUartClaim() and skips this call entirely when refused, so there is no
+// contention check here. SBUS2 is RMT-based and does not contend for it.
 //
-// When UART2 is available: drain RX, send S0 (link), then S1 (track count).
+// Drains RX, sends S0 (link), then S1 (track count).
 // playState and device are always 0xFF  --  the MP3 Trigger protocol has no
 // play-state or device-type query commands. currentTrack is the cached value
 // from the last playTrack() call (no live query available).

@@ -26,12 +26,26 @@
 //
 // Default play mode: 02 = single stop (plays once, then stops).
 //
-// Transport:
-//   TX: software UART bit-bang on GPIO26 (PIN_AUDIO_TX) via audio_soft_uart_tx.h.
-//   RX: HardwareSerial(2) on GPIO35 (PIN_AUDIO_RX), opened RX-only (TX pin = -1).
-//   UART2 is shared with dome link (S3). queryModuleState() skips UART2
-//   queries and returns cached state when dome ctrl is active.
-//   SBUS2 is now RMT-based and no longer contends UART2.
+// Transport  --  per Board Variant, keyed on PA_CAP_DEDICATED_AUDIO_UART:
+//
+//   Capability 1 (firebeetle2, five HP UARTs):
+//     One hardware UART, UART_PORT_AUDIO, opened on PIN_AUDIO_TX and
+//     PIN_AUDIO_RX. Nothing is shared, so a query never has to wait for or be
+//     refused by another consumer, and TX costs no critical section.
+//
+//   Capability 0 (artoo-esp32, three HP UARTs):
+//     TX: software UART bit-bang on PIN_AUDIO_TX via audio_soft_uart_tx.h,
+//         because the one spare controller's TX is committed to the dome link.
+//     RX: UART_PORT_AUDIO, which IS the dome link's controller, opened RX-only
+//         on PIN_AUDIO_RX (TX pin = -1). AudioTask claims it through
+//         audioUartClaim() before each query and can be refused while the dome
+//         link holds it; the refusal is reported as
+//         AUDIO_RX_BLOCKED_BY_DOME_UART, not as a dead module.
+//     SBUS2 is RMT-based and does not contend for the controller.
+//
+// This driver's own methods do not test the capability: begin() opens whatever
+// the board provides and the m_io seam hides the rest, so the frame logic below
+// is identical on both boards and stays testable on the host.
 //
 // Diagnostic queries in begin():
 //   Runs three queries before and after init commands so the serial log
@@ -45,19 +59,33 @@
 
 #include <Arduino.h>
 
-#include "audio_soft_uart_tx.h"
 #include "config.h"
+#if !PA_CAP_DEDICATED_AUDIO_UART
+// Included only where the bit-bang is the TX path. The header defines a
+// file-scope portMUX and inline functions; pulling it into a build that never
+// calls them would cost an unused static under -Werror.
+#include "audio_soft_uart_tx.h"
+#endif
 #include "logging.h"
 
 static const char* TAG = "AudioDrv";
-static HardwareSerial s_audioSerial(2);
+static HardwareSerial s_audioSerial(UART_PORT_AUDIO);
 
 // -----------------------------------------------------------------------------
 // Production IO adapters  --  file-scope statics wrapping hardware.
 // No-capture lambdas are legal here because s_audioSerial is a translation-unit
 // global; no capture needed.
 // -----------------------------------------------------------------------------
-static void dySv5wWriteByte(uint8_t b) { softUartTxByte(b); }
+static void dySv5wWriteByte(uint8_t b) {
+#if PA_CAP_DEDICATED_AUDIO_UART
+    // Real hardware TX on this board's own controller. Unlike the bit-bang
+    // below it takes no critical section, so an audio command no longer makes
+    // Core 0 non-preemptible for ~1 ms per byte.
+    s_audioSerial.write(b);
+#else
+    softUartTxByte(b);
+#endif
+}
 static int  dySv5wRxAvailable()        { return s_audioSerial.available(); }
 static int  dySv5wRxRead()             { return s_audioSerial.read(); }
 static void dySv5wDelayMs(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
@@ -116,9 +144,8 @@ uint8_t AudioDriverDySv5w::sendQuery(const uint8_t* query, uint8_t* buf,
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 RX-only on PIN_AUDIO_RX (GPIO35) for status query responses.
-// TX uses soft-UART bit-bang on PIN_AUDIO_TX (GPIO26) via softUartTxBegin().
-// Runs diagnostic queries before and after init to confirm the UART link is
+// Open the transport this board provides (see the Transport section above) and
+// run diagnostic queries before and after init to confirm the UART link is
 // alive and the storage device is present. Zero-byte query responses mean TX
 // is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0  --  blocking here is acceptable.
@@ -127,8 +154,17 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kDySv5wProductionIO; }
 
     // Hardware init  --  no-ops in native test builds.
+#if PA_CAP_DEDICATED_AUDIO_UART
+    // Both directions on one controller of our own. The GPIO matrix routes it
+    // to the pins audio already owns, so this costs no pin (spec sheet
+    // "UART Lane Plan": UART0-UART4 TX/RX reach any GPIO).
+    s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, PIN_AUDIO_TX);
+#else
+    // RX only (TX pin = -1): the controller's TX belongs to the dome link, so
+    // audio TX is the bit-bang on PIN_AUDIO_TX.
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
+#endif
 
     // DY-SV5W needs ~1.5 s after power-on to boot and enumerate storage.
     m_io.delayMs(1500);

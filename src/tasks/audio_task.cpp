@@ -1,13 +1,15 @@
 // =============================================================================
 // src/tasks/audio_task.cpp
 //
-// AudioTask  --  sole writer to the audio serial GPIO (PIN_AUDIO_TX, GPIO 26).
+// AudioTask  --  sole writer to the audio module's serial TX (PIN_AUDIO_TX).
 //
 // Imperative adapter for the Audio Step Core (audio_task_step, ADR 0014):
 //   - Gathers one generation of inputs per loop iteration (config, RobotState).
 //   - Calls the step phases in loop order and executes their plain-data actions.
-//   - Owns every side effect: driver init and playback calls, dome-UART
-//     arbitration, NVS binding-cache refresh, RobotState audio-zone writes.
+//   - Owns every side effect: driver init and playback calls, the audio UART
+//     claim (audioUartClaim/audioUartRelease, which is only an arbitration on a
+//     board without PA_CAP_DEDICATED_AUDIO_UART), NVS binding-cache refresh,
+//     RobotState audio-zone writes.
 // Decision logic (lifecycle transitions, '$'/command translation, playback
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
@@ -17,9 +19,11 @@
 // boot-latched state and return true (accepted-and-discarded) when disabled.
 //
 // Core assignment: Core 0 (non-RT).
-// Reason: software bit-bang TX blocks for up to ~6 ms per command; keeping
-// AudioTask on Core 0 prevents any interaction with DriveTask / ServoTask
-// timing on Core 1.
+// Reason: begin() and every query block for hundreds of ms, and without
+// PA_CAP_DEDICATED_AUDIO_UART the TX is a software bit-bang that additionally
+// holds a portMUX critical section for ~6 ms per command
+// (src/drivers/audio_soft_uart_tx.h). Keeping AudioTask on Core 0 prevents any
+// interaction with DriveTask / ServoTask timing on Core 1 either way.
 //
 // Driver selection: PA_AUDIO_DRIVER build flag in platformio.ini.
 // =============================================================================
@@ -653,7 +657,8 @@ void audioTask(void* pvParameters) {
         }
 
         if (tick.initDriver) {
-            // Soft-UART drivers block for up to ~6 ms per command; AudioTask must run on Core 0.
+            // Driver begin() blocks for seconds, and a soft-UART TX additionally holds
+            // a critical section per byte; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
             const bool initOk = driver->begin(step.currentVol);
             const AudioStepInitResultActions ir =
@@ -718,10 +723,10 @@ void audioTask(void* pvParameters) {
                 executePlaybackIntent(ca.intent, cmd.source);
             }
             if (ca.refreshCatalog) {
-                bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+                bool acquired = audioUartClaim();
                 bool ok = acquired && driver->refreshCatalog();
                 if (acquired) {
-                    domeUartRelease(DOME_UART_AUDIO);
+                    audioUartRelease();
                     setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                 } else {
                     setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
@@ -739,10 +744,10 @@ void audioTask(void* pvParameters) {
                 // sequence takes up to ~900 ms; acceptable because it is
                 // user-initiated and not in a real-time loop.
                 AudioModuleState ms{};
-                bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+                bool acquired = audioUartClaim();
                 if (acquired) {
                     bool ok = driver->queryModuleState(ms);
-                    domeUartRelease(DOME_UART_AUDIO);
+                    audioUartRelease();
                     writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                     PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
                                 commandSourceToString(cmd.source), ok ? "OK" : "NO_RSP",
@@ -787,10 +792,10 @@ void audioTask(void* pvParameters) {
         }
         if (idle.autoQuery) {
             AudioModuleState ms{};
-            bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+            bool acquired = audioUartClaim();
             if (acquired) {
                 bool ok = driver->queryModuleState(ms);
-                domeUartRelease(DOME_UART_AUDIO);
+                audioUartRelease();
                 writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                 PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
                              (unsigned)ms.playState);
