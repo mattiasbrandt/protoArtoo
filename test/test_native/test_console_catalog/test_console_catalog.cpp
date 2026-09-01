@@ -40,7 +40,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(190, count);  // Registry has 190 entries
+    TEST_ASSERT_EQUAL_INT(191, count);  // Registry has 191 entries
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;

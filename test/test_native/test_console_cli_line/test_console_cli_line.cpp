@@ -216,7 +216,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(190, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(191, g_itemCount);
 }
 
 // help <op> must still work through the same real path (the reconstruction

@@ -110,7 +110,7 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
-#define PROF_TASK_MAX 10
+#define PROF_TASK_MAX 11
 
 struct TaskHwmEntry {
     const char* name;
@@ -128,7 +128,7 @@ struct TaskHwmEntry {
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
     "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
-    "SeqDisp"
+    "SeqDisp", "Console"
 };
 
 static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];
