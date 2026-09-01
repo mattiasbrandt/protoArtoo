@@ -46,14 +46,26 @@
 // non-binary value a compile-time error without emitting code or data.
 // Capability values are invariant PCB topology facts, never runtime state or
 // C6/provisioning health — they declare what the board's silicon can do.
+//
+// PA_CAP_DEDICATED_AUDIO_UART declares that the board has a hardware UART
+// controller to spare for the audio module, so audio does not have to borrow
+// the dome link's. It is a count fact, not a wiring fact: the classic ESP32 has
+// three HP UARTs (SOC_UART_HP_NUM = 3) against the ESP32-P4's five, and with
+// UART0 spent on the console and UART1 on the drive backend, artoo-esp32 has
+// exactly one controller left for two consumers. Everything that follows from
+// that -- audio RX sharing the dome controller through domeUartAcquire(), and
+// audio TX being a software bit-bang because there is no spare TX -- is gated
+// on this capability rather than repeated per call site (#254).
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
   #define PA_CAP_NATIVE_WIFI 1
   #define PA_CAP_HOSTED_WIFI 0
   #define PA_CAP_DRIVE_BACKEND_HOVERBOARD 1
+  #define PA_CAP_DEDICATED_AUDIO_UART 0  // 3 HP UARTs: audio shares the dome link's controller
 #elif PA_BOARD == PA_BOARD_FIREBEETLE2
   #define PA_CAP_NATIVE_WIFI 0
   #define PA_CAP_HOSTED_WIFI 1  // Declared here before its consumers (#188, #189) to gate the capability early
   #define PA_CAP_DRIVE_BACKEND_HOVERBOARD 1
+  #define PA_CAP_DEDICATED_AUDIO_UART 1  // 5 HP UARTs: audio gets UART_PORT_AUDIO to itself
 #else
   #error "PA_BOARD value not recognized in capability selection"
 #endif
@@ -108,6 +120,24 @@ constexpr uint8_t PA_PIN_UNASSIGNED = 0xFF;
 // All pins confirmed by PCB continuity trace on 2026-03-12 (PCB v1.2).
 // See docs/pin_map.md for full trace results and revision notes.
 // ────────────────────────────────────────────────────────────────────────────
+
+// -----------------------------------------------------------------------------
+// UART controller allocation (the Arduino HardwareSerial index, not a GPIO).
+//
+// The classic ESP32 has three HP UART controllers (SOC_UART_HP_NUM = 3, the
+// Arduino core's soc/esp32/soc_caps.h). UART0 is the USB debug console on PCB
+// S0, UART1 is traced to the drive backend on S1, and that leaves ONE
+// controller for two consumers -- the dome link on S3 and the audio module's
+// RX on S2. Hence PA_CAP_DEDICATED_AUDIO_UART == 0 here, and hence the two
+// workarounds that follow from it and are load-bearing on this board:
+//   - the dome/audio ownership handoff (domeUartAcquire/domeUartRelease), and
+//   - the audio TX software bit-bang (src/drivers/audio_soft_uart_tx.h),
+//     because the one shared controller's TX is committed to the dome link.
+// Neither is a design preference; both are what three controllers force.
+// -----------------------------------------------------------------------------
+constexpr uint8_t UART_PORT_DRIVE = 1;  // Serial1, PCB S1
+constexpr uint8_t UART_PORT_DOME  = 2;  // Serial2, PCB S3
+constexpr uint8_t UART_PORT_AUDIO = 2;  // shared with the dome link -- S2 RX only, no spare TX
 
 // UART1 (Serial1)  --  Drive backend (hoverboard motor controller, Gen2.x protocol, PCB S1)
 // This board's UART to the drive backend is locked by PCB trace to hoverboard (one UART, no spares).
@@ -203,6 +233,31 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // and "Not available on the IO headers" (GPIO constraints).
 // ────────────────────────────────────────────────────────────────────────────
 
+// -----------------------------------------------------------------------------
+// UART controller allocation (the Arduino HardwareSerial index, not a GPIO).
+//
+// The ESP32-P4 has five HP UART controllers (SOC_UART_HP_NUM = 5, the Arduino
+// core's soc/esp32p4/soc_caps.h) plus one LP_UART the spec sheet rules out on
+// this board. Five is the reason this chip was chosen, so the allocation is
+// one controller per consumer rather than the share three controllers force on
+// artoo-esp32:
+//
+//   UART0  IDF console (CONFIG_ESP_CONSOLE_UART_NUM=0; Serial is USB CDC here)
+//   UART1  drive backend            UART_PORT_DRIVE
+//   UART2  dome link, permanently   UART_PORT_DOME
+//   UART3  audio module, TX and RX  UART_PORT_AUDIO
+//   UART4  unclaimed by the firmware (borrowed by bringup/p4_rt_bench.cpp)
+//
+// This costs no GPIO. UART0-UART4 route TX/RX to any pin through the GPIO
+// matrix (spec sheet "UART Lane Plan"), so audio keeps the two pins it already
+// owns and no RC channel or analog lane moves. The Lane Plan's suggestion of
+// GPIO32/33 for UART3 is advice for picking pins fresh, not a constraint --
+// those are RC channels 5 and 6 on this board (#254).
+// -----------------------------------------------------------------------------
+constexpr uint8_t UART_PORT_DRIVE = 1;
+constexpr uint8_t UART_PORT_DOME  = 2;
+constexpr uint8_t UART_PORT_AUDIO = 3;
+
 // UART1 — Drive backend (default: hoverboard motor controller, Gen2.x protocol)
 // firebeetle2 has the UART headroom artoo-esp32 lacks: this is this board's
 // default wiring, not a universal fact. A different serial drive backend
@@ -219,9 +274,11 @@ constexpr uint8_t PIN_DRIVE_RX = 21;  // UART1_RX per spec sheet §Recommended a
 constexpr uint8_t PIN_DOME_TX = 22;  // UART2_TX per spec sheet §Recommended allocation
 constexpr uint8_t PIN_DOME_RX = 23;  // UART2_RX per spec sheet §Recommended allocation
 
-// Audio UART — DY-SV5W module
+// Audio UART — DY-SV5W module, on UART_PORT_AUDIO above
 // From spec sheet: GPIO34/36 are strapping pins (P3), usable via GPIO matrix with
-// unburnt eFuses. Dedicated hardware UART TX/RX paths for audio module.
+// unburnt eFuses. Both directions are real hardware UART on this board: TX on
+// GPIO34 and RX on GPIO36 are two ends of one dedicated controller, not a
+// bit-bang output plus a borrowed RX (PA_CAP_DEDICATED_AUDIO_UART, #254).
 // CAUTION: Never burn EFUSE_JTAG_SEL_ENABLE or EFUSE_UART_PRINT_CONTROL on this board.
 // While both default to 0 (eFuse unburnt), GPIO34/36 strapping roles remain ignored.
 // Burning either turns the audio UART pins into live strapping inputs — incompatible with audio.
@@ -339,6 +396,55 @@ constexpr int firebeetlePinUseCount(uint8_t pin) {
 #else
   #error "PA_BOARD value not recognized in pin-map selection"
 #endif  // PA_BOARD
+
+// -----------------------------------------------------------------------------
+// UART controller allocation coherence guards.
+//
+// Highest HP UART controller index each chip target exposes, from the Arduino
+// core's soc_caps.h: SOC_UART_HP_NUM is 3 on ESP32 and 5 on ESP32-P4, so the
+// last valid index is 2 and 4 respectively. Duplicated here rather than
+// included because config.h is read by the plain-host probes in
+// test/test_tools/, which have no chip headers on the include path. Without
+// this bound a board claiming a controller its chip does not have compiles
+// clean and fails only at runtime: HardwareSerial::begin() rejects
+// _uart_nr >= SOC_UART_NUM with a log_e and returns, so the lane is simply
+// silent. (No line cite: the two chip targets pin different Arduino core
+// versions, so that guard sits at a different line in each.)
+//
+// `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
+// only for the selected chip, not 0/1 gates -- see "Chip target mapping" above.
+#if defined(PA_CHIP_TARGET_ESP32P4)
+constexpr uint8_t UART_PORT_MAX = 4;
+#elif defined(PA_CHIP_TARGET_ESP32)
+constexpr uint8_t UART_PORT_MAX = 2;
+#else
+  #error "UART controller count has no value for this chip target"
+#endif
+
+static_assert(UART_PORT_DRIVE <= UART_PORT_MAX,
+    "UART_PORT_DRIVE names a UART controller this chip target does not have");
+static_assert(UART_PORT_DOME <= UART_PORT_MAX,
+    "UART_PORT_DOME names a UART controller this chip target does not have");
+static_assert(UART_PORT_AUDIO <= UART_PORT_MAX,
+    "UART_PORT_AUDIO names a UART controller this chip target does not have");
+
+// UART0 is the console on both chip targets and is never a firmware lane.
+static_assert(UART_PORT_DRIVE != 0 && UART_PORT_DOME != 0 && UART_PORT_AUDIO != 0,
+    "UART0 is the console lane and must not be allocated to a firmware consumer");
+
+// The drive lane is never shared with anything.
+static_assert(UART_PORT_DRIVE != UART_PORT_DOME && UART_PORT_DRIVE != UART_PORT_AUDIO,
+    "the drive backend must own its UART controller outright");
+
+// The audio module borrows the dome link's controller EXACTLY when the board
+// does not give it one of its own. This is the guard that stops the two facts
+// drifting apart: flipping PA_CAP_DEDICATED_AUDIO_UART without moving
+// UART_PORT_AUDIO would gate the ownership handoff out while both consumers
+// still sat on one controller -- a runtime UART collision that presents as an
+// audio lane that intermittently answers. Here it is a build error (#254).
+static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UART == 0),
+    "PA_CAP_DEDICATED_AUDIO_UART must agree with the UART controller allocation:"
+    " capability 0 means audio shares UART_PORT_DOME, capability 1 means it does not");
 
 // =============================================================================
 // Protocol and Feature Constants (chip-target specific, board-agnostic)
