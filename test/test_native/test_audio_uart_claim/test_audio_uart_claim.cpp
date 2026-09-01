@@ -17,8 +17,12 @@
 // allocation values, with the coherence static_asserts shown firing) and by the
 // firebeetle2 build linking the branch.
 //
-// Test seam: g_test_dome_uart_owner in native_test_stubs.cpp stands in for
-// robotState.domeUartOwner without requiring FreeRTOS.
+// Test seam: the arbiter stub in native_test_stubs.cpp stands in for
+// robotState.domeUartOwner without requiring FreeRTOS. It is driven here
+// through the same public API production uses rather than through its backing
+// variable -- releasing both owners is an unconditional way back to
+// DOME_UART_NONE, and it keeps the test honest about the contract instead of
+// reaching past it.
 // =============================================================================
 
 #include <unity.h>
@@ -26,10 +30,15 @@
 #include "../../../include/config.h"
 #include "../../../include/dome_link.h"
 
-extern DomeUartOwner g_test_dome_uart_owner;
+namespace {
+void resetUartOwner() {
+    domeUartRelease(DOME_UART_DOME);
+    domeUartRelease(DOME_UART_AUDIO);
+}
+}  // namespace
 
-void setUp()    { g_test_dome_uart_owner = DOME_UART_NONE; }
-void tearDown() { g_test_dome_uart_owner = DOME_UART_NONE; }
+void setUp()    { resetUartOwner(); }
+void tearDown() { resetUartOwner(); }
 
 // Guard the premise. If this board ever declared the capability, every
 // assertion below would be testing the wrong branch and would still pass, so
@@ -50,7 +59,7 @@ void test_claim_succeeds_and_takes_ownership_when_controller_is_free() {
 // the shared controller the claim is refused, which is what makes AudioTask
 // report AUDIO_RX_BLOCKED_BY_DOME_UART instead of "module not responding".
 void test_claim_is_refused_while_the_dome_link_holds_the_controller() {
-    g_test_dome_uart_owner = DOME_UART_DOME;
+    TEST_ASSERT_TRUE(domeUartAcquire(DOME_UART_DOME));
 
     TEST_ASSERT_FALSE(audioUartClaim());
     TEST_ASSERT_TRUE(domeUartOwnedBy(DOME_UART_DOME));
@@ -61,7 +70,7 @@ void test_claim_is_refused_while_the_dome_link_holds_the_controller() {
 // only releases when the claim succeeded, but the arbiter has to be safe
 // against the ordering regardless.
 void test_refused_claim_leaves_the_dome_link_owning_the_controller() {
-    g_test_dome_uart_owner = DOME_UART_DOME;
+    TEST_ASSERT_TRUE(domeUartAcquire(DOME_UART_DOME));
 
     TEST_ASSERT_FALSE(audioUartClaim());
     audioUartRelease();
