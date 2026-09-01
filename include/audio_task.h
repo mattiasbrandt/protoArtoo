@@ -84,8 +84,10 @@ const char* audioRxStatusDetail(AudioRxStatus status);
 
 // -----------------------------------------------------------------------------
 // audioTask()  --  FreeRTOS task entry point.
-// Pinned to Core 0 (non-RT side). Software bit-bang TX blocks for up to ~6 ms
-// per audio command; Core 0 keeps this away from DriveTask / ServoTask.
+// Pinned to Core 0 (non-RT side). Driver init and queries block for hundreds of
+// ms, and without PA_CAP_DEDICATED_AUDIO_UART the software bit-bang TX
+// additionally holds a critical section for up to ~6 ms per audio command;
+// Core 0 keeps all of it away from DriveTask / ServoTask.
 // Priority: 3 (below web server; above idle).
 // Stack: 3072 bytes.
 // -----------------------------------------------------------------------------

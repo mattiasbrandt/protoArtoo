@@ -26,6 +26,14 @@
 #define PA_BOARD_ARTOO_ESP32   1  // artoo.uk Artoo Controller PCB on classic ESP32
 #define PA_BOARD_FIREBEETLE2   2  // DFRobot FireBeetle 2 on ESP32-P4
 
+// This is the FIRST of nine #error guards that fire together when config.h is
+// compiled with no PA_BOARD -- which is what an editor's linter does, since it
+// has no platformio.ini env. Every later guard ("... not recognized in
+// capability selection", "task stack sizes have no value for this chip
+// target", "UART controller count has no value for this chip target", and so
+// on) is a cascade from this one, not nine separate faults. Fix this one and
+// the rest go with it: point the linter at an env, or define PA_BOARD,
+// PA_LOG_LEVEL and PA_HEAP_PROFILE in its compile flags.
 #if !defined(PA_BOARD)
   #error "PA_BOARD must be defined by platformio.ini build_flags for the target environment"
 #endif
@@ -418,7 +426,7 @@ constexpr uint8_t UART_PORT_MAX = 4;
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint8_t UART_PORT_MAX = 2;
 #else
-  #error "UART controller count has no value for this chip target"
+  #error "UART_PORT_MAX has no value for this chip target: add a branch above carrying that chip's SOC_UART_HP_NUM - 1, next to its entry in the Chip target mapping ladder"
 #endif
 
 static_assert(UART_PORT_DRIVE <= UART_PORT_MAX,
