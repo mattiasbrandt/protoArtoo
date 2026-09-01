@@ -379,7 +379,12 @@ void setup() {
     xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
                             nullptr, 1);
     if (rcPlan.taskEnabled) {
-        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
+        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The #248 rule lands on 7168 on both chips
+        // (ESP32-P4 5376 * 1.25 = 6720 -> 7168); ESP32 is the existing 7168, not
+        // a lowering to its own 5248-chain figure, which is a Xtensa lower bound.
+        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
+                                nullptr, 5, nullptr, 1);
     }
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
@@ -399,7 +404,11 @@ void setup() {
     // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
     // task at all is the preferred form).
     if (bootCfg.system.enable_audio) {
-        xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
+        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The #248 rule lands on 6144 on both chips
+        // (ESP32-P4 4848 * 1.25 = 6060 -> 6144).
+        xTaskCreatePinnedToCore(audioTask, "AudioTask", AUDIO_TASK_STACK_BYTES, nullptr, 3,
+                                nullptr, 0);
     }
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.

@@ -59,6 +59,12 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
+        # Pre-#256 literals, unchanged. WebEvents is 6144 here even though the
+        # #248 rule on the profiler chain (5888) would raise it -- see the
+        # DomeLinkTask call in include/config.h.
+        "rc_input_stack": 7168,
+        "audio_stack": 6144,
+        "web_events_stack": 6144,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -74,8 +80,39 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (32, 64, 96, 112),
         "log_ring_max_lines": 112,
+        # Re-derived by the #248 rule from tools/stack_usage_report.py chains
+        # against the linked firebeetle2 image (product and profiler match).
+        # RCInputTask 5376 * 1.25 = 6720 -> 7168; AudioTask 4848 * 1.25 = 6060
+        # -> 6144; WebEvents 5808 * 1.25 = 7260 -> 7680. Only WebEvents moves:
+        # 5808 already exceeds the inherited 6144.
+        "rc_input_stack": 7168,
+        "audio_stack": 6144,
+        "web_events_stack": 7680,
     },
 }
+
+# Worst-case static chains from tools/stack_usage_report.py, restated here so a
+# stack constant that no longer covers its own measurement fails independently
+# of the EXPECTED pin. ESP32-P4 figures are the linked firebeetle2 image
+# (product and profiler match). ESP32 WebEvents/AudioTask are the profiler
+# image: the product WebEvents body is emitted as data (.xt.prop) and the
+# profiler's AudioTask chain is the deeper of the two.
+P4_STACK_CHAINS = {
+    "rc_input_stack": 5376,
+    "audio_stack": 4848,
+    "web_events_stack": 5808,
+}
+ESP32_STACK_CHAINS = {
+    "rc_input_stack": 5248,
+    "audio_stack": 4672,
+    "web_events_stack": 5888,
+}
+
+
+def stack_size_for_chain(chain_bytes):
+    """#248 rule: chain + 25%, rounded up to the next 512 bytes."""
+    need = (chain_bytes * 5 + 3) // 4
+    return ((need + 511) // 512) * 512
 
 # Boot-path log sites per level, measured from the call closure of setup() plus
 # the web bring-up entered from the WiFi event callback, with the task entry
@@ -120,15 +157,20 @@ class BoardChipSizedConstants(unittest.TestCase):
                 '#include "seq_store_util.h"',
                 '#include "sequence_run_evidence.h"',
                 '#include "log_buffer.h"',
+                '#include "config.h"',
                 "#include <cstdio>",
                 "int main() {",
-                '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu\\n",',
+                '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu '
+                '%u %u %u\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
                 "        (int)SEQ_EVID_CMD_LEN, (int)SEQ_EVID_TX_CAP,",
                 "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence),",
                 "        LOG_LINE_MAX, LOG_RING_LINES_ERROR, LOG_RING_LINES_WARN,",
                 "        LOG_RING_LINES_INFO, LOG_RING_LINES_DEBUG,",
-                "        LOG_RING_MAX_LINES);",
+                "        LOG_RING_MAX_LINES,",
+                "        (unsigned)RC_INPUT_TASK_STACK_BYTES,",
+                "        (unsigned)AUDIO_TASK_STACK_BYTES,",
+                "        (unsigned)WEB_EVENTS_TASK_STACK_BYTES);",
                 "    return 0;",
                 "}",
                 "",
@@ -159,7 +201,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 12, run_result.stdout)
+        self.assertEqual(len(fields), 15, run_result.stdout)
         values = {
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
@@ -173,6 +215,9 @@ class BoardChipSizedConstants(unittest.TestCase):
             "log_line_max": fields[6],
             "log_ladder": tuple(fields[7:11]),
             "log_ring_max_lines": fields[11],
+            "rc_input_stack": fields[12],
+            "audio_stack": fields[13],
+            "web_events_stack": fields[14],
         }
         self._cache[board_macro] = values
         return values
@@ -312,13 +357,54 @@ class BoardChipSizedConstants(unittest.TestCase):
 
     # -- 3. the regression: the two boards must not converge ------------------
 
+    def test_p4_task_stacks_cover_the_measured_chains(self):
+        """ESP32-P4 stacks are the #248 rule applied to the measured chain.
+
+        Under-sizing is the dangerous direction. A constant below chain+25%
+        rounded up to 512 is an overrun waiting for a path the HWM has not
+        run yet. RCInputTask and AudioTask land on the inherited literals;
+        WebEvents does not -- 5808 already exceeds 6144.
+        """
+        v = self._values("PA_BOARD_FIREBEETLE2")
+        for key, chain in P4_STACK_CHAINS.items():
+            with self.subTest(key=key):
+                self.assertGreaterEqual(v[key], stack_size_for_chain(chain))
+                self.assertEqual(v[key] % 512, 0)
+
+    def test_p4_webevents_is_the_one_that_moves(self):
+        """The inherited 6144 is 336 B short of the ESP32-P4 chain.
+
+        RCInputTask and AudioTask re-derive to the same number the shipping
+        artoo image has always had. WebEvents is the overrun this ticket
+        exists to fix, so a later edit that "simplified" it back to 6144
+        on both chips is the regression.
+        """
+        artoo = self._values("PA_BOARD_ARTOO_ESP32")
+        p4 = self._values("PA_BOARD_FIREBEETLE2")
+        self.assertEqual(artoo["rc_input_stack"], p4["rc_input_stack"])
+        self.assertEqual(artoo["audio_stack"], p4["audio_stack"])
+        self.assertGreater(p4["web_events_stack"], artoo["web_events_stack"])
+        self.assertGreater(p4["web_events_stack"], 6144)
+
+    def test_artoo_task_stacks_are_not_below_the_measured_chains(self):
+        """ESP32 stacks may stay above the rule; they must not drop below the chain.
+
+        Xtensa chains are lower bounds (include/config.h). A value below the
+        measured chain would be a proven overrun even on that weaker walk.
+        """
+        v = self._values("PA_BOARD_ARTOO_ESP32")
+        for key, chain in ESP32_STACK_CHAINS.items():
+            with self.subTest(key=key):
+                self.assertGreaterEqual(v[key], chain)
+
     def test_the_two_boards_do_not_converge(self):
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")
         self.assertNotEqual(artoo, firebeetle)
         for key in ("seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
-                    "evid_record_bytes", "log_ring_max_lines"):
+                    "evid_record_bytes", "log_ring_max_lines",
+                    "web_events_stack"):
             with self.subTest(key=key):
                 self.assertGreater(
                     firebeetle[key], artoo[key],
@@ -340,6 +426,8 @@ class BoardChipSizedConstants(unittest.TestCase):
              "sequence run-evidence ring dimensions have no value for this chip target"),
             ("log_buffer.h",
              "the log ring depth ladder has no value for this chip target"),
+            ("config.h",
+             "task stack sizes have no value for this chip target"),
         ):
             with self.subTest(header=header):
                 text = (INCLUDE_DIR / header).read_text(encoding="utf-8")

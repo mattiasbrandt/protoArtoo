@@ -76,6 +76,17 @@ void test_dome_and_aux_led_stacks_unchanged_on_esp32() {
     TEST_ASSERT_EQUAL_UINT32(4096U, AUX_LED_TASK_STACK_BYTES);
 }
 
+// Same guard for the three stacks #256 re-derived per chip. The ESP32-P4
+// WebEvents arm is 7680 on a measured 5808 B chain; these asserts keep that
+// raise off the artoo image. RCInputTask and AudioTask happen to land on the
+// same numbers the shipping artoo image has always had -- still pin them so a
+// later edit cannot move the ESP32 arm "to match" a P4 change.
+void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
+    TEST_ASSERT_EQUAL_UINT32(7168U, RC_INPUT_TASK_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(6144U, AUDIO_TASK_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(6144U, WEB_EVENTS_TASK_STACK_BYTES);
+}
+
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
@@ -161,5 +172,6 @@ int main() {
     RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);
     RUN_TEST(test_safety_monitor_stack_unchanged_on_esp32);
     RUN_TEST(test_dome_and_aux_led_stacks_unchanged_on_esp32);
+    RUN_TEST(test_rc_audio_webevents_stacks_unchanged_on_esp32);
     return UNITY_END();
 }

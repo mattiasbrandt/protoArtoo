@@ -1027,12 +1027,15 @@ void webServerInit() {
     networkManagerInitialize();
 
     if (!eventTaskStarted) {
-        // Keep 6144 bytes for status/rc/log SSE work and JSON serialization headroom.
-        // A previous 2048-byte reduction overflowed on client connect; 4096 also
-        // overflowed (DoubleException in _dtoa_r float formatting) once
+        // Size is chip-target specific; WEB_EVENTS_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The 6144 this used to hard-code was sized from
+        // an ESP32 DoubleException in _dtoa_r after a 4096 overflow, once
         // requestStatusBroadcastNow() call sites grew from rare hardware edges to
-        // every web write handler, raising buildStatusJson() call frequency here.
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 6144, nullptr, 1, nullptr, 0);
+        // every web write handler. On ESP32-P4 _dtoa_r is 416 B not 160 B and the
+        // static chain through buildStatusJson is 5808 B -- 336 B past 6144 -- so
+        // 5808 * 1.25 = 7260 -> 7680 (#256).
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", WEB_EVENTS_TASK_STACK_BYTES,
+                                nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

@@ -552,6 +552,28 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // of free heap measured on the board, and a tight-heap build cannot pay that
 // for margins no measurement can currently confirm. Its numbers are recorded
 // on #250 instead.
+//
+// RCInputTask, AudioTask and WebEvents, sized the same way (#256). These three
+// were still single-valued artoo-era literals. tools/stack_usage_report.py
+// against the linked firebeetle2 image (product and profiler match):
+//
+//                   old    ESP32 chain    ESP32-P4 chain
+//   RCInputTask    7168       5248            5376  <- P4 rule lands on 7168
+//   AudioTask      6144       4672            4848  <- P4 rule lands on 6144
+//   WebEvents      6144       5888            5808  <- P4 over by 336
+//
+// WebEvents is the one that moves. Its own comment already named the risk:
+// 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on
+// RISC-V. The P4 chain is 5808 B -- 336 B past 6144 before the 25% margin --
+// so 5808 * 1.25 = 7260 -> 7680.
+//
+// ESP32 WebEvents: the product image's body is emitted as data (.xt.prop), so
+// the 5888 B figure is from the profiler image where the body decodes. 5888
+// sits 256 B under 6144. Same call as DomeLinkTask above: Xtensa chains are
+// lower bounds and a tight-heap build does not pay 1536 B for a margin the
+// measurement cannot confirm. AudioTask's ESP32 4672 is also the profiler
+// (deeper than the product's 4048); the rule lands on the current 6144.
+//
 // One block for every per-chip task stack. #248 and #250 each added a pair and
 // arrived here by separate branches; keeping two adjacent, identical #if ladders
 // would mean a third ticket adds a third, and a reader has to check all of them
@@ -562,12 +584,18 @@ constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
 constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
 #else
   #error "task stack sizes have no value for this chip target"
 #endif
