@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c5e329a1..9774928c 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -634,7 +634,7 @@
+       // or a silent no-op. Kind "network" is the honest classification: nothing
+       // usable came back from the controller, which is also the reason
+       // page_bootstrap.js renders as "Connection to the controller was lost."
+-      renderLogNotice(LOG_UNREACHABLE_TEXT);
++      appendLogLine(LOG_UNREACHABLE_TEXT);
+       throw new window.PAApi.ApiError("Log response was not log text", {
+         kind: "network",
+         status: result?.status ?? 0,

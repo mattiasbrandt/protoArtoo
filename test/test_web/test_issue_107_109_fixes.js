@@ -62,7 +62,10 @@ const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
 
 // The default transport: every endpoint answers successfully.
 const healthyResponder = (path, opts = {}) => {
-  if (path === "/api/logs") return { data: OK_LOGS };
+  // The device answers /api/logs as text/plain (src/web/api_logs.cpp), and
+  // since #261 the loader refuses anything else - so the mock has to carry
+  // the media type the real transport now reports.
+  if (path === "/api/logs") return { data: OK_LOGS, contentType: "text/plain" };
   if (path === "/api/config") return { data: OK_CONFIG };
   if (path === "/api/console" && opts.body?.command === "operations") return { data: OK_OPERATIONS };
   if (path === "/api/status") return { data: {} };

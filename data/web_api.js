@@ -193,7 +193,18 @@
           });
         }
 
-        return { ok: true, status: response.status, data: payload };
+        return {
+          ok: true,
+          status: response.status,
+          // The response's declared media type, surfaced so a caller can check
+          // that what came back is what its endpoint contracts. parseResponse()
+          // already reads this header to choose JSON-vs-text parsing but kept
+          // it to itself, so the Live Logs panel had no way to tell log text
+          // from an intercepted HTML page and rendered the page (#261).
+          // Strictly additive: every existing caller destructures ok/status/data.
+          contentType: response.headers.get("content-type") || "",
+          data: payload,
+        };
       } catch (error) {
         const apiError = normalizeError(error, signal);
         // Network errors on GETs are usually the device shedding a

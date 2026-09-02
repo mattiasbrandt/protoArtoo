@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 15ecef97..01e4e94a 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -639,7 +639,7 @@
+       //
+       // A cancellation is not a failure - the page cancelled its own run - and
+       // an unreachable line for it would be a lie.
+-      if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
++      renderLogNotice(LOG_UNREACHABLE_TEXT);
+       throw error;
+     }
+     if (!isLogTextResponse(result)) {

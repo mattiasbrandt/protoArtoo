@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 15ecef97..82016fda 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -640,7 +640,7 @@
+       // A cancellation is not a failure - the page cancelled its own run - and
+       // an unreachable line for it would be a lie.
+       if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
+-      throw error;
++      return;
+     }
+     if (!isLogTextResponse(result)) {
+       // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no

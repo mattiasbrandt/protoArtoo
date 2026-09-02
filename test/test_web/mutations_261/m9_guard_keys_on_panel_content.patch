@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c677e9d6..6a494546 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -641,7 +641,7 @@
+ 
+   const loadRecentLogs = async ({ handle = null } = {}) => {
+     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
+-    if (logHistoryLoaded) return;
++    if (logLines.length > 0) return;
+     const api = handle ?? window.PAApi;
+     let result;
+     try {

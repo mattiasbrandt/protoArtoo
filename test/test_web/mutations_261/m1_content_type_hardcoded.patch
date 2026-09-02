@@ -1,0 +1,13 @@
+diff --git i/data/web_api.js w/data/web_api.js
+index 98443705..5f1fb9b8 100644
+--- i/data/web_api.js
++++ w/data/web_api.js
+@@ -202,7 +202,7 @@
+           // it to itself, so the Live Logs panel had no way to tell log text
+           // from an intercepted HTML page and rendered the page (#261).
+           // Strictly additive: every existing caller destructures ok/status/data.
+-          contentType: response.headers.get("content-type") || "",
++          contentType: "text/plain",
+           data: payload,
+         };
+       } catch (error) {
