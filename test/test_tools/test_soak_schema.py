@@ -35,6 +35,9 @@ WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
 RESET_REASON_CPP = (REPO_ROOT / "src" / "reset_reason.cpp").read_text()
 BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
 CONFIG_H = (REPO_ROOT / "include" / "config.h").read_text()
+WEB_ADMISSION_CPP = (REPO_ROOT / "src" / "web" / "web_admission.cpp").read_text()
+WEB_ADMISSION_PSYCHIC_CPP = (REPO_ROOT / "src" / "web" / "web_admission_psychic.cpp").read_text()
+PLATFORMIO_INI_TEXT = (REPO_ROOT / "platformio.ini").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
 SHIPPING = soak.SCHEMAS["shipping"]
@@ -58,6 +61,30 @@ def artoo_status_body(**overrides) -> dict:
     body = dict(soak.FIXTURE_ARTOO_STATUS_BODY)
     body.update(overrides)
     return body
+
+
+def declared_macro_values(macro: str) -> list[str]:
+    """Every `-D <macro>=<value>` platformio.ini writes, read straight out of
+    the text.
+
+    Deliberately a second, independent read of the same file the harness
+    resolves through: the point of these tests is that the harness's numbers
+    ARE the file's, and a check that went through the harness's own resolver
+    would agree with it however wrong it had become. Comment lines are excluded
+    for the reason test_env_flag_declarations.py excludes them -- platformio.ini
+    discusses these macros in prose right above declaring them.
+    """
+    body = "\n".join(
+        line for line in PLATFORMIO_INI_TEXT.splitlines() if not line.strip().startswith(";")
+    )
+    return re.findall(r"-D\s*%s=(\S+)" % re.escape(macro), body)
+
+
+def pio_section(name: str) -> str:
+    """One platformio.ini section's raw text, comments and all."""
+    match = re.search(r"(?ms)^\[%s\]\n(.*?)(?=^\[|\Z)" % re.escape(name), PLATFORMIO_INI_TEXT)
+    assert match, f"platformio.ini declares no [{name}]"
+    return match.group(1)
 
 
 class ShippingFieldNamesMatchTheFirmware(unittest.TestCase):
@@ -586,6 +613,340 @@ class ArtooReportKeys(unittest.TestCase):
         ambiguous = ARTOO.reset_reason(artoo_status_body(resetReason="OTHER"), "t")
         self.assertIsNone(ambiguous.crash_shaped)
         self.assertTrue(ambiguous.caveat)
+
+
+class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
+    """The heap verdict's yardstick.
+
+    #194's first graded artoo soak returned NO-GO on "heapLargest8bit fell to
+    11764 from baseline 40948 (beyond 20.0% tolerance)" while heapFree held
+    ~80 000, heapMin was unmoved, every refusal counter read 0 and the block
+    recovered fully the moment the clients left. A percentage of an arbitrary
+    baseline sample is not evidence about service; the floor the firmware
+    refuses at is. These tests exist so the harness's floor stays the file's
+    floor -- they read platformio.ini themselves rather than asking the
+    resolver, which would agree with itself however wrong it had become.
+    """
+
+    def test_the_resolved_floors_are_the_values_platformio_ini_declares(self):
+        declared_ordinary = declared_macro_values(soak.ADMISSION_FLOOR_MACRO)
+        declared_diag = declared_macro_values(soak.ADMISSION_FLOOR_DIAG_MACRO)
+        self.assertEqual(len(declared_ordinary), 1, declared_ordinary)
+        self.assertEqual(len(declared_diag), 1, declared_diag)
+        for env in ("artoo_esp32", "firebeetle2"):
+            with self.subTest(env=env):
+                floor = soak.resolve_admission_floor(env)
+                self.assertEqual(floor.ordinary_bytes, int(declared_ordinary[0]))
+                self.assertEqual(floor.diagnostic_bytes, int(declared_diag[0]))
+
+    def test_the_floors_are_reached_through_flags_base_and_nothing_else(self):
+        floor = soak.resolve_admission_floor("artoo_esp32")
+        self.assertEqual(floor.sources[soak.ADMISSION_FLOOR_MACRO], "[flags_base].build_flags")
+        self.assertEqual(floor.sources[soak.ADMISSION_FLOOR_DIAG_MACRO],
+                         "[flags_base].build_flags")
+        # [env:artoo_esp32] reaches it only by naming the interpolation, which
+        # is what makes "not every env inherits the floor" true rather than a
+        # defensive hypothetical.
+        self.assertIn("${flags_base.build_flags}", pio_section("env:artoo_esp32"))
+
+    def test_an_env_that_never_references_flags_base_resolves_no_floor(self):
+        # [env:native] declares its own build_flags and names no interpolation,
+        # so no floor reaches it. Per #194's pin this is INVALID, never a
+        # default -- and never the `#ifndef` fallback in
+        # src/web/web_admission_psychic.cpp, which is a compile-time safety net
+        # rather than a calibration for any board.
+        self.assertNotIn("${flags_base.build_flags}", pio_section("env:native"))
+        with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+            soak.resolve_admission_floor("native")
+        self.assertIn(soak.ADMISSION_FLOOR_MACRO, str(caught.exception))
+        self.assertIn("INVALID", str(caught.exception))
+
+    def test_an_undeclared_environment_is_refused_and_lists_the_real_ones(self):
+        with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+            soak.resolve_admission_floor("no_such_env")
+        self.assertIn("no_such_env", str(caught.exception))
+        self.assertIn("artoo_esp32", str(caught.exception))
+
+    def test_a_child_env_inherits_its_parents_flags_when_it_declares_none(self):
+        # [env:firebeetle2] declares no build_flags of its own; it extends
+        # [env:firebeetle2_bringup], which does. PlatformIO resolves it that
+        # way and so must this -- a resolver that only looked at the env's own
+        # section would report the shipping image as having no floor.
+        self.assertNotRegex(pio_section("env:firebeetle2"), r"(?m)^build_flags\s*=")
+        self.assertRegex(pio_section("env:firebeetle2"), r"(?m)^extends\s*=\s*env:firebeetle2_bringup")
+        self.assertEqual(soak.resolve_admission_floor("firebeetle2").ordinary_bytes,
+                         soak.resolve_admission_floor("firebeetle2_bringup").ordinary_bytes)
+
+    def test_a_bench_override_replaces_the_ordinary_floor_only(self):
+        declared_override = declared_macro_values(soak.ADMISSION_FLOOR_OVERRIDE_MACRO)
+        self.assertEqual(len(declared_override), 1, declared_override)
+        product = soak.resolve_admission_floor("artoo_esp32")
+        induced = soak.resolve_admission_floor("artoo_esp32_recovery_bench")
+        self.assertEqual(induced.override_bytes, int(declared_override[0]))
+        self.assertEqual(induced.ordinary_bytes, int(declared_override[0]))
+        # The displaced value is still reported, so a reader can tell an
+        # override from a calibration.
+        self.assertEqual(induced.declared_ordinary_bytes, product.ordinary_bytes)
+        self.assertEqual(induced.diagnostic_bytes, product.diagnostic_bytes)
+
+    def test_two_conflicting_definitions_are_raised_on_rather_than_picked_between(self):
+        ini = REPO_ROOT / "test" / "test_tools" / "__pycache__" / "conflicting_platformio.ini"
+        ini.parent.mkdir(parents=True, exist_ok=True)
+        ini.write_text(
+            "[flags_base]\n"
+            f"build_flags =\n\t-D {soak.ADMISSION_FLOOR_MACRO}=9000\n"
+            f"\t-D {soak.ADMISSION_FLOOR_DIAG_MACRO}=7500\n"
+            "\n[env:clash]\n"
+            "build_flags =\n\t${flags_base.build_flags}\n"
+            f"\t-D {soak.ADMISSION_FLOOR_MACRO}=11500\n",
+            encoding="utf-8",
+        )
+        try:
+            with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+                soak.resolve_admission_floor("clash", ini_path=ini)
+            self.assertIn("two different values", str(caught.exception))
+        finally:
+            ini.unlink()
+
+    def test_a_floor_of_zero_is_no_floor_and_is_refused(self):
+        # webRequestAdmissionDecide()'s comparison is `largestFreeBlock < floor`,
+        # which can never be true at 0 -- so a soak judged against it would pass
+        # whatever the heap did. That vacuous pass is the class of proof this
+        # rule exists to remove, so it is INVALID rather than a floor.
+        ini = REPO_ROOT / "test" / "test_tools" / "__pycache__" / "zero_floor_platformio.ini"
+        ini.parent.mkdir(parents=True, exist_ok=True)
+        ini.write_text(
+            "[flags_base]\n"
+            f"build_flags =\n\t-D {soak.ADMISSION_FLOOR_MACRO}=0\n"
+            f"\t-D {soak.ADMISSION_FLOOR_DIAG_MACRO}=7500\n"
+            "\n[env:nofloor]\nbuild_flags =\n\t${flags_base.build_flags}\n",
+            encoding="utf-8",
+        )
+        try:
+            with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+                soak.resolve_admission_floor("nofloor", ini_path=ini)
+            self.assertIn("can never refuse at", str(caught.exception))
+        finally:
+            ini.unlink()
+
+    def test_the_report_names_the_environment_and_where_the_number_came_from(self):
+        report = soak.resolve_admission_floor("artoo_esp32").report()
+        self.assertEqual(report["env"], "artoo_esp32")
+        self.assertEqual(report["readFrom"], "platformio.ini")
+        self.assertIn("flags_base", report["macros"][soak.ADMISSION_FLOOR_MACRO])
+        # The two floors are not interchangeable and the report says which one
+        # the verdict used.
+        self.assertIn("ordinary floor", report["note"])
+        self.assertLess(report["diagnosticFloorBytes"], report["ordinaryFloorBytes"])
+
+
+class AdmissionFloorResolutionOrderMatchesTheFirmware(unittest.TestCase):
+    """The harness applies the firmware's own precedence, read from it."""
+
+    def test_the_override_displaces_the_ordinary_floor_and_only_when_non_zero(self):
+        self.assertIn(
+            "in.minLargestFreeBlockOverride != 0 ? in.minLargestFreeBlockOverride",
+            WEB_ADMISSION_CPP,
+            "webRequestAdmissionDecide() no longer resolves the override the way "
+            "resolve_admission_floor() reproduces it",
+        )
+        self.assertIn(
+            "in.diagnostic ? in.minLargestFreeBlockDiagnostic : ordinaryFloor",
+            WEB_ADMISSION_CPP,
+            "diagnostics no longer keep their own floor; the harness reports two levels "
+            "that would then be one",
+        )
+
+    def test_the_device_hookup_still_passes_the_macros_the_harness_reads(self):
+        for macro in (soak.ADMISSION_FLOOR_MACRO, soak.ADMISSION_FLOOR_DIAG_MACRO,
+                      soak.ADMISSION_FLOOR_OVERRIDE_MACRO):
+            with self.subTest(macro=macro):
+                self.assertIn(macro, WEB_ADMISSION_PSYCHIC_CPP,
+                              f"{macro} is no longer read by the request-admission hookup")
+
+    def test_status_and_events_are_the_diagnostic_class_the_lower_floor_covers(self):
+        # Why a soak can watch a controller that is already shedding page loads:
+        # its own two paths keep the lower floor. If either stopped being
+        # diagnostic, the harness would start losing the device exactly when
+        # the evidence mattered, and the floor note would be wrong.
+        self.assertIn('strcmp(path, "/api/status") == 0', WEB_ADMISSION_CPP)
+        self.assertIn('strcmp(path, "/api/events") == 0', WEB_ADMISSION_CPP)
+
+
+class AdmissionCountersMatchTheFirmware(unittest.TestCase):
+    def test_every_counter_the_product_schemas_read_is_still_emitted(self):
+        for schema in (SHIPPING, ARTOO):
+            for field in (schema.refused_heap_floor_field,
+                          schema.refused_heap_floor_diag_field,
+                          schema.accept_min_largest_block_field,
+                          schema.heap_free_field, schema.heap_min_field):
+                with self.subTest(image=schema.name, field=field):
+                    self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+                                  f"{field!r} is no longer emitted by buildStatusJson()")
+
+    def test_the_never_sampled_sentinel_is_the_one_the_firmware_publishes(self):
+        # g_webAcceptMinLargestBlockSeen starts at UINT32_MAX and is published
+        # as -1 until the guard has sampled once. Reading that as a byte count
+        # would report the deepest possible breach on an idle controller.
+        self.assertIn("g_webAcceptMinLargestBlockSeen == UINT32_MAX", WEB_SERVER_CPP)
+        self.assertIn("? -1L", WEB_SERVER_CPP)
+        self.assertEqual(soak.ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED, -1)
+
+    def test_a_never_sampled_reading_is_none_and_never_zero(self):
+        body = artoo_status_body(acceptMinLargestBlockSeen=-1)
+        reading = ARTOO.admission(body, "t")
+        self.assertIsNone(reading.accept_min_largest_block_seen)
+        real = ARTOO.admission(artoo_status_body(acceptMinLargestBlockSeen=11764), "t")
+        self.assertEqual(real.accept_min_largest_block_seen, 11764)
+
+    def test_the_counters_are_structural_markers_so_a_wrong_image_fails_preflight(self):
+        for field in ("refusedHeapFloor", "refusedHeapFloorDiag", "acceptMinLargestBlockSeen"):
+            with self.subTest(field=field):
+                body = artoo_status_body()
+                body.pop(field)
+                mismatches = ARTOO.structural_mismatches(body)
+                self.assertTrue(any(field in m for m in mismatches), mismatches)
+
+    def test_recorded_only_heap_fields_are_not_structural_markers(self):
+        # heapFree and heapMin are recorded, not judged: losing one degrades the
+        # evidence without invalidating the verdict, so it surfaces as a series
+        # anomaly rather than refusing the whole run at preflight.
+        for field in ("heapFree", "heapMin"):
+            with self.subTest(field=field):
+                body = artoo_status_body()
+                body.pop(field)
+                self.assertEqual(ARTOO.structural_mismatches(body), [])
+
+
+class BenchCompilesNoAdmissionGuard(unittest.TestCase):
+    """The bench image's floor is inapplicable, not unresolvable.
+
+    [env:firebeetle2_hosted_bench] does inherit the floor flags -- it extends
+    [env:firebeetle2] -- but compiles none of src/, so nothing in the binary
+    reads them. Reporting 9000 for that board would describe a gate the image
+    does not contain.
+    """
+
+    def test_the_bench_env_compiles_none_of_src(self):
+        section = pio_section("env:firebeetle2_hosted_bench")
+        self.assertIn("-<*>", section)
+        self.assertIn("+<../bringup/p4_hosted_bench.cpp>", section)
+        self.assertNotIn("+<*>", section)
+
+    def test_the_bench_env_would_otherwise_resolve_a_floor(self):
+        # Stated as a fact rather than assumed: the reason the bench has no
+        # floor is the source filter, not a missing flag, and a future reader
+        # must not "fix" it by adding one to the env.
+        self.assertEqual(soak.resolve_admission_floor("firebeetle2_hosted_bench").ordinary_bytes,
+                         soak.resolve_admission_floor("firebeetle2").ordinary_bytes)
+        self.assertFalse(BENCH.enforces_admission_floor)
+
+    def test_the_bench_handler_publishes_none_of_the_refusal_counters(self):
+        for field in ("refusedHeapFloor", "refusedHeapFloorDiag", "acceptMinLargestBlockSeen"):
+            with self.subTest(field=field):
+                self.assertNotIn(field, BENCH_CPP)
+
+    def test_the_absence_reads_as_absent_never_as_zeroed_counters(self):
+        self.assertIsNone(BENCH.admission(bench_status_body(), "t"))
+        anomalies = []
+        self.assertIsNone(BENCH.collect_admission([bench_status_body()], anomalies))
+        self.assertEqual(anomalies, [])
+        published = BENCH.fields_read()["admissionRefusals"]
+        self.assertEqual(published, BENCH.admission_absence_note)
+        self.assertIn("build_src_filter", published)
+
+    def test_the_driver_refuses_a_floor_that_describes_a_gate_the_image_lacks(self):
+        # A floor handed to an image with no guard, and an image with a guard
+        # left without a floor, are both harness bugs. Neither is a device
+        # contract violation, so both raise past _run_driver_safely() rather
+        # than being absorbed into an INVALID nobody investigates.
+        floor = soak.resolve_admission_floor("firebeetle2")
+        with self.assertRaises(ValueError):
+            soak.run_sse_soak(
+                client=None, schema=BENCH, num_clients=1, duration_s=0.0,
+                status_poll_interval_s=1.0, admission_floor=floor,
+                early_stall_check_s=0.0, max_silence_s=5.0,
+            )
+        with self.assertRaises(ValueError):
+            soak.run_sse_soak(
+                client=None, schema=ARTOO, num_clients=1, duration_s=0.0,
+                status_poll_interval_s=1.0, admission_floor=None,
+                early_stall_check_s=0.0, max_silence_s=5.0,
+            )
+
+
+class EachImageNamesItsBuildEnvironment(unittest.TestCase):
+    def test_every_schema_names_an_environment_platformio_ini_declares(self):
+        for name, schema in soak.SCHEMAS.items():
+            with self.subTest(image=name):
+                self.assertTrue(schema.build_env, f"{name} names no build environment")
+                soak.require_declared_environment(schema.build_env)
+
+    def test_an_image_that_judges_a_floor_can_resolve_one(self):
+        # The coupling run_sse_soak() raises on, pinned here rather than left
+        # to that call site: a product schema whose env resolved nothing would
+        # make every run of that image INVALID.
+        for name, schema in soak.SCHEMAS.items():
+            with self.subTest(image=name):
+                if schema.enforces_admission_floor:
+                    self.assertGreater(
+                        soak.resolve_admission_floor(schema.build_env).ordinary_bytes, 0)
+                else:
+                    self.assertTrue(schema.admission_absence_note)
+
+
+class HeapSeriesRows(unittest.TestCase):
+    """The per-poll record. #194's graded run could say the largest free block
+    reached 11 764 and could not say whether it touched that once or sat near
+    it for twenty minutes -- different findings, and the shape is what tells
+    them apart."""
+
+    def poll(self, elapsed_s, body):
+        return soak.StatusPollSample(elapsed_s=elapsed_s, body=body)
+
+    def test_a_product_row_carries_all_four_readings_plus_its_timestamp(self):
+        anomalies = []
+        rows = ARTOO.collect_heap_series([self.poll(1.25, artoo_status_body())], anomalies)
+        self.assertEqual(anomalies, [])
+        self.assertEqual(rows, [{
+            soak.SERIES_KEY_ELAPSED_S: 1.25,
+            soak.SERIES_KEY_LARGEST_FREE_8BIT: 123456,
+            soak.SERIES_KEY_HEAP_FREE: 260000,
+            soak.SERIES_KEY_HEAP_MIN: 240000,
+            soak.SERIES_KEY_SSE_CLIENTS: 1,
+        }])
+
+    def test_a_field_the_image_does_not_publish_is_absent_and_not_an_anomaly(self):
+        anomalies = []
+        rows = BENCH.collect_heap_series([self.poll(0.5, bench_status_body())], anomalies)
+        self.assertEqual(anomalies, [])
+        self.assertNotIn(soak.SERIES_KEY_HEAP_MIN, rows[0])
+        self.assertEqual(rows[0][soak.SERIES_KEY_HEAP_FREE], 260000)
+        self.assertIsNone(BENCH.heap_min_field)
+
+    def test_a_field_the_image_does_publish_but_this_sample_got_wrong_is_an_anomaly(self):
+        anomalies = []
+        body = artoo_status_body(heapFree=True)  # bool is a subclass of int
+        body.pop("heapMin")
+        rows = ARTOO.collect_heap_series([self.poll(0.0, body)], anomalies)
+        self.assertEqual(len(anomalies), 2, anomalies)
+        self.assertNotIn(soak.SERIES_KEY_HEAP_FREE, rows[0])
+        self.assertNotIn(soak.SERIES_KEY_HEAP_MIN, rows[0])
+        # The readings that were fine are still recorded: one bad field does
+        # not cost the row.
+        self.assertEqual(rows[0][soak.SERIES_KEY_LARGEST_FREE_8BIT], 123456)
+
+    def test_the_aggregates_skip_a_hole_rather_than_defaulting_it_to_zero(self):
+        rows = [
+            {soak.SERIES_KEY_LARGEST_FREE_8BIT: 40948},
+            {},  # the sample whose reading was malformed
+            {soak.SERIES_KEY_LARGEST_FREE_8BIT: 11764},
+        ]
+        values = soak.series_values(rows, soak.SERIES_KEY_LARGEST_FREE_8BIT)
+        self.assertEqual(values, [40948, 11764])
+        self.assertEqual(min(values), 11764,
+                         "a zero substituted for a missing reading would drag the minimum "
+                         "straight through any floor")
 
 
 if __name__ == "__main__":
