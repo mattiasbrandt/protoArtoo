@@ -104,7 +104,7 @@ sound.config.mood-category-map|Mood Category Map|Per-mood bitmask selecting whic
 servo.action.open|Open|Open a servo-driven panel or arm to its open position|servoCmdQueue|target:string:1
 servo.action.close|Close|Close a servo-driven panel or arm to its closed position|servoCmdQueue|target:string:1
 servo.action.set-position|Set Position|Move a servo to a specific pulse-width position|servoCmdQueue|target:string:1|position_us:uint16:1
-servo.action.stop|Stop|Stop servo movement and hold current position|servoCmdQueue|
+servo.action.stop|Stop|Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no freeze-in-place command). target=both moves ARM1 and ARM2 only; AUX1, AUX2 and AUX3 must be stopped one at a time (robot_state.h's own broadcast-id comment).\n|servoCmdQueue|target:string:1
 servo.action.toggle-arm1|ARM1 Toggle|Toggle the arm 1 servo between open and closed|servoCmdQueue|
 servo.action.toggle-arm2|ARM2 Toggle|Toggle the arm 2 servo between open and closed|servoCmdQueue|
 servo.action.toggle-aux1|AUX1 Toggle|Toggle the aux 1 servo between open and closed|servoCmdQueue|

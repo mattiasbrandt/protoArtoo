@@ -29,20 +29,26 @@
 #include "api_servo.h"                    // parseArmId(), servoSubmitCommand(), ServoSubmitOutcome
 #include "ledc_pwm.h"                     // SERVO_PULSE_MIN_US/MAX_US
 
-// servo.action.open/close/set-position: target=<arm1|arm2|aux1|aux2|aux3
-// [|both]>, set-position also carries position_us=<500..2500>.
+// servo.action.open/close/set-position/stop: target=<arm1|arm2|aux1|aux2|
+// aux3[|both]>, set-position also carries position_us=<500..2500>.
 // parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
 // target<->id mapping and the SAME queue submission handleServoPost() uses,
-// reused verbatim - the ADR 0034 Commit Step beside that handler. Deliberately
-// NOT wired here: servo.action.stop, which the registry declares with zero
-// params even though the underlying /api/servo endpoint requires an `arm`
-// for every action including "stop", and armId=255 only broadcasts to
-// arm1+arm2 (robot_state.h's own field comment) - never aux1..3. Answering
-// "stop" with a hardcoded broadcast id would silently leave three of five
-// servos moving on an operator's "stop" call; that is a registry/
-// implementation decision this ticket does not invent, so
-// servo.action.stop stays CONSOLE_REASON_EXECUTOR_NOT_READY (reported on
-// the ticket).
+// reused verbatim - the ADR 0034 Commit Step beside that handler.
+//
+// servo.action.stop (#221 remainder registry fix, docs/action-registry.yaml):
+// the row used to declare zero params even though the underlying /api/servo
+// endpoint requires an `arm` for every action including "stop" - it now
+// declares the same target enum open/close/set-position already do, and
+// consoleExecuteServoStop() below resolves it the same way. Two facts this
+// wiring does NOT change, because they are firmware behaviour on a path the
+// web UI shares (registry/coordinator decision, not this ticket's to make):
+// target=both only broadcasts to ARM1+ARM2, never AUX1..3 (ServoCommand::
+// armId's own field comment, include/robot_state.h; src/tasks/
+// servo_task.cpp:353,367,387); and "stop" does not hold position at all -
+// api_servo.cpp's parseAction() maps it to SERVO_CMD_POSITION at
+// SERVO_PULSE_NEUTRAL_US (there is no SERVO_CMD_STOP in the enum), so it
+// drives the servo to neutral like set-position with a fixed pulse width,
+// never a freeze-in-place.
 static void consoleExecuteServoCommand(uint32_t requestId, const char* operationName,
                                        ServoCommandType type, const ConsoleArgs& args,
                                        ConsoleCommandSource source, const ConsoleRecordSink* sink) {
@@ -117,10 +123,62 @@ static void consoleExecuteServoSetPosition(uint32_t requestId, const char* opera
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_POSITION, args, source, sink);
 }
 
+// servo.action.stop: target=<arm1|arm2|aux1|aux2|aux3|both> only - no
+// position_us (the registry declares none, unlike set-position), because the
+// pulse width is not an operator choice here, it is always
+// SERVO_PULSE_NEUTRAL_US (see this file's header comment for why). Shares
+// consoleExecuteServoCommand()'s schema-check/target-resolution shape rather
+// than reusing that function directly: threading a fixed pulse width through
+// its SERVO_CMD_POSITION branch would need a position_us key this row's
+// schema does not have, so a small dedicated function reads more plainly
+// than a "force neutral" parameter on the shared one.
+static void consoleExecuteServoStop(uint32_t requestId, const char* operationName,
+                                    const ConsoleArgs& args, ConsoleCommandSource source,
+                                    const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    // Same "reparse after schema" precedent consoleExecuteServoCommand()
+    // above documents: parseArmId() can only fail here on a disagreement
+    // between the catalog's own enum and its accepted set.
+    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
+    if (armId < 0) {
+        consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, SERVO_CMD_POSITION,
+                                                     SERVO_PULSE_NEUTRAL_US,
+                                                     consoleCommandSourceFor(source));
+    if (!outcome.ok) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.open", consoleExecuteServoOpen},
     {"servo.action.close", consoleExecuteServoClose},
     {"servo.action.set-position", consoleExecuteServoSetPosition},
+    {"servo.action.stop", consoleExecuteServoStop},
 };
 static const size_t kServoDirectActionExecutorCount =
     sizeof(g_servoDirectActionExecutors) / sizeof(g_servoDirectActionExecutors[0]);

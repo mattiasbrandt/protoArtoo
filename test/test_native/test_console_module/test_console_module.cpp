@@ -3025,16 +3025,53 @@ void test_servo_set_position_rejects_a_missing_target() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
 }
 
-// Deliberately unwired (see consoleExecuteServoCommand()'s own header
-// comment): the registry declares zero params for this row, but the real
-// /api/servo endpoint requires an arm for every action including "stop", and
-// armId=255 only broadcasts to arm1+arm2, never aux1..3 - a registry/
-// implementation decision this ticket does not invent.
-void test_servo_stop_still_answers_executor_not_ready() {
+// servo.action.stop (#221 remainder registry fix + wiring): the row now
+// declares the same target enum open/close/set-position do, and
+// consoleExecuteServoStop() (include/console_direct_action_servo.h) resolves
+// it the same way - see that function's own header comment for why "stop"
+// is not simply consoleExecuteServoCommand(SERVO_CMD_POSITION, ...).
+void test_servo_stop_queues_with_the_resolved_arm_id() {
+    runQuery("servo.action.stop target=arm1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// target=both is still accepted (the catalog enum matches open/close's, not
+// set-position's narrower one) even though it only reaches ARM1+ARM2 at the
+// servo_task.cpp level - that asymmetry is firmware behaviour this ticket
+// does not change, only makes reachable from the Console (see this test
+// file's neighbouring servo.action.open test for the same acceptance and
+// include/console_direct_action_servo.h's header comment for the citation).
+void test_servo_stop_accepts_both_as_the_broadcast_target() {
+    runQuery("servo.action.stop target=both");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_stop_rejects_a_missing_target() {
     runQuery("servo.action.stop");
 
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+void test_servo_stop_rejects_an_unknown_target() {
+    runQuery("servo.action.stop target=aux9");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// No position_us key exists on this row's schema (unlike set-position) - a
+// caller supplying one gets the same "unknown argument" answer any other
+// unrecognized key does, not a silently ignored value.
+void test_servo_stop_rejects_position_us_as_an_unknown_argument() {
+    runQuery("servo.action.stop target=arm1 position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("position_us", capturedValue("argument"));
 }
 
 // #257: g_directActionExecutors[] split into five per-domain tables
@@ -3099,6 +3136,7 @@ void test_257_every_direct_action_row_still_dispatches() {
         "servo.action.open",
         "servo.action.close",
         "servo.action.set-position",
+        "servo.action.stop",
     };
     static const size_t kExpectedCount =
         sizeof(kExpectedDirectActionOperations) / sizeof(kExpectedDirectActionOperations[0]);
@@ -3132,10 +3170,34 @@ void test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of
     TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
 }
 
-// The five dome.api.* rows have no consoleExecuteCommand()-reachable behavior
-// to assert on at all - see the worker status comment on #221 for why
-// (chunked/paginated JSON reads with no Console Record equivalent, not this
-// ticket's pattern to invent).
+// dome.api.get-sequence / dome.api.get-layout (#221 remainder): the other
+// two of the five dome.api.* rows - the three above them
+// (get-sequence-last-run/list-sequences/list-builtin-sequences) are wired
+// and covered by their own tests above. These two stay EXECUTOR_NOT_READY
+// on purpose, the same document/bulk-transfer #206 exclusion
+// dome.action.save-sequence's test above asserts: seqStoreReadFileSlice()/
+// domeLayoutCacheReadChunk() are byte-slice readers over one stored
+// document (a Learned Sequence JSON v1 file; the dome's cached composed-
+// layout JSON), not a gap this ticket owes a Console Record shape for -
+// see the registry entries' own comments (docs/action-registry.yaml) and
+// consoleExecuteCommand()'s CONSOLE_OP_ACTION case (src/console/
+// console_module.cpp) for the full reasoning. Asserted here by name for the
+// same reason dome.action.save-sequence's test is: a future accidental
+// wiring (or unwiring) is caught, not folded into the aggregate #220
+// report count.
+void test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
+    runQuery("dome.api.get-sequence");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope() {
+    runQuery("dome.api.get-layout");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
 
 // =============================================================================
 // Test Runner
@@ -3234,6 +3296,8 @@ int main(int, char**) {
     RUN_TEST(test_action_test_sequence_rejects_a_non_dm_name);
     RUN_TEST(test_action_test_sequence_valid_name_queues_through_the_dispatcher);
     RUN_TEST(test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
+    RUN_TEST(test_action_get_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
+    RUN_TEST(test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_scope);
 
     RUN_TEST(test_component_toggle_read_reports_saved_and_active);
     RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
@@ -3358,7 +3422,11 @@ int main(int, char**) {
     RUN_TEST(test_servo_set_position_queues_with_a_valid_pulse_width);
     RUN_TEST(test_servo_set_position_rejects_an_out_of_range_pulse_width);
     RUN_TEST(test_servo_set_position_rejects_a_missing_target);
-    RUN_TEST(test_servo_stop_still_answers_executor_not_ready);
+    RUN_TEST(test_servo_stop_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_stop_accepts_both_as_the_broadcast_target);
+    RUN_TEST(test_servo_stop_rejects_a_missing_target);
+    RUN_TEST(test_servo_stop_rejects_an_unknown_target);
+    RUN_TEST(test_servo_stop_rejects_position_us_as_an_unknown_argument);
     RUN_TEST(test_257_every_direct_action_row_still_dispatches);
 
     return UNITY_END();
