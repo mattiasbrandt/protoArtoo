@@ -92,6 +92,8 @@
                                    // test-sequence's sequenceStart() queue (#259)
 #include "seq_store_index.h"      // SeqIndexEntry, seqStoreIndexAdd()/Clear() -
                                    // dome.action.delete-sequence's own lookup (#259)
+#include "seq_store_test_hooks.h"  // g_test_seq_delete_ok/calls - seqStoreDelete()'s own
+                                    // stub (#259)
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
@@ -123,12 +125,6 @@ static void seedTestSeqIndex(const char* name) {
     e.valid = true;
     seqStoreIndexAdd(e);
 }
-
-// seqStoreDelete()'s own native stub (src/native_test_stubs.cpp) - LittleFS is
-// not compiled into [env:native], so this is what dome.action.delete-sequence's
-// success/failure tests observe instead of a real file removal.
-extern bool g_test_seq_delete_ok;
-extern unsigned g_test_seq_delete_calls;
 
 // =============================================================================
 // Capture sink: records every begin/field/item/result/end call.
