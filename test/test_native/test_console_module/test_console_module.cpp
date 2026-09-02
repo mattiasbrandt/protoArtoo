@@ -2187,6 +2187,58 @@ void test_servo_stop_still_answers_executor_not_ready() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
 }
 
+// #257: g_directActionExecutors[] split into five per-domain tables
+// (include/console_direct_action_{system,drive,sound,aux_rc,servo}.h). Every
+// row's own behavior is already asserted above by name (e.g.
+// test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts,
+// test_direct_set_mood_applies_valid_mood_and_broadcasts, ...); this is the
+// split's own completeness guard, the one the ticket's proof obligation is
+// about - all 20 canonical names the single pre-split table carried, called
+// with no arguments and asserted to still resolve to a real executor. A row
+// silently dropped from a domain header answers EXECUTOR_NOT_READY (no
+// dispatch-table row) or UNKNOWN_OPERATION (not even in the catalog) instead
+// of running its own argument validation - this fails on either, so a future
+// domain-file edit that drops a row fails here even if it also deletes that
+// row's own dedicated test above.
+void test_257_every_direct_action_row_still_dispatches() {
+    static const char* kExpectedDirectActionOperations[] = {
+        "system.action.set-mode",
+        "system.action.sleep",
+        "system.action.wake",
+        "system.action.enable-web-control",
+        "system.action.disable-web-control",
+        "rc.action.toggle-debug",
+        "drive.action.move",
+        "drive.action.speed-preset-slow",
+        "drive.action.speed-preset-normal",
+        "drive.action.speed-preset-turbo",
+        "system.action.set-mood",
+        "system.action.set-identity",
+        "rc.action.test-bindable",
+        "sound.action.play-track",
+        "sound.action.set-volume",
+        "aux.action.led-color",
+        "aux.action.led-effect",
+        "servo.action.open",
+        "servo.action.close",
+        "servo.action.set-position",
+    };
+    static const size_t kExpectedCount =
+        sizeof(kExpectedDirectActionOperations) / sizeof(kExpectedDirectActionOperations[0]);
+
+    for (size_t i = 0; i < kExpectedCount; ++i) {
+        runQuery(kExpectedDirectActionOperations[i]);
+        TEST_ASSERT_FALSE_MESSAGE(g_cap.outcome == CONSOLE_OUTCOME_UNAVAILABLE &&
+                                       g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY,
+                                   kExpectedDirectActionOperations[i]);
+        TEST_ASSERT_FALSE_MESSAGE(g_cap.outcome == CONSOLE_OUTCOME_INVALID &&
+                                       g_cap.reason == CONSOLE_REASON_UNKNOWN_OPERATION,
+                                   kExpectedDirectActionOperations[i]);
+        TEST_ASSERT_TRUE_MESSAGE(g_cap.resultCalled || g_cap.endCalled,
+                                 kExpectedDirectActionOperations[i]);
+    }
+}
+
 // dome.action.dome-sequence and the five dome.api.* rows stay
 // EXECUTOR_NOT_READY too (see the pinned coordinator comment on #221 and
 // this file's own test_action_dome_sequence_still_answers_executor_not_ready
@@ -2351,6 +2403,7 @@ int main(int, char**) {
     RUN_TEST(test_servo_set_position_rejects_an_out_of_range_pulse_width);
     RUN_TEST(test_servo_set_position_rejects_a_missing_target);
     RUN_TEST(test_servo_stop_still_answers_executor_not_ready);
+    RUN_TEST(test_257_every_direct_action_row_still_dispatches);
 
     return UNITY_END();
 }
