@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c5e329a1..b9913a36 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -619,7 +619,7 @@
+   // render it, which is how it filled with 156 lines of the dashboard's own
+   // markup (#261; escaped, so wrong content rather than injection).
+   const isLogTextResponse = (result) =>
+-    String(result?.contentType ?? "").split(";")[0].trim().toLowerCase() === "text/plain";
++    String(result?.contentType ?? "").split(";")[0].trim().toLowerCase().startsWith("text/");
+ 
+   const loadRecentLogs = async ({ handle = null } = {}) => {
+     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");

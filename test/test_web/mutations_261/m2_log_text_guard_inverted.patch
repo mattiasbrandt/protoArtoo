@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c5e329a1..eaa3c704 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -626,7 +626,7 @@
+     if (logLines.length > 0) return;
+     const api = handle ?? window.PAApi;
+     const result = await api.get("/api/logs", { cache: "no-store" });
+-    if (!isLogTextResponse(result)) {
++    if (isLogTextResponse(result)) {
+       // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
+       // history, and we do not know that - we know we never reached its log
+       // endpoint. Show the page's existing unreachable line and reject, so the
