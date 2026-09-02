@@ -236,6 +236,11 @@ void test_typed_excluded_prefix_has_no_candidate(void) {
     for (int i = 0; i < n; ++i) {
         TEST_ASSERT_NULL(strstr(candidates[i], "password"));
     }
+
+    embeddedCliFree(cli);
+}
+
+// -----------------------------------------------------------------------
 // Test 9 (#224): a named operation that is NOT in this build still
 // completes. test_availability_does_not_gate_completion above sweeps the
 // whole catalog and would pass on a board where every row happens to be
