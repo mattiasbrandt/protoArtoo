@@ -231,6 +231,25 @@ void test_parse_valid_utf8_in_quoted_value_is_accepted() {
     TEST_ASSERT_EQUAL_STRING("caf\xC3\xA9", out.items[0].value);
 }
 
+// #221/#227 grill review (added to #221's remainder scope 2026-09-02): the
+// line editor guarantees nothing about codepoint boundaries - it backspaces
+// one BYTE at a time, so it will happily let an operator delete only the
+// trailing continuation byte of a multi-byte character and submit what is
+// left. This is that exact scenario, not an arbitrary/synthetic truncation:
+// the operator typed "caf\xC3\xA9" (café, a valid two-byte-terminated value -
+// see test_parse_valid_utf8_in_quoted_value_is_accepted() just above), then
+// backspaced once, removing only \xA9 and leaving the \xC3 lead byte with no
+// continuation at all. consoleParseArgs() must reject it through the same
+// consoleUtf8Valid() call the parser itself makes (include/console_args.h:249,
+// docs/console-protocol.md s.1.2/1.3) - test_cli_utf8_ingestion only proves
+// this byte sequence survives being TYPED into the line buffer; it says
+// nothing about the parser's rejection path this test covers.
+void test_parse_mid_value_edit_broken_multibyte_is_malformed() {
+    char args[] = "label=\"caf\xC3\"";  // "café" minus its last (backspaced) byte
+    ConsoleArgs out = {};
+    TEST_ASSERT_EQUAL(CONSOLE_ARGS_PARSE_MALFORMED, consoleParseArgs(args, &out));
+}
+
 // More pairs than CONSOLE_ARGS_MAX: rejected explicitly, not silently
 // truncated to the first N.
 void test_parse_too_many_pairs_is_too_many() {
@@ -466,6 +485,7 @@ int main(int, char**) {
     RUN_TEST(test_parse_junk_after_closing_quote_is_malformed);
     RUN_TEST(test_parse_invalid_utf8_in_quoted_value_is_malformed);
     RUN_TEST(test_parse_valid_utf8_in_quoted_value_is_accepted);
+    RUN_TEST(test_parse_mid_value_edit_broken_multibyte_is_malformed);
     RUN_TEST(test_parse_too_many_pairs_is_too_many);
     RUN_TEST(test_parse_exactly_max_pairs_is_ok);
     RUN_TEST(test_parse_length_mismatch_embedded_nul_is_malformed);
