@@ -48,6 +48,11 @@ typedef struct {
     double range_min;
     double range_max;
     const char* const* enum_values;  // NULL-terminated allowed-value strings, or NULL
+    bool write_excluded;   // registry `write_excluded: true`: the parameter exists and is
+                           // documented, but the Console never accepts a value for it - a
+                           // secret (docs/console-protocol.md s.4.1). `help` renders it as
+                           // write-excluded rather than required/optional, and the operation's
+                           // executor refuses it before its Apply Core sees it.
 } ConsoleParamDescriptor;
 
 // Operation descriptor

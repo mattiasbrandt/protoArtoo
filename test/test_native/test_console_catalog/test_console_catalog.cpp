@@ -40,7 +40,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(191, count);  // Registry has 191 entries
+    TEST_ASSERT_EQUAL_INT(192, count);  // Registry has 192 entries
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;
@@ -350,6 +350,36 @@ void tearDown(void) {
     // No cleanup needed
 }
 
+// The write-excluded parameter marker (#227). A registry param carrying
+// `write_excluded: true` reaches the in-image catalog as a real flag, not
+// only as prose in the FS-resident help text - that flag is what `help`
+// renders as "write-excluded" and what tells a reader the field is known
+// and documented but never settable from the Console
+// (docs/console-protocol.md s.4.1). Both WiFi password params carry it;
+// every settable param on the same entry must not, or the marker would say
+// nothing.
+void test_write_excluded_marks_only_the_wifi_password_params() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("wifi.config.settings");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(entry->params);
+
+    int excluded = 0;
+    int settable = 0;
+    for (const ConsoleParamDescriptor* p = entry->params; p->name != NULL; ++p) {
+        if (p->write_excluded) {
+            excluded++;
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(p->name, "password"),
+                "only a password-valued param may be marked write-excluded");
+        } else {
+            settable++;
+            TEST_ASSERT_NULL_MESSAGE(strstr(p->name, "password"),
+                "a password param must never be settable");
+        }
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, excluded, "sta-password and ap-password are write-excluded");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(3, settable, "mode, sta-ssid and ap-ssid stay settable");
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -386,6 +416,9 @@ int main(void) {
     // Enum value integrity tests (#249)
     RUN_TEST(test_aux_led_effect_enum_contains_off_not_false);
     RUN_TEST(test_play_banked_bank_enum_has_all_26_letters);
+
+    // Write-excluded parameter marker (#227)
+    RUN_TEST(test_write_excluded_marks_only_the_wifi_password_params);
 
     UNITY_END();
 

@@ -79,168 +79,178 @@ static const char* const g_enum_servo_action_stop_target[] = { "arm1", "arm2", "
 static const char* const g_enum_aux_action_led_effect_effect[] = { "solid", "blink", "pulse", "off", NULL };
 static const char* const g_enum_aux_config_led_pin_aux_led_pin[] = { "0", "1", "2", "3", NULL };
 static const char* const g_enum_system_action_set_mood_mood[] = { "10", "11", "13", "14", NULL };
+static const char* const g_enum_wifi_config_settings_mode[] = { "client", "standalone_ap", NULL };
 
-// Total enum-value arrays: 11
+// Total enum-value arrays: 12
 
 static const ConsoleParamDescriptor g_params_drive_action_move[] = {
-    {"speed", "int16", true, true, -1000.0, 1000.0, NULL},
-    {"steer", "int16", true, true, -1000.0, 1000.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"speed", "int16", true, true, -1000.0, 1000.0, NULL, false},
+    {"steer", "int16", true, true, -1000.0, 1000.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed[] = {
-    {"value", "float", true, true, -1.0, 1.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_steer[] = {
-    {"value", "float", true, true, -1.0, 1.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_slow[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_slow_preset},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_slow_preset, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_normal[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_normal_preset},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_normal_preset, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_turbo[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_turbo_preset},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_turbo_preset, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_move[] = {
-    {"speed", "float", true, true, -1.0, 1.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"speed", "float", true, true, -1.0, 1.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_get_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_delete_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_test_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_play_track[] = {
-    {"track", "uint16", true, true, 1.0, 999.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"track", "uint16", true, true, 1.0, 999.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_get_catalog[] = {
-    {"bank", "uint8", false, true, 1.0, 6.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"bank", "uint8", false, true, 1.0, 6.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_play_banked[] = {
-    {"bank", "uint8", true, true, 1.0, 6.0, NULL},
-    {"page", "string", true, false, 0.0, 0.0, g_enum_sound_api_play_banked_page},
-    {"index", "uint16", true, true, 1.0, 65535.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"bank", "uint8", true, true, 1.0, 6.0, NULL, false},
+    {"page", "string", true, false, 0.0, 0.0, g_enum_sound_api_play_banked_page, false},
+    {"index", "uint16", true, true, 1.0, 65535.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_mood_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_category_range[] = {
-    {"lo_key", "string", true, false, 0.0, 0.0, NULL},
-    {"hi_key", "string", true, false, 0.0, 0.0, NULL},
-    {"lo", "uint16", true, false, 0.0, 0.0, NULL},
-    {"hi", "uint16", true, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"lo_key", "string", true, false, 0.0, 0.0, NULL, false},
+    {"hi_key", "string", true, false, 0.0, 0.0, NULL, false},
+    {"lo", "uint16", true, false, 0.0, 0.0, NULL, false},
+    {"hi", "uint16", true, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_mood_category_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_open[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_open_target},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_open_target, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_close[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_close_target},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_close_target, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_set_position[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_set_position_target},
-    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_set_position_target, false},
+    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_stop[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_stop_target},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_stop_target, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_color[] = {
-    {"r", "uint8", true, true, 0.0, 255.0, NULL},
-    {"g", "uint8", true, true, 0.0, 255.0, NULL},
-    {"b", "uint8", true, true, 0.0, 255.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"r", "uint8", true, true, 0.0, 255.0, NULL, false},
+    {"g", "uint8", true, true, 0.0, 255.0, NULL, false},
+    {"b", "uint8", true, true, 0.0, 255.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_effect[] = {
-    {"effect", "string", true, false, 0.0, 0.0, g_enum_aux_action_led_effect_effect},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"effect", "string", true, false, 0.0, 0.0, g_enum_aux_action_led_effect_effect, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_pin[] = {
-    {"aux_led_pin", "uint8", true, false, 0.0, 0.0, g_enum_aux_config_led_pin_aux_led_pin},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"aux_led_pin", "uint8", true, false, 0.0, 0.0, g_enum_aux_config_led_pin_aux_led_pin, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_count[] = {
-    {"aux_led_count", "uint8", true, true, 1.0, 255.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"aux_led_count", "uint8", true, true, 1.0, 255.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_mood[] = {
-    {"mood", "uint8", true, false, 0.0, 0.0, g_enum_system_action_set_mood_mood},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"mood", "uint8", true, false, 0.0, 0.0, g_enum_system_action_set_mood_mood, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+};
+
+static const ConsoleParamDescriptor g_params_wifi_config_settings[] = {
+    {"mode", "string", false, false, 0.0, 0.0, g_enum_wifi_config_settings_mode, false},
+    {"sta-ssid", "string", false, false, 0.0, 0.0, NULL, false},
+    {"ap-ssid", "string", false, false, 0.0, 0.0, NULL, false},
+    {"sta-password", "string", false, false, 0.0, 0.0, NULL, true},
+    {"ap-password", "string", false, false, 0.0, 0.0, NULL, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_identity[] = {
-    {"droidName", "string", true, false, 0.0, 0.0, NULL},
-    {"mdnsUseName", "bool", false, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"droidName", "string", true, false, 0.0, 0.0, NULL, false},
+    {"mdnsUseName", "bool", false, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_rc_action_test_bindable[] = {
-    {"token", "string", true, false, 0.0, 0.0, NULL},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator
+    {"token", "string", true, false, 0.0, 0.0, NULL, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
 };
 
 // =============================================================================
@@ -2558,6 +2568,21 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         true,  // is_query
     },
     {
+        "wifi.config.settings",
+        "config",
+        NULL,  // aliases
+        g_params_wifi_config_settings,
+        1,  // available_on_board
+        1,  // available_in_build
+        false,  // requires_web_control
+        false,  // safety_critical
+        true,  // executor_ready
+        21951,  // help_offset
+        375,  // help_length
+        NULL,  // fields
+        true,  // is_query
+    },
+    {
         "dome.status.serial-link",
         "status",
         NULL,  // aliases
@@ -2567,7 +2592,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        21951,  // help_offset
+        22327,  // help_offset
         116,  // help_length
         g_fields_dome_status_serial_link,  // fields
         true,  // is_query
@@ -2582,7 +2607,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        22068,  // help_offset
+        22444,  // help_offset
         108,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2597,7 +2622,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        22177,  // help_offset
+        22553,  // help_offset
         198,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2612,7 +2637,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        22376,  // help_offset
+        22752,  // help_offset
         352,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2627,7 +2652,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        22729,  // help_offset
+        23105,  // help_offset
         265,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2642,7 +2667,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        22995,  // help_offset
+        23371,  // help_offset
         141,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2657,7 +2682,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        23137,  // help_offset
+        23513,  // help_offset
         138,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2672,7 +2697,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        23276,  // help_offset
+        23652,  // help_offset
         208,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2687,7 +2712,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        23485,  // help_offset
+        23861,  // help_offset
         123,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2702,7 +2727,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        23609,  // help_offset
+        23985,  // help_offset
         252,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2717,7 +2742,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        23862,  // help_offset
+        24238,  // help_offset
         140,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2732,7 +2757,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24003,  // help_offset
+        24379,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2747,7 +2772,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24122,  // help_offset
+        24498,  // help_offset
         191,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2762,7 +2787,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24314,  // help_offset
+        24690,  // help_offset
         120,  // help_length
         NULL,  // fields
         false,  // is_query
@@ -2777,7 +2802,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24435,  // help_offset
+        24811,  // help_offset
         125,  // help_length
         g_fields_rc_status_snapshot,  // fields
         true,  // is_query
@@ -2792,7 +2817,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24561,  // help_offset
+        24937,  // help_offset
         104,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2807,7 +2832,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24666,  // help_offset
+        25042,  // help_offset
         148,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2822,7 +2847,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24815,  // help_offset
+        25191,  // help_offset
         85,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2837,7 +2862,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        24901,  // help_offset
+        25277,  // help_offset
         195,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2852,7 +2877,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         true,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25097,  // help_offset
+        25473,  // help_offset
         177,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2867,7 +2892,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25275,  // help_offset
+        25651,  // help_offset
         96,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2882,7 +2907,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25372,  // help_offset
+        25748,  // help_offset
         152,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2897,7 +2922,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25525,  // help_offset
+        25901,  // help_offset
         125,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2912,7 +2937,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25651,  // help_offset
+        26027,  // help_offset
         149,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2927,7 +2952,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25801,  // help_offset
+        26177,  // help_offset
         139,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2942,7 +2967,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        25941,  // help_offset
+        26317,  // help_offset
         154,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2957,7 +2982,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26096,  // help_offset
+        26472,  // help_offset
         152,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2972,7 +2997,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26249,  // help_offset
+        26625,  // help_offset
         147,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -2987,7 +3012,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26397,  // help_offset
+        26773,  // help_offset
         157,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3002,7 +3027,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26555,  // help_offset
+        26931,  // help_offset
         165,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3017,7 +3042,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26721,  // help_offset
+        27097,  // help_offset
         168,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3032,7 +3057,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        26890,  // help_offset
+        27266,  // help_offset
         174,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3047,7 +3072,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        27065,  // help_offset
+        27441,  // help_offset
         196,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3062,7 +3087,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        27262,  // help_offset
+        27638,  // help_offset
         171,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3077,7 +3102,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        27434,  // help_offset
+        27810,  // help_offset
         156,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3092,7 +3117,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        27591,  // help_offset
+        27967,  // help_offset
         198,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3107,7 +3132,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        27790,  // help_offset
+        28166,  // help_offset
         215,  // help_length
         NULL,  // fields
         true,  // is_query
@@ -3122,7 +3147,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         true,  // executor_ready
-        28006,  // help_offset
+        28382,  // help_offset
         161,  // help_length
         NULL,  // fields
         true,  // is_query

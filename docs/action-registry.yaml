@@ -5,7 +5,7 @@
 # Naming convention:
 #   name:          {domain}.{type}.{verb-noun}  — dots between structural segments, kebab within
 #   display_name:  Short operator-facing label; domain and type are NOT repeated here
-#   domain:        drive | dome | sound | servo | system | rc | aux
+#   domain:        drive | dome | sound | servo | system | rc | aux | wifi
 #   type:          action (command/intent) | status (observable state) |
 #                  event (SSE emission) | config (NVS-backed setting)
 #
@@ -3121,6 +3121,49 @@ entries:
   - staSsid
   - wifiRssi
   - networkRecovery
+- name: wifi.config.settings
+  display_name: WiFi Settings
+  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi provisioning page.
+  domain: wifi
+  type: config
+  marcduino_cmd: null
+  api_path: /api/wifi
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources:
+  - internal
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: mode
+    type: string
+    values:
+    - client
+    - standalone_ap
+    required: false
+  - name: sta-ssid
+    type: string
+    required: false
+  - name: ap-ssid
+    type: string
+    required: false
+  - name: sta-password
+    type: string
+    required: false
+    write_excluded: true
+  - name: ap-password
+    type: string
+    required: false
+    write_excluded: true
+  nvs_keys:
+  - wifi_prov
+  - wifi_mode
+  - wifi_sta_ssid
+  - wifi_sta_pw
+  - wifi_ap_ssid
+  - wifi_ap_pw
+  executor: wifiApply
 - name: dome.status.serial-link
   display_name: Dome Serial Link
   description: Dome serial link status and heartbeat timing
