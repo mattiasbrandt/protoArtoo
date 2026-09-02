@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c677e9d6..f1344105 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -570,7 +570,7 @@
+   // holds - the next appendLogLine() appends to a panel that no longer matches
+   // its own model.
+   const renderLogNotice = (message) => {
+-    if (!logConsole || logLines.length > 0) return;
++    if (!logConsole) return;
+     logConsole.innerHTML = logEntryHtml(makeLogEntry(message, { timestamp: "--:--:--" }));
+   };
+ 
