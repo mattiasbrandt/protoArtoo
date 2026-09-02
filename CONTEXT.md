@@ -435,6 +435,18 @@ _Avoid_: endpoint probing, feature detection, available (unqualified — that wo
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
 _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
 
+**WiFi Module**:
+The operator-facing name for a wireless co-processor fitted to a Board Variant - on firebeetle2, the ESP32-C6 that serves Hosted WiFi over SDIO. "Co-processor" stays the internal term; operators see **WiFi module**, the same translation Feature Availability makes when it renders "not in this build" as *Not included*. Boards without one report it as not on this board, so artoo-esp32 owners meet the name too.
+_Avoid_: co-processor (in operator copy), C6, slave, radio module (see Flagged Ambiguities), network module
+
+**WiFi Module Update**:
+Replacing the firmware running on the **WiFi Module**, host-to-module over the existing SDIO link. A third update object beside Firmware Update and Filesystem Update, and never a second kind of firmware update: it is a different chip, a different transport, and it cannot be performed by the same flow.
+_Avoid_: C6 slave OTA, slave-image update, firmware update (for this object), FireBeetle OTA
+
+**WiFi Module Update Support**:
+Whether the firmware currently on a **WiFi Module** answers the update RPCs, in three states: **unknown** (the module is not on the bus, so it was never asked), **not supported** (it answered the link but refused the RPCs - permanent for that image, and the wired path is the only route), and **supported**. Unlike **Feature Availability** it is a fact about an image protoArtoo does not build and cannot declare, so it is discovered by attempt rather than declared - the one sanctioned exception to the no-probing rule, which exists to stop us probing our own features. Unknown is never rendered as not supported: one is a module to go and check, the other is a trip to the wires.
+_Avoid_: WiFi module capability (the glossary already carries two meanings for "capability"), slave OTA support, feature detection, treating an unreadable version as version 0.0.0
+
 **Network-Optional Operation**:
 The droid's defined functions — RC drive, dome, sound, servos, and every safety path — never depend on a network backend being fitted, configured, or reachable. A Board Variant may declare no network backend at all. A network that is absent or down removes only the web UI and web-only operations; it never restarts the controller and never degrades a droid function. Persistent network failure is announced by the droid itself (sound, dome text, serial log), not only through the web UI (ADR 0032).
 _Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
@@ -595,3 +607,5 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified.
 - "dome" was used at once for the body's dome-rotation actuator, the **protoR2link** communications link, and the dome's panel/sequence system; resolved by keeping **Dome ESC** (the actuator), **protoR2link** (the link), and **Dome Layout View Model** (the panel read-model) as separate terms, never grouped under a bare "Dome" label (ADR 0033).
 - Component Toggle identifiers (`arm1`/`s1_hoverboard`/etc.) were named after the artoo.uk PCB's own silkscreen legend; resolved by making the identifier generic project vocabulary and moving the board-specific text into a **Board Component Label** (ADR 0033).
+- "OTA" and "firmware update" each named two unrelated things: replacing the controller's own image (host, over WiFi, ArduinoOTA :3232) and replacing the fitted co-processor's image (host-to-module, over SDIO); resolved by keeping **Firmware Update** for the controller and naming the second a **WiFi Module Update**. Issue #241 was retitled for exactly this confusion.
+- "radio module" was proposed as the operator noun for the **WiFi Module** and rejected: "radio" already means the RC gear to a droid builder, and in this codebase it already means a radio-button input (`data/wifi.html:77,84`, `data/rc.js:797,934`) - on the two pages the control would sit nearest. The residual risk of **WiFi module** is accepted knowingly: the same chip can serve Bluetooth (`hostedInitBLE()`), so if protoArtoo ever uses it for BLE the name needs revisiting, and a rename is a real change rather than a copy tweak.
