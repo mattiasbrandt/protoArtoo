@@ -484,12 +484,16 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:147 - webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet)
-  - src/web/api_profiler.cpp:627 - void handleProfilerGet(WebRequest& req)
-  - src/web/api_profiler.cpp:641 - buildProfilerJson(body, kProfilerBodySize) called
-  - src/web/api_profiler.cpp:500 - defined, generates profiler JSON response
-  executor_or_core: buildProfilerJson
+  - include/api_profiler.h:148 - void profilerRead(ProfilerReading* out)
+  - src/web/api_profiler.cpp:464 - profilerRead definition, one consistent read of the muxed state
+  - src/web/api_profiler.cpp:529 - buildProfilerJson renders that reading as JSON
+  - src/console/console_module.cpp:796 - consoleExecuteSystemApiGetProfiler renders the same reading as records
+  executor_or_core: profilerRead
+  notes: >-
+    Gated by PA_HEAP_PROFILE. Issue 224 extracted profilerRead() from the
+    handler so the Console and GET /api/profiler share one read; the handler is
+    now an adapter over it rather than the only reader of the profiler muxes.
   missing_metadata: []
-  notes: Gated by PA_HEAP_PROFILE; handler directly queries heap
 - name: system.api.get-validation
   type: action
   registry_api_path: /api/validation

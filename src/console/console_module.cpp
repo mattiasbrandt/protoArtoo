@@ -100,6 +100,13 @@
 #include "sequence_run_evidence.h"  // SeqRunEvidence, seqEvidenceSnapshot(), seqRunOutcomeName() -
                                      // dome.api.get-sequence-last-run below, the same snapshot
                                      // GET /api/seq/last-run serializes (src/seq_last_run_json.cpp)
+#include "api_profiler.h"           // ProfilerReading, profilerRead(), profilerRequestTrace*() -
+                                     // the shared read GET /api/profiler renders as JSON and
+                                     // system.api.get-profiler renders as records (#224). Included
+                                     // unconditionally: its reading types are plain data and exist
+                                     // on every build, only the functions that fill them are behind
+                                     // PA_HEAP_PROFILE.
+#include "console_profiler_view.h"  // consoleEmitProfilerReading() - that rendering
 
 static const char* TAG = "Console";
 
@@ -767,6 +774,33 @@ static void consoleExecuteDomeApiListBuiltinSequences(uint32_t requestId,
     }
 }
 
+#if PA_HEAP_PROFILE
+// system.api.get-profiler (#224). Registered only on a profiler build, and
+// only reachable there: consoleExecuteCommand()'s build guard answers
+// not-in-this-build for this row on every other image before dispatch is
+// consulted at all, so a row registered unconditionally would be dead weight
+// in the flash table of every non-profiler build.
+//
+// profilerRead() (include/api_profiler.h) is the same one-shot read
+// buildProfilerJson() renders; the Console does not reach into the profiler's
+// muxed state itself, and does not emit JSON. The rendering lives in
+// include/console_profiler_view.h so that the half of this executor a host can
+// exercise - field names, item shapes, the measurement disclosure - is
+// compiled into the native test binary even though the measurement itself is
+// ESP32-only.
+//
+// The reading is a ~500-byte stack local, not a static: consoleExecuteCommand()
+// is entered from both the Console task and the web request handler, and
+// nothing serialises them yet (#229 owns that), so a shared static buffer
+// would let one adapter's in-flight snapshot corrupt the other's.
+static void consoleExecuteSystemApiGetProfiler(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ProfilerReading reading = {};
+    profilerRead(&reading);
+    consoleEmitProfilerReading(requestId, reading, profilerRequestTraceCount(),
+                               profilerRequestTraceAt, sink);
+}
+#endif  // PA_HEAP_PROFILE
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -795,6 +829,9 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"dome.api.get-sequence-last-run", consoleExecuteDomeApiGetSequenceLastRun},
     {"dome.api.list-sequences", consoleExecuteDomeApiListSequences},
     {"dome.api.list-builtin-sequences", consoleExecuteDomeApiListBuiltinSequences},
+#if PA_HEAP_PROFILE
+    {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
+#endif
 };
 static const size_t kStatusExecutorCount =
     sizeof(g_statusExecutors) / sizeof(g_statusExecutors[0]);

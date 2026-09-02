@@ -432,20 +432,21 @@ void test_operations_delivers_the_full_catalog_terminated_by_end() {
         "operations must reach the system.* domain, not just the first ~30 catalog entries");
 }
 
-// Registry has exactly 17 status-type entries (docs/action-registry.yaml) -
+// Registry has exactly 18 status-type entries (docs/action-registry.yaml) -
 // few enough to fit under the web response cap with room for begin/end, so
 // this filtered case can assert the exact, complete count. Was 14 before
 // #221's remainder reclassified dome.api.get-sequence-last-run/
 // -list-sequences/-list-builtin-sequences from type: action to type: status
 // (the only way to route them through g_statusExecutors[], src/console/
-// console_module.cpp).
+// console_module.cpp), and 17 before #224 reclassified
+// system.api.get-profiler the same way and for the same reason.
 void test_operations_type_filter_lists_only_that_type() {
     WebRequestTestBackend backend;
     runCommand(backend, "operations type=status");
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
-    TEST_ASSERT_EQUAL_UINT_MESSAGE(17, countRecordsOfType(backend.sentBody, "item"),
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(18, countRecordsOfType(backend.sentBody, "item"),
         "operations type=status must list every status entry, no more, no less");
 
     JsonDocument doc;

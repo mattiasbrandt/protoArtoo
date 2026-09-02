@@ -155,7 +155,7 @@ wifi.config.settings|WiFi Settings|How the controller gets on WiFi - joining you
 dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|
 system.action.set-identity|Set Droid Identity|Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in|configCacheApply|droidName:string:1|mdnsUseName:bool:0
-system.api.get-profiler|Get Heap Profiler Snapshot|Heap/stack diagnostics snapshot: global heap free/min/largest-block, fragmentation ratio, per-task stack high-water marks, mode-scoped low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING) per-task heap stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).\n|buildProfilerJson|
+system.api.get-profiler|Get Heap Profiler Snapshot|Heap/stack diagnostics snapshot: global heap free/min/largest-block, fragmentation ratio, per-task stack high-water marks, mode-scoped low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING) per-task heap stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).\n|profilerRead|
 system.action.profiler-trace-start|Start Heap Trace|Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires the profiler and SDK heap-tracing support).\n|heap_trace_start|
 system.action.profiler-trace-stop|Stop Heap Trace|Stop the running Tier 3 heap leak trace and dump results to the serial log|heap_trace_stop|
 system.api.get-coredump-status|Get Coredump Status|Whether a PANIC coredump image is present in the coredump partition, and its size|none|

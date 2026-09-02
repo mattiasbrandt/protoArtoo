@@ -957,16 +957,18 @@ void test_event_stream_status_entry_answers_not_executable() {
 // lands. This is the automated form of the "executor-not-ready count" the
 // ticket requires reported: this test fails the moment that count is nonzero.
 //
-// system.status.logs is NOT swept by this loop even though it now has a real
-// dispatch row (#239): `entry.is_query` here comes from the COMPILED catalog
-// (include/console_catalog.h / src/console/console_catalog.cpp), generated
-// from docs/action-registry.yaml by tools/generate_console_catalog.py, which
-// #239 deliberately did not re-run - doing so would rewrite data/console_help.txt
-// (fenced on that ticket) and shift every later entry's help-text offset,
-// since the corrected `executor:` string is a different length. The compiled
-// is_query for that one row therefore still reads false until the next
-// unrelated regen; system.status.logs gets its own direct test below instead
-// of relying on this sweep.
+// system.status.logs used to be excluded from this sweep: #239 wired it but
+// could not re-run tools/generate_console_catalog.py, because data/console_help.txt
+// was fenced on that ticket, so the COMPILED catalog still carried
+// is_query: false for it. A later unrelated regeneration has since picked the
+// registry's own is_query: true up, so the row is swept like any other and
+// keeps its own direct tests below as well.
+//
+// A row that is out of this build never reaches a dispatch table at all -
+// consoleExecuteCommand()'s build guard (#224) answers not-in-this-build
+// first - so it cannot report EXECUTOR_NOT_READY here either. That is why
+// system.api.get-profiler, an is_query: true status row registered only on a
+// PA_HEAP_PROFILE build, passes this sweep in a native binary.
 void test_no_status_entry_is_executor_not_ready() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -3655,6 +3657,21 @@ void test_operations_lists_out_of_build_rows_with_the_reason_execution_gives() {
     TEST_ASSERT_GREATER_THAN(0, checked);
 }
 
+// #224 reclassified system.api.get-profiler from type: action to type: status
+// with is_query: true (docs/action-registry.yaml, the same move #221 made for
+// the dome.api.* queries). Asserted against the COMPILED catalog so a future
+// registry edit or a lost regeneration is caught here rather than by the row
+// quietly answering through the action path, which emits a single result
+// record and has no shape for a snapshot.
+void test_profiler_snapshot_is_registered_as_an_item_based_query() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("system.api.get-profiler");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_STRING(CONSOLE_CATALOG_TYPE_STATUS, entry->type);
+    TEST_ASSERT_TRUE(entry->is_query);
+    TEST_ASSERT_NULL_MESSAGE(entry->fields,
+                             "item-based query: no fields: list, like system.status.logs");
+}
+
 // `help <op>` describes an operation that is not in this build - it does not
 // refuse it. available_in_build is one of the catalog fields help already
 // renders (consoleEmitHelpForOperation, #219 D3); this asserts it stays that
@@ -3921,6 +3938,7 @@ int main(int, char**) {
     RUN_TEST(test_every_out_of_build_row_answers_not_in_this_build);
     RUN_TEST(test_every_off_board_row_answers_not_on_this_board);
     RUN_TEST(test_operations_lists_out_of_build_rows_with_the_reason_execution_gives);
+    RUN_TEST(test_profiler_snapshot_is_registered_as_an_item_based_query);
     RUN_TEST(test_help_describes_an_operation_that_is_not_in_this_build);
 
     return UNITY_END();
