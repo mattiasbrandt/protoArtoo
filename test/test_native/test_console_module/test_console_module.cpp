@@ -3687,6 +3687,160 @@ void test_help_describes_an_operation_that_is_not_in_this_build() {
 }
 
 // =============================================================================
+// Availability reason matrix (#224 acceptance criterion 3)
+//
+// Each of the five availability reasons (docs/console-protocol.md s.3.3),
+// produced by ONE REAL OPERATION driven through consoleExecuteCommand() - the
+// entry point both adapters call - rather than by asserting on
+// consoleReasonString() or on a hand-built record. Named as a matrix here even
+// where a behaviour test above already covers the same path, because "every
+// category is produced by something real" is itself the criterion, and reading
+// it off five scattered tests is what lets one of them quietly stop covering
+// its category.
+//
+// not-on-this-board is the one exception, and it is a report rather than a
+// test: no catalog row is off-board in any image that exists, so no real
+// operation can produce it. See
+// test_every_off_board_row_answers_not_on_this_board above for the sweep and
+// the reason.
+// =============================================================================
+
+// 1/5 not-in-this-build: the profiler snapshot on an image built without
+// PA_HEAP_PROFILE, which [env:native] is.
+void test_reason_matrix_not_in_this_build() {
+    runQuery("system.api.get-profiler");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+// 2/5 component-disabled: the Dome ESC Component Toggle off (ADR 0027). The
+// dome hardware is not addressed at all here - the executor reads the config
+// cache the toggle writes.
+void test_reason_matrix_component_disabled_from_a_component_toggle_off() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = false;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+}
+
+// 3/5 blocked-by-state: estop latched. The guard core is the same one
+// POST /api/drive runs (evaluateActionTestGuard()/driveArbiterSubmit()).
+void test_reason_matrix_blocked_by_state_from_estop() {
+    robotState.webControlEnabled = true;
+    robotState.estop = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// 3/5 again, the other state rule the criterion names: sleep.
+void test_reason_matrix_blocked_by_state_from_sleep() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+    robotState.sleepMode = true;
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// 4/5 temporarily-unavailable: the shared config-write mutex already held by
+// the other adapter mid-write - "busy right now; try again", and the reason
+// the Console must not simply queue behind it.
+void test_reason_matrix_temporarily_unavailable_from_a_busy_config_write() {
+    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    paStubMutexReset();
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // simulate the OTHER Console adapter mid-write
+
+    runQuery("system.config.enable_arm1 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+
+    paStubMutexReset();  // release the simulated hold for later tests
+}
+
+// 4/5 again, the queue half: the dispatch core refusing an action right now.
+void test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kBlockedByState;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+}
+
+// =============================================================================
+// Availability is re-evaluated at execution, not cached from discovery
+// (#224 acceptance criterion 4, docs/console-protocol.md s.3.3)
+//
+// The build and board reasons are compile-time and cannot change while the
+// image runs; the three state-driven ones can, and that is where "cached from
+// discovery" would be a real defect - an operator who lists the catalog, then
+// disarms something, then runs a command, must get the state at the moment
+// they ran it.
+// =============================================================================
+
+// `operations` lists the row as available, then the Component Toggle goes off,
+// then the SAME operation refuses. Discovery is not consulted at execution.
+void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answer() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+
+    runOperationsListing();
+    const char* listed = listedOperationItem("dome.action.move");
+    TEST_ASSERT_NOT_NULL(listed);
+    TEST_ASSERT_NULL_MESSAGE(strstr(listed, "component-disabled"),
+                             "discovery reports the catalog, not live component state");
+
+    runQuery("dome.action.move speed=0.5");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+
+    // The operator turns the Dome ESC off after listing the catalog.
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = false;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason,
+                              "execution must read the toggle now, not when the catalog was listed");
+}
+
+// The same guarantee for a safety state: the identical command answers
+// differently either side of an estop, with no discovery in between to
+// invalidate.
+void test_estop_latched_after_a_successful_run_changes_the_execution_answer() {
+    robotState.webControlEnabled = true;
+
+    // A drive frame reaches the arbiter directly rather than a queue, so the
+    // success outcome is APPLIED (include/console_direct_action_drive.h).
+    runQuery("drive.action.move speed=100 steer=0");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    robotState.estop = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -3940,6 +4094,15 @@ int main(int, char**) {
     RUN_TEST(test_operations_lists_out_of_build_rows_with_the_reason_execution_gives);
     RUN_TEST(test_profiler_snapshot_is_registered_as_an_item_based_query);
     RUN_TEST(test_help_describes_an_operation_that_is_not_in_this_build);
+
+    RUN_TEST(test_reason_matrix_not_in_this_build);
+    RUN_TEST(test_reason_matrix_component_disabled_from_a_component_toggle_off);
+    RUN_TEST(test_reason_matrix_blocked_by_state_from_estop);
+    RUN_TEST(test_reason_matrix_blocked_by_state_from_sleep);
+    RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_config_write);
+    RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core);
+    RUN_TEST(test_a_component_toggle_flipped_after_discovery_changes_the_execution_answer);
+    RUN_TEST(test_estop_latched_after_a_successful_run_changes_the_execution_answer);
 
     return UNITY_END();
 }
