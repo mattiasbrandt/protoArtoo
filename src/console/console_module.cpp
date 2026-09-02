@@ -53,6 +53,10 @@
 #include "api_config.h"        // configCommitApplied() - the ADR 0034 Commit Step beside
                                // configApply(), shared verbatim with handleConfigPost (#226)
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
+#include "api_wifi_apply.h"    // wifiApply(), wifiCommitApplied() - the POST /api/wifi
+                               // Apply Core and its ADR 0034 Commit Step, shared verbatim
+                               // with handleWifiPost (#227; the Commit Step was extracted
+                               // for exactly this second caller in that ticket's phase 1)
 #include "api_helpers.h"       // parseBoolValue() - reused verbatim for rc.action.toggle-debug's
                                // enabled= argument, matching src/web/api_rc.cpp's own JSON body parse
 #include "commanded_modes.h"   // commandedSetStationary/Sleep/WebControl/RcDebug() - Commanded
@@ -237,8 +241,15 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
             size_t remaining = sizeof(paramsBuf) - used;
             if (remaining <= 1) break;
+            // A write-excluded param displaces required/optional rather than
+            // adding a fourth token: the field is documented so an operator
+            // can see it exists, and "write-excluded" is the whole answer to
+            // whether it can be supplied (docs/console-protocol.md s.4.1).
+            // Where to set it instead is the entry's own description.
+            const char* disposition = p->write_excluded ? "write-excluded"
+                                                        : (p->required ? "required" : "optional");
             int n = snprintf(paramsBuf + used, remaining, "%s%s:%s:%s", (used > 0) ? "," : "",
-                            p->name, p->type, p->required ? "required" : "optional");
+                            p->name, p->type, disposition);
             if (n < 0) break;
             used += ((size_t)n < remaining) ? (size_t)n : (remaining - 1);
         }
@@ -1528,6 +1539,330 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 }
 
 // =============================================================================
+// Private: wifi.config.settings - the Console's one GROUPED config write
+// (#227). Unlike every scalar row above, this operation's fields are only
+// meaningful as a set: a client posture needs a station SSID, an AP posture
+// needs an AP SSID, and "half applied" is not a state Device WiFi Settings
+// has. So it cannot go through consoleWriteScalarConfigField(); it validates
+// the whole set in one call to the POST /api/wifi Apply Core (wifiApply(),
+// ADR 0011) and then persists and stages through that core's Commit Step
+// (wifiCommitApplied(), ADR 0034, extracted ahead of this path by #227's
+// first phase). Neither the WiFi rules nor the post-apply side effects are
+// re-implemented here - this section only translates Console arguments into
+// the core's ConfigParamSource and the core's verdict into a Console Record.
+// =============================================================================
+
+// The two vocabularies this operation has to reconcile, and no third one.
+// LEFT is the Console argument key: kebab-case, like every token the protocol
+// defines (ADR 0034), and exactly what docs/action-registry.yaml declares as
+// this row's params: - the spelling docs/console-protocol.md s.1 already
+// shows (`wifi.config.settings mode=client sta-ssid="Workshop WiFi"`). RIGHT
+// is the parameter name src/web/api_wifi_apply.cpp's own configParamGet()
+// lookups use, copied verbatim: those are POST /api/wifi's body keys and are
+// deliberately NOT renamed, because HTTP depends on them.
+//
+// The password fields are absent on purpose. They are real parameters of the
+// Apply Core and real rows in the registry (marked write_excluded there), but
+// they have no Console key at all: consoleWifiSettingsParamGet() below
+// answers NULL for them unconditionally, and wifiApply() reads NULL as "not
+// supplied - keep the stored value" (include/api_wifi_apply.h), so this
+// adapter cannot set a password even if one somehow reached it.
+struct WifiSettingsField {
+    const char* consoleKey;
+    const char* applyKey;
+};
+static const WifiSettingsField kWifiSettingsFields[] = {
+    {"mode", "wifiMode"},
+    {"sta-ssid", "staSsid"},
+    {"ap-ssid", "apSsid"},
+};
+static const size_t kWifiSettingsFieldCount =
+    sizeof(kWifiSettingsFields) / sizeof(kWifiSettingsFields[0]);
+
+// The two human-text fields. Separated from the table above because they are
+// the only values that carry operator prose (an SSID), which is what makes
+// them the only ones needing the UTF-8 and quoting handling below.
+static const char* const kWifiSsidConsoleKeys[] = {"sta-ssid", "ap-ssid"};
+static const size_t kWifiSsidConsoleKeyCount =
+    sizeof(kWifiSsidConsoleKeys) / sizeof(kWifiSsidConsoleKeys[0]);
+
+struct WifiSettingsArgs {
+    const ConsoleArgs* args;
+};
+
+static const char* consoleWifiSettingsParamGet(void* ctx, const char* name) {
+    const WifiSettingsArgs* adapter = static_cast<const WifiSettingsArgs*>(ctx);
+    for (size_t i = 0; i < kWifiSettingsFieldCount; ++i) {
+        if (strcmp(kWifiSettingsFields[i].applyKey, name) == 0) {
+            return consoleArgsFind(*adapter->args, kWifiSettingsFields[i].consoleKey);
+        }
+    }
+    // Anything else the Apply Core asks for is a password field. NULL here is
+    // not "the operator happened not to supply it" - it is the write
+    // exclusion itself, expressed in the core's own omission-preserving
+    // contract rather than as a special case inside the core.
+    return nullptr;
+}
+
+// Case-insensitive "does `s` start with `lowerWord`". Written out rather than
+// calling strncasecmp(), which is POSIX <strings.h> and not part of the
+// freestanding C++ surface this module otherwise sticks to.
+static bool consoleStartsWithIgnoringCase(const char* s, const char* lowerWord) {
+    for (size_t i = 0; lowerWord[i] != '\0'; ++i) {
+        if (s[i] == '\0') return false;
+        if (tolower((unsigned char)s[i]) != lowerWord[i]) return false;
+    }
+    return true;
+}
+
+// Whether an argument key names a secret. Matched as a case-insensitive
+// substring rather than against a fixed list of the four spellings the two
+// vocabularies above can produce (sta-password, ap-password, staPassword,
+// apPassword), because the rule has to hold for "any other secret-valued key"
+// (#227) and not just today's four: a substring test can only ever refuse
+// MORE keys than the list would, never fewer, and no settable field is ever
+// going to be named something-password.
+static bool consoleArgKeyNamesASecret(const char* key) {
+    if (key == nullptr) return false;
+    for (const char* p = key; *p != '\0'; ++p) {
+        if (consoleStartsWithIgnoringCase(p, "password")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The mode tokens POST /api/wifi's response body has always used, which are
+// also the two `values:` docs/action-registry.yaml declares for this row's
+// `mode` param - so a mode this read prints is a mode the write side accepts
+// straight back (pinned by a round-trip native test, not by this comment).
+// Not shared with src/web/api_config.cpp's wifiModeToString(): that one sits
+// in an anonymous namespace, has internal linkage, and its file is fenced on
+// this ticket, so there is nothing to call.
+static const char* consoleWifiModeToken(WifiMode mode) {
+    return (mode == WifiMode::STANDALONE_AP) ? "standalone_ap" : "client";
+}
+
+// wifiApply() reports a field failure as a human sentence, not a field id -
+// that is its contract and POST /api/wifi renders the sentence verbatim, so
+// it is not changed here. Every sentence it can produce opens with the API
+// key it is about (src/web/api_wifi_apply.cpp: the three param helpers'
+// snprintf, the wifiMode parse, and the two mode-vs-SSID rules), so the
+// failing field is recovered by matching that opening word back through the
+// SAME table this adapter used to feed the core. The alternative - deciding
+// which rule fired by re-testing the WiFi rules here - would be a second copy
+// of exactly the logic this ticket routes through the core. Returns the
+// Console key, or NULL for a message that names no field.
+static const char* consoleWifiFailingConsoleKey(const char* message) {
+    if (message == nullptr) return nullptr;
+    for (size_t i = 0; i < kWifiSettingsFieldCount; ++i) {
+        const char* applyKey = kWifiSettingsFields[i].applyKey;
+        size_t len = strlen(applyKey);
+        if (strncmp(message, applyKey, len) == 0 &&
+            (message[len] == ' ' || message[len] == '\0')) {
+            return kWifiSettingsFields[i].consoleKey;
+        }
+    }
+    return nullptr;
+}
+
+// The read side. Field names are POST /api/wifi's own JSON keys verbatim
+// (docs/console-protocol.md s.3.5), and the values come from WifiConfigView -
+// the password-safe projection that carries "is a password set" flags instead
+// of the passwords themselves (include/config_store.h) - so this read cannot
+// echo a secret even by accident.
+static void consoleEmitWifiSettings(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                    const ConsoleRecordSink* sink) {
+    WifiConfig saved = {};
+    configCacheReadWifi(&saved);
+    WifiConfig active = {};
+    configCacheReadActiveWifi(&active);
+    WifiConfigView view = wifiConfigToView(saved);
+
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, entry->name);
+    }
+    if (sink->onRecordField) {
+        // An SSID is the first field value in this module that can legally
+        // contain a space, an '=' or a quote, and docs/console-protocol.md
+        // s.3.5 asks for exactly those to come back double-quoted with the
+        // input escaping - which is what makes a read pasteable straight back
+        // into a write. Neither adapter's record emitter quotes anything
+        // today (a pre-existing gap noted at consoleEmitHelpForOperation()
+        // above, and both adapters are fenced on this ticket), so the quoting
+        // happens here, at the one site that knows the value is human text,
+        // using the module's existing consoleQuoteValue(). Buffer: 32 SSID
+        // bytes worst-case doubled by escaping, plus both quotes and a NUL.
+        char ssidQuoteBuf[WIFI_SSID_MAX_LEN * 2 + 3] = {};
+
+        sink->onRecordField(requestId, "provisioned", view.provisioned ? "true" : "false");
+        sink->onRecordField(requestId, "mode", consoleWifiModeToken(view.mode));
+        sink->onRecordField(requestId, "staSsid",
+                            consoleQuoteValue(view.sta_ssid, ssidQuoteBuf, sizeof(ssidQuoteBuf)));
+        sink->onRecordField(requestId, "staPasswordSet",
+                            view.sta_password_set ? "true" : "false");
+        sink->onRecordField(requestId, "apSsid",
+                            consoleQuoteValue(view.ap_ssid, ssidQuoteBuf, sizeof(ssidQuoteBuf)));
+        sink->onRecordField(requestId, "apPasswordSet", view.ap_password_set ? "true" : "false");
+        // Staged Network Switch (ADR 0015): "saved" is what the next boot
+        // will use, "active" is what this boot actually came up on, and the
+        // difference is the restart the operator still owes - the same
+        // comparison POST /api/wifi's own response reports.
+        sink->onRecordField(requestId, "pendingApply",
+                            wifiConfigsDiffer(saved, active) ? "true" : "false");
+        sink->onRecordField(requestId, "networkRecovery",
+                            configCacheReadActiveWifiRecovery() ? "true" : "false");
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                       char* rawArgs, const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        consoleEmitWifiSettings(requestId, entry, sink);
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+    if (parsedArgs.count == 0) {
+        // rawArgs held non-whitespace but tokenized to nothing - malformed,
+        // not a silent read (same rule as consoleWriteScalarConfigField()).
+        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
+        return;
+    }
+
+    // Secrets are refused FIRST - before the schema check, before the UTF-8
+    // check, and before wifiApply() is called at all. The ordering is the
+    // point: a password argument must never reach the Apply Core, and it must
+    // never be the thing some later check quotes back in an error. Only the
+    // KEY is named in the answer; the value is never read, copied or emitted
+    // by any path from here.
+    for (size_t i = 0; i < parsedArgs.count; ++i) {
+        if (consoleArgKeyNamesASecret(parsedArgs.items[i].key)) {
+            consoleEmitArgFailure(requestId, entry->name, parsedArgs.items[i].key,
+                                  CONSOLE_REASON_SECRET_NOT_SETTABLE, sink);
+            return;
+        }
+    }
+
+    // Unknown keys and the mode enum come from the registry's own params:
+    // table via the shared schema validator (include/console_args.h) - the
+    // same one every registry action is checked against, not a hand-written
+    // per-field check like the single-field scalar path needs.
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schema =
+        consoleValidateArgsAgainstSchema(entry->params, parsedArgs, badKey, sizeof(badKey));
+    if (schema != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = CONSOLE_REASON_OUT_OF_RANGE;
+        if (schema == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY) {
+            reason = CONSOLE_REASON_UNKNOWN_ARGUMENT;
+        } else if (schema == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED) {
+            reason = CONSOLE_REASON_MISSING_ARGUMENT;
+        }
+        consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
+        return;
+    }
+
+    // UTF-8 validity is a Console-protocol rule with no Apply Core
+    // counterpart (POST /api/wifi carries bytes the browser already settled),
+    // so it belongs here. consoleParseArgs() already validates a QUOTED
+    // value's byte structure, but an SSID typed without quotes never passes
+    // through that check at all, and docs/console-protocol.md s.1.3 wants the
+    // rejection explicit either way. consoleUtf8Valid() is the same validator
+    // the quoted path uses - reused, not rewritten.
+    for (size_t i = 0; i < kWifiSsidConsoleKeyCount; ++i) {
+        const char* value = consoleArgsFind(parsedArgs, kWifiSsidConsoleKeys[i]);
+        if (value != nullptr && !consoleUtf8Valid(value)) {
+            consoleEmitArgFailure(requestId, entry->name, kWifiSsidConsoleKeys[i],
+                                  CONSOLE_REASON_MALFORMED_ARGUMENT, sink);
+            return;
+        }
+    }
+
+    WifiSettingsArgs adapter{&parsedArgs};
+    ConfigParamSource params;
+    params.ctx = &adapter;
+    params.get = consoleWifiSettingsParamGet;
+
+    WifiConfig working = {};
+    WifiApplyResult applyResult;
+    WifiCommitOutcome commit = {};
+    {
+        // Serialized against the other Console adapter and against every
+        // scalar config write, for the reason s_configWriteMutex's own
+        // declaration gives above: wifiCommitApplied() read-modify-writes the
+        // shared config-cache snapshot and then writes NVS, so an interleaved
+        // config write on the other adapter would lose one of the two
+        // updates. The read of the current settings is inside the guard too -
+        // reading them outside it would reopen the same window one statement
+        // earlier.
+        ConfigWriteMutexGuard guard(s_configWriteMutex);
+        if (!guard.acquired()) {
+            if (sink->onRecordResult) {
+                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                     CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+            }
+            return;
+        }
+
+        configCacheReadWifi(&working);
+        wifiApply(params, &working, &applyResult);
+        if (applyResult.ok) {
+            commit = wifiCommitApplied(&working);
+        }
+    }  // guard released here
+
+    if (!applyResult.ok) {
+        const char* failing = consoleWifiFailingConsoleKey(applyResult.errorMessage);
+        // A field the operator did not type is missing; a field they did type
+        // failed on its value. That split is what makes `mode=client` with no
+        // SSID anywhere read as missing-argument sta-ssid - the grouped rule
+        // this operation exists for - while an over-long or empty SSID they
+        // actually supplied reads as out-of-range on the same field.
+        ConsoleReason reason =
+            (failing != nullptr && consoleArgsFind(parsedArgs, failing) == nullptr)
+                ? CONSOLE_REASON_MISSING_ARGUMENT
+                : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, entry->name, failing, reason, sink);
+        return;
+    }
+
+    if (!commit.persisted) {
+        // A failed NVS write is an explicit error, the same shape the scalar
+        // config writes above use: no dedicated persistence-failure token
+        // exists in the hand-maintained ConsoleReason set
+        // (include/console_module.h) and none is added for this one site.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                 CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    // ADR 0015: settings are saved, never hot-applied, so the honest answer
+    // is whichever of the module's two existing write outcomes matches what
+    // the Commit Step just computed - staged-until-reboot while the saved
+    // settings differ from the posture actually in force, applied once they
+    // agree and there is no restart left to owe. No third outcome is invented
+    // for this operation.
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK,
+                             commit.pendingApply ? CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT
+                                                 : CONSOLE_OUTCOME_APPLIED,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
+// =============================================================================
 // Private: direct action executors - Commanded Modes (#226 criterion 4) and
 // drive motion (#222). One dispatch mechanism, many callers: a plain
 // synchronous C function taking validated Console arguments, checked before
@@ -1983,6 +2318,15 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
+            // wifi.config.settings: the one GROUPED config write (#227) -
+            // several fields validated as one configuration through the POST
+            // /api/wifi Apply Core, which is why it cannot be a row in the
+            // single-field scalar table below.
+            if (entry != nullptr && strcmp(entry->name, "wifi.config.settings") == 0) {
+                consoleExecuteWifiSettings(request->requestId, entry, rawArgs, sink);
+                break;
+            }
+
             ConsoleScalarConfigExecutorFn scalarExecutor =
                 (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
             if (scalarExecutor != nullptr) {
@@ -1993,9 +2337,9 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Every other type=config row not yet added as a row above (the
             // remaining scalar entries with no real Apply Core to reuse -
             // sound.config.volume, sound.config.mood-interval-*, see this
-            // section's own header comment - or genuinely out of this
-            // dispatch's shape, the grouped audio/rc-map writes, see the
-            // pinned coordinator comment's scope note) is not wired.
+            // section's own header comment - or the other grouped writes,
+            // audio and rc-map, whose own Apply Cores no ticket has pointed
+            // this dispatch at yet) is not wired.
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);

@@ -1939,6 +1939,290 @@ void test_config_executor_not_ready_count_report() {
 }
 
 // =============================================================================
+// wifi.config.settings - the grouped WiFi write (#227)
+//
+// Driven through consoleExecuteCommand() (the entry point both adapters call)
+// against the REAL POST /api/wifi Apply Core and its Commit Step:
+// src/web/api_wifi_apply.cpp is in [env:native]'s build_src_filter, so
+// wifiApply()/wifiCommitApplied() here are the same functions handleWifiPost()
+// runs, not stand-ins. That is what makes "validates atomically through the
+// WiFi apply core" a checked claim rather than a structural one.
+// =============================================================================
+
+// Puts a known WiFi posture in the config cache and declares it the one this
+// boot came up on, so pendingApply starts false and any difference a test
+// then creates is the test's own.
+static void seedWifi(WifiMode mode, const char* staSsid, const char* staPassword,
+                     const char* apSsid, const char* apPassword) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.wifi = WifiConfig{};
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = mode;
+    snprintf(snap.wifi.sta_ssid, sizeof(snap.wifi.sta_ssid), "%s", staSsid);
+    snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "%s", staPassword);
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "%s", apSsid);
+    snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", apPassword);
+    configCacheApply(snap);
+    configCacheSetActiveWifi(snap.wifi);
+    configCacheSetActiveWifiRecovery(false);
+}
+
+// True if any emitted field VALUE contains `needle` - the check that matters
+// for a secret, since a leak would arrive as a value, not as a field name.
+static bool anyCapturedValueContains(const char* needle) {
+    for (int i = 0; i < g_cap.fieldCount; i++) {
+        if (strstr(g_cap.values[i], needle) != nullptr) return true;
+    }
+    return false;
+}
+
+void test_wifi_settings_read_reports_the_saved_posture_and_no_password() {
+    seedWifi(WifiMode::CLIENT, "Workshop WiFi", "hunter2hunter2", "artoo-ap", "apsecret1");
+
+    runQuery("wifi.config.settings");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("provisioned"));
+    TEST_ASSERT_EQUAL_STRING("client", capturedValue("mode"));
+    // An SSID with a space comes back quoted, so the read can be pasted
+    // straight back into a write (docs/console-protocol.md s.3.5).
+    TEST_ASSERT_EQUAL_STRING("\"Workshop WiFi\"", capturedValue("staSsid"));
+    TEST_ASSERT_EQUAL_STRING("artoo-ap", capturedValue("apSsid"));
+    // Passwords are reported as set/not-set, never returned.
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("staPasswordSet"));
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("apPasswordSet"));
+    TEST_ASSERT_FALSE_MESSAGE(anyCapturedValueContains("hunter2hunter2"),
+                              "a read must never echo the stored station password");
+    TEST_ASSERT_FALSE_MESSAGE(anyCapturedValueContains("apsecret1"),
+                              "a read must never echo the stored AP password");
+    // Saved == active at this point, so nothing is owed.
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("pendingApply"));
+}
+
+void test_wifi_settings_write_stages_the_group_and_reports_staged_until_reboot() {
+    seedWifi(WifiMode::CLIENT, "old-net", "hunter2hunter2", "artoo-ap", "");
+
+    runQuery("wifi.config.settings mode=client sta-ssid=bench-net");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    // ADR 0015: saved, not hot-applied - and the new settings differ from the
+    // posture in force, so a restart is owed.
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
+
+    // The Commit Step staged the cache for a subsequent read to see...
+    WifiConfig staged = {};
+    configCacheReadWifi(&staged);
+    TEST_ASSERT_EQUAL_STRING("bench-net", staged.sta_ssid);
+    // ...and the omitted password kept its stored value rather than being
+    // cleared, which is the Apply Core's own omission-preserving contract
+    // reaching the Console unchanged.
+    TEST_ASSERT_EQUAL_STRING("hunter2hunter2", staged.sta_password);
+    // The AP fields the operator did not name are untouched: a grouped write
+    // is not a replace-everything write.
+    TEST_ASSERT_EQUAL_STRING("artoo-ap", staged.ap_ssid);
+}
+
+void test_wifi_settings_write_reports_applied_when_nothing_is_left_to_restart_for() {
+    seedWifi(WifiMode::CLIENT, "bench-net", "hunter2hunter2", "artoo-ap", "");
+
+    // Re-writing the posture already in force leaves nothing pending, so the
+    // truthful outcome is applied, not staged-until-reboot.
+    runQuery("wifi.config.settings mode=client sta-ssid=bench-net");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+}
+
+void test_wifi_settings_client_mode_without_an_ssid_is_rejected_as_a_whole() {
+    seedWifi(WifiMode::STANDALONE_AP, "", "", "artoo-ap", "");
+
+    runQuery("wifi.config.settings mode=client");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("sta-ssid", capturedValue("argument"),
+                                     "the grouped rule must name the field that failed");
+
+    // Rejected as a whole: the mode the operator did supply must not have
+    // been kept on its own.
+    WifiConfig after = {};
+    configCacheReadWifi(&after);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)WifiMode::STANDALONE_AP, (int)after.mode,
+                                  "a partial group must not reach the config cache");
+}
+
+void test_wifi_settings_ap_mode_without_an_ssid_is_rejected_as_a_whole() {
+    seedWifi(WifiMode::CLIENT, "bench-net", "", "", "");
+
+    runQuery("wifi.config.settings mode=standalone_ap");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("ap-ssid", capturedValue("argument"));
+}
+
+// The secret exclusion, in both vocabularies plus a spelling belonging to
+// neither: the refusal is a rule about the key, not a list of four strings.
+void test_wifi_settings_refuses_every_password_key_spelling() {
+    const char* lines[] = {
+        "wifi.config.settings sta-password=hunter2hunter2",
+        "wifi.config.settings ap-password=hunter2hunter2",
+        "wifi.config.settings staPassword=hunter2hunter2",
+        "wifi.config.settings apPassword=hunter2hunter2",
+        "wifi.config.settings PASSWORD=hunter2hunter2",
+        "wifi.config.settings mode=client sta-ssid=bench-net sta-password=hunter2hunter2",
+    };
+    for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); ++i) {
+        seedWifi(WifiMode::CLIENT, "bench-net", "storedpassword", "artoo-ap", "");
+
+        runQuery(lines[i]);
+
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, lines[i]);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_SECRET_NOT_SETTABLE, g_cap.reason, lines[i]);
+        // The answer names the key and nothing else - the value never appears
+        // in any emitted record.
+        TEST_ASSERT_FALSE_MESSAGE(anyCapturedValueContains("hunter2hunter2"),
+                                  "the refused password value reached a record");
+        // And the refusal happened before the Apply Core ran: the rest of the
+        // line was not applied either.
+        WifiConfig after = {};
+        configCacheReadWifi(&after);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("bench-net", after.sta_ssid,
+                                         "a line carrying a secret must not apply its other fields");
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("storedpassword", after.sta_password,
+                                         "the stored password must be untouched");
+    }
+}
+
+void test_wifi_settings_accepts_a_utf8_ssid_inside_quotes() {
+    seedWifi(WifiMode::CLIENT, "old-net", "", "artoo-ap", "");
+
+    runQuery("wifi.config.settings mode=client sta-ssid=\"Verkstad \xc3\xa5\xc3\xa4\xc3\xb6\"");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    WifiConfig staged = {};
+    configCacheReadWifi(&staged);
+    TEST_ASSERT_EQUAL_STRING("Verkstad \xc3\xa5\xc3\xa4\xc3\xb6", staged.sta_ssid);
+}
+
+void test_wifi_settings_rejects_malformed_utf8_in_an_unquoted_ssid() {
+    seedWifi(WifiMode::CLIENT, "old-net", "", "artoo-ap", "");
+
+    // A lone continuation byte, typed without quotes - the tokenizer's own
+    // UTF-8 check only covers quoted values, so this is the case the
+    // executor's explicit check exists for.
+    runQuery("wifi.config.settings sta-ssid=bad\x80ssid");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MALFORMED_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("sta-ssid", capturedValue("argument"));
+
+    WifiConfig after = {};
+    configCacheReadWifi(&after);
+    TEST_ASSERT_EQUAL_STRING("old-net", after.sta_ssid);
+}
+
+void test_wifi_settings_enforces_the_32_byte_ssid_limit() {
+    seedWifi(WifiMode::CLIENT, "old-net", "", "artoo-ap", "");
+
+    // 33 bytes: one past WIFI_SSID_MAX_LEN (include/config_store.h), the
+    // limit the Apply Core enforces and this adapter does not re-implement.
+    runQuery("wifi.config.settings sta-ssid=aaaaaaaaaabbbbbbbbbbccccccccccddd");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("sta-ssid", capturedValue("argument"));
+
+    WifiConfig after = {};
+    configCacheReadWifi(&after);
+    TEST_ASSERT_EQUAL_STRING("old-net", after.sta_ssid);
+}
+
+// A 32-byte SSID is inside the limit and must be accepted - without this the
+// test above would still pass with an off-by-one that rejected 32 too.
+void test_wifi_settings_accepts_an_ssid_exactly_at_the_limit() {
+    seedWifi(WifiMode::CLIENT, "old-net", "", "artoo-ap", "");
+
+    runQuery("wifi.config.settings sta-ssid=aaaaaaaaaabbbbbbbbbbccccccccccdd");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    WifiConfig after = {};
+    configCacheReadWifi(&after);
+    TEST_ASSERT_EQUAL_UINT32(WIFI_SSID_MAX_LEN, (uint32_t)strlen(after.sta_ssid));
+}
+
+void test_wifi_settings_rejects_an_unknown_argument_and_a_bad_mode() {
+    runQuery("wifi.config.settings bogus=1");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bogus", capturedValue("argument"));
+
+    // The API's own body key is not a second accepted spelling: the Console
+    // has one argument vocabulary (docs/console-protocol.md s.1.2).
+    runQuery("wifi.config.settings staSsid=bench-net");
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+
+    runQuery("wifi.config.settings mode=telepathy");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("mode", capturedValue("argument"));
+}
+
+// The read renders the mode with the Console's own token table, which the
+// write side validates against the registry's `values:`. If those two ever
+// drift, a read's own output stops being a legal write - so feed it back.
+void test_wifi_settings_read_mode_round_trips_into_a_write() {
+    seedWifi(WifiMode::STANDALONE_AP, "", "", "artoo-ap", "");
+
+    runQuery("wifi.config.settings");
+    const char* mode = capturedValue("mode");
+    TEST_ASSERT_NOT_NULL(mode);
+    TEST_ASSERT_EQUAL_STRING("standalone_ap", mode);
+
+    char line[96] = {};
+    snprintf(line, sizeof(line), "wifi.config.settings mode=%s", mode);
+    runQuery(line);
+    TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_OK, g_cap.status,
+                              "a mode the read printed must be a mode the write accepts");
+}
+
+void test_wifi_settings_write_reports_busy_when_the_mutex_is_already_held() {
+    consoleModuleInit();
+    seedWifi(WifiMode::CLIENT, "bench-net", "", "artoo-ap", "");
+    paStubMutexReset();
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // the OTHER Console adapter is mid-write
+
+    runQuery("wifi.config.settings mode=client sta-ssid=other-net");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+
+    WifiConfig after = {};
+    configCacheReadWifi(&after);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("bench-net", after.sta_ssid,
+                                     "a write blocked by contention must never reach the cache");
+
+    paStubMutexReset();
+}
+
+void test_help_marks_the_wifi_password_params_write_excluded() {
+    runQuery("help wifi.config.settings");
+
+    const char* params = capturedValue("params");
+    TEST_ASSERT_NOT_NULL(params);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(params, "sta-password:string:write-excluded"),
+                                 "help must show the station password as write-excluded");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(params, "ap-password:string:write-excluded"),
+                                 "help must show the AP password as write-excluded");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(params, "sta-ssid:string:optional"),
+                                 "a settable field must still read as optional");
+}
+
+// =============================================================================
 // Commanded Mode direct executors (#226 criterion 4)
 // =============================================================================
 
@@ -3316,6 +3600,21 @@ int main(int, char**) {
     RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);
     RUN_TEST(test_config_write_rejected_before_apply_never_touches_the_mutex);
     RUN_TEST(test_config_executor_not_ready_count_report);
+
+    RUN_TEST(test_wifi_settings_read_reports_the_saved_posture_and_no_password);
+    RUN_TEST(test_wifi_settings_write_stages_the_group_and_reports_staged_until_reboot);
+    RUN_TEST(test_wifi_settings_write_reports_applied_when_nothing_is_left_to_restart_for);
+    RUN_TEST(test_wifi_settings_client_mode_without_an_ssid_is_rejected_as_a_whole);
+    RUN_TEST(test_wifi_settings_ap_mode_without_an_ssid_is_rejected_as_a_whole);
+    RUN_TEST(test_wifi_settings_refuses_every_password_key_spelling);
+    RUN_TEST(test_wifi_settings_accepts_a_utf8_ssid_inside_quotes);
+    RUN_TEST(test_wifi_settings_rejects_malformed_utf8_in_an_unquoted_ssid);
+    RUN_TEST(test_wifi_settings_enforces_the_32_byte_ssid_limit);
+    RUN_TEST(test_wifi_settings_accepts_an_ssid_exactly_at_the_limit);
+    RUN_TEST(test_wifi_settings_rejects_an_unknown_argument_and_a_bad_mode);
+    RUN_TEST(test_wifi_settings_read_mode_round_trips_into_a_write);
+    RUN_TEST(test_wifi_settings_write_reports_busy_when_the_mutex_is_already_held);
+    RUN_TEST(test_help_marks_the_wifi_password_params_write_excluded);
 
     RUN_TEST(test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts);
     RUN_TEST(test_commanded_mode_set_mode_driving_calls_setter);

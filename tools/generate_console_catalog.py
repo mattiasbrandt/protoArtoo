@@ -95,6 +95,11 @@ typedef struct {
     double range_min;
     double range_max;
     const char* const* enum_values;  // NULL-terminated allowed-value strings, or NULL
+    bool write_excluded;   // registry `write_excluded: true`: the parameter exists and is
+                           // documented, but the Console never accepts a value for it - a
+                           // secret (docs/console-protocol.md s.4.1). `help` renders it as
+                           // write-excluded rather than required/optional, and the operation's
+                           // executor refuses it before its Apply Core sees it.
 } ConsoleParamDescriptor;
 
 // Operation descriptor
@@ -310,6 +315,7 @@ def generate_catalog_source(entries, offsets, output_path):
                     param_name = param.get('name', '')
                     param_type = param.get('type', 'string')
                     required = param.get('required', False)
+                    write_excluded = param.get('write_excluded', False)
                     bounds = numeric_range(param)
                     if bounds is not None:
                         has_range = 'true'
@@ -325,8 +331,9 @@ def generate_catalog_source(entries, offsets, output_path):
                         enum_expr = "NULL"
                     source += (f"    {{\"{param_name}\", \"{param_type}\", "
                                f"{'true' if required else 'false'}, {has_range}, "
-                               f"{range_min}, {range_max}, {enum_expr}}},\n")
-                source += "    {NULL, NULL, false, false, 0.0, 0.0, NULL}  // terminator\n"
+                               f"{range_min}, {range_max}, {enum_expr}, "
+                               f"{'true' if write_excluded else 'false'}}},\n")
+                source += "    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator\n"
                 source += "};\n\n"
 
     # Generate field-name tables for type=status entries that carry fields:

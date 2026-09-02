@@ -242,6 +242,41 @@ void test_error_record_keeps_its_reason() {
     TEST_ASSERT_EQUAL_STRING("unknown-operation", rec["reason"].as<const char*>());
 }
 
+// The secret exclusion holds on the BROWSER adapter too, and this is the
+// leg the module-level test cannot cover: the web adapter accumulates every
+// record value and then serializes them into one JSON response body, so a
+// leak here would be a leak into an HTTP response, not just into a record.
+// The check is on the whole body, not on any one field - the password must
+// not be anywhere in what the dashboard gets back (#227).
+void test_password_argument_is_refused_and_never_reaches_the_response_body() {
+    WebRequestTestBackend backend;
+    runCommand(backend, "wifi.config.settings mode=client sta-password=hunter2hunter2");
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_NULL_MESSAGE(strstr(backend.sentBody, "hunter2hunter2"),
+                             "the refused password value reached the HTTP response body");
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonArrayConst records = doc["records"].as<JsonArrayConst>();
+    bool sawReason = false;
+    for (JsonObjectConst rec : records) {
+        if (rec["reason"].is<const char*>() &&
+            strcmp(rec["reason"].as<const char*>(), "secret-not-settable") == 0) {
+            sawReason = true;
+            TEST_ASSERT_EQUAL_STRING("err", rec["status"].as<const char*>());
+            TEST_ASSERT_EQUAL_STRING("invalid", rec["outcome"].as<const char*>());
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(sawReason,
+                             "the browser adapter must answer secret-not-settable");
+
+    // The key is named so the operator knows which argument was refused.
+    char argument[64] = {};
+    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "argument", argument, sizeof(argument)));
+    TEST_ASSERT_EQUAL_STRING("sta-password", argument);
+}
+
 // Every record carries the same request id, and ids advance between requests.
 void test_request_ids_are_shared_within_and_advance_between() {
     WebRequestTestBackend first;
@@ -692,6 +727,7 @@ int main(int, char**) {
     RUN_TEST(test_completed_query_reports_outcome_completed);
     RUN_TEST(test_successful_records_carry_no_reason);
     RUN_TEST(test_error_record_keeps_its_reason);
+    RUN_TEST(test_password_argument_is_refused_and_never_reaches_the_response_body);
     RUN_TEST(test_request_ids_are_shared_within_and_advance_between);
     RUN_TEST(test_empty_command_is_rejected);
     RUN_TEST(test_over_length_line_is_one_result_record_with_line_too_long);
