@@ -455,6 +455,11 @@
   const LOG_MAX_LINES = 250;
   const LOG_TRIM_LINES = 200;
   const LOG_EMPTY_TEXT = "No log history available yet.";
+  // One phrase for "the page is not getting log data from the controller",
+  // shared by the live stream's error path and by a log fetch whose response
+  // did not come back as log text (#261). Two phrases for one fact is the copy
+  // defect docs/ui-copy-voice.md exists to prevent.
+  const LOG_UNREACHABLE_TEXT = "[connection lost — retrying…]";
   const COMMAND_HISTORY_MAX = 20;
   const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
@@ -546,6 +551,17 @@
     }
   };
 
+  // Paints a single line in the log panel without entering it into logLines.
+  // loadRecentLogs() reads a non-empty logLines as "history is already here"
+  // and returns early, so a notice pushed through appendLogLine() would turn
+  // every bootstrap retry into a silent no-op and freeze the panel on the
+  // notice. Keeping it out of the model leaves the retry live, and the first
+  // real log line - streamed or from a successful retry - overwrites it.
+  const renderLogNotice = (message) => {
+    if (!logConsole) return;
+    logConsole.innerHTML = logEntryHtml(makeLogEntry(message, { timestamp: "--:--:--" }));
+  };
+
   const setLogLines = (lines, { forceBottom = true } = {}) => {
     logLines = lines
       .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
@@ -591,11 +607,39 @@
     }
   };
 
+  // GET /api/logs answers text/plain on both of its exits - the ring body at
+  // 200 and "log buffer unavailable" at 503 (src/web/api_logs.cpp) - so the
+  // content type IS the contract, and no shape check over free-form log text
+  // could be as reliable: a log line may contain "<div>", and a proxy's plain
+  // error page could not be told apart from log output.
+  //
+  // Anything else arriving at 200 did not come from the log endpoint: a
+  // captive portal, an intercepting proxy, or a dev fixture server falling
+  // back to index.html. The panel used to split that body on newlines and
+  // render it, which is how it filled with 156 lines of the dashboard's own
+  // markup (#261; escaped, so wrong content rather than injection).
+  const isLogTextResponse = (result) =>
+    String(result?.contentType ?? "").split(";")[0].trim().toLowerCase() === "text/plain";
+
   const loadRecentLogs = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
     if (logLines.length > 0) return;
     const api = handle ?? window.PAApi;
     const result = await api.get("/api/logs", { cache: "no-store" });
+    if (!isLogTextResponse(result)) {
+      // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
+      // history, and we do not know that - we know we never reached its log
+      // endpoint. Show the page's existing unreachable line and reject, so the
+      // bootstrap keeps retrying with backoff instead of leaving a blank panel
+      // or a silent no-op. Kind "network" is the honest classification: nothing
+      // usable came back from the controller, which is also the reason
+      // page_bootstrap.js renders as "Connection to the controller was lost."
+      renderLogNotice(LOG_UNREACHABLE_TEXT);
+      throw new window.PAApi.ApiError("Log response was not log text", {
+        kind: "network",
+        status: result?.status ?? 0,
+      });
+    }
     const historyLines = String(result.data ?? "")
       .split(/\r?\n/)
       .map((line) => normalizeLogMessage(line.trimEnd()))
@@ -1193,7 +1237,7 @@
       }
       if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
-        appendLogLine("[connection lost — retrying…]");
+        appendLogLine(LOG_UNREACHABLE_TEXT);
         setStale(true);
       }
     });
