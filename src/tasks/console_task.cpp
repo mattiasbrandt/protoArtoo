@@ -41,6 +41,7 @@
 #include "console_serial_output.h"
 #include "console_cli_line.h"
 #include "console_completion.h"
+#include "console_write_exclusion.h"
 #include "console_host_attach.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
@@ -147,6 +148,23 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
 
     // Execute through Console module (ADR 0034)
     consoleExecuteCommand(&request, &sink);
+}
+
+// Called by embedded-cli before a submitted line reaches the Up-arrow history
+// ring (lib/embedded-cli/VENDORED.md Patch 6). A line assigning a value to a
+// write-excluded parameter - a secret (docs/console-protocol.md s.4.1) - is
+// refused by consoleExecuteCommand() with reason=secret-not-settable, and
+// must not be recoverable afterwards either: the whole guarantee is "nothing
+// secret is accepted, so nothing secret can be logged, returned, completed
+// into the line, or kept in history" (#227).
+//
+// The decision is made from the same catalog flag the browser adapter uses
+// (include/console_write_exclusion.h), so both adapters refuse the same
+// lines, and it is made HERE rather than after dispatch because the ring
+// write happens before the executor ever sees the line.
+static bool onCliShouldStoreHistory(EmbeddedCli* cli, const char* line) {
+    (void)cli;  // one Console, one rule - nothing per-instance to consult
+    return !consoleLineAssignsWriteExcludedValue(line);
 }
 
 // =============================================================================
@@ -316,6 +334,9 @@ void consoleTask(void* pvParameters) {
     // (lib/embedded-cli/VENDORED.md Patch 5). See
     // include/console_completion.h for the candidate source itself.
     embeddedCli->getCompletionCandidate = consoleCompletionCandidate;
+    // History filter (#227): keeps a refused secret out of the Up-arrow ring
+    // (lib/embedded-cli/VENDORED.md Patch 6). See onCliShouldStoreHistory().
+    embeddedCli->shouldStoreHistory = onCliShouldStoreHistory;
 
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);
