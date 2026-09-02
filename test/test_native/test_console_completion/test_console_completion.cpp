@@ -187,6 +187,59 @@ void test_availability_does_not_gate_completion(void) {
     embeddedCliFree(cli);
 }
 
+// -----------------------------------------------------------------------
+// Test 7: Tab never offers a write-excluded key (#227). Against the real
+// catalog: wifi.config.settings declares five parameters, two of them
+// write-excluded (sta-password, ap-password), and completion must enumerate
+// exactly the other three - the skip must not truncate the enumeration
+// either, so all three settable keys are asserted, not just the first.
+// include/console_write_exclusion.h's own suite covers the ordering case the
+// real catalog cannot (an excluded parameter that is not last).
+// -----------------------------------------------------------------------
+void test_write_excluded_keys_are_never_offered(void) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("wifi.config.settings");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(entry->params);
+
+    static CLI_UINT buf[4096 / sizeof(CLI_UINT)];
+    EmbeddedCli* cli = makeCliWithBuffer(buf, sizeof(buf), "wifi.config.settings ");
+
+    char candidates[16][128];
+    int n = countCandidates(cli, candidates, 16);
+
+    TEST_ASSERT_EQUAL_INT(3, n);
+    TEST_ASSERT_EQUAL_STRING("mode=", candidates[0]);
+    TEST_ASSERT_EQUAL_STRING("sta-ssid=", candidates[1]);
+    TEST_ASSERT_EQUAL_STRING("ap-ssid=", candidates[2]);
+
+    for (int i = 0; i < n; ++i) {
+        TEST_ASSERT_NULL(strstr(candidates[i], "password"));
+    }
+
+    embeddedCliFree(cli);
+}
+
+// -----------------------------------------------------------------------
+// Test 8: the operator typing the excluded key's own prefix still gets
+// nothing. The candidate source is what embedded-cli filters by prefix, so
+// an excluded key absent from the source can never be completed however
+// much of it is typed - asserted through the source itself, which is the
+// only thing this file owns.
+// -----------------------------------------------------------------------
+void test_typed_excluded_prefix_has_no_candidate(void) {
+    static CLI_UINT buf[4096 / sizeof(CLI_UINT)];
+    EmbeddedCli* cli = makeCliWithBuffer(buf, sizeof(buf), "wifi.config.settings sta-pass");
+
+    char candidates[16][128];
+    int n = countCandidates(cli, candidates, 16);
+
+    for (int i = 0; i < n; ++i) {
+        TEST_ASSERT_NULL(strstr(candidates[i], "password"));
+    }
+
+    embeddedCliFree(cli);
+}
+
 int main() {
     (void)kNoWriteChar;
     UNITY_BEGIN();
@@ -196,5 +249,7 @@ int main() {
     RUN_TEST(test_arg_key_position_uses_first_token_regardless_of_later_args);
     RUN_TEST(test_arg_key_position_unknown_operation_yields_no_candidates);
     RUN_TEST(test_availability_does_not_gate_completion);
+    RUN_TEST(test_write_excluded_keys_are_never_offered);
+    RUN_TEST(test_typed_excluded_prefix_has_no_candidate);
     return UNITY_END();
 }
