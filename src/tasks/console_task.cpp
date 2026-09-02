@@ -41,6 +41,7 @@
 #include "console_serial_output.h"
 #include "console_cli_line.h"
 #include "console_completion.h"
+#include "console_host_attach.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
@@ -76,6 +77,20 @@ static char recordBuffer[CONSOLE_RECORD_LINE_MAX] = {};
 
 // Current request ID for this command (for stack HWM measurement after first command)
 static uint32_t currentRequestId = 0;
+
+// Ready banner text, shared by the boot-time print (setup) and the
+// re-attach print (#260, consoleTask's main loop). The banner names the
+// detach key (#219 D4) - an operator attaching cold has no other way to
+// learn it. CONSOLE_DETACH_KEY_SERIAL is the same literal the bare `help`
+// meta-command's detach_key field uses (console_module.cpp), so the two
+// can't drift apart. Deliberately excludes the "> " invitation: at boot
+// that is printed alongside it manually (embedded-cli has not started
+// processing input yet); on re-attach it is supplied by
+// consoleResetInputForAttach()'s queued synthetic Enter instead, so the
+// caller does not print it twice.
+static const char CONSOLE_READY_BANNER[] =
+    "Controller Console ready. Type 'help' for commands, "
+    CONSOLE_DETACH_KEY_SERIAL " to leave.\n";
 
 // =============================================================================
 // Embedded-CLI Callbacks
@@ -305,18 +320,15 @@ void consoleTask(void* pvParameters) {
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);
 
-    // Print the ready banner and initial prompt under serial mutex. The banner
-    // names the detach key (#219 D4) - an operator attaching cold has no other
-    // way to learn it, since the firmware never closes a terminal it does not
-    // own. CONSOLE_DETACH_KEY_SERIAL is the same literal the bare `help`
-    // meta-command's detach_key field uses (console_module.cpp), so the two
-    // can't drift apart.
+    // Print the ready banner and initial prompt under serial mutex. See
+    // CONSOLE_READY_BANNER's own comment for why the two print sites (here
+    // and the re-attach path below) split banner text from the "> "
+    // invitation differently.
     SemaphoreHandle_t mutex = paGetSerialMutex();
     if (mutex != nullptr) {
         xSemaphoreTake(mutex, portMAX_DELAY);
     }
-    Serial.print("Controller Console ready. Type 'help' for commands, "
-                 CONSOLE_DETACH_KEY_SERIAL " to leave.\n");
+    Serial.print(CONSOLE_READY_BANNER);
     Serial.print("> ");
     if (mutex != nullptr) {
         xSemaphoreGive(mutex);
@@ -326,6 +338,34 @@ void consoleTask(void* pvParameters) {
     // Measure stack high water mark after first command is processed
     // This allows us to measure the stack usage for command parsing + execution + record emission
     bool hwmLogged = false;
+
+    // Debounced host-presence tracking for USB CDC (re)attach detection
+    // (#260). `Serial` (bool) is board-portable on purpose, not gated by
+    // #ifdef:
+    //  - FireBeetle 2 (P4): Serial resolves to HWCDCSerial
+    //    (HardwareSerial.h's `#define Serial HWCDCSerial`, active when
+    //    ARDUINO_USB_MODE && ARDUINO_USB_CDC_ON_BOOT - platformio.ini's P4
+    //    envs). HWCDC::operator bool() is HWCDC::isCDC_Connected(), an
+    //    ISR-driven flag (HWCDC.cpp) that is true only once the host is
+    //    actually driving the link - a genuine attach/detach signal, not
+    //    just cable presence.
+    //  - artoo-esp32: Serial resolves to Serial0 (classic UART).
+    //    HardwareSerial::operator bool() reports only that the UART driver
+    //    is installed (HardwareSerial.cpp) - true forever once Serial.begin()
+    //    runs in setup(), long before this task starts. The debounce below
+    //    can therefore never see a second false->true transition on this
+    //    board: a UART bridge has no attach/detach concept, so this logic is
+    //    inert there by construction, matching #260's own framing (the fault
+    //    is P4/native-USB-CDC-specific) without a board #if.
+    // main.cpp's setup() (ARDUINO_USB_CDC_ON_BOOT block) documents the same
+    // HWCDC `connected` flag as capable of a "few-ms" flap even on a healthy
+    // link (the SOF watchdog behind isPlugged()). Requiring two consecutive
+    // 10 ms polls before committing an attach filters that out: one extra
+    // tick (<=10 ms) of reprint latency on a genuine attach, versus
+    // resetting a line an already-connected operator is mid-typing on a
+    // spurious blip.
+    bool hostConfirmedConnected = Serial;
+    bool hostRawPrevConnected = hostConfirmedConnected;
 
     // Main loop: read from UART and process through embedded-cli
     while (true) {
@@ -337,6 +377,41 @@ void consoleTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "stack HWM: %u bytes free after first command", (unsigned)freeStack);
             hwmLogged = true;
         }
+
+        // Debounced (re)attach edge: two consecutive "connected" polls after
+        // being unconfirmed. Reset the input line and reprint the ready
+        // banner + invitation (#260) so a reattaching operator is never left
+        // staring at a blank screen with a stale, half-typed command behind
+        // it. This check and the reset it triggers run BEFORE the byte-drain
+        // loop below so the synthetic Enter consoleResetInputForAttach()
+        // queues is always ahead, in embedded-cli's FIFO, of any real bytes
+        // this same poll reads from the transport (embeddedCliReceiveChar is
+        // documented single-caller/ordered, see console_host_attach.h).
+        bool hostRawNowConnected = Serial;
+        if (hostRawNowConnected) {
+            if (hostRawPrevConnected && !hostConfirmedConnected) {
+                hostConfirmedConnected = true;
+
+                SemaphoreHandle_t attachMutex = paGetSerialMutex();
+                if (attachMutex != nullptr) {
+                    xSemaphoreTake(attachMutex, portMAX_DELAY);
+                }
+                Serial.print(CONSOLE_READY_BANNER);
+                if (attachMutex != nullptr) {
+                    xSemaphoreGive(attachMutex);
+                }
+
+                consoleResetInputForAttach(embeddedCli);
+                PA_LOG_INFO(TAG, "host attached: line reset, prompt reprinted");
+            }
+        } else {
+            // Eager on the way down: a false sample just means the next
+            // attach needs to re-confirm over two polls again. Getting this
+            // "wrong" on a momentary blip only costs one extra tick of
+            // reprint latency, never a missed or duplicated reset.
+            hostConfirmedConnected = false;
+        }
+        hostRawPrevConnected = hostRawNowConnected;
 
         // Process any available serial data
         while (Serial.available()) {
