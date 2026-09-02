@@ -11,14 +11,21 @@ The catalog is the machine-readable part (names, types, argument keys, availabil
 Help text (description, display_name, parameter schema, executor details) goes into the FS partition.
 """
 
-import yaml
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from registry_yaml import load_registry_yaml
+
 def load_registry(registry_path):
-    """Load and validate the action registry YAML."""
-    with open(registry_path, 'r') as f:
-        data = yaml.safe_load(f)
+    """Load and validate the action registry YAML.
+
+    Uses registry_yaml.load_registry_yaml() rather than yaml.safe_load()
+    directly: PyYAML's default resolver reads a bare on/off/yes/no as a
+    Python bool, not the string the registry means (#249 - aux.action.
+    led-effect's `off` enum value was corrupted to `False` by exactly this).
+    """
+    data = load_registry_yaml(registry_path)
     if not data or 'entries' not in data:
         raise ValueError(f"Invalid registry format in {registry_path}")
     return data['entries']
@@ -261,12 +268,15 @@ def generate_catalog_source(entries, offsets, output_path):
 
     # Enum-value arrays (one per param that declares one, since each param
     # in a multi-param entry can have its own enum - unlike aliases/fields,
-    # which are one per operation). Enum entries may be strings, numbers, or
-    # (a pre-existing registry data-quality quirk - aux.action.led-effect's
-    # bare `off` parses as YAML boolean False, not fixed here, out of scope
-    # for this generator change) booleans; str() renders whatever came
-    # through so the generator does not silently drop a value, and the
-    # content question is left for a follow-up on the registry itself.
+    # which are one per operation). Enum entries are legitimately strings or
+    # numbers (aux.config.led-pin, system.action.set-mood carry genuine
+    # int enums) - str() renders whichever type came through so the
+    # generator does not silently drop a value. A bool should never reach
+    # here: load_registry() uses registry_yaml.load_registry_yaml(), which
+    # narrows PyYAML's implicit resolver so a bare on/off/yes/no/y/n enum
+    # value stays a string instead of coercing to True/False (#249 -
+    # aux.action.led-effect's bare `off` was corrupted to boolean False by
+    # exactly this coercion, upstream of this generator, before that fix).
     param_names_used = set()
     enum_names_used = set()
     for entry in entries:

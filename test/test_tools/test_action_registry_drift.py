@@ -568,3 +568,104 @@ class TestConsoleHelpFileDrift(unittest.TestCase):
                 )
             finally:
                 drift_module.CONSOLE_HELP_PATH = original_path
+
+
+class TestNoBoolEnumValues(unittest.TestCase):
+    """Test check_no_bool_enum_values() - the #249 regression guard.
+
+    A bare on/off/yes/no/y/n/true/false enum value that a YAML loader
+    coerced into a Python bool must be caught, whether it lands in a
+    `values:` list or the servo-style non-numeric `range:` list (see
+    generate_console_catalog.py's enum_source()).
+    """
+
+    def test_bool_in_values_list_is_detected(self):
+        """A boolean hiding in a param's `values:` list is reported."""
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.action.led-effect',
+                    'type': 'action',
+                    'params': [
+                        {'name': 'effect', 'type': 'string',
+                         'values': ['solid', 'blink', False]},
+                    ],
+                }
+            ]
+        }
+        errors = []
+        check_action_registry_drift.check_no_bool_enum_values(doc, errors)
+        self.assertTrue(
+            any('test.action.led-effect' in e and "'effect'" in e and 'False' in e
+                for e in errors),
+            f"Expected a boolean-enum error, got: {errors}"
+        )
+
+    def test_bool_in_range_used_as_string_enum_is_detected(self):
+        """A boolean hiding in the servo `target:` range-as-enum spelling is reported."""
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.action.set-position',
+                    'type': 'action',
+                    'params': [
+                        {'name': 'target', 'type': 'string',
+                         'range': ['arm1', 'arm2', True]},
+                    ],
+                }
+            ]
+        }
+        errors = []
+        check_action_registry_drift.check_no_bool_enum_values(doc, errors)
+        self.assertTrue(
+            any('test.action.set-position' in e and "'target'" in e and 'True' in e
+                for e in errors),
+            f"Expected a boolean-enum error, got: {errors}"
+        )
+
+    def test_numeric_range_bounds_are_not_flagged(self):
+        """A genuine numeric `range:` (min/max bounds) must not false-positive."""
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.action.set-speed',
+                    'type': 'action',
+                    'params': [
+                        {'name': 'speed', 'type': 'int16', 'range': [-100, 100]},
+                    ],
+                }
+            ]
+        }
+        errors = []
+        check_action_registry_drift.check_no_bool_enum_values(doc, errors)
+        self.assertEqual(errors, [], f"Numeric range bounds should never be flagged, got: {errors}")
+
+    def test_string_enum_values_are_not_flagged(self):
+        """A clean string enum (post-#249 quoting) produces no error."""
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.action.led-effect',
+                    'type': 'action',
+                    'params': [
+                        {'name': 'effect', 'type': 'string',
+                         'values': ['solid', 'blink', 'pulse', 'off']},
+                    ],
+                }
+            ]
+        }
+        errors = []
+        check_action_registry_drift.check_no_bool_enum_values(doc, errors)
+        self.assertEqual(errors, [], f"Clean string enum should never be flagged, got: {errors}")
+
+    def test_real_registry_has_no_bool_enum_values(self):
+        """Regression guard: the live registry, loaded the way the drift
+        checker actually loads it, must never carry a boolean enum value."""
+        doc = check_action_registry_drift.load_registry_doc()
+        errors = []
+        check_action_registry_drift.check_no_bool_enum_values(doc, errors)
+        self.assertEqual(
+            errors, [],
+            f"docs/action-registry.yaml carries a boolean enum value - "
+            f"quote it (#249 regression): {errors}"
+        )
