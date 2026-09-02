@@ -88,6 +88,13 @@
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
                                   // own queue stub (#221 remainder)
 
+#include "sequence_dispatcher.h"  // sequenceDispatcherInit() - dome.action.dome-sequence/
+                                   // test-sequence's sequenceStart() queue (#259)
+#include "seq_store_index.h"      // SeqIndexEntry, seqStoreIndexAdd()/Clear() -
+                                   // dome.action.delete-sequence's own lookup (#259)
+#include "seq_store_test_hooks.h"  // g_test_seq_delete_ok/calls - seqStoreDelete()'s own
+                                    // stub (#259)
+
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
 // evidence #222's acceptance criterion 4 asks for - identical helper to
@@ -101,6 +108,22 @@ static DriveOutput resolvedDriveOutput() {
     cfg.speedLimitMax = snap.drive.speedLimitMax;
     cfg.webDriveTimeoutMs = 60000;
     return driveArbiterResolve(cfg, millis());
+}
+
+// dome.action.delete-sequence's own seqStoreDelete()/seqStoreIndexFind() lookup
+// (#259) needs a real index entry to find - src/native_test_stubs.cpp stubs the
+// LittleFS half of seq_store.cpp, but seq_store_index.{h,cpp} is pure and
+// native-real, so seeding it here proves the SAME lookup handleSeqDelete()
+// (src/web/api_seq.cpp) drives. Identical shape to test_api_seq_routes.cpp's
+// own seedIndex() (a separate native test binary, so redefined here rather
+// than shared across translation units - matching resolvedDriveOutput()'s own
+// precedent just above).
+static void seedTestSeqIndex(const char* name) {
+    SeqIndexEntry e = {};
+    snprintf(e.name, sizeof(e.name), "%s", name);
+    snprintf(e.file, sizeof(e.file), "%s", "seq1.json");
+    e.valid = true;
+    seqStoreIndexAdd(e);
 }
 
 // =============================================================================
@@ -300,6 +323,17 @@ void setUp() {
     configCacheRead(&driveDefaults);
     driveDefaults.drive.speedLimitMax = 300;
     configCacheApply(driveDefaults);
+
+    // #259: dome.action.dome-sequence/test-sequence submit through the REAL
+    // sequenceStart()/sequenceQueue, matching test_api_seq_routes.cpp's own
+    // setUp() justification - without a real queue every accepted DM: name
+    // comes back queue-full and the executor's own decisions become
+    // unobservable. dome.action.delete-sequence's own lookup needs a clean
+    // index and a reset store-delete stub per test.
+    sequenceDispatcherInit();
+    seqStoreIndexClear();
+    g_test_seq_delete_ok = true;
+    g_test_seq_delete_calls = 0;
 }
 void tearDown() {}
 
@@ -806,19 +840,81 @@ void test_action_analog_target_answers_not_executable() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_EXECUTABLE, g_cap.reason);
 }
 
-// dome.action.dome-sequence is the one payload-needing target #221 leaves
-// unwired (no existing pure validator to reuse for DM:<NAME> forwarding -
-// see consoleExecuteAction()'s own comment, console_module.cpp) - still
-// genuinely "not ready yet". dome.action.marcduino-sequence/-command are
-// NOW wired (below) - #221 closes that gap for exactly these two.
-void test_action_dome_sequence_still_answers_executor_not_ready() {
-    robotState.webControlEnabled = true;
+// dome.action.dome-sequence (#259): was #221's one deliberately unwired
+// payload-needing target (no existing pure validator to reuse for DM:<NAME>
+// forwarding - see consoleExecuteAction()'s own comment, console_module.cpp).
+// #259 closes it with a direct executor (include/console_direct_action_dome.h)
+// that forwards straight to sequenceStart() - the SAME choke point
+// handleDomeCmdPost()'s DM: branch (POST /api/dome/cmd, src/web/api_drive.cpp)
+// and handleSeqTestPost() (POST /api/seq/test) both call - never through
+// ACTION_REGISTRY[]'s guard, which still refuses this payload-needing target
+// exactly as before (test_action_analog_target_answers_not_executable's
+// sibling assertion for the OTHER two payload targets is unaffected: this
+// executor bypasses that guard, it does not loosen it).
+void test_action_dome_sequence_unknown_argument_is_rejected() {
+    runQuery("dome.action.dome-sequence value=DM:VADER extra=1");
 
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+}
+
+void test_action_dome_sequence_missing_value_answers_missing_argument() {
     runQuery("dome.action.dome-sequence");
 
-    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+}
+
+// The row is typed to DM:* only (docs/action-registry.yaml's own
+// marcduino_cmd: "DM:<NAME>") - a non-DM: value is out-of-range, not silently
+// forwarded the way dome.action.send-command's general '*'/'@' prefixes are.
+void test_action_dome_sequence_rejects_a_non_dm_value() {
+    runQuery("dome.action.dome-sequence value=:SE01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+}
+
+// A value that would be silently truncated by domeQueueTx()'s DomeTxCmd::buf
+// (src/tasks/dome_link.cpp, include/dome_link.h) is refused explicitly
+// instead - "no widening" past the real dome TX buffer's own 64-byte size.
+void test_action_dome_sequence_rejects_a_value_too_long_for_dome_tx() {
+    char longVal[80];
+    memset(longVal, 'X', sizeof(longVal) - 1);
+    longVal[sizeof(longVal) - 1] = '\0';
+    memcpy(longVal, "DM:", 3);
+    char line[128];
+    snprintf(line, sizeof(line), "dome.action.dome-sequence value=%s", longVal);
+
+    runQuery(line);
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+// A DM: name unknown to the Factory catalog and not in the (empty, per
+// setUp()) Learned Sequence index takes sequenceStart()'s SEQ_FALLBACK path -
+// domeQueueTx() straight through, exactly like an unrecognized DM:* name
+// reaching /api/dome/cmd or /api/seq/test does.
+void test_action_dome_sequence_unknown_dm_name_forwards_to_dome_fallback() {
+    runQuery("dome.action.dome-sequence value=DM:NOT_A_CATALOG_ENTRY");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// A real Factory Sequence name (sequence_catalog.cpp) takes sequenceStart()'s
+// SEQ_CATALOG path instead - the real sequenceQueue send, not the dome TX
+// fallback, proving this executor reaches the actual dispatcher choke point
+// rather than only ever hitting the fallback branch.
+void test_action_dome_sequence_catalog_name_queues_through_the_dispatcher() {
+    runQuery("dome.action.dome-sequence value=DM:VADER");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
 }
 
 // =============================================================================
@@ -963,20 +1059,258 @@ void test_action_marcduino_command_value_too_long_answers_out_of_range() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
-// A config/status-only registry entry (no RobotActionId at all) stays
-// exactly as unready as before this ticket - #220 does not invent a target
-// for operations ACTION_REGISTRY never carried. dome.action.send-command has
-// cpp_enum: null (docs/action-registry.yaml) and is not in
-// g_directActionExecutors[] (console_module.cpp) - genuinely unwired, unlike
-// drive.action.move, which #222 wires below (see "Drive motion actions").
-void test_action_with_no_rc_bindable_target_answers_executor_not_ready() {
-    robotState.webControlEnabled = true;
+// dome.action.send-command (#259): had cpp_enum: null (docs/action-registry.
+// yaml) and no RobotActionId at all, so ACTION_REGISTRY[]'s fallback path
+// could never reach it - genuinely unwired before this ticket, unlike
+// drive.action.move (#222) or servo's rows (#221 remainder), which had a
+// direct executor from the start. #259's executor
+// (consoleExecuteDomeSendCommand(), include/console_direct_action_dome.h)
+// forwards straight to executeManualCommand() (src/web/api_drive.cpp) - the
+// SAME dispatch core POST /api/manual-command uses (handleManualCommandPost(),
+// src/web/api_system.cpp).
+void test_action_send_command_unknown_argument_is_rejected() {
+    runQuery("dome.action.send-command command=estop extra=1");
 
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+}
+
+void test_action_send_command_missing_command_answers_missing_argument() {
     runQuery("dome.action.send-command");
 
-    TEST_ASSERT_EQUAL_UINT(0u, g_test_dispatch_action_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
+}
+
+// executeManualCommand() returns false for an unrecognized keyword - the SAME
+// single failure shape handleManualCommandPost() answers as its own 400
+// "unsupported command" (a pre-existing conflation with an audio-queue-full
+// $ command reused verbatim, not introduced here - see the executor's own
+// header comment).
+void test_action_send_command_unsupported_keyword_answers_out_of_range() {
+    runQuery("dome.action.send-command command=not_a_real_command");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
+}
+
+// The sleep-mode prefix block, reproduced verbatim from
+// handleManualCommandPost(): a dome-forwarding prefix ('*'/'@'/'%'/'&'/'!')
+// is held while sleeping - blocked-by-state, not dispatched.
+void test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("dome.action.send-command command=*ST00");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// The keyword commands (estop, reboot, enable/disable_web_control, ...) are
+// NOT in handleManualCommandPost()'s blockedBySleep prefix set - sleeping
+// does not hold them, matching the REST source exactly.
+void test_action_send_command_keyword_is_not_blocked_by_sleep() {
+    robotState.sleepMode = true;
+
+    runQuery("dome.action.send-command command=enable_web_control");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(g_test_commanded_web_control);
+}
+
+// The "estop" keyword reaches the SAME failsafeTrigger() the REST route's
+// executeManualCommand() call does - real state, not a stand-in dispatch
+// counter.
+void test_action_send_command_estop_keyword_dispatches_through_the_real_core() {
+    runQuery("dome.action.send-command command=estop");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE(failsafeIsActive());
+}
+
+// dome.action.sequence-stop (#259): no arguments, matching
+// handleSeqStopPost() (POST /api/seq/stop, src/web/api_seq.cpp) - an
+// unconditional, non-latching transient flag set with no estop/sleep/
+// component gate in the REST source, so none is added here either.
+void test_action_sequence_stop_rejects_any_argument() {
+    runQuery("dome.action.sequence-stop extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
+void test_action_sequence_stop_sets_the_transient_flag() {
+    robotState.seqStopRequested = false;
+
+    runQuery("dome.action.sequence-stop");
+
+    TEST_ASSERT_TRUE(robotState.seqStopRequested);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+}
+
+// dome.action.move (#259): speed=<-1.0..1.0>, the same single argument
+// POST /api/dome reads (handleDomeSpeedPost(), src/web/api_drive.cpp).
+// Consent is reproduced verbatim from that handler: sleeping, then the
+// enable_dome_esc Component Toggle, then the queue send - see the executor's
+// own header comment (include/console_direct_action_dome.h) for why schema
+// validation runs before the sleep gate here rather than between the two REST
+// checks.
+void test_action_dome_move_unknown_argument_is_rejected() {
+    runQuery("dome.action.move speed=0.5 extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+}
+
+void test_action_dome_move_missing_speed_answers_missing_argument() {
+    runQuery("dome.action.move");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("speed", capturedValue("argument"));
+}
+
+void test_action_dome_move_out_of_range_speed_is_rejected() {
+    runQuery("dome.action.move speed=2.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("speed", capturedValue("argument"));
+}
+
+void test_action_dome_move_is_blocked_while_sleeping() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+    robotState.sleepMode = true;
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+void test_action_dome_move_is_refused_when_dome_output_is_disabled() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = false;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+}
+
+void test_action_dome_move_queues_when_enabled() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// dome.action.delete-sequence (#259): name=<string>, the same lookup-then-
+// delete handleSeqDelete() (DELETE /api/seq?name=, src/web/api_seq.cpp)
+// performs, reusing seqStoreIndexFind()/seqStoreDelete() verbatim. The
+// dangling-RC-binding report that REST route also builds is not reproduced -
+// see include/console_direct_action_dome.h's header comment for why
+// (docs/console-protocol.md s.3.1 reserves multi-record answers for
+// queries).
+void test_action_delete_sequence_unknown_argument_is_rejected() {
+    seedTestSeqIndex("DM:MYSEQ");
+
+    runQuery("dome.action.delete-sequence name=DM:MYSEQ extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_seq_delete_calls);
+}
+
+void test_action_delete_sequence_missing_name_answers_missing_argument() {
+    runQuery("dome.action.delete-sequence");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("name", capturedValue("argument"));
+}
+
+void test_action_delete_sequence_unknown_name_answers_out_of_range() {
+    runQuery("dome.action.delete-sequence name=DM:NOPE");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("name", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_seq_delete_calls);
+}
+
+void test_action_delete_sequence_store_failure_answers_internal_error() {
+    seedTestSeqIndex("DM:MYSEQ");
+    g_test_seq_delete_ok = false;
+
+    runQuery("dome.action.delete-sequence name=DM:MYSEQ");
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_seq_delete_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INTERNAL_ERROR, g_cap.outcome);
+}
+
+void test_action_delete_sequence_success_calls_the_real_store_delete() {
+    seedTestSeqIndex("DM:MYSEQ");
+
+    runQuery("dome.action.delete-sequence name=DM:MYSEQ");
+
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_seq_delete_calls);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+}
+
+// dome.action.test-sequence (#259): name=DM:<NAME>, the same DM:-only
+// validation and sequenceStart() call handleSeqTestPost() (POST
+// /api/seq/test, src/web/api_seq.cpp) makes for its form-field path, reused
+// verbatim.
+void test_action_test_sequence_unknown_argument_is_rejected() {
+    runQuery("dome.action.test-sequence name=DM:VADER extra=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("extra", capturedValue("argument"));
+}
+
+void test_action_test_sequence_missing_name_answers_missing_argument() {
+    runQuery("dome.action.test-sequence");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("name", capturedValue("argument"));
+}
+
+void test_action_test_sequence_rejects_a_non_dm_name() {
+    runQuery("dome.action.test-sequence name=:SE01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("name", capturedValue("argument"));
+}
+
+void test_action_test_sequence_valid_name_queues_through_the_dispatcher() {
+    runQuery("dome.action.test-sequence name=DM:NOT_A_CATALOG_ENTRY");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
 }
 
 // The dispatch core's three outcomes map onto their documented Console
@@ -2572,13 +2906,26 @@ void test_257_every_direct_action_row_still_dispatches() {
     }
 }
 
-// dome.action.dome-sequence and the five dome.api.* rows stay
-// EXECUTOR_NOT_READY too (see the pinned coordinator comment on #221 and
-// this file's own test_action_dome_sequence_still_answers_executor_not_ready
-// above for dome.action.dome-sequence's reason); dome.api.* has no
-// consoleExecuteCommand()-reachable behavior to assert on at all - see the
-// worker status comment on #221 for why (chunked/paginated JSON reads with
-// no Console Record equivalent, not this ticket's pattern to invent).
+// dome.action.save-sequence (#259) is the one dome.action.* row #259
+// deliberately leaves EXECUTOR_NOT_READY: its REST body (POST /api/seq, a
+// full Learned Sequence JSON v1 document with a steps array) is the
+// "document/bulk transfer" #206 names out of scope for this epic, and the
+// Console's one-line key=value argument grammar has no shape for it - see
+// include/console_direct_action_dome.h's own header comment for the full
+// reasoning. Asserted here so a future accidental wiring (or an accidental
+// unwiring) of this specific row is caught by name, not folded into the
+// aggregate #220 report count.
+void test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope() {
+    runQuery("dome.action.save-sequence");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
+}
+
+// The five dome.api.* rows have no consoleExecuteCommand()-reachable behavior
+// to assert on at all - see the worker status comment on #221 for why
+// (chunked/paginated JSON reads with no Console Record equivalent, not this
+// ticket's pattern to invent).
 
 // =============================================================================
 // Test Runner
@@ -2619,8 +2966,6 @@ int main(int, char**) {
     RUN_TEST(test_action_estop_is_blocked_not_dispatched);
     RUN_TEST(test_action_web_control_disabled_is_blocked_not_dispatched);
     RUN_TEST(test_action_analog_target_answers_not_executable);
-    RUN_TEST(test_action_dome_sequence_still_answers_executor_not_ready);
-    RUN_TEST(test_action_with_no_rc_bindable_target_answers_executor_not_ready);
     RUN_TEST(test_action_dispatch_outcome_queued_maps_to_ok_result);
     RUN_TEST(test_action_dispatch_outcome_queue_full_maps_to_err_result);
     RUN_TEST(test_action_dispatch_outcome_blocked_by_state_maps_to_unavailable);
@@ -2638,6 +2983,38 @@ int main(int, char**) {
     RUN_TEST(test_action_marcduino_command_bad_prefix_answers_out_of_range);
     RUN_TEST(test_action_marcduino_command_quoted_value_dispatches_with_payload);
     RUN_TEST(test_action_marcduino_command_value_too_long_answers_out_of_range);
+
+    // dome.action.* direct executors (#259, include/console_direct_action_dome.h)
+    RUN_TEST(test_action_dome_sequence_unknown_argument_is_rejected);
+    RUN_TEST(test_action_dome_sequence_missing_value_answers_missing_argument);
+    RUN_TEST(test_action_dome_sequence_rejects_a_non_dm_value);
+    RUN_TEST(test_action_dome_sequence_rejects_a_value_too_long_for_dome_tx);
+    RUN_TEST(test_action_dome_sequence_unknown_dm_name_forwards_to_dome_fallback);
+    RUN_TEST(test_action_dome_sequence_catalog_name_queues_through_the_dispatcher);
+    RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
+    RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
+    RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);
+    RUN_TEST(test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping);
+    RUN_TEST(test_action_send_command_keyword_is_not_blocked_by_sleep);
+    RUN_TEST(test_action_send_command_estop_keyword_dispatches_through_the_real_core);
+    RUN_TEST(test_action_sequence_stop_rejects_any_argument);
+    RUN_TEST(test_action_sequence_stop_sets_the_transient_flag);
+    RUN_TEST(test_action_dome_move_unknown_argument_is_rejected);
+    RUN_TEST(test_action_dome_move_missing_speed_answers_missing_argument);
+    RUN_TEST(test_action_dome_move_out_of_range_speed_is_rejected);
+    RUN_TEST(test_action_dome_move_is_blocked_while_sleeping);
+    RUN_TEST(test_action_dome_move_is_refused_when_dome_output_is_disabled);
+    RUN_TEST(test_action_dome_move_queues_when_enabled);
+    RUN_TEST(test_action_delete_sequence_unknown_argument_is_rejected);
+    RUN_TEST(test_action_delete_sequence_missing_name_answers_missing_argument);
+    RUN_TEST(test_action_delete_sequence_unknown_name_answers_out_of_range);
+    RUN_TEST(test_action_delete_sequence_store_failure_answers_internal_error);
+    RUN_TEST(test_action_delete_sequence_success_calls_the_real_store_delete);
+    RUN_TEST(test_action_test_sequence_unknown_argument_is_rejected);
+    RUN_TEST(test_action_test_sequence_missing_name_answers_missing_argument);
+    RUN_TEST(test_action_test_sequence_rejects_a_non_dm_name);
+    RUN_TEST(test_action_test_sequence_valid_name_queues_through_the_dispatcher);
+    RUN_TEST(test_action_save_sequence_stays_executor_not_ready_document_transfer_out_of_scope);
 
     RUN_TEST(test_component_toggle_read_reports_saved_and_active);
     RUN_TEST(test_component_toggle_write_persists_and_reports_staged_until_reboot);
