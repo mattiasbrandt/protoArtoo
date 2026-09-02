@@ -1,21 +1,22 @@
-"""Pinned behaviour for the P4 soak harness's two status schemas (#197).
+"""Pinned behaviour for the soak harness's status schemas (#197).
 
-`tools/p4_hosted_soak.py` reads two different firmware images over HTTP, and a
-field mapped to the wrong name stays invisible until a bench day -- bench days
-on this project are expensive and operator-scheduled. Two kinds of test here,
+`tools/soak.py` reads three different firmware images over HTTP, and a field
+mapped to the wrong name stays invisible until a bench day -- bench days on
+this project are expensive and operator-scheduled. Two kinds of test here,
 both cheap:
 
 1. **Decision logic**, pinned directly: which reset reasons are crash-shaped,
    what counts as a restart on each image, what a wrong `--image` does, and
    which report keys each image may emit.
 2. **Drift guards** that read the firmware sources the schemas were derived
-   from (`src/web/web_server.cpp`, `src/reset_reason.cpp`,
-   `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on either
-   image, this suite goes red instead of the harness silently reading a field
-   that is no longer there.
+   from (`src/web/web_server.cpp`, `src/reset_reason.cpp`, `include/config.h`,
+   `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
+   or a board capability stops gating what the schemas assume it gates, this
+   suite goes red instead of the harness silently reading a field that is no
+   longer there.
 
 The harness's own `--self-test` covers the wire: real SSE framing through the
-real parser and both drivers end to end against local fixtures. It is not
+real parser and every driver end to end against local fixtures. It is not
 duplicated here. Run via `python3 -m unittest discover -s test/test_tools`;
 the slice gate runs this suite as its first check.
 """
@@ -28,14 +29,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import p4_hosted_soak as soak  # noqa: E402
+import soak  # noqa: E402
 
 WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
 RESET_REASON_CPP = (REPO_ROOT / "src" / "reset_reason.cpp").read_text()
 BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
+CONFIG_H = (REPO_ROOT / "include" / "config.h").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
 SHIPPING = soak.SCHEMAS["shipping"]
+ARTOO = soak.SCHEMAS["artoo"]
 
 
 def bench_status_body(**overrides) -> dict:
@@ -47,6 +50,12 @@ def bench_status_body(**overrides) -> dict:
 def shipping_status_body(**overrides) -> dict:
     body = dict(soak.FIXTURE_SHIPPING_STATUS_BODY)
     body["hostedLink"] = dict(body["hostedLink"])
+    body.update(overrides)
+    return body
+
+
+def artoo_status_body(**overrides) -> dict:
+    body = dict(soak.FIXTURE_ARTOO_STATUS_BODY)
     body.update(overrides)
     return body
 
@@ -371,6 +380,212 @@ class ResetDriverRefusesOnShipping(unittest.TestCase):
 
     def test_the_bench_schema_still_has_a_route_to_post_to(self):
         self.assertEqual(BENCH.reset_path, soak.DEFAULT_RESET_PATH)
+
+
+class ArtooIsTheSharedStatusBuilderMinusOneCapability(unittest.TestCase):
+    """The artoo schema's whole premise: `buildStatusJson()` is one function
+    serving every board, and `PA_CAP_HOSTED_WIFI` is the only thing that
+    changes its shape. These read the firmware rather than trusting the
+    premise -- if the hostedLink block ever becomes unconditional, or the
+    capability stops being 0 on artoo-esp32, the schema is wrong and this
+    suite is where that surfaces."""
+
+    def test_the_hostedlink_object_is_emitted_only_under_the_capability_guard(self):
+        guarded = re.findall(r"#if PA_CAP_HOSTED_WIFI\n(.*?)\n#endif", WEB_SERVER_CPP,
+                             re.DOTALL)
+        emit = f'\\"{soak.HOSTED_LINK_CONTAINER}\\":'
+        total = WEB_SERVER_CPP.count(emit)
+        inside = sum(block.count(emit) for block in guarded)
+        self.assertGreater(total, 0, "buildStatusJson() no longer emits hostedLink at all")
+        self.assertEqual(
+            total, inside,
+            "hostedLink is emitted outside `#if PA_CAP_HOSTED_WIFI`; the artoo schema "
+            "requires its ABSENCE and would start refusing a valid artoo payload")
+
+    def test_the_capability_is_zero_on_artoo_esp32(self):
+        # config.h has several `#if PA_BOARD == PA_BOARD_ARTOO_ESP32` arms
+        # (chip target, pin map, capabilities); pick the one that declares the
+        # capability rather than assuming it is the first.
+        arms = re.findall(r"#if PA_BOARD == PA_BOARD_ARTOO_ESP32\n(.*?)\n#elif",
+                          CONFIG_H, re.DOTALL)
+        declaring = [arm for arm in arms if "PA_CAP_HOSTED_WIFI" in arm]
+        self.assertEqual(len(declaring), 1,
+                         "expected exactly one artoo-esp32 arm to declare "
+                         f"PA_CAP_HOSTED_WIFI, found {len(declaring)}")
+        self.assertRegex(declaring[0], r"#define\s+PA_CAP_HOSTED_WIFI\s+0\b")
+
+    def test_the_event_stream_task_carries_no_capability_guard(self):
+        # The artoo schema reuses the shipping heartbeat continuity model on
+        # the strength of this: same task, same three event names, same 1 Hz
+        # tick, no board branch anywhere in it.
+        start = WEB_SERVER_CPP.index("void eventStreamTask(void*) {")
+        body = WEB_SERVER_CPP[start:WEB_SERVER_CPP.index("\n}\n", start)]
+        self.assertIsNone(
+            re.search(r"^\s*#\s*(if|ifdef|ifndef|else|elif|endif)\b", body, re.M),
+            "eventStreamTask() grew a preprocessor branch; the artoo and shipping "
+            "images may no longer put the same frames on the wire")
+        self.assertEqual(ARTOO.new_continuity_tracker().model, "heartbeat")
+
+    def test_artoo_reads_the_same_shared_fields_as_shipping(self):
+        # They come out of the same unconditional snprintf, so a divergence
+        # here would mean one of the two schemas is reading a name the
+        # firmware does not emit for it.
+        for attribute in ("heap_field", "sse_clients_field", "restart_field",
+                          "restart_verb", "reset_reason_kind"):
+            with self.subTest(attribute=attribute):
+                self.assertEqual(getattr(ARTOO, attribute), getattr(SHIPPING, attribute))
+        for field in (ARTOO.heap_field, ARTOO.sse_clients_field, ARTOO.restart_field,
+                      "resetReason", "wifiConnected"):
+            with self.subTest(field=field):
+                self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+                              f"{field!r} is no longer emitted by buildStatusJson()")
+
+
+class ArtooPublishesNoRecoveryLadder(unittest.TestCase):
+    def test_the_absence_is_a_property_not_an_empty_reading(self):
+        self.assertFalse(ARTOO.publishes_recovery_ladder)
+        self.assertIsNone(ARTOO.ladder_container)
+        self.assertEqual(ARTOO.ladder_fields, {})
+        self.assertIsNone(ARTOO.ladder(artoo_status_body(), "t"))
+        anomalies = []
+        self.assertIsNone(ARTOO.collect_ladder([artoo_status_body()], anomalies))
+        # None, not an empty LadderSamples, and not an anomaly either: nothing
+        # was malformed, there is simply no block on this image.
+        self.assertEqual(anomalies, [])
+
+    def test_the_field_map_says_so_in_words(self):
+        published = ARTOO.fields_read()["recoveryLadder"]
+        self.assertEqual(published, ARTOO.ladder_absence_note)
+        self.assertIn("PA_CAP_HOSTED_WIFI", published)
+        # The images that do have one still publish a field map, unchanged.
+        self.assertEqual(SHIPPING.fields_read()["recoveryLadder"]["state"],
+                         "hostedLink.phase")
+        self.assertEqual(BENCH.fields_read()["recoveryLadder"]["state"],
+                         "recoveryLadderState")
+
+    def test_the_shipping_container_name_is_shared_with_the_absence_check(self):
+        # One constant, so a rename cannot reach the reader without also
+        # reaching the schema that requires the block to be missing.
+        self.assertEqual(SHIPPING.ladder_container, soak.HOSTED_LINK_CONTAINER)
+
+
+class ArtooDeclaredImageIsChecked(unittest.TestCase):
+    def test_the_artoo_fixture_satisfies_its_own_schema(self):
+        self.assertEqual(ARTOO.structural_mismatches(artoo_status_body()), [])
+
+    def test_a_shipping_payload_is_refused_by_the_artoo_schema(self):
+        mismatches = ARTOO.structural_mismatches(shipping_status_body())
+        self.assertTrue(mismatches)
+        self.assertTrue(any("'hostedLink' is present" in m for m in mismatches), mismatches)
+
+    def test_an_artoo_payload_is_refused_by_the_shipping_schema(self):
+        mismatches = SHIPPING.structural_mismatches(artoo_status_body())
+        self.assertTrue(mismatches)
+        self.assertTrue(any("no 'hostedLink' object" in m for m in mismatches), mismatches)
+
+    def test_a_bootcount_is_refused_positively_the_same_way_shipping_refuses_one(self):
+        mismatches = ARTOO.structural_mismatches(artoo_status_body(bootCount=1))
+        self.assertTrue(any("bootCount is present" in m for m in mismatches), mismatches)
+        self.assertTrue(any("not an artoo image" in m for m in mismatches), mismatches)
+
+    def test_a_bench_payload_is_refused_by_the_artoo_schema(self):
+        self.assertTrue(ARTOO.structural_mismatches(bench_status_body()))
+
+    def test_identify_schema_separates_all_three(self):
+        self.assertIs(soak.identify_schema(artoo_status_body()), ARTOO)
+        self.assertIs(soak.identify_schema(shipping_status_body()), SHIPPING)
+        self.assertIs(soak.identify_schema(bench_status_body()), BENCH)
+
+
+class ArtooLinkReadiness(unittest.TestCase):
+    def test_it_reads_wificonnected_and_nothing_else(self):
+        ready, why_not = ARTOO.link_readiness(artoo_status_body())
+        self.assertTrue(ready)
+        self.assertEqual(why_not, "")
+        # A phase would be meaningless on this board; a stray one must not
+        # change the answer in either direction.
+        with_phase = artoo_status_body()
+        with_phase[soak.HOSTED_LINK_CONTAINER] = {"phase": "degraded"}
+        self.assertTrue(ARTOO.link_readiness(with_phase)[0])
+
+    def test_a_missing_field_is_absent_evidence_not_a_failed_link(self):
+        body = artoo_status_body()
+        body.pop("wifiConnected")
+        ready, why_not = ARTOO.link_readiness(body)
+        self.assertFalse(ready)
+        self.assertIn("not that the link failed", why_not)
+
+    def test_the_diagnostic_states_that_this_is_weaker_than_the_shipping_check(self):
+        _, why_not = ARTOO.link_readiness(artoo_status_body(wifiConnected=False))
+        self.assertIn("WEAKER evidence", why_not)
+        self.assertIn("hostedLink.phase", why_not)
+        self.assertIn("#184", why_not)
+        # And it names what wifiConnected actually is, which is not
+        # WiFi.status() on its own.
+        self.assertIn("apEnabled || staConnected", why_not)
+        self.assertIn("fields.wifiConnected = apEnabled || staConnected;",
+                      (REPO_ROOT / "src" / "web" / "api_status_serializers.cpp").read_text())
+
+
+class ArtooHasNoResetRoute(unittest.TestCase):
+    def test_the_driver_refuses_before_building_a_request(self):
+        # The client is deliberately unusable: reaching the network at all
+        # would raise here, which is the assertion.
+        result = soak.run_c6_reset_recovery(
+            client=None, schema=ARTOO, recovery_timeout_s=1.0, poll_interval_s=0.1,
+            heap_tolerance_pct=20.0, sse_resume_timeout_s=1.0,
+        )
+        self.assertEqual(result["verdict"], "UNAVAILABLE")
+        self.assertEqual(result["image"], "artoo")
+        reasons = " ".join(result["reasons"])
+        self.assertIn("no companion radio", reasons)
+        self.assertIn("PA_CAP_HOSTED_WIFI is 0", reasons)
+
+    def test_each_image_gives_its_own_reason_for_having_no_route(self):
+        # #243 is a missing route on a board that has a C6; artoo-esp32 has no
+        # C6. Telling an operator the wrong one of those sends them to the
+        # wrong ticket.
+        self.assertIn("#243", SHIPPING.reset_unavailable_reason)
+        self.assertNotIn("#243", ARTOO.reset_unavailable_reason.split("This is not")[0])
+        self.assertIsNone(ARTOO.reset_path)
+        self.assertIsNone(SHIPPING.reset_path)
+        self.assertEqual(BENCH.reset_path, soak.DEFAULT_RESET_PATH)
+
+    def test_a_reset_route_implies_a_ladder_to_watch_it_with(self):
+        # run_c6_reset_recovery() reads schema.ladder() straight after the
+        # reset_path refusal and dereferences it, so a schema with a route and
+        # no ladder would deref None there. The coupling is pinned rather than
+        # left to the comment at that call site.
+        for name, schema in soak.SCHEMAS.items():
+            with self.subTest(image=name):
+                if schema.reset_path is not None:
+                    self.assertTrue(schema.publishes_recovery_ladder)
+
+
+class ArtooReportKeys(unittest.TestCase):
+    def test_restart_evidence_is_uptime_with_no_bootcount_key(self):
+        self.assertFalse(ARTOO.publishes_boot_count)
+        report = ARTOO.restart_report(3_600_000, 3_601_000, False)
+        self.assertEqual(report, {"baselineUptimeMs": 3_600_000,
+                                  "finalUptimeMs": 3_601_000,
+                                  "uptimeMsWentBackwards": False})
+        self.assertNotIn("bootCount", str(report))
+
+    def test_the_same_two_uptime_limits_hold_as_on_shipping(self):
+        self.assertFalse(ARTOO.restart_detected(3_600_000, [3_601_000, 3_602_000]))
+        self.assertTrue(ARTOO.restart_detected(3_600_000, [3_601_000, 1_200]))
+        self.assertTrue(ARTOO.restart_detected(1_000, [500, 900_000]))
+
+    def test_reset_reason_classification_is_the_shipping_one(self):
+        # Same resetReasonName() on both boards (src/reset_reason.cpp has no
+        # board branch), so the tri-state must be identical.
+        self.assertIs(ARTOO.reset_reason(artoo_status_body(resetReason="TASK_WDT"),
+                                         "t").crash_shaped, True)
+        self.assertIs(ARTOO.reset_reason(artoo_status_body(resetReason="POWERON"),
+                                         "t").crash_shaped, False)
+        ambiguous = ARTOO.reset_reason(artoo_status_body(resetReason="OTHER"), "t")
+        self.assertIsNone(ambiguous.crash_shaped)
+        self.assertTrue(ambiguous.caveat)
 
 
 if __name__ == "__main__":

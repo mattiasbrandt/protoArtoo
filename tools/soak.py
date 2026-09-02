@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""P4 ESP-Hosted soak harness -- implements the #184 verdict contract (#197).
+"""protoArtoo soak harness -- implements the #184 verdict contract (#197).
 
-Drives an ESP32-P4 + ESP32-C6 board over HTTP/SSE to answer: is ESP-Hosted
-reliable enough, beyond the reduced manual smoke #184 already ran? Every
-device run here is coordinator/operator-initiated; this tool never flashes,
-never calls `make ota`, and never touches firmware sources.
+Drives a protoArtoo controller over HTTP/SSE to answer: does the web stack
+hold up over a long run, beyond the reduced manual smoke #184 already ran?
+Every device run here is coordinator/operator-initiated; this tool never
+flashes, never calls `make ota`, and never touches firmware sources.
 
-Two images can be driven, selected by --image and never sniffed (see
+Named `soak.py` rather than `p4_hosted_soak.py` since #194: the harness reads
+more than the one ESP-Hosted bench image it was written for, and a name that
+claims otherwise sends the next reader looking for a P4 in a run that has
+none.
+
+Three images can be driven, selected by --image and never sniffed (see
 StatusSchema for why the declaration is checked rather than inferred):
 
   bench     bringup/p4_hosted_bench.cpp, env firebeetle2_hosted_bench. Built
@@ -18,6 +23,13 @@ StatusSchema for why the declaration is checked rather than inferred):
             ladder nested under "hostedLink", no reset route at all (#243),
             and an /api/events stream of named status/rc/log events rather
             than a counter.
+  artoo     the artoo_esp32 product image (#194) -- the same
+            buildStatusJson(), minus the "hostedLink" block, which is emitted
+            only inside `#if PA_CAP_HOSTED_WIFI` (:724-743) and that
+            capability is 0 on artoo-esp32 (include/config.h:69). So: no
+            bootCount, no hostedLink, no recovery ladder, no reset route, and
+            the same named status/rc/log event stream, because
+            eventStreamTask() carries no capability guard at all.
 
 Structural rule (non-negotiable, #197 pinned comment): there is exactly ONE
 SSE frame-parsing implementation (SseFrameParser, driven only through
@@ -59,6 +71,24 @@ src/web/web_server.cpp:
                           503 (PA_ADMISSION_MAX_SSE_CLIENTS).
   POST /api/c6/reset   -> does not exist. run_c6_reset_recovery() refuses
                           rather than reporting anything (#243).
+
+Artoo endpoint contract, read from the same two files: /api/status,
+/api/events and /api/health are registered unconditionally in
+webRegisterSeamRoutes() (src/web/web_seam_routes.cpp:46,51,54), so the artoo
+image serves the same three routes with the same shapes as the shipping
+image, and neither product image has a reset route. Everything that differs
+follows from the one board capability:
+  GET  /api/status    -> no "hostedLink" object (:724-743 is compiled out),
+                          hence no recovery-ladder evidence at all, and
+                          nothing to corroborate wifiConnected with.
+  GET  /api/events    -> identical: eventStreamTask() (:793-902) has no
+                          preprocessor guard anywhere in it, and
+                          PA_ADMISSION_MAX_SSE_CLIENTS is 3 on every build
+                          (include/web_event_stream.h:35; no env overrides
+                          it), so api_events.cpp refuses a fourth stream here
+                          the same way.
+  POST /api/c6/reset   -> could not exist: there is no ESP32-C6 companion
+                          radio on this board to reset.
 
 Fixture-derivation and ESP_RST_* constants were read from the pinned vendor
 source, the ESP-IDF header and the firmware itself (see SseFrame's docstring,
@@ -141,6 +171,14 @@ BAD_RESET_REASONS = {4, 5, 6, 7, 15}
 SHIPPING_CRASH_SHAPED_RESET_NAMES = {"PANIC", "INT_WDT", "TASK_WDT", "WDT"}
 SHIPPING_CLEAN_RESET_NAMES = {"POWERON", "EXTERNAL", "SOFTWARE", "DEEPSLEEP", "BROWNOUT", "SDIO"}
 SHIPPING_UNKNOWN_RESET_NAMES = {"UNKNOWN", "OTHER"}
+
+# src/web/web_server.cpp:724-743 -- the recovery-ladder object, emitted inside
+# `#if PA_CAP_HOSTED_WIFI` and therefore absent from every image built for a
+# board whose capability is 0 (include/config.h:69, artoo-esp32). Named once so
+# the schema that READS the block and the schema that requires its ABSENCE
+# cannot drift apart on the spelling: a rename that reached only one of them
+# would leave the other silently accepting the wrong image.
+HOSTED_LINK_CONTAINER = "hostedLink"
 
 DEFAULT_HEALTH_PATH = "/api/health"
 DEFAULT_STATUS_PATH = "/api/status"
@@ -888,9 +926,10 @@ class ResetReasonAssessment:
 
 @dataclasses.dataclass(frozen=True)
 class LadderReading:
-    """One sample of the bounded transport-failure recovery ladder. Both
-    images publish the same five quantities under different names and, on
-    shipping, inside a nested object."""
+    """One sample of the bounded transport-failure recovery ladder. The two
+    images that have a ladder publish the same five quantities under different
+    names and, on shipping, inside a nested object. The artoo image has no
+    ladder to sample at all -- see StatusSchema.publishes_recovery_ladder."""
 
     state: str
     transport_failure_count: int
@@ -911,8 +950,8 @@ class LadderSamples:
 class StatusSchema:
     """How to read one firmware image's GET /api/status.
 
-    The two images this harness can drive publish different payloads for the
-    same measurements, and the differences are structural rather than
+    The three images this harness can drive publish different payloads for
+    the same measurements, and the differences are structural rather than
     cosmetic:
 
       bench     bringup/p4_hosted_bench.cpp handleStatus() -- built to be
@@ -925,8 +964,14 @@ class StatusSchema:
                 resetReasonName()'s string (:401), heapLargest8bit and
                 sseClients rather than largestFree8bitBlock and
                 sseClientsConnected, the ladder nested under "hostedLink"
-                (:724-742, behind the PA_CAP_HOSTED_WIFI board capability
+                (:724-743, behind the PA_CAP_HOSTED_WIFI board capability
                 gate), and no reset route anywhere in src/ (that is #243).
+      artoo     the same buildStatusJson(), built for the same dashboard on a
+                board where PA_CAP_HOSTED_WIFI is 0 -- so the "hostedLink"
+                block is not compiled in and there is no recovery ladder to
+                read anywhere in the payload. Everything else in the fixed
+                system-health block is emitted by one unconditional snprintf
+                (:391-393) and is therefore identical.
 
     Which schema is in use is an operator declaration (--image), never
     sniffed from the payload: sniffing turns a truncated or half-built
@@ -936,11 +981,16 @@ class StatusSchema:
     --image fails loudly at preflight.
 
     A field one image does not publish is a property of that image
-    (publishes_boot_count), not a .get() that quietly returns None: absent
-    must read as absent, never as zero."""
+    (publishes_boot_count, publishes_recovery_ladder), not a .get() that
+    quietly returns None: absent must read as absent, never as zero."""
 
     name = ""
     reset_path: Optional[str] = None
+    # The diagnostic run_c6_reset_recovery() refuses with when reset_path is
+    # None. Owned by the schema because the two images that have no reset
+    # route have it for different reasons, and a driver that names only one of
+    # them tells the operator something false about the other board.
+    reset_unavailable_reason = ""
     publishes_boot_count = False
     enforces_sse_client_cap = False
     reset_reason_kind = ""
@@ -950,6 +1000,13 @@ class StatusSchema:
     restart_verb = ""
     ladder_container: Optional[str] = None
     ladder_fields: dict[str, str] = {}
+    # False on an image built for a board with no ESP-Hosted link supervisor:
+    # the ladder object is absent from the payload entirely, which is a
+    # different claim from "its counters read zero" and is reported as such.
+    publishes_recovery_ladder = True
+    # What a report says in place of the ladder numbers when there are none.
+    # Only read when publishes_recovery_ladder is False.
+    ladder_absence_note = ""
     continuity_tracker_class: type = SseContinuityTracker
 
     # -- continuity ------------------------------------------------------
@@ -976,7 +1033,14 @@ class StatusSchema:
             "restartEvidence": self.restart_field,
             "resetReason": f"resetReason ({self.reset_reason_kind})",
             "bootCount": "bootCount" if self.publishes_boot_count else "<not published>",
-            "recoveryLadder": {key: prefix + name for key, name in self.ladder_fields.items()},
+            # An empty field map would read as "this image publishes an empty
+            # ladder". The absence gets words, the same way bootCount and the
+            # reset route do.
+            "recoveryLadder": (
+                {key: prefix + name for key, name in self.ladder_fields.items()}
+                if self.publishes_recovery_ladder
+                else self.ladder_absence_note
+            ),
             "resetRoute": self.reset_path or "<no reset route on this image>",
         }
 
@@ -1000,7 +1064,13 @@ class StatusSchema:
     def collect_restart_markers(self, samples: list[dict], anomalies: list[str]) -> list[int]:
         return _collect_field(samples, self.restart_field, int, anomalies)
 
-    def ladder(self, body: dict, context: str) -> LadderReading:
+    def ladder(self, body: dict, context: str) -> Optional[LadderReading]:
+        """One ladder sample, or None when this image publishes no ladder at
+        all. None is not "the counters read zero" and not "this sample was
+        malformed": it is the whole block being absent by construction, which
+        no reading can stand in for."""
+        if not self.publishes_recovery_ladder:
+            return None
         names = self.ladder_fields
         return LadderReading(
             state=_require_field(body, names["state"], str, context, container=self.ladder_container),
@@ -1014,7 +1084,12 @@ class StatusSchema:
                 body, names["recoveredCount"], int, context, container=self.ladder_container),
         )
 
-    def collect_ladder(self, samples: list[dict], anomalies: list[str]) -> LadderSamples:
+    def collect_ladder(self, samples: list[dict], anomalies: list[str]) -> Optional[LadderSamples]:
+        """Poll-loop counterpart to ladder(); None for the same reason, and
+        never an empty LadderSamples, which a caller would read as "sampled
+        and saw nothing"."""
+        if not self.publishes_recovery_ladder:
+            return None
         names = self.ladder_fields
         return LadderSamples(
             states=_collect_field(
@@ -1145,22 +1220,33 @@ class BenchStatusSchema(StatusSchema):
         return mismatches
 
 
-class ShippingStatusSchema(StatusSchema):
-    name = "shipping"
-    # No reset route exists anywhere in the shipping image: grep over src/ +
-    # include/ returns zero hits for /api/c6/reset, and the seam route table
+class ProductImageStatusSchema(StatusSchema):
+    """What src/web/web_server.cpp buildStatusJson() publishes on EVERY board.
+
+    The fixed system-health block is one unconditional snprintf (:391-393), so
+    every product image agrees on these names and types whatever the Board
+    Variant. The only board-conditional part of that payload is the
+    "hostedLink" object at :724-743, behind PA_CAP_HOSTED_WIFI -- so the
+    concrete product schemas below differ from each other in exactly that
+    block, in the readiness evidence that depends on it, and in why neither
+    has a C6 reset route."""
+
+    # Neither product image has a reset route: grep over src/ + include/
+    # returns zero hits for /api/c6/reset, and the seam route table
     # (src/web/web_seam_routes.cpp) registers none. run_c6_reset_recovery()
-    # refuses on this, rather than reporting a pass it never provoked; the
-    # reset path itself is #243, on epic #206.
+    # refuses on this, rather than reporting a pass it never provoked. The
+    # reason differs per board and is spelled out in each schema's
+    # reset_unavailable_reason.
     reset_path = None
     # buildStatusJson() publishes no bootCount at all. Recorded as a
     # structural property so nothing can read the absence as zero.
     publishes_boot_count = False
     # src/web/api_events.cpp refuses a stream once
-    # PA_ADMISSION_MAX_SSE_CLIENTS are open, with 503 and a short body. Under
-    # a reconnect storm at the cap that refusal is admission working as
-    # designed, not a transport fault -- run_reconnect_storm() counts it
-    # separately for exactly that reason.
+    # PA_ADMISSION_MAX_SSE_CLIENTS are open, with 503 and a short body. That
+    # handler and that cap carry no board guard, so this holds on every
+    # product image. Under a reconnect storm at the cap the refusal is
+    # admission working as designed, not a transport fault --
+    # run_reconnect_storm() counts it separately for exactly that reason.
     enforces_sse_client_cap = True
     reset_reason_kind = "resetReasonName() string"
     heap_field = "heapLargest8bit"
@@ -1169,17 +1255,33 @@ class ShippingStatusSchema(StatusSchema):
     # web_server.cpp:360) stepping backwards -- see restart_detected().
     restart_field = "uptimeMs"
     restart_verb = "went backwards"
-    ladder_container = "hostedLink"
-    # src/web/web_server.cpp:724-742, from HostedLinkStatusSnapshot
-    # (include/hosted_link_status.h).
-    ladder_fields = {
-        "state": "phase",
-        "transportFailureCount": "transportFailureCount",
-        "transportUpEventCount": "transportUpEventCount",
-        "attemptCount": "attemptCount",
-        "recoveredCount": "recoveredCount",
-    }
     continuity_tracker_class = HeartbeatFrameTracker
+    # Grammatical article for the diagnostics below -- "a shipping image", "an
+    # artoo image". These strings are read by an operator, not parsed.
+    image_article = "a"
+
+    def _product_marker_mismatches(self, body: dict) -> list[str]:
+        """The structural markers every product payload must carry, plus the
+        bootCount absence they all share. Each concrete product schema adds
+        the markers its own board capability decides."""
+        mismatches = []
+        # bootCount must be ABSENT. Checked positively so that an image which
+        # started publishing one is refused here rather than quietly read
+        # through a schema that assumes it cannot exist.
+        if "bootCount" in body:
+            mismatches.append(
+                f"declared image: bootCount is present, but the {self.name} payload "
+                f"(src/web/web_server.cpp:393) publishes none -- this is not "
+                f"{self.image_article} {self.name} image"
+            )
+        for field, expected_type in (
+            ("resetReason", str), (self.heap_field, int),
+            (self.sse_clients_field, int), (self.restart_field, int),
+        ):
+            mismatch = _marker_mismatch(body, field, expected_type)
+            if mismatch is not None:
+                mismatches.append(mismatch)
+        return mismatches
 
     def reset_reason(self, body: dict, context: str) -> ResetReasonAssessment:
         name = _require_field(body, "resetReason", str, context)
@@ -1202,12 +1304,12 @@ class ShippingStatusSchema(StatusSchema):
             display=name, crash_shaped=None,
             caveat=(
                 f"resetReasonName() (src/reset_reason.cpp) does not produce {name!r} -- this "
-                "payload is not the shipping mapping this schema was read from"
+                f"payload is not the {self.name} mapping this schema was read from"
             ),
         )
 
     def restart_detected(self, baseline: int, markers: list[int]) -> bool:
-        # The shipping image publishes no bootCount, so the restart evidence
+        # A product image publishes no bootCount, so the restart evidence
         # is uptimeMs (millis()) stepping backwards: a reboot restarts
         # millis() at 0. Compared against the PREVIOUS sample rather than
         # against the baseline, so a device that reboots and then runs past
@@ -1227,7 +1329,7 @@ class ShippingStatusSchema(StatusSchema):
         return False
 
     def restart_report(self, baseline: int, final: int, detected: bool) -> dict:
-        # No bootCount key on a shipping report, deliberately: a consumer
+        # No bootCount key on a product-image report, deliberately: a consumer
         # looking for one finds nothing, which is the truth, rather than an
         # uptime reading wearing bootCount's name.
         return {
@@ -1235,6 +1337,30 @@ class ShippingStatusSchema(StatusSchema):
             "finalUptimeMs": final,
             "uptimeMsWentBackwards": detected,
         }
+
+
+class ShippingStatusSchema(ProductImageStatusSchema):
+    name = "shipping"
+    # The board does have an ESP32-C6, so a reset route is meaningful here and
+    # simply is not implemented -- that is #243, on epic #206.
+    reset_unavailable_reason = (
+        "the shipping image publishes no C6 reset route -- POST /api/c6/reset "
+        "exists only on bringup/p4_hosted_bench.cpp, and the shipping seam route "
+        "table (src/web/web_seam_routes.cpp) registers none. The reset cannot be "
+        "provoked, so nothing about recovery can be measured on this image. "
+        "Shipping-image C6 reset recovery is tracked on #243; run this driver "
+        "against --image bench"
+    )
+    ladder_container = HOSTED_LINK_CONTAINER
+    # src/web/web_server.cpp:724-743, from HostedLinkStatusSnapshot
+    # (include/hosted_link_status.h).
+    ladder_fields = {
+        "state": "phase",
+        "transportFailureCount": "transportFailureCount",
+        "transportUpEventCount": "transportUpEventCount",
+        "attemptCount": "attemptCount",
+        "recoveredCount": "recoveredCount",
+    }
 
     def link_readiness(self, body: dict) -> tuple[bool, str]:
         hosted_link = body.get(self.ladder_container)
@@ -1256,22 +1382,7 @@ class ShippingStatusSchema(StatusSchema):
         )
 
     def structural_mismatches(self, body: dict) -> list[str]:
-        mismatches = []
-        # bootCount must be ABSENT. Checked positively so that an image which
-        # started publishing one is refused here rather than quietly read
-        # through a schema that assumes it cannot exist.
-        if "bootCount" in body:
-            mismatches.append(
-                "declared image: bootCount is present, but the shipping payload "
-                "(src/web/web_server.cpp:393) publishes none -- this is not a shipping image"
-            )
-        for field, expected_type in (
-            ("resetReason", str), (self.heap_field, int),
-            (self.sse_clients_field, int), (self.restart_field, int),
-        ):
-            mismatch = _marker_mismatch(body, field, expected_type)
-            if mismatch is not None:
-                mismatches.append(mismatch)
+        mismatches = self._product_marker_mismatches(body)
         hosted_link = body.get(self.ladder_container)
         if not isinstance(hosted_link, dict):
             mismatches.append(
@@ -1287,9 +1398,94 @@ class ShippingStatusSchema(StatusSchema):
         return mismatches
 
 
+class ArtooStatusSchema(ProductImageStatusSchema):
+    """The artoo_esp32 product image (#194).
+
+    The same buildStatusJson() as `shipping`, on a board where
+    PA_CAP_HOSTED_WIFI is 0 (include/config.h:69). Two things follow, and both
+    are absences this schema checks for rather than assumes:
+
+      hostedLink  emitted only inside `#if PA_CAP_HOSTED_WIFI`
+                  (src/web/web_server.cpp:724-743), so there is no recovery
+                  ladder anywhere in the payload.
+      reset route could not exist -- there is no companion radio on this board
+                  to reset.
+
+    Everything else the harness reads comes out of the unconditional
+    system-health snprintf (:391-393) and is byte-for-byte the shipping
+    image's, which is why this schema is a sibling of ShippingStatusSchema
+    under one product base rather than a fork of it."""
+
+    name = "artoo"
+    image_article = "an"
+    reset_unavailable_reason = (
+        "the artoo image publishes no C6 reset route, and could not: POST /api/c6/reset "
+        "resets an ESP32-C6 companion radio over its ESP-Hosted reset line, and "
+        "artoo-esp32 has no companion radio at all -- PA_CAP_NATIVE_WIFI is 1 and "
+        "PA_CAP_HOSTED_WIFI is 0 (include/config.h:68-69), so the radio is on the same "
+        "die as the application. There is nothing to reset and therefore nothing about "
+        "C6 recovery to measure on this board. This is not the shipping image's "
+        "situation, which is a missing route on a board that does have a C6 (#243); run "
+        "this driver against --image bench"
+    )
+    # No ladder object at all, so no container and no field map: an empty
+    # ladder_fields would otherwise read as "publishes an empty ladder".
+    ladder_container = None
+    ladder_fields = {}
+    publishes_recovery_ladder = False
+    ladder_absence_note = (
+        "<no recovery ladder on this image: the hostedLink block "
+        "(src/web/web_server.cpp:724-743) is compiled out where PA_CAP_HOSTED_WIFI is 0 "
+        "(include/config.h:69), and artoo-esp32 has no SDIO transport for a link "
+        "supervisor to watch>"
+    )
+
+    def link_readiness(self, body: dict) -> tuple[bool, str]:
+        # wifiConnected ALONE, and that is weaker evidence than the shipping
+        # schema's -- said out loud in the diagnostic rather than papered over.
+        # There, the same field is corroborated by the link supervisor's own
+        # hostedLink.phase, because #184 proved WiFi.status() stays
+        # WL_CONNECTED through a dead SDIO transport. Here there is no second
+        # opinion to ask: PA_CAP_HOSTED_WIFI is 0, so there is no SDIO
+        # transport to die and no supervisor publishing a phase. The check did
+        # not get stronger on this board; it is unopposed.
+        wifi_connected = body.get("wifiConnected")
+        if wifi_connected is True:
+            return True, ""
+        return False, (
+            "device is reachable but does not report WiFi up: "
+            f"wifiConnected={wifi_connected!r}. This is WEAKER evidence than the shipping "
+            "schema's readiness check, which corroborates the same field with the link "
+            "supervisor's hostedLink.phase -- #184 proved WiFi.status() stays WL_CONNECTED "
+            "through a dead SDIO transport. artoo-esp32 has no SDIO transport to die and "
+            "no supervisor to ask (PA_CAP_HOSTED_WIFI is 0, include/config.h:69), so this "
+            "check is not stronger here, it is unopposed. wifiConnected is itself "
+            "apEnabled || staConnected (deriveWiFiConnectivityFields(), "
+            "src/web/api_status_serializers.cpp:18), so it reads true on a board serving "
+            "only its own AP. A missing/false field means the evidence is absent, not that "
+            "the link failed"
+        )
+
+    def structural_mismatches(self, body: dict) -> list[str]:
+        mismatches = self._product_marker_mismatches(body)
+        # hostedLink must be ABSENT, checked positively for the same reason
+        # bootCount is: an image that started publishing one is a different
+        # image, and has to be refused here rather than read through a schema
+        # that assumes the block cannot exist.
+        if HOSTED_LINK_CONTAINER in body:
+            mismatches.append(
+                f"declared image: {HOSTED_LINK_CONTAINER!r} is present, but that object is "
+                "emitted only inside `#if PA_CAP_HOSTED_WIFI` "
+                "(src/web/web_server.cpp:724-743) and that capability is 0 on artoo-esp32 "
+                "(include/config.h:69) -- this is not an artoo image"
+            )
+        return mismatches
+
+
 SCHEMAS: dict[str, StatusSchema] = {
     "bench": BenchStatusSchema(),
     "shipping": ShippingStatusSchema(),
+    "artoo": ArtooStatusSchema(),
 }
 
 
@@ -1343,8 +1539,8 @@ def run_sse_soak(
     baseline_restart_marker = schema.restart_marker(baseline, "baseline /api/status")
     baseline_reset = schema.reset_reason(baseline, "baseline /api/status")
     baseline_heap = schema.heap_largest_free(baseline, "baseline /api/status")
-    # The recovery ladder, required at the baseline on both images. Its
-    # transportUpEventCount is posted by the SDIO driver's own
+    # The recovery ladder, required at the baseline on every image that has
+    # one. Its transportUpEventCount is posted by the SDIO driver's own
     # transport_active_cb() (bringup/p4_hosted_bench.cpp:574-589 on the bench,
     # hostedTransportUpHandler() at src/web/web_network_manager_hosted.cpp:317
     # on the shipping image), independent of anything the sketch believes --
@@ -1352,7 +1548,9 @@ def run_sse_soak(
     # report CONNECTED through a dead transport. Required here rather than
     # read softly, for the same reason the driver that provokes the ladder
     # requires it: a soak with no ladder baseline cannot say afterwards
-    # whether the ladder fired.
+    # whether the ladder fired. None on an image that publishes no ladder at
+    # all (schema.publishes_recovery_ladder) -- see the ladder_fields branch
+    # below, which reports that absence in words instead of numbers.
     baseline_ladder = schema.ladder(baseline, "baseline /api/status")
 
     # #184: "exactly 3 concurrent SSE clients... Higher counts may be run
@@ -1449,23 +1647,42 @@ def run_sse_soak(
     max_sse_clients_observed = max(sse_clients_samples, default=0)
     admission_reached_target = max_sse_clients_observed >= num_clients
 
-    ladder_reached_degraded = "degraded" in ladder_samples.states
+    # An image with no ladder cannot have reached 'degraded' -- and must not
+    # be reported as having stayed out of it either, which is what a bare
+    # `"degraded" in ...` over an empty list would say.
+    ladder_reached_degraded = (
+        ladder_samples is not None and "degraded" in ladder_samples.states
+    )
 
-    # transport_active_cb() only ever increments; a rise during the soak
-    # means the SDIO link independently reported at least one additional
-    # active transition (recovery ladder or otherwise) beyond the initial
-    # boot-time connect captured in the baseline -- not itself a FAIL
-    # condition (a ladder that fires and recovers without reaching
-    # 'degraded' is the ladder working as designed), but the corroborating
-    # count #184 named this field for.
-    transport_up_event_count_end = (
-        ladder_samples.transport_up_event_counts[-1]
-        if ladder_samples.transport_up_event_counts
-        else baseline_ladder.transport_up_event_count
-    )
-    transport_up_events_during_soak = (
-        transport_up_event_count_end - baseline_ladder.transport_up_event_count
-    )
+    if ladder_samples is None or baseline_ladder is None:
+        # Reported as a stated absence, never as a set of zeroes: a report
+        # carrying recoveryLadderReachedDegraded: false would claim this run
+        # watched a ladder the image does not publish.
+        ladder_fields = {"recoveryLadderEvidence": schema.ladder_absence_note}
+    else:
+        # transport_active_cb() only ever increments; a rise during the soak
+        # means the SDIO link independently reported at least one additional
+        # active transition (recovery ladder or otherwise) beyond the initial
+        # boot-time connect captured in the baseline -- not itself a FAIL
+        # condition (a ladder that fires and recovers without reaching
+        # 'degraded' is the ladder working as designed), but the corroborating
+        # count #184 named this field for.
+        transport_up_event_count_end = (
+            ladder_samples.transport_up_event_counts[-1]
+            if ladder_samples.transport_up_event_counts
+            else baseline_ladder.transport_up_event_count
+        )
+        transport_up_events_during_soak = (
+            transport_up_event_count_end - baseline_ladder.transport_up_event_count
+        )
+        ladder_fields = {
+            "recoveryLadderReachedDegraded": ladder_reached_degraded,
+            "recoveryLadderStatesObserved": sorted(set(ladder_samples.states)),
+            "baselineRecoveryLadderState": baseline_ladder.state,
+            "baselineHostedTransportUpEventCount": baseline_ladder.transport_up_event_count,
+            "finalHostedTransportUpEventCount": transport_up_event_count_end,
+            "hostedTransportUpEventCountAdvancedBy": transport_up_events_during_soak,
+        }
 
     if immediate_stall:
         reasons.append(
@@ -1554,12 +1771,10 @@ def run_sse_soak(
         "heapTolerancePct": heap_tolerance_pct,
         "maxSseClientsConnectedObserved": max_sse_clients_observed,
         "admissionReachedTarget": admission_reached_target,
-        "recoveryLadderReachedDegraded": ladder_reached_degraded,
-        "recoveryLadderStatesObserved": sorted(set(ladder_samples.states)),
-        "baselineRecoveryLadderState": baseline_ladder.state,
-        "baselineHostedTransportUpEventCount": baseline_ladder.transport_up_event_count,
-        "finalHostedTransportUpEventCount": transport_up_event_count_end,
-        "hostedTransportUpEventCountAdvancedBy": transport_up_events_during_soak,
+        # Either the six ladder readings or the one stated absence -- inlined
+        # here rather than update()d on afterwards so the report's key order
+        # is the same on every image.
+        **ladder_fields,
         "statusPollSampleCount": len(status_samples),
         "statusPollUnreachableCount": len(status_samples) - len(reachable_samples),
         "statusPollSchemaAnomalies": schema_anomalies[:50],
@@ -1779,14 +1994,10 @@ def run_c6_reset_recovery(
             "driver": "c6_reset_recovery",
             "verdict": "UNAVAILABLE",
             "image": schema.name,
-            "reasons": [
-                f"the {schema.name} image publishes no C6 reset route -- POST /api/c6/reset "
-                "exists only on bringup/p4_hosted_bench.cpp, and the shipping seam route "
-                "table (src/web/web_seam_routes.cpp) registers none. The reset cannot be "
-                "provoked, so nothing about recovery can be measured on this image. "
-                "Shipping-image C6 reset recovery is tracked on #243; run this driver "
-                "against --image bench"
-            ],
+            # The schema's own words: "no route on a board that has a C6" and
+            # "no C6 to reset" are different facts, and an operator reading
+            # one about the other board is being misinformed.
+            "reasons": [schema.reset_unavailable_reason],
         }
 
     baseline = capture_status(client)
@@ -1800,6 +2011,14 @@ def run_c6_reset_recovery(
     # bringup/p4_hosted_bench.cpp:937-957 -- recoveryLadderState is
     # recoveryPhaseName()'s const char* (idle/armed/attempting/degraded),
     # the rest are unsigned int counters.
+    #
+    # Not Optional here, unlike in run_sse_soak(): the refusal above already
+    # returned for every image with no reset route, and an image that CAN
+    # provoke a transport failure necessarily publishes the ladder that
+    # failure drives. That coupling is pinned by a test rather than left to
+    # this comment (test/test_tools/test_soak_schema.py pins reset_path
+    # implies publishes_recovery_ladder) -- a schema that broke it would
+    # deref None right here.
     baseline_ladder = schema.ladder(baseline, "baseline /api/status")
 
     # `is not False`, not `is True`: an image whose reset-reason mapping
@@ -2323,6 +2542,18 @@ FIXTURE_SHIPPING_STATUS_BODY = {
         "degradedAtMs": 0,
     },
 }
+# The artoo payload IS the shipping payload minus the one capability-gated
+# block, so it is derived that way rather than retyped: buildStatusJson()'s
+# fixed system-health snprintf (src/web/web_server.cpp:391-393) is
+# unconditional and identical on both boards, and `#if PA_CAP_HOSTED_WIFI`
+# (:724-743) is the only preprocessor guard anywhere in that function. Writing
+# the difference as a subtraction keeps the fixture honest if the shared block
+# ever grows a field.
+FIXTURE_ARTOO_STATUS_BODY = {
+    key: value for key, value in FIXTURE_SHIPPING_STATUS_BODY.items()
+    if key != HOSTED_LINK_CONTAINER
+}
+
 FIXTURE_RESET_BODY = {"requestId": 7, "resetScheduled": True, "responseGraceMs": 1000}
 
 
@@ -2821,16 +3052,186 @@ def _run_shipping_status_scenarios(failures: list[str]) -> None:
         _stop_fixture_server(server, thread)
 
 
+def _run_artoo_status_scenarios(failures: list[str]) -> None:
+    """The artoo schema, read the way a driver reads it: capture_status() over
+    real HTTP, then ArtooStatusSchema's own accessors. The two absences this
+    image is defined by -- no hostedLink, no bootCount -- are asserted in both
+    directions, because a schema that merely tolerates an absence would also
+    accept a payload from the other board."""
+    schema = SCHEMAS["artoo"]
+    shipping_schema = SCHEMAS["shipping"]
+    bench_schema = SCHEMAS["bench"]
+    server, thread = _start_fixture_server(status_body=FIXTURE_ARTOO_STATUS_BODY)
+    try:
+        port = server.server_address[1]
+        client = BenchClient("127.0.0.1", port, connect_timeout_s=5.0)
+
+        def check(name: str, body: Callable[[], None]) -> None:
+            _record_scenario(name, body, failures)
+
+        status = capture_status(client)
+
+        def field_map() -> None:
+            assert schema.heap_largest_free(status, "self-test") == 123456, "heapLargest8bit"
+            assert schema.sse_clients(status, "self-test") == 1, "sseClients"
+            assert schema.restart_marker(status, "self-test") == 3600000, "uptimeMs"
+            reset = schema.reset_reason(status, "self-test")
+            assert reset.display == "POWERON" and reset.crash_shaped is False, reset
+            # The shared system-health block, so these must be exactly the
+            # names the shipping schema reads out of the same snprintf.
+            assert schema.heap_field == shipping_schema.heap_field, schema.heap_field
+            assert schema.sse_clients_field == shipping_schema.sse_clients_field
+            assert schema.restart_field == shipping_schema.restart_field
+
+        check("artoo field map is the shared buildStatusJson() block, read identically",
+              field_map)
+
+        def hosted_link_absent() -> None:
+            assert schema.publishes_recovery_ladder is False, (
+                "the hostedLink block is compiled out where PA_CAP_HOSTED_WIFI is 0; "
+                "claiming a ladder makes an absent block readable as counters"
+            )
+            assert HOSTED_LINK_CONTAINER not in status, (
+                "fixture sanity: the artoo payload carries no hostedLink object"
+            )
+            assert schema.ladder(status, "self-test") is None, (
+                "an absent ladder must read as None, never as a LadderReading of zeroes"
+            )
+            assert schema.collect_ladder([status], []) is None, (
+                "and the poll-loop reader must not return an empty LadderSamples, which "
+                "a caller would read as 'sampled and saw nothing'"
+            )
+            assert schema.fields_read()["recoveryLadder"] == schema.ladder_absence_note, (
+                "the published field map must say the ladder is absent, not show an "
+                "empty field map"
+            )
+            assert "PA_CAP_HOSTED_WIFI" in schema.ladder_absence_note, (
+                schema.ladder_absence_note
+            )
+
+        check("an absent recovery ladder reads as absent, never as zeroed counters",
+              hosted_link_absent)
+
+        def boot_count_absent() -> None:
+            assert schema.publishes_boot_count is False
+            assert "bootCount" not in status, "fixture sanity: no bootCount on this image"
+            report = schema.restart_report(3600000, 3601000, False)
+            assert "bootCount" not in json.dumps(report), (
+                f"an artoo restart report must not carry a bootCount key at all: {report}"
+            )
+            assert report == {
+                "baselineUptimeMs": 3600000, "finalUptimeMs": 3601000,
+                "uptimeMsWentBackwards": False,
+            }, report
+            assert schema.restart_detected(3600000, [3601000, 1200]) is True, (
+                "uptimeMs stepping backwards is the reboot evidence this image has"
+            )
+            assert schema.restart_detected(3600000, [3601000, 3602000]) is False
+
+        check("artoo restart evidence is uptimeMs, with no bootCount key anywhere",
+              boot_count_absent)
+
+        def declared_image_is_checked_both_ways() -> None:
+            assert schema.structural_mismatches(status) == [], (
+                "the artoo fixture must satisfy the artoo schema"
+            )
+            # A firebeetle shipping payload read as --image artoo.
+            artoo_vs_shipping = schema.structural_mismatches(FIXTURE_SHIPPING_STATUS_BODY)
+            assert artoo_vs_shipping, (
+                "reading a shipping payload as --image artoo must be refused, not accepted"
+            )
+            assert any("'hostedLink' is present" in m for m in artoo_vs_shipping), (
+                artoo_vs_shipping
+            )
+            # An artoo payload read as --image shipping.
+            shipping_vs_artoo = shipping_schema.structural_mismatches(status)
+            assert shipping_vs_artoo, (
+                "reading an artoo payload as --image shipping must be refused, not accepted"
+            )
+            assert any("no 'hostedLink' object" in m for m in shipping_vs_artoo), (
+                shipping_vs_artoo
+            )
+            # And a bench payload, whose bootCount is the giveaway.
+            artoo_vs_bench = schema.structural_mismatches(FIXTURE_STATUS_BODY)
+            assert any("bootCount is present" in m for m in artoo_vs_bench), artoo_vs_bench
+            assert identify_schema(status) is schema, "the artoo payload identifies as artoo"
+            assert identify_schema(FIXTURE_SHIPPING_STATUS_BODY) is shipping_schema
+            assert identify_schema(FIXTURE_STATUS_BODY) is bench_schema
+
+        check("an artoo payload and a shipping payload each refuse the other's --image",
+              declared_image_is_checked_both_ways)
+
+        def readiness_is_wifi_connected_alone_and_says_so() -> None:
+            ready, why_not = schema.link_readiness(status)
+            assert ready and why_not == "", (
+                f"the fixture reports wifiConnected true: {why_not}"
+            )
+            # Nothing but wifiConnected is consulted: the shipping schema's
+            # phase would be missing here, and adding one must not matter.
+            with_phase = dict(status)
+            with_phase[HOSTED_LINK_CONTAINER] = {"phase": "degraded"}
+            assert schema.link_readiness(with_phase)[0] is True, (
+                "this schema reads wifiConnected alone; a stray phase must not change it"
+            )
+            not_ready, diagnostic = schema.link_readiness(dict(status, wifiConnected=False))
+            assert not_ready is False, "wifiConnected false is not ready"
+            assert "WEAKER evidence" in diagnostic, diagnostic
+            assert "hostedLink.phase" in diagnostic and "#184" in diagnostic, diagnostic
+            assert "apEnabled || staConnected" in diagnostic, diagnostic
+            missing = {k: v for k, v in status.items() if k != "wifiConnected"}
+            assert schema.link_readiness(missing)[0] is False, (
+                "a missing field is absent evidence, not a ready link"
+            )
+            assert "not that the link failed" in schema.link_readiness(missing)[1]
+
+        check("artoo readiness reads wifiConnected alone and calls that weaker evidence",
+              readiness_is_wifi_connected_alone_and_says_so)
+
+        def reset_driver_refuses() -> None:
+            posts_before = server.post_count
+            result = run_c6_reset_recovery(
+                client, schema, recovery_timeout_s=1.0, poll_interval_s=0.1,
+                heap_tolerance_pct=20.0, sse_resume_timeout_s=1.0,
+            )
+            assert result["verdict"] == "UNAVAILABLE", result
+            assert result["image"] == "artoo", result
+            reasons = " ".join(result["reasons"])
+            assert "no companion radio" in reasons, reasons
+            assert "PA_CAP_HOSTED_WIFI is 0" in reasons, reasons
+            assert server.post_count == posts_before, (
+                "the driver must refuse BEFORE sending anything -- a request that went "
+                "out and was discarded is a stub, not a refusal"
+            )
+            verdict, exit_code = _compose_overall_verdict({"c6_reset_recovery": result})
+            assert (verdict, exit_code) == ("INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN), (
+                f"an unavailable driver must never reach a passing exit code: "
+                f"{verdict} {exit_code}"
+            )
+
+        check("c6_reset_recovery refuses on artoo, naming the missing radio, without "
+              "touching the network", reset_driver_refuses)
+    finally:
+        _stop_fixture_server(server, thread)
+
+
 def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
     """Run the SSE-soak and reconnect-storm drivers themselves, end to end,
     against a fixture serving each image's stream and status payload. The
     scenarios above prove the pieces; these prove the drivers are wired to
     them -- that the bench driver still reports gaps and bootCount after the
-    schema split, and that the shipping driver reports the heartbeat model
-    and never grows a bootCount reading it does not have."""
+    schema split, that the shipping driver reports the heartbeat model and
+    never grows a bootCount reading it does not have, and that the artoo
+    driver reports neither bootCount nor ladder numbers.
+
+    All three artoo/shipping runs use the same "shipping_live" stream
+    deliberately: eventStreamTask() (src/web/web_server.cpp:793-902) carries
+    no capability guard, so the two product images put the identical framing
+    on the wire and a separate artoo stream fixture would be inventing a
+    difference that does not exist."""
     for image, status_body, sse_mode in (
         ("bench", FIXTURE_STATUS_BODY, "bench_live"),
         ("shipping", FIXTURE_SHIPPING_STATUS_BODY, "shipping_live"),
+        ("artoo", FIXTURE_ARTOO_STATUS_BODY, "shipping_live"),
     ):
         schema = SCHEMAS[image]
         server, thread = _start_fixture_server(status_body=status_body, sse_mode=sse_mode)
@@ -2870,6 +3271,22 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
                     )
                     assert soak["baselineUptimeMs"] == 3600000, soak
                     assert soak["uptimeMsWentBackwards"] is False, soak
+                if image == "artoo":
+                    assert soak["recoveryLadderEvidence"] == schema.ladder_absence_note, soak
+                    for ladder_key in (
+                        "recoveryLadderReachedDegraded", "recoveryLadderStatesObserved",
+                        "baselineRecoveryLadderState",
+                        "baselineHostedTransportUpEventCount",
+                        "finalHostedTransportUpEventCount",
+                        "hostedTransportUpEventCountAdvancedBy",
+                    ):
+                        assert ladder_key not in soak, (
+                            f"{ladder_key!r} on an artoo report would claim this run "
+                            "watched a ladder the image does not publish"
+                        )
+                else:
+                    assert "recoveryLadderEvidence" not in soak, soak
+                    assert soak["recoveryLadderReachedDegraded"] is False, soak
 
             _record_scenario(
                 f"{image}: sse_soak runs end to end and reports its own image's numbers",
@@ -2968,7 +3385,10 @@ def run_self_test() -> int:
     )
     _run_shipping_status_scenarios(failures)
 
-    print("\nboth images, drivers end to end:")
+    print("\nartoo image:")
+    _run_artoo_status_scenarios(failures)
+
+    print("\nall three images, drivers end to end:")
     _run_end_to_end_driver_scenarios(failures)
 
     if failures:
@@ -2986,7 +3406,7 @@ def run_self_test() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "P4 ESP-Hosted soak harness implementing the #184 verdict contract "
+            "protoArtoo soak harness implementing the #184 verdict contract "
             "(issue #197). Every device run is coordinator/operator-run; this tool "
             "never flashes and never calls `make ota`."
         ),
@@ -3007,10 +3427,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--image", choices=sorted(SCHEMAS), default="bench",
         help="which firmware image is on the board, and therefore which /api/status "
              "schema to read: 'bench' (bringup/p4_hosted_bench.cpp, env "
-             "firebeetle2_hosted_bench) or 'shipping' (the firebeetle2 product image). "
-             "Declared, never sniffed -- the declaration is checked against the payload "
-             "at preflight and a mismatch is INVALID. The shipping image has no C6 reset "
-             "route, so --driver c6_reset_recovery is refused there (#243)",
+             "firebeetle2_hosted_bench), 'shipping' (the firebeetle2 product image) or "
+             "'artoo' (the artoo_esp32 product image). Declared, never sniffed -- the "
+             "declaration is checked against the payload at preflight and a mismatch is "
+             "INVALID. Neither product image has a C6 reset route, so --driver "
+             "c6_reset_recovery is refused on both, for different reasons (#243 on "
+             "shipping; artoo-esp32 has no companion radio at all). The artoo image also "
+             "publishes no recovery ladder, so its readiness check reads wifiConnected "
+             "with nothing to corroborate it -- weaker evidence than shipping's, and its "
+             "diagnostic says so",
     )
     parser.add_argument(
         "--driver", choices=["all", "sse_soak", "reconnect_storm", "c6_reset_recovery"], default="all",
