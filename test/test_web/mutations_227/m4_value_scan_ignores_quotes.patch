@@ -1,0 +1,28 @@
+diff --git a/data/app.js b/data/app.js
+index f780527f..15a85a8d 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -831,22 +831,7 @@
+       keys.push(line.slice(keyStart, i));
+       i += 1;
+ 
+-      if (line[i] === '"') {
+-        i += 1;
+-        while (i < line.length) {
+-          if (line[i] === "\\" && i + 1 < line.length) {
+-            i += 2;
+-            continue;
+-          }
+-          if (line[i] === '"') {
+-            i += 1;
+-            break;
+-          }
+-          i += 1;
+-        }
+-      } else {
+-        while (i < line.length && !isSpace(i)) i += 1;
+-      }
++      while (i < line.length && !isSpace(i)) i += 1;
+     }
+     return keys;
+   };
