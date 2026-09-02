@@ -81,6 +81,19 @@ import pio_lock
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / ".pio" / "slice-verify-cache.json"
 VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
+# Generated, firmware-consumed artefacts under data/. They ship in the LittleFS
+# image but the browser never executes or parses them, so the web suite - whose
+# model is vm.runInNewContext(readFileSync("data/<module>.js")) - has no way to
+# cover a change to one. Requiring web-test growth for them produces a FAIL no
+# honest test can clear (a mutation of generated text has no JS behaviour to
+# turn red, test/test_web/README.md). Their real guards live elsewhere:
+# console_help.txt is checked by check_console_help_file() in
+# tools/check_action_registry_drift.py. Same exclusion principle as
+# VERSION_JSON_RE above, different reason: build artefact vs uncoverable-by-
+# construction. .html and .css are deliberately NOT here - the web suite does
+# read .html (see test/test_web/test_issue_117_recovery_visibility.js), so
+# those stay answerable.
+GENERATED_DATA_RE = re.compile(r"^data/console_help\.txt$")
 WEB_PRODUCTION_RE = re.compile(r"^data/")
 NATIVE_PRODUCTION_RE = re.compile(r"^(?:src|include)/")
 EXTERN_RE = re.compile(r'\bextern\b(?!\s*"C")')
@@ -388,13 +401,16 @@ def production_changes(diff_names: list[str]) -> dict[str, list[str]]:
     """Split diff paths into the production trees each suite is answerable for.
 
     Only the native suite can cover src/ and include/; only the web suite can
-    cover data/. The version stamps are build artifacts, not production code.
+    cover data/. The version stamps are build artifacts, not production code,
+    and GENERATED_DATA_RE names data/ files the web suite cannot cover at all.
     """
     return {
         "web": [
             name
             for name in diff_names
-            if WEB_PRODUCTION_RE.match(name) and not VERSION_JSON_RE.match(name)
+            if WEB_PRODUCTION_RE.match(name)
+            and not VERSION_JSON_RE.match(name)
+            and not GENERATED_DATA_RE.match(name)
         ],
         "native": [name for name in diff_names if NATIVE_PRODUCTION_RE.match(name)],
     }
@@ -947,11 +963,22 @@ def main() -> int:
         print(f"{result.label:<{LABEL_WIDTH}}{result.detail:<{DETAIL_WIDTH}} {status}")
 
     failures = [result for result in results if not result.passed]
-    if failures:
+    # A passing check that carries notes is a check that passed *because* a
+    # waiver was granted. Those notes were previously dropped here - only
+    # failures printed theirs - so a waived run rendered identically to a run
+    # that never needed a waiver, and AGENTS.md's rule that an unsanctioned
+    # waiver ACK is an automatic reject had nothing to detect. Printing them
+    # puts every consumed waiver in the pasted block, where the coordinator's
+    # character-for-character re-run comparison sees it.
+    acknowledged = [r for r in results if r.passed and r.notes]
+    if failures or acknowledged:
         print()
         for result in failures:
             for note in result.notes:
                 print(f"FAIL {result.label}: {note}")
+        for result in acknowledged:
+            for note in result.notes:
+                print(f"ACK  {result.label}: {note}")
 
     if args.json:
         payload = {
