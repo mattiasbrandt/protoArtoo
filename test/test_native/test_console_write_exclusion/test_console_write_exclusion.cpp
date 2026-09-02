@@ -155,6 +155,27 @@ void test_excluded_key_inside_a_quoted_value_is_not_an_assignment(void) {
         "wifi.config.settings sta-ssid=\"lab \\\" sta-password=x\""));
 }
 
+void test_unterminated_quote_does_not_hide_a_later_assignment(void) {
+    // An unterminated quoted value must not swallow the rest of the line: the
+    // assignment after it is still an assignment, and the line still carries
+    // the secret the operator typed. (consoleParseArgs() rejects this line as
+    // malformed, so it never executes - but "refused" is exactly the line
+    // this rule exists to keep out of history.)
+    TEST_ASSERT_TRUE(consoleLineAssignsWriteExcludedValue(
+        "wifi.config.settings sta-ssid=\"lab sta-password=hunter2"));
+    // Same, with an escaped quote inside the unterminated run.
+    TEST_ASSERT_TRUE(consoleLineAssignsWriteExcludedValue(
+        "wifi.config.settings sta-ssid=\"lab \\\" sta-password=hunter2"));
+    // Same, with the unterminated value last: nothing to find after it, and
+    // nothing to refuse.
+    TEST_ASSERT_FALSE(
+        consoleLineAssignsWriteExcludedValue("wifi.config.settings sta-ssid=\"lab bench"));
+    // A trailing lone quote is an unterminated run of length one - it must not
+    // hide what follows either.
+    TEST_ASSERT_TRUE(consoleLineAssignsWriteExcludedValue(
+        "wifi.config.settings sta-ssid=\" sta-password=hunter2"));
+}
+
 void test_unresolvable_operation_and_malformed_tokens(void) {
     // A first token that names no catalog operation has no declared
     // parameters, so nothing on the line can be known write-excluded (the
@@ -178,6 +199,7 @@ int main() {
     RUN_TEST(test_case_variant_of_an_excluded_key_is_recognised);
     RUN_TEST(test_settable_lines_are_storable);
     RUN_TEST(test_excluded_key_inside_a_quoted_value_is_not_an_assignment);
+    RUN_TEST(test_unterminated_quote_does_not_hide_a_later_assignment);
     RUN_TEST(test_unresolvable_operation_and_malformed_tokens);
     return UNITY_END();
 }

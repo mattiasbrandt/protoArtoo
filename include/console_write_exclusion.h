@@ -190,6 +190,8 @@ inline bool consoleLineAssignsWriteExcludedValue(const char* line) {
         }
 
         if (*p == '"') {
+            const char* quotedStart = p;
+            bool closed = false;
             ++p;
             while (*p != '\0') {
                 if (*p == '\\' && p[1] != '\0') {
@@ -198,9 +200,30 @@ inline bool consoleLineAssignsWriteExcludedValue(const char* line) {
                 }
                 if (*p == '"') {
                     ++p;
+                    closed = true;
                     break;
                 }
                 ++p;
+            }
+            if (!closed) {
+                // UNTERMINATED quote. Walking to end-of-string here would
+                // swallow the rest of the line and with it any later
+                // assignment - including a write-excluded one, which is then
+                // never examined and the line is stored. That is the exact
+                // fail-OPEN this rule cannot afford, so the unterminated run
+                // is rescanned as an ordinary unquoted value instead: back to
+                // the opening quote, forward to the next space, and carry on
+                // reading keys.
+                //
+                // It costs the operator nothing. consoleParseArgs() rejects an
+                // unterminated quote outright (CONSOLE_ARGS_PARSE_MALFORMED),
+                // so a line reaching this branch can never execute; the only
+                // lines this can newly refuse to remember are lines that were
+                // never runnable. A CLOSED quoted value keeps its exact
+                // meaning - "lab sta-password=x" is one SSID, not an
+                // assignment, and stays storable.
+                p = quotedStart;
+                while (*p != '\0' && !isspace((unsigned char)*p)) ++p;
             }
         } else {
             while (*p != '\0' && !isspace((unsigned char)*p)) ++p;

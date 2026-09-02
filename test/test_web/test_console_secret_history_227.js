@@ -276,6 +276,29 @@ test("A write-excluded key inside a quoted value is not an assignment", async ()
   );
 });
 
+test("An unterminated quote does not hide the assignment after it", async () => {
+  const storage = makeFakeStorage();
+  const { env, input, pressEnter } = await consoleHarness({
+    respond: wifiResponder(),
+    overrides: { localStorage: storage },
+  });
+  await env.runSection("app-console-catalog");
+
+  // The operator opened a quote and never closed it. Walking that run to the
+  // end of the line would swallow the sta-password= assignment with it, and
+  // the plaintext password would land in localStorage - where it survives a
+  // reload. The firmware refuses this line as malformed, so nothing is lost
+  // by not remembering it.
+  input.value = 'wifi.config.settings sta-ssid="lab sta-password=hunter2';
+  await pressEnter();
+
+  assert.equal(
+    storedHistory(storage),
+    null,
+    "an unterminated quote must not hide a write-excluded assignment behind it"
+  );
+});
+
 test("A case variant of a write-excluded key is refused too", async () => {
   const storage = makeFakeStorage();
   const { env, input, pressEnter } = await consoleHarness({

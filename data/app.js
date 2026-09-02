@@ -832,6 +832,8 @@
       i += 1;
 
       if (line[i] === '"') {
+        const quotedStart = i;
+        let closed = false;
         i += 1;
         while (i < line.length) {
           if (line[i] === "\\" && i + 1 < line.length) {
@@ -840,9 +842,25 @@
           }
           if (line[i] === '"') {
             i += 1;
+            closed = true;
             break;
           }
           i += 1;
+        }
+        if (!closed) {
+          // UNTERMINATED quote. Running to the end of the line here would
+          // swallow every later key with it - including a write-excluded one,
+          // which is then never examined and the line is stored. That is the
+          // fail-OPEN this rule cannot afford, so the unterminated run is
+          // rescanned as an ordinary unquoted value: back to the opening
+          // quote, forward to the next space, and carry on reading keys.
+          // Costs nothing - the firmware's parser rejects an unterminated
+          // quote outright, so such a line can never execute. A CLOSED quoted
+          // value keeps its meaning and stays storable. Same rule, same
+          // wording, as the serial half in
+          // include/console_write_exclusion.h.
+          i = quotedStart;
+          while (i < line.length && !isSpace(i)) i += 1;
         }
       } else {
         while (i < line.length && !isSpace(i)) i += 1;
