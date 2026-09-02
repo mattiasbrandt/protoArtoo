@@ -625,7 +625,23 @@
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
     if (logLines.length > 0) return;
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/logs", { cache: "no-store" });
+    let result;
+    try {
+      result = await api.get("/api/logs", { cache: "no-store" });
+    } catch (error) {
+      // Every way the fetch itself can fail - transport, timeout, and the
+      // device's own 503 "log buffer unavailable" exit (src/web/api_logs.cpp) -
+      // leaves the panel with nothing to show, and used to leave it literally
+      // blank once the bootstrap's recovery overlay stopped covering the page.
+      // Say so with the same line, then rethrow: the bootstrap still classifies
+      // these separately and still honours a 503's Retry-After. Only the panel
+      // copy is shared, because "the logs did not load" is one fact here.
+      //
+      // A cancellation is not a failure - the page cancelled its own run - and
+      // an unreachable line for it would be a lie.
+      if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
+      throw error;
+    }
     if (!isLogTextResponse(result)) {
       // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
       // history, and we do not know that - we know we never reached its log

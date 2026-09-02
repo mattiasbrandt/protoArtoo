@@ -22,7 +22,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webApiSrc = readFileSync(join(__dirname, "../../data/web_api.js"), "utf-8");
@@ -253,5 +253,58 @@ test("A whitespace-only text/plain body shows the empty state", async () => {
   assert.ok(
     panel.innerHTML.includes("No log history available yet."),
     "blank lines are not log history and must not render as empty log lines"
+  );
+});
+
+// -----------------------------------------------------------------------------
+// A fetch that never produced a body says so in the panel too
+//
+// The bootstrap's recovery overlay names these while it is up, but it hides
+// again as soon as every section has settled - and the panel was then left
+// literally blank, which is the state the ticket's outcome rules out.
+// -----------------------------------------------------------------------------
+
+const rejectingDashboard = async (error) =>
+  loadDashboard(() => {
+    throw error;
+  });
+
+test("The device's 503 log-buffer exit shows the unreachable line, not a blank panel", async () => {
+  const { env, panel } = await rejectingDashboard(
+    new ApiError("Device unavailable", { kind: "http", status: 503 })
+  );
+
+  await assert.rejects(
+    () => env.runSection("app-recent-logs"),
+    "a 503 must still reach the bootstrap, which honours its Retry-After"
+  );
+  assert.ok(
+    panel.innerHTML.includes("connection lost"),
+    `the panel must say the logs did not load; panel was: ${JSON.stringify(panel.innerHTML)}`
+  );
+});
+
+test("A transport failure shows the unreachable line, not a blank panel", async () => {
+  const { env, panel } = await rejectingDashboard(
+    new ApiError("Network request failed", { kind: "network" })
+  );
+
+  await assert.rejects(() => env.runSection("app-recent-logs"));
+  assert.ok(
+    panel.innerHTML.includes("connection lost"),
+    `the panel must say the logs did not load; panel was: ${JSON.stringify(panel.innerHTML)}`
+  );
+});
+
+test("A cancelled section run leaves the panel alone", async () => {
+  const { env, panel } = await rejectingDashboard(
+    new ApiError("Request cancelled", { kind: "cancelled" })
+  );
+
+  await assert.rejects(() => env.runSection("app-recent-logs"));
+  assert.ok(
+    !panel.innerHTML.includes("connection lost"),
+    "the page cancelled its own run - reporting that as a lost connection " +
+      `would be false; panel was: ${JSON.stringify(panel.innerHTML)}`
   );
 });
