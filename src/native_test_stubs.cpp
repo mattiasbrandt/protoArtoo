@@ -89,13 +89,16 @@ void domeUartRelease(DomeUartOwner requester) {
 }
 bool domeConnected() { return true; }
 
-// sequence_dispatcher.cpp needs domeQueueTx and audioQueueDollar.
-// No-op stubs: routing tests use sequenceLookup() directly and do not need
-// side-effect capture from these functions.
+// sequence_dispatcher.cpp needs domeQueueTx.
+// No-op stub: routing tests use sequenceLookup() directly and do not need
+// side-effect capture from this function. audioQueueDollar()'s real stub
+// (records calls, respects g_test_audio_queue_ok) lives below with its
+// sibling audio command queue stubs, #258 - it used to be this unconditional
+// no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
+// declared but never written by anything.
 bool domeQueueTx(const char* /*cmd*/) { return true; }
 
 #include "audio_task.h"
-bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true; }
 
 // Side effects of the config write path, recorded rather than performed so a
 // test can assert that a POST reached them. Zeroed by the test's own setUp().
@@ -303,6 +306,8 @@ bool domeLayoutCacheRefreshRequested() {
 // test, and every enqueue is recorded rather than performed.
 // -----------------------------------------------------------------------------
 
+#include <string.h>  // strncpy() - audioQueueDollar() stub below
+
 uint8_t g_test_audio_capabilities = 0;
 const char* g_test_audio_driver_name = "TEST";
 bool g_test_audio_queue_ok = true;
@@ -368,6 +373,25 @@ bool audioQueueTrackStop(CommandSource /*src*/) {
         return false;
     }
     g_test_audio_stop_calls++;
+    return true;
+}
+
+// Records the literal command rather than performing the real dollar-parse/
+// AudioTask side effect, same shape as every other stub in this group -
+// added #258 so a test can assert which $ shortcut a Console executor
+// actually sent (previously an unconditional `return true;` with no capture,
+// see this file's domeQueueTx comment above).
+bool audioQueueDollar(const char* cmd, CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_dollar_calls++;
+    if (cmd != nullptr) {
+        strncpy(g_test_audio_last_dollar, cmd, sizeof(g_test_audio_last_dollar) - 1);
+        g_test_audio_last_dollar[sizeof(g_test_audio_last_dollar) - 1] = '\0';
+    } else {
+        g_test_audio_last_dollar[0] = '\0';
+    }
     return true;
 }
 
@@ -762,7 +786,7 @@ bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlo
 }
 
 // Note: audioQueueDollar and audioQueueTrackStop stubs already exist elsewhere
-// in this file (see lines ~80-86, ~336). No need to redefine them here.
+// in this file, in the Audio route group above. No need to redefine them here.
 
 // Network manager seam (web_network_manager.h) implementation for host tests.
 // Records calls so tests can verify the seam is integrated.

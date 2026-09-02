@@ -263,12 +263,19 @@ void setUp() {
     // #221 remainder: sound.action.play-track/set-volume and
     // aux.action.led-color/-effect's own queue stubs - reset per test rather
     // than relying on each test's own explicit set/restore, matching
-    // test_api_audio_routes.cpp's own setUp() for the same globals.
+    // test_api_audio_routes.cpp's own setUp() for the same globals. #258
+    // extends this with the remaining sound.action.* rows' own queue
+    // observation globals (track-stop, query-status, every $-letter dollar
+    // shortcut and the raw dollar-command passthrough).
     g_test_audio_queue_ok = true;
     g_test_audio_play_track_calls = 0;
     g_test_audio_last_track = 0;
     g_test_audio_volume_calls = 0;
     g_test_audio_last_volume = 0;
+    g_test_audio_stop_calls = 0;
+    g_test_audio_query_calls = 0;
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_last_dollar[0] = '\0';
     g_test_aux_led_queue_ok = true;
 
     // #222: drive.action.move submits through the REAL arbiter, so the
@@ -2018,6 +2025,305 @@ void test_sound_set_volume_reports_a_full_queue() {
 }
 
 // =============================================================================
+// sound.action.* remainder (#258): every $-letter dollar shortcut, the raw
+// dollar-command passthrough, track-stop, query-status, set-mood-map and
+// set-category-range. sound.action.random-* (12 rows) are deliberately NOT
+// tested here - test_scoped_non_motion_actions_are_not_executor_not_ready
+// above already proves the whole ACTION_REGISTRY[] sweep those rows go
+// through, and adding a second assertion for them here would test
+// consoleExecuteAction() a second time, not this file's own new code.
+// =============================================================================
+
+// The nine named-track shortcuts each send one specific two-character
+// dollar command - the assertion that actually distinguishes "scream plays"
+// from "the wrong track plays". Table-driven over
+// consoleExecuteSoundDollarShortcut()'s one shared body so a copy/paste slip
+// in any one of the nine thin wrappers (include/console_direct_action_
+// sound.h) fails here.
+void test_sound_named_track_shortcuts_send_the_right_dollar_command() {
+    struct Case {
+        const char* operation;
+        const char* expectedDollar;
+    };
+    static const Case kCases[] = {
+        {"sound.action.play-track-scream", "$S"},
+        {"sound.action.play-track-faint", "$F"},
+        {"sound.action.play-track-leia", "$L"},
+        {"sound.action.play-track-cantina-short", "$c"},
+        {"sound.action.play-track-cantina-long", "$C"},
+        {"sound.action.play-track-sw-theme", "$W"},
+        {"sound.action.play-track-imperial-march", "$M"},
+        {"sound.action.play-track-startup", "$B"},
+        {"sound.action.play-track-disco", "$D"},
+    };
+    for (const Case& c : kCases) {
+        g_test_audio_dollar_calls = 0;
+        g_test_audio_last_dollar[0] = '\0';
+
+        runQuery(c.operation);
+
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_OK, g_cap.status, c.operation);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_QUEUED, g_cap.outcome, c.operation);
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(1u, g_test_audio_dollar_calls, c.operation);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.expectedDollar, g_test_audio_last_dollar, c.operation);
+    }
+}
+
+// The same sleep gate handleAudioPost()'s action=dollar branch applies -
+// scream stands in for all nine named-track rows, which share one body.
+void test_sound_named_track_shortcut_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.action.play-track-scream");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+}
+
+void test_sound_named_track_shortcut_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.play-track-scream");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+// Every row this file wires through consoleExecuteSoundDollarShortcut()
+// declares zero params in the registry, so any supplied argument must be
+// unknown - scream stands in for all of them again.
+void test_sound_named_track_shortcut_rejects_any_argument() {
+    runQuery("sound.action.play-track-scream track=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+}
+
+void test_sound_quiet_sends_dollar_s() {
+    runQuery("sound.action.quiet");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_STRING("$s", g_test_audio_last_dollar);
+}
+
+void test_sound_random_on_off_send_the_right_dollar_command() {
+    runQuery("sound.action.random-on");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("$R", g_test_audio_last_dollar);
+
+    g_test_audio_dollar_calls = 0;
+    runQuery("sound.action.random-off");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_STRING("$O", g_test_audio_last_dollar);
+}
+
+// The five relative/preset volume shortcuts - distinct dollar letters from
+// sound.action.set-volume's own absolute AUDIO_CMD_SET_VOLUME path.
+void test_sound_volume_shortcuts_send_the_right_dollar_command() {
+    struct Case {
+        const char* operation;
+        const char* expectedDollar;
+    };
+    static const Case kCases[] = {
+        {"sound.action.volume-up", "$+"},
+        {"sound.action.volume-down", "$-"},
+        {"sound.action.volume-preset-mid", "$m"},
+        {"sound.action.volume-preset-max", "$f"},
+        {"sound.action.volume-preset-min", "$p"},
+    };
+    for (const Case& c : kCases) {
+        g_test_audio_dollar_calls = 0;
+        g_test_audio_last_dollar[0] = '\0';
+
+        runQuery(c.operation);
+
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_QUEUED, g_cap.outcome, c.operation);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.expectedDollar, g_test_audio_last_dollar, c.operation);
+    }
+}
+
+// Unlike sound.action.set-volume (no sleep gate), the dollar-routed volume
+// shortcuts inherit the dollar path's sleep gate - the behavior difference
+// this file's own header comment on consoleExecuteSoundVolumeUp() etc. calls
+// out explicitly.
+void test_sound_volume_shortcut_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.action.volume-up");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+}
+
+void test_sound_dollar_command_sends_the_supplied_cmd() {
+    runQuery("sound.action.dollar-command cmd=$007");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_STRING("$007", g_test_audio_last_dollar);
+}
+
+void test_sound_dollar_command_rejects_missing_dollar_prefix() {
+    runQuery("sound.action.dollar-command cmd=R");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+}
+
+void test_sound_dollar_command_rejects_a_too_long_command() {
+    runQuery("sound.action.dollar-command cmd=$0123456789");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+}
+
+void test_sound_dollar_command_rejects_missing_cmd() {
+    runQuery("sound.action.dollar-command");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+void test_sound_dollar_command_rejects_unknown_argument() {
+    runQuery("sound.action.dollar-command foo=bar");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
+void test_sound_dollar_command_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.action.dollar-command cmd=$R");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+}
+
+void test_sound_dollar_command_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.dollar-command cmd=$R");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+// track-stop has no sleep gate (handleAudioPost()'s action=stop branch has
+// none) - proven here by leaving sleepMode true and still expecting success,
+// not merely by omitting a sleep test.
+void test_sound_track_stop_queues_even_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.action.track-stop");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_stop_calls);
+}
+
+void test_sound_track_stop_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.track-stop");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+void test_sound_query_status_queues() {
+    runQuery("sound.action.query-status");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_query_calls);
+}
+
+void test_sound_query_status_reports_a_full_queue() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.action.query-status");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+}
+
+void test_sound_set_mood_map_applies_all_four_masks() {
+    runQuery("sound.action.set-mood-map quiet=1 mid=2 full=3 awakeplus=4");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+}
+
+void test_sound_set_mood_map_rejects_a_partial_form() {
+    runQuery("sound.action.set-mood-map quiet=1 mid=2 full=3");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+void test_sound_set_mood_map_rejects_an_out_of_range_mask() {
+    runQuery("sound.action.set-mood-map quiet=5000 mid=2 full=3 awakeplus=4");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_sound_set_category_range_applies_and_persists() {
+    runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=10 hi=20");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT16(10, snap.audio.snd_cat_gen_lo);
+    TEST_ASSERT_EQUAL_UINT16(20, snap.audio.snd_cat_gen_hi);
+}
+
+// lo_key/hi_key naming a mismatched pair - audioCategoryRangeApply()'s own
+// validation, unreachable by the registry's declared schema (lo_key/hi_key
+// are plain strings there, so the pairing rule is not schema-expressible).
+void test_sound_set_category_range_rejects_a_mismatched_key_pair() {
+    runQuery(
+        "sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_chat_hi lo=1 hi=2");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_sound_set_category_range_rejects_lo_greater_than_hi() {
+    runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=20 hi=10");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
+    // bank/page (REST's optional CHIRP-binding extension) are not in this
+    // row's registry schema - Console exposes only the plain lo/hi form.
+    runQuery(
+        "sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=1 hi=2 "
+        "bank=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
+// =============================================================================
 // aux.action.led-color / aux.action.led-effect (#221 remainder)
 // =============================================================================
 
@@ -2193,13 +2499,18 @@ void test_servo_stop_still_answers_executor_not_ready() {
 // test_commanded_mode_set_mode_stationary_calls_setter_and_broadcasts,
 // test_direct_set_mood_applies_valid_mood_and_broadcasts, ...); this is the
 // split's own completeness guard, the one the ticket's proof obligation is
-// about - all 20 canonical names the single pre-split table carried, called
-// with no arguments and asserted to still resolve to a real executor. A row
-// silently dropped from a domain header answers EXECUTOR_NOT_READY (no
-// dispatch-table row) or UNKNOWN_OPERATION (not even in the catalog) instead
-// of running its own argument validation - this fails on either, so a future
-// domain-file edit that drops a row fails here even if it also deletes that
-// row's own dedicated test above.
+// about - originally all 20 canonical names the single pre-split table
+// carried; #258 extends the list with its own 22 newly-wired sound.action.*
+// rows for the same reason, called with no arguments and asserted to still
+// resolve to a real executor. A row silently dropped from a domain header
+// answers EXECUTOR_NOT_READY (no dispatch-table row) or UNKNOWN_OPERATION
+// (not even in the catalog) instead of running its own argument validation -
+// this fails on either, so a future domain-file edit that drops a row fails
+// here even if it also deletes that row's own dedicated test above.
+// sound.action.random-* (12 rows) are NOT here: they dispatch through the
+// ACTION_REGISTRY[]/dispatchRcTriggerActionTest() path, never through
+// consoleFindDirectActionExecutor()/g_soundDirectActionExecutors[] - this
+// list is scoped to that one table's own rows, matching its own name.
 void test_257_every_direct_action_row_still_dispatches() {
     static const char* kExpectedDirectActionOperations[] = {
         "system.action.set-mode",
@@ -2217,6 +2528,28 @@ void test_257_every_direct_action_row_still_dispatches() {
         "rc.action.test-bindable",
         "sound.action.play-track",
         "sound.action.set-volume",
+        "sound.action.play-track-scream",
+        "sound.action.play-track-faint",
+        "sound.action.play-track-leia",
+        "sound.action.play-track-cantina-short",
+        "sound.action.play-track-cantina-long",
+        "sound.action.play-track-sw-theme",
+        "sound.action.play-track-imperial-march",
+        "sound.action.play-track-startup",
+        "sound.action.play-track-disco",
+        "sound.action.quiet",
+        "sound.action.random-on",
+        "sound.action.random-off",
+        "sound.action.volume-up",
+        "sound.action.volume-down",
+        "sound.action.volume-preset-mid",
+        "sound.action.volume-preset-max",
+        "sound.action.volume-preset-min",
+        "sound.action.dollar-command",
+        "sound.action.track-stop",
+        "sound.action.query-status",
+        "sound.action.set-mood-map",
+        "sound.action.set-category-range",
         "aux.action.led-color",
         "aux.action.led-effect",
         "servo.action.open",
@@ -2385,6 +2718,33 @@ int main(int, char**) {
     RUN_TEST(test_sound_set_volume_applies_and_persists);
     RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);
     RUN_TEST(test_sound_set_volume_reports_a_full_queue);
+
+    RUN_TEST(test_sound_named_track_shortcuts_send_the_right_dollar_command);
+    RUN_TEST(test_sound_named_track_shortcut_blocked_while_sleeping);
+    RUN_TEST(test_sound_named_track_shortcut_reports_a_full_queue);
+    RUN_TEST(test_sound_named_track_shortcut_rejects_any_argument);
+    RUN_TEST(test_sound_quiet_sends_dollar_s);
+    RUN_TEST(test_sound_random_on_off_send_the_right_dollar_command);
+    RUN_TEST(test_sound_volume_shortcuts_send_the_right_dollar_command);
+    RUN_TEST(test_sound_volume_shortcut_blocked_while_sleeping);
+    RUN_TEST(test_sound_dollar_command_sends_the_supplied_cmd);
+    RUN_TEST(test_sound_dollar_command_rejects_missing_dollar_prefix);
+    RUN_TEST(test_sound_dollar_command_rejects_a_too_long_command);
+    RUN_TEST(test_sound_dollar_command_rejects_missing_cmd);
+    RUN_TEST(test_sound_dollar_command_rejects_unknown_argument);
+    RUN_TEST(test_sound_dollar_command_blocked_while_sleeping);
+    RUN_TEST(test_sound_dollar_command_reports_a_full_queue);
+    RUN_TEST(test_sound_track_stop_queues_even_while_sleeping);
+    RUN_TEST(test_sound_track_stop_reports_a_full_queue);
+    RUN_TEST(test_sound_query_status_queues);
+    RUN_TEST(test_sound_query_status_reports_a_full_queue);
+    RUN_TEST(test_sound_set_mood_map_applies_all_four_masks);
+    RUN_TEST(test_sound_set_mood_map_rejects_a_partial_form);
+    RUN_TEST(test_sound_set_mood_map_rejects_an_out_of_range_mask);
+    RUN_TEST(test_sound_set_category_range_applies_and_persists);
+    RUN_TEST(test_sound_set_category_range_rejects_a_mismatched_key_pair);
+    RUN_TEST(test_sound_set_category_range_rejects_lo_greater_than_hi);
+    RUN_TEST(test_sound_set_category_range_rejects_bank_as_an_unknown_argument);
 
     RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);
     RUN_TEST(test_aux_led_color_rejects_an_out_of_range_component);
