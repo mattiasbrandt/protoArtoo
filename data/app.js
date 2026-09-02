@@ -463,6 +463,14 @@
   const COMMAND_HISTORY_MAX = 20;
   const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
+  // Whether a /api/logs body has actually been applied as history. The load
+  // guard has to ask THIS, not "is the panel non-empty": a stream-error notice
+  // or a streamed line fills logLines without any history behind it, and
+  // keying the guard on logLines.length made a successful retry after a
+  // refusal return immediately, resolve, and leave the bootstrap reporting the
+  // section done with the ring never loaded (#261). Only applyLogHistory()
+  // sets it, so it cannot drift from the fact it names.
+  let logHistoryLoaded = false;
   let logSelectionActive = false;
 
   // Persistent Console command history (Up/Down), surviving a page reload.
@@ -552,23 +560,33 @@
   };
 
   // Paints a single line in the log panel without entering it into logLines.
-  // loadRecentLogs() reads a non-empty logLines as "history is already here"
-  // and returns early, so a notice pushed through appendLogLine() would turn
-  // every bootstrap retry into a silent no-op and freeze the panel on the
-  // notice. Keeping it out of the model leaves the retry live, and the first
-  // real log line - streamed or from a successful retry - overwrites it.
+  // A notice is not log output, and the model holds log output: keeping it out
+  // means a later load replaces it instead of stranding it inside the history,
+  // and it never takes a slot in the trim window.
+  //
+  // It writes only while the model is empty, for the same reason. With lines
+  // already in logLines the panel is not blank and needs no notice, and
+  // overwriting innerHTML there would drop rendered lines the model still
+  // holds - the next appendLogLine() appends to a panel that no longer matches
+  // its own model.
   const renderLogNotice = (message) => {
-    if (!logConsole) return;
+    if (!logConsole || logLines.length > 0) return;
     logConsole.innerHTML = logEntryHtml(makeLogEntry(message, { timestamp: "--:--:--" }));
   };
 
-  const setLogLines = (lines, { forceBottom = true } = {}) => {
-    logLines = lines
+  // Applies the log ring as history. It goes in FRONT of whatever is already
+  // in the panel rather than replacing it: on the first load nothing can have
+  // streamed yet - status_stream.js opens /api/events only once the bootstrap
+  // has settled every section (page_bootstrap.js announceAssetsOnce()) - but a
+  // retry runs with the stream live, and those lines are newer than the ring.
+  // Replacing them would drop log output the operator has already seen.
+  const applyLogHistory = (lines) => {
+    const history = lines
       .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
-      .filter((line) => line.message.length > 0)
-      .slice(-LOG_MAX_LINES);
-    const stickToBottom = (forceBottom || isLogAtBottom()) && !hasActiveLogSelection();
-    renderLogConsole(stickToBottom);
+      .filter((line) => line.message.length > 0);
+    logLines = [...history, ...logLines].slice(-LOG_MAX_LINES);
+    logHistoryLoaded = true;
+    renderLogConsole(!hasActiveLogSelection());
   };
 
   const appendLogLine = (text, options = {}) => {
@@ -623,7 +641,7 @@
 
   const loadRecentLogs = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
-    if (logLines.length > 0) return;
+    if (logHistoryLoaded) return;
     const api = handle ?? window.PAApi;
     let result;
     try {
@@ -660,7 +678,7 @@
       .split(/\r?\n/)
       .map((line) => normalizeLogMessage(line.trimEnd()))
       .filter((line) => line.length > 0);
-    setLogLines(historyLines);
+    applyLogHistory(historyLines);
   };
 
   const LOG_LEVELS = {

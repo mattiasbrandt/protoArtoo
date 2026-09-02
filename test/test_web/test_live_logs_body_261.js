@@ -115,6 +115,10 @@ test("PAApi reports an empty content type when the response declares none", asyn
 // Brings the dashboard up with a controllable /api/logs answer and hands back
 // the log panel element, so a test can read what the operator would see.
 const loadDashboard = async (logsResponse) => {
+  // The page subscribes to the live stream at load time; capturing the
+  // subscriber lets a test deliver a stream event the way status_stream.js
+  // would, which is how a line reaches logLines without any history behind it.
+  const stream = { subscriber: null };
   const env = loadPageModule("app.js", {
     respond: (path) => {
       if (path === "/api/logs") {
@@ -122,9 +126,30 @@ const loadDashboard = async (logsResponse) => {
       }
       return { data: {} };
     },
+    overrides: {
+      PAStatusStream: {
+        isSupported: () => true,
+        getLastStatus: () => null,
+        subscribe: (handler) => {
+          stream.subscriber = handler;
+          return () => {
+            stream.subscriber = null;
+          };
+        },
+      },
+    },
   });
   await env.settle();
-  return { env, panel: env.element("log-console") };
+  const panel = env.element("log-console");
+  // appendLogLine() writes the first line through innerHTML and every later one
+  // through insertAdjacentHTML; the DOM stub does not fold the latter back into
+  // innerHTML, so capture it the way test_console_records_218.js does and read
+  // the panel through panelHtml().
+  const appended = [];
+  panel.insertAdjacentHTML = (_position, html) => appended.push(html);
+  const panelHtml = () => [panel.innerHTML, ...appended].join("\n");
+  await env.settle();
+  return { env, panel, panelHtml, stream };
 };
 
 test("A text/plain log body is rendered as log lines", async () => {
@@ -306,5 +331,93 @@ test("A cancelled section run leaves the panel alone", async () => {
     !panel.innerHTML.includes("connection lost"),
     "the page cancelled its own run - reporting that as a lost connection " +
       `would be false; panel was: ${JSON.stringify(panel.innerHTML)}`
+  );
+});
+
+// -----------------------------------------------------------------------------
+// A stream error between the refusal and the retry
+//
+// status_stream.js opens /api/events only once the bootstrap has settled every
+// section, so a stream error lands exactly in the window a refused log load
+// opens. It reaches the panel through appendLogLine(), which pushes into
+// logLines - so a load guard that asks "is the panel non-empty" answers yes and
+// skips the fetch, resolving as a success the bootstrap then marks done with no
+// history ever loaded.
+// -----------------------------------------------------------------------------
+
+test("A stream error between a refusal and the retry does not cancel the retry", async () => {
+  let answer = { data: INDEX_HTML_BODY, contentType: "text/html; charset=utf-8" };
+  const { env, panel, stream } = await loadDashboard(() => answer);
+
+  await assert.rejects(() => env.runSection("app-recent-logs"));
+
+  // The live stream comes up now that sections have settled, and fails.
+  assert.ok(stream.subscriber, "the page must have subscribed to the status stream");
+  stream.subscriber("stream_error", "");
+  assert.ok(
+    panel.innerHTML.includes("connection lost"),
+    "precondition: the stream error is in the panel and in the log model"
+  );
+
+  // The controller comes back, and the bootstrap retries the failed section.
+  answer = { data: DEVICE_LOG_BODY, contentType: "text/plain" };
+  await env.runSection("app-recent-logs");
+
+  assert.equal(
+    env.requests.filter((r) => r.path === "/api/logs").length,
+    2,
+    "the retry must go back to the controller - a line the stream put in the " +
+      "panel is not log history and must not satisfy the load guard"
+  );
+  assert.ok(
+    panel.innerHTML.includes("protoArtoo starting"),
+    `the recovered history must be painted; panel was: ${panel.innerHTML}`
+  );
+  assert.ok(
+    panel.innerHTML.includes("connection lost"),
+    "the streamed line must survive: history goes in front of it, not over it"
+  );
+  assert.ok(
+    panel.innerHTML.indexOf("protoArtoo starting") < panel.innerHTML.indexOf("connection lost"),
+    "the ring is older than anything that streamed after it, so it belongs first"
+  );
+});
+
+test("Once history is loaded a later run is still a no-op, even with streamed lines", async () => {
+  const { env, panelHtml, stream } = await loadDashboard({
+    data: DEVICE_LOG_BODY,
+    contentType: "text/plain",
+  });
+
+  await env.runSection("app-recent-logs");
+  stream.subscriber("log", "[9999][I][test] a line that streamed in later");
+
+  await env.runSection("app-recent-logs");
+
+  assert.equal(
+    env.requests.filter((r) => r.path === "/api/logs").length,
+    1,
+    "history already loaded must not be re-fetched over the live stream"
+  );
+  assert.ok(
+    panelHtml().includes("a line that streamed in later"),
+    "and the streamed line must not be clobbered by a re-run"
+  );
+});
+
+test("A refusal after lines have streamed leaves the rendered lines alone", async () => {
+  let answer = { data: DEVICE_LOG_BODY, contentType: "text/plain" };
+  const { env, panel, stream } = await loadDashboard(() => answer);
+
+  // A line streams in before any load has succeeded, then the load is refused.
+  stream.subscriber("log", "[8888][I][test] streamed before any history");
+  answer = { data: INDEX_HTML_BODY, contentType: "text/html; charset=utf-8" };
+
+  await assert.rejects(() => env.runSection("app-recent-logs"));
+
+  assert.ok(
+    panel.innerHTML.includes("streamed before any history"),
+    `the notice must not overwrite rendered lines the model still holds; ` +
+      `panel was: ${panel.innerHTML}`
   );
 });
