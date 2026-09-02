@@ -499,24 +499,20 @@ void profilerRead(ProfilerReading* out) {
     }
     taskEXIT_CRITICAL(&s_windowMux);
 
-    // Acquire s_snapMux. Resolved to oldest-first here so no adapter repeats
-    // the ring arithmetic.
-    ProfilerWindowSnapshot raw[PROF_SNAPSHOT_MAX];
-    uint8_t head = 0;
-    uint8_t count = 0;
+    // Acquire s_snapMux. Resolved to oldest-first inside the critical section
+    // so no adapter repeats the ring arithmetic and no caller pays 256 B of
+    // stack for a temporary copy to reorder afterwards - the Console task has
+    // 5120 B total. The critical section is no longer than the copy it
+    // replaced: at most PROF_SNAPSHOT_MAX entries either way, and only
+    // s_snapCount of them here.
     taskENTER_CRITICAL(&s_snapMux);
-    for (int i = 0; i < PROF_SNAPSHOT_MAX; i++) {
-        raw[i] = s_snapshots[i];
-    }
-    head = s_snapHead;
-    count = s_snapCount;
-    taskEXIT_CRITICAL(&s_snapMux);
-
-    out->windowCount = count;
-    const uint8_t oldest = (uint8_t)((head + PROF_SNAPSHOT_MAX - count) % PROF_SNAPSHOT_MAX);
+    const uint8_t count = s_snapCount;
+    const uint8_t oldest = (uint8_t)((s_snapHead + PROF_SNAPSHOT_MAX - count) % PROF_SNAPSHOT_MAX);
     for (uint8_t i = 0; i < count; i++) {
-        out->windows[i] = raw[(uint8_t)((oldest + i) % PROF_SNAPSHOT_MAX)];
+        out->windows[i] = s_snapshots[(uint8_t)((oldest + i) % PROF_SNAPSHOT_MAX)];
     }
+    taskEXIT_CRITICAL(&s_snapMux);
+    out->windowCount = count;
 
     // Acquire s_hwmMux
     taskENTER_CRITICAL(&s_hwmMux);

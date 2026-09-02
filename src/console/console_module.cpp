@@ -789,10 +789,13 @@ static void consoleExecuteDomeApiListBuiltinSequences(uint32_t requestId,
 // compiled into the native test binary even though the measurement itself is
 // ESP32-only.
 //
-// The reading is a ~500-byte stack local, not a static: consoleExecuteCommand()
-// is entered from both the Console task and the web request handler, and
-// nothing serialises them yet (#229 owns that), so a shared static buffer
-// would let one adapter's in-flight snapshot corrupt the other's.
+// The reading is a 512-byte stack local (measured for a 32-bit target, not
+// estimated), not a static: consoleExecuteCommand() is entered from both the
+// Console task and the web request handler, and nothing serialises them yet
+// (#229 owns that), so a shared static buffer would let one adapter's
+// in-flight snapshot corrupt the other's. The Console task has 5120 B of
+// stack (src/main.cpp), and the request-lifecycle ring is streamed one
+// 36-byte entry at a time rather than copied, for the same budget.
 static void consoleExecuteSystemApiGetProfiler(uint32_t requestId, const ConsoleRecordSink* sink) {
     ProfilerReading reading = {};
     profilerRead(&reading);
@@ -2216,9 +2219,10 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
     // Check if the operation was compiled into this image.
     //
-    // Without this guard a build-gated operation fell past both availability
-    // checks and answered with whatever the executor lookup below failed
-    // with - executor-not-ready, which means "nobody has wired this yet" and
+    // Without this guard a build-gated operation fell past the board check -
+    // the only availability check there was - and answered with whatever the
+    // executor lookup below failed with: executor-not-ready, which means
+    // "nobody has wired this yet" and
     // so implies it could start working once someone does. That is the wrong
     // answer twice over: the feature is absent by build configuration, and
     // the `operations` listing a line earlier already said `not-in-this-build`
