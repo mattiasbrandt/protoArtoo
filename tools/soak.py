@@ -95,15 +95,23 @@ source, the ESP-IDF header and the firmware itself (see SseFrame's docstring,
 BAD_RESET_REASONS and SHIPPING_CRASH_SHAPED_RESET_NAMES below) rather than
 invented -- the #197 pinned comment documents two prior guesses that were
 wrong for exactly this reason.
+
+The heap verdict is taken against the admission floor the firmware itself
+refuses at, resolved per build environment from platformio.ini and never
+copied into this file -- see "The compiled admission floor" below for why a
+percentage of a baseline sample was the wrong class of proof, and for what
+replaced it.
 """
 from __future__ import annotations
 
 import argparse
+import configparser
 import dataclasses
 import http.client
 import http.server
 import json
 import random
+import re
 import socket
 import struct
 import sys
@@ -189,6 +197,377 @@ EXIT_NO_IMMEDIATE_BLOCKER = 0
 EXIT_SELF_TEST_FAILURE = 1
 EXIT_NO_GO = 2
 EXIT_INVALID_UNKNOWN = 3
+
+
+# ---------------------------------------------------------------------------
+# The compiled admission floor -- read from platformio.ini, never restated.
+#
+# The soak's heap verdict used to be "the largest free 8-bit block fell more
+# than N% below the baseline sample". That is not evidence about service, and
+# the first graded artoo soak (#194) proved it by failing on exactly that rule
+# while nothing that matters had moved: heapFree held ~80 000 throughout,
+# heapMin was 43 240 before and after, every refusal counter read 0, and the
+# block recovered to 38 900 the moment the clients left. A percentage of an
+# arbitrary sample measures how spiky a fragmentation reading is. What an
+# operator needs to know is whether the controller was still admitting work.
+#
+# The level at which it stops admitting work is compiled in, and declared
+# exactly once, in platformio.ini [flags_base] under its calibration rationale:
+#
+#   PA_ADMISSION_MIN_LARGEST_FREE_BLOCK       ordinary requests
+#   PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG  /api/status, /api/events and the
+#                                             other read-only diagnostics
+#   PA_ADMISSION_OVERRIDE_HEAP_FLOOR          bench-only, ordinary class only
+#
+# Those numbers are READ from that file rather than copied here. A copy would
+# be a second source of truth, and the rationale block above those very lines
+# invites re-calibration -- so the copy would go stale the first time anyone
+# accepted the invitation, and this harness would then be judging a controller
+# against a floor it no longer has.
+#
+# Deliberately NOT consulted: the `#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK`
+# fallbacks at src/web/web_admission_psychic.cpp:95-100. They are a compile-time
+# safety net so the guard still builds if a flag goes missing, not a calibrated
+# value for any board -- and they are a second place the number is written, with
+# nothing keeping the two in step. An environment that does not carry the flag
+# is an environment nobody calibrated, so its run is INVALID here rather than
+# judged against a net. That is the same "proof of the wrong class" failure this
+# whole section exists to remove, one level down.
+# ---------------------------------------------------------------------------
+
+# tools/soak.py -> <repo>. The harness reads platformio.ini out of the tree it
+# ships in, so a worktree judges its own branch's floor rather than another's.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PLATFORMIO_INI = REPO_ROOT / "platformio.ini"
+
+ADMISSION_FLOOR_MACRO = "PA_ADMISSION_MIN_LARGEST_FREE_BLOCK"
+ADMISSION_FLOOR_DIAG_MACRO = "PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG"
+ADMISSION_FLOOR_OVERRIDE_MACRO = "PA_ADMISSION_OVERRIDE_HEAP_FLOOR"
+
+# The two option names a -D can reach the admission guard through.
+# build_flags applies to everything compiled; build_src_flags applies to src/
+# only, which is where the guard lives -- so a floor declared in either one is
+# in force, and reading only the first would report a false "not declared".
+PIO_FLAG_OPTIONS = ("build_flags", "build_src_flags")
+
+# `-D NAME=VALUE` and `-DNAME=VALUE` are both used in platformio.ini, sometimes
+# for the same macro in different envs.
+_MACRO_DEFINITION_RE = re.compile(r"-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=(\S+))?")
+# PlatformIO's own interpolation, `${section.option}` -- not configparser's
+# `${section:option}`, which is why the parser below runs with interpolation
+# disabled and this is expanded by hand.
+_PIO_REFERENCE_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+class AdmissionFloorUnresolved(Exception):
+    """The floor for a declared environment could not be determined.
+
+    Raised, never defaulted: #194's pinned comment is explicit that an
+    unresolvable floor is INVALID. A run judged against a number this harness
+    invented would be worth less than no run at all, because it would look like
+    a verdict.
+    """
+
+
+@dataclasses.dataclass(frozen=True)
+class AdmissionFloor:
+    """The floors one build environment compiles in, with their provenance.
+
+    `ordinary_bytes` is the floor a verdict is taken against: it is what the
+    firmware refuses ORDINARY requests at, i.e. the operator's dashboard and
+    every asset on it. `diagnostic_bytes` is the lower floor /api/status and
+    /api/events keep (webPathIsDiagnostic(), src/web/web_admission.cpp:232-249)
+    -- which is exactly why this harness can still be polling a controller that
+    has already started shedding the pages an operator wants.
+    """
+
+    env: str
+    ordinary_bytes: int
+    # What [flags_base] declares, before any bench override is applied. Equal to
+    # ordinary_bytes unless override_bytes is in force; kept separately so a
+    # report shows that 40000 is an override of 9000 rather than a floor
+    # somebody calibrated.
+    declared_ordinary_bytes: int
+    diagnostic_bytes: int
+    override_bytes: Optional[int]
+    # macro name -> "[section].option" it was read from.
+    sources: dict[str, str]
+    ini_path: str
+
+    def report(self) -> dict:
+        return {
+            "env": self.env,
+            "ordinaryFloorBytes": self.ordinary_bytes,
+            "declaredOrdinaryFloorBytes": self.declared_ordinary_bytes,
+            "diagnosticFloorBytes": self.diagnostic_bytes,
+            "overrideFloorBytes": self.override_bytes,
+            "macros": dict(self.sources),
+            "readFrom": self.ini_path,
+            "note": (
+                "The ordinary floor is what src/web/web_admission.cpp refuses ordinary "
+                "requests at (the dashboard and its assets); the diagnostic floor is the "
+                "lower one /api/status and /api/events keep (webPathIsDiagnostic(), "
+                ":232-249), so this harness's own traffic outlives the point at which an "
+                "operator's page load is already being shed. The heap verdict is taken "
+                "against the ordinary floor. Values are read from platformio.ini per "
+                "environment and never restated in the harness"
+            ),
+        }
+
+
+def _pio_config(ini_path: Path) -> configparser.RawConfigParser:
+    """platformio.ini as raw sections, with no interpolation applied.
+
+    RawConfigParser rather than ConfigParser: PlatformIO's `${section.option}`
+    is not configparser's `${section:option}`, so the built-in interpolations
+    would either fail or silently mangle values. '=' is the only delimiter --
+    configparser's default set also includes ':', which would split
+    `platform = https://github.com/...` in the wrong place on some values.
+    """
+    config = configparser.RawConfigParser(delimiters=("=",), strict=True)
+    # Option names are matched exactly rather than lower-cased: what is wanted
+    # here is what the file says, not a normalisation of it.
+    config.optionxform = str
+    with ini_path.open(encoding="utf-8") as handle:
+        config.read_file(handle, source=str(ini_path))
+    return config
+
+
+def pio_environments(config: configparser.RawConfigParser) -> list[str]:
+    """Every `[env:*]` name declared in the file, without the prefix."""
+    return sorted(
+        section[len("env:"):] for section in config.sections() if section.startswith("env:")
+    )
+
+
+def _pio_extends(config: configparser.RawConfigParser, section: str) -> list[str]:
+    """The sections `section` extends, in declaration order.
+
+    PlatformIO allows several; this file only ever names one, but reading it as
+    a list costs nothing and a single-value reading would silently drop the
+    second the day one is added.
+    """
+    raw = config.get(section, "extends", fallback="")
+    return [part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()]
+
+
+def _pio_flag_sources(
+    config: configparser.RawConfigParser, section: str, option: str,
+    seen: Optional[set] = None,
+) -> list[tuple[str, str]]:
+    """(section, text) for every place `section`'s `option` gets its value.
+
+    Two composition rules, both taken from platformio.ini's own documentation of
+    them and matched by test/test_tools/test_env_flag_declarations.py, which
+    resolves PA_LOG_LEVEL and PA_HEAP_PROFILE the same way:
+
+      extends   a child that declares the option REPLACES the parent's value
+                outright rather than appending to it. platformio.ini says so at
+                [env:firebeetle2_profiler] ("a child env's build_flags REPLACES
+                the parent's list"), and that is why that env has to restate
+                PA_BOARD and the USB CDC flags by hand. So the value comes from
+                the nearest ancestor that declares the option, and no further.
+      ${a.b}    an explicit reference to another section's option, expanded in
+                place. [flags_base] is reached ONLY this way -- which is
+                precisely why "every env inherits the admission floor" is false:
+                [env:native] declares its own build_flags and references
+                [flags_base] nowhere, so no floor reaches it at all.
+    """
+    seen = set() if seen is None else seen
+    key = (section, option)
+    if key in seen:
+        return []
+    seen.add(key)
+    if not config.has_section(section):
+        raise AdmissionFloorUnresolved(
+            f"platformio.ini refers to a section [{section}] that it does not declare "
+            f"(reached while resolving {option!r})"
+        )
+    if not config.has_option(section, option):
+        sources: list[tuple[str, str]] = []
+        for parent in _pio_extends(config, section):
+            sources.extend(_pio_flag_sources(config, parent, option, seen))
+        return sources
+    raw = config.get(section, option)
+    # The references are stripped from this section's own text so a macro is
+    # attributed to the section that actually writes it, not to the one that
+    # merely pulls another section in.
+    sources = [(section, _PIO_REFERENCE_RE.sub(" ", raw))]
+    for reference in _PIO_REFERENCE_RE.findall(raw):
+        ref_section, dot, ref_option = reference.rpartition(".")
+        if not dot:
+            raise AdmissionFloorUnresolved(
+                f"[{section}].{option} contains the reference ${{{reference}}}, which "
+                "names no section.option pair -- platformio.ini interpolation is "
+                "${section.option}"
+            )
+        sources.extend(_pio_flag_sources(config, ref_section, ref_option, seen))
+    return sources
+
+
+def _pio_macro_definitions(
+    config: configparser.RawConfigParser, env_section: str,
+) -> dict[str, tuple[str, str]]:
+    """{macro: (value, "[section].option")} for one environment.
+
+    A macro defined twice with two different values is raised on rather than
+    resolved: two definitions of one macro reaching a single -Werror compile is
+    the #244 defect shape, and picking one of them here would be inventing an
+    answer the compiler does not agree with.
+    """
+    definitions: dict[str, tuple[str, str]] = {}
+    for option in PIO_FLAG_OPTIONS:
+        for section, text in _pio_flag_sources(config, env_section, option):
+            origin = f"[{section}].{option}"
+            for name, value in _MACRO_DEFINITION_RE.findall(text):
+                previous = definitions.get(name)
+                if previous is not None:
+                    if previous[0] != value:
+                        raise AdmissionFloorUnresolved(
+                            f"[{env_section}] resolves {name} to two different values: "
+                            f"{previous[0]!r} from {previous[1]} and {value!r} from "
+                            f"{origin}. Two definitions of one macro reaching one compile "
+                            "is what #244 removed; this harness will not guess which one "
+                            "the firmware took"
+                        )
+                    continue
+                definitions[name] = (value, origin)
+    return definitions
+
+
+def _macro_int(definitions: dict[str, tuple[str, str]], macro: str, env: str) -> int:
+    value, origin = definitions[macro]
+    try:
+        # base 0 so a hexadecimal calibration would be read rather than refused.
+        return int(value, 0)
+    except ValueError as not_an_int:
+        raise AdmissionFloorUnresolved(
+            f"[env:{env}] defines {macro} as {value!r} ({origin}), which is not an "
+            f"integer byte count: {not_an_int}"
+        ) from not_an_int
+
+
+def _pio_config_for(env: str, ini_path: Path) -> configparser.RawConfigParser:
+    """The parsed file, with `[env:<env>]` confirmed to exist in it."""
+    try:
+        config = _pio_config(ini_path)
+    except (OSError, configparser.Error) as unreadable:
+        raise AdmissionFloorUnresolved(
+            f"could not read {ini_path}: {unreadable}"
+        ) from unreadable
+    if not config.has_section(f"env:{env}"):
+        raise AdmissionFloorUnresolved(
+            f"{ini_path} declares no [env:{env}], so there is no build environment to read "
+            f"an admission floor from. Declared environments: "
+            f"{', '.join(pio_environments(config))}"
+        )
+    return config
+
+
+def require_declared_environment(env: str, ini_path: Path = PLATFORMIO_INI) -> None:
+    """Raise AdmissionFloorUnresolved unless platformio.ini declares this env.
+
+    Used on an image that has no floor to resolve: --build-env still appears in
+    the report, and a name matching no environment must not be presented there
+    with the look of a checked fact.
+    """
+    _pio_config_for(env, ini_path)
+
+
+def resolve_admission_floor(env: str, ini_path: Path = PLATFORMIO_INI) -> AdmissionFloor:
+    """The admission floors compiled into `env`, read from platformio.ini.
+
+    Raises AdmissionFloorUnresolved -- never returns a default -- when the file
+    cannot be read, the environment is not declared, or the environment does not
+    resolve both floors. The last of those is a real case rather than a
+    defensive branch: [env:native] declares its own build_flags without ever
+    referencing [flags_base], so it carries no floor at all.
+    """
+    config = _pio_config_for(env, ini_path)
+    section = f"env:{env}"
+    definitions = _pio_macro_definitions(config, section)
+    missing = [
+        macro for macro in (ADMISSION_FLOOR_MACRO, ADMISSION_FLOOR_DIAG_MACRO)
+        if macro not in definitions
+    ]
+    if missing:
+        raise AdmissionFloorUnresolved(
+            f"[{section}] resolves no {' and no '.join(missing)}. Those are declared in "
+            f"{ini_path}'s [flags_base], which an environment only inherits by naming "
+            "${flags_base.build_flags} in its own build_flags -- an environment that does "
+            "not is an environment nobody calibrated a floor for, so this run has no "
+            "yardstick and is INVALID rather than judged against a default"
+        )
+
+    declared_ordinary = _macro_int(definitions, ADMISSION_FLOOR_MACRO, env)
+    diagnostic = _macro_int(definitions, ADMISSION_FLOOR_DIAG_MACRO, env)
+    override = (
+        _macro_int(definitions, ADMISSION_FLOOR_OVERRIDE_MACRO, env)
+        if ADMISSION_FLOOR_OVERRIDE_MACRO in definitions else None
+    )
+    # src/web/web_admission.cpp:216-220, read rather than reconstructed: the
+    # override replaces the ORDINARY floor and only when it is non-zero, and
+    # diagnostics keep their own floor either way -- which is what leaves
+    # /api/status answering while an induced-pressure session refuses
+    # everything else.
+    ordinary = override if override else declared_ordinary
+
+    # A floor at or below zero is not a low floor, it is no floor: the guard's
+    # own comparison is `in.largestFreeBlock < floor`
+    # (src/web/web_admission.cpp:222), which can never be true at 0, so every
+    # run would pass whatever the heap did -- and the margin percentage would
+    # divide by it. There is nothing to judge a run against, which is the same
+    # INVALID as a floor that could not be read at all.
+    if ordinary <= 0 or diagnostic <= 0:
+        raise AdmissionFloorUnresolved(
+            f"[{section}] resolves an admission floor of {ordinary} ordinary / "
+            f"{diagnostic} diagnostic. A floor of zero or below is a level the firmware "
+            "can never refuse at, so a soak judged against it would pass whatever the "
+            "heap did"
+        )
+
+    sources = {
+        ADMISSION_FLOOR_MACRO: definitions[ADMISSION_FLOOR_MACRO][1],
+        ADMISSION_FLOOR_DIAG_MACRO: definitions[ADMISSION_FLOOR_DIAG_MACRO][1],
+    }
+    if override is not None:
+        sources[ADMISSION_FLOOR_OVERRIDE_MACRO] = (
+            definitions[ADMISSION_FLOOR_OVERRIDE_MACRO][1]
+        )
+    try:
+        readable_path = str(ini_path.relative_to(REPO_ROOT))
+    except ValueError:
+        readable_path = str(ini_path)
+    return AdmissionFloor(
+        env=env,
+        ordinary_bytes=ordinary,
+        declared_ordinary_bytes=declared_ordinary,
+        diagnostic_bytes=diagnostic,
+        override_bytes=override,
+        sources=sources,
+        ini_path=readable_path,
+    )
+
+
+# src/web/web_server.cpp:425-427 -- acceptMinLargestBlockSeen is published as -1
+# when g_webAcceptMinLargestBlockSeen is still UINT32_MAX, i.e. the Connection
+# Admission guard has not sampled the heap even once this boot (it samples only
+# when a connection arrives and the rate check passes). That is "no reading",
+# and it must never be read as a byte count: -1 against any floor would report
+# the deepest possible breach on a controller that has merely been idle.
+ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED = -1
+
+# Keys of one per-poll heap-series row. Named once so the rows, the aggregates
+# derived from them and the tests that read them cannot drift apart on a
+# spelling. `tS` is seconds since the soak's own clock started, so the shape of
+# a run is recoverable from the report alone -- #194's graded run could not
+# distinguish "touched 11 764 once" from "sat near 12 000 for twenty minutes",
+# and those are different findings.
+SERIES_KEY_ELAPSED_S = "tS"
+SERIES_KEY_LARGEST_FREE_8BIT = "largestFree8bitBlock"
+SERIES_KEY_HEAP_FREE = "heapFree"
+SERIES_KEY_HEAP_MIN = "heapMin"
+SERIES_KEY_SSE_CLIENTS = "sseClientsConnected"
 
 
 # ---------------------------------------------------------------------------
@@ -947,6 +1326,61 @@ class LadderSamples:
     recovered_counts: list[int]
 
 
+@dataclasses.dataclass(frozen=True)
+class AdmissionReading:
+    """One sample of the firmware's own record of what it turned away.
+
+    The two refusal counters are cumulative since boot and only ever increase,
+    so a rise across a run is requests this controller refused DURING the run --
+    which is the failure the heap rule exists to catch, and the one a percentage
+    of a baseline sample would never have noticed.
+
+    accept_min_largest_block_seen is the Connection Admission guard's own
+    running minimum, and is None when the guard has never sampled
+    (ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED). None is not zero and not a
+    breach: it is the absence of a reading.
+    """
+
+    refused_heap_floor: int
+    refused_heap_floor_diag: int
+    accept_min_largest_block_seen: Optional[int]
+
+
+@dataclasses.dataclass
+class AdmissionSamples:
+    refused_heap_floor: list[int]
+    refused_heap_floor_diag: list[int]
+    accept_min_largest_block_seen: list[Optional[int]]
+
+
+@dataclasses.dataclass(frozen=True)
+class StatusPollSample:
+    """One /api/status poll and when it was attempted.
+
+    The elapsed time is stamped BEFORE the request goes out, so a slow or
+    unreachable poll dates from when the harness asked rather than from when it
+    gave up -- a poll that times out after 10s would otherwise appear in the
+    series 10s later than the moment it describes.
+
+    `body` carries the "_pollError" sentinel key instead of the payload when the
+    device could not be reached or did not answer with JSON.
+    """
+
+    elapsed_s: float
+    body: dict
+
+
+def series_values(rows: list[dict], key: str) -> list[int]:
+    """Every row that carried `key`, in order.
+
+    A row missing it was already recorded as an anomaly when the series was
+    built (StatusSchema.collect_heap_series), so it is dropped here rather than
+    defaulted -- a zero substituted for a missing reading would drag a minimum
+    straight through any floor.
+    """
+    return [row[key] for row in rows if key in row]
+
+
 class StatusSchema:
     """How to read one firmware image's GET /api/status.
 
@@ -985,6 +1419,13 @@ class StatusSchema:
     quietly returns None: absent must read as absent, never as zero."""
 
     name = ""
+    # The PlatformIO environment that builds this image, and therefore the one
+    # whose resolved build flags declare the admission floor a run is judged
+    # against. The default for --build-env, which an operator overrides when the
+    # board is carrying a variant env (artoo_esp32_recovery_bench and
+    # artoo_esp32 publish byte-identical payloads and have different floors, so
+    # nothing in the payload can tell them apart -- see --build-env's help).
+    build_env = ""
     reset_path: Optional[str] = None
     # The diagnostic run_c6_reset_recovery() refuses with when reset_path is
     # None. Owned by the schema because the two images that have no reset
@@ -995,9 +1436,26 @@ class StatusSchema:
     enforces_sse_client_cap = False
     reset_reason_kind = ""
     heap_field = ""
+    heap_free_field = ""
+    # None on an image that publishes no free-heap low-water mark. Absent, not
+    # zero: "this image never reports how low free heap went" and "free heap
+    # never went low" are different claims.
+    heap_min_field: Optional[str] = None
     sse_clients_field = ""
     restart_field = ""
     restart_verb = ""
+    # True when this image compiles the request-admission guard
+    # (src/web/web_admission_psychic.cpp) and publishes its refusal counters, so
+    # there is a floor it actually refuses at and a count of what it refused.
+    # False is a structural property of the image, not a missing measurement --
+    # see BenchStatusSchema.admission_absence_note.
+    enforces_admission_floor = False
+    # What a report says in place of the floor verdict when there is no floor.
+    # Only read when enforces_admission_floor is False.
+    admission_absence_note = ""
+    refused_heap_floor_field = ""
+    refused_heap_floor_diag_field = ""
+    accept_min_largest_block_field = ""
     ladder_container: Optional[str] = None
     ladder_fields: dict[str, str] = {}
     # False on an image built for a board with no ESP-Hosted link supervisor:
@@ -1029,10 +1487,26 @@ class StatusSchema:
         return {
             "image": self.name,
             "heapLargestFreeBlock": self.heap_field,
+            "heapFree": self.heap_free_field,
+            # Words, not a null: an absent low-water mark is a property of the
+            # image, and a consumer must not read the omission as a zero.
+            "heapMinFreeEver": self.heap_min_field or "<not published on this image>",
             "sseClients": self.sse_clients_field,
             "restartEvidence": self.restart_field,
             "resetReason": f"resetReason ({self.reset_reason_kind})",
             "bootCount": "bootCount" if self.publishes_boot_count else "<not published>",
+            # Same treatment as the recovery ladder below: the absence gets
+            # words rather than an empty map, which would read as "this image
+            # publishes an empty set of refusal counters".
+            "admissionRefusals": (
+                {
+                    "refusedHeapFloor": self.refused_heap_floor_field,
+                    "refusedHeapFloorDiag": self.refused_heap_floor_diag_field,
+                    "acceptMinLargestBlockSeen": self.accept_min_largest_block_field,
+                }
+                if self.enforces_admission_floor
+                else self.admission_absence_note
+            ),
             # An empty field map would read as "this image publishes an empty
             # ladder". The absence gets words, the same way bootCount and the
             # reset route do.
@@ -1049,14 +1523,87 @@ class StatusSchema:
     def heap_largest_free(self, body: dict, context: str) -> int:
         return _require_field(body, self.heap_field, int, context)
 
-    def collect_heap(self, samples: list[dict], anomalies: list[str]) -> list[int]:
-        return _collect_field(samples, self.heap_field, int, anomalies)
-
     def sse_clients(self, body: dict, context: str) -> int:
         return _require_field(body, self.sse_clients_field, int, context)
 
-    def collect_sse_clients(self, samples: list[dict], anomalies: list[str]) -> list[int]:
-        return _collect_field(samples, self.sse_clients_field, int, anomalies)
+    def collect_heap_series(self, polls: list[StatusPollSample],
+                            anomalies: list[str]) -> list[dict]:
+        """One row per reachable poll: the heap readings this image publishes,
+        stamped with the elapsed seconds they were taken at.
+
+        This is the single per-poll read path for the heap and SSE-client
+        numbers -- run_sse_soak() derives its aggregates from these rows with
+        series_values() rather than collecting the same fields a second time, so
+        one malformed sample produces one anomaly and one hole rather than two
+        of each in two differently-shaped lists.
+
+        A field this image does not publish (heap_min_field is None on the
+        bench) is absent from the row and is NOT an anomaly: fields_read()
+        already states that absence in words. A field this image does publish
+        but that this sample got wrong is an anomaly, and is left out of the
+        row -- an absent key is recoverable, an invented zero is not.
+        """
+        rows: list[dict] = []
+        for index, poll in enumerate(polls):
+            row: dict = {SERIES_KEY_ELAPSED_S: round(poll.elapsed_s, 3)}
+            for key, field in (
+                (SERIES_KEY_LARGEST_FREE_8BIT, self.heap_field),
+                (SERIES_KEY_HEAP_FREE, self.heap_free_field),
+                (SERIES_KEY_HEAP_MIN, self.heap_min_field),
+                (SERIES_KEY_SSE_CLIENTS, self.sse_clients_field),
+            ):
+                if not field:
+                    continue
+                if field not in poll.body:
+                    anomalies.append(f"poll[{index}] missing field {field!r}")
+                    continue
+                value = poll.body[field]
+                if _type_mismatch(value, int):
+                    anomalies.append(
+                        f"poll[{index}] field {field!r} has type {type(value).__name__}, "
+                        "expected int"
+                    )
+                    continue
+                row[key] = value
+            rows.append(row)
+        return rows
+
+    def admission(self, body: dict, context: str) -> Optional[AdmissionReading]:
+        """One admission-counter sample, or None on an image that compiles no
+        admission guard. None is not "nothing was refused" and not "the sample
+        was malformed": there is no gate on that image to refuse anything and no
+        counter to read, which no reading can stand in for."""
+        if not self.enforces_admission_floor:
+            return None
+        seen = _require_field(body, self.accept_min_largest_block_field, int, context)
+        return AdmissionReading(
+            refused_heap_floor=_require_field(
+                body, self.refused_heap_floor_field, int, context),
+            refused_heap_floor_diag=_require_field(
+                body, self.refused_heap_floor_diag_field, int, context),
+            accept_min_largest_block_seen=(
+                None if seen == ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED else seen
+            ),
+        )
+
+    def collect_admission(self, samples: list[dict],
+                          anomalies: list[str]) -> Optional[AdmissionSamples]:
+        """Poll-loop counterpart to admission(); None for the same reason, and
+        never an empty AdmissionSamples, which a caller would read as "sampled
+        the counters and saw nothing"."""
+        if not self.enforces_admission_floor:
+            return None
+        seen = _collect_field(samples, self.accept_min_largest_block_field, int, anomalies)
+        return AdmissionSamples(
+            refused_heap_floor=_collect_field(
+                samples, self.refused_heap_floor_field, int, anomalies),
+            refused_heap_floor_diag=_collect_field(
+                samples, self.refused_heap_floor_diag_field, int, anomalies),
+            accept_min_largest_block_seen=[
+                None if value == ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED else value
+                for value in seen
+            ],
+        )
 
     def restart_marker(self, body: dict, context: str) -> int:
         return _require_field(body, self.restart_field, int, context)
@@ -1151,14 +1698,38 @@ def _marker_mismatch(body: dict, field: str, expected_type: type) -> Optional[st
 
 class BenchStatusSchema(StatusSchema):
     name = "bench"
+    build_env = "firebeetle2_hosted_bench"
     reset_path = DEFAULT_RESET_PATH
     publishes_boot_count = True
     # The bench streams through PsychicEventSource, which has no client cap
     # of its own (ADR 0030 / #184's SSE-fidelity note), so a refused stream
     # is never expected here.
     enforces_sse_client_cap = False
+    # [env:firebeetle2_hosted_bench] does resolve the admission floor flags --
+    # it extends [env:firebeetle2] and inherits its build_flags -- but its
+    # `build_src_filter = -<*> +<../bringup/p4_hosted_bench.cpp>`
+    # (platformio.ini:624-627) means NONE of src/ is compiled, so
+    # src/web/web_admission_psychic.cpp, the only code that reads those flags,
+    # is not in the image. Reporting a floor of 9000 for this board would be a
+    # claim about a gate the binary does not contain, and its handleStatus()
+    # (bringup/p4_hosted_bench.cpp:840-880) publishes none of the refusal
+    # counters that would corroborate one. So the floor is not "unresolvable"
+    # here, it is inapplicable, and the report says which.
+    enforces_admission_floor = False
+    admission_absence_note = (
+        "<no admission floor on this image: bringup/p4_hosted_bench.cpp is built with "
+        "build_src_filter = -<*> (platformio.ini:624-627), so src/web/web_admission_psychic.cpp "
+        "-- the only code that reads PA_ADMISSION_MIN_LARGEST_FREE_BLOCK -- is not compiled "
+        "in, and handleStatus() publishes no refusal counters. There is no level at which "
+        "this image turns a request away, so its heap readings are recorded (see heapSeries) "
+        "and not judged. Judging them against a percentage of a baseline sample is what "
+        "#194 removed>"
+    )
     reset_reason_kind = "esp_reset_reason_t int"
     heap_field = "largestFree8bitBlock"
+    heap_free_field = "freeHeapBytes"
+    # ESP.getMinFreeHeap() has no counterpart in the bench handleStatus().
+    heap_min_field = None
     sse_clients_field = "sseClientsConnected"
     restart_field = "bootCount"
     restart_verb = "advanced"
@@ -1248,9 +1819,28 @@ class ProductImageStatusSchema(StatusSchema):
     # admission working as designed, not a transport fault --
     # run_reconnect_storm() counts it separately for exactly that reason.
     enforces_sse_client_cap = True
+    # Both product images compile src/web/web_admission_psychic.cpp, whose
+    # request middleware carries no board guard, so both refuse at a floor and
+    # both publish the same counters out of buildStatusJson()'s unconditional
+    # snprintf (src/web/web_server.cpp:393). The floor VALUE is per build
+    # environment, which is what resolve_admission_floor() is for.
+    enforces_admission_floor = True
     reset_reason_kind = "resetReasonName() string"
     heap_field = "heapLargest8bit"
+    # ESP.getFreeHeap() / ESP.getMinFreeHeap() (src/web/web_server.cpp:361-362).
+    # heapLargest8bit is the fragmentation reading the floors gate on; these two
+    # are what separate fragmentation from exhaustion, which is the distinction
+    # #194's graded run turned on.
+    heap_free_field = "heapFree"
+    heap_min_field = "heapMin"
     sse_clients_field = "sseClients"
+    # src/web/web_server.cpp:387-388, 440. Ordinary-class and diagnostic-class
+    # request refusals at the heap floor, counted by the middleware itself.
+    refused_heap_floor_field = "refusedHeapFloor"
+    refused_heap_floor_diag_field = "refusedHeapFloorDiag"
+    # :425-427. The Connection Admission guard's own running minimum, published
+    # as -1 until it has sampled once (ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED).
+    accept_min_largest_block_field = "acceptMinLargestBlockSeen"
     # No bootCount, so the restart evidence is uptimeMs (millis(),
     # web_server.cpp:360) stepping backwards -- see restart_detected().
     restart_field = "uptimeMs"
@@ -1277,6 +1867,16 @@ class ProductImageStatusSchema(StatusSchema):
         for field, expected_type in (
             ("resetReason", str), (self.heap_field, int),
             (self.sse_clients_field, int), (self.restart_field, int),
+            # The three admission counters are markers, and heapFree/heapMin
+            # are not, on one line: these decide the verdict, so a payload
+            # without them cannot be judged at all and must be refused at
+            # preflight rather than halfway through a 30-minute run. heapFree
+            # and heapMin are recorded, so their absence degrades the evidence
+            # without invalidating the verdict -- it surfaces as a series
+            # anomaly instead.
+            (self.refused_heap_floor_field, int),
+            (self.refused_heap_floor_diag_field, int),
+            (self.accept_min_largest_block_field, int),
         ):
             mismatch = _marker_mismatch(body, field, expected_type)
             if mismatch is not None:
@@ -1341,6 +1941,9 @@ class ProductImageStatusSchema(StatusSchema):
 
 class ShippingStatusSchema(ProductImageStatusSchema):
     name = "shipping"
+    # The firebeetle2 product image (AGENTS.md "Flashing and Monitoring": of the
+    # four P4 environments, this is the only one that is the firmware).
+    build_env = "firebeetle2"
     # The board does have an ESP32-C6, so a reset route is meaningful here and
     # simply is not implemented -- that is #243, on epic #206.
     reset_unavailable_reason = (
@@ -1417,6 +2020,7 @@ class ArtooStatusSchema(ProductImageStatusSchema):
     under one product base rather than a fork of it."""
 
     name = "artoo"
+    build_env = "artoo_esp32"
     image_article = "an"
     reset_unavailable_reason = (
         "the artoo image publishes no C6 reset route, and could not: POST /api/c6/reset "
@@ -1532,13 +2136,39 @@ def _sse_soak_worker(
 
 def run_sse_soak(
     client: BenchClient, schema: StatusSchema, num_clients: int, duration_s: float,
-    status_poll_interval_s: float, heap_tolerance_pct: float, early_stall_check_s: float,
-    max_silence_s: float,
+    status_poll_interval_s: float, admission_floor: Optional[AdmissionFloor],
+    early_stall_check_s: float, max_silence_s: float,
 ) -> dict:
+    # A missing floor on an image that HAS one would silently drop the heap
+    # verdict, so it is refused here rather than absorbed. Not a contract error
+    # -- the device said nothing wrong -- so it propagates past
+    # _run_driver_safely() as the harness bug it is, per AGENTS.md "never
+    # swallow an error to keep moving".
+    if schema.enforces_admission_floor and admission_floor is None:
+        raise ValueError(
+            f"the {schema.name} image refuses requests at a compiled admission floor, but "
+            "run_sse_soak() was called without one -- run() resolves it from platformio.ini "
+            "before any driver starts"
+        )
+    if not schema.enforces_admission_floor and admission_floor is not None:
+        raise ValueError(
+            f"the {schema.name} image compiles no admission guard "
+            f"({schema.admission_absence_note}), so a floor of "
+            f"{admission_floor.ordinary_bytes} would describe a gate this binary does not "
+            "contain"
+        )
+
     baseline = capture_status(client)
     baseline_restart_marker = schema.restart_marker(baseline, "baseline /api/status")
     baseline_reset = schema.reset_reason(baseline, "baseline /api/status")
     baseline_heap = schema.heap_largest_free(baseline, "baseline /api/status")
+    # The firmware's own count of what it turned away, taken before the clients
+    # arrive so a rise is attributable to this run rather than to whatever the
+    # controller was doing beforehand. Required at the baseline on every image
+    # that has an admission guard, for the same reason the ladder is: a soak
+    # with no refusal baseline cannot say afterwards whether anything was
+    # refused. None on an image with no guard at all.
+    baseline_admission = schema.admission(baseline, "baseline /api/status")
     # The recovery ladder, required at the baseline on every image that has
     # one. Its transportUpEventCount is posted by the SDIO driver's own
     # transport_active_cb() (bringup/p4_hosted_bench.cpp:574-589 on the bench,
@@ -1562,6 +2192,12 @@ def run_sse_soak(
     counts_toward_verdict = num_clients <= PA_ADMISSION_MAX_SSE_CLIENTS
     tested_at_production_cap = num_clients == PA_ADMISSION_MAX_SSE_CLIENTS
 
+    # One clock for the whole run, taken before anything starts: the poll series
+    # and the early-stall/duration windows are both measured from it, so an
+    # elapsed second in the series means the same thing as an elapsed second in
+    # the duration.
+    run_started = time.monotonic()
+
     stop_events = [threading.Event() for _ in range(num_clients)]
     first_frame_events = [threading.Event() for _ in range(num_clients)]
     results: list[ClientSoakResult] = []
@@ -1575,34 +2211,35 @@ def run_sse_soak(
         threads.append(t)
         t.start()
 
-    status_samples: list[dict] = []
+    poll_samples: list[StatusPollSample] = []
     stop_polling = threading.Event()
 
     def _poll_status() -> None:
         while not stop_polling.is_set():
+            elapsed_s = time.monotonic() - run_started
             try:
-                status_samples.append(capture_status(client))
+                body = capture_status(client)
             except TRANSPORT_EXCEPTIONS as error:
-                status_samples.append({"_pollError": str(error)})
+                body = {"_pollError": str(error)}
             except json.JSONDecodeError as error:
-                status_samples.append({"_pollError": f"malformed JSON: {error}"})
+                body = {"_pollError": f"malformed JSON: {error}"}
+            poll_samples.append(StatusPollSample(elapsed_s=elapsed_s, body=body))
             stop_polling.wait(status_poll_interval_s)
 
     poller = threading.Thread(target=_poll_status, name="sse-soak-status-poll", daemon=True)
     poller.start()
 
-    started = time.monotonic()
     # Early-fail: if by early_stall_check_s no worker has received even one
     # frame, don't burn the operator's whole --duration on a dead stream.
     # #184's NO-GO vocabulary names this case explicitly: "SSE immediately
     # stalls".
-    early_deadline = started + min(early_stall_check_s, duration_s)
+    early_deadline = run_started + min(early_stall_check_s, duration_s)
     while time.monotonic() < early_deadline and not any(e.is_set() for e in first_frame_events):
         time.sleep(0.2)
     immediate_stall = not any(e.is_set() for e in first_frame_events)
 
     if not immediate_stall:
-        remaining = duration_s - (time.monotonic() - started)
+        remaining = duration_s - (time.monotonic() - run_started)
         if remaining > 0:
             time.sleep(remaining)
 
@@ -1622,12 +2259,19 @@ def run_sse_soak(
         [r.tracker for r in results], max_silence_s
     )
 
-    reachable_samples = [s for s in status_samples if "_pollError" not in s]
+    reachable_polls = [p for p in poll_samples if "_pollError" not in p.body]
+    reachable_samples = [p.body for p in reachable_polls]
     schema_anomalies: list[str] = []
     restart_marker_samples = schema.collect_restart_markers(reachable_samples, schema_anomalies)
-    heap_samples = schema.collect_heap(reachable_samples, schema_anomalies)
-    sse_clients_samples = schema.collect_sse_clients(reachable_samples, schema_anomalies)
+    # The per-poll heap series, and the aggregates derived from it. Recorded so
+    # the SHAPE of a run is recoverable: #194's graded run could say the largest
+    # block reached 11 764 and could not say whether it touched that once or sat
+    # near it for twenty minutes, and those are different findings.
+    heap_series = schema.collect_heap_series(reachable_polls, schema_anomalies)
+    heap_samples = series_values(heap_series, SERIES_KEY_LARGEST_FREE_8BIT)
+    sse_clients_samples = series_values(heap_series, SERIES_KEY_SSE_CLIENTS)
     ladder_samples = schema.collect_ladder(reachable_samples, schema_anomalies)
+    admission_samples = schema.collect_admission(reachable_samples, schema_anomalies)
 
     reasons: list[str] = []
 
@@ -1641,8 +2285,108 @@ def run_sse_soak(
                         "confirm the P4 did not reboot during the soak")
 
     min_heap = min([baseline_heap] + heap_samples) if heap_samples else baseline_heap
-    heap_floor = baseline_heap * (1 - heap_tolerance_pct / 100.0)
-    heap_trend_bad = min_heap < heap_floor
+
+    # -- the heap verdict -------------------------------------------------
+    #
+    # Two questions, neither of which is "did a spiky reading move away from an
+    # arbitrary sample":
+    #
+    #   did the controller refuse?  refusedHeapFloor / refusedHeapFloorDiag are
+    #       the firmware's own count of requests it turned away at the floor. A
+    #       rise across the run is the real failure this rule exists to catch,
+    #       and the percentage rule it replaces would not have noticed it at
+    #       all -- #194's run had a NO-GO verdict with both counters at 0.
+    #   how close did it come?      the lowest largest-free-8-bit block observed,
+    #       against the ORDINARY floor -- the level at which an operator's page
+    #       load starts being shed. Below it is a FAIL; above it is a margin,
+    #       reported with no second band invented in between.
+    #
+    # Neither question exists on an image with no admission guard; that absence
+    # is reported in words rather than as a set of passing numbers.
+    heap_verdict_fields: dict = {}
+    if admission_floor is None:
+        heap_verdict_fields["admissionFloorEvidence"] = schema.admission_absence_note
+    else:
+        floor = admission_floor.ordinary_bytes
+        margin = min_heap - floor
+        heap_verdict_fields.update({
+            "admissionFloorEnv": admission_floor.env,
+            "admissionOrdinaryFloorBytes": floor,
+            "admissionDiagnosticFloorBytes": admission_floor.diagnostic_bytes,
+            "minLargestFreeBlockMarginBytes": margin,
+            # Margin as a share of the floor, which is a real denominator (the
+            # level the firmware acts on) rather than a baseline sample.
+            "minLargestFreeBlockMarginPct": round(100.0 * margin / floor, 1),
+        })
+        if margin < 0:
+            reasons.append(
+                f"{schema.heap_field} fell to {min_heap}, below the {floor}-byte admission "
+                f"floor this image refuses ordinary requests at "
+                f"({ADMISSION_FLOOR_MACRO}, resolved for build environment "
+                f"{admission_floor.env!r} from "
+                f"{admission_floor.sources[ADMISSION_FLOOR_MACRO]}) -- an operator's page "
+                "load would have been shed at that point"
+            )
+
+    if baseline_admission is not None and admission_samples is not None:
+        for label, field, report_keys, baseline_count, counts in (
+            ("ordinary requests", schema.refused_heap_floor_field,
+             ("baselineRefusedHeapFloor", "finalRefusedHeapFloor",
+              "refusedHeapFloorAdvancedBy"),
+             baseline_admission.refused_heap_floor, admission_samples.refused_heap_floor),
+            ("read-only diagnostics", schema.refused_heap_floor_diag_field,
+             ("baselineRefusedHeapFloorDiag", "finalRefusedHeapFloorDiag",
+              "refusedHeapFloorDiagAdvancedBy"),
+             baseline_admission.refused_heap_floor_diag,
+             admission_samples.refused_heap_floor_diag),
+        ):
+            final_count = counts[-1] if counts else baseline_count
+            advanced_by = final_count - baseline_count
+            baseline_key, final_key, advanced_key = report_keys
+            heap_verdict_fields[baseline_key] = baseline_count
+            heap_verdict_fields[final_key] = final_count
+            heap_verdict_fields[advanced_key] = advanced_by
+            if advanced_by > 0:
+                reasons.append(
+                    f"{field} advanced by {advanced_by} during the soak ({baseline_count} -> "
+                    f"{final_count}): the controller refused {advanced_by} {label} at its "
+                    "heap floor. This is the firmware's own count of work it turned away"
+                )
+            elif advanced_by < 0:
+                # Cumulative and monotonic within a boot, so this cannot happen
+                # without the counters being reset. Reported rather than read as
+                # "no refusals": a run whose refusal evidence is not comparable
+                # end to end has no refusal evidence.
+                reasons.append(
+                    f"{field} went backwards during the soak ({baseline_count} -> "
+                    f"{final_count}). It is cumulative within a boot, so the counters were "
+                    "reset -- this run's refusal evidence is not comparable end to end"
+                )
+        # The guard's own running minimum, since boot rather than since this
+        # run, so it is corroboration and never a verdict of its own: a low
+        # value may predate the soak entirely. On #194's graded run it read
+        # 11 764, exactly what the harness saw, which is what made that
+        # measurement trustworthy in the first place.
+        # The LAST sample, whatever it says -- including None, which after a
+        # real reading means the guard's state was reset. Skipping to the last
+        # non-None would report a reading the controller is no longer making.
+        seen_series = admission_samples.accept_min_largest_block_seen
+        final_seen = (
+            seen_series[-1] if seen_series
+            else baseline_admission.accept_min_largest_block_seen
+        )
+        heap_verdict_fields.update({
+            "baselineAcceptMinLargestBlockSeen":
+                baseline_admission.accept_min_largest_block_seen,
+            "finalAcceptMinLargestBlockSeen": final_seen,
+            "acceptMinLargestBlockSeenNote": (
+                "The Connection Admission guard's own low-water reading, since BOOT and not "
+                "since this run, so a value below the floor here is not by itself evidence "
+                "about this soak. null means the guard has not sampled the heap even once "
+                "this boot (published as -1, src/web/web_server.cpp:425-427) -- no reading, "
+                "never zero bytes"
+            ),
+        })
 
     max_sse_clients_observed = max(sse_clients_samples, default=0)
     admission_reached_target = max_sse_clients_observed >= num_clients
@@ -1712,11 +2456,6 @@ def run_sse_soak(
             f"resetReason at soak start was {baseline_reset.display} -- "
             "the device was already in a crash-shaped reset state before this run began"
         )
-    if heap_trend_bad:
-        reasons.append(
-            f"{schema.heap_field} fell to {min_heap} from baseline {baseline_heap} "
-            f"(beyond {heap_tolerance_pct}% tolerance, floor {heap_floor:.0f})"
-        )
     if counts_toward_verdict and not admission_reached_target and total_frames > 0:
         reasons.append(
             f"server-reported {schema.sse_clients_field} never reached {num_clients} "
@@ -1768,16 +2507,24 @@ def run_sse_soak(
         "baselineResetReason": baseline_reset.display,
         "baselineLargestFree8bitBlock": baseline_heap,
         "minLargestFree8bitBlockObserved": min_heap,
-        "heapTolerancePct": heap_tolerance_pct,
+        # Either the floor verdict and the refusal counters, or the one stated
+        # absence -- inlined here rather than update()d on afterwards so the
+        # report's key order is the same on every image.
+        **heap_verdict_fields,
         "maxSseClientsConnectedObserved": max_sse_clients_observed,
         "admissionReachedTarget": admission_reached_target,
-        # Either the six ladder readings or the one stated absence -- inlined
-        # here rather than update()d on afterwards so the report's key order
-        # is the same on every image.
         **ladder_fields,
-        "statusPollSampleCount": len(status_samples),
-        "statusPollUnreachableCount": len(status_samples) - len(reachable_samples),
+        "statusPollSampleCount": len(poll_samples),
+        "statusPollUnreachableCount": len(poll_samples) - len(reachable_polls),
+        # The list is truncated; the count is not. A capped list on its own
+        # cannot distinguish 50 anomalies from 5000.
+        "statusPollSchemaAnomalyCount": len(schema_anomalies),
         "statusPollSchemaAnomalies": schema_anomalies[:50],
+        # Uncapped by design: a truncated series would answer "how low did it
+        # go" and lose "for how long", which is the question this record exists
+        # to answer. Keys are named by SERIES_KEY_*; statusFieldsRead says which
+        # payload field each one was read from on this image.
+        "heapSeries": heap_series,
         "note": (
             "Per-client frameCount is not cross-checked against the server's own frame "
             "counter as an independent pass/fail gate: clients connect at different "
@@ -2359,10 +3106,36 @@ def _compose_overall_verdict(driver_results: dict[str, dict]) -> tuple[str, int]
 def run(args: argparse.Namespace) -> tuple[dict, int]:
     client = BenchClient(args.device, args.port, connect_timeout_s=args.connect_timeout_s)
     schema = SCHEMAS[args.image]
+    build_env = args.build_env or schema.build_env
     header = {
-        "schemaVersion": 2, "issue": 197, "device": args.device, "port": args.port,
-        "image": schema.name, "statusFieldsRead": schema.fields_read(),
+        "schemaVersion": 3, "issue": 197, "device": args.device, "port": args.port,
+        "image": schema.name, "buildEnv": build_env,
+        "statusFieldsRead": schema.fields_read(),
     }
+
+    # The admission floor is resolved before the first request. A run this
+    # harness cannot judge is INVALID whether or not the device answers, and
+    # there is no reason to put load on a controller in order to find that out.
+    admission_floor: Optional[AdmissionFloor] = None
+    try:
+        if schema.enforces_admission_floor:
+            admission_floor = resolve_admission_floor(build_env)
+            header["admissionFloor"] = admission_floor.report()
+        else:
+            require_declared_environment(build_env)
+            header["admissionFloor"] = schema.admission_absence_note
+    except AdmissionFloorUnresolved as unresolved:
+        # #194: an unresolvable floor is INVALID, never a default. A verdict
+        # taken against a number this harness picked would read like evidence
+        # and be none.
+        return dict(header, **{
+            "verdict": "INVALID / UNKNOWN",
+            "reasons": [
+                f"the admission floor for --image {schema.name} (build environment "
+                f"{build_env!r}) could not be determined: {unresolved}"
+            ],
+            "drivers": {},
+        }), EXIT_INVALID_UNKNOWN
 
     # Preflight: an unreachable device, or a C6 that never came up, cannot
     # produce any of the required evidence -- #184's INVALID/UNKNOWN row
@@ -2429,7 +3202,7 @@ def run(args: argparse.Namespace) -> tuple[dict, int]:
     if "sse_soak" in drivers_to_run:
         driver_results["sse_soak"] = _run_driver_safely(
             "sse_soak", run_sse_soak, client, schema, args.num_clients, args.duration,
-            args.status_poll_interval_s, args.heap_recovery_tolerance_pct, args.early_stall_check_s,
+            args.status_poll_interval_s, admission_floor, args.early_stall_check_s,
             args.sse_max_silence_s,
         )
     if "reconnect_storm" in drivers_to_run:
@@ -2499,6 +3272,11 @@ FIXTURE_STATUS_BODY = {
     "hostedIsInitialized": True,
     "sseFramesSent": 42,
     "sseClientsConnected": 1,
+    # bringup/p4_hosted_bench.cpp:876-877. No heapMin counterpart on this
+    # image, and no admission counters at all -- that absence is the schema's
+    # enforces_admission_floor = False, and it is what the fixture must look
+    # like for the bench half of the self-test to mean anything.
+    "freeHeapBytes": 260000,
     "largestFree8bitBlock": 123456,
     "recoveryLadderState": "idle",
     "hostedTransportFailureCount": 0,
@@ -2525,6 +3303,16 @@ FIXTURE_SHIPPING_STATUS_BODY = {
     "heapLargest8bit": 123456,
     "sseClients": 1,
     "sseClientsPeak": 3,
+    # The admission evidence, from the same unconditional snprintf
+    # (src/web/web_server.cpp:393, values at :425-427 and :440). A healthy
+    # controller: nothing refused, and a guard low-water reading well above
+    # the 9000-byte ordinary floor.
+    "acceptRejectLargestBlock": 0,
+    "acceptMinLargestBlockSeen": 40000,
+    "refusedInflightCap": 0,
+    "refusedSseCap": 0,
+    "refusedHeapFloor": 0,
+    "refusedHeapFloorDiag": 0,
     "wifiRssi": -55,
     "wifiConnected": True,
     "wifiClientConnected": True,
@@ -2568,7 +3356,15 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/events":
             self._serve_sse()
         elif path == "/api/status":
-            self._serve_json(200, self.server.status_body)
+            # Counted so a scenario can assert that a run which claims to have
+            # refused BEFORE touching the device really did: a preflight that
+            # went out and was discarded is not a refusal.
+            self.server.status_get_count += 1
+            body = self.server.status_body
+            # A callable lets a scenario move a counter mid-run -- an admission
+            # refusal is a change over time, and a static body cannot express
+            # one.
+            self._serve_json(200, body() if callable(body) else body)
         else:
             self.send_error(404)
 
@@ -2709,17 +3505,21 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
 
 
 def _start_fixture_server(
-    status_body: Optional[dict] = None, sse_mode: str = "normal",
+    status_body: Optional[Any] = None, sse_mode: str = "normal",
 ) -> tuple[http.server.ThreadingHTTPServer, threading.Thread]:
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FixtureHandler)
     # Per-server, not per-handler: BaseHTTPRequestHandler is instantiated
     # once per request, so anything a scenario configures or counts has to
     # live on the server the handler can reach through self.server.
+    # A dict serves the same payload every time; a zero-argument callable is
+    # re-invoked per request, for the scenarios whose subject is a counter
+    # moving during a run.
     server.status_body = FIXTURE_STATUS_BODY if status_body is None else status_body
     # The mode used when the request carries no ?mode= -- which is how the
     # drivers themselves fetch /api/events, since they use the real path.
     server.default_sse_mode = sse_mode
     server.post_count = 0
+    server.status_get_count = 0
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
@@ -2740,11 +3540,13 @@ def _record_scenario(name: str, body: Callable[[], None], failures: list[str]) -
     (_require_field), so a mutation that mis-names a field would otherwise
     kill the suite mid-run and skip every scenario after it -- the exit code
     would still be non-zero, but the output would say less about which
-    measurement broke."""
+    measurement broke. AdmissionFloorUnresolved is caught for the same reason
+    and no other: a mutation to the floor resolver must land as one red
+    scenario naming the floor, not as a traceback that hides the rest."""
     try:
         body()
         print(f"  PASS  {name}")
-    except (AssertionError,) + CONTRACT_ERRORS as failure:
+    except (AssertionError, AdmissionFloorUnresolved) + CONTRACT_ERRORS as failure:
         print(f"  FAIL  {name}: {failure}")
         failures.append(f"{name}: {failure}")
 
@@ -3243,15 +4045,38 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
             # mutated reader raises out of the driver itself, and that has to
             # land as this scenario's red line rather than as a traceback.
             def soak_report(image: str = image, schema: StatusSchema = schema) -> None:
+                floor = (
+                    resolve_admission_floor(schema.build_env)
+                    if schema.enforces_admission_floor else None
+                )
                 soak = run_sse_soak(
                     client, schema, num_clients=1, duration_s=1.0, status_poll_interval_s=0.3,
-                    heap_tolerance_pct=20.0, early_stall_check_s=1.0, max_silence_s=5.0,
+                    admission_floor=floor, early_stall_check_s=1.0, max_silence_s=5.0,
                 )
                 assert soak["verdict"] == "PASS", soak["reasons"]
                 assert soak["image"] == image, soak["image"]
                 assert soak["totalFramesReceived"] > 0, soak["totalFramesReceived"]
                 assert soak["statusFieldsRead"] == schema.fields_read(), soak["statusFieldsRead"]
                 assert soak["baselineResetReasonAssessment"] == "notCrashShaped", soak
+                assert "heapTolerancePct" not in soak, (
+                    "the sse_soak heap verdict is no longer a percentage of a baseline "
+                    "sample (#194); a report still carrying the tolerance would advertise "
+                    "a rule this driver does not apply"
+                )
+                # The per-poll series, on every image: recording, not judging.
+                series = soak["heapSeries"]
+                assert series, "a reachable poll must produce a series row"
+                assert [row[SERIES_KEY_ELAPSED_S] for row in series] == sorted(
+                    row[SERIES_KEY_ELAPSED_S] for row in series
+                ), f"series rows must be in poll order: {series}"
+                for row in series:
+                    assert row[SERIES_KEY_LARGEST_FREE_8BIT] == 123456, row
+                    assert row[SERIES_KEY_HEAP_FREE] == 260000, row
+                    assert (SERIES_KEY_HEAP_MIN in row) is (schema.heap_min_field is not None), (
+                        "a heapMin key on an image that publishes no low-water mark would "
+                        f"be an invented reading: {row}"
+                    )
+                assert soak["statusPollSchemaAnomalyCount"] == 0, soak["statusPollSchemaAnomalies"]
                 if image == "bench":
                     assert soak["sseContinuityModel"] == "counter", soak["sseContinuityModel"]
                     assert soak["totalFrameGaps"] == 0, soak["totalFrameGaps"]
@@ -3288,6 +4113,31 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
                     assert "recoveryLadderEvidence" not in soak, soak
                     assert soak["recoveryLadderReachedDegraded"] is False, soak
 
+                if schema.enforces_admission_floor:
+                    assert soak["admissionFloorEnv"] == schema.build_env, soak
+                    assert soak["admissionOrdinaryFloorBytes"] == floor.ordinary_bytes, soak
+                    assert soak["admissionDiagnosticFloorBytes"] == floor.diagnostic_bytes, soak
+                    assert soak["minLargestFreeBlockMarginBytes"] == (
+                        123456 - floor.ordinary_bytes), soak
+                    assert soak["refusedHeapFloorAdvancedBy"] == 0, soak
+                    assert soak["refusedHeapFloorDiagAdvancedBy"] == 0, soak
+                    assert soak["finalAcceptMinLargestBlockSeen"] == 40000, soak
+                    assert "admissionFloorEvidence" not in soak, soak
+                else:
+                    # An image with no admission guard reports the absence in
+                    # words. A refusal count of 0 here would claim this run
+                    # watched a gate the binary does not contain.
+                    assert soak["admissionFloorEvidence"] == schema.admission_absence_note, soak
+                    for admission_key in (
+                        "admissionFloorEnv", "admissionOrdinaryFloorBytes",
+                        "minLargestFreeBlockMarginBytes", "baselineRefusedHeapFloor",
+                        "refusedHeapFloorAdvancedBy", "finalAcceptMinLargestBlockSeen",
+                    ):
+                        assert admission_key not in soak, (
+                            f"{admission_key!r} on a {image} report would claim a floor "
+                            "this image has no code to refuse at"
+                        )
+
             _record_scenario(
                 f"{image}: sse_soak runs end to end and reports its own image's numbers",
                 soak_report, failures)
@@ -3312,6 +4162,249 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
                 storm_report, failures)
         finally:
             _stop_fixture_server(server, thread)
+
+
+def _run_admission_floor_scenarios(failures: list[str]) -> None:
+    """The heap verdict's yardstick, read from the real platformio.ini through
+    the production resolver, and then driven end to end through run() -- the
+    same entry point main() calls, argv and all.
+
+    Nothing here restates 9000. A scenario that asserted the number would pass
+    against a harness that had stopped reading the file, which is the whole
+    defect this rule exists to avoid; what is asserted instead is that the
+    values come from [flags_base], that an environment which does not reference
+    it resolves nothing, and that the bench override displaces the ordinary
+    floor and only the ordinary floor. The literal values are pinned against an
+    independent read of platformio.ini in
+    test/test_tools/test_soak_schema.py."""
+
+    def check(name: str, body: Callable[[], None]) -> None:
+        _record_scenario(name, body, failures)
+
+    def floors_come_from_flags_base() -> None:
+        for env in ("artoo_esp32", "firebeetle2"):
+            floor = resolve_admission_floor(env)
+            assert floor.env == env, floor
+            assert floor.sources[ADMISSION_FLOOR_MACRO].startswith("[flags_base]"), (
+                f"{env} must resolve its floor from [flags_base], got "
+                f"{floor.sources[ADMISSION_FLOOR_MACRO]!r}"
+            )
+            assert floor.diagnostic_bytes < floor.ordinary_bytes, (
+                "read-only diagnostics keep a LOWER floor than ordinary requests, which is "
+                f"why /api/status still answers under pressure: {floor}"
+            )
+            assert floor.override_bytes is None, floor
+            assert floor.ordinary_bytes == floor.declared_ordinary_bytes, floor
+        # Both product images ship the same calibrated floor today; if a board
+        # ever needs its own, per-env resolution is already what reports it.
+        assert (resolve_admission_floor("artoo_esp32").ordinary_bytes
+                == resolve_admission_floor("firebeetle2").ordinary_bytes)
+
+    check("the admission floor is read per environment from platformio.ini [flags_base]",
+          floors_come_from_flags_base)
+
+    def an_env_that_never_references_flags_base_resolves_nothing() -> None:
+        # Not a hypothetical: [env:native] declares its own build_flags and
+        # names ${flags_base.build_flags} nowhere, so no floor reaches it. This
+        # is the case #194's pin calls INVALID rather than a default.
+        try:
+            floor = resolve_admission_floor("native")
+        except AdmissionFloorUnresolved as unresolved:
+            message = str(unresolved)
+            assert ADMISSION_FLOOR_MACRO in message, message
+            assert "flags_base" in message, message
+            assert "INVALID" in message, message
+            return
+        raise AssertionError(
+            f"env:native declares no admission floor, but the resolver produced {floor}"
+        )
+
+    check("an environment that does not inherit [flags_base] resolves no floor at all",
+          an_env_that_never_references_flags_base_resolves_nothing)
+
+    def an_unknown_env_is_refused_by_name() -> None:
+        try:
+            resolve_admission_floor("not_an_environment")
+        except AdmissionFloorUnresolved as unresolved:
+            assert "not_an_environment" in str(unresolved), str(unresolved)
+            assert "artoo_esp32" in str(unresolved), (
+                f"the refusal must list what IS declared: {unresolved}"
+            )
+            return
+        raise AssertionError("an environment platformio.ini does not declare must be refused")
+
+    check("an environment platformio.ini does not declare is refused, listing the real ones",
+          an_unknown_env_is_refused_by_name)
+
+    def the_bench_override_displaces_only_the_ordinary_floor() -> None:
+        # src/web/web_admission.cpp:216-220: the override replaces the ordinary
+        # floor when non-zero; diagnostics keep their own either way, which is
+        # what leaves /api/status readable during an induced-pressure session.
+        product = resolve_admission_floor("artoo_esp32")
+        induced = resolve_admission_floor("artoo_esp32_recovery_bench")
+        assert induced.override_bytes is not None, induced
+        assert induced.ordinary_bytes == induced.override_bytes, induced
+        assert induced.ordinary_bytes > product.ordinary_bytes, (
+            "the induced-pressure env raises the ordinary floor above the resting heap; "
+            f"got {induced.ordinary_bytes} against {product.ordinary_bytes}"
+        )
+        assert induced.declared_ordinary_bytes == product.ordinary_bytes, (
+            "the displaced value is still reported, so a reader can see that the floor in "
+            f"force is an override rather than a calibration: {induced}"
+        )
+        assert induced.diagnostic_bytes == product.diagnostic_bytes, induced
+
+    check("a bench floor override displaces the ordinary floor and not the diagnostic one",
+          the_bench_override_displaces_only_the_ordinary_floor)
+
+    def every_schema_names_a_real_environment() -> None:
+        for name, schema in SCHEMAS.items():
+            require_declared_environment(schema.build_env)
+            if schema.enforces_admission_floor:
+                assert resolve_admission_floor(schema.build_env).ordinary_bytes > 0, name
+            else:
+                assert schema.admission_absence_note, (
+                    f"{name} judges no floor, so it owes the report a reason in words"
+                )
+
+    check("every image names a build environment platformio.ini actually declares",
+          every_schema_names_a_real_environment)
+
+
+def _run_orchestrated_scenario(
+    name: str, status_body: Any, extra_args: list[str],
+    check: Callable[[dict, int, http.server.ThreadingHTTPServer], None],
+    failures: list[str],
+) -> None:
+    """Drive run() -- main()'s own entry point, through the real argument
+    parser -- against an artoo fixture, and assert on the report and exit code
+    it produces. Nothing here reimplements the orchestration or the verdict."""
+    server, thread = _start_fixture_server(status_body=status_body, sse_mode="shipping_live")
+    try:
+        port = server.server_address[1]
+        args = build_parser().parse_args([
+            "--device", "127.0.0.1", "--port", str(port), "--image", "artoo",
+            "--driver", "sse_soak", "--duration", "1.0", "--num-clients", "1",
+            "--status-poll-interval-s", "0.2", "--early-stall-check-s", "1.0",
+            *extra_args,
+        ])
+        report, exit_code = run(args)
+        _record_scenario(name, lambda: check(report, exit_code, server), failures)
+    finally:
+        _stop_fixture_server(server, thread)
+
+
+def _run_heap_verdict_scenarios(failures: list[str]) -> None:
+    """The heap verdict itself, end to end: a healthy run, a run that crossed
+    the floor, a run the controller refused during, and a run whose floor could
+    not be resolved."""
+    floor = resolve_admission_floor(SCHEMAS["artoo"].build_env)
+
+    def healthy(report: dict, exit_code: int, _server) -> None:
+        assert exit_code == EXIT_NO_IMMEDIATE_BLOCKER, (exit_code, report)
+        assert report["verdict"] == "NO IMMEDIATE BLOCKER", report
+        assert report["buildEnv"] == "artoo_esp32", report
+        assert report["admissionFloor"]["ordinaryFloorBytes"] == floor.ordinary_bytes, report
+        soak = report["drivers"]["sse_soak"]
+        assert soak["verdict"] == "PASS", soak["reasons"]
+        assert soak["minLargestFreeBlockMarginBytes"] > 0, soak
+        assert soak["minLargestFreeBlockMarginPct"] > 0, soak
+
+    _run_orchestrated_scenario(
+        "a run that stayed above the floor passes, and reports its margin",
+        FIXTURE_ARTOO_STATUS_BODY, [], healthy, failures)
+
+    # Above the diagnostic floor and below the ordinary one -- the real shape
+    # of this failure, and the reason it is observable at all: /api/status is a
+    # diagnostic path (webPathIsDiagnostic(), src/web/web_admission.cpp:232-249)
+    # and keeps answering while ordinary page loads are already being shed.
+    below_floor = floor.ordinary_bytes - 1
+    assert below_floor > floor.diagnostic_bytes, (
+        "fixture derivation: this scenario needs a reading between the two floors"
+    )
+
+    def crossed(report: dict, exit_code: int, _server) -> None:
+        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        soak = report["drivers"]["sse_soak"]
+        assert soak["verdict"] == "FAIL", soak
+        assert soak["minLargestFreeBlockMarginBytes"] < 0, soak
+        assert any("admission floor" in reason for reason in soak["reasons"]), soak["reasons"]
+        assert any(str(floor.ordinary_bytes) in reason for reason in soak["reasons"]), (
+            soak["reasons"]
+        )
+
+    _run_orchestrated_scenario(
+        "a run whose largest free block fell below the ordinary floor is a FAIL",
+        dict(FIXTURE_ARTOO_STATUS_BODY, heapLargest8bit=below_floor), [], crossed, failures)
+
+    # A counter that MOVES, which a static payload cannot express: the failure
+    # this rule exists to catch is a rise across the run, and #194's graded run
+    # would have passed every other check while it happened.
+    refusal_clock: list[float] = []
+
+    def refusing_body() -> dict:
+        # The clock starts at the FIRST status read -- run()'s preflight -- not
+        # when this scenario was set up, so the baseline is always taken before
+        # the counter moves however slow the machine is. A wall-clock offset
+        # from setup time would make this scenario pass or fail on load.
+        if not refusal_clock:
+            refusal_clock.append(time.monotonic())
+        refused = 0 if time.monotonic() - refusal_clock[0] < 0.4 else 7
+        return dict(FIXTURE_ARTOO_STATUS_BODY, refusedHeapFloor=refused)
+
+    def refused(report: dict, exit_code: int, _server) -> None:
+        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        soak = report["drivers"]["sse_soak"]
+        assert soak["refusedHeapFloorAdvancedBy"] == 7, soak
+        assert any("refused 7 ordinary requests" in reason for reason in soak["reasons"]), (
+            soak["reasons"]
+        )
+        # The heap reading never moved: this FAIL comes from the controller's
+        # own count and from nothing else, which is the point of reading it.
+        assert soak["minLargestFreeBlockMarginBytes"] > 0, soak
+
+    _run_orchestrated_scenario(
+        "a run the controller refused requests during is a FAIL on the counter alone",
+        refusing_body, [], refused, failures)
+
+    # The counters are cumulative within a boot, so a DECREASE cannot happen
+    # without them being reset. Read as "no refusals" it would be a silent pass
+    # on a run whose refusal evidence does not span the run at all.
+    reset_clock: list[float] = []
+
+    def counter_reset_body() -> dict:
+        if not reset_clock:
+            reset_clock.append(time.monotonic())
+        refused = 5 if time.monotonic() - reset_clock[0] < 0.4 else 0
+        return dict(FIXTURE_ARTOO_STATUS_BODY, refusedHeapFloor=refused)
+
+    def counters_reset(report: dict, exit_code: int, _server) -> None:
+        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        soak = report["drivers"]["sse_soak"]
+        assert soak["refusedHeapFloorAdvancedBy"] == -5, soak
+        assert any("went backwards" in reason for reason in soak["reasons"]), soak["reasons"]
+
+    _run_orchestrated_scenario(
+        "a refusal counter that went backwards is reported, never read as 'nothing refused'",
+        counter_reset_body, [], counters_reset, failures)
+
+    def unresolvable(report: dict, exit_code: int, server) -> None:
+        assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report)
+        assert report["verdict"] == "INVALID / UNKNOWN", report
+        assert report["drivers"] == {}, report
+        assert "admissionFloor" not in report, (
+            "an unresolved floor must leave no floor in the report at all -- a null there "
+            f"would still look like an answer: {report}"
+        )
+        assert any(ADMISSION_FLOOR_MACRO in reason for reason in report["reasons"]), report
+        assert server.status_get_count == 0, (
+            "the floor is resolved before the first request, so a run that cannot be judged "
+            f"never disturbs the controller: {server.status_get_count} status GET(s) went out"
+        )
+
+    _run_orchestrated_scenario(
+        "an environment with no floor is INVALID, decided before the device is touched",
+        FIXTURE_ARTOO_STATUS_BODY, ["--build-env", "native"], unresolvable, failures)
 
 
 def _run_json_scenarios(failures: list[str]) -> None:
@@ -3342,10 +4435,11 @@ def _run_json_scenarios(failures: list[str]) -> None:
 def run_self_test() -> int:
     print(
         "Running offline self-tests -- the real BenchClient.stream_sse()/get_json()/"
-        "post_json(), stream_sse_with_continuity() and the status-schema readers, "
-        "against a local http.server fixture serving byte-exact PsychicEventSource "
-        "(bench) and webEventStreamFormatPrefix (shipping) framing. No device "
-        "required, no inline parse loop.\n"
+        "post_json(), stream_sse_with_continuity(), the status-schema readers, the "
+        "platformio.ini admission-floor resolver and run() itself, against a local "
+        "http.server fixture serving byte-exact PsychicEventSource (bench) and "
+        "webEventStreamFormatPrefix (shipping) framing. No device required, no inline "
+        "parse loop.\n"
     )
     failures: list[str] = []
     shipping = SCHEMAS["shipping"]
@@ -3387,6 +4481,12 @@ def run_self_test() -> int:
 
     print("\nartoo image:")
     _run_artoo_status_scenarios(failures)
+
+    print("\nadmission floor, read from platformio.ini:")
+    _run_admission_floor_scenarios(failures)
+
+    print("\nheap verdict, driven through run():")
+    _run_heap_verdict_scenarios(failures)
 
     print("\nall three images, drivers end to end:")
     _run_end_to_end_driver_scenarios(failures)
@@ -3438,6 +4538,20 @@ def build_parser() -> argparse.ArgumentParser:
              "diagnostic says so",
     )
     parser.add_argument(
+        "--build-env", default=None,
+        help="the PlatformIO environment the board is running, and therefore the one whose "
+             "PA_ADMISSION_MIN_LARGEST_FREE_BLOCK the heap verdict is taken against. "
+             "Defaults to the product environment for --image (artoo -> artoo_esp32, "
+             "shipping -> firebeetle2, bench -> firebeetle2_hosted_bench). Set it when the "
+             "board carries a variant build: artoo_esp32_recovery_bench raises the ordinary "
+             "floor to 40000 and publishes a payload byte-identical to artoo_esp32's, so "
+             "nothing in /api/status can tell the two apart and the harness will not guess. "
+             "The value is READ from platformio.ini, never restated here; an environment "
+             "that resolves no floor (env:native declares its own build_flags and never "
+             "references [flags_base]) makes the run INVALID rather than judged against a "
+             "default",
+    )
+    parser.add_argument(
         "--driver", choices=["all", "sse_soak", "reconnect_storm", "c6_reset_recovery"], default="all",
     )
     parser.add_argument(
@@ -3477,9 +4591,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sse-resume-timeout-s", type=float, default=10.0)
     parser.add_argument(
         "--heap-recovery-tolerance-pct", type=float, default=20.0,
-        help="allowed percentage drop in largestFree8bitBlock -- used both for the "
-             "long-soak heap-trend check and for the reset-recovery heap comparison -- "
-             "before recording a fragmentation FAIL",
+        help="allowed percentage drop in largestFree8bitBlock when comparing the reading "
+             "AFTER a deliberate disturbance against the one before it: the post-storm "
+             "settle in reconnect_storm and the post-rejoin reading in c6_reset_recovery. "
+             "It governs recovery comparisons only. The sse_soak heap verdict is NOT a "
+             "percentage of a baseline -- it is taken against the compiled admission floor "
+             "(--build-env), because a percentage of an arbitrary sample says nothing about "
+             "whether the controller was still serving (#194)",
     )
     parser.add_argument("--json", default=None, help="also write the full report to this path")
     return parser
@@ -3504,6 +4622,21 @@ def main(argv: list[str]) -> int:
     print(rendered)
     if args.json:
         Path(args.json).write_text(rendered + "\n")
+    # The yardstick is printed next to the verdict, not only buried in the
+    # JSON: a reader scanning the tail of a run has to be able to see WHICH
+    # environment's floor the heap verdict was taken against without going
+    # looking for it.
+    floor_report = report.get("admissionFloor")
+    if isinstance(floor_report, dict):
+        print(
+            f"\nAdmission floor: {floor_report['ordinaryFloorBytes']} bytes ordinary / "
+            f"{floor_report['diagnosticFloorBytes']} diagnostic, from build environment "
+            f"{floor_report['env']} ({floor_report['macros'][ADMISSION_FLOOR_MACRO]} in "
+            f"{floor_report['readFrom']})",
+            file=sys.stderr,
+        )
+    elif isinstance(floor_report, str):
+        print(f"\nAdmission floor: {floor_report}", file=sys.stderr)
     print(f"\nVerdict: {report['verdict']} (exit {exit_code})", file=sys.stderr)
     return exit_code
 
