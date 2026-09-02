@@ -373,6 +373,22 @@ static bool consoleIsAvailableOnBoard(const char* operationName) {
     return entry->available_on_board;
 }
 
+// Check whether the operation was compiled into this image.
+//
+// available_in_build is the registry `build_flag:` macro's own compile-time
+// value (ADR 0029; tools/generate_console_catalog.py emits the macro name
+// itself, not a Python constant, so a differently-flagged env flips it with
+// no regeneration). Entries with no build_flag carry a literal 1.
+//
+// Read live from the catalog on every call, exactly like the board check
+// above: a Console Record answers for the image running now, never for
+// whatever a discovery listing said a moment ago.
+static bool consoleIsAvailableInBuild(const char* operationName) {
+    const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
+    if (!entry) return false;
+    return entry->available_in_build;
+}
+
 // Get the operation type from its name
 static ConsoleOperationType consoleGetOperationType(const char* operationName) {
     const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(operationName);
@@ -2157,6 +2173,28 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
         if (sink->onRecordResult) {
             sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                 CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_ON_THIS_BOARD);
+        }
+        return;
+    }
+
+    // Check if the operation was compiled into this image.
+    //
+    // Without this guard a build-gated operation fell past both availability
+    // checks and answered with whatever the executor lookup below failed
+    // with - executor-not-ready, which means "nobody has wired this yet" and
+    // so implies it could start working once someone does. That is the wrong
+    // answer twice over: the feature is absent by build configuration, and
+    // the `operations` listing a line earlier already said `not-in-this-build`
+    // for the same row. Two surfaces, two different answers to one question
+    // (routed here from #219).
+    //
+    // Checked AFTER the board check and in the same order the listing above
+    // renders its reason, so a row that is both off-board and out-of-build
+    // gets one reason from discovery and execution alike.
+    if (!consoleIsAvailableInBuild(opName)) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_NOT_IN_THIS_BUILD);
         }
         return;
     }

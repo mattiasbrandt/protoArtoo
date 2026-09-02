@@ -187,6 +187,44 @@ void test_availability_does_not_gate_completion(void) {
     embeddedCliFree(cli);
 }
 
+// -----------------------------------------------------------------------
+// Test 7 (#224): a named operation that is NOT in this build still
+// completes. test_availability_does_not_gate_completion above sweeps the
+// whole catalog and would pass on a board where every row happens to be
+// available; this one names the row #224 makes execution refuse
+// (PA_HEAP_PROFILE=0 in [env:native], platformio.ini) and asserts that
+// refusal did not follow it into completion. Verifying #238's behaviour
+// still holds - include/console_completion.h is fenced on #224 and is not
+// touched.
+// -----------------------------------------------------------------------
+void test_an_out_of_build_operation_is_still_completable(void) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("system.api.get-profiler");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_FALSE_MESSAGE(entry->available_in_build,
+                              "PA_HEAP_PROFILE=0 in [env:native]; this test is vacuous without it");
+
+    size_t catalogCount = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&catalogCount);
+    size_t index = catalogCount;
+    for (size_t i = 0; i < catalogCount; ++i) {
+        if (strcmp(entries[i].name, "system.api.get-profiler") == 0) index = i;
+    }
+    TEST_ASSERT_TRUE(index < catalogCount);
+
+    // A partially typed operation name, the state a Tab press acts on. The
+    // scan is index-driven (embedded-cli does the prefix matching over what
+    // this callback yields), so the assertion is that the row is yielded at
+    // its own index like every other - not skipped for being out of build.
+    static CLI_UINT buf[4096 / sizeof(CLI_UINT)];
+    EmbeddedCli* cli = makeCliWithBuffer(buf, sizeof(buf), "system.api.get-prof");
+
+    const char* candidate = consoleCompletionCandidate(cli, (uint16_t)index);
+    TEST_ASSERT_NOT_NULL_MESSAGE(candidate, "an out-of-build operation must stay Tab-completable");
+    TEST_ASSERT_EQUAL_STRING("system.api.get-profiler", candidate);
+
+    embeddedCliFree(cli);
+}
+
 int main() {
     (void)kNoWriteChar;
     UNITY_BEGIN();
@@ -196,5 +234,6 @@ int main() {
     RUN_TEST(test_arg_key_position_uses_first_token_regardless_of_later_args);
     RUN_TEST(test_arg_key_position_unknown_operation_yields_no_candidates);
     RUN_TEST(test_availability_does_not_gate_completion);
+    RUN_TEST(test_an_out_of_build_operation_is_still_completable);
     return UNITY_END();
 }
