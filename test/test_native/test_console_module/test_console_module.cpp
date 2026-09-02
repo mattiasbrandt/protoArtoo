@@ -957,16 +957,18 @@ void test_event_stream_status_entry_answers_not_executable() {
 // lands. This is the automated form of the "executor-not-ready count" the
 // ticket requires reported: this test fails the moment that count is nonzero.
 //
-// system.status.logs is NOT swept by this loop even though it now has a real
-// dispatch row (#239): `entry.is_query` here comes from the COMPILED catalog
-// (include/console_catalog.h / src/console/console_catalog.cpp), generated
-// from docs/action-registry.yaml by tools/generate_console_catalog.py, which
-// #239 deliberately did not re-run - doing so would rewrite data/console_help.txt
-// (fenced on that ticket) and shift every later entry's help-text offset,
-// since the corrected `executor:` string is a different length. The compiled
-// is_query for that one row therefore still reads false until the next
-// unrelated regen; system.status.logs gets its own direct test below instead
-// of relying on this sweep.
+// system.status.logs used to be excluded from this sweep: #239 wired it but
+// could not re-run tools/generate_console_catalog.py, because data/console_help.txt
+// was fenced on that ticket, so the COMPILED catalog still carried
+// is_query: false for it. A later unrelated regeneration has since picked the
+// registry's own is_query: true up, so the row is swept like any other and
+// keeps its own direct tests below as well.
+//
+// A row that is out of this build never reaches a dispatch table at all -
+// consoleExecuteCommand()'s build guard (#224) answers not-in-this-build
+// first - so it cannot report EXECUTOR_NOT_READY here either. That is why
+// system.api.get-profiler, an is_query: true status row registered only on a
+// PA_HEAP_PROFILE build, passes this sweep in a native binary.
 void test_no_status_entry_is_executor_not_ready() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -3484,6 +3486,361 @@ void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_sc
 }
 
 // =============================================================================
+// Known-but-unavailable operations (#224, ADR 0029/0034)
+//
+// [env:native] builds with PA_HEAP_PROFILE=0 PA_HEAP_TRACING=0
+// PA_ADMISSION_TRACE=1 (platformio.ini), so the four catalog rows carrying a
+// registry build_flag: split three-to-one inside ONE binary - which is what
+// makes these tests non-vacuous. They prove the execute-time guard refuses
+// the three that are compiled out AND lets the one that is compiled in
+// through, rather than refusing everything with a build_flag.
+// =============================================================================
+
+// `operations` answers item records, so it needs its own capture, the same
+// shape (and for the same reason) as runLogsQuery()'s above - the shared
+// g_cap harness the other tests use discards items.
+struct CapturedOperationItems {
+    // Sized from the catalog itself at run time; 256 comfortably exceeds the
+    // ~192 entries the registry holds today and the listing is bounded by
+    // the catalog, never by input.
+    char values[256][160];
+    int count;
+    bool endCalled;
+    ConsoleOutcome outcome;
+};
+static CapturedOperationItems g_opsCap;
+
+static void opsCapItem(uint32_t, const char* value) {
+    if (g_opsCap.count >= (int)(sizeof(g_opsCap.values) / sizeof(g_opsCap.values[0]))) return;
+    snprintf(g_opsCap.values[g_opsCap.count], sizeof(g_opsCap.values[0]), "%s", value);
+    g_opsCap.count++;
+}
+static void opsCapEnd(uint32_t, ConsoleStatus, ConsoleOutcome outcome, ConsoleReason) {
+    g_opsCap.endCalled = true;
+    g_opsCap.outcome = outcome;
+}
+
+static void runOperationsListing() {
+    memset(&g_opsCap, 0, sizeof(g_opsCap));
+    ConsoleRecordSink sink = {};
+    sink.onRecordItem = opsCapItem;
+    sink.onRecordEnd = opsCapEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = CONSOLE_SOURCE_SERIAL;
+    req.operationName = "operations";
+    consoleExecuteCommand(&req, &sink);
+}
+
+// The listing line for one operation, or nullptr when the listing omitted it.
+static const char* listedOperationItem(const char* operationName) {
+    const size_t nameLen = strlen(operationName);
+    for (int i = 0; i < g_opsCap.count; ++i) {
+        if (strncmp(g_opsCap.values[i], operationName, nameLen) == 0 &&
+            g_opsCap.values[i][nameLen] == ' ') {
+            return g_opsCap.values[i];
+        }
+    }
+    return nullptr;
+}
+
+// The ticket's central defect (routed here from #219): before this guard the
+// three PA_HEAP_PROFILE/PA_HEAP_TRACING rows fell through to whichever
+// executor lookup failed and answered executor-not-ready - "not wired yet",
+// which reads as "this may start working", when the truth is that the
+// feature is not in this image at all.
+void test_profiler_snapshot_answers_not_in_this_build() {
+    runQuery("system.api.get-profiler");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+void test_profiler_trace_start_answers_not_in_this_build() {
+    runQuery("system.action.profiler-trace-start");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+void test_profiler_trace_stop_answers_not_in_this_build() {
+    runQuery("system.action.profiler-trace-stop");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+// The other half of the same guard, and the reason a "refuse anything with a
+// build_flag" implementation would not pass: PA_ADMISSION_TRACE is 1 in this
+// binary, so system.api.get-admission-trace must reach dispatch. It has no
+// executor row yet (a later ticket's work), so it answers executor-not-ready
+// - the point is only that the build guard did not claim it.
+void test_an_enabled_build_flag_is_not_refused_by_the_build_guard() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("system.api.get-admission-trace");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_TRUE_MESSAGE(entry->available_in_build,
+                             "PA_ADMISSION_TRACE=1 in [env:native]; this test is vacuous without it");
+
+    runQuery("system.api.get-admission-trace");
+
+    TEST_ASSERT_NOT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+// Catalog-wide, so a build_flag added to a future registry row is covered
+// the day it lands rather than the day someone remembers to add a test.
+void test_every_out_of_build_row_answers_not_in_this_build() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int checked = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].available_in_build) continue;
+        checked++;
+        runQuery(entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome, entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason, entries[i].name);
+    }
+
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, checked,
+                                     "no out-of-build catalog row in this binary - the sweep proved nothing");
+}
+
+// The board half of the same guard. It is VACUOUS in every build that ships
+// today and says so out loud: tools/generate_console_catalog.py gives the
+// drive domain PA_CAP_DRIVE_BACKEND_HOVERBOARD and every other row a literal
+// 1, and include/config.h defines that capability as 1 for BOTH PA_BOARD
+// values - so no catalog row is off-board on any current board, and
+// not-on-this-board is unreachable from a real operation. Reported on #224
+// rather than faked with a stand-in row. The sweep is written anyway so the
+// first genuinely board-gated row is covered on arrival.
+void test_every_off_board_row_answers_not_on_this_board() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int checked = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].available_on_board) continue;
+        checked++;
+        runQuery(entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome, entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_ON_THIS_BOARD, g_cap.reason, entries[i].name);
+    }
+
+    printf("[#224 report] off-board catalog rows in this build: %d\n", checked);
+}
+
+// Discovery keeps unavailable operations visible, and names the same reason
+// execution does. The two used to disagree for exactly these rows.
+void test_operations_lists_out_of_build_rows_with_the_reason_execution_gives() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+
+    runOperationsListing();
+    TEST_ASSERT_TRUE(g_opsCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_opsCap.outcome);
+
+    int checked = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].available_in_build) continue;
+        checked++;
+        const char* item = listedOperationItem(entries[i].name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(item, entries[i].name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(item, "not-in-this-build"), item);
+
+        runQuery(entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason, entries[i].name);
+    }
+    TEST_ASSERT_GREATER_THAN(0, checked);
+}
+
+// #224 reclassified system.api.get-profiler from type: action to type: status
+// with is_query: true (docs/action-registry.yaml, the same move #221 made for
+// the dome.api.* queries). Asserted against the COMPILED catalog so a future
+// registry edit or a lost regeneration is caught here rather than by the row
+// quietly answering through the action path, which emits a single result
+// record and has no shape for a snapshot.
+void test_profiler_snapshot_is_registered_as_an_item_based_query() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("system.api.get-profiler");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_STRING(CONSOLE_CATALOG_TYPE_STATUS, entry->type);
+    TEST_ASSERT_TRUE(entry->is_query);
+    TEST_ASSERT_NULL_MESSAGE(entry->fields,
+                             "item-based query: no fields: list, like system.status.logs");
+}
+
+// `help <op>` describes an operation that is not in this build - it does not
+// refuse it. available_in_build is one of the catalog fields help already
+// renders (consoleEmitHelpForOperation, #219 D3); this asserts it stays that
+// way now that execution refuses the same row.
+void test_help_describes_an_operation_that_is_not_in_this_build() {
+    runQuery("help system.api.get-profiler");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("available_in_build"));
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("available_on_board"));
+}
+
+// =============================================================================
+// Availability reason matrix (#224 acceptance criterion 3)
+//
+// Each of the five availability reasons (docs/console-protocol.md s.3.3),
+// produced by ONE REAL OPERATION driven through consoleExecuteCommand() - the
+// entry point both adapters call - rather than by asserting on
+// consoleReasonString() or on a hand-built record. Named as a matrix here even
+// where a behaviour test above already covers the same path, because "every
+// category is produced by something real" is itself the criterion, and reading
+// it off five scattered tests is what lets one of them quietly stop covering
+// its category.
+//
+// not-on-this-board is the one exception, and it is a report rather than a
+// test: no catalog row is off-board in any image that exists, so no real
+// operation can produce it. See
+// test_every_off_board_row_answers_not_on_this_board above for the sweep and
+// the reason.
+// =============================================================================
+
+// 1/5 not-in-this-build: the profiler snapshot on an image built without
+// PA_HEAP_PROFILE, which [env:native] is.
+void test_reason_matrix_not_in_this_build() {
+    runQuery("system.api.get-profiler");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+}
+
+// 2/5 component-disabled: the Dome ESC Component Toggle off (ADR 0027). The
+// dome hardware is not addressed at all here - the executor reads the config
+// cache the toggle writes.
+void test_reason_matrix_component_disabled_from_a_component_toggle_off() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = false;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+}
+
+// 3/5 blocked-by-state: estop latched. The guard core is the same one
+// POST /api/drive runs (evaluateActionTestGuard()/driveArbiterSubmit()).
+void test_reason_matrix_blocked_by_state_from_estop() {
+    robotState.webControlEnabled = true;
+    robotState.estop = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// 3/5 again, the other state rule the criterion names: sleep.
+void test_reason_matrix_blocked_by_state_from_sleep() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+    robotState.sleepMode = true;
+
+    runQuery("dome.action.move speed=0.5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// 4/5 temporarily-unavailable: the shared config-write mutex already held by
+// the other adapter mid-write - "busy right now; try again", and the reason
+// the Console must not simply queue behind it.
+void test_reason_matrix_temporarily_unavailable_from_a_busy_config_write() {
+    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    paStubMutexReset();
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // simulate the OTHER Console adapter mid-write
+
+    runQuery("system.config.enable_arm1 value=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+
+    paStubMutexReset();  // release the simulated hold for later tests
+}
+
+// 4/5 again, the queue half: the dispatch core refusing an action right now.
+void test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kBlockedByState;
+
+    runQuery("sound.action.random-humming");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+}
+
+// =============================================================================
+// Availability is re-evaluated at execution, not cached from discovery
+// (#224 acceptance criterion 4, docs/console-protocol.md s.3.3)
+//
+// The build and board reasons are compile-time and cannot change while the
+// image runs; the three state-driven ones can, and that is where "cached from
+// discovery" would be a real defect - an operator who lists the catalog, then
+// disarms something, then runs a command, must get the state at the moment
+// they ran it.
+// =============================================================================
+
+// `operations` lists the row as available, then the Component Toggle goes off,
+// then the SAME operation refuses. Discovery is not consulted at execution.
+void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answer() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = true;
+    configCacheApply(snap);
+
+    runOperationsListing();
+    const char* listed = listedOperationItem("dome.action.move");
+    TEST_ASSERT_NOT_NULL(listed);
+    TEST_ASSERT_NULL_MESSAGE(strstr(listed, "component-disabled"),
+                             "discovery reports the catalog, not live component state");
+
+    runQuery("dome.action.move speed=0.5");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+
+    // The operator turns the Dome ESC off after listing the catalog.
+    configCacheRead(&snap);
+    snap.system.enable_dome_esc = false;
+    configCacheApply(snap);
+
+    runQuery("dome.action.move speed=0.5");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason,
+                              "execution must read the toggle now, not when the catalog was listed");
+}
+
+// The same guarantee for a safety state: the identical command answers
+// differently either side of an estop, with no discovery in between to
+// invalidate.
+void test_estop_latched_after_a_successful_run_changes_the_execution_answer() {
+    robotState.webControlEnabled = true;
+
+    // A drive frame reaches the arbiter directly rather than a queue, so the
+    // success outcome is APPLIED (include/console_direct_action_drive.h).
+    runQuery("drive.action.move speed=100 steer=0");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    robotState.estop = true;
+
+    runQuery("drive.action.move speed=100 steer=0");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -3727,6 +4084,25 @@ int main(int, char**) {
     RUN_TEST(test_servo_stop_rejects_an_unknown_target);
     RUN_TEST(test_servo_stop_rejects_position_us_as_an_unknown_argument);
     RUN_TEST(test_257_every_direct_action_row_still_dispatches);
+
+    RUN_TEST(test_profiler_snapshot_answers_not_in_this_build);
+    RUN_TEST(test_profiler_trace_start_answers_not_in_this_build);
+    RUN_TEST(test_profiler_trace_stop_answers_not_in_this_build);
+    RUN_TEST(test_an_enabled_build_flag_is_not_refused_by_the_build_guard);
+    RUN_TEST(test_every_out_of_build_row_answers_not_in_this_build);
+    RUN_TEST(test_every_off_board_row_answers_not_on_this_board);
+    RUN_TEST(test_operations_lists_out_of_build_rows_with_the_reason_execution_gives);
+    RUN_TEST(test_profiler_snapshot_is_registered_as_an_item_based_query);
+    RUN_TEST(test_help_describes_an_operation_that_is_not_in_this_build);
+
+    RUN_TEST(test_reason_matrix_not_in_this_build);
+    RUN_TEST(test_reason_matrix_component_disabled_from_a_component_toggle_off);
+    RUN_TEST(test_reason_matrix_blocked_by_state_from_estop);
+    RUN_TEST(test_reason_matrix_blocked_by_state_from_sleep);
+    RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_config_write);
+    RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core);
+    RUN_TEST(test_a_component_toggle_flipped_after_discovery_changes_the_execution_answer);
+    RUN_TEST(test_estop_latched_after_a_successful_run_changes_the_execution_answer);
 
     return UNITY_END();
 }

@@ -3232,7 +3232,14 @@ entries:
 
     '
   domain: system
-  type: action
+  # Reclassified from type: action by #224. It reads and returns a snapshot and
+  # changes nothing, which is what type: status means here - the same
+  # reclassification #221 made for dome.api.list-sequences and
+  # dome.api.list-builtin-sequences (9ddc93a) when they were wired as Console
+  # queries. Consequence in the Console: type decides dispatch, and only the
+  # status path emits the begin/field/item/end group a snapshot needs; the
+  # action path answers one result record and has no shape for it.
+  type: status
   build_flag: PA_HEAP_PROFILE
   marcduino_cmd: null
   api_path: /api/profiler
@@ -3244,10 +3251,22 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: buildProfilerJson
+  # The core beneath both adapters after #224's extraction: GET /api/profiler
+  # renders profilerRead()'s ProfilerReading as JSON, the Console renders the
+  # same reading as records. buildProfilerJson() is the HTTP adapter over it,
+  # not the core, so naming it here would name an adapter.
+  executor: profilerRead
+  # Item-based query, the no-fields:/is_query:-true shape #239 established for
+  # system.status.logs: the answer is scalar fields plus repeated item records
+  # (per-task stack marks, mode windows, request-lifecycle rows), not a flat
+  # list of JSON keys. A fields: list would also be unverifiable - the JSON
+  # builder it would be checked against is inside #if PA_HEAP_PROFILE and is
+  # absent from the native test binary by construction.
+  is_query: true
 - name: system.action.profiler-trace-start
   display_name: Start Heap Trace
   description: 'Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires the profiler and SDK heap-tracing support).
+    The trace records the controller you are watching it on - a busy serial console or a chatty log level allocates too, and shows up in the result.
 
     '
   domain: system
@@ -3263,10 +3282,15 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: heap_trace_start
+  # profilerTraceStart()/profilerTraceStop() (include/api_profiler.h) are the
+  # cores POST /api/profiler/trace/start|stop and the Console both call after
+  # #224's extraction: they own s_traceRunning, the state that decides between
+  # "started" and "already running". heap_trace_start()/heap_trace_stop() are
+  # the IDF calls underneath them, not the seam an adapter reaches.
+  executor: profilerTraceStart
 - name: system.action.profiler-trace-stop
   display_name: Stop Heap Trace
-  description: Stop the running Tier 3 heap leak trace and dump results to the serial log
+  description: Stop the running Tier 3 heap leak trace and dump the result to the serial log. The dump is serial traffic itself, so it lands after the measurement it describes, never inside it.
   domain: system
   type: action
   build_flag: PA_HEAP_TRACING
@@ -3280,7 +3304,8 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: heap_trace_stop
+  # See profiler-trace-start above: the extracted core, not the IDF call.
+  executor: profilerTraceStop
 - name: system.api.get-coredump-status
   display_name: Get Coredump Status
   description: Whether a PANIC coredump image is present in the coredump partition, and its size

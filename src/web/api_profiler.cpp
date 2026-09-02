@@ -67,16 +67,11 @@ static const char* TAG = "Profiler";
 // without affecting the global lifetime watermark.
 // =============================================================================
 
-#define PROF_SNAPSHOT_MAX 8
+// PROF_SNAPSHOT_MAX and ProfilerWindowSnapshot are declared in api_profiler.h:
+// the ring's shape is part of what an adapter reads, so it lives with the
+// reading types rather than being redeclared here (ADR 0034).
 
-struct HeapSnapshot {
-    char label[20];
-    uint32_t heapMinDuring;     // minimum_free_bytes from heap_caps_get_info() at window close
-    uint32_t largestBlockAtClose; // heap_caps_get_largest_free_block() at window close
-    uint32_t windowOpenTs;      // millis() when window was opened
-};
-
-static HeapSnapshot s_snapshots[PROF_SNAPSHOT_MAX];
+static ProfilerWindowSnapshot s_snapshots[PROF_SNAPSHOT_MAX];
 static uint8_t s_snapHead = 0;
 static uint8_t s_snapCount = 0;
 static portMUX_TYPE s_snapMux = portMUX_INITIALIZER_UNLOCKED;
@@ -85,12 +80,12 @@ static portMUX_TYPE s_snapMux = portMUX_INITIALIZER_UNLOCKED;
 // s_windowMux guards concurrent reads of these three fields.
 static portMUX_TYPE s_windowMux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_windowOpen = false;
-static char s_windowLabel[20] = {};
+static char s_windowLabel[PROF_LABEL_MAX] = {};
 static uint32_t s_windowOpenTs = 0;
 
 // Push a completed snapshot into the ring (called with window already closed)
 static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBlock, uint32_t openTs) {
-    HeapSnapshot snap;
+    ProfilerWindowSnapshot snap;
     strncpy(snap.label, label, sizeof(snap.label) - 1);
     snap.label[sizeof(snap.label) - 1] = '\0';
     snap.heapMinDuring = heapMin;
@@ -110,13 +105,8 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
-#define PROF_TASK_MAX 11
-
-struct TaskHwmEntry {
-    const char* name;
-    uint32_t hwmBytes;
-    bool found;
-};
+// PROF_TASK_MAX and ProfilerTaskStack are declared in api_profiler.h, beside
+// the rest of the reading's shape.
 
 // Names must match xTaskCreatePinnedToCore() calls in main.cpp.
 //
@@ -131,7 +121,7 @@ static const char* const s_taskNames[PROF_TASK_MAX] = {
     "SeqDisp", "Console"
 };
 
-static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];
+static ProfilerTaskStack s_taskHwm[PROF_TASK_MAX];
 static portMUX_TYPE s_hwmMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
@@ -153,7 +143,7 @@ static uint32_t s_failedAllocCount = 0;
 // printf. So: only count, capture raw values + backtrace PCs (esp_backtrace_*
 // walks the stack and does not allocate), guard against re-entry, and let the
 // /api/profiler handler format them where allocation is safe.
-#define PROF_FAIL_BT_MAX 12
+// PROF_FAIL_BT_MAX is declared in api_profiler.h with the reading's shape.
 static volatile bool     s_inFailedAllocCb = false;
 static volatile uint32_t s_lastFailSize    = 0;
 static volatile uint32_t s_lastFailCaps    = 0;
@@ -251,14 +241,13 @@ static bool s_traceRunning = false;
 //
 // The server task is the single writer and also serves /api/profiler. A slot
 // may be overwritten before a very long request finishes; that is acceptable
-// for a bounded diagnostic trace, not a correctness-bearing structure.
-#define PROF_REQUEST_TRACE_MAX 32
-struct RequestLifecycleEntry {
-    char requestPath[28];
-    uint32_t startMs;
-    uint32_t handlerDoneMs;
-};
-static RequestLifecycleEntry s_requestTrace[PROF_REQUEST_TRACE_MAX];
+// for a bounded diagnostic trace, not a correctness-bearing structure. The
+// Console reads it from a different task, which is one more reader of the same
+// deliberately-imprecise ring, not a new hazard class.
+//
+// PROF_REQUEST_TRACE_MAX and ProfilerRequestTrace are declared in
+// api_profiler.h with the rest of the reading's shape.
+static ProfilerRequestTrace s_requestTrace[PROF_REQUEST_TRACE_MAX];
 static uint8_t s_requestTraceHead = 0;
 static uint8_t s_requestTraceCount = 0;
 
@@ -325,7 +314,7 @@ void profilerModeTransition(const char* newLabel) {
 }
 
 void profilerCollectHwm() {
-    TaskHwmEntry tmp[PROF_TASK_MAX];
+    ProfilerTaskStack tmp[PROF_TASK_MAX];
     int foundCount = 0;
     for (int i = 0; i < PROF_TASK_MAX; i++) {
         TaskHandle_t h = xTaskGetHandle(s_taskNames[i]);
@@ -412,9 +401,9 @@ void profilerPeriodicCollect() {
 
 uint8_t profilerRequestStarted(const char* path) {
     const uint8_t idx = s_requestTraceHead;
-    RequestLifecycleEntry& entry = s_requestTrace[idx];
-    strncpy(entry.requestPath, path, sizeof(entry.requestPath) - 1);
-    entry.requestPath[sizeof(entry.requestPath) - 1] = '\0';
+    ProfilerRequestTrace& entry = s_requestTrace[idx];
+    strncpy(entry.path, path, sizeof(entry.path) - 1);
+    entry.path[sizeof(entry.path) - 1] = '\0';
     entry.startMs = millis();
     entry.handlerDoneMs = 0;
     s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PROF_REQUEST_TRACE_MAX);
@@ -430,112 +419,115 @@ void profilerRequestFinished(uint8_t token) {
     }
 }
 
-static size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
-    uint8_t count = s_requestTraceCount;
-    if (count > maxEntries) {
-        count = (uint8_t)maxEntries;
+size_t profilerRequestTraceCount(void) {
+    return s_requestTraceCount;
+}
+
+// Oldest-first indexing over the ring, one entry per call. Both adapters read
+// through this, so the head/count arithmetic exists once - it used to be a
+// copy-the-whole-ring helper, which the Console cannot afford on its stack.
+bool profilerRequestTraceAt(size_t index, ProfilerRequestTrace* out) {
+    if (out == nullptr || index >= s_requestTraceCount) {
+        return false;
     }
     const uint8_t oldest =
         (uint8_t)((s_requestTraceHead + PROF_REQUEST_TRACE_MAX - s_requestTraceCount) %
                   PROF_REQUEST_TRACE_MAX);
-    for (uint8_t i = 0; i < count; i++) {
-        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PROF_REQUEST_TRACE_MAX)];
-    }
-    return count;
+    *out = s_requestTrace[(uint8_t)((oldest + index) % PROF_REQUEST_TRACE_MAX)];
+    return true;
 }
 
 // =============================================================================
 // /api/profiler endpoint
 // =============================================================================
 
-// Profiler capture struct - holds a complete snapshot of all mux-guarded state
-struct ProfilerCapture {
-    // Window state
-    char currentLabel[20];
-    bool currentOpen;
-
-    // Snapshot ring
-    HeapSnapshot snapCopy[PROF_SNAPSHOT_MAX];
-    uint8_t snapHead;
-    uint8_t snapCount;
-
-    // HWM entries
-    TaskHwmEntry hwmCopy[PROF_TASK_MAX];
-
-    // Task heap (if CONFIG_HEAP_TASK_TRACKING)
-#ifdef CONFIG_HEAP_TASK_TRACKING
-    TaskHeapEntry heapCopy[PROF_TASK_HEAP_MAX];
-    uint8_t heapCount;
-#endif
-};
-
-// Private capture function - acquires all four muxes in fixed order and returns snapshot.
-// Lock order: s_windowMux -> s_snapMux -> s_hwmMux -> s_taskHeapMux.
+// The shared read (api_profiler.h). Acquires the muxes in fixed order and
+// returns one ProfilerReading.
+// Lock order: s_windowMux -> s_snapMux -> s_hwmMux.
 // Reason: one place owns the topology; consistent order keeps it that way if ever held together.
 // Guarantee: each block is internally consistent; blocks are captured in fixed order but are
 // NOT atomic with respect to each other (a writer can modify state between acquisitions).
-// Non-atomicity is accepted: holding all four across the copy would mean ~1KB of copying with
+// Non-atomicity is accepted: holding all of them across the copy would mean ~1KB of copying with
 // interrupts disabled on a real-time core - unacceptably long critical section for a diagnostic.
-static void profilerCapture(ProfilerCapture& cap) {
+//
+// The Tier 1 globals are read here too, not by each adapter: fragRatio is a
+// derived number, and two adapters deriving it from two separate reads of
+// heap_caps_get_free_size() could print two different ratios for one snapshot.
+//
+// Tier 2 (CONFIG_HEAP_TASK_TRACKING per-task heap attribution) is deliberately
+// NOT part of this reading and stays inside the JSON adapter below. No
+// environment in platformio.ini sets that sdkconfig option - it is documented
+// there (the artoo_esp32_profiler section) as a manual escalation that rebuilds
+// the core libs - so it is absent from every image this repo builds, and
+// carrying it across the seam would mean spelling configMAX_TASK_NAME_LEN into
+// a build-independent header to size a name buffer no build fills.
+void profilerRead(ProfilerReading* out) {
+    if (out == nullptr) {
+        return;
+    }
+
+    // Tier 1 global metrics - direct IDF 5.5 APIs (no mux needed)
+    out->heapFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    out->heapMin = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+    out->heapLargest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    out->fragRatio =
+        (out->heapFree > 0U) ? (1.0f - (float)out->heapLargest / (float)out->heapFree) : 0.0f;
+
+    multi_heap_info_t info;
+    heap_caps_get_info(&info, MALLOC_CAP_8BIT);
+    out->allocBlocks = (uint32_t)info.allocated_blocks;
+    out->freeBlocks = (uint32_t)info.free_blocks;
+    out->totalBlocks = (uint32_t)info.total_blocks;
+    out->windowMinFree = (uint32_t)info.minimum_free_bytes;
+
+    out->failedAllocs = __atomic_load_n(&s_failedAllocCount, __ATOMIC_RELAXED);
+    out->lastFailSize = s_lastFailSize;
+    out->lastFailCaps = s_lastFailCaps;
+    out->lastFailBtDepth = s_lastFailBtDepth;
+    for (uint8_t i = 0; i < PROF_FAIL_BT_MAX; ++i) {
+        out->lastFailBt[i] = s_lastFailBt[i];
+    }
+
     // Acquire s_windowMux first
     taskENTER_CRITICAL(&s_windowMux);
-    cap.currentOpen = s_windowOpen;
-    if (cap.currentOpen) {
-        strncpy(cap.currentLabel, s_windowLabel, sizeof(cap.currentLabel) - 1);
-        cap.currentLabel[sizeof(cap.currentLabel) - 1] = '\0';
+    out->currentWindowOpen = s_windowOpen;
+    if (out->currentWindowOpen) {
+        strncpy(out->currentWindowLabel, s_windowLabel, sizeof(out->currentWindowLabel) - 1);
+        out->currentWindowLabel[sizeof(out->currentWindowLabel) - 1] = '\0';
     } else {
-        cap.currentLabel[0] = '\0';
+        out->currentWindowLabel[0] = '\0';
     }
     taskEXIT_CRITICAL(&s_windowMux);
 
-    // Acquire s_snapMux
+    // Acquire s_snapMux. Resolved to oldest-first inside the critical section
+    // so no adapter repeats the ring arithmetic and no caller pays 256 B of
+    // stack for a temporary copy to reorder afterwards - the Console task has
+    // 5120 B total. The critical section is no longer than the copy it
+    // replaced: at most PROF_SNAPSHOT_MAX entries either way, and only
+    // s_snapCount of them here.
     taskENTER_CRITICAL(&s_snapMux);
-    for (int i = 0; i < PROF_SNAPSHOT_MAX; i++) {
-        cap.snapCopy[i] = s_snapshots[i];
+    const uint8_t count = s_snapCount;
+    const uint8_t oldest = (uint8_t)((s_snapHead + PROF_SNAPSHOT_MAX - count) % PROF_SNAPSHOT_MAX);
+    for (uint8_t i = 0; i < count; i++) {
+        out->windows[i] = s_snapshots[(uint8_t)((oldest + i) % PROF_SNAPSHOT_MAX)];
     }
-    cap.snapHead = s_snapHead;
-    cap.snapCount = s_snapCount;
     taskEXIT_CRITICAL(&s_snapMux);
+    out->windowCount = count;
 
     // Acquire s_hwmMux
     taskENTER_CRITICAL(&s_hwmMux);
     for (int i = 0; i < PROF_TASK_MAX; i++) {
-        cap.hwmCopy[i] = s_taskHwm[i];
+        out->taskStacks[i] = s_taskHwm[i];
     }
     taskEXIT_CRITICAL(&s_hwmMux);
-
-    // Acquire s_taskHeapMux
-#ifdef CONFIG_HEAP_TASK_TRACKING
-    taskENTER_CRITICAL(&s_taskHeapMux);
-    cap.heapCount = s_taskHeapCount;
-    for (uint8_t i = 0; i < cap.heapCount; i++) {
-        cap.heapCopy[i] = s_taskHeap[i];
-    }
-    taskEXIT_CRITICAL(&s_taskHeapMux);
-#endif
-}
-
-static const char* hwmStatus(uint32_t hwmBytes) {
-    if (hwmBytes > 2048U) return "ok";
-    if (hwmBytes > 1024U) return "warn";
-    return "crit";
 }
 
 static void buildProfilerJson(char* buf, size_t bufSize) {
-    // Tier 1 global metrics - direct IDF 5.5 APIs (no mux needed)
-    uint32_t heapFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    uint32_t heapMin = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
-    uint32_t heapLargest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    float fragRatio = (heapFree > 0U) ? (1.0f - (float)heapLargest / (float)heapFree) : 0.0f;
-
-    multi_heap_info_t info;
-    heap_caps_get_info(&info, MALLOC_CAP_8BIT);
-
-    uint32_t failedAllocs = __atomic_load_n(&s_failedAllocCount, __ATOMIC_RELAXED);
-
-    // Perform single capture of all mux-guarded state in fixed order
-    static ProfilerCapture cap = {};
-    profilerCapture(cap);
+    // One shared read of every counter (api_profiler.h) - this handler is an
+    // adapter over it, not a second reader of the muxed state. Static, not a
+    // local: the reading is ~450 B and this runs on the web server task.
+    static ProfilerReading reading = {};
+    profilerRead(&reading);
 
     // Now use only the captured data; no direct mux acquisitions in this handler
 
@@ -548,24 +540,23 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
         if (pos >= bufSize) { buf[bufSize - 1] = '\0'; return; } \
     } while (0)
 
-    APPEND("{\"heapFree\":%lu", (unsigned long)heapFree);
-    APPEND(",\"heapMin\":%lu", (unsigned long)heapMin);
-    APPEND(",\"heapLargest\":%lu", (unsigned long)heapLargest);
-    APPEND(",\"fragRatio\":%.3f", (double)fragRatio);
-    APPEND(",\"allocBlocks\":%lu", (unsigned long)info.allocated_blocks);
-    APPEND(",\"freeBlocks\":%lu", (unsigned long)info.free_blocks);
-    APPEND(",\"totalBlocks\":%lu", (unsigned long)info.total_blocks);
-    APPEND(",\"failedAllocs\":%lu", (unsigned long)failedAllocs);
+    APPEND("{\"heapFree\":%lu", (unsigned long)reading.heapFree);
+    APPEND(",\"heapMin\":%lu", (unsigned long)reading.heapMin);
+    APPEND(",\"heapLargest\":%lu", (unsigned long)reading.heapLargest);
+    APPEND(",\"fragRatio\":%.3f", (double)reading.fragRatio);
+    APPEND(",\"allocBlocks\":%lu", (unsigned long)reading.allocBlocks);
+    APPEND(",\"freeBlocks\":%lu", (unsigned long)reading.freeBlocks);
+    APPEND(",\"totalBlocks\":%lu", (unsigned long)reading.totalBlocks);
+    APPEND(",\"failedAllocs\":%lu", (unsigned long)reading.failedAllocs);
 
     // Last failed allocation (raw values + backtrace PCs captured by the hook).
     // Decode the PCs against the matching firmware.elf:
     //   xtensa-esp32-elf-addr2line -e .pio/build/<env>/firmware.elf <pc...>
-    if (failedAllocs > 0U) {
+    if (reading.failedAllocs > 0U) {
         APPEND(",\"lastFail\":{\"size\":%lu,\"caps\":%lu,\"bt\":[",
-               (unsigned long)s_lastFailSize, (unsigned long)s_lastFailCaps);
-        uint8_t btDepth = s_lastFailBtDepth;
-        for (uint8_t i = 0; i < btDepth; ++i) {
-            APPEND("%s\"0x%08x\"", (i == 0) ? "" : ",", (unsigned)s_lastFailBt[i]);
+               (unsigned long)reading.lastFailSize, (unsigned long)reading.lastFailCaps);
+        for (uint8_t i = 0; i < reading.lastFailBtDepth; ++i) {
+            APPEND("%s\"0x%08x\"", (i == 0) ? "" : ",", (unsigned)reading.lastFailBt[i]);
         }
         APPEND("]}");
     }
@@ -574,65 +565,72 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     APPEND(",\"taskStacks\":[");
     bool firstTask = true;
     for (int i = 0; i < PROF_TASK_MAX; i++) {
-        if (!cap.hwmCopy[i].found) continue;
+        if (!reading.taskStacks[i].found) continue;
         if (!firstTask) APPEND(",");
         firstTask = false;
         APPEND("{\"name\":\"%s\",\"hwmBytes\":%lu,\"status\":\"%s\"}",
-               cap.hwmCopy[i].name,
-               (unsigned long)cap.hwmCopy[i].hwmBytes,
-               hwmStatus(cap.hwmCopy[i].hwmBytes));
+               reading.taskStacks[i].name,
+               (unsigned long)reading.taskStacks[i].hwmBytes,
+               profilerHwmStatus(reading.taskStacks[i].hwmBytes));
     }
     APPEND("]");
 
 #ifdef CONFIG_HEAP_TASK_TRACKING
-    // Per-task heap allocation stats (Tier 2) - already captured in cap
+    // Per-task heap allocation stats (Tier 2). Captured here rather than in
+    // profilerRead(): no environment enables CONFIG_HEAP_TASK_TRACKING, so
+    // this tier exists in no image the repo builds and stays with its one
+    // adapter - see profilerRead()'s own comment.
+    static TaskHeapEntry heapCopy[PROF_TASK_HEAP_MAX];
+    uint8_t heapCount = 0;
+    taskENTER_CRITICAL(&s_taskHeapMux);
+    heapCount = s_taskHeapCount;
+    for (uint8_t i = 0; i < heapCount; i++) {
+        heapCopy[i] = s_taskHeap[i];
+    }
+    taskEXIT_CRITICAL(&s_taskHeapMux);
+
     APPEND(",\"taskHeap\":[");
-    for (uint8_t i = 0; i < cap.heapCount; i++) {
+    for (uint8_t i = 0; i < heapCount; i++) {
         if (i > 0) APPEND(",");
         APPEND("{\"name\":\"%s\",\"current\":%lu,\"peak\":%lu,\"heapCount\":%lu}",
-               cap.heapCopy[i].name,
-               (unsigned long)cap.heapCopy[i].currentBytes,
-               (unsigned long)cap.heapCopy[i].peakBytes,
-               (unsigned long)cap.heapCopy[i].heapCount);
+               heapCopy[i].name,
+               (unsigned long)heapCopy[i].currentBytes,
+               (unsigned long)heapCopy[i].peakBytes,
+               (unsigned long)heapCopy[i].heapCount);
     }
     APPEND("]");
 #endif
 
     // Active window: running local minimum of the currently open mode window
-    if (cap.currentOpen) {
+    if (reading.currentWindowOpen) {
         APPEND(",\"current\":{\"label\":\"%s\",\"heapFree\":%lu}",
-               cap.currentLabel, (unsigned long)info.minimum_free_bytes);
+               reading.currentWindowLabel, (unsigned long)reading.windowMinFree);
     }
 
     // Snapshot ring - oldest first; each entry = one closed mode window
     APPEND(",\"snapshots\":[");
-    if (cap.snapCount > 0) {
-        uint8_t oldest = (uint8_t)((cap.snapHead + PROF_SNAPSHOT_MAX - cap.snapCount) % PROF_SNAPSHOT_MAX);
-        bool firstSnap = true;
-        for (uint8_t i = 0; i < cap.snapCount; i++) {
-            uint8_t idx = (uint8_t)((oldest + i) % PROF_SNAPSHOT_MAX);
-            if (!firstSnap) APPEND(",");
-            firstSnap = false;
-            APPEND("{\"label\":\"%s\",\"heapFree\":%lu,\"largestBlock\":%lu,\"ts\":%lu}",
-                   cap.snapCopy[idx].label,
-                   (unsigned long)cap.snapCopy[idx].heapMinDuring,
-                   (unsigned long)cap.snapCopy[idx].largestBlockAtClose,
-                   (unsigned long)cap.snapCopy[idx].windowOpenTs);
-        }
+    for (uint8_t i = 0; i < reading.windowCount; i++) {
+        if (i > 0) APPEND(",");
+        APPEND("{\"label\":\"%s\",\"heapFree\":%lu,\"largestBlock\":%lu,\"ts\":%lu}",
+               reading.windows[i].label,
+               (unsigned long)reading.windows[i].heapMinDuring,
+               (unsigned long)reading.windows[i].largestBlockAtClose,
+               (unsigned long)reading.windows[i].windowOpenTs);
     }
     APPEND("]");
 
     // Bounded request-lifecycle trace for profiler evidence -- oldest first.
     // Read here, once, after an experiment; never polled during the
     // workload. Field and lifetime semantics are documented with the ring.
-    RequestLifecycleEntry traceCopy[PROF_REQUEST_TRACE_MAX];
-    size_t traceCount = copyRequestLifecycleTrace(traceCopy, PROF_REQUEST_TRACE_MAX);
+    const size_t traceCount = profilerRequestTraceCount();
     APPEND(",\"requestTrace\":[");
     for (size_t i = 0; i < traceCount; i++) {
+        ProfilerRequestTrace entry;
+        if (!profilerRequestTraceAt(i, &entry)) break;
         if (i > 0) APPEND(",");
         APPEND("{\"path\":\"%s\",\"startMs\":%lu,\"handlerDoneMs\":%lu}",
-               traceCopy[i].requestPath, (unsigned long)traceCopy[i].startMs,
-               (unsigned long)traceCopy[i].handlerDoneMs);
+               entry.path, (unsigned long)entry.startMs,
+               (unsigned long)entry.handlerDoneMs);
     }
     APPEND("]}");
 
@@ -667,32 +665,63 @@ void handleProfilerGet(WebRequest& req) {
 }
 
 #if PA_HEAP_TRACING
-void handleProfilerTraceStartPost(WebRequest& req) {
+// The Tier 3 trace cores, shared by POST /api/profiler/trace/start|stop and by
+// the Console's system.action.profiler-trace-start|stop (#224). s_traceRunning
+// is the whole reason these are functions rather than two lines in each
+// adapter: it is the state that decides between "started" and "already
+// running", and two adapters keeping their own opinion of it is how a trace
+// gets started twice.
+ProfilerTraceOutcome profilerTraceStart(void) {
     if (s_traceRunning) {
-        webSendJsonError(req, 409, "trace already running");
-        return;
+        return PROFILER_TRACE_ALREADY_RUNNING;
     }
     esp_err_t err = heap_trace_start(HEAP_TRACE_LEAKS);
-    if (err == ESP_OK) {
-        s_traceRunning = true;
-        PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
-        req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
-    } else {
+    if (err != ESP_OK) {
         PA_LOG_WARN(TAG, "Tier 3 heap trace start failed: %d", (int)err);
-        webSendJsonError(req, 500, "start failed");
+        return PROFILER_TRACE_FAILED;
     }
+    s_traceRunning = true;
+    PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
+    return PROFILER_TRACE_STARTED;
 }
 
-void handleProfilerTraceStopPost(WebRequest& req) {
+ProfilerTraceOutcome profilerTraceStop(void) {
     if (!s_traceRunning) {
-        webSendJsonError(req, 409, "trace not running");
-        return;
+        return PROFILER_TRACE_NOT_RUNNING;
     }
     heap_trace_stop();
     s_traceRunning = false;
     PA_LOG_INFO(TAG, "Tier 3 heap trace stopped - dumping to serial");
     heap_trace_dump();
-    req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
+    return PROFILER_TRACE_STOPPED;
+}
+
+void handleProfilerTraceStartPost(WebRequest& req) {
+    switch (profilerTraceStart()) {
+        case PROFILER_TRACE_STARTED:
+            req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
+            return;
+        case PROFILER_TRACE_ALREADY_RUNNING:
+            webSendJsonError(req, 409, "trace already running");
+            return;
+        default:
+            webSendJsonError(req, 500, "start failed");
+            return;
+    }
+}
+
+void handleProfilerTraceStopPost(WebRequest& req) {
+    switch (profilerTraceStop()) {
+        case PROFILER_TRACE_STOPPED:
+            req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
+            return;
+        case PROFILER_TRACE_NOT_RUNNING:
+            webSendJsonError(req, 409, "trace not running");
+            return;
+        default:
+            webSendJsonError(req, 500, "stop failed");
+            return;
+    }
 }
 #endif
 

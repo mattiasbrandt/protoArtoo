@@ -168,12 +168,14 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-192 count): action 125, config 35,
-// event 15, status 17. Config was 34 before #227 added
+// test_console_catalog.cpp's exact-192 count): action 124, config 35,
+// event 15, status 18. Config was 34 before #227 added
 // wifi.config.settings. Action was 128 and status 14 before #221's remainder
 // reclassified dome.api.get-sequence-last-run/-list-sequences/
 // -list-builtin-sequences from type: action to type: status (the only way
-// to route them through g_statusExecutors[], src/console/console_module.cpp).
+// to route them through g_statusExecutors[], src/console/console_module.cpp);
+// #224 moved system.api.get-profiler across the same way, taking action from
+// 125 to 124 and status from 17 to 18.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -182,8 +184,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(125, g_itemCount,
-        "operations type=action must list exactly the 125 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(124, g_itemCount,
+        "operations type=action must list exactly the 124 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");

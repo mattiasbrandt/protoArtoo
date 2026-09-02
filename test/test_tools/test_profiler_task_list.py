@@ -22,6 +22,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAIN_CPP = REPO_ROOT / "src" / "main.cpp"
 API_PROFILER = REPO_ROOT / "src" / "web" / "api_profiler.cpp"
+# PROF_TASK_MAX moved to the header when #224 extracted ProfilerReading, which
+# sizes its taskStacks[] with it: the bound is now part of what an adapter
+# reads, not private to the JSON one. Both files are searched, and exactly one
+# definition is required - the number existing in two places is the same drift
+# class this whole guard exists to catch.
+PROF_TASK_MAX_FILES = (
+    REPO_ROOT / "include" / "api_profiler.h",
+    API_PROFILER,
+)
 
 # Second argument of xTaskCreatePinnedToCore(fn, "Name", ...) is the task name
 # FreeRTOS registers, and it is the name xTaskGetHandle() looks up.
@@ -78,10 +87,19 @@ class ProfilerTaskListTest(unittest.TestCase):
 
     def test_prof_task_max_matches_the_list(self):
         """Array size and declared bound must agree, or the tail reads garbage."""
-        declared = PROF_TASK_MAX_RE.search(API_PROFILER.read_text())
-        self.assertIsNotNone(declared, "PROF_TASK_MAX not found")
+        declared = [
+            match
+            for path in PROF_TASK_MAX_FILES
+            for match in PROF_TASK_MAX_RE.findall(path.read_text())
+        ]
         self.assertEqual(
-            int(declared.group(1)),
+            len(declared),
+            1,
+            "PROF_TASK_MAX must be defined exactly once across "
+            f"{[p.name for p in PROF_TASK_MAX_FILES]}; found {len(declared)}",
+        )
+        self.assertEqual(
+            int(declared[0]),
             len(profiled_task_names()),
             "PROF_TASK_MAX does not equal the number of entries in s_taskNames[]",
         )
