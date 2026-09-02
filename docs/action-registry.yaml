@@ -1190,7 +1190,9 @@ entries:
     - K
     - L
     - M
-    - N
+    - "N"  # quoted: y/n are YAML 1.1 boolean words (#249); PyYAML's
+            # resolver doesn't coerce the single-letter form today, but that
+            # is an implementation quirk, not a language guarantee
     - O
     - P
     - Q
@@ -1201,7 +1203,7 @@ entries:
     - V
     - W
     - X
-    - Y
+    - "Y"  # quoted: same rationale as "N" above (#249)
     - Z
     required: true
   - name: index
@@ -2360,7 +2362,10 @@ entries:
     - solid
     - blink
     - pulse
-    - false
+    - "off"  # quoted: bare `off` is a YAML 1.1 boolean word and was
+             # previously round-tripped to `false` by an unquoted loader
+             # (#249). See tools/registry_yaml.py - every tool that reads
+             # this file must load through it, not yaml.safe_load().
     required: true
   nvs_key: null
   executor: auxLedQueue

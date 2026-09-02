@@ -10,6 +10,9 @@ import sys
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from registry_yaml import load_registry_yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "action-registry.yaml"
@@ -183,8 +186,11 @@ def robot_action_enum_order() -> dict[str, int]:
 
 
 def load_registry_doc() -> dict:
-    with REGISTRY_PATH.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
+    # registry_yaml.load_registry_yaml(), not yaml.safe_load(): PyYAML's
+    # default resolver reads a bare on/off/yes/no/y/n as a Python bool, not
+    # the string the registry means (#249 - aux.action.led-effect's `off`
+    # enum value was corrupted to `False` by exactly this coercion).
+    return load_registry_yaml(REGISTRY_PATH)
 
 
 def load_expected_actions(doc: dict) -> list[ExpectedAction]:
@@ -762,6 +768,44 @@ def check_status_query_classification(doc: dict, errors: list[str]) -> None:
             )
 
 
+def check_no_bool_enum_values(doc: dict, errors: list[str]) -> None:
+    """Guard against YAML boolean coercion silently corrupting a string enum
+    value (#249).
+
+    A param's `values:` list, or a `range:` list used as a string enum (the
+    servo `target:` spelling - see generate_console_catalog.py's
+    enum_source()), must never contain a Python bool. A bool there means a
+    bare on/off/yes/no/y/n/true/false enum member got coerced into True/False
+    by the YAML loader instead of staying the string the registry author
+    wrote - exactly what corrupted aux.action.led-effect's `off` value into
+    `False` before this check existed.
+
+    load_registry_doc() already loads through registry_yaml.load_registry_yaml(),
+    which narrows PyYAML's implicit resolver so on/off/yes/no/y/n never
+    coerce. This check exists for defense in depth: it also catches a
+    genuine `true`/`false` word written where a string enum value was
+    meant (registry_yaml.py deliberately keeps true/false as real booleans,
+    since `required:`/`safety_critical:` depend on that), and it stands
+    guard against the next YAML tool, reader, or hand-edit that does not go
+    through registry_yaml.py at all.
+    """
+    for entry in doc.get('entries', []):
+        name = entry.get('name', '<unnamed>')
+        for param in entry.get('params', []) or []:
+            pname = param.get('name', '<unnamed>')
+            for key in ('values', 'range'):
+                values = param.get(key)
+                if not isinstance(values, list):
+                    continue
+                for value in values:
+                    if isinstance(value, bool):
+                        errors.append(
+                            f"{name} param {pname!r} {key}: contains boolean {value!r} - "
+                            f"likely YAML coercion of an unquoted on/off/yes/no/y/n/"
+                            f"true/false enum value; quote it in the YAML"
+                        )
+
+
 def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     """Validate one-to-one mapping: registry entries <-> inventory rows.
 
@@ -863,6 +907,7 @@ def main() -> int:
     check_html_data_attributes(errors)
     check_inventory_registry_alignment(doc, errors)
     check_status_query_classification(doc, errors)
+    check_no_bool_enum_values(doc, errors)
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)

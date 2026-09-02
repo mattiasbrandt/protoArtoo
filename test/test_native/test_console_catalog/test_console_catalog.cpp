@@ -272,6 +272,73 @@ void test_web_control_requirement() {
 }
 
 // =============================================================================
+// Test: Enum Value Integrity (#249)
+//
+// PyYAML's default resolver reads a bare on/off/yes/no/y/n as a Python bool,
+// not the string the registry means. aux.action.led-effect's `off` enum
+// value was corrupted to boolean False by exactly that coercion and shipped
+// into this catalog as the literal string "False" - a value parseAuxLedEffect()
+// (src/tasks/aux_led.cpp) does not accept - while omitting "off", the value
+// that does. These tests pin the generated catalog content directly, so a
+// future regeneration from an unquoted or re-coerced registry value fails
+// here even if the Python-level guard (tools/check_action_registry_drift.py's
+// check_no_bool_enum_values(), test/test_tools/test_registry_yaml.py) is
+// ever bypassed.
+// =============================================================================
+
+static const ConsoleParamDescriptor* findParamByName(const ConsoleCatalogEntry* entry, const char* name) {
+    if (!entry || !entry->params) return NULL;
+    for (const ConsoleParamDescriptor* p = entry->params; p->name != NULL; ++p) {
+        if (strcmp(p->name, name) == 0) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+void test_aux_led_effect_enum_contains_off_not_false() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("aux.action.led-effect");
+    TEST_ASSERT_NOT_NULL(entry);
+
+    const ConsoleParamDescriptor* effect_param = findParamByName(entry, "effect");
+    TEST_ASSERT_NOT_NULL(effect_param);
+    TEST_ASSERT_NOT_NULL(effect_param->enum_values);
+
+    bool found_off = false;
+    for (const char* const* v = effect_param->enum_values; *v != NULL; ++v) {
+        TEST_ASSERT_TRUE_MESSAGE(strcmp(*v, "False") != 0,
+            "aux.action.led-effect enum must never ship \"False\" (#249)");
+        TEST_ASSERT_TRUE_MESSAGE(strcmp(*v, "True") != 0,
+            "aux.action.led-effect enum must never ship \"True\" (#249)");
+        if (strcmp(*v, "off") == 0) {
+            found_off = true;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found_off, "aux.action.led-effect enum must offer \"off\" (#249)");
+}
+
+void test_play_banked_bank_enum_has_all_26_letters() {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName("sound.api.play-banked");
+    TEST_ASSERT_NOT_NULL(entry);
+
+    const ConsoleParamDescriptor* page_param = findParamByName(entry, "page");
+    TEST_ASSERT_NOT_NULL(page_param);
+    TEST_ASSERT_NOT_NULL(page_param->enum_values);
+
+    size_t count = 0;
+    bool found_y = false;
+    bool found_n = false;
+    for (const char* const* v = page_param->enum_values; *v != NULL; ++v, ++count) {
+        if (strcmp(*v, "Y") == 0) found_y = true;
+        if (strcmp(*v, "N") == 0) found_n = true;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(26, (int)count,
+        "sound.api.play-banked bank enum must carry all 26 letters (#249)");
+    TEST_ASSERT_TRUE_MESSAGE(found_y, "bank enum missing \"Y\" (#249)");
+    TEST_ASSERT_TRUE_MESSAGE(found_n, "bank enum missing \"N\" (#249)");
+}
+
+// =============================================================================
 // Unity Test Runner Setup
 // =============================================================================
 
@@ -315,6 +382,10 @@ int main(void) {
     // Safety and control tests
     RUN_TEST(test_safety_critical_entries);
     RUN_TEST(test_web_control_requirement);
+
+    // Enum value integrity tests (#249)
+    RUN_TEST(test_aux_led_effect_enum_contains_off_not_false);
+    RUN_TEST(test_play_banked_bank_enum_has_all_26_letters);
 
     UNITY_END();
 
