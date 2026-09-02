@@ -1,11 +1,11 @@
 diff --git i/data/app.js w/data/app.js
-index c5e329a1..eaa3c704 100644
+index 15ecef97..60d1295d 100644
 --- i/data/app.js
 +++ w/data/app.js
-@@ -626,7 +626,7 @@
-     if (logLines.length > 0) return;
-     const api = handle ?? window.PAApi;
-     const result = await api.get("/api/logs", { cache: "no-store" });
+@@ -642,7 +642,7 @@
+       if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
+       throw error;
+     }
 -    if (!isLogTextResponse(result)) {
 +    if (isLogTextResponse(result)) {
        // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
