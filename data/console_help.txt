@@ -40,7 +40,7 @@ dome.event.cue-reset|BD:RESET|Dome cue -- Track Stop (audioQueueTrackStop, ADR 0
 dome.status.current|Dome Status|Current dome motor speed and connection state|captureDomeStatusSnapshot|
 dome.action.move|Dome Speed (Web)|Set dome rotation speed from the browser. Gated by sleep mode (423) and the enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is the SBUS/PWM RC-bindable axis.\n|domeCmdQueue|speed:float:1
 dome.api.list-sequences|List Learned Sequences|Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)|seqStoreIndexAt|
-dome.api.list-builtin-sequences|List Factory Sequences|Lightweight Factory catalog metadata (no step data), or the full JSON v1 of one Factory sequence when a name parameter is given (used as the clone source in the editor).\n|sequenceCatalogAt|name:string:0
+dome.api.list-builtin-sequences|List Factory Sequences|Lightweight Factory catalog metadata (no step data). GET /api/seq/builtins also accepts a name= parameter for the full JSON v1 of one Factory sequence (the editor's clone source) - a document read #206 excludes from the Console, so only the list form is wired here; no params: to keep the Console's own schema honest about what it actually runs (type: status entries take no arguments, docs/console-catalog-contributing.md).\n|sequenceCatalogAt|
 dome.api.get-sequence|Get Learned Sequence|Raw stored JSON v1 of one Learned Sequence by name|seqStoreReadFileSlice|name:string:1
 dome.action.save-sequence|Save Learned Sequence|Validate (Protocol Check) and persist a Learned Sequence JSON v1 body to LittleFS|seqStoreSave|
 dome.action.delete-sequence|Memory Wipe|Delete a Learned Sequence by name. Reports any RC trigger bindings the wipe leaves dangling (silent no-ops) unless a Factory sequence shadows the name.\n|seqStoreDelete|name:string:1
@@ -104,7 +104,7 @@ sound.config.mood-category-map|Mood Category Map|Per-mood bitmask selecting whic
 servo.action.open|Open|Open a servo-driven panel or arm to its open position|servoCmdQueue|target:string:1
 servo.action.close|Close|Close a servo-driven panel or arm to its closed position|servoCmdQueue|target:string:1
 servo.action.set-position|Set Position|Move a servo to a specific pulse-width position|servoCmdQueue|target:string:1|position_us:uint16:1
-servo.action.stop|Stop|Stop servo movement and hold current position|servoCmdQueue|
+servo.action.stop|Stop|Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no freeze-in-place command). target=both moves ARM1 and ARM2 only; AUX1, AUX2 and AUX3 must be stopped one at a time (robot_state.h's own broadcast-id comment).\n|servoCmdQueue|target:string:1
 servo.action.toggle-arm1|ARM1 Toggle|Toggle the arm 1 servo between open and closed|servoCmdQueue|
 servo.action.toggle-arm2|ARM2 Toggle|Toggle the arm 2 servo between open and closed|servoCmdQueue|
 servo.action.toggle-aux1|AUX1 Toggle|Toggle the aux 1 servo between open and closed|servoCmdQueue|

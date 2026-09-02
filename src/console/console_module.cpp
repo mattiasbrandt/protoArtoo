@@ -86,6 +86,16 @@
                                // - reused verbatim by aux.action.led-color/-effect below (#221
                                // remainder); no extraction needed, both are already complete
                                // single-call cores with no persist step
+#include "seq_store_index.h"   // SeqIndexEntry, seqStoreIndexCount/At() - dome.api.list-sequences
+                               // below (#221 remainder), the same index handleSeqListGet() reads
+#include "sequence_dispatcher.h"  // SequenceEntry, sequenceCatalogCount/At(), sequenceCatalogFind()
+                                   // - dome.api.list-builtin-sequences below and list-sequences'
+                                   // own "retrained" check, both reused verbatim from
+                                   // handleSeqBuiltinsGet()/handleSeqListGet() (src/web/api_seq.cpp)
+#include "seq_json.h"          // seqToggleGroupToString() - reused verbatim by both list executors
+#include "sequence_run_evidence.h"  // SeqRunEvidence, seqEvidenceSnapshot(), seqRunOutcomeName() -
+                                     // dome.api.get-sequence-last-run below, the same snapshot
+                                     // GET /api/seq/last-run serializes (src/seq_last_run_json.cpp)
 
 static const char* TAG = "Console";
 
@@ -619,6 +629,117 @@ static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleReco
     }
 }
 
+// dome.api.get-sequence-last-run (#221 remainder): a plain snapshot copy
+// under lock (seqEvidenceSnapshot(), src/sequence_run_evidence.cpp), not a
+// paginated read - #223's field-based query shape fits directly. Field names
+// and their presence conditions are read straight off populateSeqLastRunJson()
+// (src/seq_last_run_json.cpp) for the eight scalar keys the registry's
+// fields: list claims (see that entry's own comment for why the nested
+// tx/cleanup/warnings/fxScopes/ring-mask keys are deliberately not
+// reproduced here): "reason" only when non-empty, "endMs" only when
+// non-zero, and every field but "valid" itself only when a run has actually
+// been recorded (have == true) - the same "nothing to report yet" shape the
+// REST JSON's own early return uses.
+static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const ConsoleRecordSink* sink) {
+    SeqRunEvidence ev = {};
+    bool have = seqEvidenceSnapshot(ev);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "valid", have ? "true" : "false");
+    }
+    if (have) {
+        char tempBuf[16] = {};
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "name", ev.name);
+        }
+        // ev.source is a raw CommandSource byte (see SeqRunEvidence's own
+        // field comment) - populateSeqLastRunJson() emits it as the same
+        // unlabelled number, not a translated name, so this matches rather
+        // than inventing a friendlier representation the REST answer lacks.
+        snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)ev.source);
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "source", tempBuf);
+            sink->onRecordField(requestId, "outcome", seqRunOutcomeName(ev.outcome));
+            sink->onRecordField(requestId, "running",
+                               (ev.outcome == SEQ_RUN_RUNNING) ? "true" : "false");
+        }
+        if (ev.reason[0] != '\0' && sink->onRecordField) {
+            sink->onRecordField(requestId, "reason", ev.reason);
+        }
+        snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)ev.startMs);
+        if (sink->onRecordField) sink->onRecordField(requestId, "startMs", tempBuf);
+        if (ev.endMs != 0) {
+            snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)ev.endMs);
+            if (sink->onRecordField) sink->onRecordField(requestId, "endMs", tempBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// dome.api.list-sequences / dome.api.list-builtin-sequences (#221 remainder):
+// item-indexed queries, the same no-fields:/is_query:-true shape #239
+// established for system.status.logs above - the answer is a sequence of
+// item records (one per stored/catalog sequence), not scalar JSON keys.
+// Each item line mirrors the matching REST row's own fields
+// (handleSeqListGet()/handleSeqBuiltinsGet(), src/web/api_seq.cpp),
+// colon-separated per-field rather than "=" - the same
+// consoleFormatRcSourceSummary() convention above, so a value can never be
+// mistaken for a second key=value pair on the wire. Both stores are
+// small and fully in-memory (SEQ_STORE_MAX = 16, the Factory catalog is a
+// flash-resident const table), so - like system.status.logs' bounded ring -
+// no separate paging protocol is needed.
+static void consoleExecuteDomeApiListSequences(uint32_t requestId, const ConsoleRecordSink* sink) {
+    for (uint8_t i = 0; i < seqStoreIndexCount(); ++i) {
+        const SeqIndexEntry* e = seqStoreIndexAt(i);
+        if (e == nullptr) continue;
+        if (sink->onRecordItem) {
+            char itemBuf[160];
+            // "retrained" mirrors handleSeqListGet()'s own check: a Learned
+            // Sequence that shadows a Factory one by name.
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "%s toggleGroup:%s suppressMs:%lu source:%s modified:%s valid:%s retrained:%s",
+                     e->name, seqToggleGroupToString(e->toggleGroup), (unsigned long)e->suppressMs,
+                     e->source, e->modified ? "true" : "false", e->valid ? "true" : "false",
+                     (sequenceCatalogFind(e->name) != nullptr) ? "true" : "false");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDomeApiListBuiltinSequences(uint32_t requestId,
+                                                       const ConsoleRecordSink* sink) {
+    for (uint8_t i = 0; i < sequenceCatalogCount(); ++i) {
+        const SequenceEntry* e = sequenceCatalogAt(i);
+        if (e == nullptr) continue;
+        if (sink->onRecordItem) {
+            // 320, not 160 like list-sequences above: purpose is free
+            // operator-facing prose (up to 159 bytes on the longest Factory
+            // entry today, src/tasks/sequence_catalog.cpp's DM:RESET), not a
+            // handful of short fixed fields - sized with real margin above
+            // the measured longest entry rather than snprintf's silent
+            // truncation being the only thing standing between this and a
+            // clipped purpose string.
+            char itemBuf[320];
+            snprintf(itemBuf, sizeof(itemBuf), "%s toggleGroup:%s suppressMs:%lu stepCount:%u purpose:%s",
+                     e->name, seqToggleGroupToString(e->toggleGroup), (unsigned long)e->suppressMs,
+                     (unsigned)e->stepCount, (e->purpose != nullptr) ? e->purpose : "");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -644,6 +765,9 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"dome.status.serial-link", consoleExecuteDomeStatusSerialLink},
     {"rc.status.snapshot", consoleExecuteRcStatusSnapshot},
     {"system.status.logs", consoleExecuteSystemStatusLogs},
+    {"dome.api.get-sequence-last-run", consoleExecuteDomeApiGetSequenceLastRun},
+    {"dome.api.list-sequences", consoleExecuteDomeApiListSequences},
+    {"dome.api.list-builtin-sequences", consoleExecuteDomeApiListBuiltinSequences},
 };
 static const size_t kStatusExecutorCount =
     sizeof(g_statusExecutors) / sizeof(g_statusExecutors[0]);
@@ -1793,6 +1917,18 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // means this action has no RC-bindable target yet - a
             // not-yet-wired action #227 owns, or a motion target #222
             // owns - unchanged from before this ticket.
+            //
+            // Two of the rows that land here on purpose, not by omission:
+            // dome.api.get-sequence (seqStoreReadFileSlice()) and
+            // dome.api.get-layout (domeLayoutCacheReadChunk()) are byte-slice
+            // readers over one stored document (a Learned Sequence JSON v1
+            // file; the dome's cached composed-layout JSON) - #206's own
+            // "document/bulk transfer ... keeps its dedicated mechanisms"
+            // exclusion, the same one dome.action.save-sequence's write side
+            // cites (include/console_direct_action_dome.h). They answer
+            // EXECUTOR_NOT_READY here like any other unwired action row;
+            // the registry entries carry the same reasoning (docs/action-
+            // registry.yaml, #221 remainder).
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion

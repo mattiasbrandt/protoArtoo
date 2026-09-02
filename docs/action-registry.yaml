@@ -565,6 +565,14 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
+  # Out of scope for the Console (#221 remainder, coordinator decision
+  # 2026-09-01, issue #221): domeLayoutCacheReadChunk(buf, len, offset, ...) is
+  # a byte-slice reader over one cached document (the dome's composed layout
+  # JSON), the same "document/bulk transfer ... keeps its dedicated
+  # mechanisms" exclusion #206 states for sequence/RC-map/config documents,
+  # firmware/FS images and the coredump - not a gap this ticket owes a
+  # Console Record shape for. REST (this row's own api_path) remains the only
+  # way to read it.
   nvs_key: null
   executor: domeLayoutCacheReadChunk
 - name: dome.action.sequence-stop
@@ -812,7 +820,7 @@ entries:
   display_name: List Learned Sequences
   description: Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)
   domain: dome
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/seq/list
   sse_event: null
@@ -823,14 +831,22 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221 remainder: item-indexed (seqStoreIndexAt(uint8_t)), the same
+  # no-fields:/is_query:-true shape system.status.logs established (#239) for
+  # an answer that is a sequence of item records, not scalar JSON keys - the
+  # store's own SEQ_STORE_MAX (16 entries, include/seq_store_index.h) bounds
+  # it by construction, so no separate paging protocol is needed either.
   executor: seqStoreIndexAt
+  is_query: true
 - name: dome.api.list-builtin-sequences
   display_name: List Factory Sequences
-  description: 'Lightweight Factory catalog metadata (no step data), or the full JSON v1 of one Factory sequence when a name parameter is given (used as the clone source in the editor).
+  description: 'Lightweight Factory catalog metadata (no step data). GET /api/seq/builtins also accepts a name= parameter for the full JSON v1 of one Factory sequence (the editor''s clone source) - a
+    document read #206 excludes from the Console, so only the list form is wired here; no params: to keep the Console''s own schema honest about what it actually runs (type: status entries take no
+    arguments, docs/console-catalog-contributing.md).
 
     '
   domain: dome
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/seq/builtins
   sse_event: null
@@ -840,12 +856,13 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  params:
-  - name: name
-    type: string
-    required: false
   nvs_key: null
+  # #221 remainder: item-indexed (sequenceCatalogAt(uint8_t)), same shape as
+  # dome.api.list-sequences just above and system.status.logs (#239) - see
+  # that entry's comment. The name= single-sequence form stays REST-only (see
+  # description).
   executor: sequenceCatalogAt
+  is_query: true
 - name: dome.api.get-sequence
   display_name: Get Learned Sequence
   description: Raw stored JSON v1 of one Learned Sequence by name
@@ -864,6 +881,14 @@ entries:
   - name: name
     type: string
     required: true
+  # Out of scope for the Console (#221 remainder, coordinator decision
+  # 2026-09-01, issue #221): seqStoreReadFileSlice(name, offset, ...) is a
+  # byte-slice reader over one stored Learned Sequence JSON v1 document, the
+  # same "document/bulk transfer ... keeps its dedicated mechanisms"
+  # exclusion #206 states for sequence/RC-map/config documents, firmware/FS
+  # images and the coredump - not a gap this ticket owes a Console Record
+  # shape for. dome.api.list-sequences above gives the Console the metadata
+  # index; the document body remains REST-only (this row's own api_path).
   nvs_key: null
   executor: seqStoreReadFileSlice
 - name: dome.action.save-sequence
@@ -933,7 +958,7 @@ entries:
 
     '
   domain: dome
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/seq/last-run
   sse_event: null
@@ -944,6 +969,25 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221 remainder: not paginated at all, a plain snapshot (seqEvidenceSnapshot(),
+  # a memcpy-under-lock of one static struct) - #223's field-based query shape
+  # fits directly. fields: is a deliberate SUBSET of populateSeqLastRunJson()'s
+  # (src/seq_last_run_json.cpp) real top-level keys: the eight genuinely scalar
+  # ones. fxScopes/netOpenRingPanels/touchedRingPanels/cleanup/tx/warnings are
+  # arrays/objects with no scalar-field shape - the same reason rc.status.
+  # snapshot below collapses its own nested sources.* into summary tokens
+  # instead of one field per leaf (src/console/console_module.cpp). Documented
+  # subset, not silently narrowed - dome.status.serial-link sets this same
+  # precedent; the full nested detail stays REST-only.
+  fields:
+  - valid
+  - name
+  - source
+  - outcome
+  - running
+  - reason
+  - startMs
+  - endMs
   executor: seqEvidenceSnapshot
 - name: sound.action.play-track
   display_name: Play Track
@@ -2185,7 +2229,10 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.stop
   display_name: Stop
-  description: Stop servo movement and hold current position
+  description: 'Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no
+    freeze-in-place command). target=both moves ARM1 and ARM2 only; AUX1, AUX2 and AUX3 must be stopped one at a time (robot_state.h''s own broadcast-id comment).
+
+    '
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2197,6 +2244,21 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
+  # #221 remainder: registry previously declared zero params even though
+  # /api/servo (handleServoPost(), src/web/api_servo.cpp) requires an arm for
+  # every action including "stop" - matching servo.action.open/close's own
+  # target enum/shape rather than inventing a second one.
+  params:
+  - name: target
+    type: string
+    range:
+    - arm1
+    - arm2
+    - aux1
+    - aux2
+    - aux3
+    - both
+    required: true
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-arm1
