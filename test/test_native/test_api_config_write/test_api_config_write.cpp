@@ -208,6 +208,41 @@ void test_wifi_post_rejects_invalid_settings() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"ok\":false"));
 }
 
+// Pins the ADR 0034 Commit Step (wifiCommitApplied(), #227 phase 1): the
+// handler no longer stages the cache or reads recovery/broadcast state
+// inline, so this exercises that the extracted function still does - NVS/
+// cache staging a subsequent read would see, the status broadcast, and
+// threading the live Network Recovery posture into the response instead of
+// a stale or default value.
+void test_wifi_post_commit_step_persists_and_reports_runtime_state() {
+    configCacheSetActiveWifiRecovery(true);
+
+    const WebRequestTestParam params[] = {
+        {"wifiMode", "client"}, {"staSsid", "commit-step-net"}, {"staPassword", "hunter2hunter2"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleWifiPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    // Cache staging landed for a subsequent read to see.
+    WifiConfig staged = {};
+    configCacheReadWifi(&staged);
+    TEST_ASSERT_EQUAL_STRING("commit-step-net", staged.sta_ssid);
+
+    // Status broadcast fired.
+    TEST_ASSERT_GREATER_THAN(0, g_test_status_broadcast_count);
+
+    // The commit step's own recovery read, not a stale default, reached the
+    // response.
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_TRUE(doc["wifi"]["networkRecovery"].as<bool>());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
@@ -219,5 +254,6 @@ int main() {
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);
     RUN_TEST(test_wifi_post_stages_settings_without_leaking_the_password);
     RUN_TEST(test_wifi_post_rejects_invalid_settings);
+    RUN_TEST(test_wifi_post_commit_step_persists_and_reports_runtime_state);
     return UNITY_END();
 }

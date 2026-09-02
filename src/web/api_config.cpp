@@ -797,33 +797,18 @@ void handleWifiPost(WebRequest& req) {
         return;
     }
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    // Commit Step (ADR 0034, api_wifi_apply.h): persist to NVS, stage the
+    // config cache (Staged Network Switch, ADR 0015), and broadcast status -
+    // shared with the future Console WiFi write path (#227 phase 2) instead
+    // of each adapter carrying its own copy of the sequence.
+    WifiCommitOutcome commit = wifiCommitApplied(&working);
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist wifi settings");
         return;
     }
-    if (!configSaveWifi(prefs, working)) {
-        prefs.end();
-        webSendJsonError(req, 500, "failed to persist wifi settings");
-        return;
-    }
-    prefs.end();
-
-    // Stage only: update the persisted cache so reads see the new settings,
-    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch -
-    // apply happens through an explicit reboot/restart handoff, not as a side
-    // effect of saving this form). This is what lets an operator reprovision
-    // while connected to the controller's own AP without dropping underneath
-    // themselves mid-request.
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-    snap.wifi = working;
-    configCacheApply(snap);
-
-    requestStatusBroadcastNow();
 
     JsonDocument doc;
-    WifiConfigView view = wifiConfigToView(working);
+    WifiConfigView view = wifiConfigToView(commit.config);
     doc["ok"] = true;
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["provisioned"] = view.provisioned;
@@ -832,11 +817,8 @@ void handleWifiPost(WebRequest& req) {
     wifi["staPasswordSet"] = view.sta_password_set;
     wifi["apSsid"] = view.ap_ssid;
     wifi["apPasswordSet"] = view.ap_password_set;
-
-    WifiConfig activeWifi = {};
-    configCacheReadActiveWifi(&activeWifi);
-    wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
-    wifi["networkRecovery"] = configCacheReadActiveWifiRecovery();
+    wifi["pendingApply"] = commit.pendingApply;
+    wifi["networkRecovery"] = commit.networkRecovery;
 
     char payload[512];
     serializeJson(doc, payload, sizeof(payload));
