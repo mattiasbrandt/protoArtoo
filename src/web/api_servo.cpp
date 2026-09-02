@@ -26,8 +26,8 @@ extern QueueHandle_t servoCmdQueue;
 static const char* TAG = "SERVO_API";
 
 // See include/api_servo.h for the full contract - exported so the Controller
-// Console's servo.action.* executors (src/console/console_module.cpp) reuse
-// the same target<->id mapping.
+// Console's servo.action.* executors (include/console_direct_action_servo.h)
+// reuse the same target<->id mapping.
 int16_t parseArmId(const char* arm) {
     if (strcmp(arm, "arm1") == 0 || strcmp(arm, "ARM1") == 0)
         return 0;

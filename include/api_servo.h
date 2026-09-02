@@ -19,8 +19,8 @@
 // 255 truncates to -1 in an int8_t return, which is how "both" once came to
 // be rejected as invalid on an endpoint whose own error message offers it.
 // Exported (not file-local to api_servo.cpp) so the Controller Console's
-// servo.action.open/close/set-position executors (src/console/
-// console_module.cpp, ADR 0034) resolve a target the same way
+// servo.action.open/close/set-position executors (include/
+// console_direct_action_servo.h, ADR 0034) resolve a target the same way
 // handleServoPost() does, rather than a second name<->id mapping.
 int16_t parseArmId(const char* arm);
 
