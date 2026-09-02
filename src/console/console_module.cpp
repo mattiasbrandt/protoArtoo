@@ -1469,6 +1469,7 @@ static CommandSource consoleCommandSourceFor(ConsoleCommandSource source) {
 #include "console_direct_action_sound.h"
 #include "console_direct_action_aux_rc.h"
 #include "console_direct_action_servo.h"
+#include "console_direct_action_dome.h"
 
 // Linear scan of one domain's table - the single scan implementation every
 // domain lookup below shares, factored out rather than repeated five times.
@@ -1495,7 +1496,10 @@ static ConsoleDirectActionExecutorFn consoleFindDirectActionExecutor(const char*
     found = consoleFindInDirectActionTable(g_auxRcDirectActionExecutors, kAuxRcDirectActionExecutorCount,
                                            canonicalName);
     if (found != nullptr) return found;
-    return consoleFindInDirectActionTable(g_servoDirectActionExecutors, kServoDirectActionExecutorCount,
+    found = consoleFindInDirectActionTable(g_servoDirectActionExecutors, kServoDirectActionExecutorCount,
+                                           canonicalName);
+    if (found != nullptr) return found;
+    return consoleFindInDirectActionTable(g_domeDirectActionExecutors, kDomeDirectActionExecutorCount,
                                           canonicalName);
 }
 
