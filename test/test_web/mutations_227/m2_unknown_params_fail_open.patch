@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index f780527f..3e33a4e6 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -874,7 +874,7 @@
+ 
+     const opName = line.trim().split(/\s+/)[0];
+     const params = await fetchConsoleOperationParams(opName);
+-    if (params === null) return true;
++    if (params === null) return false;
+ 
+     const excluded = params
+       .filter((param) => param.writeExcluded)

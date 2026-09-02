@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index f780527f..771e5941 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -794,7 +794,7 @@
+   const fetchConsoleArgKeyCandidates = async (opName) => {
+     const params = await fetchConsoleOperationParams(opName);
+     if (params === null) return [];
+-    return params.filter((param) => !param.writeExcluded).map((param) => `${param.key}=`);
++    return params.map((param) => `${param.key}=`);
+   };
+ 
+   const appendCommandLine = (text, extraClass = " log-line-command") => {

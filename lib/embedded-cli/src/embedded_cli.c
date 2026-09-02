@@ -899,7 +899,13 @@ static void parseCommand(EmbeddedCli *cli) {
     if (isEmpty)
         return;
     // push command to history before buffer is modified
-    historyPut(&impl->history, impl->cmdBuffer);
+    // [PATCH: History filter callback] An optional predicate decides FIRST
+    // whether this line may be stored at all, so a refused line never enters
+    // the ring rather than being written and removed afterwards (see the
+    // field doc on EmbeddedCli::shouldStoreHistory). Unset - the upstream
+    // state - stores every line as before.
+    if (cli->shouldStoreHistory == NULL || cli->shouldStoreHistory(cli, impl->cmdBuffer))
+        historyPut(&impl->history, impl->cmdBuffer);
 
     char *cmdName = NULL;
     char *cmdArgs = NULL;

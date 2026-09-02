@@ -134,6 +134,32 @@ struct EmbeddedCli {
     const char *(*getCompletionCandidate)(EmbeddedCli *cli, uint16_t index);
 
     /**
+     * [PATCH: History filter callback] Optional predicate consulted before a
+     * submitted command line is stored in the Up/Down history ring. When it
+     * is NULL - the default, and every other consumer's state - every
+     * non-empty line is stored exactly as upstream stores it, so this patch
+     * costs nothing that is not asked for.
+     *
+     * Called from parseCommand() with the line as typed, BEFORE the command
+     * buffer is split into name and args, and BEFORE historyPut(). Deciding
+     * first is the point of the callback rather than removing the line
+     * afterwards: a value that reaches the ring has been in a buffer that
+     * outlives the decision, and Up-arrow is not that buffer's only reader.
+     * Returning false suppresses the history write only - the line still
+     * dispatches normally, because refusing to REMEMBER a command is not
+     * refusing to run it (the project's own use is a line the dispatcher
+     * must reach in order to answer that it is refused).
+     *
+     * The line is owned by the cli and is only valid for the duration of the
+     * call; a predicate that needs to keep anything must copy it, and one
+     * looking at a secret should copy nothing.
+     * @param cli  - pointer to cli that is calling this function
+     * @param line - the submitted command line, NUL-terminated
+     * @return true to store the line in history, false to leave it out
+     */
+    bool (*shouldStoreHistory)(EmbeddedCli *cli, const char *line);
+
+    /**
      * Can be used for any application context
      */
     void *appContext;

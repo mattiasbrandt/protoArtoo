@@ -691,8 +691,8 @@
   // explicit about this: "fetch help <op> for the single operation being
   // completed").
   let consoleCatalogNames = [];
-  const consoleArgKeyCache = new Map();
-  const CONSOLE_ARG_KEY_CACHE_MAX = 50;
+  const consoleOperationParamCache = new Map();
+  const CONSOLE_OPERATION_PARAM_CACHE_MAX = 50;
 
   // Parses `operations`' item records (docs/console-protocol.md s.2:
   // "name (type[, reason])") down to the bare canonical name. Tab completes
@@ -709,18 +709,25 @@
   };
 
   // Parses `help <op>`'s "params" field (console_module.cpp:
-  // "name:type:required|optional" comma-joined) down to "<key>=" candidates -
-  // the same shape the serial adapter's completion source returns
-  // (include/console_completion.h), so both adapters offer identical
-  // candidates.
+  // "name:type:required|optional|write-excluded" comma-joined) into one
+  // descriptor per parameter.
+  //
+  // The third token is the disposition, and "write-excluded" is this
+  // adapter's view of the catalog's write_excluded flag - the same authority
+  // the serial adapter reads straight out of the in-image catalog
+  // (include/console_write_exclusion.h). Reading the flag through the
+  // operation descriptor, rather than matching key names against a "password"
+  // pattern, is what keeps the two adapters refusing the SAME lines instead
+  // of growing a second vocabulary for "secret" (#227, #206's one-language
+  // decision).
   const parseHelpParamsResponse = (records) => {
     for (const record of records) {
       if (record && record.type === "field" && record.name === "params" && typeof record.value === "string") {
         return record.value
           .split(",")
-          .map((entry) => entry.split(":")[0])
-          .filter((key) => key.length > 0)
-          .map((key) => `${key}=`);
+          .map((entry) => entry.split(":"))
+          .filter((parts) => parts[0] && parts[0].length > 0)
+          .map((parts) => ({ key: parts[0], writeExcluded: parts[2] === "write-excluded" }));
       }
     }
     return [];
@@ -746,15 +753,20 @@
     consoleCatalogNames = parseOperationsResponse(result.data.records).sort((a, b) => a.localeCompare(b));
   };
 
-  // Fetches and caches one operation's argument-key candidates on demand.
+  // Fetches and caches one operation's parameter descriptors on demand.
   // A network/transport failure is deliberately NOT cached, so the next Tab
   // press retries instead of staying broken for the rest of the session; an
   // operation with no params (or a genuine "no params field in the
   // response") IS cached as an empty list - that is a stable fact about the
   // operation, not a transient failure.
-  const fetchConsoleArgKeyCandidates = async (opName) => {
-    if (consoleArgKeyCache.has(opName)) return consoleArgKeyCache.get(opName);
-    if (!window.PAApi) return [];
+  //
+  // Returns null when the operation's parameters could not be established at
+  // all. That is a different answer from [] ("this operation has none"), and
+  // the two mean opposite things to the history rule below - which is why
+  // this no longer collapses a failure into an empty candidate list.
+  const fetchConsoleOperationParams = async (opName) => {
+    if (consoleOperationParamCache.has(opName)) return consoleOperationParamCache.get(opName);
+    if (!window.PAApi) return null;
     try {
       const result = await window.PAApi.postForm(
         "/api/console",
@@ -762,24 +774,142 @@
         { timeoutMs: 5000 }
       );
       const records = Array.isArray(result?.data?.records) ? result.data.records : [];
-      const candidates = parseHelpParamsResponse(records);
-      if (consoleArgKeyCache.size >= CONSOLE_ARG_KEY_CACHE_MAX) {
-        consoleArgKeyCache.delete(consoleArgKeyCache.keys().next().value);
+      const params = parseHelpParamsResponse(records);
+      if (consoleOperationParamCache.size >= CONSOLE_OPERATION_PARAM_CACHE_MAX) {
+        consoleOperationParamCache.delete(consoleOperationParamCache.keys().next().value);
       }
-      consoleArgKeyCache.set(opName, candidates);
-      return candidates;
+      consoleOperationParamCache.set(opName, params);
+      return params;
     } catch (error) {
-      return [];
+      return null;
     }
+  };
+
+  // Tab candidates for an operation: "<key>=" for every parameter the Console
+  // will accept a value for. A write-excluded key is never offered - the
+  // Console can only ever refuse it with secret-not-settable, and completing
+  // it would invite the operator to type the secret that refusal exists to
+  // keep out. Mirrors consoleOfferedParamAt() on the serial adapter, filter
+  // and all, so neither board gets a different completion catalog (#206).
+  const fetchConsoleArgKeyCandidates = async (opName) => {
+    const params = await fetchConsoleOperationParams(opName);
+    if (params === null) return [];
+    return params.filter((param) => !param.writeExcluded).map((param) => `${param.key}=`);
   };
 
   const appendCommandLine = (text, extraClass = " log-line-command") => {
     appendLogLine(text, { extraClass });
   };
 
-  const rememberCommand = (token) => {
+  // The argument keys a submitted line assigns to, in order. Walks the line
+  // the way consoleParseArgs() does (include/console_args.h): the first token
+  // is the operation name, then a key up to "=", then a value that is either
+  // a quoted run - with \" and \\ escapes - or a bare run to the next space.
+  // Honouring the quoting is what keeps a legitimate line storable: an SSID
+  // may itself contain a space and an "=", and mistaking a value's own text
+  // for a later key would refuse a line carrying no secret at all.
+  const consoleLineArgumentKeys = (line) => {
+    const keys = [];
+    const isSpace = (index) => /\s/.test(line[index]);
+    let i = 0;
+    while (i < line.length && isSpace(i)) i += 1;
+    while (i < line.length && !isSpace(i)) i += 1;
+
+    while (i < line.length) {
+      while (i < line.length && isSpace(i)) i += 1;
+      if (i >= line.length) break;
+
+      const keyStart = i;
+      while (i < line.length && line[i] !== "=" && !isSpace(i)) i += 1;
+      if (line[i] !== "=" || i === keyStart) {
+        // A bare word or an empty key ("=value"): not a key=value pair at
+        // all. Skip to the next token - a later one can still be the
+        // assignment.
+        while (i < line.length && !isSpace(i)) i += 1;
+        continue;
+      }
+      keys.push(line.slice(keyStart, i));
+      i += 1;
+
+      if (line[i] === '"') {
+        const quotedStart = i;
+        let closed = false;
+        i += 1;
+        while (i < line.length) {
+          if (line[i] === "\\" && i + 1 < line.length) {
+            i += 2;
+            continue;
+          }
+          if (line[i] === '"') {
+            i += 1;
+            closed = true;
+            break;
+          }
+          i += 1;
+        }
+        if (!closed) {
+          // UNTERMINATED quote. Running to the end of the line here would
+          // swallow every later key with it - including a write-excluded one,
+          // which is then never examined and the line is stored. That is the
+          // fail-OPEN this rule cannot afford, so the unterminated run is
+          // rescanned as an ordinary unquoted value: back to the opening
+          // quote, forward to the next space, and carry on reading keys.
+          // Costs nothing - the firmware's parser rejects an unterminated
+          // quote outright, so such a line can never execute. A CLOSED quoted
+          // value keeps its meaning and stays storable. Same rule, same
+          // wording, as the serial half in
+          // include/console_write_exclusion.h.
+          i = quotedStart;
+          while (i < line.length && !isSpace(i)) i += 1;
+        }
+      } else {
+        while (i < line.length && !isSpace(i)) i += 1;
+      }
+    }
+    return keys;
+  };
+
+  // Whether a submitted line assigns a value to a parameter the Console will
+  // not accept one for - the browser half of #227's write-exclusion rule,
+  // deciding from the same catalog flag the serial adapter reads
+  // (include/console_write_exclusion.h).
+  //
+  // Two deliberate asymmetries with that C++ half, both forced by this
+  // adapter seeing the catalog over HTTP rather than in image:
+  //  - A line with no key=value pair at all can assign nothing, so it answers
+  //    false without a lookup. That keeps the common case (a read, an action)
+  //    free of an extra `help <op>` request.
+  //  - When the operation's parameters cannot be established (the fetch
+  //    failed), this answers TRUE and the line is not kept. Guessing wrong
+  //    the other way writes a password into localStorage, where it survives
+  //    the reload that a serial session's RAM ring does not.
+  // Keys are compared case-insensitively for the reason the C++ half gives:
+  // the executor's own secret refusal is case-insensitive, so an exact match
+  // here would make history narrower than the refusal it backs.
+  const lineAssignsWriteExcludedValue = async (line) => {
+    const keys = consoleLineArgumentKeys(line);
+    if (keys.length === 0) return false;
+
+    const opName = line.trim().split(/\s+/)[0];
+    const params = await fetchConsoleOperationParams(opName);
+    if (params === null) return true;
+
+    const excluded = params
+      .filter((param) => param.writeExcluded)
+      .map((param) => param.key.toLowerCase());
+    if (excluded.length === 0) return false;
+    return keys.some((key) => excluded.includes(key.toLowerCase()));
+  };
+
+  // Asynchronous because the write-exclusion rule may need this operation's
+  // parameter dispositions, which cost one `help <op>` fetch the first time
+  // an operation with arguments is used. A refused line is never stored at
+  // all - not stored and then removed - so nothing has to be scrubbed out of
+  // localStorage afterwards.
+  const rememberCommand = async (token) => {
     if (!token) return;
-    if (commandHistory[commandHistory.length - 1] !== token) {
+    const storable = !(await lineAssignsWriteExcludedValue(token));
+    if (storable && commandHistory[commandHistory.length - 1] !== token) {
       commandHistory.push(token);
       if (commandHistory.length > COMMAND_HISTORY_MAX) {
         commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
@@ -792,6 +922,10 @@
   const dispatchConsoleCommand = async (rawToken) => {
     const token = normalizeLogMessage(rawToken);
     if (!token) return;
+    // Deliberately not awaited: the storage decision may need a `help <op>`
+    // round trip, and neither the echo below nor the dispatch itself may wait
+    // for it. Nothing here can reject - both the fetch and the localStorage
+    // write handle their own failures.
     rememberCommand(token);
     appendCommandLine(`> ${token}`);
 

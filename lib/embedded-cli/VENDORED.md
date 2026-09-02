@@ -15,7 +15,7 @@ Rationale documented in `tasks/serial-interface-embedded-cli-deep-dive.md`:
 - Complete line editing with history, tab completion
 - Overflow-safe command buffer with built-in line ending support
 - Structured dispatch via `onCommand` callback with catch-all
-- Small footprint: 3.6 KB flash object (xtensa, all five patches), 20 B static regardless of catalog size (Patch 5's catalog completion callback pays no per-entry RAM cost)
+- Small footprint: 3.5 KB flash object (xtensa, all six patches), 20 B static regardless of catalog size (neither Patch 5's catalog completion callback nor Patch 6's history filter pays a per-entry RAM cost)
 - Stack frame 96 B max (see measured table below)
 
 ## Configuration
@@ -33,7 +33,8 @@ EmbeddedCliConfig config = {
 config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
-Object Size Analysis (Measured at commit 9950006; Patch 5 row re-measured 2026-08-29)
+Object Size Analysis (Measured at commit 9950006; Patch 5 row re-measured 2026-08-29;
+Patch 6 rows measured 2026-09-02)
 
 Measured with both toolchains under `-Os`:
 
@@ -42,9 +43,12 @@ Measured with both toolchains under `-Os`:
 | xtensa | upstream | 3,430 B | 238 B | 20 B | 96 B |
 | xtensa | patched (1-4) | 3,190 B | 118 B | 20 B | 96 B |
 | xtensa | patched (1-5) | 3,606 B | 118 B | 20 B | 96 B |
+| xtensa | patched (1-5), re-measured 2026-09-02 | 3,506 B | 118 B | 20 B | 80 B |
+| xtensa | patched (1-6) | 3,526 B | 118 B | 20 B | 80 B |
 | riscv32 | upstream | 4,342 B | 259 B | 20 B | 112 B |
 | riscv32 | patched (1-4) | 3,854 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-5) | 4,284 B | 132 B | 20 B | 96 B |
+| riscv32 | patched (1-6) | 4,308 B | 132 B | 20 B | 96 B |
 
 **Deltas (patched 1-4 - upstream):**
 - xtensa: .text -240 B, .rodata -120 B, .bss 0, max frame 0 B
@@ -53,6 +57,34 @@ Measured with both toolchains under `-Os`:
 **Deltas (patched 1-5 - patched 1-4):**
 - xtensa: .text +416 B, .rodata 0, .bss 0, max frame 0 B (`embedded_cli.c`'s own file-wide max frame is unchanged at 96 B - `getExternalAutocompletedCommand` inlines into `onAutocompleteRequest` at `-Os`, whose own frame grows 48 B -> 80 B, still under the file's existing 96 B max)
 - riscv32: .text +430 B, .rodata 0, .bss 0, max frame 0 B (same shape as xtensa)
+
+**Deltas (patched 1-6 - patched 1-5), both measured in one session with the
+compilers named below:**
+- xtensa: .text +20 B, .rodata 0, .bss 0, max frame 0 B
+- riscv32: .text +24 B, .rodata 0, .bss 0, max frame 0 B
+
+That is the cost of one NULL test, one indirect call and the branch around
+`historyPut` - a callback pointer's worth of code and nothing else. `.bss` is
+untouched because the pointer itself lives in `struct EmbeddedCli`, which the
+caller allocates: the whole cost in RAM is **+4 B of the caller's `cliBuffer`**
+(`embeddedCliRequiredSize()` grows by one pointer), not of this object's static
+data. `src/tasks/console_task.cpp`'s 2 KB static buffer already checks the
+required size at init and has room for it.
+
+> **The xtensa `patched (1-5)` row does not reproduce on today's toolchain**,
+> and the 2026-09-02 re-measurement row above records what it actually reads:
+> 3,506 B and an 80 B max frame, against the 3,606 B / 96 B recorded on
+> 2026-08-29. `git log lib/embedded-cli/src/embedded_cli.c` shows no source
+> change between the two measurements (`65e87d1` is still the last commit to
+> touch it), and riscv32 reproduces its 4,284 B exactly, so this is the xtensa
+> compiler version moving, not the patch set. It is recorded rather than
+> corrected in place because the older row is a true record of what that
+> toolchain produced. Compilers used for the 2026-09-02 rows:
+> `xtensa-esp32-elf-gcc (crosstool-NG esp-14.2.0_20251107) 14.2.0` and
+> `riscv32-esp-elf-gcc (crosstool-NG esp-14.2.0_20260121) 14.2.0`. Deltas are
+> only meaningful within one row-pair measured by one compiler - which is why
+> the Patch 6 delta above is stated against the re-measured baseline, not
+> against the 2026-08-29 number.
 
 `.bss` is unchanged by Patch 5 in `embedded_cli.c` itself - the new candidate pool
 (`pa_console_completion::g_argCandidatePool`, 256 B) lives in
@@ -88,7 +120,7 @@ binding path other callers may use):**
 **As shipped, neither board uses the binding path for completion at all**
 (zero bindings registered - Patch 5's catalog completion callback,
 "Board Differences" below). Both boards' actual cost is the library object
-itself (3.6 KB flash, all five patches, xtensa; 4.3 KB riscv32) plus the
+itself (3.5 KB flash, all six patches, xtensa; 4.3 KB riscv32) plus the
 ~256 B RAM candidate pool in `include/console_completion.h` - a flat cost
 independent of catalog size, replacing the per-board binding-subset sizing
 this subsection originally worked through. #238's closing comment on the
@@ -97,7 +129,7 @@ boards against the #233 baseline.
 
 ## Patches Applied
 
-The vendored source includes five required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
+The vendored source includes six required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
 
 ### Patch 1: Safe Enter - No Auto-completion on Enter
 
@@ -290,6 +322,76 @@ argument-key mode selection, resolving the operation from the first token
 regardless of later tokens, no-params and unknown-operation degradation, and
 that availability fields never gate completion (##238's "known-but-
 unavailable operations remain completable" acceptance criterion).
+
+### Patch 6: History Filter Callback
+
+**Problem**: `parseCommand` (line 902, before this patch) pushes the submitted
+line into the Up/Down history ring unconditionally, and it does so **before
+dispatch**:
+
+```c
+// push command to history before buffer is modified
+historyPut(&impl->history, impl->cmdBuffer);
+```
+
+The project's Console refuses a password argument with
+`invalid reason=secret-not-settable` (##227, docs/console-protocol.md s.4.1) -
+the value never reaches an Apply Core, a log, a record or the recent-log ring.
+But by the time the dispatcher has refused it, the line the operator typed is
+already in the history ring, recallable with Up-arrow for the rest of the
+session. The refusal is therefore only as good as the editor underneath it,
+which is the one place the project could not reach without a patch here.
+
+**Solution**: Add an optional predicate, `EmbeddedCli::shouldStoreHistory(cli,
+line)`, consulted in `parseCommand()` immediately before `historyPut()`. When
+it is NULL - the default, and the state of every other consumer - behaviour is
+byte-for-byte upstream's. When it returns false, the history write is skipped
+and **nothing else changes**: the line still dispatches, because refusing to
+remember a command is not refusing to run it, and the project's own use is
+precisely a line the dispatcher must reach in order to answer that it is
+refused.
+
+Deciding *before* the write is the substance of the patch, not a detail of it.
+The alternative shape - store the line, then remove it once the dispatcher
+reports a refusal - would put the secret in a buffer that outlives the
+decision, and `historyRemove()` does not scrub: it shifts the ring, and when
+the entry being removed is the oldest one it returns without moving anything
+at all, leaving those bytes verbatim in the history buffer behind
+`itemsCount`. There is no removal path in this patch on purpose.
+
+The callback receives the line as typed, before `parseCommand` splits the
+buffer into name and args (the split overwrites separators with NUL), so a
+predicate can see the whole `operation key=value ...` line. It must not retain
+the pointer: the buffer is reused on the next line.
+
+**File**: `include/embedded_cli.h`, `src/embedded_cli.c`
+**Lines**:
+- `include/embedded_cli.h`: new `shouldStoreHistory` field on `struct
+  EmbeddedCli`, next to `getCompletionCandidate` (Patch 5).
+- `src/embedded_cli.c`: the `historyPut()` call in `parseCommand()` becomes
+  conditional on the callback.
+
+**RAM ownership**: no static RAM is added to `embedded_cli.c` (`.bss`
+unchanged, see the Object Size Analysis table). The one pointer lives in
+`struct EmbeddedCli`, which the caller allocates, so the cost is +4 B of the
+caller's `cliBuffer` - accounted for by `embeddedCliRequiredSize()`, which the
+caller already checks against its static buffer at init.
+
+**Upstream candidacy**: Yes - additive, defaults to unchanged behaviour, and
+"do not remember this line" is a general need (a password prompt, a line
+carrying a token) rather than a project-specific one. Same shape as Patch 5: a
+new optional field with no effect until it is set.
+
+**Test**: `test/test_native/test_cli_history_filter/test_cli_history_filter.cpp` -
+verifies that an unset filter stores every line (upstream behaviour), that a
+refused line is unreachable by Up-arrow while the last accepted line still is,
+that a refused line still executes, that the predicate receives the whole line
+as typed, and that the ring keeps working after a refusal. History is read the
+way the operator reads it - press Up, look at the command buffer - because
+that is the exposure being closed; the ring internals are static to
+`embedded_cli.c`. The project's own rule for WHICH lines are refused lives in
+`include/console_write_exclusion.h` and is covered by
+`test/test_native/test_console_write_exclusion/`.
 
 ## Integration Notes
 

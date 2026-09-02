@@ -31,6 +31,7 @@ extern "C" {
 }
 
 #include "console_catalog.h"
+#include "console_write_exclusion.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -73,10 +74,12 @@ inline char g_argCandidatePool[kArgPoolSize][kArgCandidateMax];
 //    aliases stay typable-but-not-completable, matching that.
 //  - A space already typed: candidates are the resolved operation's
 //    argument KEYS, each returned as "<key>=" (docs/console-protocol.md
-//    s.1.2: key=value with no space around "="). The operation is resolved
-//    from the line's FIRST token only, regardless of how many argument
-//    tokens already follow it - later tokens never change which operation
-//    is being completed.
+//    s.1.2: key=value with no space around "="), MINUS the write-excluded
+//    ones - Tab never offers a key the Console refuses a value for (#227,
+//    consoleOfferedParamAt() in include/console_write_exclusion.h). The
+//    operation is resolved from the line's FIRST token only, regardless of
+//    how many argument tokens already follow it - later tokens never change
+//    which operation is being completed.
 //
 // Availability (available_on_board / available_in_build / executor_ready)
 // is NOT filtered here: "known-but-unavailable operations remain
@@ -137,10 +140,14 @@ inline const char *consoleCompletionCandidate(EmbeddedCli *cli, uint16_t index) 
     if (index >= kArgPoolSize) {
         return nullptr;
     }
-    const ConsoleParamDescriptor *param = &entry->params[index];
-    if (param->name == nullptr) {
-        // NULL-terminated array (catalog contract, console_catalog.cpp):
-        // end of this operation's parameter list.
+    // Dense over the OFFERED parameters, not a subscript into the descriptor
+    // array: a write-excluded parameter is skipped without leaving a hole in
+    // the index sequence, so the keys after it are still enumerated. NULL
+    // means the operation has no index-th offered parameter - either the
+    // NULL-terminated array ran out (catalog contract, console_catalog.cpp)
+    // or every remaining entry is write-excluded.
+    const ConsoleParamDescriptor *param = consoleOfferedParamAt(entry->params, index);
+    if (param == nullptr) {
         return nullptr;
     }
 

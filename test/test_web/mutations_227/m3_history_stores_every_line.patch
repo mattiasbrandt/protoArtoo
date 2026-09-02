@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index f780527f..1ae6ccee 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -890,7 +890,7 @@
+   // localStorage afterwards.
+   const rememberCommand = async (token) => {
+     if (!token) return;
+-    const storable = !(await lineAssignsWriteExcludedValue(token));
++    const storable = true;
+     if (storable && commandHistory[commandHistory.length - 1] !== token) {
+       commandHistory.push(token);
+       if (commandHistory.length > COMMAND_HISTORY_MAX) {

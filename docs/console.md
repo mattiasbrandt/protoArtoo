@@ -326,12 +326,19 @@ field says `required` or `optional`. Set or change a WiFi password on the
 [WiFi provisioning page](wifi-provisioning.md); the Console is not where
 that goes, by design.
 
-One thing this does not cover: on a serial terminal, the line you typed stays
-in the editor's own Up-arrow history for the rest of the session, and on the
-dashboard the command box remembers recent commands in your browser. Neither
-is something the controller stores or sends anywhere, but if you did type a
-password by mistake, that is where it lingers — reset the controller, or clear
-the browser's site data, to be rid of it.
+The line is not remembered either. A command that sets a password field is
+kept out of the serial terminal's Up-arrow history and out of the dashboard's
+saved command history, so it is not sitting there to be recalled — or read
+back after a page reload, which is what the dashboard's history normally
+survives. Tab completion leaves the password fields out for the same reason:
+there is nothing there to complete that the Console would accept.
+
+Two narrow cases still slip through, and both need a typo to reach: a password
+field typed after a misspelled command name, or a made-up field name with
+"password" in it that no command actually has. The Console refuses those lines
+just the same, but it cannot match them to a known field, so the line stays in
+that session's history. If that happens, restart the controller (serial) or
+clear the browser's site data (dashboard).
 
 ## What doesn't work here yet
 

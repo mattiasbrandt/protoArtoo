@@ -1,0 +1,14 @@
+diff --git a/data/app.js b/data/app.js
+index 3e54f155..5f299708 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -859,8 +859,7 @@
+           // value keeps its meaning and stays storable. Same rule, same
+           // wording, as the serial half in
+           // include/console_write_exclusion.h.
+-          i = quotedStart;
+-          while (i < line.length && !isSpace(i)) i += 1;
++          // mutation: the unterminated run keeps the rest of the line
+         }
+       } else {
+         while (i < line.length && !isSpace(i)) i += 1;
