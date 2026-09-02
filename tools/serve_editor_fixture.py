@@ -15,7 +15,16 @@ Ports:
 
 Routes:
   - /api/dome/layout -> tests/fixtures/dome_layout_mk4.json
+  - /api/logs -> a synthetic log ring, text/plain, like the device sends
+  - /api/* (anything else) -> 404, the way the device answers an unknown route
   - /* -> data/* (static files, fallback to index.html for SPA routing)
+
+The /api/* 404 is deliberate and load-bearing. Without it, SimpleHTTPRequestHandler
+fell through to the SPA fallback below and answered every unimplemented API path
+with index.html at "200 text/html" -- so the dashboard rendered its own markup
+into the Live Logs panel and nothing said the route was missing (#261). A 404
+matches src/web/web_request_psychic.cpp's onNotFound() and makes the next
+missing fixture route announce itself instead of hiding.
 """
 
 import json
@@ -30,6 +39,23 @@ DATA_DIR = REPO_ROOT / "data"
 FIXTURE_FILE = REPO_ROOT / "tests" / "fixtures" / "dome_layout_mk4.json"
 PORT = 4173
 HOST = "localhost"
+
+# Shaped like what GET /api/logs actually returns: the log ring copied out
+# newline-separated (src/web/api_logs.cpp), one line per entry in the
+# "[<millis>][<level>][<tag>] message" form include/logging.h emits.
+FIXTURE_LOG_LINES = (
+    "[312][I][boot] protoArtoo starting, reset reason POWERON",
+    "[418][I][config] loaded from NVS, log level 3",
+    "[1204][I][wifi] connecting to bench-ap",
+    "[2530][I][wifi] connected, ip 192.168.1.42",
+    "[2544][I][web] http server listening on port 80",
+    "[2610][I][ota] ArduinoOTA ready on port 3232",
+    "[3001][W][rc] no SBUS frames yet, failsafe held",
+    "[4120][I][drive] zero frames streaming at 50 Hz",
+    "[5330][D][console] catalog built, 148 operations",
+    "[9042][E][battery] sense read failed, retrying",
+)
+FIXTURE_LOG_BODY = "\n".join(FIXTURE_LOG_LINES).encode("utf-8")
 
 # PA:INCLUDE pattern matching, same as gzip_fsdata.py
 INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
@@ -55,8 +81,12 @@ class FixtureHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests with fixture interception."""
+        # Route on the path alone: a cache-busting query string must not make a
+        # known fixture route fall through to the /api/* 404 below.
+        route = self.path.split("?", 1)[0]
+
         # Intercept API routes
-        if self.path == "/api/dome/layout":
+        if route == "/api/dome/layout":
             if not FIXTURE_FILE.exists():
                 self.send_error(404, "Fixture file not found")
                 return
@@ -69,6 +99,27 @@ class FixtureHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", len(content))
             self.end_headers()
             self.wfile.write(content)
+            return
+
+        if route == "/api/logs":
+            self.send_response(200)
+            # text/plain is the contract both of handleLogsGet()'s exits use,
+            # and since #261 the dashboard refuses a log body that arrives as
+            # anything else -- so serving this as text/html would reproduce the
+            # very defect this route exists to keep away.
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", len(FIXTURE_LOG_BODY))
+            self.end_headers()
+            self.wfile.write(FIXTURE_LOG_BODY)
+            return
+
+        # An API path with no fixture is a missing route, not a page. Answering
+        # it from the SPA fallback below is what let index.html reach the Live
+        # Logs panel (#261); a 404 is both what the device does and what makes
+        # the gap visible the moment a page starts calling a new endpoint.
+        if route.startswith("/api/"):
+            self.send_error(404, f"No fixture route for {self.path}")
             return
 
         # SPA routing: fallback to index.html for unknown paths
