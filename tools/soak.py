@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""P4 ESP-Hosted soak harness -- implements the #184 verdict contract (#197).
+"""protoArtoo soak harness -- implements the #184 verdict contract (#197).
 
-Drives an ESP32-P4 + ESP32-C6 board over HTTP/SSE to answer: is ESP-Hosted
-reliable enough, beyond the reduced manual smoke #184 already ran? Every
-device run here is coordinator/operator-initiated; this tool never flashes,
-never calls `make ota`, and never touches firmware sources.
+Drives a protoArtoo controller over HTTP/SSE to answer: does the web stack
+hold up over a long run, beyond the reduced manual smoke #184 already ran?
+Every device run here is coordinator/operator-initiated; this tool never
+flashes, never calls `make ota`, and never touches firmware sources.
+
+Named `soak.py` rather than `p4_hosted_soak.py` since #194: the harness reads
+more than the one ESP-Hosted bench image it was written for, and a name that
+claims otherwise sends the next reader looking for a P4 in a run that has
+none.
 
 Two images can be driven, selected by --image and never sniffed (see
 StatusSchema for why the declaration is checked rather than inferred):
@@ -2986,7 +2991,7 @@ def run_self_test() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "P4 ESP-Hosted soak harness implementing the #184 verdict contract "
+            "protoArtoo soak harness implementing the #184 verdict contract "
             "(issue #197). Every device run is coordinator/operator-run; this tool "
             "never flashes and never calls `make ota`."
         ),

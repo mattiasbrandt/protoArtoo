@@ -1,8 +1,8 @@
-"""Pinned behaviour for the P4 soak harness's two status schemas (#197).
+"""Pinned behaviour for the soak harness's status schemas (#197).
 
-`tools/p4_hosted_soak.py` reads two different firmware images over HTTP, and a
-field mapped to the wrong name stays invisible until a bench day -- bench days
-on this project are expensive and operator-scheduled. Two kinds of test here,
+`tools/soak.py` reads two different firmware images over HTTP, and a field
+mapped to the wrong name stays invisible until a bench day -- bench days on
+this project are expensive and operator-scheduled. Two kinds of test here,
 both cheap:
 
 1. **Decision logic**, pinned directly: which reset reasons are crash-shaped,
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import p4_hosted_soak as soak  # noqa: E402
+import soak  # noqa: E402
 
 WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
 RESET_REASON_CPP = (REPO_ROOT / "src" / "reset_reason.cpp").read_text()
