@@ -1405,7 +1405,7 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 
 // =============================================================================
 // Private: direct action executors - Commanded Modes (#226 criterion 4) and
-// drive motion (#222). One dispatch mechanism, two callers: a plain
+// drive motion (#222). One dispatch mechanism, many callers: a plain
 // synchronous C function taking validated Console arguments, checked before
 // ACTION_REGISTRY[]/RobotActionId resolution in the CONSOLE_OP_ACTION case
 // below - never the queued RC dispatch core the OTHER action executors use.
@@ -1413,14 +1413,14 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 // #226's originating set: "Commanded Modes ... go only through
 // commanded_modes setters" (criterion 4) - stationary (system.action.set-
 // mode), sleep/wake, non-RC control (enable/disable-web-control) and
-// rc-debug all call their commanded_modes.h setter directly here,
-// reproducing exactly the side-effect sequence their REST handler already
-// runs (src/web/api_drive.cpp, src/web/api_system.cpp, src/web/api_rc.cpp)
-// rather than a second implementation of it - those three files are outside
-// #226's edit list, so this reads their logic and calls the same shared
-// functions, it does not import a Commit Step from them.
+// rc-debug all call their commanded_modes.h setter directly, reproducing
+// exactly the side-effect sequence their REST handler already runs
+// (src/web/api_drive.cpp, src/web/api_system.cpp, src/web/api_rc.cpp) rather
+// than a second implementation of it - those three files are outside #226's
+// edit list, so this reads their logic and calls the same shared functions,
+// it does not import a Commit Step from them.
 //
-// #222 extends the SAME table (not a second pattern - the pinned
+// #222 extends the SAME mechanism (not a second pattern - the pinned
 // coordinator comment names this reuse explicitly) with drive.action.move
 // and the three drive.action.speed-preset-* entries: driveArbiterSubmit()
 // and applySpeedPresetPersisted() are the "shared setter" equivalent for
@@ -1436,873 +1436,67 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 // dispatchRcTriggerActionTest() is unrelated to and unmodified by this
 // section) - that binding is unrelated to what the Console runs for the
 // same canonical name.
+//
+// #257: the table these rows lived in (g_directActionExecutors[]) and every
+// row's executor body used to live here, in one file five subsequent action-
+// wiring tickets (#221 remainder, the sound/dome/servo/drive/system/aux-rc
+// sweeps) would all have had to extend in series. Split into one header per
+// domain instead - include/console_direct_action_{system,drive,sound,
+// aux_rc,servo}.h, each holding that domain's executor bodies and its own
+// slice of the table - so those tickets can dispatch file-disjoint in
+// parallel. Each header is HEADER-ONLY, #include'd from here and nowhere
+// else, and explains why in its own top comment (native's build_src_filter
+// is a fenced, explicit allowlist with no room for a new src/console/*.cpp).
+// This file keeps the typedef/struct shape (include/
+// console_direct_action_types.h), the small cross-cutting helpers every
+// domain's bodies call (consoleEmitArgFailure(), consoleCommandSourceFor()
+// below, consoleMapDispatchOutcome(), consoleAnswerActionGuardResult(),
+// consoleMoodIdValid() - all still defined above, unmoved), and the
+// resolution step below that a domain header's own table cannot provide on
+// its own: consoleFindDirectActionExecutor() tries each domain's table in
+// turn, so no row gains, loses or changes an executor, an outcome or a
+// reason versus the single combined table this replaces.
 // =============================================================================
 
-typedef void (*ConsoleDirectActionExecutorFn)(uint32_t requestId, const char* operationName,
-                                              const ConsoleArgs& args, ConsoleCommandSource source,
-                                              const ConsoleRecordSink* sink);
+#include "console_direct_action_types.h"
 
 static CommandSource consoleCommandSourceFor(ConsoleCommandSource source) {
     return (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
 }
 
-// Rejects any argument this operation does not declare - every direct
-// executor below except set-mode/rc-debug takes none.
-static bool consoleRejectAnyArgument(uint32_t requestId, const char* operationName,
-                                    const ConsoleArgs& args, const ConsoleRecordSink* sink) {
-    if (args.count == 0) {
-        return true;
-    }
-    consoleEmitArgFailure(requestId, operationName, args.items[0].key,
-                          CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-    return false;
-}
-
-// system.action.set-mode: mode=stationary|driving, the same two values
-// POST /api/mode accepts (src/web/api_drive.cpp's handleModePost) - commit
-// step reproduced here: setter, persist, broadcast, in that order.
-static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operationName,
-                                        const ConsoleArgs& args, ConsoleCommandSource source,
-                                        const ConsoleRecordSink* sink) {
-    const char* badKey = nullptr;
-    for (size_t i = 0; i < args.count; ++i) {
-        if (strcmp(args.items[i].key, "mode") != 0) {
-            badKey = args.items[i].key;
-            break;
-        }
-    }
-    if (badKey != nullptr) {
-        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-        return;
-    }
-    const char* mode = consoleArgsFind(args, "mode");
-    if (mode == nullptr) {
-        consoleEmitArgFailure(requestId, operationName, "mode", CONSOLE_REASON_MISSING_ARGUMENT, sink);
-        return;
-    }
-
-    bool stationary;
-    if (strcmp(mode, "stationary") == 0) {
-        stationary = true;
-    } else if (strcmp(mode, "driving") == 0) {
-        stationary = false;
-    } else {
-        consoleEmitArgFailure(requestId, operationName, "mode", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    commandedSetStationary(stationary, consoleCommandSourceFor(source));
-    // saveConfigToNvs() persists the whole cache (commandedSetStationary()
-    // already synced robotState.stationary into it) - the same call
-    // handleModePost makes, its result unchecked there; the Console checks
-    // it so a failed write is an explicit error (criterion 3) rather than a
-    // silently discarded one.
-    const bool persisted = saveConfigToNvs();
-    requestStatusBroadcastNow();
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
-                            persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-// system.action.sleep / system.action.wake: no arguments, matching
-// POST /api/sleep / /api/wake (src/web/api_system.cpp). Broadcasts only on
-// an actual transition, exactly like the REST handler.
-static void consoleExecuteDirectSleepWake(uint32_t requestId, const char* operationName, bool sleep,
-                                          const ConsoleArgs& args, ConsoleCommandSource source,
-                                          const ConsoleRecordSink* sink) {
-    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
-        return;
-    }
-    const bool changed = commandedSetSleep(sleep, consoleCommandSourceFor(source));
-    if (changed) {
-        requestStatusBroadcastNow();
-    }
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-static void consoleExecuteDirectSleep(uint32_t requestId, const char* operationName,
-                                      const ConsoleArgs& args, ConsoleCommandSource source,
-                                      const ConsoleRecordSink* sink) {
-    consoleExecuteDirectSleepWake(requestId, operationName, true, args, source, sink);
-}
-
-static void consoleExecuteDirectWake(uint32_t requestId, const char* operationName,
-                                     const ConsoleArgs& args, ConsoleCommandSource source,
-                                     const ConsoleRecordSink* sink) {
-    consoleExecuteDirectSleepWake(requestId, operationName, false, args, source, sink);
-}
-
-// system.action.enable-web-control / disable-web-control: no arguments,
-// matching POST /api/web-control/enable|disable (src/web/api_drive.cpp).
-// Disable also zeroes any web-sourced drive frame, the same
-// driveArbiterSubmit() call the REST handler makes - DriveSource::WEB_API
-// is reused rather than a new console-specific source, since the effect
-// (release web-sourced drive control) is identical regardless of which
-// non-RC surface asked for it, and inventing a new DriveSource variant for
-// one zero-frame submission is out of this ticket's scope.
-static void consoleExecuteDirectWebControl(uint32_t requestId, const char* operationName,
-                                           bool enable, const ConsoleArgs& args,
-                                           ConsoleCommandSource source,
-                                           const ConsoleRecordSink* sink) {
-    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
-        return;
-    }
-    commandedSetWebControl(enable, consoleCommandSourceFor(source));
-    if (!enable) {
-        driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
-    }
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-static void consoleExecuteDirectEnableWebControl(uint32_t requestId, const char* operationName,
-                                                 const ConsoleArgs& args,
-                                                 ConsoleCommandSource source,
-                                                 const ConsoleRecordSink* sink) {
-    consoleExecuteDirectWebControl(requestId, operationName, true, args, source, sink);
-}
-
-static void consoleExecuteDirectDisableWebControl(uint32_t requestId, const char* operationName,
-                                                  const ConsoleArgs& args,
-                                                  ConsoleCommandSource source,
-                                                  const ConsoleRecordSink* sink) {
-    consoleExecuteDirectWebControl(requestId, operationName, false, args, source, sink);
-}
-
-// rc.action.toggle-debug: enabled=true|false, the same JSON field
-// POST /api/rc/debug reads (src/web/api_rc.cpp).
-static void consoleExecuteDirectRcDebug(uint32_t requestId, const char* operationName,
-                                        const ConsoleArgs& args, ConsoleCommandSource source,
-                                        const ConsoleRecordSink* sink) {
-    const char* badKey = nullptr;
-    for (size_t i = 0; i < args.count; ++i) {
-        if (strcmp(args.items[i].key, "enabled") != 0) {
-            badKey = args.items[i].key;
-            break;
-        }
-    }
-    if (badKey != nullptr) {
-        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-        return;
-    }
-    const char* raw = consoleArgsFind(args, "enabled");
-    if (raw == nullptr) {
-        consoleEmitArgFailure(requestId, operationName, "enabled", CONSOLE_REASON_MISSING_ARGUMENT,
-                              sink);
-        return;
-    }
-    bool enabled = false;
-    if (!parseBoolValue(raw, &enabled)) {
-        consoleEmitArgFailure(requestId, operationName, "enabled", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    commandedSetRcDebug(enabled, consoleCommandSourceFor(source));
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-// =============================================================================
-// Private: drive motion executors (#222). Consent is applied EXACTLY where
-// src/web/api_drive.cpp applies it today for the same command - a non-RC
-// source commanding motion while the RC link is unhealthy, nothing broader.
-// Nothing here gates queries, configuration, or unrelated actions.
-// =============================================================================
-
-// drive.action.move: speed= steer=, the same two arguments POST /api/drive
-// reads (handleDrivePost, src/web/api_drive.cpp). Schema validation reuses
-// consoleValidateArgsAgainstSchema() against this operation's own catalog
-// params (int16, -1000..1000, both required - #221's shared argument
-// contract, the same helper consoleExecuteAction() already uses for
-// ACTION_REGISTRY[]-resolved targets). Consent and clamp are reproduced
-// verbatim from handleDrivePost() below, not reinvented: blocked = estop ||
-// stationary || (!sbusHealthy && !webControlEnabled). Submits through
-// driveArbiterSubmit() with DriveSource::WEB_API - the arbiter has no
-// console-specific source, and #226 already established reusing WEB_API for
-// a non-RC console-adjacent zero-frame release (disable-web-control above);
-// the effect here is identical regardless of which non-RC caller asked for
-// it, so this is that same reuse, not a new DriveSource variant.
-static void consoleExecuteDirectDriveMove(uint32_t requestId, const char* operationName,
-                                          const ConsoleArgs& args, ConsoleCommandSource source,
-                                          const ConsoleRecordSink* sink) {
-    (void)source;  // motion consent below reads RobotState, not which adapter asked
-
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    // parseDriveValue() (src/web/api_helpers.cpp) is the same int16 parser
-    // handleDrivePost() calls - the schema check above already confirmed
-    // both values are present and within the catalog's declared -1000..1000
-    // range as numeric text, so this can only fail on a disagreement between
-    // that range and int16's own bounds, which never occurs for -1000..1000;
-    // defensive, answered the same as any other out-of-range argument.
-    int16_t speed = 0;
-    int16_t steer = 0;
-    if (!parseDriveValue(consoleArgsFind(args, "speed"), &speed) ||
-        !parseDriveValue(consoleArgsFind(args, "steer"), &steer)) {
-        consoleEmitArgFailure(requestId, operationName, "speed", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    // Consent + clamp, read verbatim from handleDrivePost() (src/web/
-    // api_drive.cpp): config snapshot read before the critical section,
-    // exactly matching that handler's own ordering.
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool sbusHealthy = !robotState.sbusSignalLost && !robotState.sbusHwFailsafe;
-    const bool blocked = robotState.estop || robotState.stationary ||
-                         (!sbusHealthy && !robotState.webControlEnabled);
-    taskEXIT_CRITICAL(&robotStateMux);
-    const int16_t maxOut = cfg.drive.speedLimitMax;
-
-    if (blocked) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
-                                CONSOLE_REASON_BLOCKED_BY_STATE);
-        }
-        return;
-    }
-
-    // Widened to int on all three arguments, matching handleDrivePost()'s own
-    // comment: Arduino's constrain() is a macro on the device but a
-    // same-type template on the host, and the clamp has to be identical
-    // arithmetic in both builds for a host test to mean anything about the
-    // device.
-    const int16_t clampedSpeed = (int16_t)constrain((int)speed, (int)-maxOut, (int)maxOut);
-    const int16_t clampedSteer = (int16_t)constrain((int)steer, (int)-maxOut, (int)maxOut);
-    driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis());
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-// drive.action.speed-preset-{slow,normal,turbo}: each carries a single
-// `preset` argument the catalog's own enum schema pins to that action's own
-// name (e.g. drive.action.speed-preset-slow only accepts preset=slow), so
-// the schema check is sufficient validation - the preset itself is chosen by
-// which action name was called, not read back out of the argument.
-// applySpeedPresetPersisted() (include/drive_speed_preset.h) is the same
-// function handleSpeedPresetPost() (src/web/api_drive.cpp) calls, reused
-// verbatim. That REST handler applies NO estop/stationary/sbus-health gate -
-// it sets the drive speed CAP the arbiter clamps against, not a live drive
-// command - so this executor adds none either; a broader gate than
-// api_drive.cpp's own is out of #222's scope even where it might look safer.
-static void consoleExecuteDirectSpeedPreset(uint32_t requestId, const char* operationName,
-                                            SpeedPresetId preset, const ConsoleArgs& args,
-                                            const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    if (!applySpeedPresetPersisted(preset)) {
-        // Matches handleSpeedPresetPost()'s own failed-persist branch: a
-        // failed NVS write is an explicit error, not a silently accepted one.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
-                                CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-static void consoleExecuteDirectSpeedPresetSlow(uint32_t requestId, const char* operationName,
-                                                const ConsoleArgs& args, ConsoleCommandSource source,
-                                                const ConsoleRecordSink* sink) {
-    (void)source;
-    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Slow, args, sink);
-}
-
-static void consoleExecuteDirectSpeedPresetNormal(uint32_t requestId, const char* operationName,
-                                                  const ConsoleArgs& args, ConsoleCommandSource source,
-                                                  const ConsoleRecordSink* sink) {
-    (void)source;
-    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Normal, args, sink);
-}
-
-static void consoleExecuteDirectSpeedPresetTurbo(uint32_t requestId, const char* operationName,
-                                                 const ConsoleArgs& args, ConsoleCommandSource source,
-                                                 const ConsoleRecordSink* sink) {
-    (void)source;
-    consoleExecuteDirectSpeedPreset(requestId, operationName, SpeedPresetId::Turbo, args, sink);
-}
-
-// =============================================================================
-// Private: the remaining named candidates from #221's remainder scope (see
-// the pinned coordinator comment on #221) - each reaches its domain core the
-// same way #226 established and #222 reused: schema-validated via the
-// catalog's own params (consoleValidateArgsAgainstSchema(), #221 criterion
-// 2), then the SAME function/Commit Step the REST handler calls, never a
-// second implementation. No new dispatch mechanism - these rows are added to
-// g_directActionExecutors[] below, the one table #222/#226 already extend.
-// =============================================================================
-
-// system.action.set-mood: mood=<10|11|13|14> - the same applyMood() core
-// system.config.mood already calls (consoleExecuteMoodConfig() above; both
-// rows model the identical active-mood mechanism) but reproducing
-// handleMoodPost()'s OWN gate too (src/web/api_audio.cpp): sleep blocks it,
-// unlike system.config.mood's write path, which carries no such gate today
-// (a pre-existing discrepancy between the two rows, not introduced or fixed
-// here - reported on the ticket, not silently closed by loosening this new
-// row to match). requestStatusBroadcastNow() is reproduced too, the same
-// broadcast handleMoodPost() makes after applying.
-static void consoleExecuteDirectSetMood(uint32_t requestId, const char* operationName,
-                                        const ConsoleArgs& args, ConsoleCommandSource source,
-                                        const ConsoleRecordSink* sink) {
-    (void)source;
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool sleeping = robotState.sleepMode;
-    taskEXIT_CRITICAL(&robotStateMux);
-    if (sleeping) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
-                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-        }
-        return;
-    }
-
-    // Schema already confirmed "mood" is one of the catalog's own enum
-    // strings ("10"/"11"/"13"/"14"); consoleMoodIdValid() (defined above,
-    // system.config.mood's own validator) is reused verbatim as defensive
-    // depth, the same "reparse after schema" precedent drive.action.move
-    // set for its own numeric arguments.
-    char* end = nullptr;
-    long mood = strtol(consoleArgsFind(args, "mood"), &end, 10);
-    if (*end != '\0' || mood < 0 || mood > 255 || !consoleMoodIdValid((uint8_t)mood)) {
-        consoleEmitArgFailure(requestId, operationName, "mood", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    applyMood((uint8_t)mood);
-    requestStatusBroadcastNow();
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
-    }
-}
-
-// system.action.set-identity: droidName=, mdnsUseName=<optional bool,
-// default false> - the same two fields handleIdentityPost() reads (src/web/
-// api_identity.cpp). normalizeDroidName() and parseBoolValue() (include/
-// api_helpers.h) are the SAME pure validators that handler calls, reused
-// verbatim; identitySetCommitApplied() is the extracted ADR 0034 Commit Step
-// (include/api_identity.h) both now share.
-static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* operationName,
-                                            const ConsoleArgs& args, ConsoleCommandSource source,
-                                            const ConsoleRecordSink* sink) {
-    (void)source;
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    char normalized[DROID_NAME_MAX_LEN + 1] = {};
-    if (!normalizeDroidName(consoleArgsFind(args, "droidName"), normalized, sizeof(normalized))) {
-        consoleEmitArgFailure(requestId, operationName, "droidName", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    bool mdnsUseName = false;
-    const char* mdnsRaw = consoleArgsFind(args, "mdnsUseName");
-    if (mdnsRaw != nullptr && !parseBoolValue(mdnsRaw, &mdnsUseName)) {
-        consoleEmitArgFailure(requestId, operationName, "mdnsUseName", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    ConfigSnapshot working = {};
-    configCacheRead(&working);
-    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-    working.system.mdns_use_name = mdnsUseName;
-
-    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, commit.persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
-                            commit.persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,
-                            CONSOLE_REASON_NONE);
-    }
-}
-
-// rc.action.test-bindable: token=<rc-token>, e.g. "arm1_toggle" - dispatches
-// ANY RC-bindable action by its RC token (parseRobotActionId()'s grammar,
-// include/rc_action_types.h - NOT the canonical console name
-// consoleFindRobotActionId() resolves elsewhere in this file) through the
-// SAME guard and dispatch core POST /api/actions/test uses
-// (handleActionsTestPost(), src/web/api_actions.cpp) - reused verbatim, not
-// duplicated. Unlike consoleExecuteAction() above, this never carves out the
-// two Marcduino payload-needing targets: REST's /api/actions/test never
-// accepted a payload either ("" is always what it dispatches), so "no
-// widening" means this generic by-token tester does not gain one just
-// because the Console's OWN typed dispatch of
-// dome.action.marcduino-sequence/-command elsewhere does.
-static void consoleExecuteDirectTestBindable(uint32_t requestId, const char* operationName,
-                                             const ConsoleArgs& args, ConsoleCommandSource source,
-                                             const ConsoleRecordSink* sink) {
-    const char* badKey = nullptr;
-    for (size_t i = 0; i < args.count; ++i) {
-        if (strcmp(args.items[i].key, "token") != 0) {
-            badKey = args.items[i].key;
-            break;
-        }
-    }
-    if (badKey != nullptr) {
-        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-        return;
-    }
-    const char* token = consoleArgsFind(args, "token");
-    if (token == nullptr || token[0] == '\0') {
-        consoleEmitArgFailure(requestId, operationName, "token", CONSOLE_REASON_MISSING_ARGUMENT, sink);
-        return;
-    }
-
-    RobotActionId target = ROBOT_ACTION_NONE;
-    if (!parseRobotActionId(token, &target)) {
-        consoleEmitArgFailure(requestId, operationName, "token", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    bool webControlEnabled = false;
-    taskENTER_CRITICAL(&robotStateMux);
-    webControlEnabled = robotState.webControlEnabled;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    ActionTestGuardResult guard = evaluateActionTestGuard(target, webControlEnabled);
-    if (guard != ACTION_TEST_ALLOWED) {
-        consoleAnswerActionGuardResult(requestId, guard, target, sink);
-        return;
-    }
-
-    RcDispatchOutcome dispatchOutcome =
-        dispatchRcTriggerActionTest(target, "", true, consoleCommandSourceFor(source));
-    ConsoleReason reason = CONSOLE_REASON_NONE;
-    ConsoleOutcome outcome = consoleMapDispatchOutcome(dispatchOutcome, &reason);
-    ConsoleStatus status = (outcome == CONSOLE_OUTCOME_QUEUED) ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR;
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, status, outcome, reason);
-    }
-}
-
-// sound.action.play-track: track=<1..999> - the same audioQueuePlayTrack()
-// call handleAudioPost()'s action=play branch makes (src/web/api_audio.cpp);
-// no persist step exists to extract, so this calls the queue function
-// directly, matching #222's "reuse the existing shared function verbatim"
-// shape rather than #226's Commit-Step-extraction shape. Its own sleep gate
-// is reproduced verbatim - robotState.sleepMode read directly under critical
-// section, the same field isSleepModeActive() (private to api_audio.cpp's
-// anonymous namespace) reads, matching the drive.action.move precedent of
-// reading RobotState directly rather than exporting a REST-private helper.
-static void consoleExecuteSoundPlayTrack(uint32_t requestId, const char* operationName,
-                                         const ConsoleArgs& args, ConsoleCommandSource source,
-                                         const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool sleeping = robotState.sleepMode;
-    taskEXIT_CRITICAL(&robotStateMux);
-    if (sleeping) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
-                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-        }
-        return;
-    }
-
-    char* end = nullptr;
-    long track = strtol(consoleArgsFind(args, "track"), &end, 10);
-    if (*end != '\0' || track < 1 || track > 999) {
-        consoleEmitArgFailure(requestId, operationName, "track", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    if (!audioQueuePlayTrack((uint16_t)track, consoleCommandSourceFor(source))) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
-                                CONSOLE_REASON_QUEUE_FULL);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
-    }
-}
-
-// sound.action.set-volume: volume=<0..30> - the same audioQueueSetVolume() +
-// persist-as-default sequence handleAudioPost()'s action=volume branch makes
-// (src/web/api_audio.cpp); audioSetVolumeCommitApplied() (include/
-// api_audio.h) is the extracted ADR 0034 Commit Step both now share.
-static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operationName,
-                                         const ConsoleArgs& args, ConsoleCommandSource source,
-                                         const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    char* end = nullptr;
-    long level = strtol(consoleArgsFind(args, "volume"), &end, 10);
-    if (*end != '\0' || level < 0 || level > 30) {
-        consoleEmitArgFailure(requestId, operationName, "volume", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    AudioSetVolumeCommitOutcome commit =
-        audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
-    if (!commit.queued) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
-                                CONSOLE_REASON_QUEUE_FULL);
-        }
-        return;
-    }
-    if (!commit.saved) {
-        // "a failed NVS write is an explicit error" (criterion 3), matching
-        // consoleWriteScalarConfigField()'s own !commit.persisted branch
-        // above - no dedicated persistence-failure reason exists in the
-        // hand-maintained ConsoleReason set.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
-                                CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
-    }
-}
-
-// aux.action.led-color: r=/g=/b=<0..255> - the same auxLedQueueSetColor()
-// call handleAuxLedColorPost() makes (src/web/api_aux_led.cpp), reused
-// verbatim (a single complete queue call, no persist - no extraction
-// needed). The two refusal reasons handleAuxLedColorPost()'s own
-// sendAuxLedQueueRefusal() distinguishes - strip unavailable vs. queue full -
-// are reproduced the same way: robotState.auxLed.available/pin read
-// directly (isAuxLedAvailable() is private to api_aux_led.cpp's anonymous
-// namespace), matching the drive.action.move precedent of reading RobotState
-// directly rather than exporting a REST-private helper. "Unavailable"
-// (pin==0, no strip configured) maps to CONSOLE_REASON_COMPONENT_DISABLED -
-// "the owning Component Toggle is off" (docs/console-protocol.md s.6), the
-// exact fit for an AUX LED pin unset via aux.config.led-pin.
-static bool consoleAuxLedAvailable() {
-    bool available = false;
-    uint8_t pin = 0;
-    taskENTER_CRITICAL(&robotStateMux);
-    available = robotState.auxLed.available;
-    pin = robotState.auxLed.pin;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return available && pin != 0;
-}
-
-static void consoleAnswerAuxLedRefusal(uint32_t requestId, const ConsoleRecordSink* sink) {
-    if (!consoleAuxLedAvailable()) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                CONSOLE_REASON_COMPONENT_DISABLED);
-        }
-        return;
-    }
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
-                            CONSOLE_REASON_QUEUE_FULL);
-    }
-}
-
-static void consoleExecuteAuxLedColor(uint32_t requestId, const char* operationName,
-                                      const ConsoleArgs& args, ConsoleCommandSource source,
-                                      const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    long rgb[3] = {0, 0, 0};
-    const char* keys[3] = {"r", "g", "b"};
-    for (int i = 0; i < 3; ++i) {
-        char* end = nullptr;
-        rgb[i] = strtol(consoleArgsFind(args, keys[i]), &end, 10);
-        if (*end != '\0' || rgb[i] < 0 || rgb[i] > 255) {
-            consoleEmitArgFailure(requestId, operationName, keys[i], CONSOLE_REASON_OUT_OF_RANGE, sink);
-            return;
-        }
-    }
-
-    if (!auxLedQueueSetColor((uint8_t)rgb[0], (uint8_t)rgb[1], (uint8_t)rgb[2],
-                             consoleCommandSourceFor(source))) {
-        consoleAnswerAuxLedRefusal(requestId, sink);
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
-    }
-}
-
-// aux.action.led-effect: effect=<off|solid|blink|pulse> - the same
-// auxLedQueueSetEffect() call handleAuxLedEffectPost() makes (src/web/
-// api_aux_led.cpp). Bypasses consoleValidateArgsAgainstSchema()'s enum check
-// for this one param: tools/generate_console_catalog.py's YAML loader reads
-// the registry's bare `off` value as the Python boolean False (YAML 1.1's
-// implicit off/on/yes/no typing), so the generated
-// g_enum_aux_action_led_effect_effect[] array literally contains the string
-// "False" where "off" belongs (src/console/console_catalog.cpp) - a
-// registry-generator defect, reported on the ticket rather than papered over
-// by accepting the wrong literal here or by regenerating the catalog (that
-// regeneration reshuffles every subsequent help_offset in the same
-// generated file, out of this slice). parseAuxLedEffect() (include/
-// aux_led.h) is the SAME validator handleAuxLedEffectPost() calls, reused
-// verbatim instead - the "hardcode the one schema this operation needs"
-// precedent the two Marcduino targets already set above.
-static void consoleExecuteAuxLedEffect(uint32_t requestId, const char* operationName,
-                                       const ConsoleArgs& args, ConsoleCommandSource source,
-                                       const ConsoleRecordSink* sink) {
-    const char* badKey = nullptr;
-    for (size_t i = 0; i < args.count; ++i) {
-        if (strcmp(args.items[i].key, "effect") != 0) {
-            badKey = args.items[i].key;
-            break;
-        }
-    }
-    if (badKey != nullptr) {
-        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
-        return;
-    }
-    const char* raw = consoleArgsFind(args, "effect");
-    if (raw == nullptr) {
-        consoleEmitArgFailure(requestId, operationName, "effect", CONSOLE_REASON_MISSING_ARGUMENT, sink);
-        return;
-    }
-    AuxLedEffect effect = AUX_LED_EFFECT_OFF;
-    if (!parseAuxLedEffect(raw, &effect)) {
-        consoleEmitArgFailure(requestId, operationName, "effect", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    if (!auxLedQueueSetEffect(effect, consoleCommandSourceFor(source))) {
-        consoleAnswerAuxLedRefusal(requestId, sink);
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
-    }
-}
-
-// servo.action.open/close/set-position: target=<arm1|arm2|aux1|aux2|aux3
-// [|both]>, set-position also carries position_us=<500..2500>.
-// parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
-// target<->id mapping and the SAME queue submission handleServoPost() uses,
-// reused verbatim - the ADR 0034 Commit Step beside that handler. Deliberately
-// NOT wired here: servo.action.stop, which the registry declares with zero
-// params even though the underlying /api/servo endpoint requires an `arm`
-// for every action including "stop", and armId=255 only broadcasts to
-// arm1+arm2 (robot_state.h's own field comment) - never aux1..3. Answering
-// "stop" with a hardcoded broadcast id would silently leave three of five
-// servos moving on an operator's "stop" call; that is a registry/
-// implementation decision this ticket does not invent, so
-// servo.action.stop stays CONSOLE_REASON_EXECUTOR_NOT_READY (reported on
-// the ticket).
-static void consoleExecuteServoCommand(uint32_t requestId, const char* operationName,
-                                       ServoCommandType type, const ConsoleArgs& args,
-                                       ConsoleCommandSource source, const ConsoleRecordSink* sink) {
-    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
-        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
-        return;
-    }
-
-    // Schema already confirmed "target" is one of the catalog's own enum
-    // values; parseArmId() can only fail here on a disagreement between
-    // that enum and its own accepted set, which never occurs for the
-    // lowercase names the registry declares - defensive, the same
-    // "reparse after schema" precedent drive.action.move set.
-    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
-    if (armId < 0) {
-        consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    uint16_t positionUs = 0;  // dead for OPEN/CLOSE (src/tasks/servo_task.cpp never reads it)
-    if (type == SERVO_CMD_POSITION) {
-        char* end = nullptr;
-        long parsed = strtol(consoleArgsFind(args, "position_us"), &end, 10);
-        if (*end != '\0' || parsed < SERVO_PULSE_MIN_US || parsed > SERVO_PULSE_MAX_US) {
-            consoleEmitArgFailure(requestId, operationName, "position_us", CONSOLE_REASON_OUT_OF_RANGE,
-                                  sink);
-            return;
-        }
-        positionUs = (uint16_t)parsed;
-    }
-
-    ServoSubmitOutcome outcome =
-        servoSubmitCommand((uint8_t)armId, type, positionUs, consoleCommandSourceFor(source));
-    if (!outcome.ok) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
-                                CONSOLE_REASON_QUEUE_FULL);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
-    }
-}
-
-static void consoleExecuteServoOpen(uint32_t requestId, const char* operationName,
-                                    const ConsoleArgs& args, ConsoleCommandSource source,
-                                    const ConsoleRecordSink* sink) {
-    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_OPEN, args, source, sink);
-}
-
-static void consoleExecuteServoClose(uint32_t requestId, const char* operationName,
-                                     const ConsoleArgs& args, ConsoleCommandSource source,
-                                     const ConsoleRecordSink* sink) {
-    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_CLOSE, args, source, sink);
-}
-
-static void consoleExecuteServoSetPosition(uint32_t requestId, const char* operationName,
-                                           const ConsoleArgs& args, ConsoleCommandSource source,
-                                           const ConsoleRecordSink* sink) {
-    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_POSITION, args, source, sink);
-}
-
-struct ConsoleDirectActionExecutorEntry {
-    const char* operationName;
-    ConsoleDirectActionExecutorFn executor;
-};
-
-static const ConsoleDirectActionExecutorEntry g_directActionExecutors[] = {
-    {"system.action.set-mode", consoleExecuteDirectSetMode},
-    {"system.action.sleep", consoleExecuteDirectSleep},
-    {"system.action.wake", consoleExecuteDirectWake},
-    {"system.action.enable-web-control", consoleExecuteDirectEnableWebControl},
-    {"system.action.disable-web-control", consoleExecuteDirectDisableWebControl},
-    {"rc.action.toggle-debug", consoleExecuteDirectRcDebug},
-    {"drive.action.move", consoleExecuteDirectDriveMove},
-    {"drive.action.speed-preset-slow", consoleExecuteDirectSpeedPresetSlow},
-    {"drive.action.speed-preset-normal", consoleExecuteDirectSpeedPresetNormal},
-    {"drive.action.speed-preset-turbo", consoleExecuteDirectSpeedPresetTurbo},
-    {"system.action.set-mood", consoleExecuteDirectSetMood},
-    {"system.action.set-identity", consoleExecuteDirectSetIdentity},
-    {"rc.action.test-bindable", consoleExecuteDirectTestBindable},
-    {"sound.action.play-track", consoleExecuteSoundPlayTrack},
-    {"sound.action.set-volume", consoleExecuteSoundSetVolume},
-    {"aux.action.led-color", consoleExecuteAuxLedColor},
-    {"aux.action.led-effect", consoleExecuteAuxLedEffect},
-    {"servo.action.open", consoleExecuteServoOpen},
-    {"servo.action.close", consoleExecuteServoClose},
-    {"servo.action.set-position", consoleExecuteServoSetPosition},
-};
-static const size_t kDirectActionExecutorCount =
-    sizeof(g_directActionExecutors) / sizeof(g_directActionExecutors[0]);
-
-static ConsoleDirectActionExecutorFn consoleFindDirectActionExecutor(const char* canonicalName) {
-    for (size_t i = 0; i < kDirectActionExecutorCount; ++i) {
-        if (strcmp(g_directActionExecutors[i].operationName, canonicalName) == 0) {
-            return g_directActionExecutors[i].executor;
+#include "console_direct_action_system.h"
+#include "console_direct_action_drive.h"
+#include "console_direct_action_sound.h"
+#include "console_direct_action_aux_rc.h"
+#include "console_direct_action_servo.h"
+
+// Linear scan of one domain's table - the single scan implementation every
+// domain lookup below shares, factored out rather than repeated five times.
+static ConsoleDirectActionExecutorFn consoleFindInDirectActionTable(
+    const ConsoleDirectActionExecutorEntry* table, size_t count, const char* canonicalName) {
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(table[i].operationName, canonicalName) == 0) {
+            return table[i].executor;
         }
     }
     return nullptr;
+}
+
+static ConsoleDirectActionExecutorFn consoleFindDirectActionExecutor(const char* canonicalName) {
+    ConsoleDirectActionExecutorFn found = consoleFindInDirectActionTable(
+        g_systemDirectActionExecutors, kSystemDirectActionExecutorCount, canonicalName);
+    if (found != nullptr) return found;
+    found = consoleFindInDirectActionTable(g_driveDirectActionExecutors, kDriveDirectActionExecutorCount,
+                                           canonicalName);
+    if (found != nullptr) return found;
+    found = consoleFindInDirectActionTable(g_soundDirectActionExecutors, kSoundDirectActionExecutorCount,
+                                           canonicalName);
+    if (found != nullptr) return found;
+    found = consoleFindInDirectActionTable(g_auxRcDirectActionExecutors, kAuxRcDirectActionExecutorCount,
+                                           canonicalName);
+    if (found != nullptr) return found;
+    return consoleFindInDirectActionTable(g_servoDirectActionExecutors, kServoDirectActionExecutorCount,
+                                          canonicalName);
 }
 
 // =============================================================================
@@ -2569,8 +1763,9 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // function), so entry is never null past this point.
             const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
 
-            // Commanded Modes first (#226 criterion 4): an operation in
-            // g_directActionExecutors[] is dispatched through its
+            // Commanded Modes first (#226 criterion 4): an operation resolved
+            // by consoleFindDirectActionExecutor() (one of the per-domain
+            // direct-action tables, #257) is dispatched through its
             // commanded_modes.h setter directly and never reaches
             // ACTION_REGISTRY[]/the queued RC dispatch below, even for
             // system.action.set-mode, which does carry a cpp_enum/rc_token
