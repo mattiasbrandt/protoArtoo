@@ -88,12 +88,23 @@
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
                                   // own queue stub (#221 remainder)
 
-#include "sequence_dispatcher.h"  // sequenceDispatcherInit() - dome.action.dome-sequence/
-                                   // test-sequence's sequenceStart() queue (#259)
+#include "sequence_dispatcher.h"  // sequenceDispatcherInit(), sequenceCatalogAt/Count/Find() -
+                                   // dome.action.dome-sequence/test-sequence's sequenceStart()
+                                   // queue (#259) and dome.api.list-builtin-sequences (#221
+                                   // remainder)
 #include "seq_store_index.h"      // SeqIndexEntry, seqStoreIndexAdd()/Clear() -
-                                   // dome.action.delete-sequence's own lookup (#259)
+                                   // dome.action.delete-sequence's own lookup (#259) and
+                                   // dome.api.list-sequences (#221 remainder)
 #include "seq_store_test_hooks.h"  // g_test_seq_delete_ok/calls - seqStoreDelete()'s own
                                     // stub (#259)
+#include "seq_json.h"              // seqToggleGroupToString() - dome.api.list-sequences'/
+                                    // -list-builtin-sequences' own three-way field-name check
+#include "sequence_run_evidence.h"  // SeqRunEvidence, seqEvidenceBegin/RecordTx/End(),
+                                     // seqRunOutcomeName() - dome.api.get-sequence-last-run's
+                                     // real capture pipeline, driven the same way the
+                                     // dispatcher task drives it (#221 remainder)
+#include "seq_last_run_json.h"      // populateSeqLastRunJson() - the JSON-builder leg of
+                                     // dome.api.get-sequence-last-run's three-way field check
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
@@ -691,6 +702,205 @@ void test_logs_query_full_ring_reports_every_line() {
     snprintf(lastLine, sizeof(lastLine), "line-%zu", LOG_RING_MAX_LINES - 1);
     TEST_ASSERT_EQUAL_STRING("line-0", g_logCap.values[0]);
     TEST_ASSERT_EQUAL_STRING(lastLine, g_logCap.values[LOG_RING_MAX_LINES - 1]);
+}
+
+// =============================================================================
+// dome.api.list-sequences / dome.api.list-builtin-sequences (#221 remainder)
+// =============================================================================
+// Both answer `item` records (one per sequence), not `field` records - the
+// same reason system.status.logs needed its own capture above. One small
+// capture struct covers both (48 rows/320 bytes: comfortably above both
+// SEQ_STORE_MAX (16) and the real, compiled-in Factory catalog's count, and
+// above the longest realistic item line - see consoleExecuteDomeApiList
+// BuiltinSequences()'s own itemBuf comment, src/console/console_module.cpp).
+
+struct CapturedSeqItems {
+    char values[48][320];
+    int count;
+    bool beginCalled;
+    bool endCalled;
+    ConsoleStatus status;
+    ConsoleOutcome outcome;
+    ConsoleReason reason;
+};
+static CapturedSeqItems g_seqItemCap;
+
+static void seqItemCapBegin(uint32_t, const char*) {
+    g_seqItemCap.beginCalled = true;
+}
+static void seqItemCapItem(uint32_t, const char* value) {
+    if (g_seqItemCap.count >= (int)(sizeof(g_seqItemCap.values) / sizeof(g_seqItemCap.values[0]))) {
+        return;
+    }
+    snprintf(g_seqItemCap.values[g_seqItemCap.count], sizeof(g_seqItemCap.values[0]), "%s", value);
+    g_seqItemCap.count++;
+}
+static void seqItemCapEnd(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason) {
+    g_seqItemCap.endCalled = true;
+    g_seqItemCap.status = status;
+    g_seqItemCap.outcome = outcome;
+    g_seqItemCap.reason = reason;
+}
+
+static void runSeqItemQuery(const char* operationName) {
+    memset(&g_seqItemCap, 0, sizeof(g_seqItemCap));
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = seqItemCapBegin;
+    sink.onRecordItem = seqItemCapItem;
+    sink.onRecordEnd = seqItemCapEnd;
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = CONSOLE_SOURCE_SERIAL;
+    req.operationName = operationName;
+    consoleExecuteCommand(&req, &sink);
+}
+
+void test_dome_api_list_sequences_streams_the_real_index_as_items() {
+    SeqIndexEntry e = {};
+    snprintf(e.name, sizeof(e.name), "%s", "DM:MYSEQ");
+    e.toggleGroup = TOGGLE_LOW;
+    e.suppressMs = 2500;
+    snprintf(e.source, sizeof(e.source), "%s", "user");
+    e.modified = true;
+    e.valid = true;
+    seqStoreIndexAdd(e);
+
+    runSeqItemQuery("dome.api.list-sequences");
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_seqItemCap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT(1, g_seqItemCap.count);
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "DM:MYSEQ"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "toggleGroup:low"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "suppressMs:2500"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "source:user"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "modified:true"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "valid:true"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "retrained:false"));
+}
+
+void test_dome_api_list_sequences_empty_index_answers_completed_with_no_items() {
+    runSeqItemQuery("dome.api.list-sequences");
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT(0, g_seqItemCap.count);
+}
+
+// "retrained" flips true when a Learned Sequence shadows a real Factory name
+// (sequenceCatalogFind(), src/tasks/sequence_catalog.cpp) - the same check
+// handleSeqListGet() makes (src/web/api_seq.cpp).
+void test_dome_api_list_sequences_reports_retrained_when_shadowing_a_factory_name() {
+    SeqIndexEntry e = {};
+    snprintf(e.name, sizeof(e.name), "%s", "DM:VADER");  // a real Factory name
+    e.valid = true;
+    seqStoreIndexAdd(e);
+
+    runSeqItemQuery("dome.api.list-sequences");
+
+    TEST_ASSERT_EQUAL_INT(1, g_seqItemCap.count);
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "retrained:true"));
+}
+
+// dome.api.list-builtin-sequences reads the real, compiled-in Factory
+// catalog (src/tasks/sequence_catalog.cpp) - no seeding possible or needed;
+// DM:VADER is catalog index 0 and its shape never changes at runtime.
+void test_dome_api_list_builtin_sequences_streams_the_real_catalog_as_items() {
+    runSeqItemQuery("dome.api.list-builtin-sequences");
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT((int)sequenceCatalogCount(), g_seqItemCap.count);
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "DM:VADER"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "toggleGroup:none"));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "suppressMs:47000"));
+    char stepCountTok[32];
+    snprintf(stepCountTok, sizeof(stepCountTok), "stepCount:%u",
+             (unsigned)sequenceCatalogAt(0)->stepCount);
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], stepCountTok));
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], "purpose:Imperial March"));
+}
+
+// =============================================================================
+// dome.api.get-sequence-last-run (#221 remainder): field-based
+// =============================================================================
+// Registered first among this group deliberately: seqEvidenceBegin()
+// (src/sequence_run_evidence.cpp) has no reset/undo, matching production (a
+// droid never "un-runs" a sequence), so the "no run recorded yet" case can
+// only be proven before any other test in this binary calls it.
+
+void test_dome_api_get_sequence_last_run_before_any_run_answers_valid_false_only() {
+    runQuery("dome.api.get-sequence-last-run");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("valid"));
+    TEST_ASSERT_NULL_MESSAGE(capturedValue("name"), "no run recorded yet - name must be absent");
+}
+
+// Three-way field match, driven through the REAL capture pipeline
+// (seqEvidenceBegin/RecordTx/End(), src/sequence_run_evidence.cpp) exactly
+// the way the dispatcher task drives it, so both the JSON-builder leg
+// (populateSeqLastRunJson(), src/seq_last_run_json.cpp) and the emitted-
+// fields leg see a genuinely completed run with reason and endMs both
+// present - the full optional-field set the registry's fields: list claims.
+void test_dome_api_get_sequence_last_run_three_way_field_match() {
+    seqEvidenceBegin("DM:VADER", 0, 1000, 0);
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_CMD;
+    snprintf(act.payload, sizeof(act.payload), "%s", ":OP01");
+    seqEvidenceRecordTx(act, false);
+    seqEvidenceEnd(SEQ_RUN_COMPLETED, "test-reason", 2000, 0);
+
+    SeqRunEvidence ev = {};
+    bool have = seqEvidenceSnapshot(ev);
+    TEST_ASSERT_TRUE(have);
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateSeqLastRunJson(doc, ev, have));
+    char json[2048];
+    size_t jsonLen = serializeJson(doc, json, sizeof(json));
+    TEST_ASSERT_GREATER_THAN(0, (int)jsonLen);
+    std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
+
+    // Subset match, the same shape dome.status.serial-link's own test uses
+    // (above): the registry's fields: list is a deliberately chosen subset
+    // of populateSeqLastRunJson()'s real top-level keys, not the full set
+    // (see that registry entry's own comment for why).
+    std::vector<std::string> registryFields = catalogFieldNames("dome.api.get-sequence-last-run");
+    TEST_ASSERT_TRUE(registryFields ==
+                     (std::vector<std::string>{"endMs", "name", "outcome", "reason", "running",
+                                                "source", "startMs", "valid"}));
+    for (const auto& field : registryFields) {
+        bool found = std::binary_search(jsonKeys.begin(), jsonKeys.end(), field);
+        TEST_ASSERT_TRUE_MESSAGE(found, field.c_str());
+    }
+
+    runQuery("dome.api.get-sequence-last-run");
+    std::vector<std::string> emitted = emittedFieldNames();
+    TEST_ASSERT_TRUE(registryFields == emitted);
+}
+
+void test_dome_api_get_sequence_last_run_carries_real_state() {
+    seqEvidenceBegin("DM:LEIA", 3, 1000, 0);
+    seqEvidenceEnd(SEQ_RUN_ABORTED, "estop", 5000, 0);
+
+    runQuery("dome.api.get-sequence-last-run");
+
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("valid"));
+    TEST_ASSERT_EQUAL_STRING("DM:LEIA", capturedValue("name"));
+    TEST_ASSERT_EQUAL_STRING("3", capturedValue("source"));
+    TEST_ASSERT_EQUAL_STRING("aborted", capturedValue("outcome"));
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("running"));
+    TEST_ASSERT_EQUAL_STRING("estop", capturedValue("reason"));
+    TEST_ASSERT_EQUAL_STRING("1000", capturedValue("startMs"));
+    TEST_ASSERT_EQUAL_STRING("5000", capturedValue("endMs"));
 }
 
 // =============================================================================
@@ -2956,6 +3166,15 @@ int main(int, char**) {
     RUN_TEST(test_logs_query_streams_ring_lines_as_items_oldest_first);
     RUN_TEST(test_logs_query_empty_ring_answers_completed_with_no_items);
     RUN_TEST(test_logs_query_full_ring_reports_every_line);
+
+    RUN_TEST(test_dome_api_list_sequences_streams_the_real_index_as_items);
+    RUN_TEST(test_dome_api_list_sequences_empty_index_answers_completed_with_no_items);
+    RUN_TEST(test_dome_api_list_sequences_reports_retrained_when_shadowing_a_factory_name);
+    RUN_TEST(test_dome_api_list_builtin_sequences_streams_the_real_catalog_as_items);
+
+    RUN_TEST(test_dome_api_get_sequence_last_run_before_any_run_answers_valid_false_only);
+    RUN_TEST(test_dome_api_get_sequence_last_run_three_way_field_match);
+    RUN_TEST(test_dome_api_get_sequence_last_run_carries_real_state);
 
     RUN_TEST(test_aggregate_field_status_entries_answer_not_executable);
     RUN_TEST(test_event_stream_status_entry_answers_not_executable);
