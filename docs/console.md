@@ -264,13 +264,74 @@ dashboard. Until it's on, an action answers `blocked reason=blocked-by-state`:
 interface never triggers an estop; use the dashboard's E-Stop control or
 `POST /api/estop` for that.
 
+## WiFi settings, as one command
+
+`wifi.config.settings` reads and writes the whole WiFi posture at once — how
+the controller gets on the network, and the network name for each way of doing
+it. With no arguments it reads:
+
+```text
+> wifi.config.settings
+< id=8 type=begin operation=wifi.config.settings
+< id=8 type=field name=provisioned value=true
+< id=8 type=field name=mode value=client
+< id=8 type=field name=staSsid value="Workshop WiFi"
+< id=8 type=field name=staPasswordSet value=true
+< id=8 type=field name=apSsid value=artoo-setup
+< id=8 type=field name=apPasswordSet value=false
+< id=8 type=field name=pendingApply value=false
+< id=8 type=field name=networkRecovery value=false
+< id=8 type=end status=ok outcome=completed
+```
+
+With arguments it writes:
+
+```text
+> wifi.config.settings mode=client sta-ssid="Workshop WiFi"
+< id=9 type=result status=ok outcome=staged-until-reboot
+```
+
+The fields are checked together, the way the Setup page checks them: ask for
+`mode=client` when there is no station network name — neither saved nor on the
+line — and the whole command is refused, naming the field it wanted, rather
+than the mode being kept on its own. What you leave out keeps its saved value.
+
+Put a network name in quotes if it has spaces, and use any text your network
+actually uses — the limit is 32 bytes, which is fewer than 32 characters once
+there are accents or emoji in it.
+
+`staged-until-reboot` means the settings are saved but the controller is still
+running on the ones it started with — restart it when you are ready to move.
+`applied` means what you just saved is already what is running, so there is
+nothing to restart for. `pendingApply` in the read answers the same question
+before you change anything.
+
 ## Passwords aren't typed here
 
 Every WiFi setting can be read except the password. A password argument is
 refused with `invalid reason=secret-not-settable` — it never even reaches
-validation. Set or change a WiFi password on the
+validation, and the value you typed is never printed back and never reaches
+the log:
+
+```text
+> wifi.config.settings sta-password=hunter2
+< id=10 type=begin operation=wifi.config.settings
+< id=10 type=field name=argument value=sta-password
+< id=10 type=end status=err outcome=invalid reason=secret-not-settable
+```
+
+`help wifi.config.settings` says the same thing about the field before you try
+it — the two password fields are listed as `write-excluded` where every other
+field says `required` or `optional`. Set or change a WiFi password on the
 [WiFi provisioning page](wifi-provisioning.md); the Console is not where
 that goes, by design.
+
+One thing this does not cover: on a serial terminal, the line you typed stays
+in the editor's own Up-arrow history for the rest of the session, and on the
+dashboard the command box remembers recent commands in your browser. Neither
+is something the controller stores or sends anywhere, but if you did type a
+password by mistake, that is where it lingers — reset the controller, or clear
+the browser's site data, to be rid of it.
 
 ## What doesn't work here yet
 
@@ -285,13 +346,14 @@ that goes, by design.
   Working today: the fifteen Component Toggles (`system.config.enable_drive`,
   `system.config.enable_audio`, `system.config.enable_arm1` and the rest) —
   changing one answers `staged-until-reboot`, and it takes effect at the next
-  restart, not immediately; `system.config.mood`; and four settings that take
-  effect straight away and answer `applied` —
+  restart, not immediately; `system.config.mood`; the grouped WiFi write
+  `wifi.config.settings` ([above](#wifi-settings-as-one-command)); and four
+  settings that take effect straight away and answer `applied` —
   `drive.config.speed-limit`, `aux.config.led-pin`, `aux.config.led-count`
-  and `rc.config.mode`. Every other `config` entry — WiFi settings among
-  them — answers `unavailable reason=executor-not-ready` whether or not you
-  supply a value. `operations type=config` lists them all, so you can see
-  which exist; change the rest from the **Setup** page in the meantime.
+  and `rc.config.mode`. Every other `config` entry answers
+  `unavailable reason=executor-not-ready` whether or not you supply a value.
+  `operations type=config` lists them all, so you can see which exist; change
+  the rest from the **Setup** page in the meantime.
 - **Events** (`type=event` entries) are output only — logs and state
   changes you'll see printed on their own — never something you run; typing
   one answers `unavailable reason=not-executable`.
