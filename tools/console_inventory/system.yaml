@@ -140,13 +140,17 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:150 - webRegisterRoute route
-  - include/api_profiler.h:62 - handleProfilerTraceStartPost declaration
-  - src/web/api_profiler.cpp:646 - handleProfilerTraceStartPost definition
-  - src/web/api_profiler.cpp:651 - heap_trace_start(HEAP_TRACE_LEAKS)
-  executor_or_core: heap_trace_start
+  - src/web/web_seam_routes.cpp:158 - webRegisterRoute route
+  - include/api_profiler.h:185 - ProfilerTraceOutcome profilerTraceStart(void)
+  - src/web/api_profiler.cpp:678 - profilerTraceStart definition, owns s_traceRunning
+  - src/web/api_profiler.cpp:703 - handleProfilerTraceStartPost adapts it to 200/409/500
+  - include/console_direct_action_system.h:339 - consoleExecuteDirectProfilerTraceStart calls the same core
+  executor_or_core: profilerTraceStart
   missing_metadata: []
-  notes: ''
+  notes: >-
+    Gated by PA_HEAP_TRACING, which no environment in platformio.ini sets, so
+    this row is compiled into no image the repo builds and answers
+    not-in-this-build on every one of them.
 - name: system.action.profiler-trace-stop
   type: action
   registry_api_path: /api/profiler/trace/stop
@@ -161,13 +165,17 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:152 - webRegisterRoute route
-  - include/api_profiler.h:63 - handleProfilerTraceStopPost declaration
-  - src/web/api_profiler.cpp:662 - handleProfilerTraceStopPost definition
-  - src/web/api_profiler.cpp:667 - heap_trace_stop()
-  executor_or_core: heap_trace_stop
+  - src/web/web_seam_routes.cpp:160 - webRegisterRoute route
+  - include/api_profiler.h:186 - ProfilerTraceOutcome profilerTraceStop(void)
+  - src/web/api_profiler.cpp:692 - profilerTraceStop definition, stops and dumps to serial
+  - src/web/api_profiler.cpp:717 - handleProfilerTraceStopPost adapts it to 200/409/500
+  - include/console_direct_action_system.h:350 - consoleExecuteDirectProfilerTraceStop calls the same core
+  executor_or_core: profilerTraceStop
   missing_metadata: []
-  notes: ''
+  notes: >-
+    Gated by PA_HEAP_TRACING, which no environment in platformio.ini sets, so
+    this row is compiled into no image the repo builds and answers
+    not-in-this-build on every one of them.
 - name: system.action.reboot
   type: action
   registry_api_path: /api/reboot

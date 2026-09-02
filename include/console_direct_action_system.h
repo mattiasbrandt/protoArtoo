@@ -51,6 +51,9 @@
 #include "api_helpers.h"                  // normalizeDroidName(), parseBoolValue()
 #include "api_identity.h"                 // identitySetCommitApplied(), IdentitySetCommitOutcome
 #include "config.h"                       // DROID_NAME_MAX_LEN
+#include "api_profiler.h"                 // profilerTraceStart()/profilerTraceStop() and
+                                          // ProfilerTraceOutcome - the Tier 3 leak-trace cores
+                                          // POST /api/profiler/trace/start|stop also call (#224)
 
 // system.action.set-mode: mode=stationary|driving, the same two values
 // POST /api/mode accepts (src/web/api_drive.cpp's handleModePost) - commit
@@ -291,6 +294,75 @@ static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* oper
     }
 }
 
+// PA_HEAP_TRACING alone is the right condition even though api_profiler.h
+// declares the trace cores inside its own PA_HEAP_PROFILE block: include/
+// config.h:105 already #errors on PA_HEAP_TRACING=1 without PA_HEAP_PROFILE=1,
+// so the pair cannot come apart in a compiling image.
+#if PA_HEAP_TRACING
+// system.action.profiler-trace-start / -stop (#224): the same Tier 3 cores
+// POST /api/profiler/trace/start|stop call (profilerTraceStart()/Stop(),
+// include/api_profiler.h), which own s_traceRunning so the two adapters cannot
+// disagree about whether a trace is already armed. No arguments, matching the
+// two REST routes, which read no body.
+//
+// Registered only when PA_HEAP_TRACING=1, and reachable only there:
+// consoleExecuteCommand()'s build guard answers not-in-this-build for both
+// rows on every image that does not carry the flag - which today is every
+// image, since no environment in platformio.ini sets it (see api_profiler.h).
+//
+// Outcome mapping. A trace start/stop takes effect immediately and is not
+// queued, so success is APPLIED - the same outcome system.action.sleep/wake
+// above use for an immediate state change. "Already running" / "not running"
+// is a state rule refusing the command, not transient busy-ness, so it is
+// BLOCKED / blocked-by-state rather than temporarily-unavailable; the REST
+// routes answer 409 for the same condition. A core that reports FAILED could
+// not do what it was asked for a reason of its own: internal-error.
+static void consoleAnswerTraceOutcome(uint32_t requestId, ProfilerTraceOutcome outcome,
+                                      const ConsoleRecordSink* sink) {
+    if (sink->onRecordResult == nullptr) {
+        return;
+    }
+    switch (outcome) {
+        case PROFILER_TRACE_STARTED:
+        case PROFILER_TRACE_STOPPED:
+            sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                                 CONSOLE_REASON_NONE);
+            return;
+        case PROFILER_TRACE_ALREADY_RUNNING:
+        case PROFILER_TRACE_NOT_RUNNING:
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                 CONSOLE_REASON_BLOCKED_BY_STATE);
+            return;
+        case PROFILER_TRACE_FAILED:
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                 CONSOLE_REASON_NONE);
+            return;
+    }
+}
+
+static void consoleExecuteDirectProfilerTraceStart(uint32_t requestId, const char* operationName,
+                                                   const ConsoleArgs& args,
+                                                   ConsoleCommandSource source,
+                                                   const ConsoleRecordSink* sink) {
+    (void)source;
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    consoleAnswerTraceOutcome(requestId, profilerTraceStart(), sink);
+}
+
+static void consoleExecuteDirectProfilerTraceStop(uint32_t requestId, const char* operationName,
+                                                  const ConsoleArgs& args,
+                                                  ConsoleCommandSource source,
+                                                  const ConsoleRecordSink* sink) {
+    (void)source;
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    consoleAnswerTraceOutcome(requestId, profilerTraceStop(), sink);
+}
+#endif  // PA_HEAP_TRACING
+
 static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = {
     {"system.action.set-mode", consoleExecuteDirectSetMode},
     {"system.action.sleep", consoleExecuteDirectSleep},
@@ -299,6 +371,10 @@ static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = 
     {"system.action.disable-web-control", consoleExecuteDirectDisableWebControl},
     {"system.action.set-mood", consoleExecuteDirectSetMood},
     {"system.action.set-identity", consoleExecuteDirectSetIdentity},
+#if PA_HEAP_TRACING
+    {"system.action.profiler-trace-start", consoleExecuteDirectProfilerTraceStart},
+    {"system.action.profiler-trace-stop", consoleExecuteDirectProfilerTraceStop},
+#endif
 };
 static const size_t kSystemDirectActionExecutorCount =
     sizeof(g_systemDirectActionExecutors) / sizeof(g_systemDirectActionExecutors[0]);

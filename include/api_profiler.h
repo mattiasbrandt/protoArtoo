@@ -162,6 +162,29 @@ bool profilerRequestTraceAt(size_t index, ProfilerRequestTrace* out);
 void handleProfilerGet(WebRequest& req);
 
 #if PA_HEAP_TRACING
+// Tier 3 leak-trace cores, shared by the two POST routes below and by the
+// Console's system.action.profiler-trace-start|stop (#224, ADR 0034). The
+// running/not-running distinction lives here rather than in each adapter,
+// because it is one piece of device state and two opinions of it is how a
+// trace gets started twice.
+//
+// NOTE: no environment in platformio.ini sets PA_HEAP_TRACING=1 - it is a
+// documented manual escalation (the artoo_esp32_profiler section there) that
+// also needs CONFIG_HEAP_TRACING=y in a custom sdkconfig. So this block, like
+// the two handlers it has always guarded, is compiled by no image the repo
+// currently builds; on every image that does exist both operations answer
+// unavailable reason=not-in-this-build from the Console's build guard.
+typedef enum {
+    PROFILER_TRACE_STARTED = 0,
+    PROFILER_TRACE_STOPPED = 1,
+    PROFILER_TRACE_ALREADY_RUNNING = 2,
+    PROFILER_TRACE_NOT_RUNNING = 3,
+    PROFILER_TRACE_FAILED = 4,
+} ProfilerTraceOutcome;
+
+ProfilerTraceOutcome profilerTraceStart(void);
+ProfilerTraceOutcome profilerTraceStop(void);
+
 //   POST /api/profiler/trace/start   - start Tier 3 leak trace
 //   POST /api/profiler/trace/stop    - stop + dump Tier 3 leak trace to serial
 void handleProfilerTraceStartPost(WebRequest& req);

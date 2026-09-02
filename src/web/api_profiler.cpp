@@ -669,32 +669,63 @@ void handleProfilerGet(WebRequest& req) {
 }
 
 #if PA_HEAP_TRACING
-void handleProfilerTraceStartPost(WebRequest& req) {
+// The Tier 3 trace cores, shared by POST /api/profiler/trace/start|stop and by
+// the Console's system.action.profiler-trace-start|stop (#224). s_traceRunning
+// is the whole reason these are functions rather than two lines in each
+// adapter: it is the state that decides between "started" and "already
+// running", and two adapters keeping their own opinion of it is how a trace
+// gets started twice.
+ProfilerTraceOutcome profilerTraceStart(void) {
     if (s_traceRunning) {
-        webSendJsonError(req, 409, "trace already running");
-        return;
+        return PROFILER_TRACE_ALREADY_RUNNING;
     }
     esp_err_t err = heap_trace_start(HEAP_TRACE_LEAKS);
-    if (err == ESP_OK) {
-        s_traceRunning = true;
-        PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
-        req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
-    } else {
+    if (err != ESP_OK) {
         PA_LOG_WARN(TAG, "Tier 3 heap trace start failed: %d", (int)err);
-        webSendJsonError(req, 500, "start failed");
+        return PROFILER_TRACE_FAILED;
     }
+    s_traceRunning = true;
+    PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
+    return PROFILER_TRACE_STARTED;
 }
 
-void handleProfilerTraceStopPost(WebRequest& req) {
+ProfilerTraceOutcome profilerTraceStop(void) {
     if (!s_traceRunning) {
-        webSendJsonError(req, 409, "trace not running");
-        return;
+        return PROFILER_TRACE_NOT_RUNNING;
     }
     heap_trace_stop();
     s_traceRunning = false;
     PA_LOG_INFO(TAG, "Tier 3 heap trace stopped - dumping to serial");
     heap_trace_dump();
-    req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
+    return PROFILER_TRACE_STOPPED;
+}
+
+void handleProfilerTraceStartPost(WebRequest& req) {
+    switch (profilerTraceStart()) {
+        case PROFILER_TRACE_STARTED:
+            req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
+            return;
+        case PROFILER_TRACE_ALREADY_RUNNING:
+            webSendJsonError(req, 409, "trace already running");
+            return;
+        default:
+            webSendJsonError(req, 500, "start failed");
+            return;
+    }
+}
+
+void handleProfilerTraceStopPost(WebRequest& req) {
+    switch (profilerTraceStop()) {
+        case PROFILER_TRACE_STOPPED:
+            req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
+            return;
+        case PROFILER_TRACE_NOT_RUNNING:
+            webSendJsonError(req, 409, "trace not running");
+            return;
+        default:
+            webSendJsonError(req, 500, "stop failed");
+            return;
+    }
 }
 #endif
 
