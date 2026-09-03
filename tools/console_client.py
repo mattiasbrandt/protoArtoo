@@ -775,6 +775,9 @@ def build_sendlen_line(n: int, prefix: str) -> str:
     return prefix + ("x" * (n - len(prefix)))
 
 
+DEFAULT_REATTACH_TIMEOUT = 30.0  # bounded wait for a detached port's by-id name to return
+
+
 class SerialTransport:
     """Scripted-mode serial adapter: byte-exact writes, wire-order reads.
 
@@ -782,13 +785,25 @@ class SerialTransport:
     "settle only before the first scripted serial send" -- listen and
     interactive never settle) and TCIFLUSH, which already happens inside
     open_posix_port() for every serial mode.
+
+    Detach survives: `port`'s by-id identity is captured once at
+    construction (via tools/resolve_upload_port.py's discover(), the same
+    reuse rule as the provenance header), so a later detach can wait for
+    THAT identity specifically rather than a device path that may
+    renumber (ttyACM0 -> ttyACM1) on replug.
     """
 
-    def __init__(self, fd: int, settle_seconds: float = DEFAULT_SETTLE_SECONDS,
-                 color: bool = False):
+    def __init__(self, fd: int, port: str, baud: int,
+                 settle_seconds: float = DEFAULT_SETTLE_SECONDS,
+                 color: bool = False,
+                 reattach_timeout: float = DEFAULT_REATTACH_TIMEOUT):
         self.fd = fd
+        self.port = port
+        self.baud = baud
         self.settle_seconds = settle_seconds
         self.color = color
+        self.reattach_timeout = reattach_timeout
+        self.by_id = lookup_by_id(port)
         self._settled = False
 
     def _settle_once(self) -> None:
@@ -797,9 +812,78 @@ class SerialTransport:
                 time.sleep(self.settle_seconds)
             self._settled = True
 
+    def _select_readable(self, timeout: float) -> bool:
+        try:
+            r, _, _ = select.select([self.fd], [], [], timeout)
+        except OSError:
+            self._reopen_after_detach()
+            return False
+        return bool(r)
+
+    def _read_chunk_or_detach(self, size: int) -> bytes | None:
+        """None means "nothing yet, keep looping" -- on the current fd, or
+        on a freshly reattached one if a detach just happened. Never
+        returns b"": that is _read_or_none()'s real-EOF/closed-peer signal
+        (docstring there), and here it means the port itself is gone, not
+        merely quiet, so it triggers reattachment instead of being handed
+        to a caller that would otherwise treat it as "nothing happened".
+
+        Deliberate asymmetry with _write_marked() below: a write failure
+        retries the SAME payload against the reopened fd (nothing was ever
+        sent, so resending is safe), but a read failure does not resend
+        anything -- the peer may already have received and even answered
+        the original write in the instant before it vanished, and
+        resending would risk executing an action twice. A request whose
+        reply never arrives because of a mid-read detach is reported as
+        an honest, ordinary timeout on that one directive; only the PORT
+        recovers here, not the in-flight exchange."""
+        try:
+            chunk = _read_or_none(self.fd, size)
+        except OSError:
+            chunk = b""
+        if chunk == b"":
+            self._reopen_after_detach()
+            return None
+        return chunk
+
+    def _reopen_after_detach(self) -> None:
+        target = f"by-id {self.by_id!r}" if self.by_id else f"{self.port} itself (no by-id name)"
+        print(f"--- gap: {self.port} detached, waiting up to {self.reattach_timeout}s "
+              f"for {target} to return ---", flush=True)
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+
+        deadline = time.monotonic() + self.reattach_timeout
+        found: str | None = None
+        while time.monotonic() < deadline and found is None:
+            for device, stable in resolve_upload_port.discover():
+                if self.by_id is not None:
+                    if stable == self.by_id:
+                        found = device
+                        break
+                elif device == self.port:
+                    found = device
+                    break
+            if found is None:
+                time.sleep(0.5)
+
+        if found is None:
+            raise ConsoleClientToolFailure(
+                f"{self.port} did not reappear within {self.reattach_timeout}s")
+
+        self.fd = open_posix_port(found, self.baud, writable=True)
+        self.port = found
+        print(f"--- reattached: {found} ---", flush=True)
+
     def _write_marked(self, payload: bytes) -> None:
         print(f"--- send {payload!r} ---", flush=True)
-        _write_all(self.fd, payload)
+        try:
+            _write_all(self.fd, payload)
+        except OSError:
+            self._reopen_after_detach()
+            _write_all(self.fd, payload)
 
     def send_line(self, line: str, timeout: float) -> tuple[list[ConsoleRecord], bool]:
         """`send`/`sendlen`: line + CR, wait for the request to close.
@@ -842,10 +926,9 @@ class SerialTransport:
         buf = bytearray()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            r, _, _ = select.select([self.fd], [], [], 0.1)
-            if not r:
+            if not self._select_readable(0.1):
                 continue
-            chunk = _read_or_none(self.fd, 4096)
+            chunk = self._read_chunk_or_detach(4096)
             if not chunk:
                 continue
             buf.extend(chunk)
@@ -878,10 +961,9 @@ class SerialTransport:
         deadline = time.monotonic() + seconds
         buf = bytearray()
         while time.monotonic() < deadline:
-            r, _, _ = select.select([self.fd], [], [], 0.1)
-            if not r:
+            if not self._select_readable(0.1):
                 continue
-            chunk = _read_or_none(self.fd, 4096)
+            chunk = self._read_chunk_or_detach(4096)
             if not chunk:
                 continue
             buf.extend(chunk)
@@ -1212,6 +1294,11 @@ def main() -> int:
              f"(default: {DEFAULT_SETTLE_SECONDS})."
     )
     parser.add_argument(
+        "--reattach-timeout", type=float, default=None,
+        help=f"Scripted serial mode: bounded seconds to wait for a detached port's "
+             f"by-id name to return before giving up (default: {DEFAULT_REATTACH_TIMEOUT})."
+    )
+    parser.add_argument(
         "--http", default=None, metavar="BASE-URL",
         help="Scripted mode transport: the browser adapter's POST /api/console "
              "at BASE-URL, instead of --port. Interactive never goes over HTTP; "
@@ -1291,7 +1378,10 @@ def main() -> int:
             file=sys.stderr,
         )
         settle = args.settle if args.settle is not None else DEFAULT_SETTLE_SECONDS
-        transport = SerialTransport(fd, settle_seconds=settle, color=color)
+        reattach_timeout = (args.reattach_timeout if args.reattach_timeout is not None
+                            else DEFAULT_REATTACH_TIMEOUT)
+        transport = SerialTransport(fd, args.port, args.baud, settle_seconds=settle,
+                                     color=color, reattach_timeout=reattach_timeout)
         try:
             return run_scripted(transport, script_directives, initial_timeout)
         except (ScriptUsageError, ConsoleClientToolFailure) as e:

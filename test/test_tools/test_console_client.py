@@ -464,8 +464,8 @@ class ScriptedSerialEngine(unittest.TestCase):
         self.master, self.slave = pty.openpty()
         self.addCleanup(self._close_quietly, self.master)
         self.addCleanup(self._close_quietly, self.slave)
-        slave_path = os.ttyname(self.slave)
-        self.fd = console_client.open_posix_port(slave_path, 115200, writable=True)
+        self.slave_path = os.ttyname(self.slave)
+        self.fd = console_client.open_posix_port(self.slave_path, 115200, writable=True)
         self.addCleanup(self._close_quietly, self.fd)
 
     @staticmethod
@@ -488,7 +488,7 @@ class ScriptedSerialEngine(unittest.TestCase):
                 b"< id=1 type=end status=ok outcome=completed\n"
             ),
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -510,7 +510,7 @@ class ScriptedSerialEngine(unittest.TestCase):
                 b"< id=1 type=end status=ok outcome=completed\n"
             ),
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
 
         with contextlib.redirect_stdout(io.StringIO()):
             records, closed = transport.send_line("system.status.health", timeout=2.0)
@@ -522,7 +522,7 @@ class ScriptedSerialEngine(unittest.TestCase):
         self._peer({
             "system.status.health": b"< id=1 type=begin operation=system.status.health\n",
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
 
         with contextlib.redirect_stdout(io.StringIO()):
             records, closed = transport.send_line("system.status.health", timeout=0.5)
@@ -536,7 +536,7 @@ class ScriptedSerialEngine(unittest.TestCase):
                 b"< id=1 type=end status=ok outcome=completed dropped=2\n"
             ),
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
         directives = [console_client.Directive("send", "system.status.health", "--send")]
 
         out = io.StringIO()
@@ -554,7 +554,7 @@ class ScriptedSerialEngine(unittest.TestCase):
                 b"< id=1 type=end status=ok outcome=completed\n"
             ),
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
         directives = [console_client.Directive("send", "system.status.health", "--send")]
 
         out = io.StringIO()
@@ -567,7 +567,7 @@ class ScriptedSerialEngine(unittest.TestCase):
 
     def test_raw_send_is_byte_exact_and_marked_in_wire_position(self):
         peer = self._peer()
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -578,7 +578,7 @@ class ScriptedSerialEngine(unittest.TestCase):
 
     def test_key_directive_sends_the_tab_byte_embedded_cli_expects(self):
         peer = self._peer()
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
 
         with contextlib.redirect_stdout(io.StringIO()):
             transport.send_raw(console_client.resolve_key_bytes("tab"), listen_seconds=0.2)
@@ -587,7 +587,7 @@ class ScriptedSerialEngine(unittest.TestCase):
 
     def test_settle_delays_only_the_first_send(self):
         self._peer({"a": b"< id=1 type=result status=ok outcome=queued\n"})
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0.3)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0.3)
 
         with contextlib.redirect_stdout(io.StringIO()):
             t0 = time.monotonic()
@@ -606,7 +606,7 @@ class ScriptedSerialEngine(unittest.TestCase):
             "ok-one": b"< id=1 type=result status=ok outcome=queued\n",
             # no response registered for "will-timeout" -- times out by design
         })
-        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200, settle_seconds=0)
         directives = [
             console_client.Directive("send", "ok-one", "--send"),
             console_client.Directive("timeout", "0.3", "--timeout"),
@@ -617,6 +617,144 @@ class ScriptedSerialEngine(unittest.TestCase):
             worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_TIMEOUT)
+
+
+class DetachAndReattach(unittest.TestCase):
+    """#264 "Detach survives": a real I/O error on the serial fd (measured
+    below, not assumed -- closing a pty's master end makes the slave's next
+    write raise EIO and its next read return EOF, matching a real unplugged
+    USB-serial adapter) waits (bounded) for the port's by-id name to
+    return via tools/resolve_upload_port.py's discover(), reopens through
+    the same open_posix_port(), and writes a gap marker to the transcript.
+    """
+
+    def setUp(self):
+        self.master1, self.slave1 = pty.openpty()
+        self.slave1_path = os.ttyname(self.slave1)
+        self.master2, self.slave2 = pty.openpty()
+        self.slave2_path = os.ttyname(self.slave2)
+        for fd in (self.master1, self.slave1, self.master2, self.slave2):
+            self.addCleanup(self._close_quietly, fd)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def test_a_write_error_reattaches_by_id_and_marks_the_gap(self):
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(fd1, self.slave1_path, 115200,
+                                                     settle_seconds=0)
+        transport.by_id = "usb-Fake-if00"  # pretend this port has a stable identity
+
+        # The detach: closing the master is what makes the NEXT write on
+        # the slave fd raise EIO, measured above -- not simulated with a
+        # mock of the write call itself.
+        os.close(self.master1)
+
+        peer2 = FakeConsolePeer(self.master2, {"a": b"< id=1 type=result status=ok outcome=queued\n"})
+        self.addCleanup(peer2.close)
+
+        calls = {"n": 0}
+
+        def fake_discover():
+            calls["n"] += 1
+            if calls["n"] < 2:
+                return []  # not back yet
+            return [(self.slave2_path, "usb-Fake-if00")]
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover",
+                                side_effect=fake_discover), \
+             mock.patch.object(console_client.time, "sleep", return_value=None):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                records, closed = transport.send_line("a", timeout=2.0)
+
+        self.assertTrue(closed, "the resend after reattach must still reassemble normally")
+        self.assertEqual(transport.port, self.slave2_path)
+        printed = out.getvalue()
+        self.assertIn("--- gap:", printed)
+        self.assertIn("usb-Fake-if00", printed)
+        self.assertIn(f"--- reattached: {self.slave2_path} ---", printed)
+
+    def test_a_read_eof_reattaches_the_port_but_does_not_resend_the_in_flight_request(self):
+        # The write succeeds (master1 is still open at that instant); the
+        # detach lands a moment later, while THIS request is waiting on its
+        # reply -- exercising _read_chunk_or_detach's EOF branch, distinct
+        # from the write-failure path proven above. time.sleep() is left
+        # real here (not mocked) so this background timer and the reattach
+        # loop's own poll delay do not race each other through one patched
+        # function.
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(
+            fd1, self.slave1_path, 115200, settle_seconds=0, reattach_timeout=5.0)
+        transport.by_id = "usb-Fake-if00"
+
+        def detach_shortly():
+            time.sleep(0.1)
+            os.close(self.master1)
+
+        threading.Thread(target=detach_shortly, daemon=True).start()
+
+        calls = {"n": 0}
+
+        def fake_discover():
+            calls["n"] += 1
+            if calls["n"] < 2:
+                return []
+            return [(self.slave2_path, "usb-Fake-if00")]
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover",
+                                side_effect=fake_discover):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                records, closed = transport.send_line("a", timeout=1.5)
+
+        self.assertFalse(
+            closed, "nothing was ever sent to the reattached port for THIS request")
+        printed = out.getvalue()
+        self.assertIn("--- gap:", printed)
+        self.assertIn("--- reattached:", printed)
+        self.assertEqual(transport.port, self.slave2_path)
+
+        # The port itself has recovered: the NEXT directive works normally.
+        peer2 = FakeConsolePeer(self.master2, {"b": b"< id=2 type=result status=ok outcome=queued\n"})
+        self.addCleanup(peer2.close)
+        with contextlib.redirect_stdout(io.StringIO()):
+            records2, closed2 = transport.send_line("b", timeout=2.0)
+        self.assertTrue(closed2, "a later directive must still work against the reattached port")
+
+    def test_giving_up_after_the_bounded_wait_is_a_tool_failure(self):
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(
+            fd1, self.slave1_path, 115200, settle_seconds=0, reattach_timeout=0.2)
+        transport.by_id = "usb-Fake-if00"
+        os.close(self.master1)
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover", return_value=[]), \
+             mock.patch.object(console_client.time, "sleep", return_value=None):
+            with self.assertRaises(console_client.ConsoleClientToolFailure):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    transport.send_line("a", timeout=2.0)
+
+    def test_a_port_with_no_by_id_name_waits_for_the_same_device_path(self):
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(fd1, self.slave1_path, 115200,
+                                                     settle_seconds=0, reattach_timeout=0.2)
+        self.assertIsNone(transport.by_id, "a pty path has no by-id entry to find")
+        os.close(self.master1)
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover",
+                                return_value=[(self.slave2_path, None)]), \
+             mock.patch.object(console_client.time, "sleep", return_value=None):
+            with self.assertRaises(console_client.ConsoleClientToolFailure):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    transport.send_line("a", timeout=2.0)
+        # Refusing here is correct: discover() never reports the ORIGINAL
+        # path back (it reports a different one, self.slave2_path), and
+        # with no by-id name there is nothing else to match against.
 
 
 class _ConsoleStubHandler(http.server.BaseHTTPRequestHandler):
