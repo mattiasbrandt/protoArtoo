@@ -337,8 +337,17 @@ buffered command. No line is ever interleaved inside another.
   never part of a result.
 - A serial record waits briefly for USB CDC transmit room before it is
   written, and is dropped whole (never split, never sent short) if that room
-  never clears (ADR 0036); log lines stay best-effort and never wait. A line
-  is one write or none - a line that starts on the wire always finishes on it.
+  never clears (ADR 0036); log lines stay best-effort and never wait. **For
+  records**, this is one write or none - a record that starts on the wire
+  always finishes on it. A runtime log line does not carry the same
+  guarantee: once the console task has bound its CLI, a log line is echoed
+  through embedded-cli's interactive redraw path one byte per `Serial.write()`
+  call (needed for the input-line clear/redraw behavior in section 6, not for
+  delivery atomicity), and can still tear under the same zero-timeout
+  backpressure. Only the boot-time fallback used before that binding (early
+  setup log lines) got the same single-write fix as records; ADR 0036
+  deliberately left the interactive log path's best-effort contract (#245)
+  unchanged.
 
 ## 8. Serial terminal
 
