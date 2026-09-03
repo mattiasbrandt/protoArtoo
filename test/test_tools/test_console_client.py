@@ -26,6 +26,8 @@ import pty
 import select
 import signal
 import socket
+import subprocess
+import sys
 import tempfile
 import termios
 import threading
@@ -755,6 +757,97 @@ class DetachAndReattach(unittest.TestCase):
         # Refusing here is correct: discover() never reports the ORIGINAL
         # path back (it reports a different one, self.slave2_path), and
         # with no by-id name there is nothing else to match against.
+
+
+def _directives(*pairs):
+    return [console_client.Directive(kind, arg, "test") for kind, arg in pairs]
+
+
+class RowsSelection(unittest.TestCase):
+    """#264: @row blocks, --rows (an explicit replay order, not file order),
+    and --skip-manual (drop any block containing a pause)."""
+
+    def test_split_separates_preamble_from_labelled_blocks(self):
+        directives = _directives(
+            ("timeout", "5"),
+            ("row", "217 boot-check"),
+            ("send", "system.status.health"),
+            ("row", "260 detach-replug"),
+            ("pause", "unplug the cable"),
+            ("send", "system.status.health"),
+        )
+        preamble, blocks = console_client.split_into_row_blocks(directives)
+
+        self.assertEqual([(d.kind, d.arg) for d in preamble], [("timeout", "5")])
+        self.assertEqual([(b.ticket, b.label) for b in blocks],
+                          [("217", "boot-check"), ("260", "detach-replug")])
+        self.assertEqual([d.kind for d in blocks[0].directives], ["send"])
+        self.assertEqual([d.kind for d in blocks[1].directives], ["pause", "send"])
+
+    def test_rows_selects_in_the_order_given_not_file_order(self):
+        directives = _directives(
+            ("row", "217 boot-check"), ("send", "a"),
+            ("row", "260 detach-replug"), ("send", "b"),
+        )
+        _, blocks = console_client.split_into_row_blocks(directives)
+
+        selected = console_client.select_rows(blocks, "detach-replug,boot-check", False)
+
+        self.assertEqual([b.label for b in selected], ["detach-replug", "boot-check"])
+
+    def test_rows_with_an_unknown_name_raises_and_names_the_available_ones(self):
+        directives = _directives(("row", "217 boot-check"), ("send", "a"))
+        _, blocks = console_client.split_into_row_blocks(directives)
+
+        with self.assertRaises(console_client.ScriptUsageError) as ctx:
+            console_client.select_rows(blocks, "nonexistent", False)
+        self.assertIn("nonexistent", str(ctx.exception))
+        self.assertIn("boot-check", str(ctx.exception))
+
+    def test_skip_manual_drops_only_blocks_containing_pause(self):
+        directives = _directives(
+            ("row", "217 boot-check"), ("send", "a"),
+            ("row", "260 detach-replug"), ("pause", "unplug"), ("send", "b"),
+        )
+        _, blocks = console_client.split_into_row_blocks(directives)
+
+        selected = console_client.select_rows(blocks, None, True)
+
+        self.assertEqual([b.label for b in selected], ["boot-check"])
+
+    def test_flatten_reprints_the_row_marker_for_run_scripted(self):
+        directives = _directives(("row", "217 boot-check"), ("send", "a"))
+        preamble, blocks = console_client.split_into_row_blocks(directives)
+
+        flat = console_client.flatten_rows(preamble, blocks)
+
+        self.assertEqual([(d.kind, d.arg) for d in flat],
+                          [("row", "217 boot-check"), ("send", "a")])
+
+    def test_end_to_end_skip_manual_over_http_runs_only_the_agent_row(self):
+        script_path = os.path.join(
+            tempfile.mkdtemp(), "rows.txt")
+        with open(script_path, "w") as f:
+            f.write(
+                "@row 217 boot-check\n"
+                "send a\n"
+                "@row 260 detach-replug\n"
+                "pause unplug the cable\n"
+                "send b\n"
+            )
+        responses = {"a": (200, b'{"records":[{"id":1,"type":"result","status":"ok","outcome":"queued"}]}')}
+        stub = _ConsoleStub(responses)
+        self.addCleanup(stub.close)
+
+        r = subprocess.run(
+            [sys.executable, str(MODULE_PATH), "--http", stub.base_url,
+             "--script", script_path, "--skip-manual"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("=== row 217 boot-check ===", r.stdout)
+        self.assertNotIn("detach-replug", r.stdout)
+        self.assertNotIn("[PAUSE]", r.stdout)
 
 
 class _ConsoleStubHandler(http.server.BaseHTTPRequestHandler):

@@ -1121,6 +1121,76 @@ def load_script_file(path: str) -> list[Directive]:
     return directives
 
 
+class RowBlock:
+    """One `@row <ticket> <name>` block: `directives` holds everything up
+    to (not including) the next `@row` marker or EOF. The marker itself is
+    rebuilt by row_marker_directive() when a selection is flattened back
+    into one execution list, so `=== row ... ===` still prints in
+    run_scripted() the same way whether or not a row was ever filtered."""
+
+    __slots__ = ("ticket", "label", "directives")
+
+    def __init__(self, ticket: str | None, label: str | None, directives: list[Directive]):
+        self.ticket = ticket
+        self.label = label
+        self.directives = directives
+
+
+def split_into_row_blocks(directives: list[Directive]) -> tuple[list[Directive], list[RowBlock]]:
+    """(preamble, blocks). `preamble` is whatever precedes the first `@row`
+    marker -- typically file-scoped `timeout`/`settle` setup -- and always
+    runs; it is not itself a row, so --rows/--skip-manual never touch it."""
+    preamble: list[Directive] = []
+    blocks: list[RowBlock] = []
+    current: RowBlock | None = None
+    for d in directives:
+        if d.kind == "row":
+            parts = d.arg.split(None, 1)
+            ticket = parts[0] if parts else None
+            label = parts[1] if len(parts) > 1 else None
+            current = RowBlock(ticket, label, [])
+            blocks.append(current)
+        elif current is None:
+            preamble.append(d)
+        else:
+            current.directives.append(d)
+    return preamble, blocks
+
+
+def row_marker_directive(block: RowBlock) -> Directive:
+    arg = f"{block.ticket} {block.label}" if block.label else (block.ticket or "")
+    return Directive("row", arg, "@row")
+
+
+def select_rows(blocks: list[RowBlock], rows: str | None, skip_manual: bool) -> list[RowBlock]:
+    """`rows` is a comma-separated list of `@row` names, run in the order
+    given (not file order) -- an explicit replay sequence. `skip_manual`
+    then drops any block that contains a `pause` directive at all, whether
+    or not it was itself named by `rows`."""
+    selected = blocks
+    if rows:
+        wanted = [w.strip() for w in rows.split(",") if w.strip()]
+        by_label = {b.label: b for b in blocks if b.label is not None}
+        missing = [w for w in wanted if w not in by_label]
+        if missing:
+            available = ", ".join(sorted(by_label)) or "(none)"
+            raise ScriptUsageError(
+                f"--rows: unknown row name(s) {', '.join(missing)}; available: {available}"
+            )
+        selected = [by_label[w] for w in wanted]
+    if skip_manual:
+        selected = [b for b in selected if not any(d.kind == "pause" for d in b.directives)]
+    return selected
+
+
+def flatten_rows(preamble: list[Directive], blocks: list[RowBlock]) -> list[Directive]:
+    out = list(preamble)
+    for b in blocks:
+        out.append(row_marker_directive(b))
+        out.extend(b.directives)
+    return out
+
+
 def run_pause(text: str) -> None:
     if not sys.stdin.isatty():
         raise ScriptUsageError(
@@ -1329,12 +1399,35 @@ def main() -> int:
         "--no-color", action="store_true",
         help="Force colour off, even on a TTY. ANSI never reaches a redirected transcript either way."
     )
+    parser.add_argument(
+        "--rows", default=None, metavar="NAME[,NAME...]",
+        help="Run only these @row blocks from --script, in the order given here "
+             "(not file order). Requires the script to declare @row blocks."
+    )
+    parser.add_argument(
+        "--skip-manual", action="store_true",
+        help="Run only @row blocks that contain no pause directive (agent-runnable rows)."
+    )
     args = parser.parse_args()
 
     script_directives: list[Directive] = []
     if args.script:
         script_directives.extend(load_script_file(args.script))
     script_directives.extend(getattr(args, "directives", None) or [])
+
+    if script_directives:
+        preamble, blocks = split_into_row_blocks(script_directives)
+        if blocks:
+            try:
+                blocks = select_rows(blocks, args.rows, args.skip_manual)
+            except ScriptUsageError as e:
+                print(f"ERROR: {e}", file=sys.stderr)
+                return EXIT_TOOL_FAILURE
+            script_directives = flatten_rows(preamble, blocks)
+        elif args.rows:
+            print("ERROR: --rows given but the script has no @row blocks to select from",
+                  file=sys.stderr)
+            return EXIT_TOOL_FAILURE
 
     if script_directives:
         if args.pyserial:
