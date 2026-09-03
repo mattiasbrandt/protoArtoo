@@ -127,7 +127,11 @@ none.
 
 ### Hardware and Tooling Reminders
 
-- Use [tools/console_client.py](../tools/console_client.py) for serial capture; avoid ad-hoc pyserial snippets.
+- [tools/console_client.py](../tools/console_client.py) is the Console Client, not only a
+  capture tool: boot-log capture (`make monitor`), an interactive Controller Console session
+  (`make console`), and a scripted mode that drives either Console Adapter and replays the
+  `tools/bench_rows/` sheets (`make bench-rows`). Use it instead of ad-hoc pyserial snippets;
+  the reference is [docs/console-client.md](../docs/console-client.md).
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - The HTTP server (`initPsychicWebServer()`, via `startHttpServerOnce()`) must be started from the WiFi event callback path, not directly in `setup()`.

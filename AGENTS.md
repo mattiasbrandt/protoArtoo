@@ -165,7 +165,7 @@ first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
 which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
 line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Four rules the Makefile cannot enforce for you:
+Five rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
@@ -196,6 +196,38 @@ Four rules the Makefile cannot enforce for you:
   uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
   that had been built against the placeholder SSID. Copy it in when you create a
   worktree, and never commit it.
+
+### The Console Client
+
+`tools/console_client.py` is the first-party host client for the Controller
+Console, and it does three things rather than one. It **captures** a boot log
+(`make monitor`; `--until <string> --timeout <s>` for a bounded wait instead of
+a fixed window). It opens an **interactive** session you can type at
+(`make console`). And it runs a **scripted** list of commands against either
+Console Adapter -- serial via `--port`, the dashboard's `POST /api/console` via
+`--http` -- printing the records that came back in one grammar, so a transcript
+from one adapter diffs line for line against the other.
+
+That third mode is what makes bench evidence replayable. `tools/bench_rows/`
+holds one sheet per board, split into named `@row` blocks; `--rows <names>` runs
+a selection in the order given and `--skip-manual` runs every row that needs
+nobody standing at the bench -- the agent-runnable set. `make bench-rows
+BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1]` replays one
+with the port resolved the same way `make flash` resolves it.
+
+Two things before you quote a transcript as evidence. Scripted mode prints a
+provenance header whose `IMAGE:` line reads `UNKNOWN (not evidence)` unless you
+pass `--status <base-url>` (read from the board) or `--image <label>`; the
+`REPO:` sha above it is your checkout's, not the firmware's, and reading it as
+the image identity is a real misreading this line exists to stop. And a
+`status=err` record is the Console answering correctly, not a failure: it never
+changes the exit code, which reports only whether the transport delivered the
+conversation (0 clean, 2 nothing closed, 3 the firmware dropped records, 4 the
+adapter capped the answer).
+
+Directive grammar, key names, every flag and the full exit-code table:
+`docs/console-client.md`. Attach safety and the supported-client list stay in
+`docs/troubleshooting.md`.
 
 ### The build lock
 
