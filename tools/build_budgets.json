@@ -73,19 +73,6 @@
       "baseline_flash_bytes": 1199056,
       "baseline_ram_bytes": 61214,
       "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes); the earlier 1,606,882 B / 79,952 B figures were recorded for the former firebeetle2_full env at 8fea3c7 and carried across the #203 rename, and do not describe this image. Budget set above measured value to allow image growth during platform development."
-    },
-    "firebeetle2_p4_rt_bench": {
-      "board": "FireBeetle 2 ESP32-P4 (RT Bench)",
-      "platform": "esp32p4",
-      "partition_flash_bytes": 3145728,
-      "flash_ceiling_bytes": 3113728,
-      "dram_limit_bytes": 327680,
-      "flash_budget_bytes": 2000000,
-      "ram_budget_bytes": 100000,
-      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
-      "baseline_flash_bytes": 1207024,
-      "baseline_ram_bytes": 62166,
-      "budget_rationale": "Complete firmware plus RT bench harness (SBUS loopback, TWDT stall). Full src/ compilation with p4_rt_bench.cpp instrumentation on FireBeetle 2 P4. Baseline is a real measurement of this image configuration."
     }
   }
 }
