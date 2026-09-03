@@ -21,9 +21,10 @@
 // Takes a plain int, not esp_reset_reason_t: <esp_system.h> does not exist
 // on the native toolchain (no stub under test/stubs/include), and every
 // existing native-only workaround for that (src/web/web_network_bootstrap.cpp,
-// include/failsafe_boot_twdt.h) re-declares its own copy of the enum under
-// `#ifdef ARDUINO`, which the slice gate's diff check (tools/slice_verify.py,
-// AGENTS.md check 9) refuses as a NEW such block under include/. An unscoped
+// include/failsafe_boot_twdt.h) re-declares its own copy of the enum behind
+// an ARDUINO build-flag guard, which the slice gate's diff check
+// (tools/slice_verify.py, AGENTS.md check 9) refuses as a NEW such guard
+// under include/. An unscoped
 // C enum converts to int implicitly at the call site (every caller here
 // passes esp_reset_reason()'s return value directly, exactly as
 // src/main.cpp already does at its other call site,
