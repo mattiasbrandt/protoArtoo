@@ -23,6 +23,7 @@ import importlib.util
 import io
 import os
 import pty
+import random
 import select
 import signal
 import socket
@@ -214,6 +215,388 @@ class RunInteractiveDuplex(unittest.TestCase):
         t.join(timeout=5)
         self.assertFalse(t.is_alive(), "run_interactive hung instead of detecting the closed port")
         self.assertEqual(result["rc"], 1)
+
+
+# ---------------------------------------------------------------------------
+# embedded-cli's device->screen editor traffic (#267)
+#
+# Read from lib/embedded-cli/src/embedded_cli.c, not invented: lineBreak
+# (:235), escSeqCursorRight/Left (:241/:244), escSeqCursorSave/Restore
+# (:247/:250), escSeqInsertChar (:253), escSeqDeleteChar (:256), moveCursor()'s
+# "\x1B[<n><dir>", and clearCurrentLine()'s carriage return + spaces + carriage
+# return. The composites below are the sequences the library writes for the
+# three edits #267 names -- Tab completion, history Up/Down, mid-line
+# Backspace -- assembled from those primitives. Their exact composition is not
+# what the assertions turn on: the colouriser's contract is that ANY byte
+# stream comes out unchanged except for SGR at record line boundaries, so
+# these exist to make that claim concrete against realistic traffic.
+# ---------------------------------------------------------------------------
+
+CLI_LINE_BREAK = b"\r\n"
+CLI_PROMPT = b"> "
+CLI_CURSOR_LEFT = b"\x1b[D"
+CLI_CURSOR_SAVE = b"\x1b[s"
+CLI_CURSOR_RESTORE = b"\x1b[u"
+CLI_DELETE_CHAR = b"\x1b[P"
+
+
+def cli_clear_line(width: int) -> bytes:
+    """clearCurrentLine(): carriage return, `width` spaces, carriage return."""
+    return b"\r" + b" " * width + b"\r"
+
+
+# Tab with several candidates: clear the line, list each candidate on its own
+# line, reprint the invitation and the buffered command (onAutocompleteRequest).
+TAB_COMPLETION_STREAM = (
+    cli_clear_line(14)
+    + b"system.status.health" + CLI_LINE_BREAK
+    + b"system.status.rc" + CLI_LINE_BREAK
+    + CLI_PROMPT + b"system.status."
+)
+
+# History Up: clear the line, invitation, the recalled command, then the live
+# autocompletion pass (cursor save, suggestion tail, spaces over the previous
+# suggestion, cursor restore).
+HISTORY_UP_STREAM = (
+    cli_clear_line(20)
+    + CLI_PROMPT + b"drive.action.move"
+    + CLI_CURSOR_SAVE + b" speed=" + b"   " + CLI_CURSOR_RESTORE
+)
+
+# Backspace mid-line: cursor left, delete character (onControlInput's
+# '\b'/0x7F branch), then the live autocompletion pass again.
+BACKSPACE_STREAM = (
+    CLI_CURSOR_LEFT + CLI_DELETE_CHAR
+    + CLI_CURSOR_SAVE + b"h" + CLI_CURSOR_RESTORE
+)
+
+
+def strip_sgr(data: bytes) -> bytes:
+    """Remove exactly the three SGR sequences the colouriser may insert."""
+    for code in (console_client.SGR_RECORD, console_client.SGR_RECORD_ERR,
+                 console_client.SGR_RESET):
+        data = data.replace(code.encode("ascii"), b"")
+    return data
+
+
+def feed_in_chunks(colorizer, data: bytes, splits) -> bytes:
+    """Feed `data` to `colorizer` split at `splits`, returning everything it
+    wrote out, including whatever a final flush() releases."""
+    out = bytearray()
+    prev = 0
+    for point in list(splits) + [len(data)]:
+        out += colorizer.feed(data[prev:point])
+        prev = point
+    out += colorizer.flush()
+    return bytes(out)
+
+
+class InteractiveRecordColour(unittest.TestCase):
+    """#267 defect 2: colour in interactive mode.
+
+    run_interactive() is a byte pump whose device->screen direction also
+    carries embedded-cli's redraw sequences, so the risk the ticket names is
+    corrupting that redraw. The contract InteractiveRecordColorizer keeps
+    instead of parsing the stream into lines is asserted here: strip the SGR
+    it inserts and you have its input back, byte for byte, whatever the
+    chunk boundaries -- which is what makes "the redraw still works" a
+    property rather than an opinion.
+    """
+
+    def test_disabled_is_a_byte_exact_passthrough(self):
+        c = console_client.InteractiveRecordColorizer(enabled=False)
+        stream = (b"< id=1 type=result status=err outcome=invalid\r\n"
+                  + TAB_COMPLETION_STREAM)
+
+        self.assertEqual(c.feed(stream), stream)
+        self.assertEqual(c.flush(), b"", "a disabled colouriser must never hold a byte")
+        self.assertIsNone(c.select_timeout(),
+                          "a disabled colouriser must never make the caller poll")
+
+    def test_record_line_is_wrapped_in_cyan_inside_its_terminator(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        line = b"< id=1 type=field name=heapFree value=42120"
+
+        out = c.feed(line + b"\r\n")
+
+        self.assertEqual(
+            out,
+            console_client.SGR_RECORD.encode() + line
+            + console_client.SGR_RESET.encode() + b"\r\n",
+            "the reset must close the record BEFORE its terminator, so the "
+            "colour never spills onto the next line")
+
+    def test_status_err_record_is_red(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        line = b"< id=2 type=result status=err outcome=invalid reason=unknown-operation"
+
+        out = c.feed(line + b"\r\n")
+
+        self.assertTrue(out.startswith(console_client.SGR_RECORD_ERR.encode()))
+        self.assertEqual(strip_sgr(out), line + b"\r\n")
+
+    def test_log_lines_prompt_and_redraw_are_never_coloured(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        stream = (b"[INFO][SafetyMonitor] estop clear\r\n"
+                  + CLI_PROMPT + b"system.stat"
+                  + TAB_COMPLETION_STREAM + HISTORY_UP_STREAM + BACKSPACE_STREAM)
+
+        out = feed_in_chunks(c, stream, [])
+
+        self.assertEqual(out, stream,
+                         "nothing that is not a Console Record may be touched")
+
+    def test_redraw_traffic_survives_every_chunk_boundary(self):
+        """The invariant, over the editor traffic #267 names by name, split at
+        every single byte boundary: output minus SGR is the input."""
+        stream = (
+            cli_clear_line(11)
+            + b"[WARN] rc link degraded" + CLI_LINE_BREAK
+            + CLI_PROMPT + b"system.stat"
+            + TAB_COMPLETION_STREAM
+            + b"< id=7 type=begin operation=system.status.health\r\n"
+            + b"< id=7 type=field name=estop value=false\r\n"
+            + b"< id=7 type=end status=err outcome=failed\r\n"
+            + HISTORY_UP_STREAM
+            + BACKSPACE_STREAM
+        )
+        self.assertEqual(strip_sgr(stream), stream,
+                         "fixture must not itself contain SGR, or the check is circular")
+
+        for split in range(len(stream) + 1):
+            c = console_client.InteractiveRecordColorizer(enabled=True)
+            out = feed_in_chunks(c, stream, [split])
+            self.assertEqual(strip_sgr(out), stream,
+                             f"bytes changed when the stream split at {split}")
+
+    def test_the_invariant_holds_for_adversarial_streams(self):
+        """The fixtures above are assembled by hand from embedded_cli.c, so
+        the invariant should not depend on how faithful they are. This feeds
+        pseudo-random streams built from the bytes that actually decide the
+        colouriser's state -- the record prefix's own characters, the two
+        terminators, ESC and the bracket that starts every cursor sequence --
+        at random chunk boundaries, and asserts the same property: strip the
+        SGR and the input comes back byte for byte.
+
+        Seeded, so a failure is reproducible rather than a flake."""
+        rng = random.Random(20260904)
+        alphabet = [b"<", b" ", b"i", b"d", b"=", b"\r", b"\n", b"\x1b",
+                    b"[", b"D", b"s", b"u", b"P", b"x", b"1", b"e", b"r"]
+        record = b"< id=5 type=result status=err outcome=invalid"
+        colored_any = False
+
+        for _ in range(300):
+            stream = bytearray()
+            while len(stream) < 120:
+                if rng.random() < 0.1:
+                    stream += record + b"\r\n"
+                else:
+                    stream += rng.choice(alphabet)
+            stream = bytes(stream)
+            self.assertEqual(strip_sgr(stream), stream,
+                             "generated fixture must not itself contain SGR")
+
+            splits = sorted(rng.sample(range(len(stream) + 1),
+                                       k=rng.randint(0, 6)))
+            c = console_client.InteractiveRecordColorizer(enabled=True)
+            out = feed_in_chunks(c, stream, splits)
+
+            self.assertEqual(strip_sgr(out), stream,
+                             f"bytes changed for splits {splits} on {stream!r}")
+            colored_any = colored_any or console_client.SGR_RESET.encode() in out
+
+        self.assertTrue(colored_any,
+                        "no record was ever coloured -- the invariant held vacuously")
+
+    def test_records_are_coloured_whatever_the_chunk_boundary(self):
+        stream = (b"< id=7 type=begin operation=system.status.health\r\n"
+                  b"< id=7 type=end status=err outcome=failed\r\n")
+
+        for split in range(len(stream) + 1):
+            c = console_client.InteractiveRecordColorizer(enabled=True)
+            out = feed_in_chunks(c, stream, [split])
+            self.assertEqual(out.count(console_client.SGR_RECORD.encode()), 1,
+                             f"split at {split} lost the ordinary record's colour")
+            self.assertEqual(out.count(console_client.SGR_RECORD_ERR.encode()), 1,
+                             f"split at {split} lost the error record's colour")
+            self.assertEqual(out.count(console_client.SGR_RESET.encode()), 2,
+                             f"split at {split} left a colour unclosed")
+
+    def test_sgr_is_inserted_only_at_a_line_boundary(self):
+        """An SGR opener may only appear at the very start of the stream or
+        directly after a CR or LF -- the one position at which an escape
+        sequence provably cannot be in progress, which is what keeps the
+        insertion out of the middle of a cursor sequence."""
+        stream = (BACKSPACE_STREAM
+                  + b"< id=9 type=item value=drive.action.move\r\n"
+                  + HISTORY_UP_STREAM
+                  + b"< id=9 type=end status=ok outcome=completed\r\n")
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        out = feed_in_chunks(c, stream, [])
+
+        for code in (console_client.SGR_RECORD.encode(),
+                     console_client.SGR_RECORD_ERR.encode()):
+            start = 0
+            while True:
+                at = out.find(code, start)
+                if at == -1:
+                    break
+                self.assertTrue(at == 0 or out[at - 1:at] in (b"\r", b"\n"),
+                                f"colour opened mid-line at offset {at}")
+                start = at + len(code)
+
+    def test_a_candidate_that_is_not_a_record_is_released_verbatim(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+
+        out = c.feed(b"< idle marker\r\n")
+
+        self.assertEqual(out, b"< idle marker\r\n")
+        self.assertEqual(c.flush(), b"")
+
+    def test_a_held_candidate_asks_the_caller_to_poll_and_is_never_lost(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+
+        held = c.feed(b"< id")
+
+        self.assertEqual(held, b"", "a candidate prefix must be held, not printed half-coloured")
+        self.assertEqual(c.select_timeout(), c.HOLD_TIMEOUT_S,
+                         "a holding colouriser must make the caller time its select() out")
+        self.assertEqual(c.flush(), b"< id", "held bytes must be released verbatim, never dropped")
+        self.assertIsNone(c.select_timeout())
+
+    def test_a_record_line_over_the_hold_limit_is_released_uncoloured(self):
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        prefix = b"< id=1 "
+        # One byte short of the limit: still a candidate, still held whole.
+        almost = prefix + b"x" * (c.HOLD_LIMIT - len(prefix) - 1)
+        self.assertEqual(c.feed(almost), b"", "a candidate under the limit must stay held")
+        self.assertEqual(c.select_timeout(), c.HOLD_TIMEOUT_S)
+
+        # The byte that reaches the limit releases the whole hold, uncoloured,
+        # and the colouriser stops holding rather than growing without bound.
+        out = c.feed(b"x")
+
+        self.assertEqual(out, almost + b"x")
+        self.assertNotIn(console_client.SGR_RECORD.encode(), out,
+                         "a line released at the limit is not a completed record")
+        self.assertIsNone(c.select_timeout(), "nothing may still be held at the limit")
+
+        # Whatever follows is ordinary pass-through: nothing is lost.
+        tail = b"yyy\r\n"
+        self.assertEqual(c.feed(tail), tail)
+        self.assertEqual(c.flush(), b"")
+
+    def test_a_record_mid_entry_is_left_alone(self):
+        """A record written while the operator is mid-entry does not clear the
+        input line (include/console_serial_output.h), so it does not start at
+        column 0 and must not be coloured as though it did."""
+        c = console_client.InteractiveRecordColorizer(enabled=True)
+        stream = CLI_PROMPT + b"system.stat" + b"< id=4 type=result status=ok\r\n"
+
+        out = c.feed(stream)
+
+        self.assertEqual(out, stream)
+
+
+class InteractiveColourEndToEnd(unittest.TestCase):
+    """The same thing through run_interactive() itself, over real fds."""
+
+    def setUp(self):
+        self.serial_master, raw_slave = pty.openpty()
+        slave_path = os.ttyname(raw_slave)
+        os.close(raw_slave)
+        self.serial_slave = console_client.open_posix_port(slave_path, 115200, writable=True)
+        self.stdin_r, self.stdin_w = os.pipe()
+        self.stdout_r, self.stdout_w = os.pipe()
+        for fd in (self.serial_master, self.serial_slave, self.stdin_r,
+                   self.stdin_w, self.stdout_r, self.stdout_w):
+            self.addCleanup(self._close_quietly, fd)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def run_in_thread(self, color):
+        result = {}
+
+        def go():
+            result["rc"] = console_client.run_interactive(
+                self.serial_slave, self.stdin_r, self.stdout_w, color=color)
+
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+        return t, result
+
+    def _read_stdout(self, expected_len, timeout=2.0):
+        got = bytearray()
+        deadline = time.monotonic() + timeout
+        while len(got) < expected_len and time.monotonic() < deadline:
+            r, _, _ = select.select([self.stdout_r], [], [], 0.2)
+            if r:
+                got += os.read(self.stdout_r, 4096)
+        return bytes(got)
+
+    def test_colour_on_records_reach_the_screen_wrapped(self):
+        t, result = self.run_in_thread(color=True)
+        line = b"< id=1 type=result status=ok outcome=queued"
+        os.write(self.serial_master, line + b"\r\n")
+
+        expected = (console_client.SGR_RECORD.encode() + line
+                    + console_client.SGR_RESET.encode() + b"\r\n")
+        with watchdog(10, "run_interactive never wrote the coloured record"):
+            self.assertEqual(self._read_stdout(len(expected)), expected)
+
+        os.write(self.stdin_w, b"\x03")
+        t.join(timeout=5)
+        self.assertEqual(result["rc"], 0)
+
+    def test_colour_off_is_byte_identical_to_the_wire(self):
+        t, result = self.run_in_thread(color=False)
+        wire = b"< id=1 type=result status=err outcome=invalid\r\n"
+        os.write(self.serial_master, wire)
+
+        with watchdog(10, "run_interactive never wrote the record"):
+            self.assertEqual(self._read_stdout(len(wire)), wire)
+
+        os.write(self.stdin_w, b"\x03")
+        t.join(timeout=5)
+        self.assertEqual(result["rc"], 0)
+
+    def test_input_stays_byte_exact_with_colour_on(self):
+        """Non-negotiable: keystrokes reach the firmware unchanged. Colour is
+        a device->screen concern and must never touch this direction."""
+        t, result = self.run_in_thread(color=True)
+        typed = b"system.status.health\t\x1b[A\x7f\r"
+        os.write(self.stdin_w, typed)
+
+        got = bytearray()
+        with watchdog(10, "typed bytes never reached the serial fd"):
+            while len(got) < len(typed):
+                r, _, _ = select.select([self.serial_master], [], [], 2.0)
+                if not r:
+                    break
+                got += os.read(self.serial_master, 256)
+        self.assertEqual(bytes(got), typed)
+
+        os.write(self.stdin_w, b"\x03")
+        t.join(timeout=5)
+        self.assertEqual(result["rc"], 0)
+
+    def test_a_half_arrived_record_still_reaches_the_screen(self):
+        """The hold expires on a quiet port: a partial line is printed
+        uncoloured rather than sitting invisible until the next byte."""
+        t, result = self.run_in_thread(color=True)
+        os.write(self.serial_master, b"< id")
+
+        with watchdog(10, "the held candidate was never released"):
+            self.assertEqual(self._read_stdout(4), b"< id")
+
+        os.write(self.stdin_w, b"\x03")
+        t.join(timeout=5)
+        self.assertEqual(result["rc"], 0)
 
 
 class InteractiveFdTermiosAndSignals(unittest.TestCase):
@@ -653,6 +1036,126 @@ class ScriptedSerialEngine(unittest.TestCase):
             worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_OK)
+
+
+class CrLfTerminatedWire(unittest.TestCase):
+    """#267: the firmware now terminates every framed serial line with CR LF
+    (src/console/console_serial_output.cpp, matching embedded-cli's own
+    lineBreak) so records stop staircasing in the raw-mode terminal a Console
+    session requires. The scripted parser was already written to tolerate that
+    -- SerialTransport._read_group()/_drain_for() rstrip("\r"), the capture
+    path rstrip()s -- and #267's acceptance criterion says prove it rather
+    than assume it. Everything below feeds the peer CR LF, never a bare LF,
+    and asserts on the PARSED values and the printed transcript, which is
+    where a surviving CR would show up (a `dropped=2\r` reads as loss for the
+    wrong reason; a `dropped=0\r` would read as loss when nothing was lost).
+
+    Same pty pair, same real fds as ScriptedSerialEngine above: the client
+    side is opened through open_posix_port(), which clears ICRNL/INLCR/IGNCR
+    on the slave, so a CR written by the peer arrives as a CR and is not
+    quietly translated by the line discipline before the code under test
+    ever sees it.
+    """
+
+    def setUp(self):
+        self.master, self.slave = pty.openpty()
+        self.addCleanup(self._close_quietly, self.master)
+        self.addCleanup(self._close_quietly, self.slave)
+        self.slave_path = os.ttyname(self.slave)
+        self.fd = console_client.open_posix_port(self.slave_path, 115200, writable=True)
+        self.addCleanup(self._close_quietly, self.fd)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _peer(self, responses=None):
+        peer = FakeConsolePeer(self.master, responses)
+        self.addCleanup(peer.close)
+        return peer
+
+    def test_send_group_parses_records_terminated_cr_lf(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\r\n"
+                b"< id=1 type=field name=heapFree value=42120\r\n"
+                b"< id=1 type=end status=ok outcome=completed\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            records, closed = transport.send_line("system.status.health", timeout=2.0)
+
+        self.assertTrue(closed, "a CR LF terminated group must still close")
+        self.assertEqual([r.type for r in records], ["begin", "field", "end"])
+        # The CR must not survive into a field value: it is line-terminator
+        # whitespace, not part of the last token on the line.
+        self.assertEqual(records[0].fields["operation"], "system.status.health")
+        self.assertEqual(records[1].fields["value"], "42120")
+        self.assertEqual(records[2].fields["outcome"], "completed")
+        printed = out.getvalue()
+        self.assertIn("< id=1 type=end status=ok outcome=completed\n", printed)
+        self.assertNotIn("\r", printed, "no carriage return may reach the transcript")
+
+    def test_dropped_on_a_cr_lf_closing_record_still_reads_as_loss(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\r\n"
+                b"< id=1 type=end status=ok outcome=completed dropped=2\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+        directives = [console_client.Directive("send", "system.status.health", "--send")]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worst = console_client.run_scripted(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_LOSS)
+        # Exact: `dropped=2` and nothing else. ADR 0036's drop count is the
+        # last token on the line, so it is the field a surviving CR lands in.
+        self.assertIn("[LOSS] dropped=2 on closing record id=1", out.getvalue())
+
+    def test_listen_window_prints_cr_lf_lines_without_the_carriage_return(self):
+        self._peer({
+            "listen-trigger": (
+                b"[INFO][ConsoleTask] active\r\n"
+                b"< id=3 type=result status=ok outcome=queued\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            transport.send_raw(b"listen-trigger\r", listen_seconds=0.4)
+
+        printed = out.getvalue()
+        self.assertIn("[INFO][ConsoleTask] active\n", printed)
+        self.assertIn("< id=3 type=result status=ok outcome=queued\n", printed)
+        self.assertNotIn("\r\n", printed, "the listen window must not echo the wire CR")
+
+    def test_capture_until_matches_a_cr_lf_terminated_line(self):
+        """The read-only capture path (`--until`, the boot-log capture every
+        epic uses) shares the wire with records and now sees CR LF on the
+        firmware's pre-console-task log lines too."""
+        os.write(self.master, b"boot: stage one\r\ninit complete\r\n")
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = console_client.read_lines_fd(self.fd, time.time() + 2.0, "init complete")
+
+        self.assertEqual(rc, 0, "--until must match a CR LF terminated line")
+        printed = out.getvalue()
+        self.assertIn("boot: stage one\n", printed)
+        self.assertNotIn("\r", printed)
 
 
 class DetachAndReattach(unittest.TestCase):

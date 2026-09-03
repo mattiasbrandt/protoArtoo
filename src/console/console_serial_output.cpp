@@ -107,17 +107,34 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
         return true;  // nothing to drop
     }
 
-    // One buffer holding the line AND its newline, so the wire only ever
-    // sees them delivered together by a single Serial.write() call -- see
-    // this function's header comment for the two-call defect this replaces.
+    // One buffer holding the line AND its CR LF terminator, so the wire only
+    // ever sees them delivered together by a single Serial.write() call --
+    // see this function's header comment for the two-call defect this
+    // replaces.
+    //
+    // CR LF, not a bare LF (#267): a Console session must be attached in raw
+    // mode so Tab and cursor bytes reach the firmware unedited
+    // (docs/console-protocol.md 8), and raw mode disables the kernel's ONLCR
+    // NL->CR-NL translation. A bare LF then feeds the line down without
+    // returning the carriage, so every line starts one column further right
+    // than the last. embedded-cli already terminates the interactive log path
+    // with "\r\n" (lib/embedded-cli/src/embedded_cli.c:235's lineBreak), so
+    // this is what makes records and logs agree on the one wire they share.
+    // The buffer is one byte longer than the content cap for the same reason:
+    // the "truncate to PA_LOG_SERIAL_LINE_MAX - 1" content rule is unchanged,
+    // only the terminator grew.
     size_t lineLen = len;
     if (lineLen > PA_LOG_SERIAL_LINE_MAX - 1) {
         lineLen = PA_LOG_SERIAL_LINE_MAX - 1;
     }
-    char buf[PA_LOG_SERIAL_LINE_MAX];
+    char buf[PA_LOG_SERIAL_LINE_MAX + 1];
     memcpy(buf, line, lineLen);
-    buf[lineLen] = '\n';
-    size_t total = lineLen + 1;
+    buf[lineLen] = '\r';
+    buf[lineLen + 1] = '\n';
+    // ADR 0036 reserves room for the WHOLE line including its terminator, so
+    // the reservation follows the extra byte: a record must never be written
+    // short for want of the CR.
+    size_t total = lineLen + 2;
 
     if (waitForRoom) {
         // Outside the mutex, on purpose (see the CONSTRAINT in the header):

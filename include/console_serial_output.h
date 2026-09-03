@@ -21,11 +21,11 @@ typedef struct EmbeddedCli EmbeddedCli;
 
 // How long a Console Record waits, OUTSIDE the serial mutex, for
 // Serial.availableForWrite() to clear room for the whole line (including its
-// newline) before the record is dropped whole (ADR 0036). Reasoning for
+// CR LF terminator) before the record is dropped whole (ADR 0036). Reasoning for
 // 100 ms, read from ~/.platformio-p4/.../cores/esp32/HWCDC.cpp, not guessed:
 //  - HWCDC's TX ring is 256 bytes (HWCDC::begin()'s setTxBufferSize(256)) and
 //    the host drains at most 64 B per 1 ms USB frame, so a fully-occupied
-//    ring recovers room for the longest record (CONSOLE_RECORD_LINE_MAX + 1)
+//    ring recovers room for the longest record (CONSOLE_RECORD_LINE_MAX + 2)
 //    in ~4-5 ms once the host is actually reading. 100 ms leaves ~20x
 //    headroom for scheduling jitter and Core 0 contention with the web
 //    server/OTA.
@@ -69,7 +69,7 @@ void consoleSerialBindCli(EmbeddedCli* cli);
 // inside consoleSerialEmitLine will block forever.
 void consoleSerialEmitLine(const char* line);
 
-// Emit exactly one line, plus its trailing newline, in a SINGLE Serial.write()
+// Emit exactly one line, plus its trailing CR LF, in a SINGLE Serial.write()
 // call, under the serial mutex (ADR 0036). This is the one emit helper both
 // the Console Record sink (src/tasks/console_task.cpp's emitRecordLine) and
 // the pre-console-task log fallback (this file's consoleSerialEmitLine, the
@@ -77,6 +77,16 @@ void consoleSerialEmitLine(const char* line);
 // seam live in exactly one place. `line` is truncated to
 // PA_LOG_SERIAL_LINE_MAX - 1 bytes first, matching every other serial-bound
 // line in this file.
+//
+// The terminator is CR LF, not a bare LF (#267). A Console session is
+// attached in raw mode so Tab and cursor bytes reach the firmware unedited
+// (docs/console-protocol.md 8), and raw mode disables the kernel's ONLCR
+// NL->CR-NL translation: a bare LF leaves the carriage where it was, so
+// records staircase down-right across the terminal while embedded-cli's own
+// log lines -- already "\r\n", lib/embedded-cli/src/embedded_cli.c:235 --
+// sit at column 0 on the same wire. Both halves of the wire now agree. Every
+// supported client (this repo's console_client.py, `pio device monitor`,
+// picocom) reads the extra CR as line-terminator whitespace.
 //
 // This replaces the #245-era shape where a line and its newline were two
 // independent Serial.write() calls that could succeed and fail independently
@@ -86,8 +96,11 @@ void consoleSerialEmitLine(const char* line);
 // waitForRoom selects which of ADR 0036's two policies applies:
 //  - true  (Console Records): before taking the mutex, waits up to
 //    CONSOLE_RECORD_ROOM_WAIT_BOUND_MS for Serial.availableForWrite() to
-//    clear room for the whole line, and only while `Serial` (bool) reports a
-//    connected host -- the same board-portable check console_task.cpp's
+//    clear room for the whole line INCLUDING both terminator bytes (the
+//    reservation is lineLen + 2, never lineLen + 1: a record written short
+//    by its CR is the drop this reservation exists to prevent), and only
+//    while `Serial` (bool) reports a connected host -- the same
+//    board-portable check console_task.cpp's
 //    #260 host-attach debounce already uses (HWCDC::isCDC_Connected() on the
 //    P4, "UART driver installed" -- effectively always true post-boot -- on
 //    artoo-esp32, so this adds nothing measurable there). If room never
