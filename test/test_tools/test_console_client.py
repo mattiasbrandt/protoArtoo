@@ -655,6 +655,126 @@ class ScriptedSerialEngine(unittest.TestCase):
         self.assertEqual(worst, console_client.EXIT_OK)
 
 
+class CrLfTerminatedWire(unittest.TestCase):
+    """#267: the firmware now terminates every framed serial line with CR LF
+    (src/console/console_serial_output.cpp, matching embedded-cli's own
+    lineBreak) so records stop staircasing in the raw-mode terminal a Console
+    session requires. The scripted parser was already written to tolerate that
+    -- SerialTransport._read_group()/_drain_for() rstrip("\r"), the capture
+    path rstrip()s -- and #267's acceptance criterion says prove it rather
+    than assume it. Everything below feeds the peer CR LF, never a bare LF,
+    and asserts on the PARSED values and the printed transcript, which is
+    where a surviving CR would show up (a `dropped=2\r` reads as loss for the
+    wrong reason; a `dropped=0\r` would read as loss when nothing was lost).
+
+    Same pty pair, same real fds as ScriptedSerialEngine above: the client
+    side is opened through open_posix_port(), which clears ICRNL/INLCR/IGNCR
+    on the slave, so a CR written by the peer arrives as a CR and is not
+    quietly translated by the line discipline before the code under test
+    ever sees it.
+    """
+
+    def setUp(self):
+        self.master, self.slave = pty.openpty()
+        self.addCleanup(self._close_quietly, self.master)
+        self.addCleanup(self._close_quietly, self.slave)
+        self.slave_path = os.ttyname(self.slave)
+        self.fd = console_client.open_posix_port(self.slave_path, 115200, writable=True)
+        self.addCleanup(self._close_quietly, self.fd)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _peer(self, responses=None):
+        peer = FakeConsolePeer(self.master, responses)
+        self.addCleanup(peer.close)
+        return peer
+
+    def test_send_group_parses_records_terminated_cr_lf(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\r\n"
+                b"< id=1 type=field name=heapFree value=42120\r\n"
+                b"< id=1 type=end status=ok outcome=completed\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            records, closed = transport.send_line("system.status.health", timeout=2.0)
+
+        self.assertTrue(closed, "a CR LF terminated group must still close")
+        self.assertEqual([r.type for r in records], ["begin", "field", "end"])
+        # The CR must not survive into a field value: it is line-terminator
+        # whitespace, not part of the last token on the line.
+        self.assertEqual(records[0].fields["operation"], "system.status.health")
+        self.assertEqual(records[1].fields["value"], "42120")
+        self.assertEqual(records[2].fields["outcome"], "completed")
+        printed = out.getvalue()
+        self.assertIn("< id=1 type=end status=ok outcome=completed\n", printed)
+        self.assertNotIn("\r", printed, "no carriage return may reach the transcript")
+
+    def test_dropped_on_a_cr_lf_closing_record_still_reads_as_loss(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\r\n"
+                b"< id=1 type=end status=ok outcome=completed dropped=2\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+        directives = [console_client.Directive("send", "system.status.health", "--send")]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worst = console_client.run_scripted(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_LOSS)
+        # Exact: `dropped=2` and nothing else. ADR 0036's drop count is the
+        # last token on the line, so it is the field a surviving CR lands in.
+        self.assertIn("[LOSS] dropped=2 on closing record id=1", out.getvalue())
+
+    def test_listen_window_prints_cr_lf_lines_without_the_carriage_return(self):
+        self._peer({
+            "listen-trigger": (
+                b"[INFO][ConsoleTask] active\r\n"
+                b"< id=3 type=result status=ok outcome=queued\r\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                   settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            transport.send_raw(b"listen-trigger\r", listen_seconds=0.4)
+
+        printed = out.getvalue()
+        self.assertIn("[INFO][ConsoleTask] active\n", printed)
+        self.assertIn("< id=3 type=result status=ok outcome=queued\n", printed)
+        self.assertNotIn("\r\n", printed, "the listen window must not echo the wire CR")
+
+    def test_capture_until_matches_a_cr_lf_terminated_line(self):
+        """The read-only capture path (`--until`, the boot-log capture every
+        epic uses) shares the wire with records and now sees CR LF on the
+        firmware's pre-console-task log lines too."""
+        os.write(self.master, b"boot: stage one\r\ninit complete\r\n")
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = console_client.read_lines_fd(self.fd, time.time() + 2.0, "init complete")
+
+        self.assertEqual(rc, 0, "--until must match a CR LF terminated line")
+        printed = out.getvalue()
+        self.assertIn("boot: stage one\n", printed)
+        self.assertNotIn("\r", printed)
+
+
 class DetachAndReattach(unittest.TestCase):
     """#264 "Detach survives": a real I/O error on the serial fd (measured
     below, not assumed -- closing a pty's master end makes the slave's next
