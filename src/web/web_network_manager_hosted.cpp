@@ -411,7 +411,21 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 WifiModuleStatusSnapshot wifiModuleQueryUpdateSupport() {
     WifiModuleStatusSnapshot snap;
 
-    hostedGetHostVersion(&snap.hostMajor, &snap.hostMinor, &snap.hostPatch);
+    snap.hostMajor = kWifiModulePinnedHostMajor;
+    snap.hostMinor = kWifiModulePinnedHostMinor;
+    snap.hostPatch = kWifiModulePinnedHostPatch;
+    uint32_t halMajor = 0;
+    uint32_t halMinor = 0;
+    uint32_t halPatch = 0;
+    hostedGetHostVersion(&halMajor, &halMinor, &halPatch);
+    if (halMajor != kWifiModulePinnedHostMajor || halMinor != kWifiModulePinnedHostMinor ||
+        halPatch != kWifiModulePinnedHostPatch) {
+        PA_LOG_WARN(TAG,
+                    "ESP-Hosted HAL %u.%u.%u does not match pinned WiFi Module target %u.%u.%u",
+                    (unsigned)halMajor, (unsigned)halMinor, (unsigned)halPatch,
+                    (unsigned)kWifiModulePinnedHostMajor, (unsigned)kWifiModulePinnedHostMinor,
+                    (unsigned)kWifiModulePinnedHostPatch);
+    }
 
     const bool initialized = hostedIsInitialized();
     const HostedLinkStatusSnapshot link = hostedLinkQueryStatus();

@@ -1749,10 +1749,22 @@ Fail-closed before any write:
 - hosted link not ready (`hostedIsInitialized()` false or supervisor `degraded`)
 - `updateSupport` `unknown` (module not on the bus, never asked)
 - `updateSupport` `not_supported` (asked, refused)
-- module version present and equal to host ESP-Hosted version
+- module version present and equal to the pinned host ESP-Hosted version
+  **2.12.11** (`kWifiModulePinnedHostMajor/Minor/Patch`, from
+  `esp_hosted_host_fw_ver.h`)
 
 Does not use `hostedHasUpdate()`. Does not reboot the controller. Activate
 runs only after `ota_end` succeeds and after the HTTP 200 is sent.
+
+Bin source order:
+
+- **(a) uploaded file** — this route. Implemented.
+- **(b) HTTP(S) to a protoArtoo release asset** — UNKNOWN. No release-asset
+  URL for `network_adapter.bin` exists in this tree; do not invent one.
+- **(c) optional pinned upstream** — `hostedGetUpdateURL()` builds
+  `https://espressif.github.io/arduino-esp32/hosted/<target>-v2.12.11.bin`
+  (HAL, verified in the FireBeetle spec sheet). This handler does not fetch
+  it. No LittleFS "replace the whole P4 app" recovery partition.
 
 - Body: multipart upload (form field `wifiModule`)
 - Success: `200` `{"ok":true,"bytes":N,"minHeapFree":N,"durationMs":N}`

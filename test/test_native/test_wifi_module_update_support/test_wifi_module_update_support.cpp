@@ -240,6 +240,12 @@ void test_upload_gate_supported_different_version_is_allowed() {
     TEST_ASSERT_NULL(wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::Allow));
 }
 
+void test_wifi_module_image_is_pinned_to_2_12_11() {
+    TEST_ASSERT_EQUAL_UINT32(2, kWifiModulePinnedHostMajor);
+    TEST_ASSERT_EQUAL_UINT32(12, kWifiModulePinnedHostMinor);
+    TEST_ASSERT_EQUAL_UINT32(11, kWifiModulePinnedHostPatch);
+}
+
 void test_upload_gate_supported_without_version_is_allowed() {
     WifiModuleUploadGateInput in =
         makeGate(true, WifiModuleUpdateSupport::Supported, false, 2, 12, 11, 2, 12, 11);
@@ -286,6 +292,7 @@ int main() {
     RUN_TEST(test_upload_gate_not_supported_fails_closed);
     RUN_TEST(test_upload_gate_supported_matching_version_is_already_current);
     RUN_TEST(test_upload_gate_supported_different_version_is_allowed);
+    RUN_TEST(test_wifi_module_image_is_pinned_to_2_12_11);
     RUN_TEST(test_upload_gate_supported_without_version_is_allowed);
 
     RUN_TEST(test_format_supported_typical_object);

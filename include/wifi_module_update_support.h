@@ -72,6 +72,13 @@ enum class WifiModuleVersionAsk : uint8_t {
 
 WifiModuleVersionAsk wifiModuleDecideVersionAsk(bool linkReady, bool cacheOccupied);
 
+// Pinned host ESP-Hosted version this firmware's WiFi Module image must match.
+// Read from esp_hosted_host_fw_ver.h (ESP_HOSTED_VERSION_*_1 = 2.12.11).
+// Do not free-float "latest".
+constexpr uint32_t kWifiModulePinnedHostMajor = 2;
+constexpr uint32_t kWifiModulePinnedHostMinor = 12;
+constexpr uint32_t kWifiModulePinnedHostPatch = 11;
+
 // -----------------------------------------------------------------------
 // Fail-closed upload gate -- before hostedBeginUpdate()
 // -----------------------------------------------------------------------

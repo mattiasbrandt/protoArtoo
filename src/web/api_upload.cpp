@@ -254,6 +254,12 @@ void handleFilesystemUploadDone(WebRequest& req) {
 // not call activate, so the running slot stays selected.
 //
 // The controller is not restarted (ADR 0032).
+//
+// Bin source order (#241): (a) this uploaded file -- implemented;
+// (b) HTTP(S) to a protoArtoo release asset -- UNKNOWN, no such URL in
+// the tree; (c) hostedGetUpdateURL() builds
+// https://espressif.github.io/arduino-esp32/hosted/<target>-v2.12.11.bin
+// (read from the HAL, not fetched here). No LittleFS recovery partition.
 
 enum class WifiModuleUploadOutcome : uint8_t {
     kInProgress,
