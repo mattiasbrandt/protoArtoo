@@ -160,6 +160,33 @@ struct EmbeddedCli {
     bool (*shouldStoreHistory)(EmbeddedCli *cli, const char *line);
 
     /**
+     * [PATCH: Explicit line-too-long] Optional notification that the line the
+     * operator just submitted lost at least one byte before it could be
+     * stored - a displayable character past the fixed command buffer, or a
+     * byte the rx FIFO could not accept - and has therefore been discarded
+     * whole instead of dispatched.
+     *
+     * The DISCARD is unconditional and happens with or without this callback:
+     * upstream ignored the excess bytes and then ran whatever fit, so a
+     * command the operator never typed could execute (an argument list
+     * clipped mid-value, a configuration write missing its last field). Not
+     * running a truncated command is a safety property of the patch. This
+     * callback is only how the caller gets to SAY so - leave it NULL and the
+     * line is still refused, silently.
+     *
+     * Called from onControlInput's CR/LF branch, in place of parseCommand():
+     * onCommand does not fire for that line, nothing is written to the
+     * history ring, and no autocompletion runs on it. The command buffer is
+     * cleared and the invitation reprinted immediately afterwards, exactly as
+     * for an ordinary submitted line, so the next line starts clean.
+     *
+     * One call per submitted line, however many bytes were lost, and CRLF
+     * still counts as one line ending.
+     * @param cli - pointer to cli that is calling this function
+     */
+    void (*onLineTooLong)(EmbeddedCli *cli);
+
+    /**
      * Can be used for any application context
      */
     void *appContext;
@@ -299,6 +326,10 @@ bool embeddedCliAddBinding(EmbeddedCli *cli, CliCommandBinding binding);
  * Reset the input buffer when an overflow is detected.
  * Clears the partial command without discarding other state.
  * Should be called by the listener when it detects that input has exceeded the buffer size.
+ *
+ * [PATCH: Explicit line-too-long] Also clears any pending line-too-long
+ * refusal (onLineTooLong above): the line it referred to is being abandoned
+ * here, so the caller's next Enter must not be answered about it.
  * @param cli
  */
 void embeddedCliResetInput(EmbeddedCli *cli);

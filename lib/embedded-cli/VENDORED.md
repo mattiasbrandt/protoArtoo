@@ -15,7 +15,7 @@ Rationale documented in `tasks/serial-interface-embedded-cli-deep-dive.md`:
 - Complete line editing with history, tab completion
 - Overflow-safe command buffer with built-in line ending support
 - Structured dispatch via `onCommand` callback with catch-all
-- Small footprint: 3.5 KB flash object (xtensa, all six patches), 20 B static regardless of catalog size (neither Patch 5's catalog completion callback nor Patch 6's history filter pays a per-entry RAM cost)
+- Small footprint: 3.6 KB flash object (xtensa, all seven patches), 20 B static regardless of catalog size (none of Patch 5's catalog completion callback, Patch 6's history filter or Patch 7's line-too-long notification pays a per-entry RAM cost)
 - Stack frame 96 B max (see measured table below)
 
 ## Configuration
@@ -34,7 +34,7 @@ config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
 Object Size Analysis (Measured at commit 9950006; Patch 5 row re-measured 2026-08-29;
-Patch 6 rows measured 2026-09-02)
+Patch 6 rows measured 2026-09-02; Patch 7 rows measured 2026-09-03)
 
 Measured with both toolchains under `-Os`:
 
@@ -45,10 +45,12 @@ Measured with both toolchains under `-Os`:
 | xtensa | patched (1-5) | 3,606 B | 118 B | 20 B | 96 B |
 | xtensa | patched (1-5), re-measured 2026-09-02 | 3,506 B | 118 B | 20 B | 80 B |
 | xtensa | patched (1-6) | 3,526 B | 118 B | 20 B | 80 B |
+| xtensa | patched (1-7) | 3,586 B | 118 B | 20 B | 80 B |
 | riscv32 | upstream | 4,342 B | 259 B | 20 B | 112 B |
 | riscv32 | patched (1-4) | 3,854 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-5) | 4,284 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-6) | 4,308 B | 132 B | 20 B | 96 B |
+| riscv32 | patched (1-7) | 4,364 B | 132 B | 20 B | 96 B |
 
 **Deltas (patched 1-4 - upstream):**
 - xtensa: .text -240 B, .rodata -120 B, .bss 0, max frame 0 B
@@ -70,6 +72,23 @@ caller allocates: the whole cost in RAM is **+4 B of the caller's `cliBuffer`**
 (`embeddedCliRequiredSize()` grows by one pointer), not of this object's static
 data. `src/tasks/console_task.cpp`'s 2 KB static buffer already checks the
 required size at init and has room for it.
+
+**Deltas (patched 1-7 - patched 1-6), both measured in one session, with the
+same two compilers named below:**
+- xtensa: .text +60 B, .rodata 0, .bss 0, max frame 0 B
+- riscv32: .text +56 B, .rodata 0, .bss 0, max frame 0 B
+
+That is one flag bit's worth of work in three places (raise in `onCharInput`,
+raise in the rx-overflow discard, test-and-clear in the CR/LF branch) plus the
+NULL test and indirect call for the callback. The `patched (1-6)` rows above
+were re-run in the same session before the patch was applied and reproduced
+exactly - 3,526/118/20/80 and 4,308/132/20/96 - so this delta is a true
+before/after on one toolchain, not a comparison across the compiler drift the
+note below records. `.bss` is unchanged for the reason Patch 6's is: the new
+pointer lives in `struct EmbeddedCli`, which the caller allocates, so the whole
+RAM cost is **+4 B of the caller's `cliBuffer`** (`sizeof(EmbeddedCli)` 24 B ->
+28 B on a 32-bit target, and `embeddedCliRequiredSize()` grows by that one
+pointer).
 
 > **The xtensa `patched (1-5)` row does not reproduce on today's toolchain**,
 > and the 2026-09-02 re-measurement row above records what it actually reads:
@@ -120,7 +139,7 @@ binding path other callers may use):**
 **As shipped, neither board uses the binding path for completion at all**
 (zero bindings registered - Patch 5's catalog completion callback,
 "Board Differences" below). Both boards' actual cost is the library object
-itself (3.5 KB flash, all six patches, xtensa; 4.3 KB riscv32) plus the
+itself (3.6 KB flash, all seven patches, xtensa; 4.4 KB riscv32) plus the
 ~256 B RAM candidate pool in `include/console_completion.h` - a flat cost
 independent of catalog size, replacing the per-board binding-subset sizing
 this subsection originally worked through. #238's closing comment on the
@@ -129,7 +148,7 @@ boards against the #233 baseline.
 
 ## Patches Applied
 
-The vendored source includes six required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
+The vendored source includes seven required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
 
 ### Patch 1: Safe Enter - No Auto-completion on Enter
 
@@ -163,9 +182,21 @@ Example:
 [truncated line still executes on Enter]
 ```
 
-**Solution**: Explicit rejection of overlong input. The listener counts bytes since the last line ending; when overflow would occur, it stops feeding and returns `line-too-long` error to the operator.
+> [!IMPORTANT]
+> **Superseded by Patch 7, and only half of this was ever applied.** The
+> `embeddedCliResetInput()` function below is in the source and is used - but
+> by the host-attach path (`include/console_host_attach.h`), not by an overflow
+> listener. The listener responsibility described here was never written, so
+> the silent truncation this patch names survived until Patch 7 closed it in
+> the library instead. The listener-side byte count is also not implementable
+> correctly, for the reason Patch 7 gives: the line editor changes what is
+> stored without a one-to-one relationship to the bytes received. The section
+> is kept because `embeddedCliResetInput()` is a real, shipped part of the
+> vendored source and this is where it is documented.
 
-**Listener responsibility**: Detect overflow, discard to CR/LF, and clear the library's partial buffer (see below).
+**Solution (as originally planned)**: Explicit rejection of overlong input. The listener counts bytes since the last line ending; when overflow would occur, it stops feeding and returns `line-too-long` error to the operator.
+
+**Listener responsibility (never implemented; see Patch 7)**: Detect overflow, discard to CR/LF, and clear the library's partial buffer (see below).
 
 **Library patch (optional)**: Add a public `embeddedCliResetInput()` function (~5 lines) to clear the partial command buffer without modifying other state. Allows explicit reset when the listener detects overflow.
 
@@ -184,7 +215,7 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
 
 **Upstream candidacy**: Yes, defensive programming.
 
-**Test**: `test/test_native/test_cli_safe_overflow/test_cli_safe_overflow.cpp` - verifies that input beyond 256 bytes is rejected with an explicit error and does not execute.
+**Test**: `test/test_native/test_cli_safe_overflow/test_cli_safe_overflow.cpp` - covers `embeddedCliResetInput()` as a primitive: the buffer is cleared, no command executes afterwards, and the next line still works. The tests call it from the test body, because no production listener ever did. What the *product* does with an over-length line is Patch 7's, and is covered by `test/test_native/test_cli_line_too_long/`.
 
 ### Patch 3: UTF-8 Ingestion - Accept High-Bit Bytes
 
@@ -392,6 +423,134 @@ that is the exposure being closed; the ring internals are static to
 `embedded_cli.c`. The project's own rule for WHICH lines are refused lives in
 `include/console_write_exclusion.h` and is covered by
 `test/test_native/test_console_write_exclusion/`.
+
+### Patch 7: Explicit Line-Too-Long
+
+**Problem**: Patch 2 above named this defect and shipped only half the fix. Its
+library half - `embeddedCliResetInput()` - is in the source and is used, but by
+the host-attach path (`include/console_host_attach.h`, #260), not by an
+overflow listener; the listener half it described ("the listener counts bytes
+since the last line ending") was never written, and the silent truncation is
+still there. `onCharInput` returns without a word once
+`impl->cmdSize + 2 >= impl->cmdMaxSize`:
+
+```c
+// have to reserve two extra chars for command ending (used in tokenization)
+if (impl->cmdSize + 2 >= impl->cmdMaxSize)
+    return;
+```
+
+At `embeddedCliDefaultConfig()`'s `cmdBufferSize` of 64, which
+`src/tasks/console_task.cpp` takes unmodified, that is 62 usable bytes. Type a
+63rd character and it is dropped; press Enter and the 62 that fit execute. The
+operator sees a command they did not type run - a `key=value` list clipped
+mid-value, a grouped configuration write missing its last field - and no error.
+
+The browser adapter refuses the same failure outright, with `invalid
+reason=line-too-long` (`src/web/api_console.cpp`). So the two adapters
+disagreed about a failure, which made two written guarantees false on the
+serial side only: `docs/console-protocol.md` s.1.3 ("A line longer than the
+input buffer is **discarded whole** and answered with `invalid
+reason=line-too-long`; a truncated command never executes") and #206's
+acceptance matrix ("All failures are explicit; no truncated command
+executes").
+
+There is a second, quieter instance of the same loss one buffer earlier.
+`embeddedCliReceiveChar` sets `CLI_FLAG_OVERFLOW` when the rx FIFO cannot
+accept a byte, and `embeddedCliProcess` then discards the whole unfinished
+command - also silently. A caller that feeds a burst larger than
+`rxBufferSize` before processing (a pasted line) loses the line with no
+indication.
+
+**Why not a listener-side byte count.** Patch 2's sketch has the listener count
+bytes since the last line ending. That cannot be made correct: the line editor
+changes what is stored without a one-to-one relationship to bytes received.
+Backspace and Delete remove stored characters, Home/End and the arrow keys are
+three-byte escape sequences that store nothing, Up-arrow replaces the whole
+buffer from history, and Tab can extend it. A listener counting received bytes
+would refuse lines that fit and accept lines that did not. The decision belongs
+where `cmdSize` and `cmdMaxSize` live.
+
+**Solution**: a sticky per-line flag, `CLI_FLAG_LINE_TOO_LONG` (0x40, the first
+free bit of the existing `uint8_t flags`), raised the moment a byte of the
+current line is lost - in `onCharInput` when the command buffer is full, and in
+`embeddedCliProcess`'s rx-overflow branch. It survives every subsequent edit of
+that line and is consumed by `onControlInput`'s CR/LF branch, which then
+refuses the line **whole** instead of submitting it: no autocompletion, no
+`parseCommand()`, so no dispatch and no history write. An optional callback,
+`EmbeddedCli::onLineTooLong(cli)`, tells the caller; the buffer is cleared and
+the invitation reprinted exactly as after an ordinary line, so the next line
+starts clean.
+
+Three deliberate decisions inside that, each of which could have gone the other
+way:
+
+- **The discard is unconditional; only the notification is optional.** With
+  `onLineTooLong` left NULL - every other consumer's state - the line is still
+  refused rather than executed. Not running a command the operator did not type
+  is a safety property, and Patches 1 and 4 already change upstream behaviour
+  unconditionally for the same kind of reason. This is the one behavioural
+  difference from upstream that a caller cannot opt out of.
+- **Backspace does not lift the flag.** The bytes past the buffer were never
+  stored, so what remains after backspacing is not a shortened version of the
+  typed line - it is a different line with a hole in it. Accepting that is the
+  original defect in a smaller disguise.
+- **`embeddedCliResetInput()` clears it.** That function abandons the line, so
+  the refusal pending for it is abandoned too. Without this, the synthetic
+  Enter `include/console_host_attach.h` queues on a USB CDC re-attach would
+  answer `line-too-long` about a line the newly attached operator never typed.
+
+**File**: `include/embedded_cli.h`, `src/embedded_cli.c`
+**Lines**:
+- `include/embedded_cli.h`: new `onLineTooLong` field on `struct EmbeddedCli`,
+  next to `shouldStoreHistory` (Patch 6); a note on
+  `embeddedCliResetInput()`'s existing declaration that it clears the pending
+  refusal.
+- `src/embedded_cli.c`: the new `CLI_FLAG_LINE_TOO_LONG` definition beside the
+  other flags; the flag raise in `onCharInput()`; the flag raise in
+  `embeddedCliProcess()`'s existing rx-overflow discard; the refuse-instead-of-
+  submit branch in `onControlInput()`'s CR/LF handling; the clear in
+  `embeddedCliResetInput()`.
+
+**RAM ownership**: no static RAM is added to `embedded_cli.c` (`.bss`
+unchanged, see the Object Size Analysis table). The one pointer lives in
+`struct EmbeddedCli`, which the caller allocates, so the cost is +4 B of the
+caller's `cliBuffer` - `sizeof(EmbeddedCli)` measured at 28 B on xtensa with
+this patch against 24 B without, and `embeddedCliRequiredSize()` grows by
+exactly that. `src/tasks/console_task.cpp`'s 2 KB static buffer has room, and
+`test/test_native/test_console_line_overflow/` asserts the requirement against
+that 2048-byte figure on the host, where every pointer is twice the target's
+width and the check is therefore conservative.
+
+**Upstream candidacy**: Yes. The silent truncation is a defect on any consumer,
+not a project-specific inconvenience, and the notification half is additive in
+the same shape as Patches 5 and 6 (a new optional field, NULL by default). The
+unconditional discard is the part upstream would have to agree is a fix rather
+than a behaviour change; the PR would lead with the truncated-command-executes
+example.
+
+**What it deliberately does NOT change**: the two adapters still refuse at
+different lengths - 62 bytes on serial, 255 in the browser
+(`src/web/api_console.cpp`'s `char command[256]`). Aligning them means raising
+`cmdBufferSize`, which changes `embeddedCliRequiredSize()` against a fixed
+caller buffer, and task/static buffer sizing on this project is a measured
+outcome on real boards (#206 "Not yet specified"; #217 and #228 own the
+measurement), not a number to choose from a host. The behaviour divergence is
+closed here; the length divergence is recorded, in
+`include/console_line_overflow.h` and on #262, rather than guessed at.
+
+**Test**: `test/test_native/test_cli_line_too_long/test_cli_line_too_long.cpp` -
+covers the line at the limit still executing, one character past it refusing
+the whole line, many lost bytes and a CRLF ending producing exactly one
+refusal, Backspace not lifting the flag, the next line executing normally, the
+refused line being unreachable by Up-arrow, the line still being refused with
+no callback wired, the rx FIFO's own overflow reporting the same way, and
+`embeddedCliResetInput()` clearing a pending refusal.
+`test/test_native/test_console_line_overflow/` covers the other half - that the
+record the serial adapter emits in response is byte-for-byte the one
+`src/web/api_console.cpp` emits for the same failure
+(`include/console_line_overflow.h`) - since the whole point of the patch is
+that the two adapters stop disagreeing.
 
 ## Integration Notes
 

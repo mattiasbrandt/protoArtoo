@@ -67,6 +67,18 @@ wifi.config.settings mode=client sta-ssid="Workshop WiFi"
 - CR, LF or CRLF terminates a command; CRLF is one ending.
 - A line longer than the input buffer is **discarded whole** and answered with
   `invalid reason=line-too-long`; a truncated command never executes.
+- **The two adapters enforce that at different lengths, and both refuse
+  explicitly.** The browser accepts 255 bytes (`src/web/api_console.cpp`'s
+  command buffer); serial accepts 62 (embedded-cli's default `cmdBufferSize`
+  of 64, less the two bytes tokenisation reserves). Serial used to truncate
+  silently and run the prefix instead - closed by the vendored library's
+  Patch 7 (`lib/embedded-cli/VENDORED.md`), which refuses the line and calls
+  back, and `include/console_line_overflow.h`, which answers with the same
+  record the browser emits. Aligning the two *lengths* is a separate question:
+  it means growing the Console task's fixed embedded-cli buffer, and task and
+  static buffer sizes on this project are measured on real boards, not chosen
+  from a host. Until that measurement exists, a command between 63 and 255
+  bytes is refused on serial and accepted in the browser - visibly, on both.
 - A NUL byte or malformed UTF-8 in a quoted value fails explicitly
   (`invalid` with a reason); nothing is silently dropped or "fixed".
 

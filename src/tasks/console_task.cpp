@@ -26,6 +26,11 @@
 //    ever interleaved inside another".
 //  - Log arriving mid-entry clears the input line, writes the log via consoleSerialEmitLine(),
 //    then redraws the prompt and buffered command via embeddedCliPrint()
+//  - An input line that lost bytes - past the fixed command buffer, or to an
+//    rx FIFO overrun - is refused whole by the library and answered here with
+//    the same `invalid reason=line-too-long` record the browser adapter emits
+//    (#262; lib/embedded-cli/VENDORED.md Patch 7, include/console_line_overflow.h).
+//    No truncated command executes on either adapter.
 // =============================================================================
 
 #include <Arduino.h>
@@ -43,6 +48,7 @@
 #include "console_completion.h"
 #include "console_write_exclusion.h"
 #include "console_host_attach.h"
+#include "console_line_overflow.h"
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
@@ -97,6 +103,21 @@ static const char CONSOLE_READY_BANNER[] =
 // Embedded-CLI Callbacks
 // =============================================================================
 
+// The serial adapter's record sink: the five callbacks below, in one place.
+// Both entry points that answer the operator - a dispatched command and a
+// refused over-length line - build it from here, so neither can drift into
+// answering through a different set of writers than the other.
+static ConsoleRecordSink consoleTaskRecordSink() {
+    ConsoleRecordSink sink = {
+        .onRecordBegin = onRecordBegin,
+        .onRecordField = onRecordField,
+        .onRecordItem = onRecordItem,
+        .onRecordResult = onRecordResult,
+        .onRecordEnd = onRecordEnd,
+    };
+    return sink;
+}
+
 // Called by embedded-cli when a complete command line is ready
 static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     (void)cli;  // Unused
@@ -138,16 +159,22 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     };
 
     // Create sink for record output (implemented inline below)
-    ConsoleRecordSink sink = {
-        .onRecordBegin = onRecordBegin,
-        .onRecordField = onRecordField,
-        .onRecordItem = onRecordItem,
-        .onRecordResult = onRecordResult,
-        .onRecordEnd = onRecordEnd,
-    };
+    ConsoleRecordSink sink = consoleTaskRecordSink();
 
     // Execute through Console module (ADR 0034)
     consoleExecuteCommand(&request, &sink);
+}
+
+// Called by embedded-cli instead of onCliCommand when the line the operator
+// just submitted lost bytes before it could be stored, and has therefore been
+// discarded whole (lib/embedded-cli/VENDORED.md Patch 7). The library owns
+// the refusal; this turns it into the same wire answer the browser adapter
+// gives for the same failure - see include/console_line_overflow.h for the
+// divergence this closes and the one it deliberately leaves recorded.
+static void onCliLineTooLong(EmbeddedCli* cli) {
+    (void)cli;  // one Console, one answer - nothing per-instance to consult
+    ConsoleRecordSink sink = consoleTaskRecordSink();
+    consoleEmitLineTooLong(&sink);
 }
 
 // Called by embedded-cli before a submitted line reaches the Up-arrow history
@@ -337,6 +364,12 @@ void consoleTask(void* pvParameters) {
     // History filter (#227): keeps a refused secret out of the Up-arrow ring
     // (lib/embedded-cli/VENDORED.md Patch 6). See onCliShouldStoreHistory().
     embeddedCli->shouldStoreHistory = onCliShouldStoreHistory;
+    // Explicit line-too-long (#262): an over-length line is refused whole and
+    // answered, instead of executing as whatever prefix fit the fixed command
+    // buffer (lib/embedded-cli/VENDORED.md Patch 7). The refusal happens with
+    // or without this callback; the callback is how the operator hears about
+    // it. See onCliLineTooLong().
+    embeddedCli->onLineTooLong = onCliLineTooLong;
 
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);
@@ -434,17 +467,40 @@ void consoleTask(void* pvParameters) {
         }
         hostRawPrevConnected = hostRawNowConnected;
 
-        // Process any available serial data
+        // Process any available serial data.
+        //
+        // One byte in, one drain out. embeddedCliReceiveChar() pushes into a
+        // fixed rx FIFO (rxBufferSize, 64 B at embeddedCliDefaultConfig()'s
+        // defaults) and embeddedCliProcess() is what empties it, so feeding a
+        // whole Serial.available() batch first would overrun the FIFO for any
+        // burst larger than 64 bytes - a pasted command, or a fast typist's
+        // key-repeat - and the library would then discard the partial line.
+        // Processing per byte keeps the FIFO at one entry and that branch
+        // unreachable. It is not free-standing safety, though: Patch 7 also
+        // makes an rx overflow answer `line-too-long` rather than vanish
+        // (lib/embedded-cli/VENDORED.md), so a future caller that batches
+        // fails loudly instead of silently.
+        //
+        // The cost is one extra embeddedCliProcess() call per byte. That
+        // function's own per-character work (the escape/control/displayable
+        // decision, and printLiveAutocompletion) already ran once per byte
+        // inside its drain loop, so what is added is the loop preamble, not
+        // the per-character handling.
         while (Serial.available()) {
             int byte = Serial.read();
             if (byte >= 0) {
                 // Feed character to embedded-cli (non-blocking)
                 // Calls onCommand when a complete line is ready
                 embeddedCliReceiveChar(embeddedCli, (char)byte);
+                embeddedCliProcess(embeddedCli);
             }
         }
 
-        // Process embedded-cli state machine (handles buffering, history, etc.)
+        // Process embedded-cli state machine once more even when no byte
+        // arrived this poll: the first call is what prints the invitation
+        // (CLI_FLAG_INIT_COMPLETE), and consoleResetInputForAttach() above
+        // queues a synthetic Enter that needs draining on a poll where the
+        // operator typed nothing.
         embeddedCliProcess(embeddedCli);
 
         // Yield to prevent starving other tasks
