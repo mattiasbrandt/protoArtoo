@@ -338,8 +338,18 @@ static void framedLineFixtureSetUp(void) {
 }
 
 // A record with room from the first check: one write call, the line and its
-// newline delivered together, the mutex taken and given exactly once, and
+// terminator delivered together, the mutex taken and given exactly once, and
 // the room was actually checked (not skipped).
+//
+// WORKER NOTE (#267, reported on the issue, not edited silently): the three
+// assertions below said `strlen(line) + 1` and a final '\n' when the sink
+// terminated records with a bare LF. #267 decided records carry the same
+// "\r\n" the log path already emits, so they now say `+ 2` and check both
+// terminator bytes. That is the coordinator's own decision on the ticket
+// arriving in the harness, not an assertion weakened to make a slice pass --
+// the single-write property they exist to protect is asserted here exactly
+// as before, and more tightly (the exact terminator bytes, not just the last
+// one).
 void test_framed_line_with_room_writes_once_including_newline(void) {
     framedLineFixtureSetUp();
 
@@ -348,12 +358,14 @@ void test_framed_line_with_room_writes_once_including_newline(void) {
 
     TEST_ASSERT_TRUE_MESSAGE(sent, "a line with room to spare must not be reported dropped");
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
-                                  "the line and its newline must reach Serial.write() together, "
-                                  "in exactly one call");
-    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(strlen(line) + 1), (int)SerialStub::capturedLen,
-                                  "captured bytes must be exactly the line plus one newline");
+                                  "the line and its terminator must reach Serial.write() "
+                                  "together, in exactly one call");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(strlen(line) + 2), (int)SerialStub::capturedLen,
+                                  "captured bytes must be exactly the line plus CR LF");
     TEST_ASSERT_EQUAL_STRING_LEN_MESSAGE(line, SerialStub::capturedBuf, strlen(line),
                                          "the captured line text must be unchanged");
+    TEST_ASSERT_EQUAL_INT_MESSAGE('\r', SerialStub::capturedBuf[SerialStub::capturedLen - 2],
+                                  "the single write must carry the CR, not a bare LF");
     TEST_ASSERT_EQUAL_INT_MESSAGE('\n', SerialStub::capturedBuf[SerialStub::capturedLen - 1],
                                   "the single write must end in the newline, not a separate call");
 
@@ -447,6 +459,66 @@ void test_framed_line_without_wait_flag_never_waits_for_room() {
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the mutex must not be left held");
 }
 
+// #267 - the terminator itself, on both paths.
+//
+// A Console session must be attached in raw mode so Tab and cursor bytes
+// reach the firmware unedited (docs/console-protocol.md 8), and raw mode
+// disables the kernel's ONLCR NL->CR-NL translation. A bare LF therefore
+// feeds the line down WITHOUT returning the carriage, and every record
+// starts one column further right than the one before it -- the staircase
+// the operator saw, while embedded-cli's log lines (already "\r\n",
+// lib/embedded-cli/src/embedded_cli.c:235) sat at column 0 on the same wire.
+// Both callers of this emitter are checked: the record sink (waitForRoom
+// true) and the pre-binding boot log fallback (false), which shares the wire
+// and staircased identically.
+void test_framed_line_terminates_with_cr_lf_on_both_policies(void) {
+    framedLineFixtureSetUp();
+
+    const char* record = "< id=11 type=item value=drive.action.move";
+    TEST_ASSERT_TRUE(consoleSerialEmitFramedLine(record, strlen(record), /*waitForRoom=*/true));
+    TEST_ASSERT_EQUAL_STRING_LEN_MESSAGE(
+        "\r\n", SerialStub::capturedBuf + strlen(record), 2,
+        "a record must end CR LF so a raw-mode terminal returns to column 0");
+
+    framedLineFixtureSetUp();
+
+    const char* log = "[INFO][ConsoleTask] active";
+    TEST_ASSERT_TRUE(consoleSerialEmitFramedLine(log, strlen(log), /*waitForRoom=*/false));
+    TEST_ASSERT_EQUAL_STRING_LEN_MESSAGE(
+        "\r\n", SerialStub::capturedBuf + strlen(log), 2,
+        "the boot-time log fallback shares the wire and must end CR LF too");
+}
+
+// ADR 0036 reserves transmit room for the WHOLE line including its
+// terminator, so the reservation had to follow the extra byte. Room for
+// exactly `lineLen + 1` is now one byte short: the record is dropped whole
+// rather than written short of its CR. `lineLen + 2` is the smallest room
+// that sends -- which pins the reservation to both bytes from either side,
+// so neither an unchanged `+ 1` nor an over-cautious `+ 3` survives.
+void test_framed_line_room_reservation_covers_both_terminator_bytes(void) {
+    const char* line = "< id=12 type=end status=ok outcome=completed";
+    const int lineLen = (int)strlen(line);
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = lineLen + 1;  // room for the line and ONE terminator byte
+    bool sentShort = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+
+    TEST_ASSERT_FALSE_MESSAGE(sentShort,
+                              "room for only one terminator byte must drop the record whole, "
+                              "not write it short of its CR");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach Serial.write() for a dropped record");
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = lineLen + 2;  // room for the line and CR LF
+    bool sentWhole = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+
+    TEST_ASSERT_TRUE_MESSAGE(sentWhole,
+                             "room for the line plus CR LF is enough: the record must be sent");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(lineLen + 2, (int)SerialStub::capturedLen,
+                                  "the whole line and both terminator bytes must reach the wire");
+}
+
 // consoleSerialFormatDroppedSuffix: absent (empty, zero-length) when nothing
 // was dropped, present with the exact count otherwise. This is the piece of
 // ADR 0036's wire format proved on the host because
@@ -496,6 +568,8 @@ int main(int, char**) {
     RUN_TEST(test_framed_line_waits_only_while_connected);
     RUN_TEST(test_framed_line_room_wait_is_bounded_and_stays_outside_the_mutex);
     RUN_TEST(test_framed_line_without_wait_flag_never_waits_for_room);
+    RUN_TEST(test_framed_line_terminates_with_cr_lf_on_both_policies);
+    RUN_TEST(test_framed_line_room_reservation_covers_both_terminator_bytes);
     RUN_TEST(test_dropped_suffix_absent_when_zero);
     RUN_TEST(test_dropped_suffix_present_with_exact_count_when_nonzero);
     RUN_TEST(test_dropped_suffix_too_small_buffer_emits_nothing);
