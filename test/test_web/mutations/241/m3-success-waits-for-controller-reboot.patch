@@ -1,0 +1,11 @@
+--- a/data/firmware.js
++++ b/data/firmware.js
+@@ -446,7 +446,7 @@
+     setUploadBusy(true);
+     doUpload("/upload/wifi-module", formData, () => {
+       if (wmProgressBar) wmProgressBar.style.width = "100%";
+-      waitForModuleBack(() => setUploadBusy(false));
++      waitForReconnect(wmFeedback, wmProgressStatus, 'firmware', () => setUploadBusy(false));
+     }, (errorMessage) => {
+       setUploadBusy(false);
+       if (wmProgressStatus) wmProgressStatus.textContent = "Update failed";

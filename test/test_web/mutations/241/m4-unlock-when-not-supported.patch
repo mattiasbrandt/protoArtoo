@@ -1,0 +1,11 @@
+--- a/data/firmware.js
++++ b/data/firmware.js
+@@ -288,7 +288,7 @@
+       wmSupportLine.textContent =
+         "This module's software cannot take an update over the air. The only route is a wired rewrite.";
+       if (wmVersionLine) wmVersionLine.textContent = "";
+-      setWmLocked(true);
++      setWmLocked(false);
+       return;
+     }
+     if (support === "supported") {

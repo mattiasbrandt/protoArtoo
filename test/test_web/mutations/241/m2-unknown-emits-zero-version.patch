@@ -1,0 +1,11 @@
+--- a/data/firmware.js
++++ b/data/firmware.js
+@@ -280,7 +280,7 @@
+     if (support === "unknown") {
+       wmSupportLine.textContent =
+         "The WiFi module is not answering. Check it is fitted and powered - this is not a cannot-update reading.";
+-      if (wmVersionLine) wmVersionLine.textContent = "";
++      if (wmVersionLine) wmVersionLine.textContent = "0.0.0";
+       setWmLocked(true);
+       return;
+     }

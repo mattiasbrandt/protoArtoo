@@ -1,0 +1,11 @@
+--- a/data/firmware.js
++++ b/data/firmware.js
+@@ -324,7 +324,7 @@
+     } else if (!caps || !Object.hasOwn(caps, "PA_CAP_HOSTED_WIFI")) {
+       state = "identity-unavailable";
+       reason = "Could not check WiFi module. The controller did not report its features.";
+-    } else if (caps.PA_CAP_HOSTED_WIFI !== true) {
++    } else if (caps.PA_CAP_HOSTED_WIFI === true) {
+       state = "not-on-this-board";
+       reason = "This controller board cannot run a WiFi module.";
+     } else {

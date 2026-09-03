@@ -871,7 +871,8 @@ input.input-narrow:focus {
   border-left: 4px solid var(--warning);
 }
 
-.feature-availability-panel.feature-state-on {
+.feature-availability-panel.feature-state-on,
+.feature-availability-panel.feature-state-included {
   border-left-color: var(--success);
 }
 

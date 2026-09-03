@@ -62,6 +62,50 @@
         <div class="desc mt-8">Build with <code>pio run -e &lt;env&gt; --target buildfs</code>, then select <code>.pio/build/&lt;env&gt;/littlefs.bin</code> for your active environment. The controller reboots automatically when done.</div>
       </div>
     </div>
+    <hr>
+
+    <div class="card feature-availability-panel feature-state-checking" id="wifi-module-card"
+         data-feature-entry="system.action.upload-wifi-module"
+         data-board-capability="PA_CAP_HOSTED_WIFI">
+      <div class="feature-availability-header">
+        <div>
+          <h3>📶 WiFi Module Update</h3>
+          <div class="desc">Replace the wireless module's own software. This is not a controller firmware update — the droid stays running.</div>
+        </div>
+        <div class="feature-availability-rail">
+          <span id="wm-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
+          <div id="wm-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
+            <span class="feature-availability-lamp" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div id="wm-availability-reason" class="feature-availability-reason" role="status" aria-live="polite">Checking whether this controller has a WiFi module…</div>
+
+      <div id="wm-content" class="feature-availability-content" inert aria-hidden="true">
+        <div class="desc mt-8 text-warning">
+          ⚠️ Keep power connected. The droid stays up; the wireless link will drop while the module restarts.
+        </div>
+        <div id="wm-support-line" class="desc mt-12" role="status" aria-live="polite"></div>
+        <div id="wm-version-line" class="desc mt-8"></div>
+        <div class="form-grid mt-16">
+          <label class="field">
+            <span>WiFi Module File</span>
+            <input id="wm-file" class="file-input" type="file" accept=".bin" aria-label="Select WiFi module software file">
+          </label>
+          <div id="wm-progress" class="fw-progress hidden">
+            <div class="fw-progress-track">
+              <div id="wm-bar" class="fw-progress-bar"></div>
+            </div>
+            <div id="wm-status" class="fw-progress-status" role="status" aria-live="polite" aria-atomic="true">Sending…</div>
+          </div>
+          <div class="button-row">
+            <button id="upload-wm-button" class="btn accent" type="button">📤 Send to WiFi Module</button>
+          </div>
+          <div class="desc mt-8">⚠️ Wrong file leaves the wireless module on old software. Check the filename before sending.</div>
+        </div>
+        <div id="wm-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+    </div>
 
     <div class="card">
       <h3>🔄 System Controls</h3>
