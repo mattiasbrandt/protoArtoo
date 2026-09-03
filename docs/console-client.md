@@ -104,12 +104,25 @@ line, in the order you wrote them.
 python3 tools/console_client.py --port /dev/ttyACM0 --send system.status.health
 
 # the same command through the dashboard's endpoint instead
-python3 tools/console_client.py --http http://artoo.local --send system.status.health
+python3 tools/console_client.py --http http://<controller> --send system.status.health
 
 # a whole sheet
 python3 tools/console_client.py --port /dev/ttyACM0 --script tools/bench_rows/firebeetle2.txt
 make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt
 ```
+
+`<controller>` is the board's address. Guess its default mDNS name first -
+`artoo.local` on artoo-esp32, `firebeetle2.local` on a FireBeetle 2, from
+`WIFI_MDNS_HOST` in `include/config.h` - but treat it as a default and not a
+promise: a Droid Name override changes it, and mDNS does not answer on every
+network. When it does not, use the device IP instead;
+[troubleshooting.md](troubleshooting.md) opens with that fallback and the rest of
+the base-URL rules, which are not repeated here.
+
+A name that does not resolve costs you the `IMAGE:` line, not the run: the
+image-identity probe warns, the header degrades to `IMAGE: UNKNOWN (not
+evidence)`, and a serial run carries on and exits 0. A command actually *sent* to
+a host that is not there is a different thing - that fails, and exits 1.
 
 ### Transports
 
