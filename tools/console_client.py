@@ -188,8 +188,18 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[n:]
 
 
-def run_interactive(serial_fd: int, stdin_fd: int, stdout_fd: int) -> int:
+def run_interactive(serial_fd: int, stdin_fd: int, stdout_fd: int,
+                    color: bool = False) -> int:
     """Full-duplex copy between stdin_fd and serial_fd until Ctrl-C (0x03).
+
+    `color` colours Console Record lines on their way to the screen, through
+    InteractiveRecordColorizer -- the same two-state rule scripted mode uses,
+    applied to a byte stream that also carries embedded-cli's editor redraw.
+    That class's docstring is the contract; the two properties that matter
+    here are that every byte the firmware sent still reaches the screen in
+    order (only SGR is added, and only at a line boundary), and that the
+    stdin -> serial direction below is not touched by any of it. `color`
+    false is a byte-exact pass-through, unchanged from before it existed.
 
     Ctrl-C is the LOCAL client's own exit key here, matching the convention
     already documented for every other supported Console terminal
@@ -209,45 +219,71 @@ def run_interactive(serial_fd: int, stdin_fd: int, stdout_fd: int) -> int:
     and keeps raw-mode enter/restore (a correctness property, not cosmetic)
     entirely inside interactive_fd()'s try/finally.
     """
-    while True:
-        r, _, _ = select.select([stdin_fd, serial_fd], [], [])
+    colorizer = InteractiveRecordColorizer(color)
 
-        if serial_fd in r:
-            try:
-                chunk = _read_or_none(serial_fd, 256)
-            except OSError as e:
-                print(f"\r\nERROR: serial port read failed: {e}", file=sys.stderr)
-                return 1
-            if chunk is None:
-                pass  # spurious non-blocking wakeup; nothing to forward yet
-            elif not chunk:
-                print("\r\nERROR: serial port closed", file=sys.stderr)
-                return 1
-            else:
-                _write_all(stdout_fd, chunk)
+    def release_held() -> None:
+        """Never leave held bytes on the floor. Called on every quiet moment
+        inside the loop, and once more in the `finally` below so that a
+        return, an I/O error or the KeyboardInterrupt raised by
+        interactive_fd()'s signal handlers all end with the screen holding
+        every byte the device sent. flush() empties the buffer, so calling it
+        twice writes nothing twice."""
+        pending = colorizer.flush()
+        if pending:
+            _write_all(stdout_fd, pending)
 
-        if stdin_fd in r:
-            data = os.read(stdin_fd, 256)
-            if not data:
-                return 0  # stdin EOF (a closed pipe; a real raw-mode terminal has no EOF key)
-            if b"\x03" in data:
-                idx = data.index(b"\x03")
-                if idx:
-                    try:
-                        _write_all(serial_fd, data[:idx])
-                    except OSError as e:
-                        print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
-                        return 1
-                return 0
-            try:
-                _write_all(serial_fd, data)
-            except OSError as e:
-                print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
-                return 1
+    try:
+        while True:
+            # None (block) unless a candidate record line is being held, in which
+            # case the hold has to be able to expire on a silent port.
+            r, _, _ = select.select([stdin_fd, serial_fd], [], [],
+                                    colorizer.select_timeout())
+            if not r:
+                release_held()
+                continue
+
+            if serial_fd in r:
+                try:
+                    chunk = _read_or_none(serial_fd, 256)
+                except OSError as e:
+                    print(f"\r\nERROR: serial port read failed: {e}", file=sys.stderr)
+                    return 1
+                if chunk is None:
+                    pass  # spurious non-blocking wakeup; nothing to forward yet
+                elif not chunk:
+                    print("\r\nERROR: serial port closed", file=sys.stderr)
+                    return 1
+                else:
+                    _write_all(stdout_fd, colorizer.feed(chunk))
+
+            if stdin_fd in r:
+                data = os.read(stdin_fd, 256)
+                if not data:
+                    return 0  # stdin EOF (a closed pipe; a real raw-mode terminal has no EOF key)
+                if b"\x03" in data:
+                    idx = data.index(b"\x03")
+                    if idx:
+                        try:
+                            _write_all(serial_fd, data[:idx])
+                        except OSError as e:
+                            print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
+                            return 1
+                    return 0
+                try:
+                    _write_all(serial_fd, data)
+                except OSError as e:
+                    print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
+                    return 1
+    finally:
+        release_held()
 
 
-def interactive_fd(fd: int) -> int:
+def interactive_fd(fd: int, color: bool = False) -> int:
     """Attach the current terminal's stdin/stdout to `fd` full-duplex.
+
+    `color` is the caller's own --color/--no-color/isatty() decision, passed
+    straight through to run_interactive(); this function only owns the
+    terminal's raw mode and its restoration.
 
     Raw mode is restored on every exit path -- normal return, an exception
     from the loop, or SIGTERM/SIGHUP/SIGINT -- via try/finally. A tool that
@@ -277,7 +313,7 @@ def interactive_fd(fd: int) -> int:
     try:
         print("[monitor] interactive: Ctrl-C to exit\r", file=sys.stderr)
         try:
-            return run_interactive(fd, stdin_fd, stdout_fd)
+            return run_interactive(fd, stdin_fd, stdout_fd, color=color)
         except KeyboardInterrupt:
             return 0
     finally:
@@ -494,6 +530,21 @@ def fetch_json_status(base_url: str, timeout: float = 5.0) -> dict | None:
         return None
 
 
+def resolve_color(args) -> bool:
+    """--color / --no-color / default-to-isatty, decided in one place for
+    every mode that colours (scripted and interactive alike).
+
+    The default is stdout's own tty-ness, never stdin's: interactive mode
+    needs a terminal on stdin for raw mode either way, but its output can
+    still be redirected to a transcript, and "colour never reaches a
+    redirected transcript" is the rule that has to hold there too."""
+    if args.no_color:
+        return False
+    if args.color:
+        return True
+    return sys.stdout.isatty()
+
+
 def build_provenance_header(args) -> list[str]:
     """Port/HTTP, by-id identity, baud, host UTC time, repo HEAD+dirty,
     board, and image identity -- the last one mandatory (acceptance
@@ -540,25 +591,189 @@ def build_provenance_header(args) -> list[str]:
     return lines
 
 
+# The wire text a Console Record line begins with (docs/console-protocol.md
+# 3: "one per line, prefixed `< `", and the first pair is always the Request
+# ID) and the token that makes it an error one. Both are printable ASCII, so
+# the byte forms below are exact -- section 7 keeps the record envelope
+# ASCII-only.
+RECORD_LINE_PREFIX = "< id="
+RECORD_ERR_TOKEN = "status=err"
+
+SGR_RECORD = "\x1b[36m"
+SGR_RECORD_ERR = "\x1b[31m"
+SGR_RESET = "\x1b[0m"
+
+
+def record_color_code(line: str) -> str | None:
+    """The SGR colour `line` gets as a Console Record, or None if it is not
+    one.
+
+    Two states, matching the browser's two CSS classes (data/app.js's
+    log-line-command / log-line-command-error): an ordinary Console Record
+    line and an error one (`status=err`). Only a line that IS a
+    rendered/wire Console Record is touched -- log lines, banners, and this
+    tool's own verdict markers ([TIMEOUT], [LOSS], the `--- send ... ---`
+    marker, ...) are left alone, and none of them start with the record
+    prefix this checks for.
+
+    Both callers -- scripted mode's line-at-a-time colorize_record_line()
+    and interactive mode's byte-stream InteractiveRecordColorizer -- decide
+    here, so there is one rule and not two that can drift.
+    """
+    if not line.startswith(RECORD_LINE_PREFIX):
+        return None
+    return SGR_RECORD_ERR if RECORD_ERR_TOKEN in line else SGR_RECORD
+
+
 def colorize_record_line(line: str, enabled: bool) -> str:
-    """Two states, matching the browser's two CSS classes
-    (data/app.js's log-line-command / log-line-command-error): an ordinary
-    Console Record line and an error one (`status=err`). Only a line that
-    IS a rendered/wire Console Record is touched -- log lines, banners,
-    and this tool's own verdict markers ([TIMEOUT], [LOSS], the
-    `--- send ... ---` marker, ...) are left alone, and none of them start
-    with the record prefix this checks for.
+    """Scripted mode's colouring: one already-split, already-stripped line in,
+    the same line (coloured or not) out.
 
     `enabled` is the caller's own --color/--no-color/isatty() decision, not
     decided here, so ANSI can never reach a redirected transcript by
     accident: the check is what stays true regardless of terminal, only
     the caller's threading of `enabled` decides whether it ever fires.
     """
-    if not enabled or not line.startswith("< id="):
+    if not enabled:
         return line
-    if "status=err" in line:
-        return f"\x1b[31m{line}\x1b[0m"
-    return f"\x1b[36m{line}\x1b[0m"
+    code = record_color_code(line)
+    return line if code is None else f"{code}{line}{SGR_RESET}"
+
+
+class InteractiveRecordColorizer:
+    """Colours Console Record lines inside interactive mode's device->screen
+    byte stream (#267), without ever altering a byte the firmware sent.
+
+    Why this cannot just reuse colorize_record_line(): run_interactive() is a
+    byte pump, not a line reader. The same direction carries embedded-cli's
+    editor redraw -- the input-line clear (`\r`, spaces, `\r`), the prompt
+    and buffered-command reprint, cursor save/restore and left/right moves
+    (lib/embedded-cli/src/embedded_cli.c's clearCurrentLine, moveCursor,
+    printLiveAutocompletion) -- and those sequences are what Tab completion,
+    history Up/Down and mid-line Backspace are made of. Splitting that stream
+    into lines and reprinting them would corrupt the redraw; holding it until
+    a newline would stall the echo the operator is typing against.
+
+    The contract this keeps instead, and what the tests assert:
+
+    1. **Byte transparency modulo SGR.** Strip every SGR sequence this class
+       emits from its output and you get its input back, byte for byte, in
+       order. Nothing is dropped, reordered, re-encoded or re-wrapped, so no
+       redraw sequence can be corrupted -- the terminal receives the
+       firmware's own bytes.
+    2. **SGR is inserted only at a line boundary**, immediately before a
+       record's first byte and immediately after its last, never inside an
+       escape sequence: the only injection point is a position that directly
+       follows a `\r` or `\n` (or the start of the session), which is
+       exactly where an escape sequence cannot be in progress. SGR does not
+       move the cursor or occupy a column, so embedded-cli's own model of the
+       input line stays true.
+    3. **Bounded hold.** At most one candidate record line is held back
+       (HOLD_LIMIT bytes), and only until its terminator arrives, the limit
+       is hit, or the caller flushes on a quiet stream (HOLD_TIMEOUT_S).
+       Whatever is held is released verbatim, uncoloured, rather than lost.
+    4. **Disabled means untouched.** With `enabled` false, feed() returns its
+       input unchanged and nothing is ever held -- the pump behaves exactly
+       as it did before this class existed, which is what keeps ANSI out of a
+       redirected transcript.
+
+    Input (keystrokes -> firmware) never passes through here at all.
+
+    A record that arrives while the operator is mid-entry is NOT coloured: it
+    is written by the framed emitter without clearing the input line
+    (include/console_serial_output.h), so it does not start at column 0 and
+    this class does not pretend it does. The answer to a submitted command --
+    the case an operator actually watches -- always follows embedded-cli's
+    own `\r\n` echo of the Enter key, so it is at a line start.
+    """
+
+    # A record line on the wire is at most PA_LOG_SERIAL_LINE_MAX - 1 bytes
+    # plus CR LF = 257 (include/console_serial_output.h). 512 is that with
+    # room to spare: the limit exists to bound the hold if something that is
+    # not a record ever starts with the record prefix, not to clip records.
+    HOLD_LIMIT = 512
+
+    # How long the caller waits for the rest of a held candidate before
+    # giving up and releasing it uncoloured. A record is one Serial.write()
+    # (ADR 0036), so a split mid-record is host-side fragmentation and
+    # resolves within a USB frame / a UART character time; 50 ms is far above
+    # both and still imperceptible.
+    HOLD_TIMEOUT_S = 0.05
+
+    _PREFIX = RECORD_LINE_PREFIX.encode("ascii")
+    _TERMINATORS = (b"\r", b"\n")
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self._held = bytearray()
+        self._in_record = False
+        self._at_line_start = True
+
+    def select_timeout(self) -> float | None:
+        """The timeout the caller's select() should use: None (block, as
+        before) unless bytes are being held, in which case the hold must be
+        able to expire even if the device never sends another byte."""
+        return self.HOLD_TIMEOUT_S if self._held else None
+
+    def feed(self, chunk: bytes) -> bytes:
+        """The bytes to write to the screen for this chunk -- possibly fewer
+        than came in (a candidate record still accumulating), possibly more
+        (a completed record, plus its SGR)."""
+        if not self.enabled:
+            return chunk
+
+        out = bytearray()
+        for i in range(len(chunk)):
+            b = chunk[i:i + 1]
+
+            if self._held:
+                self._held += b
+                if self._in_record:
+                    if b in self._TERMINATORS:
+                        out += self._emit_record()
+                    elif len(self._held) >= self.HOLD_LIMIT:
+                        out += self.flush()
+                elif self._PREFIX.startswith(bytes(self._held)):
+                    if len(self._held) == len(self._PREFIX):
+                        self._in_record = True
+                else:
+                    out += self.flush()
+                continue
+
+            if self._at_line_start and b == self._PREFIX[:1]:
+                self._held += b
+                continue
+
+            out += b
+            self._at_line_start = b in self._TERMINATORS
+
+        return bytes(out)
+
+    def flush(self) -> bytes:
+        """Release whatever is held, verbatim and uncoloured. Called by the
+        caller when the stream goes quiet, and internally whenever a
+        candidate turns out not to be a record."""
+        data = bytes(self._held)
+        self._held.clear()
+        self._in_record = False
+        if data:
+            self._at_line_start = data[-1:] in self._TERMINATORS
+        return data
+
+    def _emit_record(self):
+        data = bytes(self._held)
+        self._held.clear()
+        self._in_record = False
+        self._at_line_start = True
+
+        text, terminator = data[:-1], data[-1:]
+        # Decoded for the two-state DECISION only; what goes to the screen is
+        # `text` itself, so a value carrying UTF-8 (protocol section 7) is
+        # never re-encoded on its way through.
+        code = record_color_code(text.decode("utf-8", "replace"))
+        if code is None:
+            return data  # unreachable: the prefix already matched
+        return code.encode("ascii") + text + SGR_RESET.encode("ascii") + terminator
 
 
 class ScriptUsageError(Exception):
@@ -1393,7 +1608,8 @@ def main() -> int:
     color_group = parser.add_mutually_exclusive_group()
     color_group.add_argument(
         "--color", action="store_true",
-        help="Force colour on Console Record lines (default: on only when stdout is a TTY)."
+        help="Force colour on Console Record lines, in scripted and interactive mode "
+             "(default: on only when stdout is a TTY)."
     )
     color_group.add_argument(
         "--no-color", action="store_true",
@@ -1440,12 +1656,7 @@ def main() -> int:
             return EXIT_TOOL_FAILURE
 
         initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
-        if args.no_color:
-            color = False
-        elif args.color:
-            color = True
-        else:
-            color = sys.stdout.isatty()
+        color = resolve_color(args)
 
         if args.http:
             for line in build_provenance_header(args):
@@ -1508,7 +1719,7 @@ def main() -> int:
             file=sys.stderr,
         )
         try:
-            return interactive_fd(fd)
+            return interactive_fd(fd, color=resolve_color(args))
         finally:
             os.close(fd)
 
