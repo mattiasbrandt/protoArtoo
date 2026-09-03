@@ -68,6 +68,14 @@ BOUNDARIES
   code, no copy-paste where the ticket demands consolidation, no deleted or
   degraded comments, no scope creep beyond the sub-issue. If the clean fix
   reveals a deeper issue, report it on the issue - do not expand scope.
+- Small finds ride along. A lying comment, a stale name, a missing guard, an
+  off-by-one in a log line, inside the files your slice already touches: fix it
+  in THIS ticket as its own commit and name it in your status comment. You are
+  holding the context; a new ticket throws it away.
+- You never create issues. `gh issue create` is not yours. A find too big to
+  ride along - it needs a decision, its own verification run, or files your
+  ticket fences off - goes in your status comment on YOUR issue, and you carry
+  on. The coordinator decides what becomes a ticket.
 - Comment deliberate subtleties at the site: an unguarded include, `#if`
   over `#ifdef`, a resolution order, a teardown that is part of correctness.
   A ticket note reaches the reviewer; the comment reaches the maintainer
