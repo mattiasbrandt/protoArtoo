@@ -186,7 +186,6 @@ dome.action.marcduino-sequence value=30
 < id=4 type=field name=available_on_board value=true
 < id=4 type=field name=available_in_build value=true
 < id=4 type=field name=requires_web_control value=false
-< id=4 type=field name=executor_ready value=true
 < id=4 type=field name=aliases value=sound_rand_humming
 < id=4 type=field name=display_name value=Random Humming
 < id=4 type=field name=description value=Play one random track from the configured Humming category range
