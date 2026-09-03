@@ -177,14 +177,24 @@ ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 # port `make flash` uses. Membership in P4_ENVS decides, as for PIO_CORE_DIR.
 UPLOADFS_ENV  = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(BUILD_ENV),$(BUILD_ENV)_ota)
 
+# The OTA branch goes through tools/ota_upload.py, not pio's `-t uploadfs`.
+# PlatformIO invokes espota directly and lets it pick a RANDOM local callback
+# port (measured: host_port=21870), which a default-deny inbound firewall drops
+# — surfacing as the misleading "No response from device" that OTA_HOST_PORT
+# above exists to prevent. `make ota` never hit this because it already routes
+# through the wrapper; `make uploadfs` did, and could not upload an FS image to
+# the artoo at all. The wrapper also brings the board-identity guard (#252) and
+# the project transfer timeout, so the two OTA paths now agree on all three.
 uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB, port resolved; no test gate)
 	@if [ -n "$(filter $(P4_ENVS),$(BUILD_ENV))" ]; then \
 	  port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) || exit 1; \
+	  echo "==> uploading filesystem for $(UPLOADFS_ENV) to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(UPLOADFS_ENV) -t uploadfs --upload-port $$port; \
 	else \
-	  port='$(OTA_IP)'; \
-	fi; \
-	echo "==> uploading filesystem for $(UPLOADFS_ENV) to $$port" && \
-	PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(UPLOADFS_ENV) -t uploadfs --upload-port $$port
+	  echo "==> uploading filesystem for $(UPLOADFS_ENV) to $(OTA_IP)" && \
+	  $(PIO) run -e $(UPLOADFS_ENV) -t buildfs && \
+	  python3 tools/ota_upload.py --env $(UPLOADFS_ENV) --spiffs --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT); \
+	fi
 
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
