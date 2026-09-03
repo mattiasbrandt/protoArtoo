@@ -18,16 +18,19 @@ re-proven by this file, and this file makes no board-reset claim.
 """
 
 import contextlib
+import http.server
 import importlib.util
 import io
 import os
 import pty
 import select
 import signal
+import socket
 import termios
 import threading
 import time
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -452,8 +455,8 @@ class FakeConsolePeer:
 
 class ScriptedSerialEngine(unittest.TestCase):
     """#264: SerialTransport's send/reassembly, raw/key, listen, settle, and
-    run_scripted_serial()'s exit-code aggregation -- against a real pty pair
-    and a synthetic peer, never mocked I/O."""
+    run_scripted()'s exit-code aggregation on the serial path -- against a
+    real pty pair and a synthetic peer, never mocked I/O."""
 
     def setUp(self):
         self.master, self.slave = pty.openpty()
@@ -536,7 +539,7 @@ class ScriptedSerialEngine(unittest.TestCase):
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            worst = console_client.run_scripted_serial(transport, directives)
+            worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_LOSS)
         self.assertIn("[LOSS] dropped=2", out.getvalue())
@@ -554,7 +557,7 @@ class ScriptedSerialEngine(unittest.TestCase):
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            worst = console_client.run_scripted_serial(transport, directives)
+            worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_OK,
                           "a blank line alone must never change the exit code")
@@ -609,9 +612,154 @@ class ScriptedSerialEngine(unittest.TestCase):
         ]
 
         with contextlib.redirect_stdout(io.StringIO()):
-            worst = console_client.run_scripted_serial(transport, directives)
+            worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_TIMEOUT)
+
+
+class _ConsoleStubHandler(http.server.BaseHTTPRequestHandler):
+    """Reproduces src/web/api_console.cpp's POST /api/console response
+    shapes for exactly the commands a test registers, so HttpTransport is
+    proven against the real three wire shapes (200, 500, 200+truncated)
+    without a live board -- #266's panic makes a live-board transcript
+    unavailable today."""
+
+    def log_message(self, format, *args):
+        pass  # keep test output on the actual assertions, not access logs
+
+    def do_POST(self):
+        if self.path != "/api/console":
+            self.send_response(404)
+            self.end_headers()
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        form = urllib.parse.parse_qs(body.decode("utf-8"))
+        command = form.get("command", [""])[0]
+        fixture = self.server.responses.get(command)
+        if fixture is None:
+            status, response_body = 404, b'{"ok":false,"error":"no fixture for command"}'
+        else:
+            status, response_body = fixture
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response_body)))
+        self.end_headers()
+        self.wfile.write(response_body)
+
+
+class _ConsoleStub:
+    def __init__(self, responses: dict[str, tuple[int, bytes]]):
+        self.httpd = http.server.HTTPServer(("127.0.0.1", 0), _ConsoleStubHandler)
+        self.httpd.responses = responses
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.httpd.server_port}"
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=2)
+
+
+class HttpTransportAgainstAStub(unittest.TestCase):
+    """#264: HttpTransport against a local stub reproducing the three
+    src/web/api_console.cpp response shapes the coordinator pin names --
+    the normal 200, the 500 "response too large for this adapter" record
+    overflow, and the 200 envelope carrying "truncated":true. Live-board
+    HTTP is unavailable (#266's panic); this is the stub proof the ticket
+    asks for in its place.
+    """
+
+    def setUp(self):
+        self.responses: dict[str, tuple[int, bytes]] = {}
+        self.stub = _ConsoleStub(self.responses)
+        self.addCleanup(self.stub.close)
+
+    def test_a_normal_response_renders_the_wire_line_grammar(self):
+        self.responses["system.status.health"] = (
+            200,
+            b'{"records":[{"id":1,"type":"begin","operation":"system.status.health"},'
+            b'{"id":1,"type":"field","name":"estop","value":"false"},'
+            b'{"id":1,"type":"end","status":"ok","outcome":"completed"}]}',
+        )
+        transport = console_client.HttpTransport(self.stub.base_url)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            records, closed = transport.send_line("system.status.health", timeout=2.0)
+
+        self.assertTrue(closed)
+        self.assertEqual([r.type for r in records], ["begin", "field", "end"])
+        printed = out.getvalue()
+        self.assertIn("< id=1 type=begin operation=system.status.health", printed)
+        self.assertIn("< id=1 type=field name=estop value=false", printed)
+        self.assertIn("< id=1 type=end status=ok outcome=completed", printed)
+
+    def test_a_500_response_is_reported_as_adapter_capped_not_a_timeout(self):
+        self.responses["operations"] = (
+            500, b'{"ok":false,"error":"response too large for this adapter"}',
+        )
+        transport = console_client.HttpTransport(self.stub.base_url)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(console_client.AdapterCapped) as ctx:
+                transport.send_line("operations", timeout=2.0)
+
+        self.assertIn("response too large for this adapter", str(ctx.exception))
+        self.assertIn("[ADAPTER-CAPPED]", out.getvalue())
+
+    def test_a_truncated_envelope_still_prints_its_records_then_caps(self):
+        self.responses["system.status.logs"] = (
+            200,
+            b'{"records":[{"id":1,"type":"item","value":"line one"},'
+            b'{"id":1,"type":"end","status":"ok","outcome":"completed"}],'
+            b'"truncated":true}',
+        )
+        transport = console_client.HttpTransport(self.stub.base_url)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(console_client.AdapterCapped):
+                transport.send_line("system.status.logs", timeout=2.0)
+
+        printed = out.getvalue()
+        self.assertIn("< id=1 type=item value=line one", printed)
+        self.assertIn("[ADAPTER-CAPPED] response envelope truncated=true", printed)
+
+    def test_run_scripted_maps_adapter_capped_to_exit_4(self):
+        self.responses["operations"] = (
+            500, b'{"ok":false,"error":"response too large for this adapter"}',
+        )
+        transport = console_client.HttpTransport(self.stub.base_url)
+        directives = [console_client.Directive("send", "operations", "--send")]
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            worst = console_client.run_scripted(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_ADAPTER_CAPPED)
+
+    def test_raw_key_listen_are_refused_over_http(self):
+        transport = console_client.HttpTransport(self.stub.base_url)
+        with self.assertRaises(console_client.ScriptUsageError):
+            transport.send_raw(b"\t", 0.1)
+        with self.assertRaises(console_client.ScriptUsageError):
+            transport.capture(0.1)
+
+    def test_unreachable_host_is_a_tool_failure_not_a_per_request_outcome(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()  # nothing listens here now
+        transport = console_client.HttpTransport(f"http://127.0.0.1:{port}")
+
+        with self.assertRaises(console_client.ConsoleClientToolFailure):
+            with contextlib.redirect_stdout(io.StringIO()):
+                transport.send_line("system.status.health", timeout=1.0)
 
 
 class DirectiveParsingAndHelpers(unittest.TestCase):

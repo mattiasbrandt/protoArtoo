@@ -58,14 +58,19 @@
 # =============================================================================
 
 import argparse
+import json
 import os
 import re
 import select
 import signal
+import socket
 import sys
 import termios
 import time
 import tty
+import urllib.error
+import urllib.parse
+import urllib.request
 
 BAUD_MAP = {
     9600: termios.B9600,
@@ -443,6 +448,13 @@ class AdapterCapped(Exception):
         self.message = message
 
 
+class ConsoleClientToolFailure(Exception):
+    """The transport itself could not be used at all -- HTTP unreachable,
+    a malformed response the adapter should never send. Exit 1, same
+    bucket as an open() failure: this is not a per-request outcome, it
+    means the run cannot meaningfully continue."""
+
+
 # Key names accepted by the `key <name[,name...]>` directive, mapped to the
 # exact bytes embedded-cli's line editor recognises. Read from
 # lib/embedded-cli/src/embedded_cli.c, not guessed at from a generic VT100
@@ -564,6 +576,61 @@ def parse_serial_record_line(line: str) -> ConsoleRecord | None:
     return ConsoleRecord(int(m.group(1)), m.group(2), _split_kv_pairs(m.group(3) or ""))
 
 
+# JSON keys a POST /api/console record can carry, per the field-by-field
+# match against src/web/api_console.cpp's handleConsolePost() response
+# builder (:504-520): every ConsoleRecord field that ever gets set on the
+# JSON object, across every record type it builds.
+_HTTP_RECORD_FIELD_KEYS = ("operation", "name", "value", "status", "outcome", "reason")
+
+
+def record_from_http_json(rec: dict) -> ConsoleRecord:
+    """Build the same transport-neutral ConsoleRecord a serial wire line
+    would parse into, from one element of a POST /api/console response's
+    `records` array."""
+    fields = {k: str(rec[k]) for k in _HTTP_RECORD_FIELD_KEYS if k in rec}
+    return ConsoleRecord(int(rec["id"]), str(rec["type"]), fields)
+
+
+def render_record_line(rec: ConsoleRecord) -> str:
+    """Render a ConsoleRecord in the protocol's line grammar, so an HTTP
+    transcript diffs line for line against a serial one for the same
+    command. This is the JSON-to-wire-text direction; the reverse never
+    happens (serial's transcript is the wire text verbatim, never
+    reconstructed -- "Transcript = what the wire said").
+
+    The grammar is read verbatim from the firmware's OWN serial emitter
+    (src/tasks/console_task.cpp's onRecordBegin/Field/Item/Result/End,
+    `< id=%lu type=<t> ...`), not from data/app.js's browser rendering:
+    app.js re-quotes a value defensively for on-page display, which the
+    firmware's serial sink never does at this layer (any quoting a field
+    value carries, e.g. a WiFi SSID, was already applied upstream by the
+    executor via consoleQuoteValue() before either sink saw it) -- matching
+    app.js here would double-quote and diverge from serial, not converge
+    with it.
+    """
+    if rec.type == "begin":
+        return f"< id={rec.id} type=begin operation={rec.fields.get('operation', '')}"
+    if rec.type == "field":
+        return (f"< id={rec.id} type=field name={rec.fields.get('name', '')} "
+                f"value={rec.fields.get('value', '')}")
+    if rec.type == "item":
+        return f"< id={rec.id} type=item value={rec.fields.get('value', '')}"
+    if rec.type in ("result", "end"):
+        line = (f"< id={rec.id} type={rec.type} "
+                f"status={rec.fields.get('status', '')} outcome={rec.fields.get('outcome', '')}")
+        if "reason" in rec.fields:
+            line += f" reason={rec.fields['reason']}"
+        if "dropped" in rec.fields:
+            # Never actually emitted by the browser adapter (ADR 0036: it
+            # builds its response whole and cannot drop) -- included so
+            # this renderer stays a faithful, transport-neutral mirror of
+            # the wire grammar rather than one that silently assumes the
+            # field can't appear here.
+            line += f" dropped={rec.fields['dropped']}"
+        return line
+    return f"< id={rec.id} type={rec.type}"
+
+
 def build_sendlen_line(n: int, prefix: str) -> str:
     """Build an exactly-`n`-byte line for the overflow rows (serial refuses
     at 62 bytes, browser at 255 -- docs/console-protocol.md 1.3). `prefix` is
@@ -626,6 +693,12 @@ class SerialTransport:
         loses the boot log it exists to catch)."""
         self._drain_for(seconds)
 
+    def note_settle(self, seconds: float) -> None:
+        """`settle <s>` directive: only meaningful before the first send;
+        a later occurrence is accepted (never a usage error) but has no
+        further effect, since `_settle_once()` never sleeps again."""
+        self.settle_seconds = seconds
+
     def _read_group(self, timeout: float) -> tuple[list[ConsoleRecord], bool]:
         records: list[ConsoleRecord] = []
         req_id: int | None = None
@@ -686,6 +759,106 @@ class SerialTransport:
                 print(tail, flush=True)
 
 
+def _http_error_message(body: bytes) -> str:
+    """Best-effort extraction of the `error` field from one of
+    handleConsolePost()'s `{"ok":false,"error":"..."}` bodies; falls back to
+    the raw decoded body if it is not that shape, so a caller always has
+    something readable to report."""
+    try:
+        parsed = json.loads(body)
+        if isinstance(parsed, dict) and isinstance(parsed.get("error"), str):
+            return parsed["error"]
+    except ValueError:
+        pass
+    return body.decode("utf-8", "replace")
+
+
+class HttpTransport:
+    """Scripted-mode browser adapter: one `POST /api/console` per `send`,
+    `command=<line>` form-urlencoded (docs/api.md; matches data/web_api.js's
+    own `postForm`, the same encoding the dashboard's Live Logs box uses).
+
+    raw/key/listen have no meaning over HTTP (there is no continuous stream
+    to send bytes into or watch) and are refused outright, per the
+    acceptance criterion marking them serial-only.
+    """
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip("/")
+
+    def send_line(self, line: str, timeout: float) -> tuple[list[ConsoleRecord], bool]:
+        print(f"--- send {line.encode('utf-8')!r} ---", flush=True)
+        data = urllib.parse.urlencode({"command": line}).encode("utf-8")
+        request = urllib.request.Request(
+            self.base_url + "/api/console",
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
+                body = resp.read()
+                status_code = resp.getcode()
+        except urllib.error.HTTPError as e:
+            with e:
+                body = e.read()
+                status_code = e.code
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+            # Unreachable at the connection level (refused, DNS, host down):
+            # no per-request outcome to report, the run cannot continue.
+            raise ConsoleClientToolFailure(
+                f"HTTP request to {self.base_url} failed: {e}") from e
+
+        if status_code == 500:
+            # src/web/api_console.cpp answers 500 for exactly two reasons
+            # today: webSink.overflowed (the bounded path's record array or
+            # value arena ran out before the group closed, :492-494) and the
+            # final serializeJson() overflowing its 4096-byte buffer
+            # (:535-536). Both are the adapter refusing size, matching the
+            # acceptance criterion's "500 response too large" -> exit 4.
+            message = _http_error_message(body)
+            print(f"[ADAPTER-CAPPED] HTTP 500: {message}", flush=True)
+            raise AdapterCapped(message)
+
+        if status_code != 200:
+            message = _http_error_message(body)
+            print(f"[ERROR] unexpected HTTP {status_code}: {message}", flush=True)
+            return [], False
+
+        try:
+            payload = json.loads(body)
+        except ValueError as e:
+            raise ConsoleClientToolFailure(
+                f"malformed JSON from {self.base_url}/api/console: {e}") from e
+
+        records = [record_from_http_json(r) for r in payload.get("records", [])]
+        for rec in records:
+            print(render_record_line(rec), flush=True)
+
+        if payload.get("truncated"):
+            # #240: item-level truncation on system.status.logs-style
+            # answers -- a 200 with a complete, terminated group, but not
+            # every item that existed. Distinct from the 500 above, same
+            # exit bucket: the adapter told us it capped the answer.
+            print("[ADAPTER-CAPPED] response envelope truncated=true", flush=True)
+            raise AdapterCapped("truncated=true")
+
+        closed = bool(records) and records[-1].type in ("result", "end")
+        return records, closed
+
+    def send_raw(self, payload: bytes, listen_seconds: float) -> None:
+        raise ScriptUsageError(
+            "raw/key directives are serial-only (no continuous stream to send "
+            "bytes into over --http)")
+
+    def capture(self, seconds: float) -> None:
+        raise ScriptUsageError(
+            "listen is serial-only (no continuous stream to watch over --http)")
+
+    def note_settle(self, seconds: float) -> None:
+        pass  # settle exists to let a serial attach-reprint land first; no-op over HTTP
+
+
 class Directive:
     __slots__ = ("kind", "arg", "source")
 
@@ -737,11 +910,11 @@ def run_pause(text: str) -> None:
     input()
 
 
-def run_scripted_serial(transport: SerialTransport, directives: list[Directive],
-                         initial_timeout: float = DEFAULT_SEND_TIMEOUT) -> int:
-    """Execute `directives` against `transport`. Returns the worst exit code
-    seen across the whole run (EXIT_OK if every request closed with no
-    loss)."""
+def run_scripted(transport: "SerialTransport | HttpTransport", directives: list[Directive],
+                  initial_timeout: float = DEFAULT_SEND_TIMEOUT) -> int:
+    """Execute `directives` against `transport` (either adapter). Returns the
+    worst exit code seen across the whole run (EXIT_OK if every request
+    closed with no loss and the adapter never capped an answer)."""
     worst = EXIT_OK
     current_timeout = initial_timeout
     current_listen = DEFAULT_LISTEN_SECONDS
@@ -758,12 +931,23 @@ def run_scripted_serial(transport: SerialTransport, directives: list[Directive],
             print(f"[LOSS] dropped={dropped} on closing record id={last.id}", flush=True)
             worst = max(worst, EXIT_LOSS)
 
+    def send(line: str, timeout: float, label: str) -> None:
+        nonlocal worst
+        try:
+            records, closed = transport.send_line(line, timeout)
+        except AdapterCapped:
+            # The transport already printed its own [ADAPTER-CAPPED] line
+            # (it knows which of the two capped shapes fired); this is only
+            # the exit-code side of that verdict.
+            worst = max(worst, EXIT_ADAPTER_CAPPED)
+            return
+        note(records, closed, label)
+
     for d in directives:
         if d.kind == "row":
             print(f"=== row {d.arg} ===", flush=True)
         elif d.kind == "send":
-            records, closed = transport.send_line(d.arg, current_timeout)
-            note(records, closed, f"send {d.arg!r}")
+            send(d.arg, current_timeout, f"send {d.arg!r}")
         elif d.kind == "sendlen":
             parts = d.arg.split(None, 1)
             if not parts:
@@ -771,8 +955,7 @@ def run_scripted_serial(transport: SerialTransport, directives: list[Directive],
             n = int(parts[0])
             prefix = parts[1] if len(parts) > 1 else ""
             line = build_sendlen_line(n, prefix)
-            records, closed = transport.send_line(line, current_timeout)
-            note(records, closed, f"sendlen {n}")
+            send(line, current_timeout, f"sendlen {n}")
         elif d.kind == "raw":
             transport.send_raw(unescape_raw(d.arg), current_listen)
         elif d.kind == "key":
@@ -781,7 +964,7 @@ def run_scripted_serial(transport: SerialTransport, directives: list[Directive],
             current_listen = float(d.arg)
             transport.capture(current_listen)
         elif d.kind == "settle":
-            transport.settle_seconds = float(d.arg)
+            transport.note_settle(float(d.arg))
         elif d.kind == "timeout":
             current_timeout = float(d.arg)
         elif d.kind == "pause":
@@ -890,6 +1073,12 @@ def main() -> int:
         help=f"Scripted mode: seconds to wait before the first serial send "
              f"(default: {DEFAULT_SETTLE_SECONDS})."
     )
+    parser.add_argument(
+        "--http", default=None, metavar="BASE-URL",
+        help="Scripted mode transport: the browser adapter's POST /api/console "
+             "at BASE-URL, instead of --port. Interactive never goes over HTTP; "
+             "raw/key/listen directives are refused."
+    )
     args = parser.parse_args()
 
     script_directives: list[Directive] = []
@@ -906,6 +1095,18 @@ def main() -> int:
             print("ERROR: scripted mode cannot be combined with "
                   "--interactive/--stream/--until.", file=sys.stderr)
             return EXIT_TOOL_FAILURE
+
+        initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
+
+        if args.http:
+            print(f"[console] {args.http} (HTTP, scripted)", file=sys.stderr)
+            transport = HttpTransport(args.http)
+            try:
+                return run_scripted(transport, script_directives, initial_timeout)
+            except (ScriptUsageError, ConsoleClientToolFailure) as e:
+                print(f"ERROR: {e}", file=sys.stderr)
+                return EXIT_TOOL_FAILURE
+
         try:
             fd = open_posix_port(args.port, args.baud, writable=True)
         except Exception as e:
@@ -918,10 +1119,9 @@ def main() -> int:
         )
         settle = args.settle if args.settle is not None else DEFAULT_SETTLE_SECONDS
         transport = SerialTransport(fd, settle_seconds=settle)
-        initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
         try:
-            return run_scripted_serial(transport, script_directives, initial_timeout)
-        except ScriptUsageError as e:
+            return run_scripted(transport, script_directives, initial_timeout)
+        except (ScriptUsageError, ConsoleClientToolFailure) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return EXIT_TOOL_FAILURE
         finally:
