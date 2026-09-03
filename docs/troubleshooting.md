@@ -285,7 +285,9 @@ machine.
 **`python3 tools/console_client.py --interactive`** -- this repo's own tool,
 nothing extra to install. Extends the exact open the read-only default uses
 (still no DTR/RTS touch, still `O_NOCTTY`) with a write path and a raw local
-terminal.
+terminal. Its other two modes, the scripted directives and the exit codes are
+in [console-client.md](console-client.md); `make console` is the same thing
+with the port resolved for you.
 
 ```
 python3 tools/console_client.py --interactive
@@ -449,7 +451,8 @@ Retype the command in the dashboard's Live Logs command box, where the limit is
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.
-- Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md).
+- Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md),
+  [console-client.md](console-client.md) (`tools/console_client.py`).
 - WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
 - Heap root-cause + fixes: GitHub issue #8 and `tasks/heap-exhaustion-and-flash-findings-2026-06-19.md`.
 - In-PCB USB flash limitation: `tasks/lessons.md` (2026-03-15 entry).

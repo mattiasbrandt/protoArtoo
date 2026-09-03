@@ -56,8 +56,9 @@ picocom -b 115200 -q --imap "" --omap "" /dev/ttyACM0   # FireBeetle 2
 ```
 
 Both boards run at **115200 baud**. Do not attach with `make monitor` — that
-command runs a read-only capture tool and cannot send anything you type; use
-`pio device monitor -e <env>` above instead.
+target runs the capture mode, which is read-only and cannot send anything you
+type. `make console` is the one that opens a session you can type at (it
+resolves the port for you); `pio device monitor -e <env>` above works too.
 
 **Flash the right firmware image.** `firebeetle2_bringup` is an early
 bring-up image that only prints a banner and answers nothing — it is not the
@@ -455,6 +456,9 @@ during and after a command.
 
 ## See also
 
+- [console-client.md](console-client.md) — `tools/console_client.py`, this
+  repo's own client: its three modes, the scripted directives a bench sheet
+  is written in, and what its exit codes mean.
 - [console-protocol.md](console-protocol.md) — the full wire-format
   reference: quoting rules in detail, every record shape, and the
   reasoning behind each decision.

@@ -156,6 +156,13 @@ session. One image at a time; before any acceptance run, confirm
 invalidates the run. If the fix changed `data/`, the FS image must be
 uploaded too, and `fs-version.json` must match.
 
+Where an epic has Console bench runbooks, replay the rows rather than typing a
+session: `tools/bench_rows/<board>.txt` holds one sheet per board and
+`make bench-rows BENCH_ROWS=<sheet> [ROWS=a,b] [SKIP_MANUAL=1]` runs it with the
+port resolved - `SKIP_MANUAL=1` is the subset needing nobody at the bench. The
+transcript is the evidence comment's body; what a row is expected to answer stays
+on the runbook ticket. Reference: `docs/console-client.md`.
+
 ## Builds and toolchain (serialized - one build machine-wide)
 
 Only one PlatformIO build may run on the machine, and the tooling now enforces
