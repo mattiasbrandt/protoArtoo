@@ -189,6 +189,14 @@ Every record carries `id=<n>`. Because logs and events keep streaming, records
 of one request may be separated by other lines; the Request ID is how a reader
 reassembles them.
 
+On serial only, a `result` or `end` record carries `dropped=<n>` when the sink
+could not secure USB CDC transmit room for `<n>` earlier records of that same
+request (ADR 0036); the field is absent when nothing was dropped. A dropped
+closing record itself just leaves the group unterminated, which a reader
+already treats as loss - the two together make every drop visible on the
+wire. The browser adapter builds its JSON response whole and never emits this
+field.
+
 ### 3.2 Request ID
 
 Assigned by the firmware, monotonic, and **one counter across both surfaces**:
@@ -327,6 +335,19 @@ buffered command. No line is ever interleaved inside another.
   inside a record.
 - Editor-only cursor sequences (section 8) are distinct from records and are
   never part of a result.
+- A serial record waits briefly for USB CDC transmit room before it is
+  written, and is dropped whole (never split, never sent short) if that room
+  never clears (ADR 0036); log lines stay best-effort and never wait. **For
+  records**, this is one write or none - a record that starts on the wire
+  always finishes on it. A runtime log line does not carry the same
+  guarantee: once the console task has bound its CLI, a log line is echoed
+  through embedded-cli's interactive redraw path one byte per `Serial.write()`
+  call (needed for the input-line clear/redraw behavior in section 6, not for
+  delivery atomicity), and can still tear under the same zero-timeout
+  backpressure. Only the boot-time fallback used before that binding (early
+  setup log lines) got the same single-write fix as records; ADR 0036
+  deliberately left the interactive log path's best-effort contract (#245)
+  unchanged.
 
 ## 8. Serial terminal
 

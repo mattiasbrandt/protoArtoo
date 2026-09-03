@@ -35,18 +35,77 @@ private:
 };
 
 // Serial stub — used by code compiled in native host tests.
+//
+// availableForWrite() / operator bool() (ADR 0036, #265): test-controlled so
+// the room-wait seam in src/console/console_serial_output.cpp is provable on
+// the host without a board. Defaults ("unlimited room", "connected") match
+// what every native test written before #265 already assumed implicitly, so
+// this extension is additive — nothing that does not touch these knobs can
+// observe a behavior change.
+//
+// The write() capture exists for the same reason: consoleSerialEmitFramedLine()
+// writes the record/log line straight to Serial (not through embedded-cli's
+// per-character cli->writeChar, which test_console_serial_output.cpp already
+// captures separately) and its own tests need to see exactly what reached
+// the wire and in how many calls.
 struct SerialStub {
+    // Test-controlled knobs — see serialStubReset() below for the one place
+    // that owns their defaults.
+    static inline int availableForWriteValue = 100000;
+    static inline bool connectedValue = true;
+
+    // Bytes handed to write(), across however many calls were made, plus a
+    // count of those calls. Deliberately separate from the writeChar capture
+    // used elsewhere in this header's neighboring test file: merging them
+    // would make "one write call" assertions ambiguous about which sink
+    // produced a given byte.
+    static inline char capturedBuf[2048] = {};
+    static inline size_t capturedLen = 0;
+    static inline int writeCallCount = 0;
+    static inline int availableForWriteCallCount = 0;
+
     template<typename... Args>
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
     static void println(const char* /*s*/) {}
     static void print(const char* /*s*/) {}
-    static size_t write(uint8_t /*c*/) { return 1; }
-    static size_t write(const uint8_t* /*data*/, size_t len) { return len; }
+    static size_t write(uint8_t c) {
+        writeCallCount++;
+        if (capturedLen + 1 < sizeof(capturedBuf)) {
+            capturedBuf[capturedLen++] = (char)c;
+        }
+        return 1;
+    }
+    static size_t write(const uint8_t* data, size_t len) {
+        writeCallCount++;
+        for (size_t i = 0; i < len && capturedLen + 1 < sizeof(capturedBuf); ++i) {
+            capturedBuf[capturedLen++] = (char)data[i];
+        }
+        return len;
+    }
     static void flush() {}
     static int available() { return 0; }
     static int read() { return -1; }
+    static int availableForWrite() {
+        availableForWriteCallCount++;
+        return availableForWriteValue;
+    }
+    operator bool() const { return connectedValue; }
 };
 extern SerialStub Serial;
+
+// Resets every SerialStub knob and capture to its default (unlimited room,
+// connected, empty capture, zeroed counters). Call at the top of any test
+// that touches the ADR 0036 room-wait/single-write seam — this is one global
+// shared by every native test in the binary, so state left over from a prior
+// test would otherwise leak forward.
+inline void serialStubReset() {
+    SerialStub::availableForWriteValue = 100000;
+    SerialStub::connectedValue = true;
+    SerialStub::capturedLen = 0;
+    SerialStub::capturedBuf[0] = '\0';
+    SerialStub::writeCallCount = 0;
+    SerialStub::availableForWriteCallCount = 0;
+}
 
 // millis() stub — used by failsafe gate and other timing code
 unsigned long millis();
