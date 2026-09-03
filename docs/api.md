@@ -1410,6 +1410,32 @@ Returns controller status snapshot.
 - Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`)
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
+- On boards with Hosted WiFi (`PA_CAP_HOSTED_WIFI`, firebeetle2), two further objects are present. They are **absent entirely** on boards without that capability (artoo-esp32) — never a placeholder object.
+
+#### `hostedLink` (hosted boards only)
+
+ESP-Hosted link supervisor snapshot. Fields match the snprintf in `buildStatusJson`:
+
+- `phase`: `idle` | `armed` | `attempting` | `degraded`
+- `terminal`: `true` when `phase` is `degraded`, otherwise `false`
+- `transportFailureCount`, `transportUpEventCount`, `attemptCount`, `totalAttemptCount`, `recoveredCount`
+- `lastFailureAtMs`, `lastAttemptAtMs`, `degradedAtMs`
+
+#### `wifiModule` (hosted boards only)
+
+WiFi Module Update Support, discovered by asking the module (not declared at compile time):
+
+- `updateSupport`: `unknown` (module not on the bus, never asked) | `not_supported` (asked and refused) | `supported`
+- `version`: module version string (`major.minor.patch`). **Omitted** when a version was not actually read. Never `null`, and never synthesized as `0.0.0` for an unread version. A genuine read of `0.0.0` is emitted as `"0.0.0"`.
+- `hostVersion`: host ESP-Hosted version this firmware was built against (compile-time). Always present when the object is present.
+
+```json
+"wifiModule":{"updateSupport":"unknown","hostVersion":"2.12.11"}
+```
+
+```json
+"wifiModule":{"updateSupport":"supported","version":"2.12.11","hostVersion":"2.12.11"}
+```
 
 #### Example request
 

@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "wifi_module_update_support.h"
 
 WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
                                                     unsigned int apStationCount, long staRssi) {
@@ -68,4 +69,22 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
              fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi);
+}
+
+void formatWifiModuleJson(char* buf, size_t bufSize,
+                          const WifiModuleUpdateSupportResult& result, uint32_t hostMajor,
+                          uint32_t hostMinor, uint32_t hostPatch) {
+    const char* support = wifiModuleUpdateSupportName(result.support);
+    if (result.versionPresent) {
+        snprintf(buf, bufSize,
+                 "{\"updateSupport\":\"%s\",\"version\":\"%lu.%lu.%lu\","
+                 "\"hostVersion\":\"%lu.%lu.%lu\"}",
+                 support, (unsigned long)result.versionMajor, (unsigned long)result.versionMinor,
+                 (unsigned long)result.versionPatch, (unsigned long)hostMajor,
+                 (unsigned long)hostMinor, (unsigned long)hostPatch);
+    } else {
+        snprintf(buf, bufSize, "{\"updateSupport\":\"%s\",\"hostVersion\":\"%lu.%lu.%lu\"}",
+                 support, (unsigned long)hostMajor, (unsigned long)hostMinor,
+                 (unsigned long)hostPatch);
+    }
 }

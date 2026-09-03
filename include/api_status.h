@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "web_request.h"
+#include "wifi_module_update_support.h"
 
 // WiFi connectivity status fields derived from WiFi modes and station counts.
 struct WiFiConnectivityFields {
@@ -83,6 +84,16 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
                       unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
+
+// Write a JSON WiFi Module object for GET /api/status.
+// Pure function - no globals, no Arduino, no FreeRTOS.
+// `version` is omitted when result.versionPresent is false (never null, never
+// synthesized as "0.0.0" for an unread version). hostVersion is always
+// present. Typical object is ~50-75 bytes; worst-case uint32 versions fit
+// in 160 bytes. The /api/status body is a 3072-byte static.
+void formatWifiModuleJson(char* buf, size_t bufSize,
+                          const WifiModuleUpdateSupportResult& result, uint32_t hostMajor,
+                          uint32_t hostMinor, uint32_t hostPatch);
 
 // Endpoint handlers
 void handleWifiGet(WebRequest& req);

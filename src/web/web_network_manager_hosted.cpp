@@ -58,6 +58,8 @@
 #include "../../include/hosted_link_degraded_announcement.h"
 #include "../../include/hosted_link_status.h"
 #include "../../include/hosted_link_supervisor.h"
+#include "../../include/wifi_module_status.h"
+#include "../../include/wifi_module_update_support.h"
 #include "../../include/logging.h"
 #include "../../include/web_network_manager_common.h"
 #include "../../include/wifi_boot_decision.h"
@@ -392,6 +394,40 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
     snap.lastAttemptAtMs = g_hostedLinkState.lastAttemptAtMs;
     snap.degradedAtMs = g_hostedLinkState.degradedAtMs;
     portEXIT_CRITICAL(&g_hostedLinkMux);
+    return snap;
+}
+
+// WiFi Module Update Support snapshot for /api/status (#241, ADR 0034).
+// Classifies on each call (no cache): a later Degraded / hostedIsInitialized
+// drop must not keep a previous successful read. The version RPC is asked
+// only when the link is ready; Core 0 web path only.
+WifiModuleStatusSnapshot wifiModuleQueryUpdateSupport() {
+    WifiModuleStatusSnapshot snap;
+
+    hostedGetHostVersion(&snap.hostMajor, &snap.hostMinor, &snap.hostPatch);
+
+    const bool initialized = hostedIsInitialized();
+    const HostedLinkStatusSnapshot link = hostedLinkQueryStatus();
+    const bool linkReady = initialized && (link.phase != HostedLinkPhase::Degraded);
+
+    WifiModuleUpdateSupportInput in{};
+    in.linkReady = linkReady;
+    if (linkReady) {
+        // Same component public API as the Arduino wrapper, one layer below
+        // hostedGetSlaveVersion() -- that wrapper copies a file-static
+        // initialised to {0,0,0} and returns void, so a refused RPC and a
+        // genuine 0.0.0 are indistinguishable through it (ADR 0034).
+        esp_hosted_coprocessor_fwver_t ver{};
+        const int ret = esp_hosted_get_coprocessor_fwversion(&ver);
+        in.versionReadOk = (ret == ESP_OK);
+        if (in.versionReadOk) {
+            in.versionMajor = ver.major1;
+            in.versionMinor = ver.minor1;
+            in.versionPatch = ver.patch1;
+        }
+    }
+
+    snap.classification = wifiModuleClassifyUpdateSupport(in);
     return snap;
 }
 
