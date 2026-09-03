@@ -201,6 +201,14 @@ _Avoid_: recovered page, healthy control surface, HTTP blackout
 The operator UI and diagnostic HTTP endpoint are both unreachable while the controller still responds at the network layer. It is a stop condition, not successful pressure shedding or Page Load Memory Recovery.
 _Avoid_: page failure, network outage, self-recovery
 
+**Survival Path**:
+The serial Console: the one operator surface that still answers when HTTP admission refuses everything. It depends on no network, no heap admission decision and no browser, which is what makes it a guarantee rather than a concession. Distinct from the diagnostic HTTP endpoint, which is an HTTP concession under pressure and still subject to a floor.
+_Avoid_: survival set, /api/health as a survival surface, "the health endpoint always answers", diagnostic HTTP endpoint
+
+**Diagnostic Floor**:
+The lower largest-free-block threshold applied to the small set of read-only diagnostic paths, so they keep answering under pressure that already refuses ordinary requests. The set is an exact-match list, not a pattern; membership is a deliberate decision per path, and an endpoint's payload being small does not put it in the set.
+_Avoid_: admission floor, health endpoint exemption, "small responses are exempt"
+
 **Power-Cycle Recovery**:
 Restoring controller HTTP service by physically removing and restoring controller power. It is the only recovery demonstrated so far after an HTTP Blackout and is evidence of failed self-recovery, not an acceptable recovery mechanism.
 _Avoid_: browser retry, page refresh, self-recovery
