@@ -5961,6 +5961,91 @@ def _run_admission_floor_scenarios(failures: list[str]) -> None:
           every_schema_names_a_real_environment)
 
 
+def _run_verdict_contract_scenarios(failures: list[str]) -> None:
+    """The exit codes and the Run Verdict ranking, pinned against literals.
+
+    Deliberately NOT written as `assert code == EXIT_FAIL`: that compares a
+    constant with itself and would keep passing if the constant moved. The
+    exit-code VALUES are this tool's contract (ADR 0035) -- a wrapper, a CI
+    step or a scheduled run may rely on them -- so they are written out here
+    as bare integers, and a change to any of them has to come back through
+    this scenario and be argued for.
+
+    The verdict STRINGS are prose and may be reworded, so they are read from
+    the constants; what is pinned about them is the ranking, and that one
+    driver's verdict IS the run's rather than being translated into a second
+    vocabulary (CONTEXT.md, Run Verdict).
+    """
+
+    def check(name: str, body: Callable[[], None]) -> None:
+        _record_scenario(name, body, failures)
+
+    def the_exit_codes_are_the_ones_a_wrapper_may_rely_on() -> None:
+        assert (EXIT_PASS, EXIT_SELF_TEST_FAILURE, EXIT_FAIL, EXIT_INVALID) == (0, 1, 2, 3), (
+            "the exit-code values are contract and did not move: 0 pass, 1 self-test "
+            "failure, 2 fail, 3 the required evidence is missing"
+        )
+        for driver_verdict, expected in (
+            (VERDICT_PASS, (VERDICT_PASS, 0)),
+            (VERDICT_OBSERVATION_ONLY, (VERDICT_PASS, 0)),
+            (VERDICT_FAIL, (VERDICT_FAIL, 2)),
+            (VERDICT_INVALID, (VERDICT_INVALID, 3)),
+            (VERDICT_UNAVAILABLE, (VERDICT_INVALID, 3)),
+            (VERDICT_INTERRUPTED_DRIVER, (VERDICT_INTERRUPTED_RUN, 3)),
+        ):
+            got = _compose_overall_verdict({"only": {"verdict": driver_verdict}})
+            assert got == expected, f"{driver_verdict!r} composed to {got}, expected {expected}"
+
+    check("the exit codes are 0/1/2/3 and every driver verdict maps to the right one",
+          the_exit_codes_are_the_ones_a_wrapper_may_rely_on)
+
+    def the_run_speaks_its_drivers_words() -> None:
+        # No second vocabulary, and no translation layer: the string a run
+        # prints is the string its driver produced. (That the RETIRED wording
+        # is gone from the source is a drift guard in
+        # test/test_tools/test_soak_schema.py -- it has to live in another file,
+        # because a grep for a string cannot be written in the file it greps.)
+        for driver_verdict in (VERDICT_PASS, VERDICT_FAIL, VERDICT_INVALID):
+            verdict, _ = _compose_overall_verdict({"only": {"verdict": driver_verdict}})
+            assert verdict == driver_verdict, (
+                f"one driver's verdict IS the run's: {driver_verdict!r} became {verdict!r}"
+            )
+
+    check("the run verdict speaks its drivers' words, with no translation layer",
+          the_run_speaks_its_drivers_words)
+
+    def a_finding_outranks_a_coverage_gap_which_outranks_a_pass() -> None:
+        # The ranking is the contract; the wording is not (ADR 0035). A real
+        # failure must never be masked by a driver that could not run, and a
+        # coverage gap must never be reported as a pass.
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_FAIL}, "b": {"verdict": VERDICT_UNAVAILABLE},
+        }) == (VERDICT_FAIL, 2)
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_PASS}, "b": {"verdict": VERDICT_UNAVAILABLE},
+        }) == (VERDICT_INVALID, 3)
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_PASS}, "b": {"verdict": VERDICT_INTERRUPTED_DRIVER},
+        }) == (VERDICT_INTERRUPTED_RUN, 3)
+
+    check("a finding outranks a coverage gap, and a truncated run outranks both",
+          a_finding_outranks_a_coverage_gap_which_outranks_a_pass)
+
+    def the_artefact_version_says_what_shape_it_is() -> None:
+        assert REPORT_SCHEMA_VERSION == 4, (
+            "the artefact's shape changed; bump the version AND record what changed in "
+            "the history above REPORT_SCHEMA_VERSION"
+        )
+        source = Path(__file__).read_text(encoding="utf-8")
+        for version in range(1, REPORT_SCHEMA_VERSION + 1):
+            assert re.search(rf"(?m)^#\s+{version}\s+\S", source), (
+                f"schemaVersion {version} is claimed but its history line is missing"
+            )
+
+    check("the artefact version is stated and every version it claims is described",
+          the_artefact_version_says_what_shape_it_is)
+
+
 def _cap_override_env_section(env: str, clients: int) -> str:
     """A platformio.ini environment that declares the client cap, appended to a
     copy of the real file so an override is resolved by the file's own
@@ -6057,6 +6142,46 @@ def _run_sse_client_cap_scenarios(failures: list[str]) -> None:
 
     check("a build environment's -D displaces the header default, and is reported as an "
           "override", an_environment_d_displaces_the_header_default)
+
+    def the_header_is_read_rather_than_recalled() -> None:
+        # A header carrying a DIFFERENT number, so a reader that had stopped
+        # reading and started returning today's value is caught. Reading the
+        # real header and checking the reader agrees cannot do that: the
+        # invented constant would be the right one.
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory) / "web_event_stream.h"
+            other.write_text(
+                "#pragma once\n"
+                f"#ifndef {SSE_CLIENT_CAP_MACRO}\n"
+                f"#define {SSE_CLIENT_CAP_MACRO} 7\n"
+                "#endif\n",
+                encoding="utf-8",
+            )
+            value, source = read_header_sse_client_cap(other)
+            assert value == 7, (
+                f"the reader returned {value} for a header that declares 7 -- it is not "
+                "reading the file"
+            )
+            assert source == str(other), source
+            cap = resolve_sse_client_cap("artoo_esp32", header_path=other)
+            assert cap.value == 7 and cap.header_default == 7, cap
+            # And a header declaring the macro twice is ambiguous, not a
+            # number: which one a compile takes is not this harness's to guess.
+            twice = Path(directory) / "twice.h"
+            twice.write_text(
+                f"#define {SSE_CLIENT_CAP_MACRO} 3\n"
+                f"#define {SSE_CLIENT_CAP_MACRO} 5\n",
+                encoding="utf-8",
+            )
+            try:
+                read_header_sse_client_cap(twice)
+            except BuildConstantUnresolved as unresolved:
+                assert "2 time(s)" in str(unresolved), str(unresolved)
+            else:
+                raise AssertionError("two #defines of the cap must be refused, not picked between")
+
+    check("the header is read rather than recalled: a different header gives a different cap",
+          the_header_is_read_rather_than_recalled)
 
     def a_header_that_declares_no_cap_is_refused() -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -6459,7 +6584,10 @@ def run_self_test() -> int:
     failures: list[str] = []
     shipping = SCHEMAS["shipping"]
 
-    print("bench image:")
+    print("verdict and exit-code contract:")
+    _run_verdict_contract_scenarios(failures)
+
+    print("\nbench image:")
     _run_sse_scenario("normal frames parse with zero gaps", "normal", _check_normal, failures)
     _run_sse_scenario("gapped fixture reports exactly 2 gaps", "gapped", _check_gapped, failures)
     _run_sse_scenario(
