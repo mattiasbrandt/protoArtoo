@@ -363,6 +363,32 @@ static void consoleExecuteDirectProfilerTraceStop(uint32_t requestId, const char
 }
 #endif  // PA_HEAP_TRACING
 
+// system.action.reboot: no arguments, matching POST /api/reboot
+// (handleRebootPost, src/web/api_system.cpp) - a status broadcast, then the
+// complete record group, THEN the deferred restart flag, in that order:
+// requestSystemRestart() (include/web_server.h) only arms loop()'s restart
+// (src/main.cpp) after delayMs, so emitting the record after arming it
+// would risk it racing the restart for nothing, where emitting it first
+// costs nothing and is provably ordered before the reboot lands (ticket
+// acceptance criterion 3). ADR 0032 ("requestSystemRestart() keeps its
+// operator-initiated callers only") is satisfied by construction: a Console
+// reboot is operator-initiated, and this adds no new caller of it anywhere
+// else. 500 ms matches handleRebootPost()'s own delay.
+static void consoleExecuteDirectReboot(uint32_t requestId, const char* operationName,
+                                       const ConsoleArgs& args, ConsoleCommandSource source,
+                                       const ConsoleRecordSink* sink) {
+    (void)source;
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    requestStatusBroadcastNow();
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+    requestSystemRestart(500);
+}
+
 static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = {
     {"system.action.set-mode", consoleExecuteDirectSetMode},
     {"system.action.sleep", consoleExecuteDirectSleep},
@@ -371,6 +397,7 @@ static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = 
     {"system.action.disable-web-control", consoleExecuteDirectDisableWebControl},
     {"system.action.set-mood", consoleExecuteDirectSetMood},
     {"system.action.set-identity", consoleExecuteDirectSetIdentity},
+    {"system.action.reboot", consoleExecuteDirectReboot},
 #if PA_HEAP_TRACING
     {"system.action.profiler-trace-start", consoleExecuteDirectProfilerTraceStart},
     {"system.action.profiler-trace-stop", consoleExecuteDirectProfilerTraceStop},

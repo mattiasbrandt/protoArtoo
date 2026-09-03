@@ -106,6 +106,13 @@
 #include "seq_last_run_json.h"      // populateSeqLastRunJson() - the JSON-builder leg of
                                      // dome.api.get-sequence-last-run's three-way field check
 
+// requestSystemRestart()'s recorded side effect (src/native_test_stubs.cpp) -
+// system.action.reboot's (#225) own observation hook, the same symbol
+// test_api_motion_routes.cpp already declares for POST /api/reboot; a local
+// extern here rather than a shared header, matching that file's own choice
+// for this particular symbol.
+extern unsigned g_test_restart_requests;
+
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state
 // evidence #222's acceptance criterion 4 asks for - identical helper to
@@ -281,6 +288,7 @@ void setUp() {
     g_test_last_dispatch_target = ROBOT_ACTION_NONE;
     g_test_last_dispatch_source = SRC_NONE;
     g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+    g_test_restart_requests = 0;
     // Reset to empty before every test (#239) - matches test_api_logs.cpp's
     // own setUp(), so a log-ring test never sees another test's lines.
     logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
@@ -2823,6 +2831,34 @@ void test_direct_set_identity_rejects_a_missing_name() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
 }
 
+// system.action.reboot (#225): no arguments, a status broadcast, then the
+// complete result record, then requestSystemRestart() -
+// g_test_restart_requests is the native stub's own observation hook
+// (src/native_test_stubs.cpp), the same one test_api_motion_routes.cpp
+// already uses for POST /api/reboot. The record-before-restart ordering
+// criterion 3 asks for is a source-level property of
+// consoleExecuteDirectReboot() (include/console_direct_action_system.h) -
+// this proves both calls happen exactly once per accepted command, not the
+// ordering between them.
+void test_direct_reboot_broadcasts_answers_then_requests_restart() {
+    runQuery("system.action.reboot");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE_MESSAGE(g_cap.resultCalled, "reboot answers a single result record");
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_restart_requests);
+}
+
+void test_direct_reboot_rejects_an_argument() {
+    runQuery("system.action.reboot delayMs=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_restart_requests,
+                                   "a rejected command must never reach requestSystemRestart()");
+}
+
 // rc.action.test-bindable: token=<rc-token> - "arm1_toggle" is
 // SERVO_ACTION_ARM1_TOGGLE's own rc_token (src/rc_action_types.cpp,
 // docs/action-registry.yaml), a non-analog, non-payload target the guard
@@ -4131,6 +4167,9 @@ int main(int, char**) {
     RUN_TEST(test_direct_set_identity_defaults_mdns_to_false_when_omitted);
     RUN_TEST(test_direct_set_identity_rejects_an_invalid_name);
     RUN_TEST(test_direct_set_identity_rejects_a_missing_name);
+
+    RUN_TEST(test_direct_reboot_broadcasts_answers_then_requests_restart);
+    RUN_TEST(test_direct_reboot_rejects_an_argument);
 
     RUN_TEST(test_direct_test_bindable_dispatches_by_rc_token);
     RUN_TEST(test_direct_test_bindable_rejects_a_missing_token);
