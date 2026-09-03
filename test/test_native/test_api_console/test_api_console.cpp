@@ -486,9 +486,9 @@ void test_operations_unknown_type_filter_is_invalid() {
 // #219 D3 rework: `help <op>` must render schema/availability from the
 // IN-IMAGE catalog table (ConsoleCatalogEntry) regardless of the FS-resident
 // help file's health - consoleEmitHelpForOperation() used to jump straight
-// from `type` to the file and never touch entry->aliases/params/available_*/
-// executor_ready at all, even though the catalog carries real data for 38
-// alias entries and 29 parameter entries.
+// from `type` to the file and never touch entry->aliases/params/available_*
+// at all, even though the catalog carries real data for 38 alias entries and
+// 29 parameter entries.
 // -----------------------------------------------------------------------------
 
 // drive.action.move: no rc_token (no aliases), two required int16 params.
@@ -504,8 +504,13 @@ void test_help_emits_catalog_availability_fields() {
     TEST_ASSERT_EQUAL_STRING("true", value);
     TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "requires_web_control", value, sizeof(value)));
     TEST_ASSERT_EQUAL_STRING("true", value);
-    TEST_ASSERT_TRUE(fieldValue(backend.sentBody, "executor_ready", value, sizeof(value)));
-    TEST_ASSERT_EQUAL_STRING("true", value);
+
+    // Those three are the whole availability set. Readiness is not among them
+    // and never was true information: the catalog claimed it for every entry
+    // while dispatch refused ~44 of them, so the field is gone from the
+    // browser adapter's help reply too (ADR 0035, #263).
+    TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "executor_ready", value, sizeof(value)),
+        "help must not advertise executor readiness at discovery time");
 }
 
 void test_help_emits_params_from_catalog_not_file() {

@@ -207,6 +207,11 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     // purpose, distinct from the camelCase used by status-type queries whose
     // field list mirrors a REST JSON schema (docs/console-protocol.md s.3.5) -
     // these fields have no REST counterpart to mirror.
+    //
+    // These three are the whole availability set help reports, and each is a
+    // compile-time fact. There is deliberately no readiness field: whether an
+    // executor is wired is answered by running the operation and reading its
+    // outcome/reason, never claimed at discovery (ADR 0035).
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "available_on_board",
                            entry->available_on_board ? "true" : "false");
@@ -214,8 +219,6 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
                            entry->available_in_build ? "true" : "false");
         sink->onRecordField(requestId, "requires_web_control",
                            entry->requires_web_control ? "true" : "false");
-        sink->onRecordField(requestId, "executor_ready",
-                           entry->executor_ready ? "true" : "false");
     }
 
     // Aliases: comma-joined into one field value. Neither adapter's record
@@ -2266,6 +2269,12 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
             // Emit each operation as an item record
             // Format: name (type, [reason if unavailable])
+            //
+            // The two annotations are the two availability facts knowable
+            // without executing. Discovery never annotates executor-not-ready:
+            // that is an execution-time answer (ADR 0035), and the branch that
+            // used to emit it here was unreachable for the life of the catalog's
+            // readiness flag, which read `true` for every entry.
             if (sink->onRecordItem) {
                 char itemBuf[256];
                 if (!entry->available_on_board) {
@@ -2273,9 +2282,6 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                             entry->name, entry->type);
                 } else if (!entry->available_in_build) {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s, not-in-this-build)",
-                            entry->name, entry->type);
-                } else if (!entry->executor_ready) {
-                    snprintf(itemBuf, sizeof(itemBuf), "%s (%s, executor-not-ready)",
                             entry->name, entry->type);
                 } else {
                     snprintf(itemBuf, sizeof(itemBuf), "%s (%s)",

@@ -3791,6 +3791,70 @@ void test_operations_lists_out_of_build_rows_with_the_reason_execution_gives() {
     TEST_ASSERT_GREATER_THAN(0, checked);
 }
 
+// =============================================================================
+// Readiness is reported at execution, not at discovery (ADR 0035, #263)
+//
+// The catalog used to carry an executor_ready flag the generator hardcoded to
+// true for every entry. So `help` claimed every operation was wired, and the
+// `operations` listing's executor-not-ready branch could never be reached,
+// while dispatch was refusing dozens of rows with exactly that reason. The
+// flag is gone; these two tests hold both operator surfaces to that.
+// =============================================================================
+
+// Discovery annotates only the two availability facts that are knowable
+// without executing. No listing line may carry executor-not-ready: that is an
+// execution-time answer, and deriving it from a catalog flag is the shape
+// ADR 0035 removed.
+void test_operations_never_annotates_executor_not_ready() {
+    runOperationsListing();
+
+    TEST_ASSERT_TRUE(g_opsCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_opsCap.outcome);
+    TEST_ASSERT_GREATER_THAN(0, g_opsCap.count);
+
+    for (int i = 0; i < g_opsCap.count; ++i) {
+        TEST_ASSERT_NULL_MESSAGE(strstr(g_opsCap.values[i], "executor-not-ready"),
+                                 g_opsCap.values[i]);
+    }
+}
+
+// `help <op>` on a row execution genuinely refuses: it still describes the
+// operation and still reports the three real availability facts, and says
+// nothing at all about readiness. The row is found by asking dispatch rather
+// than being named here, so this keeps testing the same thing as later tickets
+// wire more executors - and if the refused set ever empties, the first
+// assertion says so out loud instead of passing vacuously.
+void test_help_reports_no_readiness_for_a_row_execution_refuses() {
+    robotState.webControlEnabled = true;
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+
+    const char* refusedRow = nullptr;
+    for (size_t i = 0; i < count && refusedRow == nullptr; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_ACTION) != 0) continue;
+        runQuery(entries[i].name);
+        if (g_cap.reason == CONSOLE_REASON_EXECUTOR_NOT_READY) {
+            refusedRow = entries[i].name;
+        }
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+        refusedRow,
+        "no action row answers executor-not-ready any more; point this test at any catalog row");
+
+    char helpCommand[160];
+    snprintf(helpCommand, sizeof(helpCommand), "help %s", refusedRow);
+    runQuery(helpCommand);
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_TRUE(g_cap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_NOT_NULL_MESSAGE(capturedValue("available_on_board"), refusedRow);
+    TEST_ASSERT_NOT_NULL_MESSAGE(capturedValue("available_in_build"), refusedRow);
+    TEST_ASSERT_NOT_NULL_MESSAGE(capturedValue("requires_web_control"), refusedRow);
+    TEST_ASSERT_NULL_MESSAGE(capturedValue("executor_ready"),
+                             "help must not advertise executor readiness at discovery time");
+}
+
 // #224 reclassified system.api.get-profiler from type: action to type: status
 // with is_query: true (docs/action-registry.yaml, the same move #221 made for
 // the dome.api.* queries). Asserted against the COMPILED catalog so a future
@@ -4237,6 +4301,8 @@ int main(int, char**) {
     RUN_TEST(test_every_out_of_build_row_answers_not_in_this_build);
     RUN_TEST(test_every_off_board_row_answers_not_on_this_board);
     RUN_TEST(test_operations_lists_out_of_build_rows_with_the_reason_execution_gives);
+    RUN_TEST(test_operations_never_annotates_executor_not_ready);
+    RUN_TEST(test_help_reports_no_readiness_for_a_row_execution_refuses);
     RUN_TEST(test_profiler_snapshot_is_registered_as_an_item_based_query);
     RUN_TEST(test_help_describes_an_operation_that_is_not_in_this_build);
 

@@ -81,11 +81,12 @@ inline char g_argCandidatePool[kArgPoolSize][kArgCandidateMax];
 //    how many argument tokens already follow it - later tokens never change
 //    which operation is being completed.
 //
-// Availability (available_on_board / available_in_build / executor_ready)
-// is NOT filtered here: "known-but-unavailable operations remain
-// completable" is a named acceptance criterion, and availability is
-// re-checked at execution (console_module.cpp), never at discovery or
-// completion time.
+// Availability (available_on_board / available_in_build) is NOT filtered
+// here: "known-but-unavailable operations remain completable" is a named
+// acceptance criterion, and availability is re-checked at execution
+// (console_module.cpp), never at discovery or completion time. Executor
+// readiness is not a catalog fact at all - it is only ever answered by
+// running the operation (ADR 0035) - so there is nothing to filter on.
 //
 // Quote-aware tokenization of argument values (docs/console-protocol.md
 // s.1.2, include/console_args.h's consoleParseArgs()) is deliberately NOT
