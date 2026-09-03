@@ -1,4 +1,4 @@
-"""Host-provable coverage for tools/console_client.py's --interactive mode (#228).
+"""Host-provable coverage for tools/console_client.py (#228, #264).
 
 No board is involved anywhere in this file -- every "serial port" here is one
 side of a real pty pair (pty.openpty()), and every "terminal" is either a pipe
@@ -19,6 +19,7 @@ re-proven by this file, and this file makes no board-reset claim.
 
 import contextlib
 import importlib.util
+import io
 import os
 import pty
 import select
@@ -396,6 +397,77 @@ class ReadOrNoneAndWriteAll(unittest.TestCase):
 
         self.assertFalse(t.is_alive(), "the reader thread never saw all the bytes")
         self.assertEqual(received.get("data"), payload)
+
+
+class ReadLinesFdBurstDrain(unittest.TestCase):
+    """#264: a burst delivered in ONE os.read() call must not strand its
+    later lines behind a single-line-per-select()-wakeup drain.
+
+    Proven against a real pty pair, not a mocked read(): the whole point is
+    that a short multi-line burst genuinely arrives as one kernel read (well
+    under the 256-byte request), which is exactly the case the old
+    read_fd_line()/read_lines_fd() pair mishandled -- see their docstrings.
+    """
+
+    def setUp(self):
+        self.master, self.slave = pty.openpty()
+        self.addCleanup(self._close_quietly, self.master)
+        self.addCleanup(self._close_quietly, self.slave)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _open_reader(self):
+        slave_path = os.ttyname(self.slave)
+        return console_client.open_posix_port(slave_path, 115200)
+
+    def test_a_burst_delivered_in_one_read_prints_every_line(self):
+        fd = self._open_reader()
+        self.addCleanup(self._close_quietly, fd)
+        os.write(self.master, b"line one\nline two\nline three\n")
+        # Give the kernel a moment to queue the whole burst before the first
+        # select() wake-up -- what makes one os.read() see all of it.
+        time.sleep(0.05)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = console_client.read_lines_fd(fd, time.time() + 1.0, None)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().splitlines(),
+                          ["line one", "line two", "line three"])
+
+    def test_until_matches_the_last_line_of_a_burst_not_just_the_first(self):
+        fd = self._open_reader()
+        self.addCleanup(self._close_quietly, fd)
+        os.write(self.master, b"line one\nline two\ninit complete\n")
+        time.sleep(0.05)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = console_client.read_lines_fd(fd, time.time() + 1.0, "init complete")
+
+        self.assertEqual(rc, 0, "the --until string was already in the buffer but was never reached")
+        self.assertIn("init complete", out.getvalue())
+
+    def test_a_trailing_partial_chunk_at_the_deadline_is_still_printed(self):
+        fd = self._open_reader()
+        self.addCleanup(self._close_quietly, fd)
+        os.write(self.master, b"line one\nno newline yet")
+        time.sleep(0.05)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = console_client.read_lines_fd(fd, time.time() + 0.3, None)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().splitlines(),
+                          ["line one", "no newline yet"],
+                          "the unterminated tail was discarded at the deadline")
 
 
 if __name__ == "__main__":

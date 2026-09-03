@@ -258,7 +258,24 @@ def interactive_fd(fd: int) -> int:
 
 
 def read_fd_line(fd: int, buffer: bytearray) -> bytes:
+    """Pop and return one already-terminated line from `buffer`, reading more
+    only if none is available yet.
+
+    #264: the buffer is checked FIRST, before touching the fd. The previous
+    order checked only right after an os.read() call, so a line already
+    fully buffered from an earlier call -- left behind because that call's
+    single os.read() happened to return a chunk containing more than one
+    "\\n" -- was never looked at again until fresh bytes happened to arrive
+    on the fd and trigger another append+check. A burst delivered in one
+    read (short lines, well under the 256-byte request) could sit in
+    `buffer` complete and unread indefinitely.
+    """
     while True:
+        if b"\n" in buffer:
+            idx = buffer.index(b"\n")
+            line = bytes(buffer[:idx + 1])
+            del buffer[:idx + 1]
+            return line
         try:
             chunk = os.read(fd, 256)
         except BlockingIOError:
@@ -266,11 +283,6 @@ def read_fd_line(fd: int, buffer: bytearray) -> bytes:
         if not chunk:
             break
         buffer.extend(chunk)
-        if b"\n" in buffer:
-            idx = buffer.index(b"\n")
-            line = bytes(buffer[:idx + 1])
-            del buffer[:idx + 1]
-            return line
     return b""
 
 
@@ -279,18 +291,41 @@ def read_lines_fd(fd: int, deadline: float, until: str | None) -> int:
     Read lines from fd until deadline or until 'until' string is found.
     Prints each line to stdout. Returns 0 if 'until' was found (or not used),
     1 if timed out before finding 'until'.
+
+    #264: every complete line already sitting in `buffer` is drained and
+    printed before returning to select() -- one select() wake-up used to
+    emit at most one line even when a burst had already arrived complete,
+    so the rest of that burst waited for another wake-up that only came if
+    MORE bytes later arrived on the fd. A burst that had already fully
+    landed could then sit past the deadline unprinted, and --until could
+    miss a string that was already in the buffer, unread. A trailing
+    fragment with no terminator is flushed at the deadline too, instead of
+    being discarded silently.
     """
     found = False
     buffer = bytearray()
     while time.time() < deadline:
         r, _, _ = select.select([fd], [], [], 0.1)
-        raw = read_fd_line(fd, buffer) if r else b""
-        if raw:
+        if not r:
+            continue
+        while True:
+            raw = read_fd_line(fd, buffer)
+            if not raw:
+                break
             line = raw.decode("utf-8", errors="replace").rstrip()
             print(line, flush=True)
             if until and until in line:
                 found = True
                 break
+        if found:
+            break
+
+    if not found and buffer:
+        tail = bytes(buffer).decode("utf-8", errors="replace").rstrip()
+        if tail:
+            print(tail, flush=True)
+            if until and until in tail:
+                found = True
 
     if until and not found:
         print(f"TIMEOUT: '{until}' not seen within time limit", file=sys.stderr)
@@ -299,13 +334,21 @@ def read_lines_fd(fd: int, deadline: float, until: str | None) -> int:
 
 
 def stream_forever_fd(fd: int) -> None:
-    """Stream lines until Ctrl+C."""
+    """Stream lines until Ctrl+C.
+
+    #264: drains every complete line already buffered before returning to
+    select(), for the same reason read_lines_fd() does -- see its docstring.
+    """
     buffer = bytearray()
     try:
         while True:
             r, _, _ = select.select([fd], [], [], 0.1)
-            raw = read_fd_line(fd, buffer) if r else b""
-            if raw:
+            if not r:
+                continue
+            while True:
+                raw = read_fd_line(fd, buffer)
+                if not raw:
+                    break
                 print(raw.decode("utf-8", errors="replace").rstrip(), flush=True)
     except KeyboardInterrupt:
         print("\n[monitor exited]", file=sys.stderr)
