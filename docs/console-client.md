@@ -116,22 +116,24 @@ make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt
 A board's mDNS name is **configurable by design**, so guess it in an order rather
 than pinning one. The compiled-in default is `WIFI_MDNS_HOST`
 (`include/config.h`) - `artoo` on artoo-esp32, `firebeetle2` on a FireBeetle 2,
-so the two never contest one LAN. But when an operator sets a Droid Name and turns on
-`mdnsUseName`, *that* name, lowercased, is what the board advertises, and the
-compiled default is only the fallback (`configResolvedMdnsHostname()`,
+so the two never contest one LAN. But when an operator sets a Droid Name and
+ticks *Use as network hostname (mDNS)* on the **Setup** page (`mdnsUseName` in the
+API), *that* name, lowercased, is what the board advertises, and the compiled
+default is only the fallback (`configResolvedMdnsHostname()`,
 `src/config_store.cpp`).
 
 | # | Try | Where the name comes from |
 |---|---|---|
 | 1 | `http://artoo.local`, or `http://firebeetle2.local` | The compiled default. This is the right **first** attempt, and the one a tool or an agent should make when it knows nothing else about the board. |
 | 2 | `http://<droid-name>.local` | The configured name: `GET /api/identity` -> `droidName`, advertised whenever `mdnsUseName` is true. A droid named `protoartoo` answers at `protoartoo.local` and **not** at `artoo.local`. |
-| 3 | `http://<ip>` | `GET /api/wifi` -> `staIp`, or your network's lease table. Never guessable, always right. |
+| 3 | `http://<ip>` | The WiFi Client address (`staIp` in `GET /api/wifi`), or your network's lease table. Never guessable, always right. |
 
 **Step 1 failing is not evidence the board is offline.** The ordinary meaning is
 that the droid is named and you asked for the wrong name. And if no name answers
 at all, the serial adapter needs none: attach with `--port` and ask
-`system.status.wifi`, whose `staIp` field is the same one `GET /api/wifi`
-returns - which is the whole point of a surface that depends on no network.
+`system.status.wifi`, which answers with the same WiFi Client address (`staIp`)
+that `GET /api/wifi` returns - which is the whole point of a surface that depends
+on no network.
 [api.md](api.md) holds the identity endpoints and the override rule;
 [troubleshooting.md](troubleshooting.md) holds the base-URL fallback. Neither is
 repeated here.
