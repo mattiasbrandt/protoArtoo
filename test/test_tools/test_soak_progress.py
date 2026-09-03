@@ -24,6 +24,7 @@ suite directly.
 
 import io
 import json
+import os
 import signal
 import sys
 import tempfile
@@ -31,6 +32,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
@@ -196,10 +198,21 @@ class TheConsoleDegradesAndKeepsTheTranscriptPlain(unittest.TestCase):
         self.assertIn("[FAIL] something is wrong", stream.getvalue())
 
     def test_a_terminal_gets_colour_and_the_same_ascii_tokens(self):
+        # rich honours NO_COLOR and TERM=dumb even with force_terminal=True;
+        # RunConsole does not second-guess that (tools/soak.py). This test
+        # still has to prove colour on a terminal, so it supplies its own
+        # env rather than assuming a human tty.
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("NO_COLOR", "FORCE_COLOR")
+        }
+        env["TERM"] = "xterm-256color"
         stream = io.StringIO()
-        console = soak.RunConsole(stream=stream, log_path=None, force_terminal=True)
-        console.line("everything fine", kind="ok")
-        console.close()
+        with mock.patch.dict(os.environ, env, clear=True):
+            console = soak.RunConsole(stream=stream, log_path=None, force_terminal=True)
+            console.line("everything fine", kind="ok")
+            console.close()
         self.assertIn("\x1b[", stream.getvalue(), "a terminal should get colour")
         self.assertIn("[OK]", stream.getvalue(), "the token stays ASCII everywhere")
 
