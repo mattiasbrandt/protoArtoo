@@ -165,12 +165,11 @@ dome.action.marcduino-sequence value=30
   `type=config`, or `type=event` to see only one kind. Nothing is hidden
   because it happens to be unavailable on this board or not included in
   this firmware — you see the full list either way, with the reason
-  attached to the ones that can't run. For example, `system.api.get-profiler`
-  and its two heap-trace actions
-  (`system.action.profiler-trace-start`/`-stop`) show up in `operations` on
-  every image, marked `not-in-this-build` on a board not running the
-  profiler build — try to run one there and you get the matching
-  `unavailable reason=not-in-this-build`, not a missing-command error.
+  attached to the ones that can't run. The profiler and heap-trace rows are
+  the clearest example: they show up in `operations` on every image, marked
+  `not-in-this-build` on a board not running the profiler build — try to
+  run one there and you get the matching `unavailable reason=not-in-this-build`,
+  not a missing-command error.
 - **Tab** completes an operation name, or — once you've typed the operation
   and a space — one of its argument keys. One match fills it in; several
   share a prefix and Tab fills in that much; a second Tab lists every match
@@ -219,8 +218,8 @@ A simple action or an error is one line:
 ```
 
 A query answers with a group — `begin`, one `field`/`item` line per value,
-then `end` (abridged — `system.status.health` answers with thirteen fields,
-not three):
+then `end`. The example below is abridged for space; run the command
+yourself to see the complete answer:
 
 ```text
 > system.status.health
@@ -386,7 +385,7 @@ the word, either case — `value=4` and `value=debug` set the same thing:
 < id=11 type=result status=ok outcome=applied
 ```
 
-The change applies immediately and is saved, the same as the four other
+The change applies immediately and is saved, the same as the other
 settings that answer `applied` right away (see
 [below](#what-doesnt-work-here-yet)) — nothing to restart for, and it holds
 across a reboot too.
@@ -422,19 +421,17 @@ with no on-screen sign that anything was cut — see
   (`drive.action.speed`, `drive.action.steer`, `dome.action.set-speed`)
   answer `unavailable reason=not-executable`. Drive the droid from the
   dashboard or RC for now.
-- **Most `config`-type commands** don't run here yet, but some now do.
-  Working today: the fifteen Component Toggles (`system.config.enable_drive`,
-  `system.config.enable_audio`, `system.config.enable_arm1` and the rest) —
-  changing one answers `staged-until-reboot`, and it takes effect at the next
-  restart, not immediately; `system.config.mood`; the grouped WiFi write
-  `wifi.config.settings` ([above](#wifi-settings-as-one-command)); and five
-  settings that take effect straight away and answer `applied` —
-  `drive.config.speed-limit`, `aux.config.led-pin`, `aux.config.led-count`,
-  `rc.config.mode`, and `system.config.log-level`
-  ([above](#setting-the-log-level)). Every other `config` entry answers
-  `unavailable reason=executor-not-ready` whether or not you supply a value.
-  `operations type=config` lists them all, so you can see which exist; change
-  the rest from the **Setup** page in the meantime.
+- **Most `config`-type commands** don't run here yet, but a growing number
+  do. `operations type=config` shows you which, live: an entry with no
+  reason attached works today, and `executor-not-ready` means it doesn't
+  yet — change that one from the **Setup** page instead. Among the ones
+  that work, a Component Toggle (`system.config.enable_*`) always answers
+  `staged-until-reboot` — saved, but only takes effect at the next restart;
+  the grouped WiFi write `wifi.config.settings`
+  ([above](#wifi-settings-as-one-command)) answers either that or
+  `applied`, depending on whether anything actually changed; and the rest
+  — including [`system.config.log-level`](#setting-the-log-level) — answer
+  `applied` right away, with nothing to restart for.
 - **Events** (`type=event` entries) are output only — logs and state
   changes you'll see printed on their own — never something you run; typing
   one answers `unavailable reason=not-executable`.
