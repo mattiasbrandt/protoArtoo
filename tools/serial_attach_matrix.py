@@ -80,12 +80,14 @@ def run_method(method, capture_path, seconds):
     pre = post = None
     try:
         if method == "serial_monitor_posix":
-            cmd = [sys.executable, f"{repo}/tools/serial_monitor.py",
+            # Method label is the measured #214 row name and stays; the
+            # invoked path is the renamed tool (#264).
+            cmd = [sys.executable, f"{repo}/tools/console_client.py",
                    "--port", PORT, "--baud", "115200", "--duration", str(seconds)]
             subprocess.run(cmd, stdout=cap, stderr=subprocess.DEVNULL,
                            timeout=seconds + 25)
         elif method == "serial_monitor_pyserial":
-            cmd = [sys.executable, f"{repo}/tools/serial_monitor.py",
+            cmd = [sys.executable, f"{repo}/tools/console_client.py",
                    "--port", PORT, "--baud", "115200", "--duration", str(seconds),
                    "--pyserial"]
             subprocess.run(cmd, stdout=cap, stderr=subprocess.DEVNULL,

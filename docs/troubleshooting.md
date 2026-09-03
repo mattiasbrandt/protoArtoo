@@ -199,13 +199,13 @@ firewall the default instead of moving it, so the rule above keeps working.
 
 | Attach method | resets |
 |---|---|
-| `tools/serial_monitor.py` (default POSIX `O_NOCTTY`/termios backend) | 0/5 |
+| `tools/console_client.py` (default POSIX `O_NOCTTY`/termios backend) | 0/5 |
 | `pio device monitor` | 0/5 |
 | `picocom` | 0/5 |
 | `cat` after `stty -F <port> -hupcl` | 0/5 |
 | `cat` after `stty -F <port> hupcl` | 0/5 |
 
-**Unsafe: `tools/serial_monitor.py --pyserial`.** 7/7 resets, and 2 of those 7 also
+**Unsafe: `tools/console_client.py --pyserial`.** 7/7 resets, and 2 of those 7 also
 left the board **stranded off the network** -- silent on serial and absent from
 WiFi, because it came up in the ROM download stub instead of the application.
 
@@ -282,13 +282,13 @@ machine.
 > result above, not re-measured per client here; nothing below is a new
 > board-reset trial.
 
-**`python3 tools/serial_monitor.py --interactive`** -- this repo's own tool,
+**`python3 tools/console_client.py --interactive`** -- this repo's own tool,
 nothing extra to install. Extends the exact open the read-only default uses
 (still no DTR/RTS touch, still `O_NOCTTY`) with a write path and a raw local
 terminal.
 
 ```
-python3 tools/serial_monitor.py --interactive
+python3 tools/console_client.py --interactive
 ```
 
 - **Ctrl-C exits the session locally**, matching the convention already
@@ -314,7 +314,7 @@ describes.
 **Never pass `--dtr` or `--rts`.** Read from `device_monitor.py`/
 `miniterm.py`: those flags are forwarded straight to pyserial's
 `serial_instance.dtr`/`.rts` *before* `.open()` -- the identical ordering that
-makes `serial_monitor.py --pyserial` unsafe above. Left unset (the default),
+makes `console_client.py --pyserial` unsafe above. Left unset (the default),
 neither line is touched at open, matching the matrix's measured `pio device
 monitor` row.
 - **Do not press Ctrl-T Ctrl-R or Ctrl-T Ctrl-D while attached.** Those are

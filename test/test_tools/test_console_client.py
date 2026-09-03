@@ -1,4 +1,4 @@
-"""Host-provable coverage for tools/serial_monitor.py's --interactive mode (#228).
+"""Host-provable coverage for tools/console_client.py's --interactive mode (#228).
 
 No board is involved anywhere in this file -- every "serial port" here is one
 side of a real pty pair (pty.openpty()), and every "terminal" is either a pipe
@@ -31,11 +31,11 @@ from pathlib import Path
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = REPO_ROOT / "tools" / "serial_monitor.py"
+MODULE_PATH = REPO_ROOT / "tools" / "console_client.py"
 
-_spec = importlib.util.spec_from_file_location("serial_monitor", MODULE_PATH)
-serial_monitor = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(serial_monitor)
+_spec = importlib.util.spec_from_file_location("console_client", MODULE_PATH)
+console_client = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(console_client)
 
 
 @contextlib.contextmanager
@@ -77,13 +77,13 @@ class OpenPosixPortWritable(unittest.TestCase):
             pass
 
     def test_default_open_is_still_read_only(self):
-        fd = serial_monitor.open_posix_port(self.slave_path, 115200)
+        fd = console_client.open_posix_port(self.slave_path, 115200)
         self.addCleanup(self._close_quietly, fd)
         with self.assertRaises(OSError):
             os.write(fd, b"x")
 
     def test_writable_open_can_write_and_the_byte_arrives(self):
-        fd = serial_monitor.open_posix_port(self.slave_path, 115200, writable=True)
+        fd = console_client.open_posix_port(self.slave_path, 115200, writable=True)
         self.addCleanup(self._close_quietly, fd)
         os.write(fd, b"hi")
         r, _, _ = select.select([self.master], [], [], 2.0)
@@ -104,7 +104,7 @@ class RunInteractiveDuplex(unittest.TestCase):
         # b"help\r\n" and misrepresent this as run_interactive's behaviour.
         # open_posix_port() clears OPOST, exactly like the real serial port
         # this stands in for.
-        self.serial_slave = serial_monitor.open_posix_port(
+        self.serial_slave = console_client.open_posix_port(
             slave_path, 115200, writable=True)
         self.stdin_r, self.stdin_w = os.pipe()
         self.stdout_r, self.stdout_w = os.pipe()
@@ -123,7 +123,7 @@ class RunInteractiveDuplex(unittest.TestCase):
         result = {}
 
         def go():
-            result["rc"] = serial_monitor.run_interactive(
+            result["rc"] = console_client.run_interactive(
                 self.serial_slave, self.stdin_r, self.stdout_w)
 
         t = threading.Thread(target=go, daemon=True)
@@ -227,9 +227,9 @@ class InteractiveFdTermiosAndSignals(unittest.TestCase):
             def fileno(self):
                 return stdout_w
 
-        with mock.patch.object(serial_monitor.sys, "stdin", FakeStdin()), \
-             mock.patch.object(serial_monitor.sys, "stdout", FakeStdout()):
-            rc = serial_monitor.interactive_fd(self.serial_slave)
+        with mock.patch.object(console_client.sys, "stdin", FakeStdin()), \
+             mock.patch.object(console_client.sys, "stdout", FakeStdout()):
+            rc = console_client.interactive_fd(self.serial_slave)
 
         self.assertEqual(rc, 0)
 
@@ -265,9 +265,9 @@ class InteractiveFdTermiosAndSignals(unittest.TestCase):
         threading.Thread(target=send_exit_key_soon, daemon=True).start()
 
         with watchdog(5, "interactive_fd() did not exit on Ctrl-C"):
-            with mock.patch.object(serial_monitor.sys, "stdin", FakeStdin()), \
-                 mock.patch.object(serial_monitor.sys, "stdout", FakeStdout()):
-                rc = serial_monitor.interactive_fd(self.serial_slave)
+            with mock.patch.object(console_client.sys, "stdin", FakeStdin()), \
+                 mock.patch.object(console_client.sys, "stdout", FakeStdout()):
+                rc = console_client.interactive_fd(self.serial_slave)
 
         after = termios.tcgetattr(stdin_slave)
         self.assertEqual(rc, 0)
@@ -295,12 +295,12 @@ class InteractiveFdTermiosAndSignals(unittest.TestCase):
             def fileno(self):
                 return stdout_w
 
-        with mock.patch.object(serial_monitor.sys, "stdin", FakeStdin()), \
-             mock.patch.object(serial_monitor.sys, "stdout", FakeStdout()), \
-             mock.patch.object(serial_monitor, "run_interactive",
+        with mock.patch.object(console_client.sys, "stdin", FakeStdin()), \
+             mock.patch.object(console_client.sys, "stdout", FakeStdout()), \
+             mock.patch.object(console_client, "run_interactive",
                                 side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
-                serial_monitor.interactive_fd(self.serial_slave)
+                console_client.interactive_fd(self.serial_slave)
 
         after = termios.tcgetattr(stdin_slave)
         self.assertEqual(before, after, "raw mode was not restored after an exception")
@@ -332,9 +332,9 @@ class InteractiveFdTermiosAndSignals(unittest.TestCase):
 
         threading.Thread(target=send_sigterm_soon, daemon=True).start()
         with watchdog(10, "interactive_fd() did not return within the watchdog window"):
-            with mock.patch.object(serial_monitor.sys, "stdin", FakeStdin()), \
-                 mock.patch.object(serial_monitor.sys, "stdout", FakeStdout()):
-                rc = serial_monitor.interactive_fd(self.serial_slave)
+            with mock.patch.object(console_client.sys, "stdin", FakeStdin()), \
+                 mock.patch.object(console_client.sys, "stdout", FakeStdout()):
+                rc = console_client.interactive_fd(self.serial_slave)
 
         after = termios.tcgetattr(stdin_slave)
         self.assertEqual(rc, 0)
@@ -358,7 +358,7 @@ class ReadOrNoneAndWriteAll(unittest.TestCase):
         self.addCleanup(os.close, r)
         self.addCleanup(os.close, w)
 
-        self.assertIsNone(serial_monitor._read_or_none(r, 64))
+        self.assertIsNone(console_client._read_or_none(r, 64))
 
     def test_read_or_none_returns_the_bytes_when_data_is_available(self):
         r, w = os.pipe()
@@ -366,7 +366,7 @@ class ReadOrNoneAndWriteAll(unittest.TestCase):
         self.addCleanup(os.close, w)
         os.write(w, b"x")
 
-        self.assertEqual(serial_monitor._read_or_none(r, 64), b"x")
+        self.assertEqual(console_client._read_or_none(r, 64), b"x")
 
     def test_write_all_drains_through_backpressure_via_retry(self):
         # A pipe's kernel buffer is bounded (commonly 64 KiB on Linux). Push
@@ -391,7 +391,7 @@ class ReadOrNoneAndWriteAll(unittest.TestCase):
         t = threading.Thread(target=drain, daemon=True)
         t.start()
         with watchdog(10, "_write_all() did not drain a backpressured pipe"):
-            serial_monitor._write_all(w, payload)
+            console_client._write_all(w, payload)
             t.join(timeout=9)
 
         self.assertFalse(t.is_alive(), "the reader thread never saw all the bytes")

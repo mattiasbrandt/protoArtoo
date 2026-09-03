@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 # =============================================================================
-# tools/serial_monitor.py
+# tools/console_client.py  (formerly tools/serial_monitor.py)
 #
-# Serial monitor for protoArtoo ESP32 bench verification.
+# The Console Client (CONTEXT.md) for protoArtoo ESP32 bench verification: the
+# boot-log capture every epic uses, the interactive serial terminal an operator
+# sits at, and the scripted mode a bench day and its agents drive -- on either
+# Console Adapter (docs/console-protocol.md), one host program, no shim.
 #
 # Opens the port without becoming its controlling terminal and without touching
 # DTR/RTS on POSIX systems. Output goes to stdout; status/errors go to stderr.
-# Exit code 0 on success, 1 on failure.
+# Exit code 0 on success; see "Exit codes" below for the rest.
 #
 # The default POSIX backend is one of the attach methods measured at 0/5 resets
 # (docs/troubleshooting.md, "Serial monitor caveat"). The --pyserial backend is
 # NOT safe: it drives DTR and RTS low in two separate ioctls after the open, which
-# resets the board every time and can leave it in the ROM download stub.
+# resets the board every time and can leave it in the ROM download stub. It is
+# refused outright for --interactive and scripted serial use, and remains only
+# for the read-only capture mode's comparison use.
 #
 # --interactive extends the same proven-safe open (open_posix_port(), still no
 # DTR/RTS touch, still O_NOCTTY) with a write path and a raw-mode local terminal,
@@ -22,22 +27,34 @@
 # docs/troubleshooting.md "Serial monitor caveat" / "Console interactive
 # session" for the operator instructions and the safe-flag list for each.
 #
+# --script (or the same directives given directly on the command line) drives
+# either Console Adapter -- --port <dev> for serial, --http <base-url> for the
+# browser adapter's POST /api/console -- from a flat file of one directive per
+# line, so a bench row is a tracked, replayable transcript instead of a hand
+# session. See "Scripted mode" below for the directive grammar and exit codes.
+#
 # Usage:
 #   # Capture for 10 s (default), print to stdout:
-#   python3 tools/serial_monitor.py
+#   python3 tools/console_client.py
 #
 #   # Capture for 30 s on a specific port:
-#   python3 tools/serial_monitor.py --port /dev/ttyUSB1 --duration 30
+#   python3 tools/console_client.py --port /dev/ttyUSB1 --duration 30
 #
 #   # Exit as soon as a known string appears (preferred for agent verification):
-#   python3 tools/serial_monitor.py --until "init complete" --timeout 20
+#   python3 tools/console_client.py --until "init complete" --timeout 20
 #
 #   # Stream continuously (human monitoring — Ctrl+C to exit):
-#   python3 tools/serial_monitor.py --stream
+#   python3 tools/console_client.py --stream
 #
 #   # Interactive Controller Console session (bidirectional, raw mode,
 #   # Ctrl-C to exit -- see docs/troubleshooting.md before first use):
-#   python3 tools/serial_monitor.py --interactive
+#   python3 tools/console_client.py --interactive
+#
+#   # Scripted, serial adapter -- a tracked row file, replayable by a human or an agent:
+#   python3 tools/console_client.py --port /dev/ttyACM0 --script tools/bench_rows/firebeetle2.txt
+#
+#   # Scripted, browser adapter -- same directive grammar, POST /api/console instead:
+#   python3 tools/console_client.py --http http://artoo.local --send system.status.health
 # =============================================================================
 
 import argparse

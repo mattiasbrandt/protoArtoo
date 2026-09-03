@@ -69,7 +69,7 @@ Do not duplicate large policy sections from those files in this adapter.
 ## Domain-Specific Notes
 
 - Marcduino RX routing and action naming conventions are canonicalized in `docs/action-registry.yaml` and `AGENTS.md`.
-- Use `tools/serial_monitor.py` for serial capture during verification workflows.
+- Use `tools/console_client.py` for serial capture during verification workflows.
 - Keep operator-facing web copy free of internal phase/process language.
 
 ## Espressif MCP Usage

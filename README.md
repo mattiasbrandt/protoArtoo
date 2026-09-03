@@ -106,7 +106,7 @@ protoArtoo/
 ├── tools/
 │   ├── configure.py           # First-time setup wizard (writes user.mk)
 │   ├── deploy.py              # Interactive build & deploy wizard (bare make)
-│   ├── serial_monitor.py      # Serial monitor (holds DTR/RTS low — no accidental reset)
+│   ├── console_client.py      # Console Client: capture, interactive, scripted (holds DTR/RTS low)
 │   └── ...                    # check_deps.py, extract_version.py, requirements.txt
 └── docs/
     ├── pin_map.md             # GPIO assignments and UART ownership
