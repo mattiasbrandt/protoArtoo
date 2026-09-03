@@ -60,6 +60,20 @@
 #define CLI_FLAG_AUTOCOMPLETE_ENABLED 0x20u
 
 /**
+ * [PATCH: Explicit line-too-long] Indicates that the line currently being
+ * typed has already lost at least one byte - either a displayable character
+ * that did not fit the fixed command buffer (onCharInput), or a byte the rx
+ * FIFO could not accept (CLI_FLAG_OVERFLOW above). Sticky for the rest of the
+ * line: it is cleared only when the line ends (onControlInput's CR/LF branch)
+ * or when the caller resets input outright (embeddedCliResetInput).
+ *
+ * Deliberately separate from CLI_FLAG_OVERFLOW, which means something
+ * narrower and shorter-lived - "the rx FIFO dropped a byte since the last
+ * embeddedCliProcess()" - and is consumed and cleared inside that same call.
+ */
+#define CLI_FLAG_LINE_TOO_LONG 0x40u
+
+/**
 * Indicates that cursor direction should be forward
 */
 #define CURSOR_DIRECTION_FORWARD true
@@ -585,6 +599,15 @@ void embeddedCliProcess(EmbeddedCli *cli) {
         impl->cmdSize = 0;
         impl->cmdBuffer[impl->cmdSize] = '\0';
         UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
+        // [PATCH: Explicit line-too-long] Upstream discards the partial
+        // command here and tells nobody, which is the same silent loss
+        // onCharInput used to have one buffer further along. Raise the
+        // sticky flag so the operator's next Enter is answered rather than
+        // ignored. The caller can also keep this branch unreachable by
+        // draining the transport in units the rx FIFO can hold - which is
+        // what src/tasks/console_task.cpp does - but a caller that does not
+        // now fails loudly instead of quietly.
+        SET_FLAG(impl->flags, CLI_FLAG_LINE_TOO_LONG);
     }
 }
 
@@ -605,6 +628,12 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
     impl->cmdSize = 0;
     UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
+    // [PATCH: Explicit line-too-long] An outright input reset abandons the
+    // line, so the pending refusal for it is abandoned with it - otherwise
+    // the operator's first Enter after a host re-attach
+    // (include/console_host_attach.h) would answer line-too-long about a line
+    // they never see and did not type.
+    UNSET_U8FLAG(impl->flags, CLI_FLAG_LINE_TOO_LONG);
 }
 
 const char *embeddedCliGetCmdBuffer(const EmbeddedCli *cli) {
@@ -827,8 +856,16 @@ static void onCharInput(EmbeddedCli *cli, char c) {
     PREPARE_IMPL(cli);
 
     // have to reserve two extra chars for command ending (used in tokenization)
-    if (impl->cmdSize + 2 >= impl->cmdMaxSize)
+    if (impl->cmdSize + 2 >= impl->cmdMaxSize) {
+        // [PATCH: Explicit line-too-long] Upstream returns here and says
+        // nothing, so the dropped byte is invisible and whatever fit still
+        // executes on Enter. Remember instead: the flag survives every
+        // subsequent edit of this line (a Backspace does not un-lose the
+        // byte that was never stored), and onControlInput's CR/LF branch
+        // refuses the whole line rather than running a prefix of it.
+        SET_FLAG(impl->flags, CLI_FLAG_LINE_TOO_LONG);
         return;
+    }
 
     size_t insertPos = strlen(impl->cmdBuffer) - impl->cursorPos;
 
@@ -853,16 +890,31 @@ static void onControlInput(EmbeddedCli *cli, char c) {
         return;
 
     if (c == '\r' || c == '\n') {
-        // try to autocomplete command and then process it
-        // [PATCH: Safe Enter] Only autocomplete if live autocomplete is enabled.
-        // This prevents accidental command expansion when the operator presses Enter.
-        if (IS_FLAG_SET(impl->flags, CLI_FLAG_AUTOCOMPLETE_ENABLED))
-            onAutocompleteRequest(cli);
+        // [PATCH: Explicit line-too-long] A line that lost bytes is refused
+        // WHOLE, never dispatched as the prefix that happened to fit. This
+        // branch is taken instead of - not before - the ordinary submit path:
+        // autocompleting, dispatching or storing a line already known to be
+        // incomplete would all act on text the operator did not type. The
+        // callback is the caller's chance to say so on the wire; when it is
+        // NULL the line is still discarded, because not executing a truncated
+        // command is a safety property and not a notification preference.
+        if (IS_FLAG_SET(impl->flags, CLI_FLAG_LINE_TOO_LONG)) {
+            writeToOutput(cli, lineBreak);
+            UNSET_U8FLAG(impl->flags, CLI_FLAG_LINE_TOO_LONG);
+            if (cli->onLineTooLong != NULL)
+                cli->onLineTooLong(cli);
+        } else {
+            // try to autocomplete command and then process it
+            // [PATCH: Safe Enter] Only autocomplete if live autocomplete is enabled.
+            // This prevents accidental command expansion when the operator presses Enter.
+            if (IS_FLAG_SET(impl->flags, CLI_FLAG_AUTOCOMPLETE_ENABLED))
+                onAutocompleteRequest(cli);
 
-        writeToOutput(cli, lineBreak);
+            writeToOutput(cli, lineBreak);
 
-        if (impl->cmdSize > 0)
-            parseCommand(cli);
+            if (impl->cmdSize > 0)
+                parseCommand(cli);
+        }
         impl->cmdSize = 0;
         impl->cmdBuffer[impl->cmdSize] = '\0';
         impl->inputLineLength = 0;

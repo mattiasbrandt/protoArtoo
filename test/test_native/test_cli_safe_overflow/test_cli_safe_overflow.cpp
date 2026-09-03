@@ -1,14 +1,23 @@
 /**
- * Test: embedded-cli Safe Overflow patch
+ * Test: embedded-cli Patch 2's embeddedCliResetInput() primitive
+ * (lib/embedded-cli/VENDORED.md "Patch 2: Safe Overflow")
  *
- * Verifies that input exceeding the command buffer size is rejected explicitly.
- * The buffer is cleared, and overlong input does not execute.
+ * SCOPE, corrected 2026-09-03 (#262). This file covers what Patch 2 actually
+ * shipped: the public reset primitive. Each test below calls
+ * embeddedCliResetInput() from the test body, because that is where the call
+ * came from - the "listener counts bytes and resets on overflow" half Patch 2
+ * described was never written, so nothing in production drove this path for an
+ * overflow, and the file's original header ("the listener detects overflow and
+ * rejects the line") described an intention rather than the tree.
  *
- * Without the patch: Input exceeding cmdBufferSize - 2 (e.g., 256) is silently
- * discarded, but the command still executes on Enter.
- *
- * With the patch: The listener detects overflow and rejects the line with
- * an explicit error.
+ * The product behaviour those words promised - an over-length line refused
+ * whole, answered with `line-too-long`, never executed as the prefix that fit -
+ * is Patch 7's, and lives in test/test_native/test_cli_line_too_long/ (the
+ * library half) and test/test_native/test_console_line_overflow/ (the record
+ * the serial adapter emits in response). What remains here is still worth
+ * keeping: embeddedCliResetInput() is a shipped public function with a live
+ * production caller in include/console_host_attach.h, and these three cases
+ * pin its contract.
  */
 
 #include <unity.h>
@@ -98,17 +107,20 @@ void test_safe_overflow_valid_length_accepted(void) {
 }
 
 /**
- * Test 2: Input exceeding buffer size is detected and rejected
+ * Test 2: a reset between the overlong input and Enter yields no command
  *
  * Scenario:
  * 1. Command buffer size is 256
- * 2. Feed 260 characters (exceeds buffer by 4 bytes)
- * 3. After overflow is detected, call embeddedCliResetInput() to clear the buffer
+ * 2. Feed 260 characters (4 more than the buffer can hold)
+ * 3. Call embeddedCliResetInput() - standing in for the overflow listener
+ *    Patch 2 described and no production code ever became
  * 4. Press Enter
- * 5. Verify that the buffer is empty and no command is executed
+ * 5. Verify the buffer is empty and no command is executed
  *
- * This is the core overflow test. The listener detects overflow, resets the buffer,
- * and the Enter key produces no command.
+ * What this pins is the primitive: after a reset, Enter submits nothing. It is
+ * NOT evidence that the product refuses an over-length line, because nothing
+ * in production makes this call for an overflow - Patch 7 refuses the line
+ * inside the library instead, and test_cli_line_too_long.cpp covers that.
  */
 void test_safe_overflow_exceeds_buffer_rejected(void) {
     static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
@@ -129,15 +141,13 @@ void test_safe_overflow_exceeds_buffer_rejected(void) {
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
-    // Feed 260 characters, exceeding the 256-byte buffer
-    // This simulates the listener detecting overflow after ~254 chars
+    // Feed 260 characters; the library stops storing at 254 and drops the rest
     for (int i = 0; i < 260; i++) {
         embeddedCliReceiveChar(cli, 'a');
         embeddedCliProcess(cli);
     }
 
-    // At this point, the overflow flag should be set in the library
-    // The listener detects this and resets the buffer
+    // Stand in for the listener Patch 2 described: clear the partial command.
     embeddedCliResetInput(cli);
 
     // Press Enter
