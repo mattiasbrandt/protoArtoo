@@ -264,6 +264,83 @@ printing the ROM banner while the board was unseated) is **not reproducible**: t
 POSIX backend measured 0/5 across this session. What that earlier observation
 actually captured is not established, and is not re-asserted here.
 
+### Console interactive session
+
+The Controller Console ([console-protocol.md](console-protocol.md)) is
+bidirectional and needs a raw-mode terminal (section 8): Tab and cursor bytes
+must reach the firmware unedited, and local echo must be off (the firmware
+echoes). Three clients are supported below, all built on attach methods
+measured 0/5 resets in the matrix above; use whichever is already on your
+machine.
+
+> [!IMPORTANT]
+> This section proves only what the host side of each client does --
+> `open()` ordering, DTR/RTS flags, default local-echo state -- read from each
+> tool's own source (pyserial's `miniterm.py`, PlatformIO's
+> `device/monitor/command.py`, picocom 3.1's `picocom.c`). Whether the
+> underlying open resets the artoo-esp32 is the attach matrix's measured
+> result above, not re-measured per client here; nothing below is a new
+> board-reset trial.
+
+**`python3 tools/serial_monitor.py --interactive`** -- this repo's own tool,
+nothing extra to install. Extends the exact open the read-only default uses
+(still no DTR/RTS touch, still `O_NOCTTY`) with a write path and a raw local
+terminal.
+
+```
+python3 tools/serial_monitor.py --interactive
+```
+
+- **Ctrl-C exits the session locally**, matching the convention already
+  documented for every supported Console terminal below and in
+  [console.md](console.md#attach-a-serial-terminal): "that is your terminal
+  program's own default key, not something the firmware does". The firmware
+  never acts on an inbound Ctrl-C byte (console-protocol.md section 8 says it
+  "never attempts to close a terminal it does not own"), so this tool
+  consumes Ctrl-C itself rather than sending it -- it is never forwarded to
+  the port.
+- `--interactive --pyserial` together is refused with an error: `--pyserial`
+  is the unsafe backend measured 7/7 above, and is never valid for a client an
+  operator is told is safe.
+
+**`pio device monitor -e artoo_esp32`** -- already configured for this
+project: the `artoo_esp32` env in `platformio.ini` ships `monitor_raw = yes`
+(its comment names the same reason -- the Console's VT100 backspace sequences
+need raw passthrough), so no `--raw` flag is needed here. Always pass
+`-e artoo_esp32` explicitly rather than relying on environment autodetection.
+Ctrl-C exits by default (`device/monitor/command.py`'s `--exit-char` default
+is `3`, i.e. Ctrl-C) -- this is the tool [console.md](console.md) already
+describes.
+**Never pass `--dtr` or `--rts`.** Read from `device_monitor.py`/
+`miniterm.py`: those flags are forwarded straight to pyserial's
+`serial_instance.dtr`/`.rts` *before* `.open()` -- the identical ordering that
+makes `serial_monitor.py --pyserial` unsafe above. Left unset (the default),
+neither line is touched at open, matching the matrix's measured `pio device
+monitor` row.
+- **Do not press Ctrl-T Ctrl-R or Ctrl-T Ctrl-D while attached.** Those are
+  miniterm's own live RTS-toggle and DTR-toggle keys (Ctrl-T is its menu key,
+  read from `miniterm.py`'s `handle_menu_key()`).
+
+**`picocom -b 115200 -q --imap "" --omap "" <port>`** -- the exact invocation
+measured 0/5 in the attach matrix. Read from picocom 3.1 source (the version
+in Arch's `extra` repo at time of writing; the exact version on the #214
+bench is not recorded, so re-check this against `picocom --help`/`man
+picocom` if the installed version differs): local echo defaults off (matches
+the Console's requirement -- do not add `--echo`), and DTR/RTS are only
+actively driven at open when `--lower-rts`/`--raise-rts`/`--lower-dtr`/
+`--raise-dtr` are given, none of which appear above, so the port opens with
+both lines untouched exactly as measured.
+- **Ctrl-C does *not* exit picocom** -- unlike the two clients above, picocom
+  only binds its escape-prefixed key combinations (below); a bare Ctrl-C is
+  forwarded to the port as ordinary data. **Ctrl-A Ctrl-X exits cleanly.**
+- **Do not press Ctrl-A Ctrl-T, Ctrl-A Ctrl-G, or Ctrl-A Ctrl-P while
+  attached.** Picocom's own live DTR-toggle, RTS-toggle and DTR-pulse keys
+  (Ctrl-A is its escape key, read from `picocom.c`'s `KEY_TOG_DTR`/
+  `KEY_TOG_RTS`/`KEY_PULSE`).
+
+Whichever client is used, the shared rule from the matrix above still holds:
+**never change DTR or RTS after the port is open.**
+
 ### Serial log integrity caveat
 
 Treat USB serial as a convenience stream, not the only diagnostic record. The
