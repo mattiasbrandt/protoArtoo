@@ -13,6 +13,15 @@
 # NOT safe: it drives DTR and RTS low in two separate ioctls after the open, which
 # resets the board every time and can leave it in the ROM download stub.
 #
+# --interactive extends the same proven-safe open (open_posix_port(), still no
+# DTR/RTS touch, still O_NOCTTY) with a write path and a raw-mode local terminal,
+# for the bidirectional Controller Console (docs/console-protocol.md section 8).
+# It is not the only supported client -- `pio device monitor` (this repo's
+# artoo_esp32 env already ships `monitor_raw = yes`) and `picocom` were both
+# measured 0/5 resets in the same attach matrix and remain fully supported; see
+# docs/troubleshooting.md "Serial monitor caveat" / "Console interactive
+# session" for the operator instructions and the safe-flag list for each.
+#
 # Usage:
 #   # Capture for 10 s (default), print to stdout:
 #   python3 tools/serial_monitor.py
@@ -25,14 +34,20 @@
 #
 #   # Stream continuously (human monitoring — Ctrl+C to exit):
 #   python3 tools/serial_monitor.py --stream
+#
+#   # Interactive Controller Console session (bidirectional, raw mode,
+#   # Ctrl-C to exit -- see docs/troubleshooting.md before first use):
+#   python3 tools/serial_monitor.py --interactive
 # =============================================================================
 
 import argparse
 import os
 import select
+import signal
 import sys
 import termios
 import time
+import tty
 
 BAUD_MAP = {
     9600: termios.B9600,
@@ -46,8 +61,13 @@ BAUD_MAP = {
 }
 
 
-def open_posix_port(port: str, baud: int) -> int:
-    fd = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+def open_posix_port(port: str, baud: int, writable: bool = False) -> int:
+    """Open `port` without becoming its controlling terminal, without touching
+    DTR/RTS. `writable=True` opens O_RDWR instead of O_RDONLY for --interactive;
+    every other termios setting (below) is identical for both, so the write path
+    reuses the exact open already measured 0/5 resets rather than a new one."""
+    access = os.O_RDWR if writable else os.O_RDONLY
+    fd = os.open(port, access | os.O_NOCTTY | os.O_NONBLOCK)
     attrs = termios.tcgetattr(fd)
     baud_const = BAUD_MAP.get(baud)
     if baud_const is None:
@@ -88,6 +108,136 @@ def open_pyserial_port(port: str, baud: int):
     s.rts = False
     s.open()
     return s
+
+
+def _read_or_none(fd: int, size: int) -> bytes | None:
+    """os.read that swallows only a spurious non-blocking wakeup (`None`).
+
+    A true end-of-file/closed-peer still returns `b""`, distinct from `None`,
+    so a caller can tell "nothing happened this pass, loop again" apart from
+    "the peer is gone, stop". `BlockingIOError` is a subclass of `OSError`,
+    so it has to be caught here explicitly: a bare `except OSError` around
+    the call site would misreport this harmless retry as a fatal I/O error."""
+    try:
+        return os.read(fd, size)
+    except BlockingIOError:
+        return None
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """Write every byte of `data`, retrying on non-blocking backpressure.
+
+    open_posix_port()'s writable fd is O_NONBLOCK (same open as the read-only
+    backend), so a full kernel write buffer raises BlockingIOError rather than
+    blocking -- that is backpressure, not a failure, and is retried via
+    select() rather than surfaced as a write error."""
+    view = memoryview(data)
+    while view:
+        try:
+            n = os.write(fd, view)
+        except BlockingIOError:
+            select.select([], [fd], [], 0.1)
+            continue
+        view = view[n:]
+
+
+def run_interactive(serial_fd: int, stdin_fd: int, stdout_fd: int) -> int:
+    """Full-duplex copy between stdin_fd and serial_fd until Ctrl-C (0x03).
+
+    Ctrl-C is the LOCAL client's own exit key here, matching the convention
+    already documented for every other supported Console terminal
+    (docs/console.md "Attach a serial terminal": "Ctrl-C detaches -- that is
+    your terminal program's own default key, not something the firmware
+    does; the firmware never closes a terminal on its own"; the firmware's
+    ready banner says the same thing to the operator, and `pio device
+    monitor`'s own `--exit-char` default is 3, i.e. Ctrl-C). Ctrl-C is
+    therefore consumed here, not forwarded -- inventing a second, unforwarded
+    local exit key that no other supported client uses would be a new
+    convention for the operator to learn, not a safety requirement; nothing
+    in docs/console-protocol.md has the firmware acting on an inbound Ctrl-C
+    byte.
+
+    Takes plain fds, not sys.stdin/stdout, and touches no termios itself --
+    that keeps it testable against a pty pair with no real terminal involved,
+    and keeps raw-mode enter/restore (a correctness property, not cosmetic)
+    entirely inside interactive_fd()'s try/finally.
+    """
+    while True:
+        r, _, _ = select.select([stdin_fd, serial_fd], [], [])
+
+        if serial_fd in r:
+            try:
+                chunk = _read_or_none(serial_fd, 256)
+            except OSError as e:
+                print(f"\r\nERROR: serial port read failed: {e}", file=sys.stderr)
+                return 1
+            if chunk is None:
+                pass  # spurious non-blocking wakeup; nothing to forward yet
+            elif not chunk:
+                print("\r\nERROR: serial port closed", file=sys.stderr)
+                return 1
+            else:
+                _write_all(stdout_fd, chunk)
+
+        if stdin_fd in r:
+            data = os.read(stdin_fd, 256)
+            if not data:
+                return 0  # stdin EOF (a closed pipe; a real raw-mode terminal has no EOF key)
+            if b"\x03" in data:
+                idx = data.index(b"\x03")
+                if idx:
+                    try:
+                        _write_all(serial_fd, data[:idx])
+                    except OSError as e:
+                        print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
+                        return 1
+                return 0
+            try:
+                _write_all(serial_fd, data)
+            except OSError as e:
+                print(f"\r\nERROR: serial port write failed: {e}", file=sys.stderr)
+                return 1
+
+
+def interactive_fd(fd: int) -> int:
+    """Attach the current terminal's stdin/stdout to `fd` full-duplex.
+
+    Raw mode is restored on every exit path -- normal return, an exception
+    from the loop, or SIGTERM/SIGHUP/SIGINT -- via try/finally. A tool that
+    leaves the operator's terminal in raw mode after a crash costs them their
+    shell, which is worse than the tool not existing (228 pin trap 2): this
+    teardown is part of correctness, not optional cleanup, and that is also
+    why SIGTERM/SIGHUP are converted to a KeyboardInterrupt here rather than
+    left at their default disposition, which would terminate the process
+    without ever reaching the `finally` block.
+
+    If stdin is not a real terminal (piped input, as in the test suite),
+    termios is left untouched: tty.setraw()/tcgetattr() require a real tty
+    and would raise on a pipe, and there is nothing to save or restore.
+    """
+    stdin_fd = sys.stdin.fileno()
+    stdout_fd = sys.stdout.fileno()
+    is_tty = os.isatty(stdin_fd)
+    saved_termios = tty.setraw(stdin_fd) if is_tty else None
+
+    def _to_keyboard_interrupt(signum, _frame):
+        raise KeyboardInterrupt(f"signal {signum}")
+
+    old_handlers = {
+        sig: signal.signal(sig, _to_keyboard_interrupt)
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+    }
+    try:
+        print("[monitor] interactive: Ctrl-C to exit\r", file=sys.stderr)
+        try:
+            return run_interactive(fd, stdin_fd, stdout_fd)
+        except KeyboardInterrupt:
+            return 0
+    finally:
+        for sig, handler in old_handlers.items():
+            signal.signal(sig, handler)
+        if is_tty:
+            termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved_termios)
 
 
 def read_fd_line(fd: int, buffer: bytearray) -> bytes:
@@ -210,7 +360,44 @@ def main() -> int:
             "off the network. Comparison use only -- see docs/troubleshooting.md."
         )
     )
+    parser.add_argument(
+        "--interactive", action="store_true",
+        help=(
+            "Bidirectional Controller Console session: raw-mode local terminal, "
+            "safe POSIX backend only (no --pyserial), Ctrl-C to exit. Read "
+            "docs/troubleshooting.md before first use."
+        )
+    )
     args = parser.parse_args()
+
+    if args.interactive:
+        if args.pyserial:
+            print(
+                "ERROR: --interactive does not support --pyserial: that backend "
+                "is not safe (measured 7/7 resets; see docs/troubleshooting.md).",
+                file=sys.stderr,
+            )
+            return 1
+        if args.stream or args.until:
+            print(
+                "ERROR: --interactive cannot be combined with --stream or --until.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            fd = open_posix_port(args.port, args.baud, writable=True)
+        except Exception as e:
+            print(f"ERROR: could not open {args.port}: {e}", file=sys.stderr)
+            return 1
+        print(
+            f"[monitor] {args.port} @ {args.baud} baud "
+            "(POSIX no-control-line open, interactive)",
+            file=sys.stderr,
+        )
+        try:
+            return interactive_fd(fd)
+        finally:
+            os.close(fd)
 
     if args.pyserial:
         try:
