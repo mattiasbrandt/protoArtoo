@@ -1,4 +1,4 @@
-"""Pinned behaviour for the soak harness's status schemas (#197).
+"""Pinned behaviour for the soak harness's status schemas and its verdict.
 
 `tools/soak.py` reads three different firmware images over HTTP, and a field
 mapped to the wrong name stays invisible until a bench day -- bench days on
@@ -37,7 +37,10 @@ BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
 CONFIG_H = (REPO_ROOT / "include" / "config.h").read_text()
 WEB_ADMISSION_CPP = (REPO_ROOT / "src" / "web" / "web_admission.cpp").read_text()
 WEB_ADMISSION_PSYCHIC_CPP = (REPO_ROOT / "src" / "web" / "web_admission_psychic.cpp").read_text()
+WEB_EVENT_STREAM_H = (REPO_ROOT / "include" / "web_event_stream.h").read_text()
+API_EVENTS_CPP = (REPO_ROOT / "src" / "web" / "api_events.cpp").read_text()
 PLATFORMIO_INI_TEXT = (REPO_ROOT / "platformio.ini").read_text()
+SOAK_PY = REPO_ROOT / "tools" / "soak.py"
 
 BENCH = soak.SCHEMAS["bench"]
 SHIPPING = soak.SCHEMAS["shipping"]
@@ -360,29 +363,66 @@ class ContinuityModels(unittest.TestCase):
 
 
 class VerdictComposition(unittest.TestCase):
+    """The Run Verdict, in the words its Soak Drivers use (CONTEXT.md).
+
+    The strings are asserted as literals rather than through soak.VERDICT_*:
+    a test that compared the constant with itself would pass whatever it was
+    reworded to, and the point here is that the run and its drivers speak ONE
+    vocabulary. The exit-code VALUES are asserted as bare integers for the same
+    reason -- they are the contract (ADR 0035) and must not be free to move.
+    """
+
     def test_an_unavailable_driver_can_never_reach_a_passing_exit_code(self):
         verdict, code = soak._compose_overall_verdict({
             "sse_soak": {"verdict": "PASS"},
             "c6_reset_recovery": {"verdict": "UNAVAILABLE"},
         })
-        self.assertEqual(verdict, "INVALID / UNKNOWN")
-        self.assertEqual(code, soak.EXIT_INVALID_UNKNOWN)
+        self.assertEqual(verdict, "INVALID")
+        self.assertEqual(code, 3)
 
     def test_a_real_failure_outranks_a_coverage_gap(self):
         verdict, code = soak._compose_overall_verdict({
             "sse_soak": {"verdict": "FAIL"},
             "c6_reset_recovery": {"verdict": "UNAVAILABLE"},
         })
-        self.assertEqual(verdict, "NO-GO")
-        self.assertEqual(code, soak.EXIT_NO_GO)
+        self.assertEqual(verdict, "FAIL")
+        self.assertEqual(code, 2)
 
-    def test_all_passing_is_no_immediate_blocker(self):
+    def test_all_passing_is_a_pass(self):
         verdict, code = soak._compose_overall_verdict({
             "sse_soak": {"verdict": "PASS"},
             "reconnect_storm": {"verdict": "PASS"},
         })
-        self.assertEqual(verdict, "NO IMMEDIATE BLOCKER")
-        self.assertEqual(code, soak.EXIT_NO_IMMEDIATE_BLOCKER)
+        self.assertEqual(verdict, "PASS")
+        self.assertEqual(code, 0)
+
+    def test_the_run_speaks_only_its_drivers_words(self):
+        # The retired go/no-go vocabulary named a gate that closed with one
+        # epic, on an instrument meant to outlive it (ADR 0035). A rewording is
+        # sanctioned; leaving the old synonym behind in one output path is not.
+        source = SOAK_PY.read_text(encoding="utf-8")
+        for retired in ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN"):
+            self.assertNotIn(retired, source, f"{retired!r} is retired vocabulary")
+        for driver_verdict in (soak.VERDICT_PASS, soak.VERDICT_FAIL, soak.VERDICT_INVALID):
+            self.assertEqual(
+                soak._compose_overall_verdict({"only": {"verdict": driver_verdict}})[0],
+                driver_verdict,
+                "one driver's verdict IS the run's -- no translation layer",
+            )
+
+    def test_the_exit_codes_are_the_ones_a_wrapper_may_rely_on(self):
+        # ADR 0035: these VALUES are contract. Written out rather than derived,
+        # so a change to any of them fails here and has to be argued for.
+        self.assertEqual(soak.EXIT_PASS, 0)
+        self.assertEqual(soak.EXIT_SELF_TEST_FAILURE, 1)
+        self.assertEqual(soak.EXIT_FAIL, 2)
+        self.assertEqual(soak.EXIT_INVALID, 3)
+        self.assertEqual(
+            soak._compose_overall_verdict(
+                {"only": {"verdict": soak.VERDICT_INTERRUPTED_DRIVER}}),
+            (soak.VERDICT_INTERRUPTED_RUN, 3),
+            "a truncated run is missing evidence, which is exit 3 -- not a failure",
+        )
 
     def test_a_non_json_body_is_a_contract_violation_not_a_traceback(self):
         # A device answering with an HTML error page must leave a verdict on a
@@ -618,8 +658,8 @@ class ArtooReportKeys(unittest.TestCase):
 class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
     """The heap verdict's yardstick.
 
-    #194's first graded artoo soak returned NO-GO on "heapLargest8bit fell to
-    11764 from baseline 40948 (beyond 20.0% tolerance)" while heapFree held
+    #194's first graded artoo soak failed on "heapLargest8bit fell to 11764
+    from baseline 40948 (beyond 20.0% tolerance)" while heapFree held
     ~80 000, heapMin was unmoved, every refusal counter read 0 and the block
     recovered fully the moment the clients left. A percentage of an arbitrary
     baseline sample is not evidence about service; the floor the firmware
@@ -656,13 +696,13 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
         # src/web/web_admission_psychic.cpp, which is a compile-time safety net
         # rather than a calibration for any board.
         self.assertNotIn("${flags_base.build_flags}", pio_section("env:native"))
-        with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+        with self.assertRaises(soak.BuildConstantUnresolved) as caught:
             soak.resolve_admission_floor("native")
         self.assertIn(soak.ADMISSION_FLOOR_MACRO, str(caught.exception))
         self.assertIn("INVALID", str(caught.exception))
 
     def test_an_undeclared_environment_is_refused_and_lists_the_real_ones(self):
-        with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+        with self.assertRaises(soak.BuildConstantUnresolved) as caught:
             soak.resolve_admission_floor("no_such_env")
         self.assertIn("no_such_env", str(caught.exception))
         self.assertIn("artoo_esp32", str(caught.exception))
@@ -702,7 +742,7 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
             encoding="utf-8",
         )
         try:
-            with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+            with self.assertRaises(soak.BuildConstantUnresolved) as caught:
                 soak.resolve_admission_floor("clash", ini_path=ini)
             self.assertIn("two different values", str(caught.exception))
         finally:
@@ -723,7 +763,7 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
             encoding="utf-8",
         )
         try:
-            with self.assertRaises(soak.AdmissionFloorUnresolved) as caught:
+            with self.assertRaises(soak.BuildConstantUnresolved) as caught:
                 soak.resolve_admission_floor("nofloor", ini_path=ini)
             self.assertIn("can never refuse at", str(caught.exception))
         finally:
@@ -738,6 +778,136 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
         # the verdict used.
         self.assertIn("ordinary floor", report["note"])
         self.assertLess(report["diagnosticFloorBytes"], report["ordinaryFloorBytes"])
+
+
+class SseClientCapIsReadFromTheHeader(unittest.TestCase):
+    """The concurrency yardstick.
+
+    `--num-clients 3` used to mean "at production's cap" because the harness
+    carried the literal 3. A literal cannot go wrong loudly: if a build ever
+    displaced PA_ADMISSION_MAX_SSE_CLIENTS, the same flag would quietly have
+    started meaning "one short of the cap" or "one over it", and a run would
+    have kept reporting a verdict for a concurrency nobody was testing at. The
+    number is now read from include/web_event_stream.h, and these tests read
+    that header themselves rather than asking the resolver, which would agree
+    with itself however wrong it had become.
+    """
+
+    def test_the_resolved_cap_is_the_number_the_header_declares(self):
+        declared = re.findall(
+            r"(?m)^\s*#\s*define\s+%s\s+(\d+)\s*$" % re.escape(soak.SSE_CLIENT_CAP_MACRO),
+            WEB_EVENT_STREAM_H,
+        )
+        self.assertEqual(len(declared), 1, declared)
+        for name, schema in soak.SCHEMAS.items():
+            with self.subTest(image=name):
+                cap = soak.resolve_sse_client_cap(schema.build_env)
+                self.assertEqual(cap.value, int(declared[0]))
+                self.assertEqual(cap.header_default, int(declared[0]))
+                self.assertEqual(cap.source, "include/web_event_stream.h")
+
+    def test_the_header_default_is_a_default_a_build_can_displace(self):
+        # An #ifndef guard is what makes "honour a per-environment override"
+        # meaningful. Without it a -D would be a redefinition error, and the
+        # resolver's override branch would be resolving something unreachable.
+        self.assertIn(f"#ifndef {soak.SSE_CLIENT_CAP_MACRO}", WEB_EVENT_STREAM_H)
+        self.assertNotIn(
+            f"-D{soak.SSE_CLIENT_CAP_MACRO}", PLATFORMIO_INI_TEXT,
+            "no environment overrides the cap today; if one starts to, the resolver "
+            "reports it and this expectation is the thing to update",
+        )
+        self.assertEqual(declared_macro_values(soak.SSE_CLIENT_CAP_MACRO), [])
+
+    def test_an_environment_definition_wins_over_the_header_default(self):
+        ini = REPO_ROOT / "test" / "test_tools" / "__pycache__" / "cap_override_platformio.ini"
+        ini.parent.mkdir(parents=True, exist_ok=True)
+        header_default, _ = soak.read_header_sse_client_cap()
+        ini.write_text(
+            PLATFORMIO_INI_TEXT
+            + soak._cap_override_env_section("cap_override", header_default + 4),
+            encoding="utf-8",
+        )
+        try:
+            cap = soak.resolve_sse_client_cap("cap_override", ini_path=ini)
+            self.assertEqual(cap.value, header_default + 4)
+            self.assertEqual(cap.header_default, header_default)
+            self.assertTrue(cap.source.startswith("[env:cap_override]"), cap.source)
+            # Local to that environment, not global to the file.
+            self.assertEqual(
+                soak.resolve_sse_client_cap("artoo_esp32", ini_path=ini).value,
+                header_default,
+            )
+        finally:
+            ini.unlink()
+
+    def test_a_header_with_no_cap_is_refused_rather_than_defaulted(self):
+        header = REPO_ROOT / "test" / "test_tools" / "__pycache__" / "cap_free_header.h"
+        header.parent.mkdir(parents=True, exist_ok=True)
+        header.write_text("#pragma once\n", encoding="utf-8")
+        try:
+            with self.assertRaises(soak.BuildConstantUnresolved) as caught:
+                soak.read_header_sse_client_cap(header)
+            self.assertIn(soak.SSE_CLIENT_CAP_MACRO, str(caught.exception))
+        finally:
+            header.unlink()
+
+    def test_the_firmware_still_refuses_at_the_macro_this_cap_describes(self):
+        # The cap is only a yardstick because api_events.cpp acts on it. If
+        # that handler stopped comparing against this macro, the harness would
+        # be judging concurrency against a number the firmware ignores.
+        self.assertIn(f">= {soak.SSE_CLIENT_CAP_MACRO}", API_EVENTS_CPP)
+        self.assertIn("webEventStreamClientCount()", API_EVENTS_CPP)
+
+    def test_the_cap_decides_which_runs_carry_a_verdict(self):
+        cap = soak.resolve_sse_client_cap(ARTOO.build_env)
+        self.assertGreaterEqual(cap.value, 1)
+        report = cap.report()
+        self.assertEqual(report["clients"], cap.value)
+        self.assertEqual(report["macro"], soak.SSE_CLIENT_CAP_MACRO)
+        self.assertEqual(report["readFrom"], cap.source)
+        self.assertIn("observation", report["note"])
+
+    def test_num_clients_defaults_to_the_cap_rather_than_to_a_literal(self):
+        # The default is resolved in run(), not baked into the parser: at parse
+        # time --build-env has not selected an environment yet, and a literal
+        # default is exactly the rot this derivation removes.
+        self.assertIsNone(soak.build_parser().parse_args([]).num_clients)
+
+
+class TheArtefactBelongsToTheInstrumentNotToATicket(unittest.TestCase):
+    """`tools/soak.py` outlives the epic that produced it (ADR 0035).
+
+    Its JSON keys are contract, so removing one is a version bump rather than a
+    tidy-up -- and `schemaVersion` is what a consumer switches on to know which
+    shape it is holding.
+    """
+
+    def test_the_report_carries_a_schema_version_and_no_ticket_number(self):
+        # Asserted on a real report rather than on the source text: the report
+        # is the artefact a consumer holds. Driven through run()'s
+        # unresolvable-floor path, which composes the whole header and returns
+        # before any request goes out, so this costs no fixture and no network.
+        args = soak.build_parser().parse_args([
+            "--device", "127.0.0.1", "--port", "1", "--image", "artoo",
+            "--driver", "sse_soak", "--build-env", "native",
+        ])
+        report, exit_code = soak.run(args)
+        self.assertEqual(exit_code, 3)
+        self.assertEqual(report["schemaVersion"], soak.REPORT_SCHEMA_VERSION)
+        self.assertEqual(soak.REPORT_SCHEMA_VERSION, 4)
+        self.assertNotIn("issue", report,
+                         "the artefact does not belong to one ticket")
+
+    def test_the_version_history_names_every_version_it_claims(self):
+        # A bare number is not worth having; the constant is documented with
+        # what each version meant, so a consumer holding an old artefact can
+        # tell what changed under it.
+        source = SOAK_PY.read_text(encoding="utf-8")
+        for version in range(1, soak.REPORT_SCHEMA_VERSION + 1):
+            self.assertRegex(
+                source, r"(?m)^#\s+%d\s+\S" % version,
+                f"schemaVersion {version} is claimed but not described",
+            )
 
 
 class AdmissionFloorResolutionOrderMatchesTheFirmware(unittest.TestCase):
@@ -865,12 +1035,14 @@ class BenchCompilesNoAdmissionGuard(unittest.TestCase):
             soak.run_sse_soak(
                 client=None, schema=BENCH, num_clients=1, duration_s=0.0,
                 status_poll_interval_s=1.0, admission_floor=floor,
+                sse_client_cap=soak.resolve_sse_client_cap(BENCH.build_env),
                 early_stall_check_s=0.0, max_silence_s=5.0,
             )
         with self.assertRaises(ValueError):
             soak.run_sse_soak(
                 client=None, schema=ARTOO, num_clients=1, duration_s=0.0,
                 status_poll_interval_s=1.0, admission_floor=None,
+                sse_client_cap=soak.resolve_sse_client_cap(ARTOO.build_env),
                 early_stall_check_s=0.0, max_silence_s=5.0,
             )
 

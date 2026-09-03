@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""protoArtoo soak harness -- implements the #184 verdict contract (#197).
+"""protoArtoo soak harness -- a permanent instrument, not one epic's scaffold.
 
-Drives a protoArtoo controller over HTTP/SSE to answer: does the web stack
-hold up over a long run, beyond the reduced manual smoke #184 already ran?
-Every device run here is coordinator/operator-initiated; this tool never
-flashes, never calls `make ota`, and never touches firmware sources.
+Holds a protoArtoo controller's web stack under load for as long as it is
+asked to, and answers one question: did it hold up? A run ends in one Run
+Verdict (PASS / FAIL / INVALID), one exit code and one JSON artefact carrying
+every number the verdict was taken from. Operator documentation is
+docs/soak.md; the surface a consumer may rely on -- the exit codes and the
+artefact's keys -- is ADR 0035.
 
-Named `soak.py` rather than `p4_hosted_soak.py` since #194: the harness reads
-more than the one ESP-Hosted bench image it was written for, and a name that
-claims otherwise sends the next reader looking for a P4 in a run that has
-none.
+Reads only. This tool never flashes, never calls `make ota`, never writes to
+the controller's configuration and never touches firmware sources: everything
+it does is a GET, plus the one POST that the C6-reset driver exists to make.
 
-Three images can be driven, selected by --image and never sniffed (see
+Three Image Modes can be driven, selected by --image and never sniffed (see
 StatusSchema for why the declaration is checked rather than inferred):
 
   bench     bringup/p4_hosted_bench.cpp, env firebeetle2_hosted_bench. Built
@@ -23,23 +24,24 @@ StatusSchema for why the declaration is checked rather than inferred):
             ladder nested under "hostedLink", no reset route at all (#243),
             and an /api/events stream of named status/rc/log events rather
             than a counter.
-  artoo     the artoo_esp32 product image (#194) -- the same
-            buildStatusJson(), minus the "hostedLink" block, which is emitted
-            only inside `#if PA_CAP_HOSTED_WIFI` (:724-743) and that
-            capability is 0 on artoo-esp32 (include/config.h:69). So: no
-            bootCount, no hostedLink, no recovery ladder, no reset route, and
-            the same named status/rc/log event stream, because
-            eventStreamTask() carries no capability guard at all.
+  artoo     the artoo_esp32 product image -- the same buildStatusJson(),
+            minus the "hostedLink" block, which is emitted only inside
+            `#if PA_CAP_HOSTED_WIFI` (:724-743) and that capability is 0 on
+            artoo-esp32 (include/config.h:69). So: no bootCount, no
+            hostedLink, no recovery ladder, no reset route, and the same
+            named status/rc/log event stream, because eventStreamTask()
+            carries no capability guard at all.
 
-Structural rule (non-negotiable, #197 pinned comment): there is exactly ONE
-SSE frame-parsing implementation (SseFrameParser, driven only through
-BenchClient.stream_sse()), one continuity wiring point
-(stream_sse_with_continuity()) and one status-field map per image
-(StatusSchema); --self-test exercises all three by starting a local
-http.server fixture and driving those same production entry points against
-it -- never a second, hand-rolled parse loop that only the test sees. Three
-prior attempts on this ticket failed by drifting from that rule; see the
-issue's pinned comment for the full attempt log.
+Structural rule, non-negotiable: there is exactly ONE SSE frame-parsing
+implementation (SseFrameParser, driven only through BenchClient.stream_sse()),
+one continuity wiring point (stream_sse_with_continuity()) and one
+status-field map per Image Mode (StatusSchema); --self-test exercises all
+three by starting a local http.server fixture and driving those same
+production entry points against it -- never a second, hand-rolled parse loop
+that only the test sees. This rule is written down because it has been broken:
+earlier revisions of this harness carried a self-test with its own parse loop,
+which stayed green while the real parser was broken outright. A test that does
+not drive the production path proves nothing about it.
 
 Bench endpoint contract, read directly from bringup/p4_hosted_bench.cpp
 rather than assumed (b990b88, 1ee0640):
@@ -67,8 +69,8 @@ src/web/web_server.cpp:
                           every 1s tick, "status" on demand and "log" every
                           other tick, framed by webEventStreamFormatPrefix()
                           (src/web/web_event_stream.cpp:106) with millis() as
-                          the id. api_events.cpp refuses a fourth stream with
-                          503 (PA_ADMISSION_MAX_SSE_CLIENTS).
+                          the id. api_events.cpp refuses the stream past
+                          PA_ADMISSION_MAX_SSE_CLIENTS with 503.
   POST /api/c6/reset   -> does not exist. run_c6_reset_recovery() refuses
                           rather than reporting anything (#243).
 
@@ -83,24 +85,29 @@ follows from the one board capability:
                           nothing to corroborate wifiConnected with.
   GET  /api/events    -> identical: eventStreamTask() (:793-902) has no
                           preprocessor guard anywhere in it, and
-                          PA_ADMISSION_MAX_SSE_CLIENTS is 3 on every build
-                          (include/web_event_stream.h:35; no env overrides
-                          it), so api_events.cpp refuses a fourth stream here
-                          the same way.
+                          api_events.cpp's client cap carries no board guard
+                          either, so a stream past the cap is refused here the
+                          same way (resolve_sse_client_cap() reads the number).
   POST /api/c6/reset   -> could not exist: there is no ESP32-C6 companion
                           radio on this board to reset.
 
-Fixture-derivation and ESP_RST_* constants were read from the pinned vendor
+Fixture derivation and the ESP_RST_* constants were READ -- from the vendor
 source, the ESP-IDF header and the firmware itself (see SseFrame's docstring,
-BAD_RESET_REASONS and SHIPPING_CRASH_SHAPED_RESET_NAMES below) rather than
-invented -- the #197 pinned comment documents two prior guesses that were
-wrong for exactly this reason.
+BAD_RESET_REASONS and SHIPPING_CRASH_SHAPED_RESET_NAMES below) -- rather than
+recalled. Two earlier revisions recalled them instead and got both wrong, in
+ways that would have made a run report the wrong answer confidently.
 
-The heap verdict is taken against the admission floor the firmware itself
-refuses at, resolved per build environment from platformio.ini and never
-copied into this file -- see "The compiled admission floor" below for why a
-percentage of a baseline sample was the wrong class of proof, and for what
-replaced it.
+Nothing the firmware compiles in is restated here; both yardsticks are read
+out of the tree the harness ships in, per build environment:
+
+  the heap verdict     against the admission floor the firmware itself
+                       refuses ordinary requests at, from platformio.ini --
+                       see "The compiled admission floor" below for why a
+                       percentage of a baseline sample was the wrong class of
+                       proof, and for what replaced it.
+  the concurrency      against the client cap /api/events admits, from
+                       include/web_event_stream.h -- see "The compiled SSE
+                       client cap".
 
 A run that lasts hours has to be legible while it lasts and has to survive
 being cut short, so RunMonitor and RunConsole (see "Progress, checkpoints and
@@ -111,12 +118,12 @@ checkpoint of the --json artefact, and the SIGINT/SIGTERM path that stops the
 drivers and still leaves a report. stdout carries the JSON report and nothing
 else, because `soak.py > report.json` and `soak.py | jq` are working
 contracts. An interrupted run reports the verdict INTERRUPTED / INCOMPLETE
-and exits EXIT_INVALID_UNKNOWN -- never a pass, and never a failure either,
-because a truncated run has not covered the contract it was asked to cover:
-its required evidence is missing, which is exactly what that exit code means.
-None of that changes what a run that finishes concludes: a driver called without a
-monitor, and a run that is never interrupted, reach the same verdict by the
-same code as before any of it existed.
+and exits EXIT_INVALID -- never a pass, and never a failure either, because a
+truncated run has not covered the contract it was asked to cover: its required
+evidence is missing, which is exactly what that exit code means. None of that
+changes what a run that finishes concludes: a driver called without a monitor,
+and a run that is never interrupted, reach the same verdict by the same code
+as before any of it existed.
 """
 from __future__ import annotations
 
@@ -133,6 +140,7 @@ import signal
 import socket
 import struct
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -153,21 +161,13 @@ from rich.text import Text
 # Constants read from source -- never invented (AGENTS.md "no guessing").
 # ---------------------------------------------------------------------------
 
-# include/web_event_stream.h:35 -- production's live SSE admission cap. The
-# bench firmware (bringup/p4_hosted_bench.cpp) has no such cap of its own
-# (ADR 0030 / #184's SSE-fidelity note), so this value exists only to decide
-# which sse_soak runs count toward the #184 verdict: "exactly 3 concurrent
-# SSE clients remain live... Higher counts may be run and logged, but carry
-# no verdict."
-PA_ADMISSION_MAX_SSE_CLIENTS = 3
-
 # ~/.platformio-p4/packages/framework-arduinoespressif32-libs/esp32p4/include/
 # esp_system/include/esp_system.h -- esp_reset_reason_t. Unnumbered enum
 # starting at ESP_RST_UNKNOWN = 0; the mapping below is that declaration
-# order, read directly. The #197 pinned comment records a prior attempt that
-# guessed [1, 3, 4, 5], which would reject a normal power-on (1 is
-# ESP_RST_POWERON, not a fault) and miss ESP_RST_TASK_WDT entirely (6, not
-# 5) -- the one reset AGENTS.md names as the project's top concern.
+# order, read rather than recalled. An early revision of this harness recalled
+# it instead and produced [1, 3, 4, 5], which would reject a normal power-on
+# (1 is ESP_RST_POWERON, not a fault) and miss ESP_RST_TASK_WDT entirely (6,
+# not 5) -- the one reset AGENTS.md names as the project's top concern.
 ESP_RESET_REASON_NAMES = {
     0: "ESP_RST_UNKNOWN",
     1: "ESP_RST_POWERON",
@@ -202,8 +202,8 @@ BAD_RESET_REASONS = {4, 5, 6, 7, 15}
 # default and is published as "OTHER". A CPU lockup is therefore
 # indistinguishable from a JTAG reset on that image, which is why the
 # shipping classification below is tri-state: "OTHER" is recorded as unknown
-# and never as "not crash-shaped". src/ is fenced for this ticket, so the
-# collapse is reported on #197 rather than fixed here.
+# and never as "not crash-shaped". Widening that switch is a firmware change,
+# so this harness reports the collapse rather than working around it.
 SHIPPING_CRASH_SHAPED_RESET_NAMES = {"PANIC", "INT_WDT", "TASK_WDT", "WDT"}
 SHIPPING_CLEAN_RESET_NAMES = {"POWERON", "EXTERNAL", "SOFTWARE", "DEEPSLEEP", "BROWNOUT", "SDIO"}
 SHIPPING_UNKNOWN_RESET_NAMES = {"UNKNOWN", "OTHER"}
@@ -221,35 +221,74 @@ DEFAULT_STATUS_PATH = "/api/status"
 DEFAULT_RESET_PATH = "/api/c6/reset"
 DEFAULT_SSE_PATH = "/api/events"
 
-EXIT_NO_IMMEDIATE_BLOCKER = 0
+# The process exit codes, which are this tool's contract along with the keys of
+# its JSON artefact (ADR 0035). The VALUES never move: a wrapper script, a CI
+# step or a scheduled regression run may rely on them. The NAMES are ordinary
+# source identifiers and were reworded when the verdict vocabulary was.
+EXIT_PASS = 0
 EXIT_SELF_TEST_FAILURE = 1
-EXIT_NO_GO = 2
-EXIT_INVALID_UNKNOWN = 3
+EXIT_FAIL = 2
+# "The required evidence is missing" -- reached by a coverage gap, by a
+# contract violation, and by a run that was cut short. Not a failure: a
+# failure is a controller that was watched and found wanting.
+EXIT_INVALID = 3
+
+# ---------------------------------------------------------------------------
+# The verdict vocabulary.
+#
+# ADR 0035: the exit codes and the JSON keys are the contract, the verdict
+# WORDING is prose and may be reworded. Every string is therefore named here
+# rather than written as a bare literal at the point of comparison, so a
+# rewording has one place to land instead of being buried in an output path.
+#
+# A Soak Driver's verdict and the Run Verdict speak the same three words
+# (CONTEXT.md, Run Verdict): a run that says PASS is saying what its drivers
+# said, not translating them into a second vocabulary.
+# ---------------------------------------------------------------------------
+
+VERDICT_PASS = "PASS"
+VERDICT_FAIL = "FAIL"
+VERDICT_INVALID = "INVALID"
+# A Soak Driver that cannot run on the declared Image Mode at all -- no reset
+# route to provoke, for instance. Never a pass: it collapses to INVALID at the
+# Run Verdict, because a coverage gap is not evidence of health.
+VERDICT_UNAVAILABLE = "UNAVAILABLE"
+# A driver that ran and measured, above the concurrency the verdict is defined
+# at. It found nothing wrong and claims nothing (see run_sse_soak()).
+VERDICT_OBSERVATION_ONLY = "OBSERVATION_ONLY"
+
+# Soak Driver verdicts that mean "this driver found nothing wrong", for the
+# footer and the progress surface.
+DRIVER_VERDICTS_WITHOUT_A_FINDING = (VERDICT_PASS, VERDICT_OBSERVATION_ONLY)
 
 # The verdicts a run that did not finish carries. Additions to the vocabulary
-# rather than changes to it: every one describes a state that used to produce
-# no report at all (an interrupted run exited 143 and wrote nothing), and none
-# is reachable by a run that completes. They are deliberately spelled in the
-# style of the verdicts already here, so a later rewording of the verdict
-# vocabulary sweeps one consistent set (ADR 0035: the exit codes and the JSON
-# keys are the contract; the wording is prose).
-#
-# The exit-code mapping itself is untouched. An interrupted run exits
-# EXIT_INVALID_UNKNOWN, which means "the required evidence is missing" -- and a
-# truncated soak is precisely that.
-# Soak Driver verdicts that mean "this driver found nothing wrong". Named once
-# so the footer and the progress surface never compare against a bare literal:
-# ADR 0035 makes the verdict WORDING prose that may be reworded, so a rename
-# has to have one place to land rather than a comparison buried in an output
-# path. (The exit codes above are the contract; the strings are not.)
-DRIVER_VERDICTS_WITHOUT_A_FINDING = ("PASS", "OBSERVATION_ONLY")
-
+# rather than changes to it: each describes a state that used to produce no
+# report at all (an interrupted run exited 143 and wrote nothing), and none is
+# reachable by a run that completes. An interrupted run exits EXIT_INVALID,
+# "the required evidence is missing" -- and a truncated soak is precisely that.
 VERDICT_INTERRUPTED_RUN = "INTERRUPTED / INCOMPLETE"
 VERDICT_INTERRUPTED_DRIVER = "INTERRUPTED"
 # Written into a mid-run checkpoint artefact. Deliberately not any verdict a
 # finished run can carry: a consumer that finds this string is holding
 # evidence from a run that had not reached its own conclusion.
 VERDICT_CHECKPOINT = "IN PROGRESS / INCOMPLETE"
+
+# The shape of the JSON artefact, for a consumer that has to decide whether it
+# can read this report at all. Bumped when a key is REMOVED or its meaning
+# changes; adding a key does not bump it, because a consumer that ignores
+# unknown keys is unaffected by an addition.
+#
+#   4  the top-level "issue" key is gone -- this harness is a permanent
+#      instrument and its artefact does not belong to one ticket -- and the
+#      Run Verdict speaks its drivers' words (PASS/FAIL/INVALID) instead of a
+#      second, gate-shaped vocabulary. Exit codes unchanged.
+#   3  the sse_soak heap verdict became the compiled admission floor rather
+#      than a percentage of a baseline sample: "heapTolerancePct" left that
+#      driver's report and the "admissionFloor" block arrived.
+#   2  the harness gained Image Modes: "image" and "statusFieldsRead", and
+#      restart evidence published under each image's own key names.
+#   1  the first artefact, bench Image Mode only.
+REPORT_SCHEMA_VERSION = 4
 
 
 # ---------------------------------------------------------------------------
@@ -312,13 +351,16 @@ _MACRO_DEFINITION_RE = re.compile(r"-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=(\S+))?")
 _PIO_REFERENCE_RE = re.compile(r"\$\{([^}]+)\}")
 
 
-class AdmissionFloorUnresolved(Exception):
-    """The floor for a declared environment could not be determined.
+class BuildConstantUnresolved(Exception):
+    """A constant compiled into the firmware could not be read out of the tree.
 
-    Raised, never defaulted: #194's pinned comment is explicit that an
-    unresolvable floor is INVALID. A run judged against a number this harness
-    invented would be worth less than no run at all, because it would look like
-    a verdict.
+    Two are resolved this way -- the admission floors below, and the SSE client
+    cap after them -- and both obey one rule: raised, never defaulted. An
+    unresolvable yardstick makes a run INVALID, because a run judged against a
+    number this harness invented would be worth less than no run at all: it
+    would carry the look of a verdict without the substance of one. That rule
+    was settled when the heap verdict stopped being a percentage of a baseline
+    sample (#194).
     """
 
 
@@ -432,7 +474,7 @@ def _pio_flag_sources(
         return []
     seen.add(key)
     if not config.has_section(section):
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"platformio.ini refers to a section [{section}] that it does not declare "
             f"(reached while resolving {option!r})"
         )
@@ -449,7 +491,7 @@ def _pio_flag_sources(
     for reference in _PIO_REFERENCE_RE.findall(raw):
         ref_section, dot, ref_option = reference.rpartition(".")
         if not dot:
-            raise AdmissionFloorUnresolved(
+            raise BuildConstantUnresolved(
                 f"[{section}].{option} contains the reference ${{{reference}}}, which "
                 "names no section.option pair -- platformio.ini interpolation is "
                 "${section.option}"
@@ -476,12 +518,12 @@ def _pio_macro_definitions(
                 previous = definitions.get(name)
                 if previous is not None:
                     if previous[0] != value:
-                        raise AdmissionFloorUnresolved(
+                        raise BuildConstantUnresolved(
                             f"[{env_section}] resolves {name} to two different values: "
                             f"{previous[0]!r} from {previous[1]} and {value!r} from "
                             f"{origin}. Two definitions of one macro reaching one compile "
-                            "is what #244 removed; this harness will not guess which one "
-                            "the firmware took"
+                            "is a build defect in its own right; this harness will not "
+                            "guess which one the firmware took"
                         )
                     continue
                 definitions[name] = (value, origin)
@@ -494,7 +536,7 @@ def _macro_int(definitions: dict[str, tuple[str, str]], macro: str, env: str) ->
         # base 0 so a hexadecimal calibration would be read rather than refused.
         return int(value, 0)
     except ValueError as not_an_int:
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"[env:{env}] defines {macro} as {value!r} ({origin}), which is not an "
             f"integer byte count: {not_an_int}"
         ) from not_an_int
@@ -505,20 +547,20 @@ def _pio_config_for(env: str, ini_path: Path) -> configparser.RawConfigParser:
     try:
         config = _pio_config(ini_path)
     except (OSError, configparser.Error) as unreadable:
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"could not read {ini_path}: {unreadable}"
         ) from unreadable
     if not config.has_section(f"env:{env}"):
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"{ini_path} declares no [env:{env}], so there is no build environment to read "
-            f"an admission floor from. Declared environments: "
+            f"this run's compiled values from. Declared environments: "
             f"{', '.join(pio_environments(config))}"
         )
     return config
 
 
 def require_declared_environment(env: str, ini_path: Path = PLATFORMIO_INI) -> None:
-    """Raise AdmissionFloorUnresolved unless platformio.ini declares this env.
+    """Raise BuildConstantUnresolved unless platformio.ini declares this env.
 
     Used on an image that has no floor to resolve: --build-env still appears in
     the report, and a name matching no environment must not be presented there
@@ -530,7 +572,7 @@ def require_declared_environment(env: str, ini_path: Path = PLATFORMIO_INI) -> N
 def resolve_admission_floor(env: str, ini_path: Path = PLATFORMIO_INI) -> AdmissionFloor:
     """The admission floors compiled into `env`, read from platformio.ini.
 
-    Raises AdmissionFloorUnresolved -- never returns a default -- when the file
+    Raises BuildConstantUnresolved -- never returns a default -- when the file
     cannot be read, the environment is not declared, or the environment does not
     resolve both floors. The last of those is a real case rather than a
     defensive branch: [env:native] declares its own build_flags without ever
@@ -544,7 +586,7 @@ def resolve_admission_floor(env: str, ini_path: Path = PLATFORMIO_INI) -> Admiss
         if macro not in definitions
     ]
     if missing:
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"[{section}] resolves no {' and no '.join(missing)}. Those are declared in "
             f"{ini_path}'s [flags_base], which an environment only inherits by naming "
             "${flags_base.build_flags} in its own build_flags -- an environment that does "
@@ -572,7 +614,7 @@ def resolve_admission_floor(env: str, ini_path: Path = PLATFORMIO_INI) -> Admiss
     # divide by it. There is nothing to judge a run against, which is the same
     # INVALID as a floor that could not be read at all.
     if ordinary <= 0 or diagnostic <= 0:
-        raise AdmissionFloorUnresolved(
+        raise BuildConstantUnresolved(
             f"[{section}] resolves an admission floor of {ordinary} ordinary / "
             f"{diagnostic} diagnostic. A floor of zero or below is a level the firmware "
             "can never refuse at, so a soak judged against it would pass whatever the "
@@ -602,6 +644,162 @@ def resolve_admission_floor(env: str, ini_path: Path = PLATFORMIO_INI) -> Admiss
     )
 
 
+# ---------------------------------------------------------------------------
+# The compiled SSE client cap -- read from the header, never restated.
+#
+# PA_ADMISSION_MAX_SSE_CLIENTS is how many concurrent /api/events streams a
+# product image admits before src/web/api_events.cpp answers the next one 503.
+# It is what makes a soak's --num-clients mean something: at the cap, the soak
+# is holding exactly as many streams as the firmware will ever hold, which is
+# the concurrency a verdict is defined at. Above it, a run is measuring a
+# refusal the firmware is designed to make, so it is recorded and carries no
+# verdict of its own.
+#
+# The value is declared in include/web_event_stream.h, guarded:
+#
+#     #ifndef PA_ADMISSION_MAX_SSE_CLIENTS
+#     #define PA_ADMISSION_MAX_SSE_CLIENTS 3
+#     #endif
+#
+# so the header's number is the default and a build may displace it with a -D,
+# exactly like the admission floors. Both halves are therefore read -- the
+# header for the default, platformio.ini for a per-environment override --
+# rather than the number being copied into this file. A copy is a second source
+# of truth with nothing keeping the two in step, and this one would rot
+# silently: a stale cap does not fail, it quietly changes what `--num-clients 3`
+# MEANS, from "at the cap" to "one short of it" or "one over".
+#
+# The bench image is a deliberate exception in one direction only. Its stream is
+# PsychicEventSource, which has no cap of its own (ADR 0030), so nothing there
+# refuses a fourth client -- BenchStatusSchema.enforces_sse_client_cap is False
+# and the storm never counts a capacity refusal against it. The cap still
+# selects the bench soak's concurrency, because the point of a bench soak is to
+# drive the transport at the concurrency the product firmware will actually see.
+# ---------------------------------------------------------------------------
+
+WEB_EVENT_STREAM_HEADER = REPO_ROOT / "include" / "web_event_stream.h"
+SSE_CLIENT_CAP_MACRO = "PA_ADMISSION_MAX_SSE_CLIENTS"
+
+# The `#define NAME <int>` inside the header's #ifndef guard. Anchored on the
+# macro name rather than on a line number so moving the block does not silently
+# stop matching -- a regex that found nothing would otherwise read as "the
+# header no longer declares a cap".
+_HEADER_DEFINE_RE_TEMPLATE = r"^[ \t]*#[ \t]*define[ \t]+{macro}[ \t]+([0-9]+)[ \t]*$"
+
+
+@dataclasses.dataclass(frozen=True)
+class SseClientCap:
+    """The concurrent-stream cap one build compiles in, with its provenance.
+
+    `value` is the cap in force. `source` says where it came from in words,
+    because "3, from the header default" and "3, because this environment sets
+    it to 3" are different facts about a build and an operator reading a report
+    a year from now should not have to guess which one they are holding.
+    """
+
+    env: str
+    value: int
+    source: str
+    # What the header declares, before any per-environment -D. Equal to `value`
+    # unless an environment overrides it; kept separately so a report can show
+    # that a cap of 5 is an override of 3 rather than a number somebody chose
+    # here.
+    header_default: int
+    header_path: str
+
+    def report(self) -> dict:
+        return {
+            "env": self.env,
+            "macro": SSE_CLIENT_CAP_MACRO,
+            "clients": self.value,
+            "headerDefault": self.header_default,
+            "readFrom": self.source,
+            "note": (
+                "The number of concurrent /api/events streams a product image admits "
+                "before src/web/api_events.cpp refuses the next one with 503. It is the "
+                "concurrency an sse_soak verdict is defined at: at or below it a run "
+                "counts toward the verdict, above it the run is recorded as observation "
+                "only, because a refusal at the cap is the firmware working as designed. "
+                "Read from the header's #ifndef default and from any -D the build "
+                "environment adds, never restated in the harness. The bench image's "
+                "vendor stream has no cap of its own (ADR 0030), so nothing refuses "
+                "there -- the number still selects that run's concurrency"
+            ),
+        }
+
+
+def read_header_sse_client_cap(
+    header_path: Path = WEB_EVENT_STREAM_HEADER,
+) -> tuple[int, str]:
+    """(default, readable-path) for the cap the header declares.
+
+    Raises BuildConstantUnresolved rather than defaulting, for the same reason
+    the floor resolver does: a soak whose concurrency target this harness made
+    up is a soak measuring something nobody specified.
+    """
+    try:
+        text = header_path.read_text(encoding="utf-8")
+    except OSError as unreadable:
+        raise BuildConstantUnresolved(
+            f"could not read {header_path}, which declares {SSE_CLIENT_CAP_MACRO} -- "
+            "there is no concurrent-stream cap to drive a soak at"
+        ) from unreadable
+    matches = re.findall(
+        _HEADER_DEFINE_RE_TEMPLATE.format(macro=SSE_CLIENT_CAP_MACRO), text, re.MULTILINE
+    )
+    try:
+        readable_path = str(header_path.relative_to(REPO_ROOT))
+    except ValueError:
+        readable_path = str(header_path)
+    if len(matches) != 1:
+        # Zero means the header stopped declaring it; more than one means the
+        # header declares it twice and this harness cannot say which one a
+        # compile takes. Neither is a number to soak against.
+        raise BuildConstantUnresolved(
+            f"{readable_path} declares {SSE_CLIENT_CAP_MACRO} {len(matches)} time(s); "
+            "exactly one `#define` is expected inside its #ifndef guard, and this "
+            "harness will not guess a concurrent-stream cap"
+        )
+    return int(matches[0]), readable_path
+
+
+def resolve_sse_client_cap(
+    env: str, ini_path: Path = PLATFORMIO_INI,
+    header_path: Path = WEB_EVENT_STREAM_HEADER,
+) -> SseClientCap:
+    """The concurrent-stream cap `env` compiles in.
+
+    The header's `#ifndef` default unless this environment defines the macro
+    itself, in which case the -D wins -- which is exactly what the preprocessor
+    does with a guarded default, and why both halves have to be read. Resolved
+    per environment for the same reason the floors are: two images can publish
+    byte-identical payloads and be built with different caps, so nothing in
+    /api/status can tell them apart.
+    """
+    header_default, header_source = read_header_sse_client_cap(header_path)
+    config = _pio_config_for(env, ini_path)
+    definitions = _pio_macro_definitions(config, f"env:{env}")
+    if SSE_CLIENT_CAP_MACRO in definitions:
+        value = _macro_int(definitions, SSE_CLIENT_CAP_MACRO, env)
+        source = definitions[SSE_CLIENT_CAP_MACRO][1]
+    else:
+        value = header_default
+        source = header_source
+    # A cap of zero or below is not a low cap, it is no stream at all:
+    # api_events.cpp's `count >= cap` refuses the FIRST client, and the soak
+    # would be asked to hold a negative number of them.
+    if value < 1:
+        raise BuildConstantUnresolved(
+            f"[env:{env}] resolves {SSE_CLIENT_CAP_MACRO} to {value} ({source}). A cap "
+            "below one admits no stream at all, so there is no concurrency for a soak "
+            "to run at"
+        )
+    return SseClientCap(
+        env=env, value=value, source=source,
+        header_default=header_default, header_path=header_source,
+    )
+
+
 # src/web/web_server.cpp:425-427 -- acceptMinLargestBlockSeen is published as -1
 # when g_webAcceptMinLargestBlockSeen is still UINT32_MAX, i.e. the Connection
 # Admission guard has not sampled the heap even once this boot (it samples only
@@ -624,8 +822,9 @@ SERIES_KEY_SSE_CLIENTS = "sseClientsConnected"
 
 
 # ---------------------------------------------------------------------------
-# SSE frame parsing -- the single implementation (#197 pinned comment part B:
-# a prior attempt kept two, one tested-but-unused, one live-but-untested).
+# SSE frame parsing -- the single implementation. An earlier revision of this
+# harness kept two, one tested-but-unused and one live-but-untested, which is
+# how a broken parser passed its own test suite.
 # ---------------------------------------------------------------------------
 
 
@@ -841,12 +1040,11 @@ class BenchClient:
         Every transport-shaped exception (refused/reset connection, timeout,
         malformed handshake) is caught HERE and folded into the returned
         SseStreamResult.error -- never swallowed silently, and never left to
-        surface as an unrelated crash in a soak thread. (#197 pinned
-        comment, rejected attempt #1 part A: its exception handler
-        referenced a `metrics` name that was neither a parameter nor a
-        module global, so a wedged link raised NameError instead of being
-        recorded. There is no such free variable here -- every field the
-        caller needs comes back on SseStreamResult.)
+        surface as an unrelated crash in a soak thread. An earlier revision's
+        handler here referenced a `metrics` name that was neither a parameter
+        nor a module global, so a wedged link raised NameError instead of
+        being recorded. There is no such free variable now: every field the
+        caller needs comes back on SseStreamResult.
 
         Uses resp.fp.read1(), not resp.read(): verified empirically before
         writing this method that http.client's resp.read(amt), when
@@ -946,10 +1144,10 @@ class BenchClient:
                     if abrupt_stop and stop.is_set() and error is None:
                         # SO_LINGER(on=1, linger=0): the close below sends
                         # RST instead of FIN + orderly shutdown -- standard
-                        # POSIX socket semantics, used to make "abort
-                        # mid-stream" (the #197 acceptance wording for the
-                        # reconnect-storm driver) an actual abrupt
-                        # disconnect rather than a clean close.
+                        # POSIX socket semantics. It is what makes the
+                        # reconnect storm's abort-mid-stream an actual abrupt
+                        # disconnect rather than a clean close, which is a
+                        # different thing for the server to survive.
                         raw_sock.setsockopt(
                             socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0),
                         )
@@ -1805,9 +2003,9 @@ class BenchStatusSchema(StatusSchema):
     build_env = "firebeetle2_hosted_bench"
     reset_path = DEFAULT_RESET_PATH
     publishes_boot_count = True
-    # The bench streams through PsychicEventSource, which has no client cap
-    # of its own (ADR 0030 / #184's SSE-fidelity note), so a refused stream
-    # is never expected here.
+    # The bench streams through PsychicEventSource, the vendor class production
+    # deliberately replaced (ADR 0030). It has no client cap of its own, so a
+    # refused stream is never expected here.
     enforces_sse_client_cap = False
     # [env:firebeetle2_hosted_bench] does resolve the admission floor flags --
     # it extends [env:firebeetle2] and inherits its build_flags -- but its
@@ -1826,8 +2024,9 @@ class BenchStatusSchema(StatusSchema):
         "-- the only code that reads PA_ADMISSION_MIN_LARGEST_FREE_BLOCK -- is not compiled "
         "in, and handleStatus() publishes no refusal counters. There is no level at which "
         "this image turns a request away, so its heap readings are recorded (see heapSeries) "
-        "and not judged. Judging them against a percentage of a baseline sample is what "
-        "#194 removed>"
+        "and not judged. Judging them against a percentage of a baseline sample was tried "
+        "and removed: it measures how spiky a fragmentation reading is, not whether the "
+        "controller was still serving>"
     )
     reset_reason_kind = "esp_reset_reason_t int"
     heap_field = "largestFree8bitBlock"
@@ -2062,7 +2261,7 @@ class ShippingStatusSchema(ProductImageStatusSchema):
     # four P4 environments, this is the only one that is the firmware).
     build_env = "firebeetle2"
     # The board does have an ESP32-C6, so a reset route is meaningful here and
-    # simply is not implemented -- that is #243, on epic #206.
+    # simply is not implemented -- tracked on #243.
     reset_unavailable_reason = (
         "the shipping image publishes no C6 reset route -- POST /api/c6/reset "
         "exists only on bringup/p4_hosted_bench.cpp, and the shipping seam route "
@@ -2119,7 +2318,7 @@ class ShippingStatusSchema(ProductImageStatusSchema):
 
 
 class ArtooStatusSchema(ProductImageStatusSchema):
-    """The artoo_esp32 product image (#194).
+    """The artoo_esp32 product image.
 
     The same buildStatusJson() as `shipping`, on a board where
     PA_CAP_HOSTED_WIFI is 0 (include/config.h:69). Two things follow, and both
@@ -3024,7 +3223,7 @@ def _sse_soak_worker(
 def run_sse_soak(
     client: BenchClient, schema: StatusSchema, num_clients: int, duration_s: float,
     status_poll_interval_s: float, admission_floor: Optional[AdmissionFloor],
-    early_stall_check_s: float, max_silence_s: float,
+    sse_client_cap: SseClientCap, early_stall_check_s: float, max_silence_s: float,
     monitor: Optional[RunMonitor] = None,
 ) -> dict:
     monitor = monitor or RunMonitor.disabled()
@@ -3072,14 +3271,16 @@ def run_sse_soak(
     # below, which reports that absence in words instead of numbers.
     baseline_ladder = schema.ladder(baseline, "baseline /api/status")
 
-    # #184: "exactly 3 concurrent SSE clients... Higher counts may be run
-    # and logged, but carry no verdict." Read narrowly: it is the ABOVE-cap
-    # case the contract excludes from the verdict (an admission-refusal
-    # scenario production doesn't accept in the first place); at-or-below
-    # the cap is still meaningful transport evidence, just not "at the
-    # production concurrency target" (recorded separately below).
-    counts_toward_verdict = num_clients <= PA_ADMISSION_MAX_SSE_CLIENTS
-    tested_at_production_cap = num_clients == PA_ADMISSION_MAX_SSE_CLIENTS
+    # Above the compiled cap, a run is provoking a refusal the firmware is
+    # designed to make (api_events.cpp answers the extra stream 503), so it is
+    # recorded and carries no verdict: what it measures is admission working,
+    # not the transport holding up. At or below the cap is real transport
+    # evidence, and exactly AT the cap is that evidence taken at the
+    # concurrency the product firmware will actually see -- recorded
+    # separately, because the two are different claims. The number itself is
+    # resolved from the header and the build environment; see SseClientCap.
+    counts_toward_verdict = num_clients <= sse_client_cap.value
+    tested_at_production_cap = num_clients == sse_client_cap.value
 
     # One clock for the whole run, taken before anything starts: the poll series
     # and the early-stall/duration windows are both measured from it, so an
@@ -3167,9 +3368,9 @@ def run_sse_soak(
     monitor.tick(_progress, force=True)
 
     # Early-fail: if by early_stall_check_s no worker has received even one
-    # frame, don't burn the operator's whole --duration on a dead stream.
-    # #184's NO-GO vocabulary names this case explicitly: "SSE immediately
-    # stalls".
+    # frame, don't burn the operator's whole --duration on a dead stream. A
+    # stream that never starts is a finding on its own, and waiting three hours
+    # to report it costs the operator the session.
     early_deadline = run_started + min(early_stall_check_s, duration_s)
     early_window_completed = True
     while not any(e.is_set() for e in first_frame_events):
@@ -3253,7 +3454,7 @@ def run_sse_soak(
     #       the firmware's own count of requests it turned away at the floor. A
     #       rise across the run is the real failure this rule exists to catch,
     #       and the percentage rule it replaces would not have noticed it at
-    #       all -- #194's run had a NO-GO verdict with both counters at 0.
+    #       all -- #194's run failed on the percentage with both counters at 0.
     #   how close did it come?      the lowest largest-free-8-bit block observed,
     #       against the ORDINARY floor -- the level at which an operator's page
     #       load starts being shed. Below it is a FAIL; above it is a margin,
@@ -3428,18 +3629,19 @@ def run_sse_soak(
         )
 
     # A truncated soak reports its truncation first and carries every reason it
-    # did observe underneath it. Three attempts on this ticket were rejected
-    # for verification that could not judge itself, and a partial result is
-    # where that hazard comes back: neither a PASS nor a FAIL may be claimed
+    # did observe underneath it. A partial result is where "verification that
+    # cannot judge itself" comes back: neither a PASS nor a FAIL may be claimed
     # from a window the operator cut short. PASS is obvious; FAIL matters just
     # as much, because most of the reasons above are absence-shaped
-    # ("sseClients never reached 3", "no poll carried a bootCount") and a run
-    # stopped after 20 seconds would produce them against a healthy board.
+    # ("sseClients never reached the cap", "no poll carried a bootCount") and a
+    # run stopped after 20 seconds would produce them against a healthy board.
     if monitor.interrupted:
         reasons.insert(0, monitor.truncation_reason(duration_s_observed, duration_s))
         verdict = VERDICT_INTERRUPTED_DRIVER
+    elif not counts_toward_verdict:
+        verdict = VERDICT_OBSERVATION_ONLY
     else:
-        verdict = ("FAIL" if reasons else "PASS") if counts_toward_verdict else "OBSERVATION_ONLY"
+        verdict = VERDICT_FAIL if reasons else VERDICT_PASS
 
     # Report-key convention, and the reason it is not uniform: heap and SSE
     # client keys keep one harness-level name across both images because both
@@ -3458,6 +3660,11 @@ def run_sse_soak(
         "statusFieldsRead": schema.fields_read(),
         "countsTowardVerdict": counts_toward_verdict,
         "testedAtProductionCap": tested_at_production_cap,
+        # The number those two booleans were decided against, beside them
+        # rather than only in the run header: a reader holding one driver's
+        # report has to be able to see what "at the cap" meant for this run.
+        "sseClientCap": sse_client_cap.value,
+        "sseClientCapReadFrom": sse_client_cap.source,
         "reasons": reasons,
         "numClientsRequested": num_clients,
         "durationSRequested": duration_s,
@@ -3504,7 +3711,7 @@ def run_sse_soak(
             "Per-client frameCount is not cross-checked against the server's own frame "
             "counter as an independent pass/fail gate: clients connect at different "
             "points in a shared stream, so raw counts are not directly comparable across "
-            "different connection windows (#184's own accepted run showed exactly this: "
+            "different connection windows (an accepted 25-minute run showed exactly this: "
             "client counts of 1401/1403/1399 against a server delta of 1397). The "
             "continuity model named in sseContinuityModel is the authoritative per-client "
             "check; the per-client fields let an operator do the cross-check by hand."
@@ -3870,7 +4077,7 @@ def run_reconnect_storm(
         reasons.insert(0, monitor.truncation_reason(duration_s_observed, duration_s))
         verdict = VERDICT_INTERRUPTED_DRIVER
     else:
-        verdict = "FAIL" if reasons else "PASS"
+        verdict = VERDICT_FAIL if reasons else VERDICT_PASS
     report = {
         "driver": "reconnect_storm",
         "verdict": verdict,
@@ -3934,15 +4141,15 @@ def run_c6_reset_recovery(
 ) -> dict:
     monitor = monitor or RunMonitor.disabled()
     # Refused here, before any request is sent, rather than skipped by the
-    # orchestrator: this driver's whole claim is that it provoked a C6 reset
-    # and watched the link come back, and on an image with no reset route
-    # there is nothing to provoke. A skip would leave a driver that can
-    # report a pass without having measured anything, which is the exact
-    # signature three earlier attempts on #197 were rejected for.
+    # orchestrator: this driver's whole claim is that it provoked a WiFi Module
+    # reset and watched the link come back, and on an image with no reset route
+    # there is nothing to provoke. A skip would leave a driver that can report
+    # a pass without having measured anything -- verification that cannot judge
+    # itself, which is the failure this whole harness was rebuilt to avoid.
     if schema.reset_path is None:
         return {
             "driver": "c6_reset_recovery",
-            "verdict": "UNAVAILABLE",
+            "verdict": VERDICT_UNAVAILABLE,
             "image": schema.name,
             # The schema's own words: "no route on a board that has a C6" and
             # "no C6 to reset" are different facts, and an operator reading
@@ -3954,10 +4161,11 @@ def run_c6_reset_recovery(
     baseline_restart_marker = schema.restart_marker(baseline, "baseline /api/status")
     baseline_reset = schema.reset_reason(baseline, "baseline /api/status")
     baseline_heap = schema.heap_largest_free(baseline, "baseline /api/status")
-    # Recovery-ladder baseline (#184, #197): this driver
-    # deliberately provokes ESP_HOSTED_EVENT_TRANSPORT_FAILURE via the C6
-    # reset it is about to trigger, so it is the one place in this harness
-    # where these fields carry the most evidence. Types read from
+    # Recovery-ladder baseline. This driver deliberately provokes
+    # ESP_HOSTED_EVENT_TRANSPORT_FAILURE through the reset it is about to
+    # trigger, so it is the one place in this harness where these fields carry
+    # the most evidence -- everywhere else the ladder is watched rather than
+    # exercised. Types read from
     # bringup/p4_hosted_bench.cpp:937-957 -- recoveryLadderState is
     # recoveryPhaseName()'s const char* (idle/armed/attempting/degraded),
     # the rest are unsigned int counters.
@@ -3978,7 +4186,7 @@ def run_c6_reset_recovery(
     if baseline_reset.crash_shaped is not False:
         return {
             "driver": "c6_reset_recovery",
-            "verdict": "INVALID",
+            "verdict": VERDICT_INVALID,
             "image": schema.name,
             "reasons": [
                 "device was not in a confirmed-clean reset state "
@@ -3994,10 +4202,11 @@ def run_c6_reset_recovery(
         reason = reset_body.get("reason", "<no reason field>")
         return {
             "driver": "c6_reset_recovery",
-            "verdict": "INVALID",
+            "verdict": VERDICT_INVALID,
             "reasons": [
                 f"reset was rejected ({status_code}): {reason} -- required evidence (a "
-                "scheduled and executed reset) is missing, per #184's INVALID/UNKNOWN row"
+                "scheduled and executed reset) is missing, so this driver has nothing to "
+                "judge rather than something to fail"
             ],
             "rejectionStatus": status_code,
             "rejectionReason": reason,
@@ -4005,7 +4214,7 @@ def run_c6_reset_recovery(
     if status_code != 202:
         return {
             "driver": "c6_reset_recovery",
-            "verdict": "FAIL",
+            "verdict": VERDICT_FAIL,
             "reasons": [f"POST /api/c6/reset returned unexpected status {status_code}: {reset_body}"],
         }
 
@@ -4013,7 +4222,7 @@ def run_c6_reset_recovery(
     if not reset_scheduled:
         return {
             "driver": "c6_reset_recovery",
-            "verdict": "INVALID",
+            "verdict": VERDICT_INVALID,
             "reasons": [f"202 response did not set resetScheduled: true: {reset_body}"],
         }
     response_grace_ms = _require_field(reset_body, "responseGraceMs", int, "POST /api/c6/reset response")
@@ -4083,9 +4292,9 @@ def run_c6_reset_recovery(
         if schema.restart_detected(baseline_restart_marker, [restart_marker_field]):
             recovery_reasons.append(
                 f"{schema.restart_field} {schema.restart_verb} from {baseline_restart_marker} to "
-                f"{restart_marker_field} -- the P4 host rebooted. ADR 0032 forbids relying on a "
-                "host restart, and #184's NO-GO condition is exactly 'abrupt C6 reset cannot "
-                "rejoin without P4 restart'"
+                f"{restart_marker_field} -- the host controller rebooted. The link is "
+                "required to rejoin WITHOUT one: ADR 0032 forbids relying on a host restart "
+                "to recover a network fault, so a rejoin that needed one is not a rejoin"
             )
             break
 
@@ -4144,18 +4353,15 @@ def run_c6_reset_recovery(
         if ladder_samples.recovered_counts
         else baseline_ladder.recovered_count
     )
-    # #184's NO-GO/verdict contract for this driver is bootCount/resetReason/
-    # wifiConnected+hostedIsInitialized/SSE-resume/heap (all above and
-    # unchanged) -- it does not name 'recoveryLadderState reached degraded'
-    # as a FAIL condition of C6-RESET RECOVERY specifically. run_sse_soak()
-    # treats it as a FAIL because a ladder that goes terminal *during an
-    # otherwise-idle soak* is itself the anomaly; here the ladder is
-    # deliberately provoked, and a degraded outcome is already caught by
-    # the "did not observe an established Hosted link again" reason below
-    # (a ladder that reaches degraded cannot also have restored the
-    # transport). Recorded per #197 for evidence, and
-    # intentionally not added as a second, redundant FAIL path -- flagged
-    # on the issue rather than decided here.
+    # Recorded, and deliberately NOT a FAIL condition of this driver.
+    # run_sse_soak() treats a ladder that reaches 'degraded' as a FAIL because
+    # a ladder going terminal during an otherwise-idle soak is itself the
+    # anomaly. Here the ladder is deliberately provoked, so reaching 'degraded'
+    # is one possible outcome of the provocation rather than a surprise -- and
+    # it is already caught by the "did not observe an established Hosted link
+    # again" reason below, since a ladder that went terminal cannot also have
+    # restored the transport. A second, redundant FAIL path on the same fact
+    # would say the same thing twice.
     ladder_reached_degraded = "degraded" in ladder_samples.states
 
     if not recovery_reasons and not recovered:
@@ -4241,7 +4447,10 @@ def run_c6_reset_recovery(
             0, monitor.truncation_reason(recovered_at_s, recovery_timeout_s))
         verdict = VERDICT_INTERRUPTED_DRIVER
     else:
-        verdict = "PASS" if recovered and sse_resumed and not recovery_reasons else "FAIL"
+        verdict = (
+            VERDICT_PASS if recovered and sse_resumed and not recovery_reasons
+            else VERDICT_FAIL
+        )
 
     report = {
         "driver": "c6_reset_recovery",
@@ -4291,12 +4500,11 @@ def run_c6_reset_recovery(
             "GPIO API results require external logic capture plus C6 UART reboot proof",
         ),
         "note": (
-            "This driver proves host-side rejoin (Hosted link teardown + "
-            "hostedIsInitialized() + /api/status answering again through the same "
-            "link, per #184's 2026-08-29 coordinator ruling) and SSE freshness. It "
-            "does NOT prove the physical GPIO54 edge or pulse width -- that requires "
-            "a synchronized logic capture, a coordinator/operator action this "
-            "host-side harness cannot perform."
+            "This driver proves host-side rejoin -- Hosted link teardown, "
+            "hostedIsInitialized() again, and /api/status answering again through the "
+            "same link -- plus SSE freshness. It does NOT prove the physical reset "
+            "edge or its pulse width: that needs a synchronised logic capture on the "
+            "reset line, which no host-side harness can perform."
         ),
     }
     report.update(
@@ -4306,7 +4514,7 @@ def run_c6_reset_recovery(
 
 
 # ---------------------------------------------------------------------------
-# Orchestration and the #184 verdict vocabulary.
+# Orchestration and the Run Verdict.
 # ---------------------------------------------------------------------------
 
 
@@ -4332,37 +4540,41 @@ def _run_driver_safely(name: str, fn: Callable[..., dict], *args: Any) -> dict:
     except CONTRACT_ERRORS as contract_error:
         return {
             "driver": name,
-            "verdict": "INVALID",
+            "verdict": VERDICT_INVALID,
             "reasons": [f"response contract violation while running {name}: {contract_error}"],
         }
 
 
 def _compose_overall_verdict(driver_results: dict[str, dict]) -> tuple[str, int]:
+    """The Run Verdict, in the same three words its Soak Drivers use.
+
+    Ranked, most serious first. The ranking is the contract; the words are
+    prose (ADR 0035), which is why every one of them is a named constant.
+    """
     verdicts = [d["verdict"] for d in driver_results.values()]
     # Ranked above everything else, and deliberately so: a run the operator
     # stopped has not covered the contract it was asked to cover, so no
     # conclusion drawn from it is safe in either direction -- neither a pass,
     # nor a failure manufactured out of an observation window that was cut
-    # short. The exit code is EXIT_INVALID_UNKNOWN, "the required evidence is
+    # short. The exit code is EXIT_INVALID, "the required evidence is
     # missing"; the mapping is not extended, only reached from one more state.
     if any(v == VERDICT_INTERRUPTED_DRIVER for v in verdicts):
-        return VERDICT_INTERRUPTED_RUN, EXIT_INVALID_UNKNOWN
-    if any(v == "INVALID" for v in verdicts):
-        return "INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN
-    if any(v == "FAIL" for v in verdicts):
-        return "NO-GO", EXIT_NO_GO
-    # UNAVAILABLE is ranked BELOW FAIL and above pass: a driver that could
-    # not run on this image did not cover its part of #184's contract, which
-    # is that row's "required evidence is missing" -- but a driver that
-    # actually failed is the more actionable answer, so a real NO-GO is never
-    # masked by a coverage gap. An operator who wants an exit code covering
-    # only what this image can measure names the drivers explicitly.
-    if any(v == "UNAVAILABLE" for v in verdicts):
-        return "INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN
-    # PASS and OBSERVATION_ONLY (num_clients > production's cap) both fall
-    # through here -- #184: "Higher counts may be run and logged, but carry
-    # no verdict."
-    return "NO IMMEDIATE BLOCKER", EXIT_NO_IMMEDIATE_BLOCKER
+        return VERDICT_INTERRUPTED_RUN, EXIT_INVALID
+    if any(v == VERDICT_INVALID for v in verdicts):
+        return VERDICT_INVALID, EXIT_INVALID
+    if any(v == VERDICT_FAIL for v in verdicts):
+        return VERDICT_FAIL, EXIT_FAIL
+    # UNAVAILABLE is ranked BELOW FAIL and above pass: a driver that could not
+    # run on this Image Mode left a coverage gap, and a coverage gap is never a
+    # pass -- but a driver that actually failed is the more actionable answer,
+    # so a real failure is never masked by a gap. An operator who wants an exit
+    # code covering only what this image can measure names the drivers
+    # explicitly. That collapse is the rule, not the wording (ADR 0035).
+    if any(v == VERDICT_UNAVAILABLE for v in verdicts):
+        return VERDICT_INVALID, EXIT_INVALID
+    # PASS and OBSERVATION_ONLY both fall through here: a run above the client
+    # cap measured something real and claims nothing, which is not a finding.
+    return VERDICT_PASS, EXIT_PASS
 
 
 # How long each driver intends to occupy, from the arguments it was given.
@@ -4399,7 +4611,7 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
     schema = SCHEMAS[args.image]
     build_env = args.build_env or schema.build_env
     header = {
-        "schemaVersion": 3, "issue": 197, "device": args.device, "port": args.port,
+        "schemaVersion": REPORT_SCHEMA_VERSION, "device": args.device, "port": args.port,
         "image": schema.name, "buildEnv": build_env,
         "statusFieldsRead": schema.fields_read(),
     }
@@ -4435,9 +4647,10 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
             "logPath": None if monitor.log_path is None else str(monitor.log_path),
         }), exit_code
 
-    # The admission floor is resolved before the first request. A run this
-    # harness cannot judge is INVALID whether or not the device answers, and
-    # there is no reason to put load on a controller in order to find that out.
+    # Both yardsticks are resolved out of the tree before the first request. A
+    # run this harness cannot judge is INVALID whether or not the device
+    # answers, and there is no reason to put load on a controller in order to
+    # find that out.
     admission_floor: Optional[AdmissionFloor] = None
     try:
         if schema.enforces_admission_floor:
@@ -4446,37 +4659,45 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
         else:
             require_declared_environment(build_env)
             header["admissionFloor"] = schema.admission_absence_note
-    except AdmissionFloorUnresolved as unresolved:
-        # #194: an unresolvable floor is INVALID, never a default. A verdict
-        # taken against a number this harness picked would read like evidence
-        # and be none.
+        sse_client_cap = resolve_sse_client_cap(build_env)
+        header["sseClientCap"] = sse_client_cap.report()
+    except BuildConstantUnresolved as unresolved:
+        # An unresolvable yardstick is INVALID, never a default (#194). A
+        # verdict taken against a number this harness picked would read like
+        # evidence and be none.
         reason = (
-            f"the admission floor for --image {schema.name} (build environment "
-            f"{build_env!r}) could not be determined: {unresolved}"
+            f"a compiled value this run has to be judged against, for --image "
+            f"{schema.name} (build environment {build_env!r}), could not be determined: "
+            f"{unresolved}"
         )
         monitor.line(reason, kind="fail")
         return finish({
-            "verdict": "INVALID / UNKNOWN",
+            "verdict": VERDICT_INVALID,
             "reasons": [reason],
             "drivers": {},
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
 
-    # Preflight: an unreachable device, or a C6 that never came up, cannot
-    # produce any of the required evidence -- #184's INVALID/UNKNOWN row
-    # ("required evidence is missing"), not NO-GO (NO-GO is a live link
-    # that then fails; this is "there was never a link to test").
+    # --num-clients defaults to the cap rather than to a number written here,
+    # so the default always means "at the concurrency the firmware admits" --
+    # a literal would go on saying 3 after a build changed it.
+    num_clients = args.num_clients if args.num_clients is not None else sse_client_cap.value
+
+    # Preflight: an unreachable device, or a WiFi Module that never came up,
+    # cannot produce any of the required evidence, so this is INVALID rather
+    # than FAIL. A FAIL is a live link that then failed; this is "there was
+    # never a link to test".
     try:
         preflight_status = capture_status(client)
     except TRANSPORT_EXCEPTIONS as error:
         reason = f"device unreachable at {args.device}:{args.port}: {error}"
         monitor.line(reason, kind="fail")
         return finish({
-            "verdict": "INVALID / UNKNOWN",
+            "verdict": VERDICT_INVALID,
             "reasons": [reason],
             "drivers": {},
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
     except json.JSONDecodeError as error:
-        # Answered, but not with JSON. Same INVALID/UNKNOWN row as
+        # Answered, but not with JSON. INVALID for the same reason as
         # unreachable -- the required evidence never arrived -- and reported
         # rather than raised, so a run started overnight leaves a verdict
         # instead of a traceback.
@@ -4486,10 +4707,10 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
         )
         monitor.line(reason, kind="fail")
         return finish({
-            "verdict": "INVALID / UNKNOWN",
+            "verdict": VERDICT_INVALID,
             "reasons": [reason],
             "drivers": {},
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
 
     # The board half of the header. It cannot be printed with the rest of the
     # header in main(), because these two values are only knowable once the
@@ -4523,19 +4744,19 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
             kind="fail",
         )
         return finish({
-            "verdict": "INVALID / UNKNOWN",
+            "verdict": VERDICT_INVALID,
             "reasons": [reason],
             "drivers": {},
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
 
     link_ready, why_not = schema.link_readiness(preflight_status)
     if not link_ready:
         monitor.line(why_not, kind="fail")
         return finish({
-            "verdict": "INVALID / UNKNOWN",
+            "verdict": VERDICT_INVALID,
             "reasons": [why_not],
             "drivers": {},
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
 
     driver_results: dict[str, dict] = {}
     # One dispatch table rather than three `if name in drivers_to_run` blocks:
@@ -4545,8 +4766,9 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
     # driver_results is keyed in the same order it always was.
     driver_calls: dict[str, tuple[Callable[..., dict], tuple]] = {
         "sse_soak": (run_sse_soak, (
-            client, schema, args.num_clients, args.duration, args.status_poll_interval_s,
-            admission_floor, args.early_stall_check_s, args.sse_max_silence_s,
+            client, schema, num_clients, args.duration, args.status_poll_interval_s,
+            admission_floor, sse_client_cap, args.early_stall_check_s,
+            args.sse_max_silence_s,
         )),
         "reconnect_storm": (run_reconnect_storm, (
             client, schema, args.storm_clients, args.storm_duration, args.storm_cycle_min_s,
@@ -4576,7 +4798,7 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
             ],
             "driverInFlight": None if snapshot is None else snapshot.as_dict(),
             "drivers": dict(driver_results),
-        }, EXIT_INVALID_UNKNOWN)
+        }, EXIT_INVALID)
         return report
 
     monitor.bind_checkpoint_source(_checkpoint_report)
@@ -4631,14 +4853,14 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
         # shipped verification that could not judge itself, and one check
         # standing alone between a truncated run and a green exit code is the
         # shape of that failure.
-        verdict, exit_code = VERDICT_INTERRUPTED_RUN, EXIT_INVALID_UNKNOWN
+        verdict, exit_code = VERDICT_INTERRUPTED_RUN, EXIT_INVALID
         interrupt_fields = {
             "interrupted": True,
             "interruptSignal": monitor.signal_name,
             "reasons": [
                 f"the run was interrupted ({monitor.signal_name}); it covers only the "
-                "window actually observed and therefore carries no go/no-go verdict. Each "
-                "driver's own report says how far it got"
+                "window actually observed and therefore reaches no verdict about the "
+                "controller. Each driver's own report says how far it got"
             ],
         }
     return finish({
@@ -4646,7 +4868,7 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
         # Empty on a run that finished, so a completed report is unchanged.
         **interrupt_fields,
         "driversUnavailableOnThisImage": [
-            name for name, result in driver_results.items() if result["verdict"] == "UNAVAILABLE"
+            name for name, result in driver_results.items() if result["verdict"] == VERDICT_UNAVAILABLE
         ],
         "drivers": driver_results,
     }, exit_code)
@@ -4990,13 +5212,14 @@ def _record_scenario(name: str, body: Callable[[], None], failures: list[str]) -
     (_require_field), so a mutation that mis-names a field would otherwise
     kill the suite mid-run and skip every scenario after it -- the exit code
     would still be non-zero, but the output would say less about which
-    measurement broke. AdmissionFloorUnresolved is caught for the same reason
-    and no other: a mutation to the floor resolver must land as one red
-    scenario naming the floor, not as a traceback that hides the rest."""
+    measurement broke. BuildConstantUnresolved is caught for the same reason
+    and no other: a mutation to either yardstick resolver -- the admission
+    floor or the SSE client cap -- must land as one red scenario naming it, not
+    as a traceback that hides the rest."""
     try:
         body()
         print(f"  PASS  {name}")
-    except (AssertionError, AdmissionFloorUnresolved) + CONTRACT_ERRORS as failure:
+    except (AssertionError, BuildConstantUnresolved) + CONTRACT_ERRORS as failure:
         print(f"  FAIL  {name}: {failure}")
         failures.append(f"{name}: {failure}")
 
@@ -5294,7 +5517,7 @@ def _run_shipping_status_scenarios(failures: list[str]) -> None:
                 "and was discarded is a stub, not a refusal"
             )
             verdict, exit_code = _compose_overall_verdict({"c6_reset_recovery": result})
-            assert (verdict, exit_code) == ("INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN), (
+            assert (verdict, exit_code) == ("INVALID", EXIT_INVALID), (
                 f"an unavailable driver must never reach a passing exit code: {verdict} {exit_code}"
             )
 
@@ -5455,7 +5678,7 @@ def _run_artoo_status_scenarios(failures: list[str]) -> None:
                 "out and was discarded is a stub, not a refusal"
             )
             verdict, exit_code = _compose_overall_verdict({"c6_reset_recovery": result})
-            assert (verdict, exit_code) == ("INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN), (
+            assert (verdict, exit_code) == ("INVALID", EXIT_INVALID), (
                 f"an unavailable driver must never reach a passing exit code: "
                 f"{verdict} {exit_code}"
             )
@@ -5499,14 +5722,22 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
                     resolve_admission_floor(schema.build_env)
                     if schema.enforces_admission_floor else None
                 )
+                cap = resolve_sse_client_cap(schema.build_env)
                 soak = run_sse_soak(
                     client, schema, num_clients=1, duration_s=1.0, status_poll_interval_s=0.3,
-                    admission_floor=floor, early_stall_check_s=1.0, max_silence_s=5.0,
+                    admission_floor=floor, sse_client_cap=cap, early_stall_check_s=1.0,
+                    max_silence_s=5.0,
                 )
                 assert soak["verdict"] == "PASS", soak["reasons"]
                 assert soak["image"] == image, soak["image"]
                 assert soak["totalFramesReceived"] > 0, soak["totalFramesReceived"]
                 assert soak["statusFieldsRead"] == schema.fields_read(), soak["statusFieldsRead"]
+                # The cap the run was judged against travels with the driver's
+                # own report, not only in the run header.
+                assert soak["sseClientCap"] == cap.value, soak
+                assert soak["sseClientCapReadFrom"] == cap.source, soak
+                assert soak["countsTowardVerdict"] is True, soak
+                assert soak["testedAtProductionCap"] is (cap.value == 1), soak
                 assert soak["baselineResetReasonAssessment"] == "notCrashShaped", soak
                 assert "heapTolerancePct" not in soak, (
                     "the sse_soak heap verdict is no longer a percentage of a baseline "
@@ -5663,11 +5894,12 @@ def _run_admission_floor_scenarios(failures: list[str]) -> None:
 
     def an_env_that_never_references_flags_base_resolves_nothing() -> None:
         # Not a hypothetical: [env:native] declares its own build_flags and
-        # names ${flags_base.build_flags} nowhere, so no floor reaches it. This
-        # is the case #194's pin calls INVALID rather than a default.
+        # names ${flags_base.build_flags} nowhere, so no floor reaches it. An
+        # environment nobody calibrated is INVALID, never judged against a
+        # default (#194).
         try:
             floor = resolve_admission_floor("native")
-        except AdmissionFloorUnresolved as unresolved:
+        except BuildConstantUnresolved as unresolved:
             message = str(unresolved)
             assert ADMISSION_FLOOR_MACRO in message, message
             assert "flags_base" in message, message
@@ -5683,7 +5915,7 @@ def _run_admission_floor_scenarios(failures: list[str]) -> None:
     def an_unknown_env_is_refused_by_name() -> None:
         try:
             resolve_admission_floor("not_an_environment")
-        except AdmissionFloorUnresolved as unresolved:
+        except BuildConstantUnresolved as unresolved:
             assert "not_an_environment" in str(unresolved), str(unresolved)
             assert "artoo_esp32" in str(unresolved), (
                 f"the refusal must list what IS declared: {unresolved}"
@@ -5729,6 +5961,275 @@ def _run_admission_floor_scenarios(failures: list[str]) -> None:
           every_schema_names_a_real_environment)
 
 
+def _run_verdict_contract_scenarios(failures: list[str]) -> None:
+    """The exit codes and the Run Verdict ranking, pinned against literals.
+
+    Deliberately NOT written as `assert code == EXIT_FAIL`: that compares a
+    constant with itself and would keep passing if the constant moved. The
+    exit-code VALUES are this tool's contract (ADR 0035) -- a wrapper, a CI
+    step or a scheduled run may rely on them -- so they are written out here
+    as bare integers, and a change to any of them has to come back through
+    this scenario and be argued for.
+
+    The verdict STRINGS are prose and may be reworded, so they are read from
+    the constants; what is pinned about them is the ranking, and that one
+    driver's verdict IS the run's rather than being translated into a second
+    vocabulary (CONTEXT.md, Run Verdict).
+    """
+
+    def check(name: str, body: Callable[[], None]) -> None:
+        _record_scenario(name, body, failures)
+
+    def the_exit_codes_are_the_ones_a_wrapper_may_rely_on() -> None:
+        assert (EXIT_PASS, EXIT_SELF_TEST_FAILURE, EXIT_FAIL, EXIT_INVALID) == (0, 1, 2, 3), (
+            "the exit-code values are contract and did not move: 0 pass, 1 self-test "
+            "failure, 2 fail, 3 the required evidence is missing"
+        )
+        for driver_verdict, expected in (
+            (VERDICT_PASS, (VERDICT_PASS, 0)),
+            (VERDICT_OBSERVATION_ONLY, (VERDICT_PASS, 0)),
+            (VERDICT_FAIL, (VERDICT_FAIL, 2)),
+            (VERDICT_INVALID, (VERDICT_INVALID, 3)),
+            (VERDICT_UNAVAILABLE, (VERDICT_INVALID, 3)),
+            (VERDICT_INTERRUPTED_DRIVER, (VERDICT_INTERRUPTED_RUN, 3)),
+        ):
+            got = _compose_overall_verdict({"only": {"verdict": driver_verdict}})
+            assert got == expected, f"{driver_verdict!r} composed to {got}, expected {expected}"
+
+    check("the exit codes are 0/1/2/3 and every driver verdict maps to the right one",
+          the_exit_codes_are_the_ones_a_wrapper_may_rely_on)
+
+    def the_run_speaks_its_drivers_words() -> None:
+        # No second vocabulary, and no translation layer: the string a run
+        # prints is the string its driver produced. (That the RETIRED wording
+        # is gone from the source is a drift guard in
+        # test/test_tools/test_soak_schema.py -- it has to live in another file,
+        # because a grep for a string cannot be written in the file it greps.)
+        for driver_verdict in (VERDICT_PASS, VERDICT_FAIL, VERDICT_INVALID):
+            verdict, _ = _compose_overall_verdict({"only": {"verdict": driver_verdict}})
+            assert verdict == driver_verdict, (
+                f"one driver's verdict IS the run's: {driver_verdict!r} became {verdict!r}"
+            )
+
+    check("the run verdict speaks its drivers' words, with no translation layer",
+          the_run_speaks_its_drivers_words)
+
+    def a_finding_outranks_a_coverage_gap_which_outranks_a_pass() -> None:
+        # The ranking is the contract; the wording is not (ADR 0035). A real
+        # failure must never be masked by a driver that could not run, and a
+        # coverage gap must never be reported as a pass.
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_FAIL}, "b": {"verdict": VERDICT_UNAVAILABLE},
+        }) == (VERDICT_FAIL, 2)
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_PASS}, "b": {"verdict": VERDICT_UNAVAILABLE},
+        }) == (VERDICT_INVALID, 3)
+        assert _compose_overall_verdict({
+            "a": {"verdict": VERDICT_PASS}, "b": {"verdict": VERDICT_INTERRUPTED_DRIVER},
+        }) == (VERDICT_INTERRUPTED_RUN, 3)
+
+    check("a finding outranks a coverage gap, and a truncated run outranks both",
+          a_finding_outranks_a_coverage_gap_which_outranks_a_pass)
+
+    def the_artefact_version_says_what_shape_it_is() -> None:
+        assert REPORT_SCHEMA_VERSION == 4, (
+            "the artefact's shape changed; bump the version AND record what changed in "
+            "the history above REPORT_SCHEMA_VERSION"
+        )
+        source = Path(__file__).read_text(encoding="utf-8")
+        for version in range(1, REPORT_SCHEMA_VERSION + 1):
+            assert re.search(rf"(?m)^#\s+{version}\s+\S", source), (
+                f"schemaVersion {version} is claimed but its history line is missing"
+            )
+
+    check("the artefact version is stated and every version it claims is described",
+          the_artefact_version_says_what_shape_it_is)
+
+
+def _cap_override_env_section(env: str, clients: int) -> str:
+    """A platformio.ini environment that declares the client cap, appended to a
+    copy of the real file so an override is resolved by the file's own
+    composition rules rather than by a synthetic stand-in.
+
+    A child that declares build_src_flags replaces its parent's outright
+    (see _pio_flag_sources), so this is the whole of that option for this env,
+    while build_flags still reaches [flags_base] through `extends`.
+    """
+    return (
+        f"\n[env:{env}]\n"
+        "extends = env:artoo_esp32\n"
+        f"build_src_flags = -D {SSE_CLIENT_CAP_MACRO}={clients}\n"
+    )
+
+
+def _run_sse_client_cap_scenarios(failures: list[str]) -> None:
+    """The concurrency yardstick, read from the real include/web_event_stream.h
+    through the production resolver.
+
+    Nothing here restates the number, for the same reason the floor scenarios
+    do not restate 9000: a scenario that asserted 3 would keep passing against
+    a harness that had stopped reading the header, which is the exact rot this
+    derivation exists to remove. What is asserted instead is that the value
+    comes from the header, that a per-environment -D displaces it, and that an
+    unreadable or ambiguous header is refused rather than defaulted.
+    """
+
+    def check(name: str, body: Callable[[], None]) -> None:
+        _record_scenario(name, body, failures)
+
+    def the_cap_comes_from_the_header() -> None:
+        # The header is read HERE, by this scenario's own regex, and the
+        # resolver is judged against that. Asking read_header_sse_client_cap()
+        # what the header says and then checking the resolver agrees would be
+        # the reader agreeing with itself -- a resolver that had stopped
+        # reading the file and returned a constant would pass. That shape of
+        # self-agreeing check is what this whole harness exists not to ship.
+        text = WEB_EVENT_STREAM_HEADER.read_text(encoding="utf-8")
+        assert f"#ifndef {SSE_CLIENT_CAP_MACRO}" in text, (
+            "the cap must stay #ifndef-guarded, or a build could not override it and "
+            "resolving an override would be resolving something unreachable"
+        )
+        declared = re.findall(
+            rf"(?m)^\s*#\s*define\s+{re.escape(SSE_CLIENT_CAP_MACRO)}\s+(\d+)\s*$", text)
+        assert len(declared) == 1, f"expected exactly one #define, found {declared}"
+        header_default = int(declared[0])
+        header_source = str(WEB_EVENT_STREAM_HEADER.relative_to(REPO_ROOT))
+        assert read_header_sse_client_cap() == (header_default, header_source), (
+            f"the header reader must return what the file says: {declared}"
+        )
+        for name, schema in SCHEMAS.items():
+            cap = resolve_sse_client_cap(schema.build_env)
+            assert cap.env == schema.build_env, cap
+            assert cap.header_default == header_default, cap
+            assert cap.value == header_default, (
+                f"{name}: no environment declares {SSE_CLIENT_CAP_MACRO} today, so every "
+                f"image resolves the header default: {cap}"
+            )
+            assert cap.source == header_source, cap
+
+    check("the SSE client cap is read from include/web_event_stream.h, per image",
+          the_cap_comes_from_the_header)
+
+    def an_environment_d_displaces_the_header_default() -> None:
+        # No environment declares the macro today, so the override path is
+        # exercised against the REAL platformio.ini with one extra environment
+        # appended -- a branch nobody has shown working is a branch nobody
+        # should rely on. Appended as a child of artoo_esp32 rather than edited
+        # into it, so the file's own composition rules are what resolve it: the
+        # child's build_src_flags replaces the parent's, and build_flags still
+        # reaches [flags_base] through `extends`.
+        header_default, header_source = read_header_sse_client_cap()
+        overridden = header_default + 2
+        with tempfile.TemporaryDirectory() as directory:
+            ini_path = Path(directory) / "platformio.ini"
+            ini_path.write_text(
+                PLATFORMIO_INI.read_text(encoding="utf-8")
+                + _cap_override_env_section("soak_selftest_cap_override", overridden),
+                encoding="utf-8",
+            )
+            cap = resolve_sse_client_cap("soak_selftest_cap_override", ini_path=ini_path)
+            assert cap.value == overridden, cap
+            assert cap.header_default == header_default, (
+                "the displaced default is still reported, so a reader can see that the "
+                f"cap in force is an override rather than the header's number: {cap}"
+            )
+            assert cap.source.startswith("[env:soak_selftest_cap_override]"), cap
+            # And an environment with no -D still gets the header's number out
+            # of the same file, so the override is local rather than global.
+            neighbour = resolve_sse_client_cap("artoo_esp32", ini_path=ini_path)
+            assert neighbour.value == header_default, neighbour
+            assert neighbour.source == header_source, neighbour
+
+    check("a build environment's -D displaces the header default, and is reported as an "
+          "override", an_environment_d_displaces_the_header_default)
+
+    def the_header_is_read_rather_than_recalled() -> None:
+        # A header carrying a DIFFERENT number, so a reader that had stopped
+        # reading and started returning today's value is caught. Reading the
+        # real header and checking the reader agrees cannot do that: the
+        # invented constant would be the right one.
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory) / "web_event_stream.h"
+            other.write_text(
+                "#pragma once\n"
+                f"#ifndef {SSE_CLIENT_CAP_MACRO}\n"
+                f"#define {SSE_CLIENT_CAP_MACRO} 7\n"
+                "#endif\n",
+                encoding="utf-8",
+            )
+            value, source = read_header_sse_client_cap(other)
+            assert value == 7, (
+                f"the reader returned {value} for a header that declares 7 -- it is not "
+                "reading the file"
+            )
+            assert source == str(other), source
+            cap = resolve_sse_client_cap("artoo_esp32", header_path=other)
+            assert cap.value == 7 and cap.header_default == 7, cap
+            # And a header declaring the macro twice is ambiguous, not a
+            # number: which one a compile takes is not this harness's to guess.
+            twice = Path(directory) / "twice.h"
+            twice.write_text(
+                f"#define {SSE_CLIENT_CAP_MACRO} 3\n"
+                f"#define {SSE_CLIENT_CAP_MACRO} 5\n",
+                encoding="utf-8",
+            )
+            try:
+                read_header_sse_client_cap(twice)
+            except BuildConstantUnresolved as unresolved:
+                assert "2 time(s)" in str(unresolved), str(unresolved)
+            else:
+                raise AssertionError("two #defines of the cap must be refused, not picked between")
+
+    check("the header is read rather than recalled: a different header gives a different cap",
+          the_header_is_read_rather_than_recalled)
+
+    def a_header_that_declares_no_cap_is_refused() -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            empty = Path(directory) / "web_event_stream.h"
+            empty.write_text("// no cap here\n", encoding="utf-8")
+            try:
+                read_header_sse_client_cap(empty)
+            except BuildConstantUnresolved as unresolved:
+                assert SSE_CLIENT_CAP_MACRO in str(unresolved), str(unresolved)
+                assert "0 time(s)" in str(unresolved), str(unresolved)
+            else:
+                raise AssertionError(
+                    "a header with no cap must be refused, never defaulted -- a soak run at "
+                    "a concurrency this harness invented is a soak measuring nothing anyone "
+                    "specified"
+                )
+            missing = Path(directory) / "not_a_file.h"
+            try:
+                read_header_sse_client_cap(missing)
+            except BuildConstantUnresolved as unresolved:
+                assert "could not read" in str(unresolved), str(unresolved)
+            else:
+                raise AssertionError("an unreadable header must be refused, never defaulted")
+
+    check("a header that declares no cap, or cannot be read, is refused rather than "
+          "defaulted", a_header_that_declares_no_cap_is_refused)
+
+    def a_cap_below_one_is_refused() -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ini_path = Path(directory) / "platformio.ini"
+            ini_path.write_text(
+                PLATFORMIO_INI.read_text(encoding="utf-8")
+                + _cap_override_env_section("soak_selftest_cap_zero", 0),
+                encoding="utf-8",
+            )
+            try:
+                resolve_sse_client_cap("soak_selftest_cap_zero", ini_path=ini_path)
+            except BuildConstantUnresolved as unresolved:
+                assert "admits no stream at all" in str(unresolved), str(unresolved)
+                return
+        raise AssertionError(
+            "a cap of zero refuses the first client, so there is no concurrency to soak at"
+        )
+
+    check("a cap of zero is refused: there would be no concurrency to run at",
+          a_cap_below_one_is_refused)
+
+
 def _run_orchestrated_scenario(
     name: str, status_body: Any, extra_args: list[str],
     check: Callable[[dict, int, http.server.ThreadingHTTPServer], None],
@@ -5759,10 +6260,21 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
     floor = resolve_admission_floor(SCHEMAS["artoo"].build_env)
 
     def healthy(report: dict, exit_code: int, _server) -> None:
-        assert exit_code == EXIT_NO_IMMEDIATE_BLOCKER, (exit_code, report)
-        assert report["verdict"] == "NO IMMEDIATE BLOCKER", report
+        assert exit_code == EXIT_PASS, (exit_code, report)
+        assert report["verdict"] == "PASS", report
         assert report["buildEnv"] == "artoo_esp32", report
         assert report["admissionFloor"]["ordinaryFloorBytes"] == floor.ordinary_bytes, report
+        # Both yardsticks are on the run header, with their provenance, so the
+        # artefact says what it judged against and not only what it concluded.
+        cap = resolve_sse_client_cap("artoo_esp32")
+        assert report["sseClientCap"]["clients"] == cap.value, report
+        assert report["sseClientCap"]["readFrom"] == cap.source, report
+        assert report["sseClientCap"]["env"] == "artoo_esp32", report
+        # The artefact belongs to this instrument, not to the ticket that
+        # produced it: a consumer switches on schemaVersion and finds no ticket
+        # number to key off.
+        assert report["schemaVersion"] == REPORT_SCHEMA_VERSION, report
+        assert "issue" not in report, report
         soak = report["drivers"]["sse_soak"]
         assert soak["verdict"] == "PASS", soak["reasons"]
         assert soak["minLargestFreeBlockMarginBytes"] > 0, soak
@@ -5782,7 +6294,7 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
     )
 
     def crossed(report: dict, exit_code: int, _server) -> None:
-        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        assert exit_code == EXIT_FAIL, (exit_code, report)
         soak = report["drivers"]["sse_soak"]
         assert soak["verdict"] == "FAIL", soak
         assert soak["minLargestFreeBlockMarginBytes"] < 0, soak
@@ -5811,7 +6323,7 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
         return dict(FIXTURE_ARTOO_STATUS_BODY, refusedHeapFloor=refused)
 
     def refused(report: dict, exit_code: int, _server) -> None:
-        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        assert exit_code == EXIT_FAIL, (exit_code, report)
         soak = report["drivers"]["sse_soak"]
         assert soak["refusedHeapFloorAdvancedBy"] == 7, soak
         assert any("refused 7 ordinary requests" in reason for reason in soak["reasons"]), (
@@ -5837,7 +6349,7 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
         return dict(FIXTURE_ARTOO_STATUS_BODY, refusedHeapFloor=refused)
 
     def counters_reset(report: dict, exit_code: int, _server) -> None:
-        assert exit_code == EXIT_NO_GO, (exit_code, report)
+        assert exit_code == EXIT_FAIL, (exit_code, report)
         soak = report["drivers"]["sse_soak"]
         assert soak["refusedHeapFloorAdvancedBy"] == -5, soak
         assert any("went backwards" in reason for reason in soak["reasons"]), soak["reasons"]
@@ -5847,12 +6359,16 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
         counter_reset_body, [], counters_reset, failures)
 
     def unresolvable(report: dict, exit_code: int, server) -> None:
-        assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report)
-        assert report["verdict"] == "INVALID / UNKNOWN", report
+        assert exit_code == EXIT_INVALID, (exit_code, report)
+        assert report["verdict"] == "INVALID", report
         assert report["drivers"] == {}, report
         assert "admissionFloor" not in report, (
             "an unresolved floor must leave no floor in the report at all -- a null there "
             f"would still look like an answer: {report}"
+        )
+        assert "sseClientCap" not in report, (
+            "the run stopped at the floor, so no cap was resolved either -- a cap in the "
+            f"report would claim a yardstick this run never took: {report}"
         )
         assert any(ADMISSION_FLOOR_MACRO in reason for reason in report["reasons"]), report
         assert server.status_get_count == 0, (
@@ -5984,7 +6500,7 @@ def _run_interrupt_scenarios(failures: list[str]) -> None:
 
         def a_truncated_soak_is_not_a_pass() -> None:
             report, exit_code = interrupted_run("sse_soak", after_s=0.8)
-            assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report["verdict"])
+            assert exit_code == EXIT_INVALID, (exit_code, report["verdict"])
             assert report["verdict"] == VERDICT_INTERRUPTED_RUN, report["verdict"]
             soak = report["drivers"]["sse_soak"]
             assert soak["verdict"] == VERDICT_INTERRUPTED_DRIVER, soak["verdict"]
@@ -5999,7 +6515,7 @@ def _run_interrupt_scenarios(failures: list[str]) -> None:
 
         def a_truncated_storm_keeps_what_it_collected() -> None:
             report, exit_code = interrupted_run("reconnect_storm", after_s=0.8)
-            assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report["verdict"])
+            assert exit_code == EXIT_INVALID, (exit_code, report["verdict"])
             storm = report["drivers"]["reconnect_storm"]
             assert storm["verdict"] == VERDICT_INTERRUPTED_DRIVER, storm["verdict"]
             # The post-storm evidence is still gathered: the settle window runs
@@ -6059,15 +6575,19 @@ def run_self_test() -> int:
     print(
         "Running offline self-tests -- the real BenchClient.stream_sse()/get_json()/"
         "post_json(), stream_sse_with_continuity(), the status-schema readers, the "
-        "platformio.ini admission-floor resolver and run() itself, against a local "
-        "http.server fixture serving byte-exact PsychicEventSource (bench) and "
+        "admission-floor and SSE-client-cap resolvers that read platformio.ini and "
+        "include/web_event_stream.h, and run() itself, against a local http.server "
+        "fixture serving byte-exact PsychicEventSource (bench) and "
         "webEventStreamFormatPrefix (shipping) framing. No device required, no inline "
         "parse loop.\n"
     )
     failures: list[str] = []
     shipping = SCHEMAS["shipping"]
 
-    print("bench image:")
+    print("verdict and exit-code contract:")
+    _run_verdict_contract_scenarios(failures)
+
+    print("\nbench image:")
     _run_sse_scenario("normal frames parse with zero gaps", "normal", _check_normal, failures)
     _run_sse_scenario("gapped fixture reports exactly 2 gaps", "gapped", _check_gapped, failures)
     _run_sse_scenario(
@@ -6108,6 +6628,9 @@ def run_self_test() -> int:
     print("\nadmission floor, read from platformio.ini:")
     _run_admission_floor_scenarios(failures)
 
+    print("\nSSE client cap, read from include/web_event_stream.h:")
+    _run_sse_client_cap_scenarios(failures)
+
     print("\nheap verdict, driven through run():")
     _run_heap_verdict_scenarios(failures)
 
@@ -6135,9 +6658,10 @@ def run_self_test() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "protoArtoo soak harness implementing the #184 verdict contract "
-            "(issue #197). Every device run is coordinator/operator-run; this tool "
-            "never flashes and never calls `make ota`."
+            "protoArtoo soak harness: hold a controller's web stack under load for as "
+            "long as you ask, and say in one verdict and one exit code whether it held "
+            "up. Reads only -- it never flashes, never calls `make ota` and never writes "
+            "to the controller's configuration. See docs/soak.md."
         ),
     )
     parser.add_argument(
@@ -6147,8 +6671,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--device", default=None,
-        help="bench device hostname or IP. bringup/p4_hosted_bench.cpp does not "
-             "register mDNS, so there is no usable default -- required for any real run",
+        help="controller hostname or IP. Required for any real run: the bench image "
+             "registers no mDNS name, so there is no default that would be right for "
+             "every board",
     )
     parser.add_argument("--port", type=int, default=80)
     parser.add_argument("--connect-timeout-s", type=float, default=10.0)
@@ -6168,15 +6693,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--build-env", default=None,
-        help="the PlatformIO environment the board is running, and therefore the one whose "
-             "PA_ADMISSION_MIN_LARGEST_FREE_BLOCK the heap verdict is taken against. "
-             "Defaults to the product environment for --image (artoo -> artoo_esp32, "
-             "shipping -> firebeetle2, bench -> firebeetle2_hosted_bench). Set it when the "
-             "board carries a variant build: artoo_esp32_recovery_bench raises the ordinary "
+        help="the PlatformIO environment the board is running, and therefore the one "
+             "whose compiled values this run is judged against: "
+             "PA_ADMISSION_MIN_LARGEST_FREE_BLOCK for the heap verdict and "
+             "PA_ADMISSION_MAX_SSE_CLIENTS for the concurrency one. Defaults to the "
+             "product environment for --image (artoo -> artoo_esp32, shipping -> "
+             "firebeetle2, bench -> firebeetle2_hosted_bench). Set it when the board "
+             "carries a variant build: artoo_esp32_recovery_bench raises the ordinary "
              "floor to 40000 and publishes a payload byte-identical to artoo_esp32's, so "
-             "nothing in /api/status can tell the two apart and the harness will not guess. "
-             "The value is READ from platformio.ini, never restated here; an environment "
-             "that resolves no floor (env:native declares its own build_flags and never "
+             "nothing in /api/status can tell the two apart and the harness will not "
+             "guess. Both values are READ -- from platformio.ini and from "
+             "include/web_event_stream.h -- and never restated here; an environment that "
+             "resolves no floor (env:native declares its own build_flags and never "
              "references [flags_base]) makes the run INVALID rather than judged against a "
              "default",
     )
@@ -6185,14 +6713,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--duration", type=float, default=1800.0,
-        help="sse_soak duration in seconds (default 1800 = 30 minutes, matching #184's "
-             "'tens of minutes')",
+        help="sse_soak duration in seconds (default 1800 = 30 minutes). A soak is worth "
+             "the time it is given: hours are what this driver is for",
     )
     parser.add_argument(
-        "--num-clients", type=int, default=PA_ADMISSION_MAX_SSE_CLIENTS,
-        help=f"concurrent SSE clients for sse_soak. Only {PA_ADMISSION_MAX_SSE_CLIENTS} "
-             "(production's live cap, PA_ADMISSION_MAX_SSE_CLIENTS) counts toward the "
-             "verdict; higher counts are logged as observation only, per #184",
+        "--num-clients", type=int, default=None,
+        help="concurrent SSE clients for sse_soak. Defaults to the client cap the "
+             "firmware compiles in (PA_ADMISSION_MAX_SSE_CLIENTS, resolved for "
+             "--build-env from include/web_event_stream.h and any -D that displaces it) "
+             "-- deliberately not a number written into this tool, which would go on "
+             "meaning 'at the cap' after the cap had moved. At or below the cap a run "
+             "counts toward the verdict; above it the run is recorded as observation "
+             "only, because past the cap the firmware refuses the extra stream by "
+             "design and what is being measured is admission, not the transport",
     )
     parser.add_argument("--status-poll-interval-s", type=float, default=5.0)
     parser.add_argument(
@@ -6247,7 +6780,7 @@ def build_parser() -> argparse.ArgumentParser:
              "It governs recovery comparisons only. The sse_soak heap verdict is NOT a "
              "percentage of a baseline -- it is taken against the compiled admission floor "
              "(--build-env), because a percentage of an arbitrary sample says nothing about "
-             "whether the controller was still serving (#194)",
+             "whether the controller was still serving",
     )
     parser.add_argument(
         "--progress-interval-s", type=float, default=DEFAULT_PROGRESS_INTERVAL_S,
@@ -6325,7 +6858,9 @@ def main(argv: list[str]) -> int:
 
     if not args.device:
         parser.error("--device is required (the bench sketch has no mDNS name to default to)")
-    if args.num_clients < 1:
+    # None means "not given", which run() resolves to the compiled client cap.
+    # Only a number the operator actually typed can be out of range here.
+    if args.num_clients is not None and args.num_clients < 1:
         parser.error("--num-clients must be >= 1")
     if args.storm_clients < 1:
         parser.error("--storm-clients must be >= 1")
@@ -6414,8 +6949,8 @@ def main(argv: list[str]) -> int:
     slowest = max(report.get("phases") or [], key=lambda phase: phase["durationS"], default=None)
     failure = first_failure(report)
     verdict_kind = (
-        "ok" if exit_code == EXIT_NO_IMMEDIATE_BLOCKER
-        else "warn" if exit_code == EXIT_INVALID_UNKNOWN else "fail"
+        "ok" if exit_code == EXIT_PASS
+        else "warn" if exit_code == EXIT_INVALID else "fail"
     )
     monitor.rule("finished")
     monitor.rows([
@@ -6436,10 +6971,10 @@ def main(argv: list[str]) -> int:
     monitor.line(f"run verdict: {report['verdict']} (exit {exit_code})", kind=verdict_kind)
     console.close()
 
-    # The yardstick is printed next to the verdict, not only buried in the
+    # The yardsticks are printed next to the verdict, not only buried in the
     # JSON: a reader scanning the tail of a run has to be able to see WHICH
-    # environment's floor the heap verdict was taken against without going
-    # looking for it.
+    # floor the heap verdict was taken against, and WHICH cap decided whether
+    # the run counted, without going looking for them.
     floor_report = report.get("admissionFloor")
     if isinstance(floor_report, dict):
         print(
@@ -6451,10 +6986,18 @@ def main(argv: list[str]) -> int:
         )
     elif isinstance(floor_report, str):
         print(f"\nAdmission floor: {floor_report}", file=sys.stderr)
+    cap_report = report.get("sseClientCap")
+    if isinstance(cap_report, dict):
+        print(
+            f"SSE client cap: {cap_report['clients']} concurrent stream(s) for build "
+            f"environment {cap_report['env']} ({cap_report['macro']} in "
+            f"{cap_report['readFrom']})",
+            file=sys.stderr,
+        )
     if report.get("interrupted"):
         print(
             f"\nInterrupted by {report.get('interruptSignal')}: the report above covers "
-            "only the window actually observed and carries no go/no-go verdict"
+            "only the window actually observed and reaches no verdict about the controller"
             + (f". Written to {json_path}" if json_path is not None else ""),
             file=sys.stderr,
         )

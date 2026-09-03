@@ -300,19 +300,21 @@ class AnInterruptedRunCanNeverReportAPass(unittest.TestCase):
         self.port = self.server.server_address[1]
         self.client = soak.BenchClient("127.0.0.1", self.port, connect_timeout_s=5.0)
         self.floor = soak.resolve_admission_floor(ARTOO.build_env)
+        self.cap = soak.resolve_sse_client_cap(ARTOO.build_env)
 
     def soak_report(self, monitor):
         return soak.run_sse_soak(
             self.client, ARTOO, num_clients=1, duration_s=30.0,
             status_poll_interval_s=0.2, admission_floor=self.floor,
-            early_stall_check_s=1.0, max_silence_s=5.0, monitor=monitor,
+            sse_client_cap=self.cap, early_stall_check_s=1.0, max_silence_s=5.0,
+            monitor=monitor,
         )
 
     def test_a_clean_short_run_still_passes(self):
         report = soak.run_sse_soak(
             self.client, ARTOO, num_clients=1, duration_s=1.0,
             status_poll_interval_s=0.2, admission_floor=self.floor,
-            early_stall_check_s=1.0, max_silence_s=5.0,
+            sse_client_cap=self.cap, early_stall_check_s=1.0, max_silence_s=5.0,
         )
         self.assertEqual(report["verdict"], "PASS", report["reasons"])
         self.assertNotIn("interrupted", report)
@@ -339,7 +341,7 @@ class AnInterruptedRunCanNeverReportAPass(unittest.TestCase):
         verdict, code = soak._compose_overall_verdict(
             {"sse_soak": {"verdict": soak.VERDICT_INTERRUPTED_DRIVER}})
         self.assertEqual(verdict, soak.VERDICT_INTERRUPTED_RUN)
-        self.assertEqual(code, soak.EXIT_INVALID_UNKNOWN)
+        self.assertEqual(code, soak.EXIT_INVALID)
 
     def test_a_truncated_driver_outranks_a_passing_one(self):
         verdict, code = soak._compose_overall_verdict({
@@ -347,17 +349,19 @@ class AnInterruptedRunCanNeverReportAPass(unittest.TestCase):
             "reconnect_storm": {"verdict": soak.VERDICT_INTERRUPTED_DRIVER},
         })
         self.assertEqual(verdict, soak.VERDICT_INTERRUPTED_RUN)
-        self.assertNotEqual(code, soak.EXIT_NO_IMMEDIATE_BLOCKER)
+        self.assertNotEqual(code, soak.EXIT_PASS)
 
-    def test_a_completed_run_still_maps_to_the_verdicts_it_always_did(self):
+    def test_a_completed_run_still_reaches_the_exit_codes_it_always_did(self):
+        # The verdict WORDING was reworded when #184's go/no-go vocabulary was
+        # retired (ADR 0035); the exit-code VALUES are contract and did not
+        # move. Both halves are written out, so a future rewording has to come
+        # back through here and a changed exit code cannot slip past.
         for drivers, expected in (
-            ({"a": {"verdict": "PASS"}}, ("NO IMMEDIATE BLOCKER", soak.EXIT_NO_IMMEDIATE_BLOCKER)),
-            ({"a": {"verdict": "OBSERVATION_ONLY"}},
-             ("NO IMMEDIATE BLOCKER", soak.EXIT_NO_IMMEDIATE_BLOCKER)),
-            ({"a": {"verdict": "FAIL"}}, ("NO-GO", soak.EXIT_NO_GO)),
-            ({"a": {"verdict": "INVALID"}}, ("INVALID / UNKNOWN", soak.EXIT_INVALID_UNKNOWN)),
-            ({"a": {"verdict": "UNAVAILABLE"}},
-             ("INVALID / UNKNOWN", soak.EXIT_INVALID_UNKNOWN)),
+            ({"a": {"verdict": "PASS"}}, ("PASS", 0)),
+            ({"a": {"verdict": "OBSERVATION_ONLY"}}, ("PASS", 0)),
+            ({"a": {"verdict": "FAIL"}}, ("FAIL", 2)),
+            ({"a": {"verdict": "INVALID"}}, ("INVALID", 3)),
+            ({"a": {"verdict": "UNAVAILABLE"}}, ("INVALID", 3)),
         ):
             self.assertEqual(soak._compose_overall_verdict(drivers), expected, drivers)
 
@@ -369,7 +373,7 @@ class AnInterruptedRunCanNeverReportAPass(unittest.TestCase):
             "--status-poll-interval-s", "0.2", "--early-stall-check-s", "1.0",
         ])
         report, code = soak.run(args, monitor)
-        self.assertEqual(code, soak.EXIT_INVALID_UNKNOWN)
+        self.assertEqual(code, soak.EXIT_INVALID)
         self.assertEqual(report["verdict"], soak.VERDICT_INTERRUPTED_RUN)
         self.assertEqual(set(report["drivers"]),
                          {"sse_soak", "reconnect_storm", "c6_reset_recovery"})
@@ -423,7 +427,7 @@ class TheReportEchoesTheClocksAndTheTranscriptPath(unittest.TestCase):
 
     def test_a_refusal_before_the_device_is_touched_still_carries_clocks(self):
         report, code = self.run_report(extra=["--build-env", "native"])
-        self.assertEqual(code, soak.EXIT_INVALID_UNKNOWN)
+        self.assertEqual(code, soak.EXIT_INVALID)
         self.assertIn("startedAt", report)
         self.assertIn("endedAt", report)
         self.assertEqual(report["phases"], [])
@@ -466,8 +470,11 @@ class TheCheckpointArtifact(unittest.TestCase):
             checkpoint = json.loads(artifact.read_text())
         self.assertIs(checkpoint["checkpoint"], True)
         self.assertEqual(checkpoint["verdict"], soak.VERDICT_CHECKPOINT)
-        self.assertNotIn(checkpoint["verdict"],
-                         ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN"))
+        self.assertNotIn(
+            checkpoint["verdict"],
+            (soak.VERDICT_PASS, soak.VERDICT_FAIL, soak.VERDICT_INVALID),
+            "a checkpoint must not carry any verdict a finished run can carry",
+        )
         self.assertEqual(checkpoint["drivers"]["sse_soak"]["verdict"], "PASS")
 
     def test_the_artifact_is_replaced_atomically_and_leaves_no_partial_behind(self):
@@ -487,8 +494,8 @@ class TheStormSeparatesPollGranularityFromLiveness(unittest.TestCase):
     `run_reconnect_storm()` passed its 0.25s abort granularity to
     `stream_sse()` as the read window, and an expired read window was reported
     as a stalled stream -- so any stream slower than 4 Hz read as broken, which
-    is every stream this harness drives (a device run returned NO-GO with 218
-    stalls out of 218 cycles against a board that was fine). The classifier
+    is every stream this harness drives (a device run failed with 218 stalls
+    out of 218 cycles against a board that was fine). The classifier
     below now judges what a cycle actually observed, and these pin both sides
     of that line: what may fail, and what must still fail.
     """
