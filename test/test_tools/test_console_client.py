@@ -638,6 +638,22 @@ class ScriptedSerialEngine(unittest.TestCase):
 
         self.assertEqual(worst, console_client.EXIT_TIMEOUT)
 
+    def test_status_err_alone_never_changes_the_exit_code(self):
+        # docs/console-protocol.md's own verdict rule: `line-too-long`,
+        # `secret-not-settable`, `out-of-range` etc. are expected RESULTS of
+        # rows, not tool failures -- only `dropped=` or a timeout do that.
+        self._peer({
+            "bad-op": b"< id=1 type=result status=err outcome=invalid reason=unknown-operation\n",
+        })
+        transport = console_client.SerialTransport(self.fd, self.slave_path, 115200,
+                                                     settle_seconds=0)
+        directives = [console_client.Directive("send", "bad-op", "--send")]
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            worst = console_client.run_scripted(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_OK)
+
 
 class DetachAndReattach(unittest.TestCase):
     """#264 "Detach survives": a real I/O error on the serial fd (measured
@@ -1057,6 +1073,29 @@ class HttpTransportAgainstAStub(unittest.TestCase):
         with self.assertRaises(console_client.ConsoleClientToolFailure):
             with contextlib.redirect_stdout(io.StringIO()):
                 transport.send_line("system.status.health", timeout=1.0)
+
+    def test_colour_defaults_off_when_stdout_is_piped(self):
+        # A real end-to-end process, not colorize_record_line() in
+        # isolation: subprocess.run(capture_output=True) makes stdout a
+        # pipe, which is exactly the case main()'s own
+        # `sys.stdout.isatty()` decision (no --color/--no-color given) must
+        # resolve to False for -- an error record proves it, since that is
+        # the one line colorize_record_line() would otherwise wrap in
+        # ANSI red.
+        self.responses["bad-op"] = (
+            200,
+            b'{"records":[{"id":1,"type":"result","status":"err",'
+            b'"outcome":"invalid","reason":"unknown-operation"}]}',
+        )
+
+        r = subprocess.run(
+            [sys.executable, str(MODULE_PATH), "--http", self.stub.base_url, "--send", "bad-op"],
+            capture_output=True, text=True, timeout=10,
+        )
+
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("status=err", r.stdout)
+        self.assertNotIn("\x1b[", r.stdout, "ANSI reached a piped (non-TTY) transcript")
 
 
 def _fake_args(**overrides):
