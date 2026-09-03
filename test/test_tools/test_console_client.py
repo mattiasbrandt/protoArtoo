@@ -399,6 +399,275 @@ class ReadOrNoneAndWriteAll(unittest.TestCase):
         self.assertEqual(received.get("data"), payload)
 
 
+class FakeConsolePeer:
+    """Stands in for the firmware side of a pty pair for scripted-mode tests.
+
+    Runs a background reader thread on the master fd, accumulating bytes
+    until a CR/LF (matching a real command line's terminator) and looking
+    the decoded line up in `responses` to write back -- or, for raw/key
+    tests where there is no line terminator at all, every raw chunk
+    received is appended to `raw_received` so a test can assert on the
+    exact bytes the "firmware" side saw.
+    """
+
+    def __init__(self, master_fd: int, responses: dict[str, bytes] | None = None):
+        self.master_fd = master_fd
+        self.responses = responses or {}
+        self.raw_received: list[bytes] = []
+        self._buf = bytearray()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        os.set_blocking(self.master_fd, False)
+        while not self._stop.is_set():
+            r, _, _ = select.select([self.master_fd], [], [], 0.05)
+            if not r:
+                continue
+            try:
+                chunk = os.read(self.master_fd, 256)
+            except (BlockingIOError, OSError):
+                continue
+            if not chunk:
+                continue
+            self.raw_received.append(chunk)
+            self._buf.extend(chunk)
+            while b"\r" in self._buf or b"\n" in self._buf:
+                idx = min((i for i in
+                           (self._buf.find(b"\r"), self._buf.find(b"\n"))
+                           if i != -1), default=-1)
+                if idx == -1:
+                    break
+                line = bytes(self._buf[:idx]).decode("utf-8", "replace")
+                del self._buf[:idx + 1]
+                reply = self.responses.get(line)
+                if reply is not None:
+                    os.write(self.master_fd, reply)
+
+    def close(self):
+        self._stop.set()
+        self._thread.join(timeout=2)
+
+
+class ScriptedSerialEngine(unittest.TestCase):
+    """#264: SerialTransport's send/reassembly, raw/key, listen, settle, and
+    run_scripted_serial()'s exit-code aggregation -- against a real pty pair
+    and a synthetic peer, never mocked I/O."""
+
+    def setUp(self):
+        self.master, self.slave = pty.openpty()
+        self.addCleanup(self._close_quietly, self.master)
+        self.addCleanup(self._close_quietly, self.slave)
+        slave_path = os.ttyname(self.slave)
+        self.fd = console_client.open_posix_port(slave_path, 115200, writable=True)
+        self.addCleanup(self._close_quietly, self.fd)
+
+    @staticmethod
+    def _close_quietly(fd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _peer(self, responses=None):
+        peer = FakeConsolePeer(self.master, responses)
+        self.addCleanup(peer.close)
+        return peer
+
+    def test_send_reassembles_a_multi_record_group_in_wire_order(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\n"
+                b"< id=1 type=field name=estop value=false\n"
+                b"< id=1 type=end status=ok outcome=completed\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            records, closed = transport.send_line("system.status.health", timeout=2.0)
+
+        self.assertTrue(closed)
+        self.assertEqual([r.type for r in records], ["begin", "field", "end"])
+        self.assertEqual(records[1].fields["name"], "estop")
+        printed = out.getvalue()
+        self.assertIn("--- send b'system.status.health\\r' ---", printed)
+        # Wire order: the marker precedes the echoed records in the transcript.
+        self.assertLess(printed.index("--- send"), printed.index("type=begin"))
+
+    def test_a_foreign_id_interleaved_mid_group_never_ends_the_read(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\n"
+                b"< id=99 type=result status=ok outcome=queued\n"  # concurrent browser session
+                b"< id=1 type=end status=ok outcome=completed\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            records, closed = transport.send_line("system.status.health", timeout=2.0)
+
+        self.assertTrue(closed)
+        self.assertEqual([r.id for r in records], [1, 1])
+
+    def test_no_closing_record_times_out(self):
+        self._peer({
+            "system.status.health": b"< id=1 type=begin operation=system.status.health\n",
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            records, closed = transport.send_line("system.status.health", timeout=0.5)
+
+        self.assertFalse(closed)
+
+    def test_dropped_on_the_closing_record_is_flagged_as_loss_not_timeout(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\n"
+                b"< id=1 type=end status=ok outcome=completed dropped=2\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        directives = [console_client.Directive("send", "system.status.health", "--send")]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worst = console_client.run_scripted_serial(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_LOSS)
+        self.assertIn("[LOSS] dropped=2", out.getvalue())
+
+    def test_blank_line_inside_a_group_is_an_anomaly_not_the_loss_signature(self):
+        self._peer({
+            "system.status.health": (
+                b"< id=1 type=begin operation=system.status.health\n"
+                b"\n"
+                b"< id=1 type=end status=ok outcome=completed\n"
+            ),
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        directives = [console_client.Directive("send", "system.status.health", "--send")]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worst = console_client.run_scripted_serial(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_OK,
+                          "a blank line alone must never change the exit code")
+        self.assertIn("[ANOMALY] blank line inside record group id=1", out.getvalue())
+
+    def test_raw_send_is_byte_exact_and_marked_in_wire_position(self):
+        peer = self._peer()
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            transport.send_raw(console_client.unescape_raw("sys\\t"), listen_seconds=0.2)
+
+        self.assertIn(r"--- send b'sys\t' ---", out.getvalue())
+        self.assertEqual(b"".join(peer.raw_received), b"sys\t")
+
+    def test_key_directive_sends_the_tab_byte_embedded_cli_expects(self):
+        peer = self._peer()
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            transport.send_raw(console_client.resolve_key_bytes("tab"), listen_seconds=0.2)
+
+        self.assertEqual(b"".join(peer.raw_received), b"\t")
+
+    def test_settle_delays_only_the_first_send(self):
+        self._peer({"a": b"< id=1 type=result status=ok outcome=queued\n"})
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0.3)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            t0 = time.monotonic()
+            transport.send_line("a", timeout=2.0)
+            first_elapsed = time.monotonic() - t0
+
+            t1 = time.monotonic()
+            transport.send_line("a", timeout=2.0)
+            second_elapsed = time.monotonic() - t1
+
+        self.assertGreaterEqual(first_elapsed, 0.3)
+        self.assertLess(second_elapsed, 0.15, "settle must not repeat after the first send")
+
+    def test_run_scripted_serial_takes_the_worst_exit_code_across_directives(self):
+        self._peer({
+            "ok-one": b"< id=1 type=result status=ok outcome=queued\n",
+            # no response registered for "will-timeout" -- times out by design
+        })
+        transport = console_client.SerialTransport(self.fd, settle_seconds=0)
+        directives = [
+            console_client.Directive("send", "ok-one", "--send"),
+            console_client.Directive("timeout", "0.3", "--timeout"),
+            console_client.Directive("send", "will-timeout", "--send"),
+        ]
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            worst = console_client.run_scripted_serial(transport, directives)
+
+        self.assertEqual(worst, console_client.EXIT_TIMEOUT)
+
+
+class DirectiveParsingAndHelpers(unittest.TestCase):
+    """#264: the small pure-logic pieces the scripted engine is built from."""
+
+    def test_blank_and_comment_lines_are_skipped(self):
+        self.assertIsNone(console_client.parse_directive_line("", "f:1"))
+        self.assertIsNone(console_client.parse_directive_line("   ", "f:2"))
+        self.assertIsNone(console_client.parse_directive_line("# a comment", "f:3"))
+
+    def test_row_marker_is_split_from_send_lines(self):
+        d = console_client.parse_directive_line("@row 260 detach-replug", "f:1")
+        self.assertEqual((d.kind, d.arg), ("row", "260 detach-replug"))
+
+    def test_send_argument_keeps_embedded_spaces_and_quotes(self):
+        d = console_client.parse_directive_line(
+            'send wifi.config.settings mode=client sta-ssid="Workshop WiFi"', "f:1")
+        self.assertEqual(d.kind, "send")
+        self.assertEqual(d.arg, 'wifi.config.settings mode=client sta-ssid="Workshop WiFi"')
+
+    def test_unknown_directive_raises(self):
+        with self.assertRaises(console_client.ScriptUsageError):
+            console_client.parse_directive_line("frobnicate foo", "f:1")
+
+    def test_resolve_key_bytes_maps_known_names(self):
+        self.assertEqual(console_client.resolve_key_bytes("tab"), b"\t")
+        self.assertEqual(console_client.resolve_key_bytes("up,up,enter"), b"\x1b[A\x1b[A\r")
+
+    def test_resolve_key_bytes_rejects_unknown_name(self):
+        with self.assertRaises(console_client.ScriptUsageError):
+            console_client.resolve_key_bytes("pageup")
+
+    def test_unescape_raw_matches_backslash_escape_grammar(self):
+        self.assertEqual(console_client.unescape_raw("sys\\t"), b"sys\t")
+        self.assertEqual(console_client.unescape_raw("a\\r"), b"a\r")
+
+    def test_build_sendlen_line_pads_with_filler(self):
+        line = console_client.build_sendlen_line(10, "ab")
+        self.assertEqual(len(line), 10)
+        self.assertTrue(line.startswith("ab"))
+
+    def test_build_sendlen_line_truncates_an_oversized_prefix(self):
+        self.assertEqual(console_client.build_sendlen_line(3, "abcdef"), "abc")
+
+    def test_pause_without_a_controlling_terminal_fails_loudly(self):
+        with mock.patch.object(console_client.sys.stdin, "isatty", return_value=False):
+            with self.assertRaises(console_client.ScriptUsageError):
+                console_client.run_pause("unplug the cable")
+
+    def test_pause_with_a_controlling_terminal_waits_for_enter(self):
+        with mock.patch.object(console_client.sys.stdin, "isatty", return_value=True), \
+             mock.patch("builtins.input", return_value="") as mocked_input:
+            console_client.run_pause("unplug the cable")
+        mocked_input.assert_called_once()
+
+
 class ReadLinesFdBurstDrain(unittest.TestCase):
     """#264: a burst delivered in ONE os.read() call must not strand its
     later lines behind a single-line-per-select()-wakeup drain.

@@ -59,6 +59,7 @@
 
 import argparse
 import os
+import re
 import select
 import signal
 import sys
@@ -108,6 +109,15 @@ def open_posix_port(port: str, baud: int, writable: bool = False) -> int:
 
     termios.tcsetattr(fd, termios.TCSANOW,
                       [iflag, oflag, cflag, lflag, baud_const, baud_const, cc])
+
+    # #264: flush immediately after termios, in every mode that opens through
+    # this function (listen, interactive, scripted) -- discards whatever
+    # arrived under the port's PREVIOUS line settings (a stale partial
+    # escape byte, a fragment from before this process existed) so the first
+    # bytes this process decodes are the first bytes it actually applied
+    # raw-mode settings for. TCIFLUSH is the input-side-only flush: nothing
+    # queued for transmit is touched.
+    termios.tcflush(fd, termios.TCIFLUSH)
     return fd
 
 
@@ -381,11 +391,429 @@ def stream_forever_pyserial(s) -> None:
         print("\n[monitor exited]", file=sys.stderr)
 
 
+# =============================================================================
+# Scripted mode (#264)
+#
+# One directive per line (from --script <file>) or the same directives given
+# directly on the command line, driving either Console Adapter: --port <dev>
+# for serial, --http <base-url> for the browser adapter's POST /api/console.
+# Grammar and verdicts: docs/console-protocol.md; the send/reassembly
+# algorithm below is read from tasks/console_bench.py's send_command() (the
+# gitignored stopgap driver named in the #264 coordinator pin) -- its read
+# loop was sound per ADR 0036, so it is the reference this reimplements
+# against the shared ConsoleRecord model both transports render through.
+# =============================================================================
+
+# Exit codes (docs/console-protocol.md's verdict rule: status=err is data and
+# never changes these). Cross-directive severity is the MAX seen across the
+# whole run -- not explicitly ordered by the ticket for the case where more
+# than one applies in one run, but 4 (a server-confirmed answer cap) is a
+# more specific diagnosis than 3 (a server-confirmed drop), which is more
+# specific than 2 (we simply never heard a close) -- so "highest number wins"
+# tracks "most specific finding wins".
+EXIT_OK = 0
+EXIT_TOOL_FAILURE = 1
+EXIT_TIMEOUT = 2
+EXIT_LOSS = 3
+EXIT_ADAPTER_CAPPED = 4
+
+DEFAULT_SEND_TIMEOUT = 8.0   # tasks/console_bench.py's --timeout default
+DEFAULT_LISTEN_SECONDS = 2.0  # tasks/console_bench.py's raw/key drain floor was 1.5s; rounded up
+DEFAULT_SETTLE_SECONDS = 0.3  # acceptance criterion's stated default
+
+
+class ScriptUsageError(Exception):
+    """A directive is malformed, or valid but not usable on the active
+    transport (raw/key/listen are serial-only) or the active terminal
+    (pause with no controlling tty). Fatal: the run stops rather than
+    skipping the bad line, per the ticket's "fails loudly" requirement."""
+
+
+class AdapterCapped(Exception):
+    """Raised by a transport's send_line()/send_raw() when the ADAPTER
+    itself reports it could not carry the full answer (HTTP 500 "response
+    too large for this adapter", or a 200 envelope with "truncated":true).
+    Kept distinct from "did not close in time": both look like a stalled
+    request from the caller's side, but one is the server explicitly
+    refusing size, and the ticket requires the transcript never blame a
+    timeout for a cap."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+# Key names accepted by the `key <name[,name...]>` directive, mapped to the
+# exact bytes embedded-cli's line editor recognises. Read from
+# lib/embedded-cli/src/embedded_cli.c, not guessed at from a generic VT100
+# reference: onControlInput()/isControlChar() (Enter, Backspace, Tab) and
+# onEscapedInput() (arrows via ESC[<A-D>, Home via ESC[H, End via ESC[F,
+# Delete via ESC[3~ -- Home/End's alternate ESC[1~/ESC[7~ and ESC[4~/ESC[8~
+# forms exist in the library too, but a real terminal's arrow/Home/End keys
+# emit the primary forms below, which is what a Console Client is standing
+# in for here). Backspace is 0x7F: isControlChar() treats '\b' and 0x7F as
+# the same key, and 0x7F (DEL) is what a raw-mode terminal's physical
+# Backspace key sends on this project's supported terminals.
+KEY_BYTES = {
+    "tab": b"\t",
+    "enter": b"\r",
+    "backspace": b"\x7f",
+    "delete": b"\x1b[3~",
+    "up": b"\x1b[A",
+    "down": b"\x1b[B",
+    "right": b"\x1b[C",
+    "left": b"\x1b[D",
+    "home": b"\x1b[H",
+    "end": b"\x1b[F",
+}
+
+
+def resolve_key_bytes(names: str) -> bytes:
+    """`names` is a comma-separated list, e.g. `up,up,enter`."""
+    out = bytearray()
+    for name in names.split(","):
+        name = name.strip()
+        try:
+            out.extend(KEY_BYTES[name])
+        except KeyError:
+            raise ScriptUsageError(
+                f"unknown key name {name!r}; known keys: {', '.join(sorted(KEY_BYTES))}"
+            ) from None
+    return bytes(out)
+
+
+def unescape_raw(text: str) -> bytes:
+    """Decode `raw <escaped bytes>`'s backslash escapes (\\t, \\r, \\xNN, ...).
+
+    Lifted from tasks/console_bench.py's own `unescape()` (the reference
+    driver named in the #264 pin): encode to UTF-8 first so a literal
+    multi-byte character in the directive still round-trips, decode with
+    Python's own escape grammar, then re-encode latin-1 to get the exact
+    byte values back out (unicode_escape's decode step yields a str whose
+    code points ARE the intended byte values for anything in the escape
+    grammar).
+    """
+    return text.encode("utf-8").decode("unicode_escape").encode("latin-1")
+
+
+def _split_kv_pairs(rest: str) -> dict[str, str]:
+    """Split a Console Record's trailing `key=value ...` text into a dict.
+
+    Hand-rolled rather than shlex: docs/console-protocol.md 1.2 and
+    consoleQuoteValue() (src/console/console_record.cpp) define a narrower
+    quoting grammar than shlex's -- a value is either bare (no spaces) or
+    double-quoted with ONLY `"` and `\\` escaped inside -- and the firmware
+    is the one producing these lines, so they are always well-formed against
+    that exact grammar.
+    """
+    pairs: dict[str, str] = {}
+    i, n = 0, len(rest)
+    while i < n:
+        while i < n and rest[i] == " ":
+            i += 1
+        if i >= n:
+            break
+        eq = rest.find("=", i)
+        if eq == -1:
+            break
+        key = rest[i:eq]
+        i = eq + 1
+        if i < n and rest[i] == '"':
+            i += 1
+            chars = []
+            while i < n and rest[i] != '"':
+                if rest[i] == "\\" and i + 1 < n and rest[i + 1] in ('"', "\\"):
+                    chars.append(rest[i + 1])
+                    i += 2
+                else:
+                    chars.append(rest[i])
+                    i += 1
+            i += 1  # skip closing quote
+            pairs[key] = "".join(chars)
+        else:
+            start = i
+            while i < n and rest[i] != " ":
+                i += 1
+            pairs[key] = rest[start:i]
+    return pairs
+
+
+class ConsoleRecord:
+    """One Console Record (docs/console-protocol.md 3.1), transport-neutral:
+    built from a parsed serial wire line or a decoded HTTP JSON record so
+    verdict logic (below) never needs to know which adapter answered."""
+
+    __slots__ = ("id", "type", "fields")
+
+    def __init__(self, id_: int, type_: str, fields: dict[str, str]):
+        self.id = id_
+        self.type = type_
+        self.fields = fields
+
+
+_RECORD_LINE_RE = re.compile(r"^< id=(\d+) type=(\S+)(?: (.*))?$")
+
+
+def parse_serial_record_line(line: str) -> ConsoleRecord | None:
+    """`line` is one already-decoded, already-stripped wire line. Returns
+    None for anything that is not a Console Record -- a log line, the
+    banner, a bare prompt echo -- which a scripted read simply ignores."""
+    m = _RECORD_LINE_RE.match(line)
+    if not m:
+        return None
+    return ConsoleRecord(int(m.group(1)), m.group(2), _split_kv_pairs(m.group(3) or ""))
+
+
+def build_sendlen_line(n: int, prefix: str) -> str:
+    """Build an exactly-`n`-byte line for the overflow rows (serial refuses
+    at 62 bytes, browser at 255 -- docs/console-protocol.md 1.3). `prefix` is
+    kept whole and padded with filler up to length n, or truncated to n if
+    it is already that long or longer."""
+    if len(prefix) >= n:
+        return prefix[:n]
+    return prefix + ("x" * (n - len(prefix)))
+
+
+class SerialTransport:
+    """Scripted-mode serial adapter: byte-exact writes, wire-order reads.
+
+    Owns the one-time settle-before-first-send delay (acceptance criterion:
+    "settle only before the first scripted serial send" -- listen and
+    interactive never settle) and TCIFLUSH, which already happens inside
+    open_posix_port() for every serial mode.
+    """
+
+    def __init__(self, fd: int, settle_seconds: float = DEFAULT_SETTLE_SECONDS):
+        self.fd = fd
+        self.settle_seconds = settle_seconds
+        self._settled = False
+
+    def _settle_once(self) -> None:
+        if not self._settled:
+            if self.settle_seconds > 0:
+                time.sleep(self.settle_seconds)
+            self._settled = True
+
+    def _write_marked(self, payload: bytes) -> None:
+        print(f"--- send {payload!r} ---", flush=True)
+        _write_all(self.fd, payload)
+
+    def send_line(self, line: str, timeout: float) -> tuple[list[ConsoleRecord], bool]:
+        """`send`/`sendlen`: line + CR, wait for the request to close.
+
+        Reassembly per docs/console-protocol.md 3.2 (reference algorithm:
+        tasks/console_bench.py's send_command()): the first record whose id
+        follows the send owns this request; a differently-id'd record is a
+        concurrent browser session's and never ends this read. A blank line
+        seen while a group is open is a wire anomaly (ADR 0036), reported
+        in-stream and marked, never treated as the loss signature itself.
+        """
+        self._settle_once()
+        self._write_marked(line.encode("utf-8") + b"\r")
+        return self._read_group(timeout)
+
+    def send_raw(self, payload: bytes, listen_seconds: float) -> None:
+        """`raw`/`key`: byte-exact, no CR/LF translation, no reassembly --
+        then a listen window, per the acceptance criterion."""
+        self._settle_once()
+        self._write_marked(payload)
+        self._drain_for(listen_seconds)
+
+    def capture(self, seconds: float) -> None:
+        """Standalone `listen <s>`: watch only, no send, no settle (settle
+        exists to let an attach reprint land before OUR first send; a
+        listen is exactly the case that must not delay behind it, or it
+        loses the boot log it exists to catch)."""
+        self._drain_for(seconds)
+
+    def _read_group(self, timeout: float) -> tuple[list[ConsoleRecord], bool]:
+        records: list[ConsoleRecord] = []
+        req_id: int | None = None
+        closed = False
+        buf = bytearray()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            r, _, _ = select.select([self.fd], [], [], 0.1)
+            if not r:
+                continue
+            chunk = _read_or_none(self.fd, 4096)
+            if not chunk:
+                continue
+            buf.extend(chunk)
+            while b"\n" in buf:
+                raw, _, rest = buf.partition(b"\n")
+                buf[:] = rest
+                text = raw.decode("utf-8", "replace").rstrip("\r")
+                print(text, flush=True)
+                if text == "":
+                    if req_id is not None:
+                        print(f"[ANOMALY] blank line inside record group id={req_id}",
+                              flush=True)
+                    continue
+                rec = parse_serial_record_line(text)
+                if rec is None:
+                    continue
+                if req_id is None:
+                    req_id = rec.id
+                if rec.id != req_id:
+                    continue
+                records.append(rec)
+                if rec.type in ("result", "end"):
+                    closed = True
+                    break
+            if closed:
+                break
+        return records, closed
+
+    def _drain_for(self, seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        buf = bytearray()
+        while time.monotonic() < deadline:
+            r, _, _ = select.select([self.fd], [], [], 0.1)
+            if not r:
+                continue
+            chunk = _read_or_none(self.fd, 4096)
+            if not chunk:
+                continue
+            buf.extend(chunk)
+            while b"\n" in buf:
+                raw, _, rest = buf.partition(b"\n")
+                buf[:] = rest
+                print(raw.decode("utf-8", "replace").rstrip("\r"), flush=True)
+        if buf:
+            tail = bytes(buf).decode("utf-8", "replace")
+            if tail:
+                print(tail, flush=True)
+
+
+class Directive:
+    __slots__ = ("kind", "arg", "source")
+
+    def __init__(self, kind: str, arg: str, source: str):
+        self.kind = kind
+        self.arg = arg
+        self.source = source  # "<file>:<lineno>" or "--<flag>", for error messages
+
+
+_DIRECTIVE_KINDS = frozenset(
+    {"send", "raw", "key", "sendlen", "listen", "settle", "timeout", "pause", "row"}
+)
+
+
+def parse_directive_line(line: str, source: str) -> Directive | None:
+    """One line of a script file. Returns None for a blank line or a `#`
+    comment. Splits only on the FIRST run of whitespace: a `send` or `pause`
+    argument keeps every embedded space (a command's own arguments, an
+    operator's pause message) verbatim."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("@row"):
+        return Directive("row", stripped[len("@row"):].strip(), source)
+    parts = stripped.split(None, 1)
+    kind = parts[0]
+    arg = parts[1] if len(parts) > 1 else ""
+    if kind not in _DIRECTIVE_KINDS:
+        raise ScriptUsageError(f"{source}: unknown directive {kind!r}")
+    return Directive(kind, arg, source)
+
+
+def load_script_file(path: str) -> list[Directive]:
+    directives: list[Directive] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for lineno, raw_line in enumerate(f, start=1):
+            d = parse_directive_line(raw_line, f"{path}:{lineno}")
+            if d is not None:
+                directives.append(d)
+    return directives
+
+
+def run_pause(text: str) -> None:
+    if not sys.stdin.isatty():
+        raise ScriptUsageError(
+            f"pause: no controlling terminal to wait on (message: {text!r})"
+        )
+    print(f"[PAUSE] {text}", flush=True)
+    input()
+
+
+def run_scripted_serial(transport: SerialTransport, directives: list[Directive],
+                         initial_timeout: float = DEFAULT_SEND_TIMEOUT) -> int:
+    """Execute `directives` against `transport`. Returns the worst exit code
+    seen across the whole run (EXIT_OK if every request closed with no
+    loss)."""
+    worst = EXIT_OK
+    current_timeout = initial_timeout
+    current_listen = DEFAULT_LISTEN_SECONDS
+
+    def note(records: list[ConsoleRecord], closed: bool, label: str) -> None:
+        nonlocal worst
+        if not closed:
+            print(f"[TIMEOUT] {label} did not close within {current_timeout}s", flush=True)
+            worst = max(worst, EXIT_TIMEOUT)
+            return
+        last = records[-1] if records else None
+        dropped = last.fields.get("dropped") if last is not None else None
+        if dropped not in (None, "0"):
+            print(f"[LOSS] dropped={dropped} on closing record id={last.id}", flush=True)
+            worst = max(worst, EXIT_LOSS)
+
+    for d in directives:
+        if d.kind == "row":
+            print(f"=== row {d.arg} ===", flush=True)
+        elif d.kind == "send":
+            records, closed = transport.send_line(d.arg, current_timeout)
+            note(records, closed, f"send {d.arg!r}")
+        elif d.kind == "sendlen":
+            parts = d.arg.split(None, 1)
+            if not parts:
+                raise ScriptUsageError(f"{d.source}: sendlen needs a length")
+            n = int(parts[0])
+            prefix = parts[1] if len(parts) > 1 else ""
+            line = build_sendlen_line(n, prefix)
+            records, closed = transport.send_line(line, current_timeout)
+            note(records, closed, f"sendlen {n}")
+        elif d.kind == "raw":
+            transport.send_raw(unescape_raw(d.arg), current_listen)
+        elif d.kind == "key":
+            transport.send_raw(resolve_key_bytes(d.arg), current_listen)
+        elif d.kind == "listen":
+            current_listen = float(d.arg)
+            transport.capture(current_listen)
+        elif d.kind == "settle":
+            transport.settle_seconds = float(d.arg)
+        elif d.kind == "timeout":
+            current_timeout = float(d.arg)
+        elif d.kind == "pause":
+            run_pause(d.arg)
+        else:
+            raise ScriptUsageError(f"{d.source}: unhandled directive {d.kind!r}")
+
+    return worst
+
+
+class _AppendDirective(argparse.Action):
+    """Appends a Directive onto one shared `directives` list in declaration
+    order, so --send/--raw/--key/--sendlen/--listen/--pause interleave on
+    the command line exactly the way lines in a --script file would --
+    composing a scripted run directly on the command line is the same
+    engine, not a second one."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        directives = getattr(namespace, "directives", None)
+        if directives is None:
+            directives = []
+            setattr(namespace, "directives", directives)
+        directives.append(Directive(self.dest, values, f"--{self.dest}"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "protoArtoo serial monitor. The default POSIX backend does not reset the "
-            "ESP32 on connect (measured 0/5 unseated); --pyserial does, every time."
+            "protoArtoo Console Client: boot-log capture, interactive serial "
+            "terminal, and scripted mode on either Console Adapter (#264). The "
+            "default POSIX backend does not reset the ESP32 on connect (measured "
+            "0/5 unseated); --pyserial does, every time."
         )
     )
     parser.add_argument(
@@ -428,7 +856,76 @@ def main() -> int:
             "docs/troubleshooting.md before first use."
         )
     )
+    parser.add_argument(
+        "--script", default=None, metavar="FILE",
+        help="Scripted mode: run one directive per line from FILE (serial via --port)."
+    )
+    parser.add_argument(
+        "--send", action=_AppendDirective, metavar="LINE",
+        help="Scripted directive: line + CR, wait for the request to close. Repeatable."
+    )
+    parser.add_argument(
+        "--raw", action=_AppendDirective, metavar="ESCAPED-BYTES",
+        help="Scripted directive: byte-exact send (serial only), backslash escapes honoured."
+    )
+    parser.add_argument(
+        "--key", action=_AppendDirective, metavar="NAME[,NAME...]",
+        help=f"Scripted directive: byte-exact key send (serial only). Known keys: "
+             f"{', '.join(sorted(KEY_BYTES))}."
+    )
+    parser.add_argument(
+        "--sendlen", action=_AppendDirective, metavar="N [PREFIX]",
+        help="Scripted directive: build and send an exactly-N-byte line (overflow rows)."
+    )
+    parser.add_argument(
+        "--listen", action=_AppendDirective, metavar="SECONDS",
+        help="Scripted directive: capture only, for SECONDS (serial only)."
+    )
+    parser.add_argument(
+        "--pause", action=_AppendDirective, metavar="TEXT",
+        help="Scripted directive: print TEXT and wait for Enter on the controlling terminal."
+    )
+    parser.add_argument(
+        "--settle", type=float, default=None,
+        help=f"Scripted mode: seconds to wait before the first serial send "
+             f"(default: {DEFAULT_SETTLE_SECONDS})."
+    )
     args = parser.parse_args()
+
+    script_directives: list[Directive] = []
+    if args.script:
+        script_directives.extend(load_script_file(args.script))
+    script_directives.extend(getattr(args, "directives", None) or [])
+
+    if script_directives:
+        if args.pyserial:
+            print("ERROR: scripted mode does not support --pyserial "
+                  "(measured 7/7 resets; see docs/troubleshooting.md).", file=sys.stderr)
+            return EXIT_TOOL_FAILURE
+        if args.interactive or args.stream or args.until:
+            print("ERROR: scripted mode cannot be combined with "
+                  "--interactive/--stream/--until.", file=sys.stderr)
+            return EXIT_TOOL_FAILURE
+        try:
+            fd = open_posix_port(args.port, args.baud, writable=True)
+        except Exception as e:
+            print(f"ERROR: could not open {args.port}: {e}", file=sys.stderr)
+            return EXIT_TOOL_FAILURE
+        print(
+            f"[console] {args.port} @ {args.baud} baud "
+            "(POSIX no-control-line open, scripted)",
+            file=sys.stderr,
+        )
+        settle = args.settle if args.settle is not None else DEFAULT_SETTLE_SECONDS
+        transport = SerialTransport(fd, settle_seconds=settle)
+        initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
+        try:
+            return run_scripted_serial(transport, script_directives, initial_timeout)
+        except ScriptUsageError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return EXIT_TOOL_FAILURE
+        finally:
+            os.close(fd)
 
     if args.interactive:
         if args.pyserial:
