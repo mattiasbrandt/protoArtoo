@@ -201,6 +201,14 @@ _Avoid_: recovered page, healthy control surface, HTTP blackout
 The operator UI and diagnostic HTTP endpoint are both unreachable while the controller still responds at the network layer. It is a stop condition, not successful pressure shedding or Page Load Memory Recovery.
 _Avoid_: page failure, network outage, self-recovery
 
+**Survival Path**:
+The serial Console: the one operator surface that still answers when HTTP admission refuses everything. It depends on no network, no heap admission decision and no browser, which is what makes it a guarantee rather than a concession. Distinct from the diagnostic HTTP endpoint, which is an HTTP concession under pressure and still subject to a floor.
+_Avoid_: survival set, /api/health as a survival surface, "the health endpoint always answers", diagnostic HTTP endpoint
+
+**Diagnostic Floor**:
+The lower largest-free-block threshold applied to the small set of read-only diagnostic paths, so they keep answering under pressure that already refuses ordinary requests. The set is an exact-match list, not a pattern; membership is a deliberate decision per path, and an endpoint's payload being small does not put it in the set.
+_Avoid_: admission floor, health endpoint exemption, "small responses are exempt"
+
 **Power-Cycle Recovery**:
 Restoring controller HTTP service by physically removing and restoring controller power. It is the only recovery demonstrated so far after an HTTP Blackout and is evidence of failed self-recovery, not an acceptable recovery mechanism.
 _Avoid_: browser retry, page refresh, self-recovery
@@ -481,6 +489,10 @@ _Avoid_: serial console (when the shared thing is meant), CLI, debug shell, reco
 A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own.
 _Avoid_: frontend, shell, REPL, second backend
 
+**Console Client**:
+A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
+_Avoid_: serial monitor (for the program), bench driver, test harness, the console (for the host side), terminal (when the program rather than the operator's shell is meant)
+
 **Operation**:
 A canonical registry entry of type action, status or config that the Controller Console can execute or query, resolved from its name or an accepted alias to exactly one transport-free callable; events are output, not Operations, and meta-commands such as `help` are Console vocabulary, not entries.
 _Avoid_: command (for the catalog entry), token, route
@@ -590,6 +602,8 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - The **Controller Console** has exactly two **Console Adapters**; every **Operation** behaves identically through both, on every board.
 - An **Operation** of type config is an **Apply Core** plus its **Commit Step**; of type status, a **Zone Snapshot** rendered as **Console Records**; of type action, the existing dispatch core returning an outcome instead of nothing.
 - Every **Console Record** carries one **Request ID**; a write that entered through a **Console Adapter** carries its **Console Source** as its Command Source.
+- A **Console Client** drives exactly one **Console Adapter** per session and adds no behaviour to the **Controller Console**; a scripted client may address either adapter, which is what makes a parity transcript a one-program job.
+- A **Bench Runbook** row is replayed by a **Console Client** script that carries commands only; what the row expects stays on the runbook ticket, and each replay still leaves one dated evidence comment.
 - A **Known-but-unavailable** Operation reports exactly one **Availability Reason**; `not-in-this-build` and `not-on-this-board` are the two **Feature Availability** states, and `component-disabled` is a **Component Toggle** that is off.
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
 

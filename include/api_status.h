@@ -37,8 +37,14 @@ struct WiFiConnectivityFields {
 
 // GET /api/health's fields, verbatim (formatHealthJson's JSON keys).
 //
-// uptimeMs/resetReason (#225): the survival set below the HTTP admission
-// floor - added additively, same key spellings /api/status already uses
+// uptimeMs/resetReason (#225): read by the Survival Path - the serial
+// Console, the one operator surface that answers when HTTP admission refuses
+// everything (CONTEXT.md). They are ALSO served here over /api/health, which
+// is an ordinary endpoint behind the ordinary admission floor and is shed
+// before /api/status: webPathIsDiagnostic() (src/web/web_admission.cpp) names
+// the paths that get the lower Diagnostic Floor, and /api/health is not one of
+// them. Do not read "survival" as a property of this endpoint.
+// Added additively, same key spellings /api/status already uses
 // (src/web/web_server.cpp: "uptimeMs", "resetReason") so a serial transcript
 // and the REST API name the same thing the same way (docs/console-protocol.md
 // s.3.5). resetReason is a `const char*` to resetReasonName()'s static
