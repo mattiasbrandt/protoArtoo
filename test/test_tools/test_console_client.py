@@ -98,6 +98,24 @@ class OpenPosixPortWritable(unittest.TestCase):
         self.assertEqual(r, [self.master], "the write-capable fd never reached the pty master")
         self.assertEqual(os.read(self.master, 8), b"hi")
 
+    def test_stale_input_queued_before_open_is_flushed_not_delivered(self):
+        # #264: TCIFLUSH runs immediately after termios inside
+        # open_posix_port(), in every serial mode. Queue bytes on the
+        # master BEFORE opening the slave through this function at all, so
+        # they are sitting in the kernel's input queue under whatever line
+        # discipline was in effect before this process's raw-mode termios
+        # (and the flush) applied -- exactly the "fragment from before this
+        # process existed" the flush exists to discard.
+        os.write(self.master, b"stale garbage from before this process existed\n")
+        time.sleep(0.05)  # let the kernel queue it before open() flushes
+
+        fd = console_client.open_posix_port(self.slave_path, 115200)
+        self.addCleanup(self._close_quietly, fd)
+
+        r, _, _ = select.select([fd], [], [], 0.3)
+        if r:
+            self.fail(f"stale pre-open input was not flushed: {os.read(fd, 256)!r}")
+
 
 class RunInteractiveDuplex(unittest.TestCase):
     """Drives run_interactive() against real pty/pipe fds, in a background thread."""
