@@ -1841,6 +1841,106 @@ void test_rc_mode_rejects_an_unknown_mode_string() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
+// system.config.log-level (#225): read renders the live numeric level;
+// write accepts the raw 1..4 integer api_config_apply.cpp's paramInt16
+// validates.
+void test_log_level_read_and_write_the_integer() {
+    runQuery("system.config.log-level value=3");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("system.config.log-level");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("3", capturedValue("value"));
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+}
+
+// The word form docs/console-protocol.md s.1's own grammar example uses
+// ("system.config.log-level value=debug") - each of the four words maps to
+// its stored digit, proven against the real config cache, not just the
+// executor's own echo.
+void test_log_level_accepts_every_word_form() {
+    struct {
+        const char* word;
+        uint8_t digit;
+    } cases[] = {
+        {"error", 1},
+        {"warning", 2},
+        {"info", 3},
+        {"debug", 4},
+    };
+    for (const auto& c : cases) {
+        char line[64];
+        snprintf(line, sizeof(line), "system.config.log-level value=%s", c.word);
+        runQuery(line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_APPLIED, g_cap.outcome, c.word);
+
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(c.digit, snap.system.logLevel, c.word);
+    }
+}
+
+// The word form is case-insensitive, matching how the rest of the protocol
+// treats operator-typed words (mode= in rc.config.mode is the closest
+// existing precedent, and that one IS case-sensitive - log-level's word
+// form is deliberately more forgiving since it is this ticket's own
+// addition, not an existing wire contract to preserve).
+void test_log_level_word_form_is_case_insensitive() {
+    runQuery("system.config.log-level value=DEBUG");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(4, snap.system.logLevel);
+}
+
+// The named key (logLevel=) works exactly like value= - the same
+// ScalarConfigArg bridge every other row in g_scalarConfigExecutors[] shares
+// (src/console/console_module.cpp).
+void test_log_level_accepts_the_named_key() {
+    runQuery("system.config.log-level logLevel=info");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+}
+
+void test_log_level_rejects_an_out_of_range_integer() {
+    runQuery("system.config.log-level value=5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_log_level_rejects_an_unknown_word() {
+    runQuery("system.config.log-level value=verbose");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_log_level_rejects_an_unknown_argument() {
+    runQuery("system.config.log-level bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
+// An extra key alongside a valid value= must still be rejected as unknown -
+// the word-form translator only fires for an exactly-one-argument write
+// (consoleExecuteSystemLogLevel()'s own comment, src/console/console_module.cpp),
+// so this also proves the translator does not silently swallow the second key.
+void test_log_level_rejects_an_extra_argument_even_with_a_valid_word() {
+    runQuery("system.config.log-level value=debug bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
 void test_scalar_config_write_rejects_an_unknown_argument() {
     runQuery("drive.config.speed-limit bogus=1");
 
@@ -3504,7 +3604,7 @@ void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_sc
 // g_cap harness the other tests use discards items.
 struct CapturedOperationItems {
     // Sized from the catalog itself at run time; 256 comfortably exceeds the
-    // ~192 entries the registry holds today and the listing is bounded by
+    // ~193 entries the registry holds today and the listing is bounded by
     // the catalog, never by input.
     char values[256][160];
     int count;
@@ -3955,6 +4055,14 @@ int main(int, char**) {
     RUN_TEST(test_aux_led_count_read_and_write);
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
+    RUN_TEST(test_log_level_read_and_write_the_integer);
+    RUN_TEST(test_log_level_accepts_every_word_form);
+    RUN_TEST(test_log_level_word_form_is_case_insensitive);
+    RUN_TEST(test_log_level_accepts_the_named_key);
+    RUN_TEST(test_log_level_rejects_an_out_of_range_integer);
+    RUN_TEST(test_log_level_rejects_an_unknown_word);
+    RUN_TEST(test_log_level_rejects_an_unknown_argument);
+    RUN_TEST(test_log_level_rejects_an_extra_argument_even_with_a_valid_word);
     RUN_TEST(test_scalar_config_write_rejects_an_unknown_argument);
     RUN_TEST(test_config_write_reports_busy_when_the_mutex_is_already_held);
     RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);

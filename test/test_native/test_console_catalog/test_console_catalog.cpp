@@ -5,8 +5,12 @@
 // Tests cover:
 // 1. Catalog lookup (by name, count, iteration)
 // 2. Help text parsing (hit, miss, degraded)
-// 3. Allocation evidence (help path is allocation-free in the loop)
-// 4. Drift checker evidence (registry -> catalog sync)
+// 3. Registry -> catalog sync (availability flags, build flags, parameter
+//    descriptors, aliases, write-exclusion) - this file carries no
+//    allocation evidence: the help-path allocation proof (#225) lives in
+//    test/test_native/test_console_help_reader/test_console_help_reader.cpp,
+//    the one binary with the operator-new-counting override, per that
+//    ticket's own reasoning against a second override here.
 // =============================================================================
 
 #include <unity.h>
@@ -40,7 +44,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(192, count);  // Registry has 192 entries
+    TEST_ASSERT_EQUAL_INT(193, count);  // Registry has 193 entries (#225 added system.config.log-level)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;

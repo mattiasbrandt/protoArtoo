@@ -3018,6 +3018,22 @@ entries:
   requires_web_control: false
   nvs_key: en_r2link
   executor: configApply
+- name: system.config.log-level
+  display_name: Log Level
+  description: 'Runtime log level: 1 Error, 2 Warning, 3 Info, 4 Debug'
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: null
+  sources:
+  - internal
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: log_level
+  executor: configApply
 - name: system.status.health
   display_name: Health
   description: 'System health snapshot: estop, SBUS, WiFi, heap, filesystem, uptime, reset reason'
