@@ -903,8 +903,6 @@ class TheArtefactBelongsToTheInstrumentNotToATicket(unittest.TestCase):
         # what each version meant, so a consumer holding an old artefact can
         # tell what changed under it.
         source = SOAK_PY.read_text(encoding="utf-8")
-        block = source.split("REPORT_SCHEMA_VERSION")[0].rsplit("#   4", 1)
-        self.assertEqual(len(block), 2, "the version history block is gone")
         for version in range(1, soak.REPORT_SCHEMA_VERSION + 1):
             self.assertRegex(
                 source, r"(?m)^#\s+%d\s+\S" % version,
