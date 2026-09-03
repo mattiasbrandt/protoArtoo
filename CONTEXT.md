@@ -461,6 +461,22 @@ _Avoid_: bench verified, bench tested, bench-attachable peripherals, scoping pin
 One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
 _Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
 
+**Soak Driver**:
+One named scenario the soak harness runs against a controller — SSE soak, reconnect storm, C6-reset recovery. Each yields its own verdict, and each may be **Unavailable** on a given Image Mode.
+_Avoid_: test, scenario, mode, check
+
+**Image Mode**:
+Which firmware image's `/api/status` schema the soak harness reads, **declared** on the command line and then checked against the payload — never sniffed from it, because sniffing turns a truncated or half-built response into a confident misreading.
+_Avoid_: auto-detect, schema sniffing, board type
+
+**Run Verdict**:
+The single verdict for a whole soak run, composed from its Soak Driver verdicts and spoken in the same words they use — `PASS`, `FAIL`, `INVALID`. A driver that could not run collapses to `INVALID`: a coverage gap is never a pass.
+_Avoid_: NO IMMEDIATE BLOCKER, NO-GO, INVALID / UNKNOWN, overall result, go/no-go verdict
+
+**Not Assessed**:
+The recorded result for something a run could not measure — a driver that could not run on this Image Mode, or a window too short to judge liveness. Distinct from a pass in both the report and the verdict: what was not observed reads as not measured, never as healthy.
+_Avoid_: skipped, n/a, passing by default, no news is good news
+
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.
 _Avoid_: emergency stop mode, safety pause, drive disable
@@ -608,4 +624,6 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - "dome" was used at once for the body's dome-rotation actuator, the **protoR2link** communications link, and the dome's panel/sequence system; resolved by keeping **Dome ESC** (the actuator), **protoR2link** (the link), and **Dome Layout View Model** (the panel read-model) as separate terms, never grouped under a bare "Dome" label (ADR 0033).
 - Component Toggle identifiers (`arm1`/`s1_hoverboard`/etc.) were named after the artoo.uk PCB's own silkscreen legend; resolved by making the identifier generic project vocabulary and moving the board-specific text into a **Board Component Label** (ADR 0033).
 - "OTA" and "firmware update" each named two unrelated things: replacing the controller's own image (host, over WiFi, ArduinoOTA :3232) and replacing the fitted co-processor's image (host-to-module, over SDIO); resolved by keeping **Firmware Update** for the controller and naming the second a **WiFi Module Update**. Issue #241 was retitled for exactly this confusion.
+- "verdict" named two different levels at once: a **Soak Driver**'s own result and the whole run's. Resolved by making the **Run Verdict** speak the drivers' words (`PASS`/`FAIL`/`INVALID`) rather than a second vocabulary. The #184 go/no-go wording ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN") is retired for the same reason its pass-tier wording was: it names a gate that closes with one epic, on an instrument meant to outlive it. The collapse of an unavailable driver to `INVALID` is kept — that is the rule, not the wording (ADR 0035).
+- "the soak script needs re-running because the vocabulary changed" was wrong and is recorded so it is not repeated: **a rename cannot invalidate a measurement.** Driver verdicts are where judgement lives and they were already neutral. What forces a re-run is a change to what the harness *judges* — the reconnect storm's stall classification — never what it *calls* the answer.
 - "radio module" was proposed as the operator noun for the **WiFi Module** and rejected: "radio" already means the RC gear to a droid builder, and in this codebase it already means a radio-button input (`data/wifi.html:77,84`, `data/rc.js:797,934`) - on the two pages the control would sit nearest. The residual risk of **WiFi module** is accepted knowingly: the same chip can serve Bluetooth (`hostedInitBLE()`), so if protoArtoo ever uses it for BLE the name needs revisiting, and a rename is a real change rather than a copy tweak.
