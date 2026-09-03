@@ -22,6 +22,14 @@ Strategy (in order):
   3. "v0.0.0-dev"                           -> last resort
 
 The define name PA_FIRMWARE_VERSION must match the guard in include/config.h.
+
+NOTE: the stamp-file exclusion below is ours alone. The ESP-IDF app descriptor
+baked into libesp_app_format.a derives its version from a raw
+`git describe --dirty`, which counts those two files, so an image's descriptor
+version is always -dirty and names whichever commit the framework libs were
+last compiled at -- not the commit being flashed. Read provenance from
+PA_FIRMWARE_VERSION, never from the descriptor. See docs/troubleshooting.md,
+"The image's IDF app descriptor version is NOT the firmware version".
 """
 
 import json
