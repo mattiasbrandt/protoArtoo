@@ -23,6 +23,7 @@ import importlib.util
 import io
 import os
 import pty
+import random
 import select
 import signal
 import socket
@@ -367,6 +368,45 @@ class InteractiveRecordColour(unittest.TestCase):
             out = feed_in_chunks(c, stream, [split])
             self.assertEqual(strip_sgr(out), stream,
                              f"bytes changed when the stream split at {split}")
+
+    def test_the_invariant_holds_for_adversarial_streams(self):
+        """The fixtures above are assembled by hand from embedded_cli.c, so
+        the invariant should not depend on how faithful they are. This feeds
+        pseudo-random streams built from the bytes that actually decide the
+        colouriser's state -- the record prefix's own characters, the two
+        terminators, ESC and the bracket that starts every cursor sequence --
+        at random chunk boundaries, and asserts the same property: strip the
+        SGR and the input comes back byte for byte.
+
+        Seeded, so a failure is reproducible rather than a flake."""
+        rng = random.Random(20260904)
+        alphabet = [b"<", b" ", b"i", b"d", b"=", b"\r", b"\n", b"\x1b",
+                    b"[", b"D", b"s", b"u", b"P", b"x", b"1", b"e", b"r"]
+        record = b"< id=5 type=result status=err outcome=invalid"
+        colored_any = False
+
+        for _ in range(300):
+            stream = bytearray()
+            while len(stream) < 120:
+                if rng.random() < 0.1:
+                    stream += record + b"\r\n"
+                else:
+                    stream += rng.choice(alphabet)
+            stream = bytes(stream)
+            self.assertEqual(strip_sgr(stream), stream,
+                             "generated fixture must not itself contain SGR")
+
+            splits = sorted(rng.sample(range(len(stream) + 1),
+                                       k=rng.randint(0, 6)))
+            c = console_client.InteractiveRecordColorizer(enabled=True)
+            out = feed_in_chunks(c, stream, splits)
+
+            self.assertEqual(strip_sgr(out), stream,
+                             f"bytes changed for splits {splits} on {stream!r}")
+            colored_any = colored_any or console_client.SGR_RESET.encode() in out
+
+        self.assertTrue(colored_any,
+                        "no record was ever coloured -- the invariant held vacuously")
 
     def test_records_are_coloured_whatever_the_chunk_boundary(self):
         stream = (b"< id=7 type=begin operation=system.status.health\r\n"
