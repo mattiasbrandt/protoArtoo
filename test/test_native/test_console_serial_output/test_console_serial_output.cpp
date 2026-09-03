@@ -24,6 +24,7 @@
 
 #include <string.h>
 
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -321,6 +322,166 @@ void test_keystroke_echo_output_stays_proportional_to_input(void) {
 }
 
 // =============================================================================
+// 5. ADR 0036 - single-write framing, room-wait, and dropped= accounting (#265)
+// =============================================================================
+//
+// The seam under test here is consoleSerialEmitFramedLine() and
+// consoleSerialFormatDroppedSuffix() (console_serial_output.h). Both are pure
+// with respect to this file's fixtures: they talk to `Serial` (SerialStub,
+// test/stubs/include/Arduino.h) and paGetSerialMutex() (the same PaStubMutex
+// section 2 above already exercises), so every assertion below reads back
+// through those two test doubles rather than a board.
+
+static void framedLineFixtureSetUp(void) {
+    serialStubReset();
+    paStubMutexReset();
+}
+
+// A record with room from the first check: one write call, the line and its
+// newline delivered together, the mutex taken and given exactly once, and
+// the room was actually checked (not skipped).
+void test_framed_line_with_room_writes_once_including_newline(void) {
+    framedLineFixtureSetUp();
+
+    const char* line = "< id=7 type=field name=heapFree value=42120";
+    bool sent = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+
+    TEST_ASSERT_TRUE_MESSAGE(sent, "a line with room to spare must not be reported dropped");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
+                                  "the line and its newline must reach Serial.write() together, "
+                                  "in exactly one call");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(strlen(line) + 1), (int)SerialStub::capturedLen,
+                                  "captured bytes must be exactly the line plus one newline");
+    TEST_ASSERT_EQUAL_STRING_LEN_MESSAGE(line, SerialStub::capturedBuf, strlen(line),
+                                         "the captured line text must be unchanged");
+    TEST_ASSERT_EQUAL_INT_MESSAGE('\n', SerialStub::capturedBuf[SerialStub::capturedLen - 1],
+                                  "the single write must end in the newline, not a separate call");
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount, "the mutex must be taken exactly once to write");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->giveCount, "the mutex must be given back");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the mutex must not be left held");
+    TEST_ASSERT_TRUE_MESSAGE(SerialStub::availableForWriteCallCount > 0,
+                             "a waiting caller must actually check for room, not skip the check");
+}
+
+// Disconnected: the record is dropped whole, without ever checking transmit
+// room (there being no host to drain it is not a room question) and without
+// ever taking the mutex -- a half-taken mutex on a drop would be worse than
+// the two-call defect this function replaces.
+void test_framed_line_waits_only_while_connected(void) {
+    framedLineFixtureSetUp();
+    SerialStub::connectedValue = false;
+
+    const char* line = "< id=8 type=end status=ok outcome=completed";
+    bool sent = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+
+    TEST_ASSERT_FALSE_MESSAGE(sent, "a disconnected host must drop the record, not send it");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach Serial.write() for a dropped record");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        0, SerialStub::availableForWriteCallCount,
+        "disconnected must short-circuit before ever asking about transmit room");
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount,
+                                  "a dropped record must never take the serial mutex");
+}
+
+// Room never clears: the wait terminates at CONSOLE_RECORD_ROOM_WAIT_BOUND_MS
+// rather than spinning forever, the record is dropped, and (same as the
+// disconnected case) the mutex is never taken -- the wait is provably OUTSIDE
+// the mutex, which is the whole point of ADR 0036's "never inside the mutex"
+// rule for a TWDT-subscribed logger's portMAX_DELAY take to be safe from it.
+void test_framed_line_room_wait_is_bounded_and_stays_outside_the_mutex(void) {
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = 0;  // never enough room
+
+    const char* line = "< id=9 type=item value=drive.action.move";
+    bool sent = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+
+    TEST_ASSERT_FALSE_MESSAGE(sent, "room that never clears must drop the record");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach Serial.write() for a dropped record");
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        0, m->takeCount, "the wait must run entirely before any mutex take -- taking it here "
+                         "would let a TWDT-subscribed logger's portMAX_DELAY inherit the wait");
+
+    // The wait must be bounded by CONSOLE_RECORD_ROOM_WAIT_BOUND_MS -- not
+    // unbounded (an infinite spin) and not skipped (an immediate give-up).
+    // Each polling iteration calls Serial.availableForWrite() once, so the
+    // call count is the wait's own iteration count; a couple of extra calls
+    // either side of the loop (the loop's own terminating check, then the
+    // post-loop confirmation) are implementation detail this assertion does
+    // not pin down.
+    TEST_ASSERT_TRUE_MESSAGE(
+        SerialStub::availableForWriteCallCount >= (int)CONSOLE_RECORD_ROOM_WAIT_BOUND_MS,
+        "the wait gave up before reaching its own documented bound");
+    TEST_ASSERT_TRUE_MESSAGE(
+        SerialStub::availableForWriteCallCount <= (int)CONSOLE_RECORD_ROOM_WAIT_BOUND_MS + 5,
+        "the wait ran well past its documented bound -- it must not spin indefinitely");
+}
+
+// Log lines (#245's best-effort contract) never wait, whatever the room or
+// connection state, and still land in a single write call.
+void test_framed_line_without_wait_flag_never_waits_for_room() {
+    framedLineFixtureSetUp();
+    SerialStub::connectedValue = false;
+    SerialStub::availableForWriteValue = 0;
+
+    const char* line = "[INFO][ConsoleTask] active";
+    bool sent = consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
+
+    TEST_ASSERT_TRUE_MESSAGE(sent, "a non-waiting caller always reports sent -- #245's "
+                                   "best-effort contract, unchanged by this function");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
+                                  "a log line is still one write call, line plus newline");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        0, SerialStub::availableForWriteCallCount,
+        "a non-waiting caller must never even ask about transmit room or connection state");
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount, "a log line still writes under the mutex");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the mutex must not be left held");
+}
+
+// consoleSerialFormatDroppedSuffix: absent (empty, zero-length) when nothing
+// was dropped, present with the exact count otherwise. This is the piece of
+// ADR 0036's wire format proved on the host because
+// src/tasks/console_task.cpp (which stamps it onto a real record) is not
+// part of the native build (Arduino/FreeRTOS-only, per its own file header).
+void test_dropped_suffix_absent_when_zero() {
+    char buf[24] = {'X', '\0'};
+    size_t written = consoleSerialFormatDroppedSuffix(buf, sizeof(buf), 0);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)written, "zero dropped must report zero bytes written");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", buf, "zero dropped must produce an empty suffix");
+}
+
+void test_dropped_suffix_present_with_exact_count_when_nonzero() {
+    char buf[24] = {};
+    size_t written = consoleSerialFormatDroppedSuffix(buf, sizeof(buf), 4);
+
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(" dropped=4", buf,
+                                     "nonzero dropped must render as ' dropped=<n>'");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)strlen(" dropped=4"), (int)written,
+                                  "the returned length must match what was actually written");
+}
+
+// A buffer too small to hold the suffix must not overrun or emit a torn
+// token -- it drops the field, exactly like an over-length record line
+// dropping rather than truncating into something malformed.
+void test_dropped_suffix_too_small_buffer_emits_nothing() {
+    char buf[4] = {'Z', 'Z', 'Z', '\0'};  // " dropped=4294967295" does not fit
+    size_t written = consoleSerialFormatDroppedSuffix(buf, sizeof(buf), 4294967295u);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)written, "a suffix that cannot fit must report 0");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", buf, "a suffix that cannot fit must not leave a torn token");
+}
+
+// =============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -331,5 +492,12 @@ int main(int, char**) {
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     RUN_TEST(test_long_lines_are_truncated_to_serial_max);
     RUN_TEST(test_keystroke_echo_output_stays_proportional_to_input);
+    RUN_TEST(test_framed_line_with_room_writes_once_including_newline);
+    RUN_TEST(test_framed_line_waits_only_while_connected);
+    RUN_TEST(test_framed_line_room_wait_is_bounded_and_stays_outside_the_mutex);
+    RUN_TEST(test_framed_line_without_wait_flag_never_waits_for_room);
+    RUN_TEST(test_dropped_suffix_absent_when_zero);
+    RUN_TEST(test_dropped_suffix_present_with_exact_count_when_nonzero);
+    RUN_TEST(test_dropped_suffix_too_small_buffer_emits_nothing);
     return UNITY_END();
 }

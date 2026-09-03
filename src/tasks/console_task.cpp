@@ -85,6 +85,17 @@ static char recordBuffer[CONSOLE_RECORD_LINE_MAX] = {};
 // Current request ID for this command (for stack HWM measurement after first command)
 static uint32_t currentRequestId = 0;
 
+// Records this request could not send within CONSOLE_RECORD_ROOM_WAIT_BOUND_MS
+// of waiting (ADR 0036). Reset at the top of both entry points that build a
+// consoleTaskRecordSink() answer (onCliCommand, onCliLineTooLong) AND drained
+// back to 0 every time a closing record (onRecordResult/onRecordEnd) is
+// emitted, so a request whose sink never reaches a closing callback at all
+// -- an exotic early return inside consoleExecuteCommand -- cannot leave a
+// stale count for the NEXT request to inherit. Serial-only: the browser
+// adapter builds its JSON response whole and cannot drop a field once
+// dispatch starts, so it has no equivalent counter.
+static uint32_t g_recordsDroppedThisRequest = 0;
+
 // Ready banner text, shared by the boot-time print (setup) and the
 // re-attach print (#260, consoleTask's main loop). The banner names the
 // detach key (#219 D4) - an operator attaching cold has no other way to
@@ -151,6 +162,13 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     uint32_t requestId = consoleGetNextRequestId();
     currentRequestId = requestId;
 
+    // Belt-and-suspenders reset (ADR 0036): the closing-record callbacks
+    // already drain this to 0, but that only runs if dispatch reaches one.
+    // Starting every new request at 0 here means an early return inside
+    // consoleExecuteCommand() that skips the sink entirely still leaves the
+    // NEXT request's count honest.
+    g_recordsDroppedThisRequest = 0;
+
     // Create console request
     ConsoleRequest request = {
         .requestId = requestId,
@@ -173,6 +191,7 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
 // divergence this closes and the one it deliberately leaves recorded.
 static void onCliLineTooLong(EmbeddedCli* cli) {
     (void)cli;  // one Console, one answer - nothing per-instance to consult
+    g_recordsDroppedThisRequest = 0;  // see onCliCommand's reset for why
     ConsoleRecordSink sink = consoleTaskRecordSink();
     consoleEmitLineTooLong(&sink);
 }
@@ -198,30 +217,31 @@ static bool onCliShouldStoreHistory(EmbeddedCli* cli, const char* line) {
 // Console Record Sink Callbacks (output formatting)
 // =============================================================================
 
-// Emit one fully-formatted record line atomically: take the serial mutex,
-// write the line + a newline, give the mutex back. This is the ONLY unit of
-// atomicity the wire format needs (docs/console-protocol.md section 6: "no
-// line is ever interleaved inside another"). A multi-record response
+// Emit one fully-formatted record line atomically: wait for CDC transmit
+// room (ADR 0036), take the serial mutex, write the line + newline in one
+// call, give the mutex back. This is the ONLY unit of atomicity the wire
+// format needs (docs/console-protocol.md section 6: "no line is ever
+// interleaved inside another"). A multi-record response
 // (begin -> field/item* -> end) is deliberately NOT held as one locked block
 // across this call boundary -- see the file header for why (#219 R1).
 //
+// The wait and the single-write framing live in consoleSerialEmitFramedLine()
+// (src/console/console_serial_output.cpp) -- the one emit helper both the
+// record sink here and the log fallback path there call, per ADR 0036. This
+// function's own job is just to count what that helper reports dropped.
+//
 // CONSTRAINT: the mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic). Do
 // not call PA_LOG_* (or anything else that takes paGetSerialMutex()) between
-// the take and the give inside this function -- paLogLine routes through
-// consoleSerialEmitLine(), which takes the same mutex with portMAX_DELAY, and
-// a non-recursive mutex self-deadlocks the calling task. None of the sink
-// callbacks below log while formatting a record, so this holds; it is the
-// narrower, still-live form of the warning this file used to state at the
-// whole-group level (begin..end) before #219 R1 moved locking to per-line.
+// the take and the give inside consoleSerialEmitFramedLine() -- paLogLine
+// routes through consoleSerialEmitLine(), which takes the same mutex with
+// portMAX_DELAY, and a non-recursive mutex self-deadlocks the calling task.
+// None of the sink callbacks below log while formatting a record, so this
+// holds; it is the narrower, still-live form of the warning this file used
+// to state at the whole-group level (begin..end) before #219 R1 moved
+// locking to per-line.
 static void emitRecordLine(const char* line, size_t len) {
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-    }
-    Serial.write((const uint8_t*)line, len);
-    Serial.write('\n');
-    if (mutex != nullptr) {
-        xSemaphoreGive(mutex);
+    if (!consoleSerialEmitFramedLine(line, len, /*waitForRoom=*/true)) {
+        g_recordsDroppedThisRequest++;
     }
 }
 
@@ -262,7 +282,7 @@ static void onRecordItem(uint32_t requestId, const char* value) {
 static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                           ConsoleReason reason) {
     // Guard path: emit single result record for error/unknown/unsupported operations
-    // Emit: < id=<n> type=result status=ok outcome=queued [reason=...]
+    // Emit: < id=<n> type=result status=ok outcome=queued [reason=...] [dropped=<n>]
 
     // Present exactly when there is a reason. This is the record an unavailable
     // operation answers with, so the reason must survive: the previous guard
@@ -272,18 +292,32 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 
+    // dropped= (ADR 0036, docs/console-protocol.md 3.1/3.6): stamped on this
+    // request's closing record exactly when nonzero, counting only the
+    // records that preceded it -- captured before emitRecordLine() below,
+    // which may itself drop THIS line without that counting as a further
+    // drop. `< id=%lu ...` alone is a single-record answer (no begin), so
+    // g_recordsDroppedThisRequest is always 0 here unless a caller changes
+    // that shape; the field only ever fires on a multi-record group. The
+    // formatting itself lives in consoleSerialFormatDroppedSuffix() so the
+    // wire rule is provable on the host (this file is not native-compiled).
+    char droppedStr[24] = {};
+    consoleSerialFormatDroppedSuffix(droppedStr, sizeof(droppedStr), g_recordsDroppedThisRequest);
+
     size_t len =
         snprintf(recordBuffer, sizeof(recordBuffer),
-                 "< id=%lu type=result status=%s outcome=%s%s", (unsigned long)requestId,
-                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
+                 "< id=%lu type=result status=%s outcome=%s%s%s", (unsigned long)requestId,
+                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr,
+                 droppedStr);
     if (len < sizeof(recordBuffer)) {
         emitRecordLine(recordBuffer, len);
     }
+    g_recordsDroppedThisRequest = 0;  // this request is answered either way
 }
 
 static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                        ConsoleReason reason) {
-    // Emit: < id=<n> type=end status=ok outcome=completed [reason=...]
+    // Emit: < id=<n> type=end status=ok outcome=completed [reason=...] [dropped=<n>]
     //
     // The reason field is present exactly when there is a reason. Testing
     // against NONE rather than the status keeps a genuine availability answer
@@ -296,13 +330,20 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 
+    // dropped= (ADR 0036): see onRecordResult's comment above -- same
+    // capture-before-emit, same drain-after-emit discipline.
+    char droppedStr[24] = {};
+    consoleSerialFormatDroppedSuffix(droppedStr, sizeof(droppedStr), g_recordsDroppedThisRequest);
+
     size_t len =
         snprintf(recordBuffer, sizeof(recordBuffer),
-                 "< id=%lu type=end status=%s outcome=%s%s", (unsigned long)requestId,
-                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr);
+                 "< id=%lu type=end status=%s outcome=%s%s%s", (unsigned long)requestId,
+                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr,
+                 droppedStr);
     if (len < sizeof(recordBuffer)) {
         emitRecordLine(recordBuffer, len);
     }
+    g_recordsDroppedThisRequest = 0;  // this request is answered either way
 }
 
 // =============================================================================
@@ -387,7 +428,27 @@ void consoleTask(void* pvParameters) {
     if (mutex != nullptr) {
         xSemaphoreGive(mutex);
     }
+#if !(ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE)
+    // artoo-esp32 only (ADR 0036's flush() decision, #265). On UART0 this is
+    // a real, harmless wait for the driver to finish draining the banner
+    // just printed above -- kept, matching the ticket's requirement that
+    // artoo-esp32's behavior is unchanged.
+    //
+    // Deliberately SKIPPED on a CDC-on-boot build (main.cpp's
+    // setTxTimeoutMs(0)): read HWCDC::flush() (HWCDC.cpp) and it cannot wait
+    // at all with a zero timeout -- `tries` starts at tx_timeout_ms == 0, so
+    // the "keep polling while bytes remain queued" loop never runs even
+    // once -- and BOTH of its exit paths end by calling
+    // flushTXBuffer(NULL, 0), which discards whatever is still sitting in
+    // the TX ring, and forcing HWCDC's `connected` latch to false. Calling
+    // it here would silently drop whatever of the banner/prompt the host
+    // has not yet picked up, and would report the host as disconnected to
+    // this same task's own host-attach read of `Serial` a few lines below --
+    // strictly worse than not calling it. src/main.cpp:540 and :554 have the
+    // identical defect (fenced, out of this ticket's scope) and are reported
+    // as such rather than fixed; see #265's status comment.
     Serial.flush();
+#endif
 
     // Measure stack high water mark after first command is processed
     // This allows us to measure the stack usage for command parsing + execution + record emission
