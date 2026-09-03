@@ -723,6 +723,51 @@ void test_logs_query_full_ring_is_truncated_and_keeps_the_newest_lines() {
         "truncation must drop the OLDEST lines, keeping the most recent ones");
 }
 
+// -----------------------------------------------------------------------------
+// Static storage must not leak between requests (#266)
+// -----------------------------------------------------------------------------
+
+// handleConsolePost() moved `command`/`webSink`/`routeScratch` from stack
+// locals to static storage so its own stack frame stays small enough for the
+// httpd task's 8 KB stack (see handleConsolePost()'s own comment: 3776 B ->
+// 240 B, measured via `-fstack-usage`). Static storage means the SAME memory
+// backs every request on this (single, serializing) httpd task, so an
+// incomplete reset before use would leak one request's sink state into the
+// next - the one new risk this refactor introduces. Provably-able-to-fail:
+// deleting the `memset(&webSink, 0, sizeof(webSink))` call in
+// handleConsolePost() turns this red (verified 2026-09-03) - the truncated
+// log response's leftover item records and its `truncated:true` flag survive
+// into the following, otherwise-clean request.
+void test_static_websink_does_not_leak_into_the_next_request() {
+    // First request: overflow the ring so the response comes back
+    // truncated:true with a full house of "item" records - the sink state
+    // most worth proving does NOT survive into the next call.
+    for (size_t i = 0; i < LOG_RING_MAX_LINES; ++i) {
+        char line[32];
+        snprintf(line, sizeof(line), "line-%zu", i);
+        logBufferAppend(&g_test_log_buffer, line);
+    }
+    WebRequestTestBackend firstBackend;
+    runCommand(firstBackend, "system.status.logs");
+    TEST_ASSERT_TRUE_MESSAGE(responseIsTruncated(firstBackend.sentBody),
+        "setup expected the first request to be truncated");
+    TEST_ASSERT_TRUE(countRecordsOfType(firstBackend.sentBody, "item") > 0);
+
+    // Second request: the smallest possible response, on a fresh backend. If
+    // the static ConsoleWebSink were not fully reset, this response would
+    // carry forward the first request's item records, its truncated flag, or
+    // its stale record count.
+    WebRequestTestBackend secondBackend;
+    runCommand(secondBackend, "no.such.operation");
+    TEST_ASSERT_EQUAL_INT(200, secondBackend.sentCode);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1, countRecordsOfType(secondBackend.sentBody, "result"),
+        "a stale ConsoleWebSink leaked extra records from the previous request");
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, countRecordsOfType(secondBackend.sentBody, "item"),
+        "a stale ConsoleWebSink leaked item records from the previous request");
+    TEST_ASSERT_FALSE_MESSAGE(responseIsTruncated(secondBackend.sentBody),
+        "a stale ConsoleWebSink leaked the previous request's truncated:true");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_field_values_are_not_aliased);
@@ -751,5 +796,6 @@ int main(int, char**) {
     RUN_TEST(test_logs_query_small_ring_is_not_truncated);
     RUN_TEST(test_logs_query_full_ring_answers_200_not_500);
     RUN_TEST(test_logs_query_full_ring_is_truncated_and_keeps_the_newest_lines);
+    RUN_TEST(test_static_websink_does_not_leak_into_the_next_request);
     return UNITY_END();
 }
