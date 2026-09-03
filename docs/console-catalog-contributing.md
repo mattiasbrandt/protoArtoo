@@ -32,8 +32,9 @@ them for you.
   declaration from `include/board_capabilities.inc` /
   `include/build_flags.inc`. Absent means universal for that tier (ADR
   0029). These drive the catalog's `available_on_board` /
-  `available_in_build` fields, which `help` and `operations` show — but see
-  the caveat below on what actually gets checked at run time.
+  `available_in_build` fields, which `help` and `operations` show — and which
+  are the only availability facts either surface reports (see "Readiness is
+  answered at execution" below).
 - **`rc_token`** — if present, it becomes the operation's one Console alias
   automatically (`tools/generate_console_catalog.py`'s
   `build_rc_token_map()`). There is no separate "Console alias" field to
@@ -101,18 +102,28 @@ this both ways, by two separate checks:
 > described above live inside `tools/check_action_registry_drift.py`
 > itself, run via `make check-action-drift`.
 
-## A caveat worth knowing before you trust `executor_ready`
+## Readiness is answered at execution, never in the catalog
 
-`ConsoleCatalogEntry::executor_ready` (`include/console_catalog.h`) is
-generated as `true` for **every** entry — `tools/generate_console_catalog.py`
-does not yet check whether the Console module actually has a runtime path
-wired for that operation (its own comment says so: `# TODO: check if
-executor function is actually defined`). Whether an operation is genuinely
-dispatchable today is decided at run time, in `src/console/console_module.cpp`
-— its status-executor table for `type: status`, its `ACTION_REGISTRY[]`
-lookup plus guard for `type: action`, and (at this base) an unconditional
-"not ready" for every `type: config` entry regardless of what the catalog
-says. Do not read `executor_ready: true` in the catalog, or in a `help`
-reply's `executor_ready` field, as proof that running the operation will
-actually do something — confirm against `console_module.cpp`'s own dispatch
-tables, or just try it and read the `outcome`/`reason` it answers with.
+The catalog carries **no** readiness flag, and adding one back is the wrong
+move. It used to carry `ConsoleCatalogEntry::executor_ready`, generated as
+`true` for **every** entry because `tools/generate_console_catalog.py`
+hardcoded it beside its own `# TODO: check if executor function is actually
+defined`. The Console meanwhile refused dozens of those same rows at run time
+with `unavailable reason=executor-not-ready`, so discovery and execution
+disagreed — and the operator only ever sees discovery. **ADR 0035** deleted
+the field rather than teach the generator to derive readiness by parsing the
+C++ dispatch tables: a second source of truth about readiness is the shape
+that produced the defect, and it breaks silently every time a table moves.
+
+So a registry entry gets no say in whether its executor is wired, and neither
+`help <op>` nor `operations` claims to know. They report the two facts that
+are genuinely knowable without running anything — `available_on_board` and
+`available_in_build`, both compile-time expressions. To find out whether an
+operation is dispatchable today, run it and read the `outcome`/`reason` it
+answers with; `executor-not-ready` is still a reason in the vocabulary,
+because it is an execution-time answer and always was. Whether a given
+`type:` has a runtime path at all is decided in
+`src/console/console_module.cpp` — its status-executor table for
+`type: status`, the six per-domain executor headers plus the
+`ACTION_REGISTRY[]` lookup and guard for `type: action`, and
+`g_scalarConfigExecutors[]` for `type: config`.

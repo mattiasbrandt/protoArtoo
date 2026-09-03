@@ -146,21 +146,6 @@ void test_help_text_offset_and_length() {
 }
 
 // =============================================================================
-// Test: Executor Ready Status
-// =============================================================================
-
-void test_executor_ready_flag() {
-    // All entries in the registry have executors defined, so all should be marked ready
-    size_t count = 0;
-    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
-
-    for (size_t i = 0; i < count; ++i) {
-        const ConsoleCatalogEntry* entry = &entries[i];
-        TEST_ASSERT_TRUE(entry->executor_ready);
-    }
-}
-
-// =============================================================================
 // Test: Aliases (None in current registry, but should handle NULL gracefully)
 // =============================================================================
 
@@ -396,9 +381,6 @@ int main(void) {
 
     // Help text tests
     RUN_TEST(test_help_text_offset_and_length);
-
-    // Executor tests
-    RUN_TEST(test_executor_ready_flag);
 
     // Aliases tests
     RUN_TEST(test_aliases_null_terminated);

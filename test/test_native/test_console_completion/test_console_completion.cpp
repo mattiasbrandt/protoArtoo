@@ -155,10 +155,10 @@ void test_arg_key_position_unknown_operation_yields_no_candidates(void) {
 
 // -----------------------------------------------------------------------
 // Test 6: known-but-unavailable operations remain completable - the
-// candidate source never filters on available_on_board / available_in_build
-// / executor_ready. Picks a real entry and proves its actual availability
-// value (whatever it is on this build) does not gate whether its name is
-// returned as an operation-name candidate.
+// candidate source never filters on available_on_board / available_in_build.
+// Picks a real entry and proves its actual availability value (whatever it
+// is on this build) does not gate whether its name is returned as an
+// operation-name candidate.
 // -----------------------------------------------------------------------
 void test_availability_does_not_gate_completion(void) {
     size_t catalogCount = 0;
@@ -169,7 +169,7 @@ void test_availability_does_not_gate_completion(void) {
     EmbeddedCli* cli = makeCliWithBuffer(buf, sizeof(buf), "");
 
     // Every catalog entry appears at its own index, regardless of its
-    // available_on_board / available_in_build / executor_ready values -
+    // available_on_board / available_in_build values -
     // consoleCompletionCandidate() reads only entries[index].name.
     for (size_t i = 0; i < catalogCount; ++i) {
         const char* c = consoleCompletionCandidate(cli, (uint16_t)i);
@@ -181,7 +181,6 @@ void test_availability_does_not_gate_completion(void) {
         // merely that it was never inspected.
         (void)entries[i].available_on_board;
         (void)entries[i].available_in_build;
-        (void)entries[i].executor_ready;
     }
 
     embeddedCliFree(cli);

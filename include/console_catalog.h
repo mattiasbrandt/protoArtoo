@@ -65,7 +65,12 @@ typedef struct {
     bool available_in_build;             // build flag availability
     bool requires_web_control;           // if true, needs webControlEnabled for motion
     bool safety_critical;                // if true, subject to safety constraints
-    bool executor_ready;                 // true if executor function is defined and ready
+    // No readiness flag lives here. Whether an operation's executor is wired
+    // is answered by running it, never advertised at discovery (ADR 0035).
+    // The two availability flags above are genuine compile-time expressions;
+    // readiness was not, and the field that claimed it read `true` for every
+    // entry - including the ones dispatch refuses with
+    // `unavailable reason=executor-not-ready`.
     uint16_t help_offset;                // offset in help file for this operation
     uint16_t help_length;                // length of help text in help file
     const char* const* fields;           // for type=status: API JSON keys this query answers
