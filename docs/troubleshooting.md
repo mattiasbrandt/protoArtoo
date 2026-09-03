@@ -430,10 +430,11 @@ box instead, or keep serial commands short.
 ### An action answers `blocked reason=blocked-by-state` or `unavailable reason=temporarily-unavailable`
 
 - `blocked reason=blocked-by-state` on an action almost always means **Web
-  control** is off — enable it with the **✓ Enable Web Control** button
-  under Safety Controls on the Drive page, or `POST /api/web-control/enable`,
-  then retry. This applies from serial too, not only the dashboard.
-  `system.action.estop` always answers this way, on purpose; use the
+  control** is off — turn it on with the **✓ Enable Web Control** button
+  under Safety Controls on the Drive page, `POST /api/web-control/enable`,
+  or the Console command `system.action.enable-web-control` (works from
+  serial, needs no network, and needs no Web control of its own), then
+  retry. `system.action.estop` always answers this way, on purpose; use the
   dashboard's E-Stop control or `POST /api/estop` instead.
 - `outcome=queue-full` means the part of the firmware that would run the
   command is busy right now (its queue is momentarily full) — the command

@@ -1480,7 +1480,7 @@ Returns controller status snapshot.
 - `failsafeSource`, `failsafeCount`, `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, `failsafeTriggerSource`
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
-- `uptimeMs`, `firmwareVersion`, `webVersion`
+- `uptimeMs`, `firmwareVersion`, `fsVersion`, `resetReason`
 - `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
   - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
     the pool `malloc` and the admission guards actually use. `heapLargestBlock`
@@ -1509,14 +1509,22 @@ curl -s http://artoo.local/api/status
 #### Example response (abridged)
 
 ```json
-{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","webVersion":"fs-v1.0.0","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"auxLed":{"pin":1,"r":0,"g":0,"b":0,"effect":"off","available":true}}
+{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"auxLed":{"pin":1,"r":0,"g":0,"b":0,"effect":"off","available":true}}
 ```
 
 ### GET /api/health
 
-Returns compact health JSON.
+Returns a small, fixed health snapshot — the one status endpoint built to
+keep answering even while the controller is shedding other requests under
+heap pressure, so it is the one to poll first when something else looks
+stuck.
 
 - Success: `200` JSON
+- Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
+  `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
+  `heapMin`, `heapLargestBlock` (the 8-bit-capable value, despite the
+  `/api/status` name it shares — see that endpoint's own note above),
+  `wifiRssi`, `uptimeMs`, `resetReason`
 
 #### Example request
 
