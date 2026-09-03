@@ -1527,7 +1527,7 @@ curl -s http://artoo.local/api/health
 #### Example response
 
 ```json
-{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70}
+{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"uptimeMs":27790,"resetReason":"POWERON"}
 ```
 
 ### GET /api/wifi
