@@ -421,11 +421,15 @@ with no on-screen sign that anything was cut — see
   answer `unavailable reason=not-executable`. Drive the droid from the
   dashboard or RC for now.
 - **Most `config`-type commands** don't run here yet, but a growing number
-  do. `operations type=config` shows you which, live: an entry with no
-  reason attached works today, and `executor-not-ready` means it doesn't
-  yet — change that one from the **Setup** page instead. Among the ones
-  that work, a Component Toggle (`system.config.enable_*`) always answers
-  `staged-until-reboot` — saved, but only takes effect at the next restart;
+  do. `operations type=config` lists every one of them either way: the
+  listing tells you what exists, not what's wired up, so the only way to
+  know is to run one. Run it with the value you actually want — if it works
+  it has already taken effect, and if it doesn't you get
+  `executor-not-ready` back, meaning the Console knows the command but has
+  nothing behind it yet. Change that setting from the **Setup** page in the
+  meantime. Among the ones that work, a Component Toggle
+  (`system.config.enable_*`) always answers `staged-until-reboot` — saved,
+  but only takes effect at the next restart;
   the grouped WiFi write `wifi.config.settings`
   ([above](#wifi-settings-as-one-command)) answers either that or
   `applied`, depending on whether anything actually changed; and the rest
