@@ -87,6 +87,8 @@
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
                                   // own queue stub (#221 remainder)
+#include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
+                                     // own observation hook, shared with test_api_motion_routes.cpp
 
 #include "sequence_dispatcher.h"  // sequenceDispatcherInit(), sequenceCatalogAt/Count/Find() -
                                    // dome.action.dome-sequence/test-sequence's sequenceStart()
@@ -281,6 +283,7 @@ void setUp() {
     g_test_last_dispatch_target = ROBOT_ACTION_NONE;
     g_test_last_dispatch_source = SRC_NONE;
     g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+    g_test_restart_requests = 0;
     // Reset to empty before every test (#239) - matches test_api_logs.cpp's
     // own setUp(), so a log-ring test never sees another test's lines.
     logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
@@ -353,11 +356,14 @@ void tearDown() {}
 // =============================================================================
 
 void test_health_three_way_field_match() {
-    char json[256];
+    // 384, matching handleHealthGet()'s own buffer (src/web/api_status.cpp) -
+    // resetReason (#225) is a variable-length string, not a fixed-width
+    // value, so this is no longer bounded by the old fixed-field shape.
+    char json[384];
     // Same shape formatHealthJson() actually emits - values are arbitrary,
     // only the key set matters here.
     formatHealthJson(json, sizeof(json), true, false, false, true, false, false, true, 1000, 900,
-                     800, -50);
+                     800, -50, 123456, "SOFTWARE");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("system.status.health");
 
@@ -1838,6 +1844,106 @@ void test_rc_mode_rejects_an_unknown_mode_string() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
+// system.config.log-level (#225): read renders the live numeric level;
+// write accepts the raw 1..4 integer api_config_apply.cpp's paramInt16
+// validates.
+void test_log_level_read_and_write_the_integer() {
+    runQuery("system.config.log-level value=3");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    runQuery("system.config.log-level");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("3", capturedValue("value"));
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+}
+
+// The word form docs/console-protocol.md s.1's own grammar example uses
+// ("system.config.log-level value=debug") - each of the four words maps to
+// its stored digit, proven against the real config cache, not just the
+// executor's own echo.
+void test_log_level_accepts_every_word_form() {
+    struct {
+        const char* word;
+        uint8_t digit;
+    } cases[] = {
+        {"error", 1},
+        {"warning", 2},
+        {"info", 3},
+        {"debug", 4},
+    };
+    for (const auto& c : cases) {
+        char line[64];
+        snprintf(line, sizeof(line), "system.config.log-level value=%s", c.word);
+        runQuery(line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_APPLIED, g_cap.outcome, c.word);
+
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(c.digit, snap.system.logLevel, c.word);
+    }
+}
+
+// The word form is case-insensitive, matching how the rest of the protocol
+// treats operator-typed words (mode= in rc.config.mode is the closest
+// existing precedent, and that one IS case-sensitive - log-level's word
+// form is deliberately more forgiving since it is this ticket's own
+// addition, not an existing wire contract to preserve).
+void test_log_level_word_form_is_case_insensitive() {
+    runQuery("system.config.log-level value=DEBUG");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(4, snap.system.logLevel);
+}
+
+// The named key (logLevel=) works exactly like value= - the same
+// ScalarConfigArg bridge every other row in g_scalarConfigExecutors[] shares
+// (src/console/console_module.cpp).
+void test_log_level_accepts_the_named_key() {
+    runQuery("system.config.log-level logLevel=info");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);
+}
+
+void test_log_level_rejects_an_out_of_range_integer() {
+    runQuery("system.config.log-level value=5");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_log_level_rejects_an_unknown_word() {
+    runQuery("system.config.log-level value=verbose");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_log_level_rejects_an_unknown_argument() {
+    runQuery("system.config.log-level bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
+// An extra key alongside a valid value= must still be rejected as unknown -
+// the word-form translator only fires for an exactly-one-argument write
+// (consoleExecuteSystemLogLevel()'s own comment, src/console/console_module.cpp),
+// so this also proves the translator does not silently swallow the second key.
+void test_log_level_rejects_an_extra_argument_even_with_a_valid_word() {
+    runQuery("system.config.log-level value=debug bogus=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+}
+
 void test_scalar_config_write_rejects_an_unknown_argument() {
     runQuery("drive.config.speed-limit bogus=1");
 
@@ -2720,6 +2826,34 @@ void test_direct_set_identity_rejects_a_missing_name() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
 }
 
+// system.action.reboot (#225): no arguments, a status broadcast, then the
+// complete result record, then requestSystemRestart() -
+// g_test_restart_requests is the native stub's own observation hook
+// (src/native_test_stubs.cpp), the same one test_api_motion_routes.cpp
+// already uses for POST /api/reboot. The record-before-restart ordering
+// criterion 3 asks for is a source-level property of
+// consoleExecuteDirectReboot() (include/console_direct_action_system.h) -
+// this proves both calls happen exactly once per accepted command, not the
+// ordering between them.
+void test_direct_reboot_broadcasts_answers_then_requests_restart() {
+    runQuery("system.action.reboot");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_TRUE_MESSAGE(g_cap.resultCalled, "reboot answers a single result record");
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_restart_requests);
+}
+
+void test_direct_reboot_rejects_an_argument() {
+    runQuery("system.action.reboot delayMs=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_restart_requests,
+                                   "a rejected command must never reach requestSystemRestart()");
+}
+
 // rc.action.test-bindable: token=<rc-token> - "arm1_toggle" is
 // SERVO_ACTION_ARM1_TOGGLE's own rc_token (src/rc_action_types.cpp,
 // docs/action-registry.yaml), a non-analog, non-payload target the guard
@@ -3501,7 +3635,7 @@ void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_sc
 // g_cap harness the other tests use discards items.
 struct CapturedOperationItems {
     // Sized from the catalog itself at run time; 256 comfortably exceeds the
-    // ~192 entries the registry holds today and the listing is bounded by
+    // ~193 entries the registry holds today and the listing is bounded by
     // the catalog, never by input.
     char values[256][160];
     int count;
@@ -3952,6 +4086,14 @@ int main(int, char**) {
     RUN_TEST(test_aux_led_count_read_and_write);
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
+    RUN_TEST(test_log_level_read_and_write_the_integer);
+    RUN_TEST(test_log_level_accepts_every_word_form);
+    RUN_TEST(test_log_level_word_form_is_case_insensitive);
+    RUN_TEST(test_log_level_accepts_the_named_key);
+    RUN_TEST(test_log_level_rejects_an_out_of_range_integer);
+    RUN_TEST(test_log_level_rejects_an_unknown_word);
+    RUN_TEST(test_log_level_rejects_an_unknown_argument);
+    RUN_TEST(test_log_level_rejects_an_extra_argument_even_with_a_valid_word);
     RUN_TEST(test_scalar_config_write_rejects_an_unknown_argument);
     RUN_TEST(test_config_write_reports_busy_when_the_mutex_is_already_held);
     RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);
@@ -4020,6 +4162,9 @@ int main(int, char**) {
     RUN_TEST(test_direct_set_identity_defaults_mdns_to_false_when_omitted);
     RUN_TEST(test_direct_set_identity_rejects_an_invalid_name);
     RUN_TEST(test_direct_set_identity_rejects_a_missing_name);
+
+    RUN_TEST(test_direct_reboot_broadcasts_answers_then_requests_restart);
+    RUN_TEST(test_direct_reboot_rejects_an_argument);
 
     RUN_TEST(test_direct_test_bindable_dispatches_by_rc_token);
     RUN_TEST(test_direct_test_bindable_rejects_a_missing_token);

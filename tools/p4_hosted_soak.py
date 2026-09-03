@@ -128,16 +128,20 @@ ESP_RESET_REASON_NAMES = {
 # themselves, evidence of a panic or watchdog reset.
 BAD_RESET_REASONS = {4, 5, 6, 7, 15}
 
-# src/reset_reason.cpp -- resetReasonName()'s switch, read in full. The
-# shipping image publishes this NAME, not the enum value
-# (src/web/web_server.cpp:401), and the mapping is deliberately not a
-# bijection: every reason the switch does not case on (ESP_RST_CPU_LOCKUP,
-# ESP_RST_PWR_GLITCH, ESP_RST_USB, ESP_RST_JTAG, ESP_RST_EFUSE) falls to its
-# default and is published as "OTHER". A CPU lockup is therefore
-# indistinguishable from a JTAG reset on that image, which is why the
-# shipping classification below is tri-state: "OTHER" is recorded as unknown
-# and never as "not crash-shaped". src/ is fenced for this ticket, so the
-# collapse is reported on #197 rather than fixed here.
+# include/reset_reason.h -- resetReasonName()'s switch, read in full (#225:
+# moved here from src/reset_reason.cpp, header-only, so the Console's
+# system.status.health query can call it natively too - see that header's
+# own comment). The shipping image publishes this NAME, not the enum value
+# (src/web/web_server.cpp:408, a citation this comment previously had stale
+# at :401 - fixed in the same #225 pass that moved the file, not a separate
+# ticket), and the mapping is deliberately not a bijection: every reason the
+# switch does not case on (ESP_RST_CPU_LOCKUP, ESP_RST_PWR_GLITCH, ESP_RST_USB,
+# ESP_RST_JTAG, ESP_RST_EFUSE) falls to its default and is published as
+# "OTHER". A CPU lockup is therefore indistinguishable from a JTAG reset on
+# that image, which is why the shipping classification below is tri-state:
+# "OTHER" is recorded as unknown and never as "not crash-shaped". src/ is
+# fenced for this ticket, so the collapse is reported on #197 rather than
+# fixed here.
 SHIPPING_CRASH_SHAPED_RESET_NAMES = {"PANIC", "INT_WDT", "TASK_WDT", "WDT"}
 SHIPPING_CLEAN_RESET_NAMES = {"POWERON", "EXTERNAL", "SOFTWARE", "DEEPSLEEP", "BROWNOUT", "SDIO"}
 SHIPPING_UNKNOWN_RESET_NAMES = {"UNKNOWN", "OTHER"}
@@ -1191,7 +1195,7 @@ class ShippingStatusSchema(StatusSchema):
             return ResetReasonAssessment(
                 display=name, crash_shaped=None,
                 caveat=(
-                    f"resetReasonName() (src/reset_reason.cpp) reports {name!r}, which does not "
+                    f"resetReasonName() (include/reset_reason.h) reports {name!r}, which does not "
                     "identify one reset: 'OTHER' is its default arm and collapses "
                     "ESP_RST_CPU_LOCKUP, ESP_RST_PWR_GLITCH, ESP_RST_USB, ESP_RST_JTAG and "
                     "ESP_RST_EFUSE into one name, and 'UNKNOWN' is esp_reset_reason() itself "
@@ -1201,7 +1205,7 @@ class ShippingStatusSchema(StatusSchema):
         return ResetReasonAssessment(
             display=name, crash_shaped=None,
             caveat=(
-                f"resetReasonName() (src/reset_reason.cpp) does not produce {name!r} -- this "
+                f"resetReasonName() (include/reset_reason.h) does not produce {name!r} -- this "
                 "payload is not the shipping mapping this schema was read from"
             ),
         )

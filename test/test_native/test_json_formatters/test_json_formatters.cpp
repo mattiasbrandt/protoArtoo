@@ -176,112 +176,144 @@ void test_formatSerialJson_is_valid_json_object() {
 }
 
 // --- formatHealthJson() tests ---
+// uptimeMs/resetReason (#225) are appended with a fixed sample value/string
+// on every call below - only the field(s) each test names are varied, same
+// convention the rest of this block already uses for the other fixed args.
 
 void test_formatHealthJson_estop_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), true, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":true"));
 }
 
 void test_formatHealthJson_estop_false() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":false"));
 }
 
 void test_formatHealthJson_sbusSignalLost_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, true, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusSignalLost\":true"));
 }
 
 void test_formatHealthJson_sbusHwFailsafe_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, true, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusHwFailsafe\":true"));
 }
 
 void test_formatHealthJson_webControlEnabled_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, true, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"webControlEnabled\":true"));
 }
 
 void test_formatHealthJson_wifiConnected_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     75000UL, -65);
+                     75000UL, -65, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiConnected\":true"));
 }
 
 void test_formatHealthJson_wifiClientConnected_false() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiClientConnected\":false"));
 }
 
 void test_formatHealthJson_littleFsReady_true() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, true, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"littleFsReady\":true"));
 }
 
 void test_formatHealthJson_heapFree() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 123456,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapFree\":123456"));
 }
 
 void test_formatHealthJson_heapMin() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     77777, 75000UL, 0);
+                     77777, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapMin\":77777"));
 }
 
 void test_formatHealthJson_heapLargestBlock() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapLargestBlock\":75000"));
 }
 
 void test_formatHealthJson_wifiRssi_negative() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     75000UL, -72);
+                     75000UL, -72, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
 }
 
 void test_formatHealthJson_wifiRssi_zero_when_disconnected() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":0"));
 }
 
-void test_formatHealthJson_is_valid_json_object() {
-    char out[320];
+void test_formatHealthJson_uptimeMs() {
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 75000UL, 0);
+                     90000, 75000UL, 0, 4242424242UL, "SOFTWARE");
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"uptimeMs\":4242424242"));
+}
+
+void test_formatHealthJson_resetReason() {
+    char out[384];
+    formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
+                     90000, 75000UL, 0, 500000, "DEEPSLEEP");
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"resetReason\":\"DEEPSLEEP\""));
+}
+
+void test_formatHealthJson_is_valid_json_object() {
+    char out[384];
+    formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
+                     90000, 75000UL, 0, 500000, "SOFTWARE");
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
 void test_formatHealthJson_is_valid_json_with_largest_block() {
-    char out[320];
+    char out[384];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, false, true, 200000,
-                     180000, 75000UL, -70);
+                     180000, 75000UL, -70, 500000, "SOFTWARE");
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+}
+
+void test_formatHealthJson_worst_case_fits_the_buffer() {
+    // #225: resetReason is now variable-length ("DEEPSLEEP" is the longest
+    // literal resetReasonName() returns, include/reset_reason.h), so this is
+    // the one case that used to be impossible - every fixed-width field at
+    // its maximum, together with the longest string field. Proves the
+    // caller's sizing comment (handleHealthGet(), src/web/api_status.cpp)
+    // against the real formatter rather than by hand-counting bytes.
+    char out[384];
+    formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 4294967295UL,
+                     4294967295UL, 4294967295UL, -2147483648L, 4294967295UL, "DEEPSLEEP");
+    TEST_ASSERT_EQUAL_CHAR('{', out[0]);
+    TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+    TEST_ASSERT_LESS_THAN(sizeof(out), strlen(out) + 1);
 }
 
 void test_deriveWiFiConnectivityFields_ap_only_no_clients() {
@@ -359,8 +391,11 @@ int main() {
     RUN_TEST(test_formatHealthJson_heapLargestBlock);
     RUN_TEST(test_formatHealthJson_wifiRssi_negative);
     RUN_TEST(test_formatHealthJson_wifiRssi_zero_when_disconnected);
+    RUN_TEST(test_formatHealthJson_uptimeMs);
+    RUN_TEST(test_formatHealthJson_resetReason);
     RUN_TEST(test_formatHealthJson_is_valid_json_object);
     RUN_TEST(test_formatHealthJson_is_valid_json_with_largest_block);
+    RUN_TEST(test_formatHealthJson_worst_case_fits_the_buffer);
 
     return UNITY_END();
 }

@@ -147,7 +147,8 @@ system.config.enable_rc_ch6|RC CH6|Use the receiver signal connected to RC chann
 system.config.enable_drive|S1 — Hoverboard|Use the hoverboard drive controller connected to S1|configApply|
 system.config.enable_audio|S2 — Sound|Use the sound module connected to S2|configApply|
 system.config.enable_protor2link|S3 — Dome Control|Use the dome controller connected to S3|configApply|
-system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem|captureHealthSnapshot|
+system.config.log-level|Log Level|Runtime log level: 1 Error, 2 Warning, 3 Info, 4 Debug|configApply|
+system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, filesystem, uptime, reset reason|captureHealthSnapshot|
 system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
 system.status.logs|Logs|Recent firmware log lines|copyLogLineAt|
 system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|captureWifiStatusSnapshot|

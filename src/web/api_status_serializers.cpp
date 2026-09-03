@@ -22,11 +22,36 @@
 #ifdef ARDUINO
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#else
+// Native test build: esp_reset_reason()'s return type. <esp_system.h> does
+// not exist on the native toolchain (device builds get it transitively
+// through <Arduino.h> above); src/native_test_stubs.cpp defines the real
+// esp_reset_reason() symbol this links against, from its own private copy of
+// this enum (not exported via any header), so this TU needs its own
+// declaration too - the same shape src/web/web_network_bootstrap.cpp already
+// uses for the identical constraint. millis() needs no such declaration
+// here: include/robot_state.h and include/web_server.h below already pull in
+// <Arduino.h> (the native stub, test/stubs/include/Arduino.h) unconditionally.
+enum esp_reset_reason_t {
+    ESP_RST_UNKNOWN = 0,
+    ESP_RST_POWERON = 1,
+    ESP_RST_EXT = 2,
+    ESP_RST_SW = 3,
+    ESP_RST_PANIC = 4,
+    ESP_RST_INT_WDT = 5,
+    ESP_RST_TASK_WDT = 6,
+    ESP_RST_WDT = 7,
+    ESP_RST_DEEPSLEEP = 8,
+    ESP_RST_BROWNOUT = 9,
+    ESP_RST_SDIO = 10,
+};
+esp_reset_reason_t esp_reset_reason();
 #endif
 
 #include "config.h"
 #include "config_cache.h"
 #include "dome_link.h"
+#include "reset_reason.h"
 #include "robot_state.h"
 #include "web_network_manager.h"
 #include "web_server.h"
@@ -84,15 +109,18 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi) {
+                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi,
+                      unsigned long uptimeMs, const char* resetReason) {
     snprintf(buf, bufSize,
              "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
              "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld}",
+             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
+             "\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
              estop ? "true" : "false", sbusSignalLost ? "true" : "false",
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi);
+             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi, uptimeMs,
+             resetReason);
 }
 
 // =============================================================================
@@ -120,6 +148,14 @@ void captureHealthSnapshot(HealthSnapshot* out) {
     out->wifiRssi = connectivity.wifiRssi;
 
     out->littleFsReady = webLittleFsMounted();
+
+    // #225: uptime and reset reason, the same on both build types - millis()
+    // and esp_reset_reason() are each a real device call or a settable
+    // native stub (src/native_test_stubs.cpp), not an ARDUINO-only API like
+    // the heap block below. resetReasonName() returns a static string
+    // literal, so this is a pointer copy, not an allocation.
+    out->uptimeMs = millis();
+    out->resetReason = resetReasonName(esp_reset_reason());
 
 #ifdef ARDUINO
     out->heapFree = ESP.getFreeHeap();

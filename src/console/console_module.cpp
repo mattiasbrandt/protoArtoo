@@ -455,6 +455,11 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
     if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.uptimeMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "uptimeMs", tempBuf);
+    // resetReason is resetReasonName()'s static string literal - emitted
+    // directly, no tempBuf copy needed (#225).
+    if (sink->onRecordField) sink->onRecordField(requestId, "resetReason", snap.resetReason);
 
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
@@ -1495,6 +1500,95 @@ static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* 
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
+// Case-insensitive whole-string equality for the log-level word form below.
+// Written out rather than calling strcasecmp() (POSIX <strings.h>, not part
+// of the freestanding C++ surface this module otherwise sticks to - the same
+// rule consoleStartsWithIgnoringCase() states further down this file for its
+// own WiFi-password-key check; not reused directly here, since that helper
+// is defined after this point in the file and reusing it would need a
+// forward declaration for no real benefit - the two checks serve unrelated
+// domains).
+static bool consoleWordEqualsIgnoringCase(const char* s, const char* lowerWord) {
+    size_t i = 0;
+    for (; lowerWord[i] != '\0'; ++i) {
+        if (tolower((unsigned char)s[i]) != lowerWord[i]) {
+            return false;
+        }
+    }
+    return s[i] == '\0';
+}
+
+// system.config.log-level: value=<1..4> or the human word
+// (error/warning/info/debug) - docs/console-protocol.md s.1's own grammar
+// example is the word form ("system.config.log-level value=debug"). Read
+// renders the live numeric level (configCurrentLogLevel(), the same
+// lock-free byte the log macros read, include/logging.h); write accepts
+// both spellings, translating a recognized word into its digit into a fresh
+// local buffer before handing off to the shared scalar-config write path,
+// so api_config_apply.cpp's paramInt16(1, 4) range check stays the one place
+// that owns what a valid level is - this executor only knows the
+// word<->digit mapping the Apply Core does not.
+static void consoleExecuteSystemLogLevel(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                         char* rawArgs, ConsoleCommandSource source,
+                                         const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        char buf[4] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)configCurrentLogLevel());
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "value", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                             CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    // Detected on a disposable local copy, never on `rawArgs` itself:
+    // consoleParseArgs() tokenizes in place (NUL-splits key/value substrings
+    // into the same storage), so parsing the real rawArgs here would leave
+    // nothing for consoleWriteScalarConfigField()'s own parse below to split
+    // on. Only a single, exactly-named `value=`/`logLevel=` argument is
+    // translated; anything else (extra or unknown keys, an already-numeric
+    // value) is passed through untouched so the shared write path's own
+    // unknown-key and range checks are still the ones that decide it.
+    char detectBuf[256];
+    snprintf(detectBuf, sizeof(detectBuf), "%s", rawArgs);
+    ConsoleArgs detected = {};
+    char translated[32];
+    char* effectiveArgs = rawArgs;
+    if (consoleParseArgs(detectBuf, &detected) == CONSOLE_ARGS_PARSE_OK && detected.count == 1 &&
+        (strcmp(detected.items[0].key, "value") == 0 ||
+         strcmp(detected.items[0].key, "logLevel") == 0)) {
+        struct LogLevelWord {
+            const char* word;
+            const char* digit;
+        };
+        static const LogLevelWord kLogLevelWords[] = {
+            {"error", "1"},
+            {"warning", "2"},
+            {"info", "3"},
+            {"debug", "4"},
+        };
+        static const size_t kLogLevelWordCount =
+            sizeof(kLogLevelWords) / sizeof(kLogLevelWords[0]);
+        for (size_t i = 0; i < kLogLevelWordCount; ++i) {
+            if (consoleWordEqualsIgnoringCase(detected.items[0].value, kLogLevelWords[i].word)) {
+                snprintf(translated, sizeof(translated), "logLevel=%s", kLogLevelWords[i].digit);
+                effectiveArgs = translated;
+                break;
+            }
+        }
+    }
+
+    consoleWriteScalarConfigField(requestId, entry->name, "logLevel", effectiveArgs, source,
+                                  CONSOLE_OUTCOME_APPLIED, sink);
+}
+
 typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                               char* rawArgs, ConsoleCommandSource source,
                                               const ConsoleRecordSink* sink);
@@ -1509,6 +1603,7 @@ static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
     {"aux.config.led-pin", consoleExecuteAuxLedPin},
     {"aux.config.led-count", consoleExecuteAuxLedCount},
     {"rc.config.mode", consoleExecuteRcMode},
+    {"system.config.log-level", consoleExecuteSystemLogLevel},
 };
 static const size_t kScalarConfigExecutorCount =
     sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
