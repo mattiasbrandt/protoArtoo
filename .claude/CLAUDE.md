@@ -127,7 +127,7 @@ none.
 
 ### Hardware and Tooling Reminders
 
-- Use [tools/serial_monitor.py](../tools/serial_monitor.py) for serial capture; avoid ad-hoc pyserial snippets.
+- Use [tools/console_client.py](../tools/console_client.py) for serial capture; avoid ad-hoc pyserial snippets.
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - The HTTP server (`initPsychicWebServer()`, via `startHttpServerOnce()`) must be started from the WiFi event callback path, not directly in `setup()`.

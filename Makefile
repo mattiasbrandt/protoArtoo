@@ -207,13 +207,13 @@ flash-monitor: test ## Flash default build via USB then capture boot log
 	@port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) && \
 	  echo "==> flashing $(BUILD_ENV) to $$port" && \
 	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(BUILD_ENV) -t upload --upload-port $$port && \
-	  python3 tools/serial_monitor.py --port $$port --until "init complete" --timeout 30
+	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
 
 flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
 	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
 	  echo "==> flashing artoo_esp32_chirp to $$port" && \
 	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port && \
-	  python3 tools/serial_monitor.py --port $$port --until "init complete" --timeout 30
+	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
 	$(FLOCK) pio run -e artoo_esp32_chirp_ota
@@ -258,7 +258,7 @@ clean: ## Remove PlatformIO build artifacts
 	$(PIO) run -t clean
 
 monitor: ## Open serial monitor  (UPLOAD_PORT=/dev/... to pick a board)
-	@port=$$($(RESOLVE_PORT)) && python3 tools/serial_monitor.py --port $$port
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \

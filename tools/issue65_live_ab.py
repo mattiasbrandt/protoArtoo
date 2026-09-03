@@ -339,7 +339,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             },
             "serial": {
                 "command": command(
-                    "python3", f"{worktree}/tools/serial_monitor.py",
+                    "python3", f"{worktree}/tools/console_client.py",
                     "--port", serial_port, "--stream",
                 ),
                 "artifact": str(evidence / "serial.log"),

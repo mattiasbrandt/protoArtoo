@@ -1011,7 +1011,7 @@ def future_execution_argv(
             "--file", f"{tree}/.pio/build/{environment}/firmware.bin",
         ],
         "serialMonitor": [
-            "python3", f"{tree}/tools/serial_monitor.py",
+            "python3", f"{tree}/tools/console_client.py",
             "--port", serial_port, "--stream",
         ],
         "pingSample": ["ping", "-c", "1", "-W", "1", controller],

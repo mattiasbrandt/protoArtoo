@@ -40,7 +40,7 @@ draws the prompt with cursor-movement codes (the same codes vi/nano use), so
 a terminal that is not in raw mode shows those codes as literal text instead
 of moving the cursor — Backspace looks broken, Tab does nothing useful.
 Three terminals behave correctly out of the box: the two below, plus this
-repo's own `python3 tools/serial_monitor.py --interactive` (nothing extra to
+repo's own `python3 tools/console_client.py --interactive` (nothing extra to
 install). [troubleshooting.md](troubleshooting.md#console-interactive-session)
 is the authoritative list — exact flags, why each one is safe to open, and
 the key that detaches each one, which is **not the same for all three**:
@@ -72,7 +72,7 @@ Controller Console ready. Type 'help' for commands, Ctrl-C to leave.
 ```
 
 Type a command and press Enter. **Ctrl-C detaches** on `pio device monitor`
-and `tools/serial_monitor.py --interactive` — that is the terminal program's
+and `tools/console_client.py --interactive` — that is the terminal program's
 own default key, not something the firmware does; the firmware never closes
 a terminal on its own, and there is no `quit` or `exit` command to type.
 **picocom is the exception**: it does not act on Ctrl-C at all and forwards
@@ -86,7 +86,7 @@ this and every other client-specific key to know about before you attach.
 Changing a serial port's control lines (DTR/RTS) after it is already open can
 reset the board, and on at least one known combination can even leave it
 silent on both serial and WiFi. Stick to a plain attach — `pio device
-monitor`, `picocom`, or `tools/serial_monitor.py` — and never toggle DTR/RTS
+monitor`, `picocom`, or `tools/console_client.py` — and never toggle DTR/RTS
 once the port is open. The full measured results, the recovery steps if a
 board does get stranded, and how to tell a real reset from a missed capture
 are in [troubleshooting.md](troubleshooting.md#serial-monitor-caveat).
