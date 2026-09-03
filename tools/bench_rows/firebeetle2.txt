@@ -1,0 +1,161 @@
+# =============================================================================
+# tools/bench_rows/firebeetle2.txt
+#
+# The replayable sheet for the FireBeetle 2 (ESP32-P4) Console bench runbook
+# (#215), commands only -- everything #215 lists that the Console Client's
+# scripted mode (#264) can express. Human-only steps (physical attach/detach,
+# flashing, pressing heap from a browser) are `pause` directives; what a row
+# is expected to answer stays on #215's own criterion, never written here
+# (docs/console-protocol.md's "no expect directive" decision) -- a reviewer
+# reads the transcript against the linked ticket.
+#
+# Run with either adapter:
+#   python3 tools/console_client.py --port /dev/ttyACM0 --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --http http://<host> --script tools/bench_rows/firebeetle2.txt
+#
+# Select rows (by name only, e.g. "detach-replug" -- not the ticket number):
+#   --rows detach-replug,tab-completion   (explicit order, not file order)
+#   --skip-manual                         (every row with no `pause` -- agent-runnable)
+#
+# After this ticket, #215 owns edits to this file (ticket body, "Rows").
+# =============================================================================
+
+timeout 8
+settle 0.5
+
+# #217 - first command + help over USB CDC with logs streaming; stack
+# high-water and before/after-flash checks are bench-observed, not
+# console-expressible, and stay on #215's own evidence comment.
+@row 217 first-command-and-help
+pause Flash firebeetle2 (both firmware and filesystem images) and attach the terminal now
+send help
+send system.status.health
+
+# #260 - attach / detach / reconnect / no-host. The five steps from #215's
+# caution box: a partial command left mid-line survives a detach as an
+# empty, correctly-reprinted prompt, not as an inherited fragment.
+@row 260 detach-replug
+raw drive.action.mo
+pause Unplug the USB cable now, then press Enter here once it is reattached
+send system.status.health
+pause Repeat the detach with `help` output still printing (mid-stream), then press Enter once reattached
+send system.status.health
+
+# #219 - operations/operations type=<t> list every catalog entry over the
+# wire; help/help <op> render from the FS-resident help file; the detach key
+# is discoverable from inside the console (`help`'s detach_key field, serial
+# only). Both images (firmware + filesystem) must be current or the help
+# rows measure a stale artefact (#215's own note).
+@row 219 discovery
+send operations
+send operations type=action
+send operations type=status
+send operations type=config
+send operations type=event
+send help
+send help system.status.health
+
+# #238 - Tab and cursor bytes reach the device in a raw capture; ambiguous
+# prefix extends to the longest common prefix; a unique match completes with
+# a trailing space; argument keys complete and a second Tab lists them; Enter
+# never autocompletes; a known-but-unavailable operation still completes.
+# Serial only (raw/key directives are refused over --http).
+@row 238 tab-completion
+key tab,tab,tab,tab,tab,tab,tab,tab,tab,tab
+raw sys
+key tab
+raw system.status.he
+key tab
+raw drive.action.move
+key tab
+key tab
+raw system.status.
+key enter
+raw dome.action.dr
+key tab
+
+# #220 (closed) - one non-motion action parity transcript per adapter: serial
+# and browser giving the same outcome and reason. Enable Web control first
+# (needed for any action-type command, docs/console.md); sound.action is the
+# doc's own non-motion example.
+@row 220 non-motion-parity
+send system.action.enable-web-control
+send sound.action.random-humming
+
+# #221 - parameterized and raw manual actions with schema validation. `help`
+# on the manual-action operation is the safe, always-correct way to read its
+# argument schema back without guessing an exact parameter name here.
+@row 221 parameterized-manual-actions
+send help dome.action.marcduino-command
+send help dome.action.send-command
+
+# #222 (closed) - motion actions and Non-RC Control consent. Motion is not
+# wired through the Console yet (docs/console.md "What doesn't work here
+# yet"): the expected answer today is `unavailable reason=executor-not-ready`.
+@row 222 motion-and-non-rc-control
+send drive.action.move speed=100 steer=0
+send drive.action.speed value=100
+send drive.action.steer value=0
+
+# #224 - profiling operations and known-but-unavailable behaviour.
+# profiler.action.start is docs/console-protocol.md 3.1's own worked example
+# (`reason=not-in-this-build` on a non-profiler image).
+@row 224 profiling-and-unavailable
+send operations type=action
+send profiler.action.start
+
+# #225 (closed) - the Survival Path answers below the admission floor while
+# HTTP refuses. Pressing the admission floor needs several open browser tabs
+# / SSE clients, which is bench-operator work, not console_client's.
+@row 225 survival-path
+pause Open enough browser tabs/SSE clients to push heap below the admission floor, confirm HTTP is refusing, then press Enter
+send system.status.health
+
+# #226 - scalar configuration and Commanded Modes through the Apply Cores.
+# log-level round-trips through a value every board accepts; the two
+# Commanded Mode actions need no Web control of their own (docs/console.md).
+@row 226 scalar-config-and-commanded-modes
+send system.config.log-level
+send system.config.log-level value=debug
+send system.config.log-level value=info
+send system.action.enable-web-control
+send system.action.disable-web-control
+
+# #227 - grouped WiFi configuration with password writes excluded. Reading
+# is always safe; the password write is refused before it ever reaches
+# validation (docs/console.md "Passwords aren't typed here").
+@row 227 grouped-wifi-config
+send wifi.config.settings
+send wifi.config.settings sta-password=hunter2
+
+# #229 - sustained DEBUG traffic while typing; overflow behaviour on both
+# adapters' limits (docs/console-protocol.md 1.3: serial refuses at 62 bytes,
+# browser at 255). Whichever limit the ACTIVE transport enforces answers
+# `invalid reason=line-too-long`; the other transport just runs (or refuses
+# for an unrelated reason) an oversized nonsense operation name, which is
+# still informative, not a defect in this row.
+@row 229 sustained-traffic-and-overflow
+send system.config.log-level value=debug
+listen 5
+sendlen 70 sys.status.
+sendlen 260 sys.status.
+send system.config.log-level value=info
+
+# #265 - P4 sink stops dropping records. Run ONLY on a build containing
+# #265: system.status.health 13/13 on five consecutive runs, no dropped= on
+# any closing record. (Before #265 merges, ADR 0036's known drop is
+# expected here and is that ticket's own evidence, not a #215 failure.)
+@row 265 p4-sink-reliability
+send system.status.health
+send system.status.health
+send system.status.health
+send system.status.health
+send system.status.health
+
+# #240 - the browser adapter's response caps. `operations` streams and is
+# never capped (#240's fix); `system.status.logs` is the row that can hit
+# the 32-record/4096-byte bounded-path cap and answer `truncated:true` or
+# (rarer) HTTP 500, depending on the board's current log-ring depth.
+@row 240 response-caps
+send operations
+send system.status.logs

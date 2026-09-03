@@ -1,0 +1,105 @@
+# =============================================================================
+# tools/bench_rows/artoo_esp32.txt
+#
+# The replayable sheet for the artoo-esp32 Console bench runbook (#216),
+# commands only -- everything #216 lists that the Console Client's scripted
+# mode (#264) can express. Transport under test is the UART0 bridge,
+# unseated over USB-UART (#216's own scope: no seated or droid-mounted
+# hardware). Human-only steps are `pause` directives; what a row is expected
+# to answer stays on #216's own criterion, never written here
+# (docs/console-protocol.md's "no expect directive" decision).
+#
+# Run (serial is this board's primary transport; --http only if this board's
+# own WiFi is up and reachable):
+#   python3 tools/console_client.py --port /dev/ttyUSB0 --script tools/bench_rows/artoo_esp32.txt
+#
+# Select rows (by name only, e.g. "safe-attach" -- not the ticket number):
+#   --rows safe-attach,grouped-wifi-config   (explicit order, not file order)
+#   --skip-manual                            (every row with no `pause` -- agent-runnable)
+#
+# After this ticket, #216 owns edits to this file (ticket body, "Rows").
+# =============================================================================
+
+timeout 8
+settle 0.5
+
+# #214 (closed) - safe host-attach rule from the measured attach matrix
+# (docs/troubleshooting.md "Serial monitor caveat"): the default POSIX
+# backend measured 0/5 resets. Attach itself is what's under test, not a
+# console command; `help` is the first byte-for-byte proof the link is live
+# and did not reset the board.
+@row 214 safe-attach
+pause Attach over the UART0 bridge (unseated) now, using the default POSIX backend
+send help
+send system.status.health
+
+# #228 - unseated bidirectional transport; no unexplained reset on attach;
+# no line contention; sustained traffic; Core 1 unaffected. Flash / static /
+# resting-min-largest heap within ADR 0017 are bench-read from /api/status
+# or /api/profiler, not console-expressible.
+@row 228 unseated-bidirectional
+send help
+send system.status.health
+send system.config.log-level value=debug
+listen 5
+send system.config.log-level value=info
+
+# #225 (closed) - the Survival Path answers below the admission floor while
+# HTTP refuses. Pressing the admission floor needs several open browser tabs
+# / SSE clients, which is bench-operator work, not console_client's.
+@row 225 survival-path
+pause Open enough browser tabs/SSE clients to push heap below the admission floor, confirm HTTP is refusing, then press Enter
+send system.status.health
+
+# #220 (closed) - one non-motion action parity transcript per adapter: serial
+# and browser giving the same outcome and reason. Enable Web control first
+# (needed for any action-type command, docs/console.md); sound.action is the
+# doc's own non-motion example.
+@row 220 non-motion-parity
+send system.action.enable-web-control
+send sound.action.random-humming
+
+# #222 (closed) - motion actions and Non-RC Control consent, plus queue/state
+# evidence (DriveTask frame counters or a logic-level capture -- bench-read,
+# not console-expressible). Motion is not wired through the Console yet
+# (docs/console.md): expected today is `unavailable reason=executor-not-ready`.
+@row 222 motion-and-non-rc-control
+send drive.action.move speed=100 steer=0
+send drive.action.speed value=100
+send drive.action.steer value=0
+
+# #226 - scalar configuration and Commanded Modes, including "toggle a
+# component on a networkless controller" (serial reaches this with no
+# network up, unlike the dashboard). log-level round-trips through a value
+# every board accepts.
+@row 226 scalar-config-and-commanded-modes
+send system.config.log-level
+send system.config.log-level value=debug
+send system.config.log-level value=info
+send system.action.enable-web-control
+send system.action.disable-web-control
+
+# #227 - grouped WiFi configuration with the secret-not-settable refusal on
+# the live board. Reading is always safe; the password write is refused
+# before it ever reaches validation (docs/console.md).
+@row 227 grouped-wifi-config
+send wifi.config.settings
+send wifi.config.settings sta-password=hunter2
+
+# #218, #219 - browser parity rows (Live Logs on the live controller). The
+# actual page-vs-serial comparison is an operator judgement call, not
+# something this client renders; the pause exists so a human has the
+# dashboard open to compare against while these run.
+@row 218 browser-parity
+pause Open the dashboard's Live Logs panel now, so its output can be compared against this transcript
+send system.status.health
+send help
+
+# #229 - concurrency and overflow rows on artoo. Serial's own line limit is
+# 62 bytes (docs/console-protocol.md 1.3); this board's rows assume --port,
+# so only the serial-refusal length is meaningful here.
+@row 229 concurrency-and-overflow
+send system.config.log-level value=debug
+listen 5
+sendlen 70 sys.status.
+send system.config.log-level value=info

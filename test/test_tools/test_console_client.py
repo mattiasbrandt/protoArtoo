@@ -850,6 +850,52 @@ class RowsSelection(unittest.TestCase):
         self.assertNotIn("[PAUSE]", r.stdout)
 
 
+class ShippedBenchRows(unittest.TestCase):
+    """#264: tools/bench_rows/{firebeetle2,artoo_esp32}.txt -- the
+    replayable sheets #215/#216 own from here -- parse cleanly, declare no
+    duplicate row names (--rows selects by name; a collision would make one
+    row unreachable), and --skip-manual leaves at least one row runnable on
+    each file (a sheet that is entirely manual would make the "and its
+    agents drive" outcome false)."""
+
+    BENCH_ROWS_DIR = REPO_ROOT / "tools" / "bench_rows"
+
+    def _load(self, filename):
+        directives = console_client.load_script_file(str(self.BENCH_ROWS_DIR / filename))
+        return console_client.split_into_row_blocks(directives)
+
+    def test_firebeetle2_rows_parse_with_no_duplicate_names(self):
+        _, blocks = self._load("firebeetle2.txt")
+        labels = [b.label for b in blocks]
+        self.assertTrue(labels, "expected at least one @row block")
+        self.assertEqual(len(labels), len(set(labels)), f"duplicate row names: {labels}")
+
+    def test_artoo_esp32_rows_parse_with_no_duplicate_names(self):
+        _, blocks = self._load("artoo_esp32.txt")
+        labels = [b.label for b in blocks]
+        self.assertTrue(labels, "expected at least one @row block")
+        self.assertEqual(len(labels), len(set(labels)), f"duplicate row names: {labels}")
+
+    def test_firebeetle2_has_at_least_one_agent_runnable_row(self):
+        _, blocks = self._load("firebeetle2.txt")
+        selected = console_client.select_rows(blocks, None, True)
+        self.assertTrue(selected, "--skip-manual left nothing runnable")
+
+    def test_artoo_esp32_has_at_least_one_agent_runnable_row(self):
+        _, blocks = self._load("artoo_esp32.txt")
+        selected = console_client.select_rows(blocks, None, True)
+        self.assertTrue(selected, "--skip-manual left nothing runnable")
+
+    def test_every_row_directive_is_a_known_kind(self):
+        # load_script_file() already raises on an unknown directive keyword
+        # (a bare command missing its `send` prefix is the classic mistake
+        # here); this just proves both files actually get that far for
+        # every row, not only the ones exercised above.
+        for filename in ("firebeetle2.txt", "artoo_esp32.txt"):
+            directives = console_client.load_script_file(str(self.BENCH_ROWS_DIR / filename))
+            self.assertTrue(directives, filename)
+
+
 class _ConsoleStubHandler(http.server.BaseHTTPRequestHandler):
     """Reproduces src/web/api_console.cpp's POST /api/console response
     shapes for exactly the commands a test registers, so HttpTransport is
