@@ -153,6 +153,100 @@ void test_format_not_supported_omits_version_key() {
     TEST_ASSERT_NULL(strstr(out, "\"version\":"));
 }
 
+// =============================================================================
+// Version-RPC ask cache
+// =============================================================================
+
+void test_ask_cache_skips_when_link_not_ready() {
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleVersionAsk::SkipUnknown,
+                          (int)wifiModuleDecideVersionAsk(false, false));
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleVersionAsk::SkipUnknown,
+                          (int)wifiModuleDecideVersionAsk(false, true));
+}
+
+void test_ask_cache_uses_cache_when_occupied() {
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleVersionAsk::UseCached,
+                          (int)wifiModuleDecideVersionAsk(true, true));
+}
+
+void test_ask_cache_asks_once_when_ready_and_empty() {
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleVersionAsk::Ask,
+                          (int)wifiModuleDecideVersionAsk(true, false));
+}
+
+// =============================================================================
+// Fail-closed upload gate
+// =============================================================================
+
+static WifiModuleUploadGateInput makeGate(bool linkReady, WifiModuleUpdateSupport support,
+                                          bool versionPresent, uint32_t verMaj, uint32_t verMin,
+                                          uint32_t verPat, uint32_t hostMaj, uint32_t hostMin,
+                                          uint32_t hostPat) {
+    WifiModuleUploadGateInput in{};
+    in.linkReady = linkReady;
+    in.support = support;
+    in.versionPresent = versionPresent;
+    in.versionMajor = verMaj;
+    in.versionMinor = verMin;
+    in.versionPatch = verPat;
+    in.hostMajor = hostMaj;
+    in.hostMinor = hostMin;
+    in.hostPatch = hostPat;
+    return in;
+}
+
+void test_upload_gate_link_not_ready_fails_closed() {
+    WifiModuleUploadGateInput in =
+        makeGate(false, WifiModuleUpdateSupport::Supported, true, 2, 12, 11, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::LinkNotReady,
+                          (int)wifiModuleClassifyUploadGate(in));
+    TEST_ASSERT_EQUAL_STRING("wifi-module-link-not-ready",
+                             wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::LinkNotReady));
+}
+
+void test_upload_gate_unknown_is_not_already_current() {
+    // Matching numbers must not look like "already up to date" when unknown.
+    WifiModuleUploadGateInput in =
+        makeGate(true, WifiModuleUpdateSupport::Unknown, false, 2, 12, 11, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::Unknown,
+                          (int)wifiModuleClassifyUploadGate(in));
+    TEST_ASSERT_EQUAL_STRING("wifi-module-unknown",
+                             wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::Unknown));
+}
+
+void test_upload_gate_not_supported_fails_closed() {
+    WifiModuleUploadGateInput in =
+        makeGate(true, WifiModuleUpdateSupport::NotSupported, false, 0, 0, 0, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::NotSupported,
+                          (int)wifiModuleClassifyUploadGate(in));
+    TEST_ASSERT_EQUAL_STRING("wifi-module-not-supported",
+                             wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::NotSupported));
+}
+
+void test_upload_gate_supported_matching_version_is_already_current() {
+    WifiModuleUploadGateInput in =
+        makeGate(true, WifiModuleUpdateSupport::Supported, true, 2, 12, 11, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::AlreadyCurrent,
+                          (int)wifiModuleClassifyUploadGate(in));
+    TEST_ASSERT_EQUAL_STRING("wifi-module-already-current",
+                             wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::AlreadyCurrent));
+}
+
+void test_upload_gate_supported_different_version_is_allowed() {
+    WifiModuleUploadGateInput in =
+        makeGate(true, WifiModuleUpdateSupport::Supported, true, 0, 0, 0, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::Allow,
+                          (int)wifiModuleClassifyUploadGate(in));
+    TEST_ASSERT_NULL(wifiModuleUploadGateErrorToken(WifiModuleUploadDecision::Allow));
+}
+
+void test_upload_gate_supported_without_version_is_allowed() {
+    WifiModuleUploadGateInput in =
+        makeGate(true, WifiModuleUpdateSupport::Supported, false, 2, 12, 11, 2, 12, 11);
+    TEST_ASSERT_EQUAL_INT((int)WifiModuleUploadDecision::Allow,
+                          (int)wifiModuleClassifyUploadGate(in));
+}
+
 void test_format_serialized_size_budget() {
     // GET /api/status uses a 3072-byte static in handleStatusGet. Typical
     // wifiModule objects are tens of bytes; even worst-case uint32 versions
@@ -182,6 +276,17 @@ int main() {
     RUN_TEST(test_link_ready_version_read_ok_2_12_11_is_supported);
     RUN_TEST(test_link_ready_version_0_0_0_is_supported_not_unknown);
     RUN_TEST(test_update_support_name_strings);
+
+    RUN_TEST(test_ask_cache_skips_when_link_not_ready);
+    RUN_TEST(test_ask_cache_uses_cache_when_occupied);
+    RUN_TEST(test_ask_cache_asks_once_when_ready_and_empty);
+
+    RUN_TEST(test_upload_gate_link_not_ready_fails_closed);
+    RUN_TEST(test_upload_gate_unknown_is_not_already_current);
+    RUN_TEST(test_upload_gate_not_supported_fails_closed);
+    RUN_TEST(test_upload_gate_supported_matching_version_is_already_current);
+    RUN_TEST(test_upload_gate_supported_different_version_is_allowed);
+    RUN_TEST(test_upload_gate_supported_without_version_is_allowed);
 
     RUN_TEST(test_format_supported_typical_object);
     RUN_TEST(test_format_unknown_omits_version_key);

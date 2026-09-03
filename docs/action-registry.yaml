@@ -2936,6 +2936,26 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: system.action.upload-wifi-module
+  display_name: Upload WiFi Module
+  description: >
+    Host-to-module update of the fitted WiFi Module over the existing hosted
+    link. Fail-closed when the module is not on the bus or refuses the update
+    RPCs. Does not reboot the controller. Compiled in only when
+    PA_CAP_HOSTED_WIFI=1.
+  domain: system
+  type: action
+  board_capability: PA_CAP_HOSTED_WIFI
+  marcduino_cmd: null
+  api_path: /upload/wifi-module
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_upload.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 - name: system.api.event-stream
   display_name: Event Stream
   description: Server-sent event stream the dashboard subscribes to for status and rc events

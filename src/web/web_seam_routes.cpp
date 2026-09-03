@@ -26,6 +26,7 @@
 #include "../../include/api_system.h"
 #include "../../include/api_upload.h"
 #include "../../include/api_validation.h"
+#include "../../include/config.h"
 #include "../../include/seq_store_util.h"  // SEQ_FILE_MAX_BYTES
 #include "../../include/web_request.h"
 
@@ -160,6 +161,13 @@ void webRegisterSeamRoutes() {
                            handleFirmwareUploadDone);
     webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk,
                            handleFilesystemUploadDone);
+#if PA_CAP_HOSTED_WIFI
+    // Absent entirely on boards with no WiFi Module. Feature Availability
+    // tells the browser why; this route 404s via handleNotFound rather than
+    // pretending an upload can run.
+    webRegisterUploadRoute("/upload/wifi-module", handleWifiModuleUploadChunk,
+                           handleWifiModuleUploadDone);
+#endif
 
     // Everything the table above did not claim, and no static file answered
     // either. Registered here rather than in the bring-up so the fallthrough

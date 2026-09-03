@@ -94,6 +94,16 @@ static HostedLinkSupervisorState g_hostedLinkState;
 static portMUX_TYPE g_hostedLinkMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_hostedRecoveryTaskHandle = nullptr;
 
+// WiFi Module Update Support ask-cache (#241). The version RPC times out on
+// a factory module; status GET and SSE share this snapshot helper, so we
+// ask once after the link is ready and keep that result until linkReady
+// drops. g_wifiModuleAsking prevents a second blocking RPC while one is
+// already in flight (HTTP status and the SSE task both run on Core 0).
+static portMUX_TYPE g_wifiModuleMux = portMUX_INITIALIZER_UNLOCKED;
+static bool g_wifiModuleCacheOccupied = false;
+static bool g_wifiModuleAsking = false;
+static WifiModuleUpdateSupportResult g_wifiModuleCached;
+
 // Post-recovery WiFi rejoin diagnostics, one field per esp_wifi_* call
 // (2026-08-29 #184 device review: a collapsed bool made a real hardware
 // failure undiagnosable because Arduino's log_e() is compiled out at this
@@ -398,9 +408,6 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 }
 
 // WiFi Module Update Support snapshot for /api/status (#241, ADR 0034).
-// Classifies on each call (no cache): a later Degraded / hostedIsInitialized
-// drop must not keep a previous successful read. The version RPC is asked
-// only when the link is ready; Core 0 web path only.
 WifiModuleStatusSnapshot wifiModuleQueryUpdateSupport() {
     WifiModuleStatusSnapshot snap;
 
@@ -408,26 +415,81 @@ WifiModuleStatusSnapshot wifiModuleQueryUpdateSupport() {
 
     const bool initialized = hostedIsInitialized();
     const HostedLinkStatusSnapshot link = hostedLinkQueryStatus();
-    const bool linkReady = initialized && (link.phase != HostedLinkPhase::Degraded);
+    snap.linkReady = initialized && (link.phase != HostedLinkPhase::Degraded);
 
-    WifiModuleUpdateSupportInput in{};
-    in.linkReady = linkReady;
-    if (linkReady) {
-        // Same component public API as the Arduino wrapper, one layer below
-        // hostedGetSlaveVersion() -- that wrapper copies a file-static
-        // initialised to {0,0,0} and returns void, so a refused RPC and a
-        // genuine 0.0.0 are indistinguishable through it (ADR 0034).
-        esp_hosted_coprocessor_fwver_t ver{};
-        const int ret = esp_hosted_get_coprocessor_fwversion(&ver);
-        in.versionReadOk = (ret == ESP_OK);
-        if (in.versionReadOk) {
-            in.versionMajor = ver.major1;
-            in.versionMinor = ver.minor1;
-            in.versionPatch = ver.patch1;
-        }
+    bool cacheOccupied = false;
+    WifiModuleUpdateSupportResult cached{};
+    portENTER_CRITICAL(&g_wifiModuleMux);
+    cacheOccupied = g_wifiModuleCacheOccupied;
+    cached = g_wifiModuleCached;
+    portEXIT_CRITICAL(&g_wifiModuleMux);
+
+    const WifiModuleVersionAsk ask = wifiModuleDecideVersionAsk(snap.linkReady, cacheOccupied);
+
+    if (ask == WifiModuleVersionAsk::SkipUnknown) {
+        portENTER_CRITICAL(&g_wifiModuleMux);
+        g_wifiModuleCacheOccupied = false;
+        g_wifiModuleCached = WifiModuleUpdateSupportResult{};
+        portEXIT_CRITICAL(&g_wifiModuleMux);
+        WifiModuleUpdateSupportInput in{};
+        in.linkReady = false;
+        snap.classification = wifiModuleClassifyUpdateSupport(in);
+        return snap;
     }
 
-    snap.classification = wifiModuleClassifyUpdateSupport(in);
+    if (ask == WifiModuleVersionAsk::UseCached) {
+        snap.classification = cached;
+        return snap;
+    }
+
+    // Ask. If another Core 0 task is already in the RPC, do not stack a
+    // second blocking call -- return unknown for this snapshot; the next
+    // poll reads the cache.
+    bool wonAsk = false;
+    portENTER_CRITICAL(&g_wifiModuleMux);
+    if (g_wifiModuleAsking || g_wifiModuleCacheOccupied) {
+        if (g_wifiModuleCacheOccupied) {
+            snap.classification = g_wifiModuleCached;
+            portEXIT_CRITICAL(&g_wifiModuleMux);
+            return snap;
+        }
+        wonAsk = false;
+    } else {
+        g_wifiModuleAsking = true;
+        wonAsk = true;
+    }
+    portEXIT_CRITICAL(&g_wifiModuleMux);
+
+    if (!wonAsk) {
+        WifiModuleUpdateSupportInput in{};
+        in.linkReady = false;
+        snap.classification = wifiModuleClassifyUpdateSupport(in);
+        return snap;
+    }
+
+    // Same component public API as the Arduino wrapper, one layer below
+    // hostedGetSlaveVersion() -- that wrapper copies a file-static
+    // initialised to {0,0,0} and returns void, so a refused RPC and a
+    // genuine 0.0.0 are indistinguishable through it (ADR 0034).
+    WifiModuleUpdateSupportInput in{};
+    in.linkReady = true;
+    esp_hosted_coprocessor_fwver_t ver{};
+    const int ret = esp_hosted_get_coprocessor_fwversion(&ver);
+    in.versionReadOk = (ret == ESP_OK);
+    if (in.versionReadOk) {
+        in.versionMajor = ver.major1;
+        in.versionMinor = ver.minor1;
+        in.versionPatch = ver.patch1;
+    }
+    const WifiModuleUpdateSupportResult result = wifiModuleClassifyUpdateSupport(in);
+
+    portENTER_CRITICAL(&g_wifiModuleMux);
+    g_wifiModuleCached = result;
+    g_wifiModuleCacheOccupied = true;
+    g_wifiModuleAsking = false;
+    portEXIT_CRITICAL(&g_wifiModuleMux);
+
+    snap.classification = result;
     return snap;
 }
 

@@ -5,6 +5,7 @@
 // seam (ADR 0021) and bound by the seam route table:
 //   POST /upload/firmware    - firmware image (U_FLASH)
 //   POST /upload/filesystem  - LittleFS image (U_SPIFFS)
+//   POST /upload/wifi-module - WiFi Module image (hosted boards only)
 //
 // The size guard and the outcome-to-response mapping live here as pure
 // functions so the host tests can drive them; the handlers themselves are
@@ -172,3 +173,9 @@ void handleFirmwareUploadDone(WebRequest& req);
 void handleFilesystemUploadChunk(WebRequest& req, const char* filename, size_t index,
                                  const uint8_t* data, size_t len, bool final);
 void handleFilesystemUploadDone(WebRequest& req);
+
+// Hosted boards only. The seam registers this route under PA_CAP_HOSTED_WIFI;
+// artoo-esp32 does not register it and answers the generic 404.
+void handleWifiModuleUploadChunk(WebRequest& req, const char* filename, size_t index,
+                                 const uint8_t* data, size_t len, bool final);
+void handleWifiModuleUploadDone(WebRequest& req);

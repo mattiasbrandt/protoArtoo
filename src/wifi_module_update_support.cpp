@@ -46,3 +46,48 @@ WifiModuleUpdateSupportResult wifiModuleClassifyUpdateSupport(
     out.versionPatch = in.versionPatch;
     return out;
 }
+
+WifiModuleVersionAsk wifiModuleDecideVersionAsk(bool linkReady, bool cacheOccupied) {
+    if (!linkReady) {
+        return WifiModuleVersionAsk::SkipUnknown;
+    }
+    if (cacheOccupied) {
+        return WifiModuleVersionAsk::UseCached;
+    }
+    return WifiModuleVersionAsk::Ask;
+}
+
+WifiModuleUploadDecision wifiModuleClassifyUploadGate(const WifiModuleUploadGateInput& in) {
+    if (!in.linkReady) {
+        return WifiModuleUploadDecision::LinkNotReady;
+    }
+    if (in.support == WifiModuleUpdateSupport::Unknown) {
+        return WifiModuleUploadDecision::Unknown;
+    }
+    if (in.support == WifiModuleUpdateSupport::NotSupported) {
+        return WifiModuleUploadDecision::NotSupported;
+    }
+    // Version-equality refusal only when a version was actually read.
+    // Unknown never reaches here, so it cannot look like "already current".
+    if (in.versionPresent && in.versionMajor == in.hostMajor &&
+        in.versionMinor == in.hostMinor && in.versionPatch == in.hostPatch) {
+        return WifiModuleUploadDecision::AlreadyCurrent;
+    }
+    return WifiModuleUploadDecision::Allow;
+}
+
+const char* wifiModuleUploadGateErrorToken(WifiModuleUploadDecision decision) {
+    switch (decision) {
+        case WifiModuleUploadDecision::Allow:
+            return nullptr;
+        case WifiModuleUploadDecision::LinkNotReady:
+            return "wifi-module-link-not-ready";
+        case WifiModuleUploadDecision::Unknown:
+            return "wifi-module-unknown";
+        case WifiModuleUploadDecision::NotSupported:
+            return "wifi-module-not-supported";
+        case WifiModuleUploadDecision::AlreadyCurrent:
+            return "wifi-module-already-current";
+    }
+    return "wifi-module-unknown";
+}

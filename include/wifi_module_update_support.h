@@ -55,3 +55,48 @@ WifiModuleUpdateSupportResult wifiModuleClassifyUpdateSupport(
 
 // "unknown" | "not_supported" | "supported"
 const char* wifiModuleUpdateSupportName(WifiModuleUpdateSupport support);
+
+// -----------------------------------------------------------------------
+// Version-RPC ask cache (device glue holds the bytes; this decides)
+//
+// The version RPC times out on a factory module. Status and SSE both call
+// the snapshot helper, so the device shell asks once after the link is
+// ready and keeps that result until linkReady drops.
+// -----------------------------------------------------------------------
+
+enum class WifiModuleVersionAsk : uint8_t {
+    SkipUnknown,  // link not ready -- never asked; caller must clear cache
+    UseCached,    // link ready and a result is already held
+    Ask,          // link ready and not yet asked
+};
+
+WifiModuleVersionAsk wifiModuleDecideVersionAsk(bool linkReady, bool cacheOccupied);
+
+// -----------------------------------------------------------------------
+// Fail-closed upload gate -- before hostedBeginUpdate()
+// -----------------------------------------------------------------------
+
+enum class WifiModuleUploadDecision : uint8_t {
+    Allow,
+    LinkNotReady,
+    Unknown,
+    NotSupported,
+    AlreadyCurrent,
+};
+
+struct WifiModuleUploadGateInput {
+    bool linkReady = false;
+    WifiModuleUpdateSupport support = WifiModuleUpdateSupport::Unknown;
+    bool versionPresent = false;
+    uint32_t versionMajor = 0;
+    uint32_t versionMinor = 0;
+    uint32_t versionPatch = 0;
+    uint32_t hostMajor = 0;
+    uint32_t hostMinor = 0;
+    uint32_t hostPatch = 0;
+};
+
+WifiModuleUploadDecision wifiModuleClassifyUploadGate(const WifiModuleUploadGateInput& in);
+
+// JSON `error` token. nullptr when Allow.
+const char* wifiModuleUploadGateErrorToken(WifiModuleUploadDecision decision);

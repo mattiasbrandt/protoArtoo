@@ -3,10 +3,12 @@
 This document describes the currently exposed HTTP and SSE API in protoArtoo,
 including request shape, accepted parameters, and observed response contracts.
 
-**Route Coverage (for drift detection):** 64 routes total, derived from
+**Route Coverage (for drift detection):** 65 routes total, derived from
 `src/web/web_seam_routes.cpp`, `src/web/web_request_psychic.cpp` (SSE), and
-upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
+upload handlers. Breakdown: 61 core API routes + 3 multipart upload routes +
 1 SSE stream. All are documented here or listed under "Internal Routes".
+The third upload route (`POST /upload/wifi-module`) is registered only on
+boards with `PA_CAP_HOSTED_WIFI`; artoo-esp32 answers the generic 404.
 
 ## Table of Contents
 
@@ -1734,6 +1736,45 @@ curl -s -X POST http://artoo.local/upload/filesystem \
 
 ```json
 {"ok":true}
+```
+
+### POST /upload/wifi-module
+
+Streams a WiFi Module image over the hosted link into the module's inactive
+slot, then activates. Registered only on boards with `PA_CAP_HOSTED_WIFI`
+(firebeetle2). artoo-esp32 does not register the route (generic 404).
+
+Fail-closed before any write:
+
+- hosted link not ready (`hostedIsInitialized()` false or supervisor `degraded`)
+- `updateSupport` `unknown` (module not on the bus, never asked)
+- `updateSupport` `not_supported` (asked, refused)
+- module version present and equal to host ESP-Hosted version
+
+Does not use `hostedHasUpdate()`. Does not reboot the controller. Activate
+runs only after `ota_end` succeeds and after the HTTP 200 is sent.
+
+- Body: multipart upload (form field `wifiModule`)
+- Success: `200` `{"ok":true,"bytes":N,"minHeapFree":N,"durationMs":N}`
+- Errors:
+- `409` `{"ok":false,"error":"wifi-module-link-not-ready"}`
+- `409` `{"ok":false,"error":"wifi-module-unknown"}`
+- `409` `{"ok":false,"error":"wifi-module-not-supported"}`
+- `409` `{"ok":false,"error":"wifi-module-already-current"}`
+- `400` `{"ok":false,"error":"no image received"}`
+- `500` `{"ok":false,"error":"wifi-module-begin-failed"}` (and `write` / `end` / `update-failed`)
+
+#### Example request
+
+```bash
+curl -s -X POST http://firebeetle2.local/upload/wifi-module \
+  -F 'wifiModule=@network_adapter.bin'
+```
+
+#### Example response
+
+```json
+{"ok":true,"bytes":1100000,"minHeapFree":200000,"durationMs":8000}
 ```
 
 ### GET /api/coredump/status

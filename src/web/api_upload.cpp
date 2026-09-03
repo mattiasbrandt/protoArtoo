@@ -4,6 +4,7 @@
 // Streaming OTA upload endpoints, ported to the WebRequest seam (ADR 0021):
 //   POST /upload/firmware    - firmware image (U_FLASH)
 //   POST /upload/filesystem  - LittleFS image (U_SPIFFS)
+//   POST /upload/wifi-module - WiFi Module image (PA_CAP_HOSTED_WIFI)
 //
 // Split out of api_system.cpp when ported. These land early in the migration
 // on purpose: without a working HTTP upload path, later work needs a physical
@@ -27,6 +28,12 @@
 
 #include "logging.h"
 #include "web_server.h"
+
+#if PA_CAP_HOSTED_WIFI
+#include "esp32-hal-hosted.h"
+#include "wifi_module_status.h"
+#include "wifi_module_update_support.h"
+#endif
 
 static const char* TAG = "Upload";
 
@@ -233,3 +240,213 @@ void handleFilesystemUploadChunk(WebRequest& req, const char* filename, size_t i
 void handleFilesystemUploadDone(WebRequest& req) {
     handleUploadDone(s_filesystemSession, UploadTarget::kFilesystem, "filesystem", req);
 }
+
+#if PA_CAP_HOSTED_WIFI
+
+// WiFi Module Update (#241). Streams the body into hostedWriteUpdate() the
+// same way firmware streams into Update.write() -- never accumulated in heap.
+//
+// hostedDeinitWiFi() is NOT used as a pause: when BLE is inactive it calls
+// hostedDeinit() and tears down the SDIO stack (esp32-hal-hosted.c), which
+// would drop both this HTTP upload and the OTA RPCs. The radio traffic for
+// the transfer is the upload itself. Activate runs after the HTTP response
+// so a module reboot cannot swallow the 200. A failed begin/write/end does
+// not call activate, so the running slot stays selected.
+//
+// The controller is not restarted (ADR 0032).
+
+enum class WifiModuleUploadOutcome : uint8_t {
+    kInProgress,
+    kGated,
+    kFailedBegin,
+    kFailedWrite,
+    kFailedEnd,
+    kNoImage,
+    kBodyNotParsed,
+    kComplete,
+};
+
+struct WifiModuleUploadSession {
+    WifiModuleUploadOutcome outcome = WifiModuleUploadOutcome::kInProgress;
+    WifiModuleUploadDecision gateDecision = WifiModuleUploadDecision::Allow;
+    size_t bytesWritten = 0;
+    uint32_t minHeapFree = 0;
+    uint32_t startMs = 0;
+    bool sawChunk = false;
+    bool began = false;
+};
+
+static WifiModuleUploadSession s_wifiModuleSession = {};
+
+static const char* wifiModuleGateErrorJson(WifiModuleUploadDecision decision) {
+    switch (decision) {
+        case WifiModuleUploadDecision::LinkNotReady:
+            return "{\"ok\":false,\"error\":\"wifi-module-link-not-ready\"}";
+        case WifiModuleUploadDecision::Unknown:
+            return "{\"ok\":false,\"error\":\"wifi-module-unknown\"}";
+        case WifiModuleUploadDecision::NotSupported:
+            return "{\"ok\":false,\"error\":\"wifi-module-not-supported\"}";
+        case WifiModuleUploadDecision::AlreadyCurrent:
+            return "{\"ok\":false,\"error\":\"wifi-module-already-current\"}";
+        case WifiModuleUploadDecision::Allow:
+            break;
+    }
+    return "{\"ok\":false,\"error\":\"wifi-module-unknown\"}";
+}
+
+static const char* wifiModuleTransferErrorJson(WifiModuleUploadOutcome outcome) {
+    switch (outcome) {
+        case WifiModuleUploadOutcome::kFailedBegin:
+            return "{\"ok\":false,\"error\":\"wifi-module-begin-failed\"}";
+        case WifiModuleUploadOutcome::kFailedWrite:
+            return "{\"ok\":false,\"error\":\"wifi-module-write-failed\"}";
+        case WifiModuleUploadOutcome::kFailedEnd:
+            return "{\"ok\":false,\"error\":\"wifi-module-end-failed\"}";
+        case WifiModuleUploadOutcome::kNoImage:
+            return "{\"ok\":false,\"error\":\"no image received\"}";
+        case WifiModuleUploadOutcome::kBodyNotParsed:
+            return "{\"ok\":false,\"error\":\"the controller could not read the upload "
+                   "body; no image data reached the updater. retry\"}";
+        default:
+            return "{\"ok\":false,\"error\":\"wifi-module-update-failed\"}";
+    }
+}
+
+void handleWifiModuleUploadChunk(WebRequest& req, const char* filename, size_t index,
+                                 const uint8_t* data, size_t len, bool final) {
+    (void)filename;
+    s_wifiModuleSession.sawChunk = true;
+
+    if (index == 0) {
+        s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kInProgress;
+        s_wifiModuleSession.bytesWritten = 0;
+        s_wifiModuleSession.began = false;
+        s_wifiModuleSession.minHeapFree = (uint32_t)ESP.getFreeHeap();
+        s_wifiModuleSession.startMs = millis();
+
+        const WifiModuleStatusSnapshot snap = wifiModuleQueryUpdateSupport();
+        WifiModuleUploadGateInput gateIn{};
+        gateIn.linkReady = snap.linkReady;
+        gateIn.support = snap.classification.support;
+        gateIn.versionPresent = snap.classification.versionPresent;
+        gateIn.versionMajor = snap.classification.versionMajor;
+        gateIn.versionMinor = snap.classification.versionMinor;
+        gateIn.versionPatch = snap.classification.versionPatch;
+        gateIn.hostMajor = snap.hostMajor;
+        gateIn.hostMinor = snap.hostMinor;
+        gateIn.hostPatch = snap.hostPatch;
+
+        const WifiModuleUploadDecision decision = wifiModuleClassifyUploadGate(gateIn);
+        if (decision != WifiModuleUploadDecision::Allow) {
+            s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kGated;
+            s_wifiModuleSession.gateDecision = decision;
+            return;
+        }
+
+        if (!hostedBeginUpdate()) {
+            s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kFailedBegin;
+            return;
+        }
+        s_wifiModuleSession.began = true;
+    }
+
+    if (s_wifiModuleSession.outcome != WifiModuleUploadOutcome::kInProgress) {
+        return;
+    }
+
+    if (len > 0) {
+        if (!hostedWriteUpdate(const_cast<uint8_t*>(data), (uint32_t)len)) {
+            s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kFailedWrite;
+            return;
+        }
+        s_wifiModuleSession.bytesWritten += len;
+        const uint32_t freeHeap = (uint32_t)ESP.getFreeHeap();
+        if (freeHeap < s_wifiModuleSession.minHeapFree) {
+            s_wifiModuleSession.minHeapFree = freeHeap;
+        }
+    }
+
+    if (final) {
+        if (s_wifiModuleSession.bytesWritten == 0) {
+            s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kNoImage;
+            return;
+        }
+        if (!hostedEndUpdate()) {
+            s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kFailedEnd;
+            return;
+        }
+        s_wifiModuleSession.outcome = WifiModuleUploadOutcome::kComplete;
+        PA_LOG_INFO(TAG, "WiFi Module upload complete: %u bytes in %u ms, min free heap %u",
+                    (unsigned)s_wifiModuleSession.bytesWritten,
+                    (unsigned)(millis() - s_wifiModuleSession.startMs),
+                    (unsigned)s_wifiModuleSession.minHeapFree);
+    }
+}
+
+void handleWifiModuleUploadDone(WebRequest& req) {
+    WifiModuleUploadOutcome effective = s_wifiModuleSession.outcome;
+    if (effective == WifiModuleUploadOutcome::kInProgress) {
+        if (!s_wifiModuleSession.sawChunk && req.contentLength() > 0) {
+            effective = WifiModuleUploadOutcome::kBodyNotParsed;
+        } else {
+            effective = WifiModuleUploadOutcome::kNoImage;
+        }
+    }
+
+    const bool complete = (effective == WifiModuleUploadOutcome::kComplete);
+    const size_t bytesWritten = s_wifiModuleSession.bytesWritten;
+    const uint32_t minHeapFree = s_wifiModuleSession.minHeapFree;
+    const uint32_t durationMs = millis() - s_wifiModuleSession.startMs;
+    const WifiModuleUploadDecision gateDecision = s_wifiModuleSession.gateDecision;
+
+    s_wifiModuleSession = WifiModuleUploadSession{};
+
+    if (!complete) {
+        if (effective == WifiModuleUploadOutcome::kGated) {
+            PA_LOG_ERROR(TAG, "POST /upload/wifi-module gated: %s",
+                         wifiModuleUploadGateErrorToken(gateDecision));
+            req.send(409, "application/json", wifiModuleGateErrorJson(gateDecision));
+            return;
+        }
+        const int code = (effective == WifiModuleUploadOutcome::kNoImage) ? 400
+                         : (effective == WifiModuleUploadOutcome::kBodyNotParsed) ? 503
+                                                                                  : 500;
+        PA_LOG_ERROR(TAG, "POST /upload/wifi-module failed with %d", code);
+        req.send(code, "application/json", wifiModuleTransferErrorJson(effective));
+        return;
+    }
+
+    char body[96] = {};
+    if (!formatUploadSuccessJson(body, sizeof(body), bytesWritten, minHeapFree, durationMs)) {
+        PA_LOG_ERROR(TAG, "POST /upload/wifi-module response overflow");
+        req.send(500, "application/json", "{\"ok\":false,\"error\":\"wifi-module-update-failed\"}");
+        return;
+    }
+
+    PA_LOG_INFO(TAG, "[WEB] POST /upload/wifi-module - update written, activating module");
+    req.send(200, "application/json", body);
+    // Activate after the response so a module reboot cannot swallow the 200.
+    // Failure here leaves the new image in the inactive slot; the running
+    // slot stays selected (fail closed).
+    if (!hostedActivateUpdate()) {
+        PA_LOG_ERROR(TAG, "WiFi Module activate failed after a successful write");
+    }
+}
+
+#else  // !PA_CAP_HOSTED_WIFI
+
+void handleWifiModuleUploadChunk(WebRequest& req, const char* filename, size_t index,
+                                 const uint8_t* data, size_t len, bool final) {
+    (void)req;
+    (void)filename;
+    (void)index;
+    (void)data;
+    (void)len;
+    (void)final;
+}
+
+void handleWifiModuleUploadDone(WebRequest& req) {
+    req.send(404, "application/json", "{\"ok\":false,\"error\":\"not on this board\"}");
+}
+
+#endif  // PA_CAP_HOSTED_WIFI

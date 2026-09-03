@@ -14,14 +14,15 @@
 
 struct WifiModuleStatusSnapshot {
     WifiModuleUpdateSupportResult classification;
+    bool linkReady = false;
     uint32_t hostMajor = 0;
     uint32_t hostMinor = 0;
     uint32_t hostPatch = 0;
 };
 
-// Snapshot for /api/status. Classifies on each call (no cache): if the
-// link is not ready the version RPC is not asked; if it is, this calls
-// esp_hosted_get_coprocessor_fwversion() directly (ADR 0034 -- not the
-// Arduino hostedGetSlaveVersion() wrapper, which cannot express unknown).
-// Defined in web_network_manager_hosted.cpp. Core 0 web path only.
+// Snapshot for /api/status and the upload gate (#241, ADR 0034).
+// Asks esp_hosted_get_coprocessor_fwversion() once after the link is ready
+// and caches that classification until linkReady drops (not initialized or
+// supervisor Degraded). Does not use hostedGetSlaveVersion().
+// Defined in web_network_manager_hosted.cpp. Core 0 only.
 WifiModuleStatusSnapshot wifiModuleQueryUpdateSupport();
