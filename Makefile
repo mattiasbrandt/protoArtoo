@@ -108,7 +108,7 @@ FLOCK := python3 tools/pio_lock.py
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
         check-chirp check-mp3trigger \
-        setup setup-wifi clean monitor check-deps
+        setup setup-wifi clean monitor console bench-rows check-deps
 
 # Default target — launches the interactive wizard
 all:
@@ -259,6 +259,34 @@ clean: ## Remove PlatformIO build artifacts
 
 monitor: ## Open serial monitor  (UPLOAD_PORT=/dev/... to pick a board)
 	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port
+
+# ── Controller Console: interactive session and bench-row replay ─────────────
+# tools/console_client.py has three modes; `monitor` above only ever reached the
+# read-only capture one. These two expose the other two. Both resolve the port
+# through RESOLVE_PORT exactly as `monitor` does — a literal or defaulted port
+# is the fault c0eca355 removed, after `make flash` aimed an ESP32-P4 image at
+# the artoo and only esptool's chip check stopped it.
+#
+# Reference for the client itself, including the directive grammar these sheets
+# are written in: docs/console-client.md.
+
+BENCH_ROWS  ?=
+ROWS        ?=
+SKIP_MANUAL ?=
+
+console: ## Interactive Console session  (UPLOAD_PORT=/dev/... to pick a board)
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port --interactive
+
+bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1])
+	@if [ -z "$(BENCH_ROWS)" ]; then \
+	  echo "BENCH_ROWS is required: a bench sheet is board-specific and is never guessed."; \
+	  echo "  make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt"; \
+	  echo "Sheets in this tree:"; \
+	  ls tools/bench_rows/*.txt; \
+	  exit 1; \
+	fi
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port \
+	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual)
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \
