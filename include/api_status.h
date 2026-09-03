@@ -36,6 +36,14 @@ struct WiFiConnectivityFields {
 // =============================================================================
 
 // GET /api/health's fields, verbatim (formatHealthJson's JSON keys).
+//
+// uptimeMs/resetReason (#225): the survival set below the HTTP admission
+// floor - added additively, same key spellings /api/status already uses
+// (src/web/web_server.cpp: "uptimeMs", "resetReason") so a serial transcript
+// and the REST API name the same thing the same way (docs/console-protocol.md
+// s.3.5). resetReason is a `const char*` to resetReasonName()'s static
+// string literal (include/reset_reason.h) - never copied into a buffer, so
+// this field costs no allocation and no extra storage.
 struct HealthSnapshot {
     bool estop;
     bool sbusSignalLost;
@@ -48,6 +56,8 @@ struct HealthSnapshot {
     unsigned long heapMin;
     unsigned long heapLargestBlock;
     long wifiRssi;
+    unsigned long uptimeMs;
+    const char* resetReason;
 };
 
 // Capture the health snapshot: estop/SBUS diagnostics under robotStateMux,
@@ -179,11 +189,14 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
 //         heapMin           - minimum free heap since boot in bytes
 //         heapLargestBlock  - largest contiguous free heap block in bytes
 //         wifiRssi          - STA RSSI in dBm (0 when STA disconnected)
+//         uptimeMs          - milliseconds since boot (#225, same key /api/status uses)
+//         resetReason       - resetReasonName()'s static string for the last reset (#225)
 // thread-safe: yes (pure function, no globals)
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
+                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi,
+                      unsigned long uptimeMs, const char* resetReason);
 
 // Endpoint handlers
 void handleWifiGet(WebRequest& req);

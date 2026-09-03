@@ -353,11 +353,14 @@ void tearDown() {}
 // =============================================================================
 
 void test_health_three_way_field_match() {
-    char json[256];
+    // 384, matching handleHealthGet()'s own buffer (src/web/api_status.cpp) -
+    // resetReason (#225) is a variable-length string, not a fixed-width
+    // value, so this is no longer bounded by the old fixed-field shape.
+    char json[384];
     // Same shape formatHealthJson() actually emits - values are arbitrary,
     // only the key set matters here.
     formatHealthJson(json, sizeof(json), true, false, false, true, false, false, true, 1000, 900,
-                     800, -50);
+                     800, -50, 123456, "SOFTWARE");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("system.status.health");
 

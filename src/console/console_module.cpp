@@ -455,6 +455,11 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
     if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.uptimeMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "uptimeMs", tempBuf);
+    // resetReason is resetReasonName()'s static string literal - emitted
+    // directly, no tempBuf copy needed (#225).
+    if (sink->onRecordField) sink->onRecordField(requestId, "resetReason", snap.resetReason);
 
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,

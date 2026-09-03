@@ -41,7 +41,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     formatHealthJson(buffer, bufferSize, snap.estop, snap.sbusSignalLost, snap.sbusHwFailsafe,
                      snap.webControlEnabled, snap.wifiConnected, snap.wifiClientConnected,
                      snap.littleFsReady, snap.heapFree, snap.heapMin, snap.heapLargestBlock,
-                     snap.wifiRssi);
+                     snap.wifiRssi, snap.uptimeMs, snap.resetReason);
 }
 
 // GET /api/wifi - active connection diagnostics, read by the WiFi page
@@ -80,10 +80,15 @@ void handleSerialGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-// GET /api/health - the small telemetry payload the shell polls. Every field is
-// a bool or a fixed-width number, so 256 bytes is the whole of it.
+// GET /api/health - the small telemetry payload the shell polls, and (#225)
+// the survival set the Console's system.status.health answers below the HTTP
+// admission floor. Most fields are a bool or a fixed-width number, but
+// resetReason (#225) is a variable-length string - resetReasonName()'s
+// longest literal is "DEEPSLEEP" (9 chars) - so this is no longer the fixed
+// upper bound the prior comment claimed. Worst case (every numeric field
+// maxed, "DEEPSLEEP") is 303 bytes; 384 keeps headroom above that.
 void handleHealthGet(WebRequest& req) {
-    char body[256];
+    char body[384];
     buildHealthJson(body, sizeof(body));
     req.send(200, "application/json", body);
 }

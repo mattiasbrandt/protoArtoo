@@ -9,7 +9,7 @@ both cheap:
    what counts as a restart on each image, what a wrong `--image` does, and
    which report keys each image may emit.
 2. **Drift guards** that read the firmware sources the schemas were derived
-   from (`src/web/web_server.cpp`, `src/reset_reason.cpp`,
+   from (`src/web/web_server.cpp`, `include/reset_reason.h`,
    `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on either
    image, this suite goes red instead of the harness silently reading a field
    that is no longer there.
@@ -31,7 +31,10 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 import p4_hosted_soak as soak  # noqa: E402
 
 WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
-RESET_REASON_CPP = (REPO_ROOT / "src" / "reset_reason.cpp").read_text()
+# #225: resetReasonName() moved from src/reset_reason.cpp into
+# include/reset_reason.h (header-only, so the Console's system.status.health
+# query can call it from a native-compiled translation unit too).
+RESET_REASON_H = (REPO_ROOT / "include" / "reset_reason.h").read_text()
 BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
@@ -110,7 +113,7 @@ class ResetReasonClassification(unittest.TestCase):
         # Read the switch rather than trusting the harness's copy of it. A new
         # case (say ESP_RST_CPU_LOCKUP getting its own name) narrows the
         # ambiguity and must be reflected, not silently ignored.
-        emitted = set(re.findall(r'return "([A-Z_]+)";', RESET_REASON_CPP))
+        emitted = set(re.findall(r'return "([A-Z_]+)";', RESET_REASON_H))
         classified = (soak.SHIPPING_CRASH_SHAPED_RESET_NAMES
                       | soak.SHIPPING_CLEAN_RESET_NAMES
                       | soak.SHIPPING_UNKNOWN_RESET_NAMES)

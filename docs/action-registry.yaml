@@ -3020,7 +3020,7 @@ entries:
   executor: configApply
 - name: system.status.health
   display_name: Health
-  description: 'System health snapshot: estop, SBUS, WiFi, heap, filesystem'
+  description: 'System health snapshot: estop, SBUS, WiFi, heap, filesystem, uptime, reset reason'
   domain: system
   type: status
   marcduino_cmd: null
@@ -3046,6 +3046,8 @@ entries:
   - heapMin
   - heapLargestBlock
   - wifiRssi
+  - uptimeMs
+  - resetReason
 - name: system.status.dashboard-health
   display_name: Dashboard Health Signals
   description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
