@@ -31,6 +31,8 @@ epic issue. Material an agent needs only on some paths lives under
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
 - Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
+- Soak harness operation, its Soak Drivers and its verdict/exit-code contract:
+  `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
