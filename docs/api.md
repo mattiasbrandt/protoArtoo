@@ -1514,10 +1514,14 @@ curl -s http://artoo.local/api/status
 
 ### GET /api/health
 
-Returns a small, fixed health snapshot — the one status endpoint built to
-keep answering even while the controller is shedding other requests under
-heap pressure, so it is the one to poll first when something else looks
-stuck.
+Returns a small, fixed health snapshot.
+
+Despite the name, this is not the endpoint to reach for during a heap-
+pressure event: the admission layer's diagnostic allow-list
+(`webPathIsDiagnostic()`) does not include `/api/health`, so it is held to
+the ordinary, higher admission floor and can refuse before `GET /api/status`
+does. `/api/status` is on that list — poll it instead when the controller is
+shedding requests.
 
 - Success: `200` JSON
 - Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
