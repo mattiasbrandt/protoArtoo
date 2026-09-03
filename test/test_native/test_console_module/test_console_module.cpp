@@ -87,6 +87,8 @@
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
                                   // own queue stub (#221 remainder)
+#include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
+                                     // own observation hook, shared with test_api_motion_routes.cpp
 
 #include "sequence_dispatcher.h"  // sequenceDispatcherInit(), sequenceCatalogAt/Count/Find() -
                                    // dome.action.dome-sequence/test-sequence's sequenceStart()
@@ -105,13 +107,6 @@
                                      // dispatcher task drives it (#221 remainder)
 #include "seq_last_run_json.h"      // populateSeqLastRunJson() - the JSON-builder leg of
                                      // dome.api.get-sequence-last-run's three-way field check
-
-// requestSystemRestart()'s recorded side effect (src/native_test_stubs.cpp) -
-// system.action.reboot's (#225) own observation hook, the same symbol
-// test_api_motion_routes.cpp already declares for POST /api/reboot; a local
-// extern here rather than a shared header, matching that file's own choice
-// for this particular symbol.
-extern unsigned g_test_restart_requests;
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
 // resolving it with the same config DriveTask would use is the queue/state

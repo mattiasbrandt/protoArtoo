@@ -28,6 +28,10 @@
 #include "robot_state.h"
 #include "web_admission.h"
 #include "web_request_test_backend.h"
+#include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
+                                     // raw declaration into a shared header, now that
+                                     // test_console_module.cpp needs it too
+                                     // (include/web_server_test_hooks.h's own comment)
 
 // Recorded side effects from src/native_test_stubs.cpp.
 extern bool g_test_commanded_stationary;
@@ -36,7 +40,6 @@ extern unsigned g_test_web_control_calls;
 extern unsigned g_test_status_broadcast_count;
 extern unsigned g_test_marcduino_calls;
 extern unsigned g_test_applied_mood;
-extern unsigned g_test_restart_requests;
 extern bool g_test_speed_preset_persist_ok;
 extern bool g_test_aux_led_queue_ok;
 extern DomeLayoutCacheStatus g_test_dome_layout_status;
