@@ -26,9 +26,11 @@ import pty
 import select
 import signal
 import socket
+import tempfile
 import termios
 import threading
 import time
+import types
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -760,6 +762,115 @@ class HttpTransportAgainstAStub(unittest.TestCase):
         with self.assertRaises(console_client.ConsoleClientToolFailure):
             with contextlib.redirect_stdout(io.StringIO()):
                 transport.send_line("system.status.health", timeout=1.0)
+
+
+def _fake_args(**overrides):
+    """A minimal stand-in for argparse's Namespace -- only the attributes
+    build_provenance_header()/its helpers actually read."""
+    base = dict(port="/dev/ttyFAKE0", baud=115200, http=None, status=None,
+                board=None, image=None)
+    base.update(overrides)
+    return types.SimpleNamespace(**base)
+
+
+class ProvenanceAndColor(unittest.TestCase):
+    """#264: the provenance header's mandatory-image-identity cascade,
+    by-id lookup, and the two-state colour rule."""
+
+    def test_colorize_leaves_non_record_lines_untouched(self):
+        for line in ("[TIMEOUT] send did not close", "--- send b'x' ---",
+                     "[54012][W][WebServer] heap floor", ""):
+            self.assertEqual(console_client.colorize_record_line(line, True), line)
+
+    def test_colorize_disabled_is_always_a_no_op(self):
+        line = "< id=1 type=end status=err outcome=invalid"
+        self.assertEqual(console_client.colorize_record_line(line, False), line)
+
+    def test_colorize_marks_an_ok_record_and_an_error_record_with_different_colours(self):
+        ok = console_client.colorize_record_line(
+            "< id=1 type=end status=ok outcome=completed", True)
+        err = console_client.colorize_record_line(
+            "< id=1 type=end status=err outcome=invalid", True)
+        ok_code = ok.split("< id=", 1)[0]
+        err_code = err.split("< id=", 1)[0]
+        self.assertTrue(ok_code, "an ok record must still be coloured (state 1 of the two)")
+        self.assertTrue(err_code, "an error record must still be coloured (state 2 of the two)")
+        self.assertNotEqual(ok_code, err_code,
+                             "ok and error records must use different ANSI codes")
+
+    def test_lookup_by_id_finds_the_stable_name_for_the_requested_device(self):
+        with tempfile.TemporaryDirectory() as root:
+            device = os.path.join(root, "ttyACM0")
+            open(device, "w").close()
+            by_id_dir = os.path.join(root, "by-id")
+            os.mkdir(by_id_dir)
+            os.symlink(device, os.path.join(by_id_dir, "usb-Espressif-if00"))
+            with mock.patch.object(
+                console_client.resolve_upload_port, "discover",
+                return_value=[(device, "usb-Espressif-if00")],
+            ):
+                self.assertEqual(console_client.lookup_by_id(device), "usb-Espressif-if00")
+
+    def test_lookup_by_id_returns_none_for_an_unlisted_device(self):
+        with mock.patch.object(console_client.resolve_upload_port, "discover", return_value=[]):
+            self.assertIsNone(console_client.lookup_by_id("/dev/ttyNOPE"))
+
+    def test_image_identity_prefers_http_status_over_the_image_flag(self):
+        args = _fake_args(image="operator-label")
+        with mock.patch.object(console_client, "fetch_json_status",
+                                return_value={"firmwareVersion": "v9", "fsVersion": "fs-v9"}), \
+             mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            args.status = "http://10.0.0.5"
+            header = console_client.build_provenance_header(args)
+        self.assertIn("IMAGE: firmwareVersion=v9 fsVersion=fs-v9", header)
+
+    def test_image_identity_falls_back_to_the_image_flag_when_status_is_unreachable(self):
+        args = _fake_args(image="operator-label", status="http://10.0.0.5")
+        with mock.patch.object(console_client, "fetch_json_status", return_value=None), \
+             mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("IMAGE: operator-label", header)
+
+    def test_image_identity_is_an_explicit_unknown_line_absent_both(self):
+        args = _fake_args()
+        with mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("IMAGE: UNKNOWN (not evidence)", header)
+
+    def test_board_line_states_the_operator_assertion_without_a_verdict(self):
+        args = _fake_args(board="firebeetle2")
+        with mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("BOARD: firebeetle2 (asserted)", header)
+
+    def test_board_line_is_explicit_when_not_asserted(self):
+        args = _fake_args()
+        with mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("BOARD: (not asserted)", header)
+
+    def test_repo_line_is_explicit_unknown_when_git_metadata_is_unavailable(self):
+        args = _fake_args()
+        with mock.patch.object(console_client, "git_head_and_dirty", return_value=None), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("REPO: UNKNOWN", header)
+
+    def test_git_head_and_dirty_reads_the_real_repo(self):
+        result = console_client.git_head_and_dirty(str(REPO_ROOT))
+        self.assertIsNotNone(result)
+        sha, dirty = result
+        self.assertRegex(sha, r"^[0-9a-f]{8}$")
+        self.assertIsInstance(dirty, bool)
+
+    def test_git_head_and_dirty_is_none_outside_a_git_checkout(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertIsNone(console_client.git_head_and_dirty(root))
 
 
 class DirectiveParsingAndHelpers(unittest.TestCase):

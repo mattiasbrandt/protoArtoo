@@ -9,7 +9,9 @@
 #
 # Opens the port without becoming its controlling terminal and without touching
 # DTR/RTS on POSIX systems. Output goes to stdout; status/errors go to stderr.
-# Exit code 0 on success; see "Exit codes" below for the rest.
+# Exit code 0 on success in every mode; scripted mode's other codes (a request
+# that never closed, a sink-confirmed drop, an adapter-confirmed cap) are the
+# EXIT_* constants in the "Scripted mode" section below.
 #
 # The default POSIX backend is one of the attach methods measured at 0/5 resets
 # (docs/troubleshooting.md, "Serial monitor caveat"). The --pyserial backend is
@@ -64,6 +66,7 @@ import re
 import select
 import signal
 import socket
+import subprocess
 import sys
 import termios
 import time
@@ -71,6 +74,18 @@ import tty
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
+
+# tools/resolve_upload_port.py is reused, never edited (#264 pin): its
+# discover() is the enumeration this file's board-identity header needs.
+# Inserted explicitly rather than relying on sys.path[0] (only set to this
+# script's own directory when run as `python3 tools/console_client.py` --
+# a test loading this module by file path via importlib does not get that
+# for free).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import resolve_upload_port  # noqa: E402
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BAUD_MAP = {
     9600: termios.B9600,
@@ -427,6 +442,125 @@ DEFAULT_LISTEN_SECONDS = 2.0  # tasks/console_bench.py's raw/key drain floor was
 DEFAULT_SETTLE_SECONDS = 0.3  # acceptance criterion's stated default
 
 
+# =============================================================================
+# Provenance header and colour (#264)
+# =============================================================================
+
+def git_head_and_dirty(repo_root: str) -> tuple[str, bool] | None:
+    """(short sha, dirty) for `repo_root`, or None if git metadata is not
+    available at all (no git on PATH, not a git checkout) -- the header's
+    caller falls back to an explicit `REPO: UNKNOWN` line rather than
+    guessing."""
+    try:
+        sha_proc = subprocess.run(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=repo_root, capture_output=True, text=True, timeout=5,
+        )
+        if sha_proc.returncode != 0:
+            return None
+        status_proc = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root, capture_output=True, text=True, timeout=5,
+        )
+        return sha_proc.stdout.strip(), bool(status_proc.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def lookup_by_id(port: str) -> str | None:
+    """The by-id identity resolve_upload_port.discover() has for `port`, or
+    None if the port has no stable name (or is not currently enumerated --
+    a race with the port itself, not this function's problem to solve)."""
+    real = os.path.realpath(port)
+    for device, stable in resolve_upload_port.discover():
+        if device == port or os.path.realpath(device) == real:
+            return stable
+    return None
+
+
+def fetch_json_status(base_url: str, timeout: float = 5.0) -> dict | None:
+    """GET <base_url>/api/status, parsed. None on any failure to reach it or
+    parse it -- reported to stderr (never silently swallowed), since image
+    identity is mandatory and a caller falls back to --image or the
+    explicit UNKNOWN line, never to a guess."""
+    url = base_url.rstrip("/") + "/api/status"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=timeout) as resp:
+            body = resp.read()
+        return json.loads(body)
+    except (urllib.error.URLError, socket.timeout, TimeoutError, ValueError) as e:
+        print(f"[console] WARNING: could not fetch {url} for image identity: {e}",
+              file=sys.stderr)
+        return None
+
+
+def build_provenance_header(args) -> list[str]:
+    """Port/HTTP, by-id identity, baud, host UTC time, repo HEAD+dirty,
+    board, and image identity -- the last one mandatory (acceptance
+    criterion): from the HTTP status when reachable, else --image, else an
+    explicit UNKNOWN line rather than leaving host HEAD as the only
+    version on the page (the #233 misreading this exists to catch)."""
+    lines: list[str] = []
+
+    if args.http:
+        lines.append(f"HTTP: {args.http}")
+    else:
+        port_line = f"PORT: {args.port}"
+        by_id = lookup_by_id(args.port)
+        if by_id:
+            port_line += f" ({by_id})"
+        lines.append(port_line)
+        lines.append(f"BAUD: {args.baud}")
+
+    lines.append(f"HOST-TIME: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
+
+    head_dirty = git_head_and_dirty(REPO_ROOT)
+    if head_dirty is None:
+        lines.append("REPO: UNKNOWN")
+    else:
+        sha, dirty = head_dirty
+        lines.append(f"REPO: {sha}{' (dirty)' if dirty else ''}")
+
+    lines.append(f"BOARD: {args.board} (asserted)" if args.board else "BOARD: (not asserted)")
+
+    status = None
+    if args.http:
+        status = fetch_json_status(args.http)
+    elif args.status:
+        status = fetch_json_status(args.status)
+    if status is not None:
+        fw = status.get("firmwareVersion", "UNKNOWN")
+        fs = status.get("fsVersion", "UNKNOWN")
+        lines.append(f"IMAGE: firmwareVersion={fw} fsVersion={fs}")
+    elif args.image:
+        lines.append(f"IMAGE: {args.image}")
+    else:
+        lines.append("IMAGE: UNKNOWN (not evidence)")
+
+    return lines
+
+
+def colorize_record_line(line: str, enabled: bool) -> str:
+    """Two states, matching the browser's two CSS classes
+    (data/app.js's log-line-command / log-line-command-error): an ordinary
+    Console Record line and an error one (`status=err`). Only a line that
+    IS a rendered/wire Console Record is touched -- log lines, banners,
+    and this tool's own verdict markers ([TIMEOUT], [LOSS], the
+    `--- send ... ---` marker, ...) are left alone, and none of them start
+    with the record prefix this checks for.
+
+    `enabled` is the caller's own --color/--no-color/isatty() decision, not
+    decided here, so ANSI can never reach a redirected transcript by
+    accident: the check is what stays true regardless of terminal, only
+    the caller's threading of `enabled` decides whether it ever fires.
+    """
+    if not enabled or not line.startswith("< id="):
+        return line
+    if "status=err" in line:
+        return f"\x1b[31m{line}\x1b[0m"
+    return f"\x1b[36m{line}\x1b[0m"
+
+
 class ScriptUsageError(Exception):
     """A directive is malformed, or valid but not usable on the active
     transport (raw/key/listen are serial-only) or the active terminal
@@ -650,9 +784,11 @@ class SerialTransport:
     open_posix_port() for every serial mode.
     """
 
-    def __init__(self, fd: int, settle_seconds: float = DEFAULT_SETTLE_SECONDS):
+    def __init__(self, fd: int, settle_seconds: float = DEFAULT_SETTLE_SECONDS,
+                 color: bool = False):
         self.fd = fd
         self.settle_seconds = settle_seconds
+        self.color = color
         self._settled = False
 
     def _settle_once(self) -> None:
@@ -717,7 +853,7 @@ class SerialTransport:
                 raw, _, rest = buf.partition(b"\n")
                 buf[:] = rest
                 text = raw.decode("utf-8", "replace").rstrip("\r")
-                print(text, flush=True)
+                print(colorize_record_line(text, self.color), flush=True)
                 if text == "":
                     if req_id is not None:
                         print(f"[ANOMALY] blank line inside record group id={req_id}",
@@ -752,7 +888,8 @@ class SerialTransport:
             while b"\n" in buf:
                 raw, _, rest = buf.partition(b"\n")
                 buf[:] = rest
-                print(raw.decode("utf-8", "replace").rstrip("\r"), flush=True)
+                text = raw.decode("utf-8", "replace").rstrip("\r")
+                print(colorize_record_line(text, self.color), flush=True)
         if buf:
             tail = bytes(buf).decode("utf-8", "replace")
             if tail:
@@ -783,8 +920,9 @@ class HttpTransport:
     acceptance criterion marking them serial-only.
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, color: bool = False):
         self.base_url = base_url.rstrip("/")
+        self.color = color
 
     def send_line(self, line: str, timeout: float) -> tuple[list[ConsoleRecord], bool]:
         print(f"--- send {line.encode('utf-8')!r} ---", flush=True)
@@ -833,7 +971,7 @@ class HttpTransport:
 
         records = [record_from_http_json(r) for r in payload.get("records", [])]
         for rec in records:
-            print(render_record_line(rec), flush=True)
+            print(colorize_record_line(render_record_line(rec), self.color), flush=True)
 
         if payload.get("truncated"):
             # #240: item-level truncation on system.status.logs-style
@@ -1079,6 +1217,31 @@ def main() -> int:
              "at BASE-URL, instead of --port. Interactive never goes over HTTP; "
              "raw/key/listen directives are refused."
     )
+    parser.add_argument(
+        "--board", default=None, metavar="LABEL",
+        help="Operator assertion printed on the provenance header as "
+             "'BOARD: LABEL (asserted)' -- never a verdict this tool makes itself "
+             "(a CP2102 fronts any board; there is no env-to-board mapping to check against)."
+    )
+    parser.add_argument(
+        "--image", default=None, metavar="LABEL",
+        help="Provenance header's image identity when no HTTP status is available "
+             "(see --status). Falls back to an explicit 'IMAGE: UNKNOWN' line if neither is given."
+    )
+    parser.add_argument(
+        "--status", default=None, metavar="BASE-URL",
+        help="Fetch firmwareVersion/fsVersion from BASE-URL/api/status for the "
+             "provenance header's image identity, without switching transport to --http."
+    )
+    color_group = parser.add_mutually_exclusive_group()
+    color_group.add_argument(
+        "--color", action="store_true",
+        help="Force colour on Console Record lines (default: on only when stdout is a TTY)."
+    )
+    color_group.add_argument(
+        "--no-color", action="store_true",
+        help="Force colour off, even on a TTY. ANSI never reaches a redirected transcript either way."
+    )
     args = parser.parse_args()
 
     script_directives: list[Directive] = []
@@ -1097,10 +1260,18 @@ def main() -> int:
             return EXIT_TOOL_FAILURE
 
         initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
+        if args.no_color:
+            color = False
+        elif args.color:
+            color = True
+        else:
+            color = sys.stdout.isatty()
 
         if args.http:
+            for line in build_provenance_header(args):
+                print(line, flush=True)
             print(f"[console] {args.http} (HTTP, scripted)", file=sys.stderr)
-            transport = HttpTransport(args.http)
+            transport = HttpTransport(args.http, color=color)
             try:
                 return run_scripted(transport, script_directives, initial_timeout)
             except (ScriptUsageError, ConsoleClientToolFailure) as e:
@@ -1112,13 +1283,15 @@ def main() -> int:
         except Exception as e:
             print(f"ERROR: could not open {args.port}: {e}", file=sys.stderr)
             return EXIT_TOOL_FAILURE
+        for line in build_provenance_header(args):
+            print(line, flush=True)
         print(
             f"[console] {args.port} @ {args.baud} baud "
             "(POSIX no-control-line open, scripted)",
             file=sys.stderr,
         )
         settle = args.settle if args.settle is not None else DEFAULT_SETTLE_SECONDS
-        transport = SerialTransport(fd, settle_seconds=settle)
+        transport = SerialTransport(fd, settle_seconds=settle, color=color)
         try:
             return run_scripted(transport, script_directives, initial_timeout)
         except (ScriptUsageError, ConsoleClientToolFailure) as e:
