@@ -101,6 +101,22 @@ refuses at, resolved per build environment from platformio.ini and never
 copied into this file -- see "The compiled admission floor" below for why a
 percentage of a baseline sample was the wrong class of proof, and for what
 replaced it.
+
+A run that lasts hours has to be legible while it lasts and has to survive
+being cut short, so RunMonitor and RunConsole (see "Progress, checkpoints and
+interruption" below) own four things no driver owns for itself: a heartbeat
+line per interval plus a once-a-second status line on STDERR, a plain
+transcript of both in a log file whose path the report carries, a periodic
+checkpoint of the --json artefact, and the SIGINT/SIGTERM path that stops the
+drivers and still leaves a report. stdout carries the JSON report and nothing
+else, because `soak.py > report.json` and `soak.py | jq` are working
+contracts. An interrupted run reports the verdict INTERRUPTED / INCOMPLETE
+and exits EXIT_INVALID_UNKNOWN -- never a pass, and never a failure either,
+because a truncated run has not covered the contract it was asked to cover:
+its required evidence is missing, which is exactly what that exit code means.
+None of that changes what a run that finishes concludes: a driver called without a
+monitor, and a run that is never interrupted, reach the same verdict by the
+same code as before any of it existed.
 """
 from __future__ import annotations
 
@@ -110,8 +126,10 @@ import dataclasses
 import http.client
 import http.server
 import json
+import os
 import random
 import re
+import signal
 import socket
 import struct
 import sys
@@ -120,6 +138,16 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlsplit
+
+# The one non-stdlib dependency this harness has, and a hard one: imported at
+# module scope with no try/except and no fallback renderer, so there is a
+# single presentation path rather than two that can disagree about what a run
+# looked like. Declared in tools/requirements.txt, which CI installs. rich owns
+# terminal detection, NO_COLOR and TERM=dumb; RunConsole does not second-guess
+# any of that.
+from rich.console import Console
+from rich.live import Live
+from rich.text import Text
 
 # ---------------------------------------------------------------------------
 # Constants read from source -- never invented (AGENTS.md "no guessing").
@@ -197,6 +225,31 @@ EXIT_NO_IMMEDIATE_BLOCKER = 0
 EXIT_SELF_TEST_FAILURE = 1
 EXIT_NO_GO = 2
 EXIT_INVALID_UNKNOWN = 3
+
+# The verdicts a run that did not finish carries. Additions to the vocabulary
+# rather than changes to it: every one describes a state that used to produce
+# no report at all (an interrupted run exited 143 and wrote nothing), and none
+# is reachable by a run that completes. They are deliberately spelled in the
+# style of the verdicts already here, so a later rewording of the verdict
+# vocabulary sweeps one consistent set (ADR 0035: the exit codes and the JSON
+# keys are the contract; the wording is prose).
+#
+# The exit-code mapping itself is untouched. An interrupted run exits
+# EXIT_INVALID_UNKNOWN, which means "the required evidence is missing" -- and a
+# truncated soak is precisely that.
+# Soak Driver verdicts that mean "this driver found nothing wrong". Named once
+# so the footer and the progress surface never compare against a bare literal:
+# ADR 0035 makes the verdict WORDING prose that may be reworded, so a rename
+# has to have one place to land rather than a comparison buried in an output
+# path. (The exit codes above are the contract; the strings are not.)
+DRIVER_VERDICTS_WITHOUT_A_FINDING = ("PASS", "OBSERVATION_ONLY")
+
+VERDICT_INTERRUPTED_RUN = "INTERRUPTED / INCOMPLETE"
+VERDICT_INTERRUPTED_DRIVER = "INTERRUPTED"
+# Written into a mid-run checkpoint artefact. Deliberately not any verdict a
+# finished run can carry: a consumer that finds this string is holding
+# evidence from a run that had not reached its own conclusion.
+VERDICT_CHECKPOINT = "IN PROGRESS / INCOMPLETE"
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +776,18 @@ class SseStreamResult:
     # streams are already open (src/web/api_events.cpp), which under a
     # reconnect storm at the cap is admission working, not a transport fault.
     status_code: Optional[int] = None
+    # True when the read window expired with no bytes on the wire. Reported as
+    # the FACT it is, separately from `error`, because whether that fact is a
+    # stall depends on how long the window was: a 250 ms window says nothing
+    # about a 1 Hz stream, and a 5 s one says a great deal. The caller decides;
+    # see run_reconnect_storm(), which was classifying every expiry of its own
+    # poll interval as a stalled stream and failing healthy boards for it.
+    read_timed_out: bool = False
+    # Seconds between the last byte that arrived on this stream and the moment
+    # it ended -- or, when nothing ever arrived, the whole life of the stream.
+    # This is the same quantity the read window measures, so a caller can judge
+    # silence against its own budget rather than against the poll granularity.
+    silence_before_end_s: Optional[float] = None
 
 
 class BenchClient:
@@ -796,6 +861,11 @@ class BenchClient:
         for the connection and never retried in place.
         """
         started = time.monotonic()
+        # Updated on every chunk that actually arrives, so the silence this
+        # method reports is measured against the same thing the socket's read
+        # window measures: bytes on the wire.
+        last_data_at = started
+        read_timed_out = False
         frames: list[SseFrame] = []
         parser = SseFrameParser()
         conn = http.client.HTTPConnection(self.device, self.port, timeout=self.connect_timeout_s)
@@ -847,6 +917,17 @@ class BenchClient:
                         try:
                             chunk = resp.fp.read1(4096)
                         except (socket.timeout, TimeoutError) as timeout_error:
+                            # Recorded on the result whether or not it is
+                            # treated as an error, so a caller whose read
+                            # window is a poll interval rather than a liveness
+                            # budget can tell the two apart. The connection is
+                            # over either way: socket.SocketIO sets
+                            # _timeout_occurred permanently on a timeout and
+                            # raises "cannot read from timed out object" on
+                            # every later read (CPython Lib/socket.py,
+                            # SocketIO.readinto), so there is no continuing in
+                            # place after one.
+                            read_timed_out = True
                             if not stop.is_set():
                                 error = (
                                     f"read timed out after {read_chunk_timeout_s}s with "
@@ -858,6 +939,7 @@ class BenchClient:
                             break
                         if not chunk:
                             break  # peer closed cleanly (EOF)
+                        last_data_at = time.monotonic()
                         for frame in parser.feed(chunk):
                             frames.append(frame)
                             on_frame(frame, time.monotonic())
@@ -888,6 +970,7 @@ class BenchClient:
             except OSError:
                 pass
         truncated_detail = parser.finish()
+        ended = time.monotonic()
         return SseStreamResult(
             frames=frames,
             truncated=truncated_detail is not None,
@@ -895,8 +978,10 @@ class BenchClient:
             error=error,
             connect_ok=connect_ok,
             status_line=status_line,
-            elapsed_s=time.monotonic() - started,
+            elapsed_s=ended - started,
             status_code=status_code,
+            read_timed_out=read_timed_out,
+            silence_before_end_s=ended - last_data_at,
         )
 
 
@@ -1267,13 +1352,22 @@ def stream_sse_with_continuity(
     client: BenchClient, schema: StatusSchema, stop: threading.Event,
     read_chunk_timeout_s: float, path: str = DEFAULT_SSE_PATH,
     on_frame: Optional[Callable[[SseFrame, float], None]] = None,
+    tracker: Optional[SseContinuityTracker] = None,
 ) -> tuple[SseStreamResult, SseContinuityTracker]:
     """Open one SSE stream and feed every frame to this image's continuity
     tracker. The single wiring point between BenchClient.stream_sse() and the
     continuity model: the soak worker and --self-test both go through here,
     so a self-test that passes cannot be exercising wiring the device run
-    does not use."""
-    tracker = schema.new_continuity_tracker()
+    does not use.
+
+    `tracker` lets the caller supply the tracker instead of receiving it at
+    the end, which is what run_sse_soak() needs in order to read a live frame
+    count out of a worker thread for its progress line. It is the same object
+    this function would have made (schema.new_continuity_tracker()), so the
+    numbers a progress line shows are the numbers the report will carry --
+    not a parallel count that could disagree with it."""
+    if tracker is None:
+        tracker = schema.new_continuity_tracker()
     tracker.stream_started(time.monotonic())
 
     def observe(frame: SseFrame, ts: float) -> None:
@@ -1456,6 +1550,16 @@ class StatusSchema:
     refused_heap_floor_field = ""
     refused_heap_floor_diag_field = ""
     accept_min_largest_block_field = ""
+    # Progress-line only, and deliberately NOT in fields_read(): these are read
+    # to make a run legible while it is still running, never to decide
+    # anything, so they must not appear in the report's statusFieldsRead map --
+    # that map states which payload paths the VERDICT was taken from, and
+    # padding it with fields no verdict reads would make it say less, not more.
+    # None on an image that publishes no such counter, in which case the
+    # progress line omits the key entirely rather than printing a zero.
+    sse_refused_cap_field: Optional[str] = None
+    sse_evicted_field: Optional[str] = None
+    sse_clients_peak_field: Optional[str] = None
     ladder_container: Optional[str] = None
     ladder_fields: dict[str, str] = {}
     # False on an image built for a board with no ESP-Hosted link supervisor:
@@ -1841,6 +1945,19 @@ class ProductImageStatusSchema(StatusSchema):
     # :425-427. The Connection Admission guard's own running minimum, published
     # as -1 until it has sampled once (ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED).
     accept_min_largest_block_field = "acceptMinLargestBlockSeen"
+    # Progress-line only (see StatusSchema). The SSE half of admission, from the
+    # same unconditional snprintf (src/web/web_server.cpp:393): refusedSseCap is
+    # a stream turned away at PA_ADMISSION_MAX_SSE_CLIENTS
+    # (src/web/api_events.cpp) and sseEvicted is a stream the broadcaster
+    # dropped for missing its send deadline (g_webSseEvicted,
+    # src/web/web_request_psychic.cpp:180). Both are what an operator watching a
+    # multi-hour soak wants to see move, or not move, while it runs. The bench
+    # image publishes neither -- bringup/p4_hosted_bench.cpp handleStatus() has
+    # no cap and no evicting registry -- so they stay None there and its
+    # progress lines carry no such key.
+    sse_refused_cap_field = "refusedSseCap"
+    sse_evicted_field = "sseEvicted"
+    sse_clients_peak_field = "sseClientsPeak"
     # No bootCount, so the restart evidence is uptimeMs (millis(),
     # web_server.cpp:360) stepping backwards -- see restart_detected().
     restart_field = "uptimeMs"
@@ -2102,6 +2219,774 @@ def identify_schema(body: dict) -> Optional[StatusSchema]:
 
 
 # ---------------------------------------------------------------------------
+# Progress, checkpoints and interruption.
+#
+# Two defects, one root cause, both found while taking a multi-hour soak on a
+# real board:
+#
+#   silence      the SSE soak driver had no print() at all and the CLI had no
+#                progress option, so `--duration 10800` emitted nothing for
+#                three hours and was indistinguishable from a hang.
+#   all-or-none  a 3-hour run stopped at 8m46s exited 143 (SIGTERM) and wrote
+#                no JSON artefact whatsoever. Every measurement it had already
+#                taken was discarded.
+#
+# The common cause is that the harness treated "the run finished" as the only
+# state in which it had anything to say. This section is the one place that
+# treats "the run is still going" and "the run was cut short" as states too.
+#
+# Where the output goes, and why it is not negotiable: stdout carries the JSON
+# report and NOTHING else, because `soak.py > report.json` and `soak.py | jq`
+# are working contracts (main() ends with one print(rendered) on stdout).
+# Every human-facing byte -- header, heartbeats, status line, footer, the
+# admission-floor and verdict lines -- goes to stderr.
+#
+# What none of it may do, and this is the constraint that shapes the design:
+# it must not change what a completed run concludes. Every driver takes the
+# monitor as an optional trailing argument and falls back to
+# RunMonitor.disabled(), which prints nothing, logs nothing, checkpoints
+# nothing and is never interrupted -- so a driver called without one (the
+# --self-test, the unit tests) and a run that is never interrupted reach the
+# same verdict, by the same code, as before any of this existed.
+#
+# THE SEAM, for whoever adds the fourth driver: a driver becomes legible by
+# writing one function of one argument (see ProgressSource below) and passing
+# it to RunMonitor.wait()/tick(). Nothing here knows what any driver measures.
+# ---------------------------------------------------------------------------
+
+# What a progress line prints for a reading this image publishes but this
+# particular sample did not carry. Never 0 and never "false": "the controller
+# did not answer with this field just now" and "the field read zero" are
+# different facts, and a soak that confuses them is the failure this whole
+# harness exists to avoid. A reading the IMAGE does not publish at all never
+# reaches a line -- the key is omitted entirely, so the two absences stay
+# distinguishable from each other as well.
+PROGRESS_ABSENT = "?"
+
+# Default seconds between heartbeat lines and --json checkpoint writes. A
+# presentation cadence, not a property of any board: 30s is ~360 lines across
+# a 3-hour soak (legible in a scrollback, not a firehose) and 4 across a
+# two-minute reconnect storm. --progress-interval-s overrides it.
+DEFAULT_PROGRESS_INTERVAL_S = 30.0
+
+# How often the one in-place status line is redrawn on a terminal. It is a
+# clock, not an animation: it exists so a wait between heartbeats still shows
+# time advancing. A spinner would say "something is happening" without saying
+# how long for, which after two hours is the same as saying nothing.
+STATUS_LINE_REFRESH_S = 1.0
+
+# Semantic tokens, ASCII in every environment. Colour is the only thing that
+# varies with the terminal, and rich decides that (see RunConsole): these
+# never become glyphs or emoji, so a redirected stderr and the transcript log
+# read identically to a terminal minus the escape codes.
+CONSOLE_KINDS = {
+    "ok": ("[OK]", "bold green"),
+    "fail": ("[FAIL]", "bold red"),
+    "warn": ("[WARN]", "bold yellow"),
+    "step": ("[>>]", "bold cyan"),
+    "info": ("[..]", "dim"),
+}
+
+
+def format_duration(seconds: float) -> str:
+    """H:MM:SS -- the form an operator reads a multi-hour run in. Negative
+    input clamps to zero rather than printing a negative clock, which only
+    happens when a wait overshoots its deadline by scheduling jitter."""
+    total = int(max(0.0, seconds))
+    return f"{total // 3600}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+
+
+def format_timestamp(epoch_s: float) -> str:
+    """Local wall-clock ISO 8601 with an offset, for the header/footer and for
+    the JSON clocks. Wall clock rather than the monotonic clock the durations
+    use: an operator correlates this against a board log, and a monotonic
+    reading correlates with nothing."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(epoch_s))
+
+
+def render_progress_value(value: Any) -> str:
+    """One progress-line value. None is PROGRESS_ABSENT, never 0/false."""
+    if value is None:
+        return PROGRESS_ABSENT
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(render_progress_value(item) for item in value) + "]"
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def _render_fields(fields: dict) -> str:
+    return " ".join(f"{key}={render_progress_value(value)}" for key, value in fields.items())
+
+
+@dataclasses.dataclass
+class ProgressSnapshot:
+    """One moment of a running driver, rendered three ways from one source.
+
+    status_line() is the in-place clock, render() is the appended heartbeat
+    and as_dict() is what a --json checkpoint carries. All three read the same
+    fields, which is the point: a status line that said something the
+    heartbeat did not, or a checkpoint that disagreed with either, would give
+    two accounts of one instant.
+
+    Four clocks, and never an indicator without one: run_elapsed_s (the whole
+    run), elapsed_s (this driver), remaining_s() (only where it is genuinely
+    known) and total_s (the plan). "2/3 reconnect_storm" on its own is useless
+    two hours in.
+    """
+
+    driver: str
+    # 1-based, and how many drivers this run will attempt.
+    driver_index: int
+    driver_count: int
+    run_elapsed_s: float
+    elapsed_s: float
+    # None when this driver runs to no clock at all. Never a fabricated total:
+    # a percentage against a guess is a fake ETA, which is worse than no ETA.
+    total_s: Optional[float]
+    # How to READ total_s, because the two are not the same promise.
+    #   "planned"    the driver intends to run for total_s (a soak duration, a
+    #                storm duration), so a countdown is honest.
+    #   "timeout"    total_s is the most it will wait, and finishing early is
+    #                the GOOD outcome (a recovery budget): shown as a timeout,
+    #                never as progress toward completion.
+    #   "unbounded"  no clock at all; elapsed plus what it is waiting for.
+    total_kind: str = "planned"
+    waiting_for: str = ""
+    # Driver-local and free to compute -- no request goes out for these, which
+    # is what lets the status line redraw once a second at no cost on the wire.
+    headline: dict = dataclasses.field(default_factory=dict)
+    # Controller-sourced, gathered only when a heartbeat is actually due.
+    fields: dict = dataclasses.field(default_factory=dict)
+
+    def remaining_s(self) -> Optional[float]:
+        if self.total_s is None:
+            return None
+        return max(0.0, self.total_s - self.elapsed_s)
+
+    def _clocks(self) -> str:
+        head = (
+            f"[{self.driver_index}/{self.driver_count} {self.driver}] "
+            f"run {format_duration(self.run_elapsed_s)} | "
+            f"drv {format_duration(self.elapsed_s)}"
+        )
+        if self.total_s is None or self.total_s <= 0:
+            if self.total_kind == "unbounded" and self.waiting_for:
+                return f"{head} (waiting for {self.waiting_for})"
+            return head
+        remaining = format_duration(self.remaining_s() or 0.0)
+        if self.total_kind == "timeout":
+            # No percentage here on purpose: 40% of a timeout is not 40% done,
+            # it is 40% of the way to giving up.
+            return f"{head} (timeout {format_duration(self.total_s)}, {remaining} left)"
+        percent = 100.0 * min(self.elapsed_s / self.total_s, 1.0)
+        return f"{head}/{format_duration(self.total_s)} ({percent:.1f}%) left {remaining}"
+
+    def status_line(self) -> str:
+        body = _render_fields(self.headline)
+        return f"{self._clocks()} | {body}" if body else self._clocks()
+
+    def render(self) -> str:
+        body = _render_fields({**self.headline, **self.fields})
+        return f"{self._clocks()} | {body}" if body else self._clocks()
+
+    def as_dict(self) -> dict:
+        return {
+            "driver": self.driver,
+            "driverIndex": self.driver_index,
+            "driverCount": self.driver_count,
+            "runElapsedS": round(self.run_elapsed_s, 3),
+            "elapsedS": round(self.elapsed_s, 3),
+            "totalS": self.total_s,
+            "totalKind": self.total_kind,
+            "remainingS": (
+                None if self.remaining_s() is None else round(self.remaining_s(), 3)
+            ),
+            "fields": {**self.headline, **self.fields},
+        }
+
+
+# The seam a long-running driver reports through, and the whole of it:
+#
+#     snapshot(full: bool) -> ProgressSnapshot
+#
+#   full=False  the once-a-second status line. MUST be cheap and MUST NOT
+#               touch the network -- it is called every second for the whole
+#               run, so a request in here would be thousands of extra requests
+#               that the measurement never asked for. Fill `headline` only.
+#   full=True   the heartbeat line and the checkpoint. May read the controller
+#               to fill `fields`, and is called once per --progress-interval-s.
+#
+# Build the returned snapshot with RunMonitor.snapshot(), which stamps the
+# run-level clocks the driver does not know. A driver added years from now
+# becomes legible by writing that one function; nothing in this section has to
+# learn what it measures.
+ProgressSource = Callable[[bool], ProgressSnapshot]
+
+
+def _progress_int(scope: dict, field: Optional[str]) -> Optional[int]:
+    """One int out of a status sample, for a progress line only.
+
+    None means "this sample carried no usable reading", which renders as
+    PROGRESS_ABSENT. Type-checked through the same _type_mismatch() the verdict
+    readers use, so a `true` where an int belongs reads as absent here too
+    rather than as the integer 1.
+    """
+    if not field:
+        return None
+    value = scope.get(field)
+    if _type_mismatch(value, int):
+        return None
+    return value
+
+
+def progress_status_fields(
+    schema: StatusSchema, body: Optional[dict],
+    admission_floor: Optional[AdmissionFloor] = None,
+) -> dict:
+    """The controller-side signals a progress line carries, per image.
+
+    Reads only what the declared image genuinely publishes. A key this image
+    has no field for is left out of the mapping entirely (the bench publishes
+    no admission counters and no eviction count; a board with no companion
+    radio publishes no recovery ladder), while a key this image DOES publish
+    but this sample did not carry is present with None and renders as
+    PROGRESS_ABSENT. The two absences therefore stay distinguishable from each
+    other, and neither is ever a zero.
+
+    Nothing here reaches a verdict, which is why these field names live in the
+    schema's progress-only block and NOT in fields_read(): that map states
+    which payload paths the verdict was taken from, and padding it with
+    fields no verdict reads would make it say less, not more.
+    """
+    fields: dict = {}
+    if body is None:
+        return fields
+    poll_error = body.get("_pollError")
+    if poll_error is not None:
+        # The sentinel the soak's poller writes when the device could not be
+        # reached. Reported as the unreachable poll it was; every other key is
+        # omitted rather than carried over from an older sample, which would
+        # show an operator a stale reading as if it were current.
+        fields["statusPoll"] = f"unreachable ({poll_error})"
+        return fields
+    largest_free = _progress_int(body, schema.heap_field)
+    fields[schema.heap_field] = largest_free
+    if admission_floor is not None:
+        fields["floorMargin"] = (
+            None if largest_free is None else largest_free - admission_floor.ordinary_bytes
+        )
+    if schema.enforces_admission_floor:
+        fields["refusedHeapFloor"] = _progress_int(body, schema.refused_heap_floor_field)
+        fields["refusedHeapFloorDiag"] = _progress_int(
+            body, schema.refused_heap_floor_diag_field)
+    if schema.sse_refused_cap_field:
+        fields["refusedSseCap"] = _progress_int(body, schema.sse_refused_cap_field)
+    if schema.sse_evicted_field:
+        fields["sseEvicted"] = _progress_int(body, schema.sse_evicted_field)
+    if schema.publishes_recovery_ladder:
+        names = schema.ladder_fields
+        scope = body
+        if schema.ladder_container is not None:
+            container = body.get(schema.ladder_container)
+            # A missing container leaves every ladder key absent rather than
+            # zero: the block being gone and its counters reading zero are
+            # different claims, and preflight already refuses an image whose
+            # container is missing outright.
+            scope = container if isinstance(container, dict) else {}
+        state = scope.get(names["state"])
+        # Named for the thing rather than abbreviated: "recovery ladder" is the
+        # project's word for it (CONTEXT.md), and a progress line an operator
+        # quotes a year from now should use the same word the report and the
+        # firmware do.
+        fields["recoveryLadder"] = state if isinstance(state, str) else None
+        fields["recoveryLadderFailures"] = _progress_int(
+            scope, names["transportFailureCount"])
+        fields["recoveryLadderUpEvents"] = _progress_int(
+            scope, names["transportUpEventCount"])
+        fields["recoveryLadderAttempts"] = _progress_int(scope, names["attemptCount"])
+        fields["recoveryLadderRecovered"] = _progress_int(scope, names["recoveredCount"])
+    return fields
+
+
+class RunConsole:
+    """Everything a human sees, on stderr, plus the transcript log file.
+
+    Presentation rules this class exists to hold in one place:
+
+      no TUI          no alt-screen, no keybinds, no screen clearing. An
+                      append-only stream of lines, plus at most ONE status
+                      line that updates in place.
+      no spinner      the status line carries clocks. An animation says
+                      "something is happening" without saying for how long.
+      semantic only   colour and the [OK]/[FAIL]/[WARN] tokens mark meaning,
+                      never decoration, and the tokens are ASCII everywhere so
+                      only the colour varies with the terminal.
+      log always      every line an operator would have seen is also written
+                      to a plain transcript, with no ANSI and no emoji, whose
+                      path the JSON report carries so the next tool can find
+                      it without parsing a terminal.
+
+    rich owns the degradation and is not second-guessed here: Console(file=
+    sys.stderr) reports is_terminal False for a redirected stream and drops
+    colour, and it honours NO_COLOR and TERM=dumb on its own. Measured against
+    a real pty rather than assumed, because the two are not the same:
+    TERM=dumb makes rich report is_terminal False, so nothing is emitted but
+    plain text; NO_COLOR removes the COLOUR codes and deliberately keeps bold
+    and dim and keeps the status line, which is what NO_COLOR asks for -- it
+    is a colour switch, not a cursor-control switch. Neither is worth
+    overriding, and a "fix" that stripped bold under NO_COLOR would be going
+    beyond the standard.
+
+    The one thing this class decides is that the in-place status line exists
+    only on a terminal -- carriage returns and erase-to-end-of-line are noise
+    in a redirected stream or a CI log, so off a terminal the heartbeats are
+    the whole display.
+
+    markup=False and highlight=False are deliberate, not defensive: a
+    heartbeat contains "[1/3 sse_soak]" and a status token is literally
+    "[OK]", both of which rich would otherwise read as markup and swallow.
+    soft_wrap=True keeps a long heartbeat on one line, because a wrapped
+    transcript is a transcript nobody can grep.
+    """
+
+    def __init__(
+        self, stream: Any = None, quiet: bool = False, log_path: Optional[Path] = None,
+        force_terminal: Optional[bool] = None,
+    ) -> None:
+        self.console = Console(
+            file=stream if stream is not None else sys.stderr,
+            highlight=False, markup=False, soft_wrap=True,
+            force_terminal=force_terminal,
+        )
+        self.quiet = quiet
+        self.log_path = log_path
+        # Append, never truncate: a transcript is evidence, and a second run
+        # pointed at the same path must not delete the first one's.
+        self._log = None if log_path is None else log_path.open("a", encoding="utf-8")
+        # Serialises the log file against the driver threads that reach it
+        # through detail() while the main thread is emitting lines.
+        self._lock = threading.Lock()
+        self._live: Optional[Live] = None
+        self._status_text = ""
+        # The widest label any block in this run has used, so the header, the
+        # board rows and the footer line up as one column even though they are
+        # emitted from three different places at three different times.
+        self._label_width = 0
+
+    # -- lifecycle -------------------------------------------------------
+
+    def start_status_line(self) -> None:
+        """Begin the one updating status line, on a terminal only.
+
+        auto_refresh is off and transient is on: nothing redraws unless this
+        process asks it to (so a wedged run looks wedged rather than animated),
+        and the line disappears at the end instead of leaving a stale clock in
+        the scrollback -- the heartbeats are the permanent record.
+        """
+        if self.quiet or self._live is not None or not self.console.is_terminal:
+            return
+        self._live = Live(
+            Text(self._status_text), console=self.console,
+            auto_refresh=False, transient=True,
+        )
+        self._live.start()
+
+    def stop_status_line(self) -> None:
+        """Tear down the in-place status line while leaving the transcript
+        open. Called before anything is written to stdout: the JSON report is
+        the only thing on that stream and must not share a terminal frame with
+        a line that is still updating."""
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+
+    def close(self) -> None:
+        self.stop_status_line()
+        with self._lock:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
+
+    # -- output ----------------------------------------------------------
+
+    def line(self, text: str, kind: Optional[str] = None) -> None:
+        """One appended line. `kind` selects a semantic token and colour; None
+        is a plain data line (a heartbeat), which is what keeps the transcript
+        greppable."""
+        token, style = CONSOLE_KINDS.get(kind or "", ("", ""))
+        plain = f"{token} {text}" if token else text
+        self._write_log(plain)
+        if self.quiet:
+            return
+        rendered = Text()
+        if token:
+            rendered.append(token, style=style)
+            rendered.append(" ")
+        rendered.append(text)
+        self.console.print(rendered)
+        # Live intercepts console output and reprints the status line beneath
+        # it, so an appended line never has to erase anything by hand -- but
+        # it only does so when asked, because auto-refresh is off.
+        if self._live is not None:
+            self._live.refresh()
+
+    def status(self, text: str) -> None:
+        """Redraw the in-place status line. A no-op off a terminal, where the
+        heartbeats already carry everything this would say."""
+        self._status_text = text
+        if self._live is None:
+            return
+        self._live.update(Text(text, style="dim"), refresh=True)
+
+    def detail(self, text: str) -> None:
+        """Log-only, and safe from any thread. For per-event device detail
+        that should be complete in the file and summarised on the terminal: an
+        unreachable status poll every few seconds is a flood on stderr and
+        exactly the record an operator wants afterwards."""
+        self._write_log(text)
+
+    def _write_log(self, text: str) -> None:
+        with self._lock:
+            if self._log is None:
+                return
+            self._log.write(f"{time.strftime('%H:%M:%S')}  {text}\n")
+            self._log.flush()
+
+    def rule(self, title: str) -> None:
+        self.line(f"=== {title} ===")
+
+    def rows(self, rows: list[tuple[str, str]]) -> None:
+        """A header/footer block: aligned label/value pairs, one per line. Not
+        a rich table -- a table is box-drawing in a transcript that has to stay
+        plain, and these are a handful of short pairs."""
+        if not rows:
+            return
+        self._label_width = max(
+            self._label_width, max(len(label) for label, _ in rows))
+        for label, value in rows:
+            self.line(f"  {label.ljust(self._label_width)}  {value}")
+
+
+class RunMonitor:
+    """Progress cadence, periodic checkpoints and the operator's stop signal.
+
+    Every long-running driver takes one and reports to it through a
+    ProgressSource; a driver given none uses RunMonitor.disabled() and behaves
+    exactly as it did before this class existed, which is what keeps the
+    --self-test and the unit tests measuring the same code path a device run
+    takes.
+
+    Only the thread running a driver ever calls line()/tick()/wait(), so
+    nothing interleaves on stderr; the worker and poller threads a driver
+    starts reach the transcript through detail() and never the console. The
+    JSON report is printed after every driver has returned, on stdout, so it
+    cannot interleave either.
+    """
+
+    def __init__(
+        self, interval_s: float = DEFAULT_PROGRESS_INTERVAL_S, quiet: bool = False,
+        console: Optional[RunConsole] = None,
+        checkpoint_writer: Optional[Callable[[dict], None]] = None,
+        interrupt: Optional[threading.Event] = None,
+        started_at: Optional[float] = None,
+    ) -> None:
+        # <= 0 disables the cadence entirely: no heartbeats, no status line and
+        # no checkpoints either, since all three hang off the same tick.
+        self.interval_s = interval_s
+        # Silences stderr and nothing else. The transcript is a separate
+        # concern: a scripted run still wants a log, and still wants its
+        # artefact to survive a kill.
+        self.quiet = quiet
+        self.console = console
+        # Wall clock for the header, the footer and the JSON; monotonic for
+        # every duration. `started_at` is accepted so main() can stamp the
+        # transcript's filename and the report with the same instant rather
+        # than two that differ by however long it took to open a file.
+        self.started_at = time.time() if started_at is None else started_at
+        self._run_started = time.monotonic()
+        self._checkpoint_writer = checkpoint_writer
+        self._checkpoint_source: Optional[Callable[[Optional[ProgressSnapshot]], dict]] = None
+        self._interrupt = interrupt if interrupt is not None else threading.Event()
+        self._signal_name: Optional[str] = None
+        # Seeded from the run's own clock rather than from 0.0: a wait() that
+        # ran before any driver was announced would otherwise see a deadline
+        # decades in the past, spin at zero timeout, and make the catch-up
+        # below count every interval since the machine booted.
+        self._next_tick_at = self._run_started
+        self._next_status_at = self._run_started
+        self._driver_index = 0
+        self._driver_count = 0
+
+    @classmethod
+    def disabled(cls) -> RunMonitor:
+        """A monitor that prints nothing, logs nothing, checkpoints nothing
+        and is never interrupted. The default for every driver, so calling a
+        driver directly is indistinguishable from calling it before this
+        existed."""
+        return cls(interval_s=0.0, quiet=True)
+
+    # -- clocks ----------------------------------------------------------
+
+    @property
+    def run_elapsed_s(self) -> float:
+        return time.monotonic() - self._run_started
+
+    @property
+    def log_path(self) -> Optional[Path]:
+        return None if self.console is None else self.console.log_path
+
+    # -- interruption ----------------------------------------------------
+
+    @property
+    def interrupted(self) -> bool:
+        return self._interrupt.is_set()
+
+    @property
+    def signal_name(self) -> Optional[str]:
+        """"SIGINT"/"SIGTERM", or None when nothing has been received."""
+        return self._signal_name
+
+    def install_signal_handlers(self) -> None:
+        """Make SIGINT and SIGTERM stop the run instead of killing it.
+
+        The handler does nothing but record the signal and set the flag: it
+        does not print and does not write. Python runs a signal handler in the
+        main thread between bytecodes, so writing from here can land in the
+        middle of another write and hit `RuntimeError: reentrant call inside
+        <_io.BufferedWriter>`; the wait loops notice the flag within
+        milliseconds (threading.Event.wait returns the moment it is set) and
+        report it from ordinary code instead.
+
+        The signal's default disposition is restored before the handler
+        returns, so a SECOND Ctrl-C (or a second SIGTERM from an impatient
+        script) kills the process immediately. An interrupt path that cannot
+        itself be interrupted is a hang, and the artefact is written through
+        os.replace() so even a hard kill leaves the last checkpoint intact.
+        """
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, self._handle_signal)
+
+    def _handle_signal(self, signum: int, _frame: Any) -> None:
+        if self._signal_name is None:
+            self._signal_name = signal.Signals(signum).name
+        signal.signal(signum, signal.SIG_DFL)
+        self._interrupt.set()
+
+    # -- output ----------------------------------------------------------
+
+    def line(self, text: str, kind: Optional[str] = None) -> None:
+        if self.console is not None:
+            self.console.line(text, kind)
+
+    def detail(self, text: str) -> None:
+        """Log-only detail, safe to call from a driver's background thread."""
+        if self.console is not None:
+            self.console.detail(text)
+
+    def rule(self, title: str) -> None:
+        if self.console is not None:
+            self.console.rule(title)
+
+    def rows(self, rows: list[tuple[str, str]]) -> None:
+        if self.console is not None:
+            self.console.rows(rows)
+
+    # -- checkpoints -----------------------------------------------------
+
+    def bind_checkpoint_source(
+        self, source: Optional[Callable[[Optional[ProgressSnapshot]], dict]],
+    ) -> None:
+        """Give the monitor the run-level report composer. Held by run(),
+        because only run() knows which drivers have finished."""
+        self._checkpoint_source = source
+
+    def checkpoint(self, snapshot: Optional[ProgressSnapshot] = None) -> None:
+        """Write the artefact from what has been collected so far. A no-op
+        with no writer or no source bound."""
+        if self._checkpoint_writer is None or self._checkpoint_source is None:
+            return
+        self._checkpoint_writer(self._checkpoint_source(snapshot))
+
+    # -- the cadence -----------------------------------------------------
+
+    @property
+    def _shows_progress(self) -> bool:
+        return self.console is not None and not self.quiet
+
+    @property
+    def _consumes_snapshot(self) -> bool:
+        """Whether a snapshot would reach anyone at all. Checked before one is
+        built, because a full snapshot may cost a request: a disabled monitor
+        must put nothing on the wire that the driver would not have put there
+        itself."""
+        return self._shows_progress or (
+            self._checkpoint_writer is not None and self._checkpoint_source is not None
+        )
+
+    def snapshot(
+        self, driver: str, elapsed_s: float, total_s: Optional[float],
+        headline: dict, fields: Optional[dict] = None,
+        total_kind: str = "planned", waiting_for: str = "",
+    ) -> ProgressSnapshot:
+        """Stamp a driver's own numbers with the run-level clocks. The driver
+        knows its activity; only the monitor knows how long the whole run has
+        been going and which of how many drivers this is."""
+        return ProgressSnapshot(
+            driver=driver, driver_index=self._driver_index,
+            driver_count=self._driver_count, run_elapsed_s=self.run_elapsed_s,
+            elapsed_s=elapsed_s, total_s=total_s, total_kind=total_kind,
+            waiting_for=waiting_for, headline=headline, fields=fields or {},
+        )
+
+    def start_run(self, driver_count: int) -> None:
+        """How many drivers this run will attempt, for the i/N in every clock
+        line. Set once by the orchestrator before the first driver."""
+        self._driver_count = driver_count
+
+    def begin_driver(self, index: int, name: str) -> None:
+        """Announce a driver and reset both cadences for it.
+
+        Called by the orchestrator rather than by the driver, so that a driver
+        which refuses before it starts (no reset route on this image) is still
+        announced, and so the i/N stays the orchestrator's count rather than
+        something each driver has to be told.
+        """
+        self._driver_index = index
+        now = time.monotonic()
+        self._next_tick_at = now
+        self._next_status_at = now
+        self.line(f"{index}/{self._driver_count} {name}: starting", kind="step")
+
+    def tick(self, snapshot_fn: Optional[ProgressSource] = None, force: bool = False) -> None:
+        """Emit a heartbeat and write a checkpoint if the interval is up.
+
+        `force` bypasses the cadence for the once-per-driver boundaries.
+        Cheap to call in a tight poll loop: the common case is one comparison.
+        """
+        if not self._consumes_snapshot:
+            return
+        now = time.monotonic()
+        if not force:
+            if self.interval_s <= 0 or now < self._next_tick_at:
+                return
+        if self.interval_s > 0:
+            # Advance from the scheduled time rather than from now, so a slow
+            # status read does not make the cadence drift later every tick.
+            # Computed rather than looped: a driver that blocked for an hour
+            # must not cost an hour's worth of iterations to catch up.
+            self._next_tick_at += self.interval_s * (
+                1 + int((now - self._next_tick_at) // self.interval_s))
+        snapshot = None if snapshot_fn is None else snapshot_fn(True)
+        if snapshot is not None:
+            self.line(snapshot.render())
+            self._refresh_status(snapshot.status_line())
+        self.checkpoint(snapshot)
+
+    def status_tick(self, snapshot_fn: Optional[ProgressSource] = None) -> None:
+        """Redraw the in-place status line if its (much faster) cadence is up.
+        Costs nothing on the wire: the snapshot is built with full=False, which
+        the seam defines as local state only."""
+        if not self._shows_progress or snapshot_fn is None or self.interval_s <= 0:
+            return
+        now = time.monotonic()
+        if now < self._next_status_at:
+            return
+        self._next_status_at += STATUS_LINE_REFRESH_S * (
+            1 + int((now - self._next_status_at) // STATUS_LINE_REFRESH_S))
+        self._refresh_status(snapshot_fn(False).status_line())
+
+    def _refresh_status(self, text: str) -> None:
+        if self._shows_progress:
+            self.console.status(text)
+
+    # -- waiting ---------------------------------------------------------
+
+    def wait(self, seconds: float, snapshot_fn: Optional[ProgressSource] = None) -> bool:
+        """Sleep up to `seconds`, keeping both cadences, returning early the
+        instant the run is interrupted.
+
+        True when the full time elapsed, False when the interrupt cut it
+        short. On a disabled monitor this is exactly time.sleep(seconds) --
+        threading.Event.wait() on an event nothing ever sets.
+        """
+        deadline = time.monotonic() + max(0.0, seconds)
+        while True:
+            if self.interrupted:
+                return False
+            now = time.monotonic()
+            if now >= deadline:
+                return True
+            chunk = deadline - now
+            if self.interval_s > 0:
+                chunk = min(chunk, max(0.0, self._next_tick_at - now))
+                if self._shows_progress:
+                    chunk = min(chunk, max(0.0, self._next_status_at - now))
+            if self._interrupt.wait(chunk):
+                return False
+            self.tick(snapshot_fn)
+            self.status_tick(snapshot_fn)
+
+    def wait_for_interrupt(self, seconds: float) -> bool:
+        """Block up to `seconds`, returning True if the run was interrupted.
+        Thread-safe and cadence-free -- for a helper thread that only needs to
+        stop waiting, not to report anything."""
+        return self._interrupt.wait(max(0.0, seconds))
+
+    # -- what a truncated report says ------------------------------------
+
+    def truncation_fields(self, observed_s: float, requested_s: Optional[float] = None) -> dict:
+        """The keys a driver adds to its report when it was cut short, and
+        NOTHING when it was not.
+
+        Conditional on purpose: their presence is what tells a consumer --
+        machine or human -- that it is holding a truncated run, alongside the
+        verdict. A completed run's report is untouched.
+        """
+        if not self.interrupted:
+            return {}
+        fields = {
+            "interrupted": True,
+            "interruptSignal": self.signal_name,
+            "durationSObserved": round(observed_s, 3),
+        }
+        if requested_s is not None:
+            # Only for a driver whose report carries no durationSRequested of
+            # its own; passing it twice would be two names for one number.
+            fields["durationSRequested"] = requested_s
+        return fields
+
+    def truncation_reason(self, observed_s: float, requested_s: Optional[float] = None) -> str:
+        of_requested = (
+            f" of the {format_duration(requested_s)} requested" if requested_s is not None else ""
+        )
+        return (
+            f"the run was interrupted ({self.signal_name}) after "
+            f"{format_duration(observed_s)}{of_requested} -- this driver's evidence covers "
+            "only the window actually observed, so it carries no verdict about the window "
+            "it did not"
+        )
+
+
+def write_json_artifact(path: Path, rendered: str) -> None:
+    """Write the --json artefact through a temporary file in the same
+    directory and os.replace() it into place.
+
+    A checkpoint is written repeatedly during a multi-hour run, so the write
+    itself is a window in which a hard kill or a power loss could truncate the
+    file. os.replace() is atomic within a filesystem on POSIX, and a temporary
+    in the destination's own directory guarantees that filesystem -- so an
+    interrupted write leaves the PREVIOUS checkpoint intact rather than a
+    half-written one, which is the whole value of checkpointing.
+    """
+    temporary = path.with_name(path.name + ".partial")
+    temporary.write_text(rendered)
+    os.replace(temporary, path)
+
+
+# ---------------------------------------------------------------------------
 # Driver 1 -- SSE soak: N concurrent long-lived readers, gap detection,
 # heap-trend and reboot/reset-reason guards, recovery-ladder visibility.
 # ---------------------------------------------------------------------------
@@ -2123,10 +3008,12 @@ class ClientSoakResult:
 def _sse_soak_worker(
     client: BenchClient, schema: StatusSchema, index: int, stop: threading.Event,
     results: list[ClientSoakResult], first_frame_event: threading.Event,
+    tracker: SseContinuityTracker,
 ) -> None:
     stream_result, tracker = stream_sse_with_continuity(
         client, schema, stop, read_chunk_timeout_s=5.0,
         on_frame=lambda _frame, _ts: first_frame_event.set(),
+        tracker=tracker,
     )
     results.append(ClientSoakResult(
         index=index, tracker=tracker, error=stream_result.error,
@@ -2138,7 +3025,9 @@ def run_sse_soak(
     client: BenchClient, schema: StatusSchema, num_clients: int, duration_s: float,
     status_poll_interval_s: float, admission_floor: Optional[AdmissionFloor],
     early_stall_check_s: float, max_silence_s: float,
+    monitor: Optional[RunMonitor] = None,
 ) -> dict:
+    monitor = monitor or RunMonitor.disabled()
     # A missing floor on an image that HAS one would silently drop the heap
     # verdict, so it is refused here rather than absorbed. Not a contract error
     # -- the device said nothing wrong -- so it propagates past
@@ -2201,11 +3090,17 @@ def run_sse_soak(
     stop_events = [threading.Event() for _ in range(num_clients)]
     first_frame_events = [threading.Event() for _ in range(num_clients)]
     results: list[ClientSoakResult] = []
+    # Made here rather than inside each worker so the progress line can read a
+    # live frame count out of a running stream. These are the very objects the
+    # report is summarised from, so what a line shows at t+2h is what the
+    # report will say about t+2h -- not a second count kept alongside.
+    trackers = [schema.new_continuity_tracker() for _ in range(num_clients)]
     threads = []
     for i in range(num_clients):
         t = threading.Thread(
             target=_sse_soak_worker,
-            args=(client, schema, i, stop_events[i], results, first_frame_events[i]),
+            args=(client, schema, i, stop_events[i], results, first_frame_events[i],
+                  trackers[i]),
             name=f"sse-soak-{i}", daemon=True,
         )
         threads.append(t)
@@ -2224,24 +3119,87 @@ def run_sse_soak(
             except json.JSONDecodeError as error:
                 body = {"_pollError": f"malformed JSON: {error}"}
             poll_samples.append(StatusPollSample(elapsed_s=elapsed_s, body=body))
+            if "_pollError" in body:
+                # Complete in the transcript, summarised on the terminal: a
+                # controller that goes unreachable for a minute produces a
+                # failed poll every few seconds, which is a flood on stderr and
+                # precisely the record an operator wants afterwards. The
+                # heartbeat carries the running pollsUnreachable count instead.
+                monitor.detail(
+                    f"sse_soak: status poll at t+{elapsed_s:.1f}s failed: "
+                    f"{body['_pollError']}"
+                )
             stop_polling.wait(status_poll_interval_s)
 
     poller = threading.Thread(target=_poll_status, name="sse-soak-status-poll", daemon=True)
     poller.start()
+
+    def _progress(full: bool) -> ProgressSnapshot:
+        """This driver's ProgressSource. Nothing here puts a request on the
+        wire at all, even when full: the poller thread above is already
+        sampling /api/status on its own cadence, so the heartbeat reads its
+        most recent sample. Watching a soak therefore does not change it."""
+        headline = {
+            "frames": sum(tracker.frame_count for tracker in trackers),
+            "perClientFrames": [tracker.frame_count for tracker in trackers],
+            "polls": len(poll_samples),
+            "pollsUnreachable": sum(1 for p in poll_samples if "_pollError" in p.body),
+        }
+        fields: dict = {}
+        latest = poll_samples[-1] if poll_samples else None
+        if full and latest is not None:
+            # The controller's own count of open SSE clients, next to the
+            # number the harness is holding. Two keys rather than one "3/3":
+            # the same mapping is what a checkpoint carries, and a machine
+            # reading it needs the number, not a rendering of it. Absent (not
+            # 0) when this sample carried no count.
+            fields["clients"] = _progress_int(latest.body, schema.sse_clients_field)
+            fields["clientsHeldOpen"] = num_clients
+            fields.update(progress_status_fields(schema, latest.body, admission_floor))
+        return monitor.snapshot(
+            "sse_soak", elapsed_s=time.monotonic() - run_started, total_s=duration_s,
+            headline=headline, fields=fields,
+        )
+
+    # The first heartbeat as soon as there is anything to report, rather than
+    # one full interval into the run: the defect being fixed here is silence,
+    # and 30s of it at the start still reads as a hang.
+    monitor.tick(_progress, force=True)
 
     # Early-fail: if by early_stall_check_s no worker has received even one
     # frame, don't burn the operator's whole --duration on a dead stream.
     # #184's NO-GO vocabulary names this case explicitly: "SSE immediately
     # stalls".
     early_deadline = run_started + min(early_stall_check_s, duration_s)
-    while time.monotonic() < early_deadline and not any(e.is_set() for e in first_frame_events):
-        time.sleep(0.2)
-    immediate_stall = not any(e.is_set() for e in first_frame_events)
+    early_window_completed = True
+    while not any(e.is_set() for e in first_frame_events):
+        remaining_early = early_deadline - time.monotonic()
+        if remaining_early <= 0:
+            break
+        if not monitor.wait(min(remaining_early, 0.2), _progress):
+            early_window_completed = False
+            break
+    # An interrupt inside the early window is not evidence of a stall: the run
+    # was stopped before the window it needed had elapsed. Claiming
+    # "SSE immediately stalled" there would put a fault on the controller for
+    # something the operator did, which is the same class of error as claiming
+    # a pass from a truncated run.
+    immediate_stall = (
+        early_window_completed and not any(e.is_set() for e in first_frame_events)
+    )
 
     if not immediate_stall:
         remaining = duration_s - (time.monotonic() - run_started)
         if remaining > 0:
-            time.sleep(remaining)
+            monitor.wait(remaining, _progress)
+    duration_s_observed = time.monotonic() - run_started
+    if monitor.interrupted:
+        monitor.line(
+            f"sse_soak: interrupt ({monitor.signal_name}) after "
+            f"{format_duration(duration_s_observed)} of {format_duration(duration_s)} -- "
+            "stopping the readers and reporting what was collected",
+            kind="warn",
+        )
 
     for event in stop_events:
         event.set()
@@ -2469,7 +3427,19 @@ def run_sse_soak(
             "for this boot by design"
         )
 
-    verdict = ("FAIL" if reasons else "PASS") if counts_toward_verdict else "OBSERVATION_ONLY"
+    # A truncated soak reports its truncation first and carries every reason it
+    # did observe underneath it. Three attempts on this ticket were rejected
+    # for verification that could not judge itself, and a partial result is
+    # where that hazard comes back: neither a PASS nor a FAIL may be claimed
+    # from a window the operator cut short. PASS is obvious; FAIL matters just
+    # as much, because most of the reasons above are absence-shaped
+    # ("sseClients never reached 3", "no poll carried a bootCount") and a run
+    # stopped after 20 seconds would produce them against a healthy board.
+    if monitor.interrupted:
+        reasons.insert(0, monitor.truncation_reason(duration_s_observed, duration_s))
+        verdict = VERDICT_INTERRUPTED_DRIVER
+    else:
+        verdict = ("FAIL" if reasons else "PASS") if counts_toward_verdict else "OBSERVATION_ONLY"
 
     # Report-key convention, and the reason it is not uniform: heap and SSE
     # client keys keep one harness-level name across both images because both
@@ -2491,6 +3461,11 @@ def run_sse_soak(
         "reasons": reasons,
         "numClientsRequested": num_clients,
         "durationSRequested": duration_s,
+        # Empty on a run that finished, so the completed-run report is
+        # unchanged; on an interrupted one it carries the duration actually
+        # observed next to the duration requested (durationSRequested, right
+        # above), so no consumer can read a truncated run as a completed one.
+        **monitor.truncation_fields(duration_s_observed),
         "immediateStall": immediate_stall,
         "totalFramesReceived": total_frames,
         "clientsFailed": len(clients_failed),
@@ -2560,18 +3535,88 @@ def run_sse_soak(
 
 @dataclasses.dataclass
 class StormCycleResult:
+    """One connect-hold-abort cycle, and what it is entitled to conclude.
+
+    `liveness` is the whole reason this class is not just a pair of counters.
+    A cycle that held an open stream for less than the silence budget saw too
+    small a window to say anything about a stream that ticks about once a
+    second, so its liveness is Not Assessed -- never "fine". A cycle that
+    watched one for at least the budget and received nothing is SILENT, and
+    that is a real stall. A cycle that received a frame DELIVERED. What the
+    storm did not observe reads as not measured; a Soak Driver that passes
+    because it stopped looking is worse than one that fails a healthy board.
+    """
+
     connect_ok: bool
     frame_count: int
     error: Optional[str]
     status_code: Optional[int]
+    # The window this cycle intended to hold the stream open for, and the
+    # window it actually observed (shorter when the peer closed first, longer
+    # when a read was still blocked when the hold expired).
+    hold_s: float
+    observed_s: float
+    liveness: str
+    # True when the read window expired. Distinguished from `error` so a
+    # timeout that is merely this cycle's window closing is never counted as a
+    # transport fault -- see run_reconnect_storm().
+    read_timed_out: bool
+
+
+# What one storm cycle is entitled to say about the stream staying alive.
+LIVENESS_DELIVERED = "delivered"
+LIVENESS_SILENT = "silent"
+LIVENESS_NOT_ASSESSED = "notAssessed"
+
+
+def _storm_cycle_liveness(
+    result: SseStreamResult, frame_count: int, max_silence_s: float,
+) -> str:
+    """Classify one cycle's liveness evidence. See StormCycleResult."""
+    if not result.connect_ok or result.status_code != 200:
+        # Nothing was ever open to observe. Whether that is a fault is the
+        # connect/capacity question, judged separately.
+        return LIVENESS_NOT_ASSESSED
+    if frame_count > 0:
+        return LIVENESS_DELIVERED
+    if result.elapsed_s >= max_silence_s:
+        return LIVENESS_SILENT
+    return LIVENESS_NOT_ASSESSED
+
+
+def _storm_hold_seconds(
+    cycle_index: int, cycle_min_s: float, cycle_max_s: float,
+    max_silence_s: float, liveness_cycle_every: int,
+) -> float:
+    """How long cycle number `cycle_index` (0-based, per worker) holds.
+
+    Most cycles hold a random short window, which is what makes this a storm.
+    Every liveness_cycle_every-th cycle holds longer than the silence budget
+    instead, so that receiving no frame during it is a stall rather than an
+    unremarkable short look -- without such a cycle the storm can never
+    conclude anything about the stream staying alive, and a driver that cannot
+    fail is not a measurement.
+
+    The long hold is derived from the arguments already given
+    (max_silence_s + cycle_max_s) rather than from a factor invented here: it
+    is one full silence budget plus one full ordinary cycle, so the budget can
+    elapse inside the hold with room for the connect.
+    """
+    if liveness_cycle_every > 0 and cycle_index % liveness_cycle_every == 0:
+        return max_silence_s + cycle_max_s
+    return random.uniform(cycle_min_s, cycle_max_s)
 
 
 def _storm_worker(
     client: BenchClient, stop_all: threading.Event,
     cycle_min_s: float, cycle_max_s: float, cycles: list[StormCycleResult],
+    max_silence_s: float, liveness_cycle_every: int,
 ) -> None:
+    cycle_index = 0
     while not stop_all.is_set():
-        hold_s = random.uniform(cycle_min_s, cycle_max_s)
+        hold_s = _storm_hold_seconds(
+            cycle_index, cycle_min_s, cycle_max_s, max_silence_s, liveness_cycle_every)
+        cycle_index += 1
         cycle_stop = threading.Event()
 
         def _timer(cycle_stop: threading.Event = cycle_stop, hold_s: float = hold_s) -> None:
@@ -2586,23 +3631,41 @@ def _storm_worker(
         def on_frame(_frame: SseFrame, _ts: float, holder: list[int] = frame_count_holder) -> None:
             holder[0] += 1
 
-        # Short read-chunk timeout so the abort lands close to hold_s even
-        # though a single read() call can otherwise block for the whole
-        # timeout window (see BenchClient.stream_sse's docstring).
+        # The read window IS the silence budget, not the abort granularity.
+        # It used to be a fixed 0.25s so that an abort landed close to hold_s,
+        # and stream_sse() treats an expired window as a stalled stream -- so
+        # every stream slower than 4 Hz was classified as stalled. Both the
+        # shipping /api/events tick and the bench sketch emit about one frame a
+        # second, and a device run of this driver duly failed the whole run
+        # with 218 stalls out of 218 cycles against a board that was fine.
+        #
+        # Abort promptness does not need the short window: the read loop checks
+        # `stop` after every chunk, so on a live 1 Hz stream it notices within
+        # about one frame interval. Only a stream that has actually gone quiet
+        # keeps a read blocked for the whole budget, and that is precisely the
+        # case worth waiting for. The loop cannot simply carry on past an
+        # expiry instead -- socket.SocketIO latches _timeout_occurred and
+        # refuses every later read on that socket (CPython Lib/socket.py).
         result = client.stream_sse(
-            DEFAULT_SSE_PATH, on_frame, cycle_stop, read_chunk_timeout_s=0.25, abrupt_stop=True,
+            DEFAULT_SSE_PATH, on_frame, cycle_stop,
+            read_chunk_timeout_s=max_silence_s, abrupt_stop=True,
         )
         timer_thread.join(timeout=2.0)
         cycles.append(StormCycleResult(
             connect_ok=result.connect_ok, frame_count=frame_count_holder[0], error=result.error,
-            status_code=result.status_code,
+            status_code=result.status_code, hold_s=hold_s, observed_s=result.elapsed_s,
+            liveness=_storm_cycle_liveness(result, frame_count_holder[0], max_silence_s),
+            read_timed_out=result.read_timed_out,
         ))
 
 
 def run_reconnect_storm(
     client: BenchClient, schema: StatusSchema, storm_clients: int, duration_s: float,
     cycle_min_s: float, cycle_max_s: float, settle_s: float, heap_tolerance_pct: float,
+    max_silence_s: float, liveness_cycle_every: int,
+    monitor: Optional[RunMonitor] = None,
 ) -> dict:
+    monitor = monitor or RunMonitor.disabled()
     baseline = capture_status(client)
     baseline_sse_clients = schema.sse_clients(baseline, "baseline /api/status")
     baseline_heap = schema.heap_largest_free(baseline, "baseline /api/status")
@@ -2614,17 +3677,88 @@ def run_reconnect_storm(
     for i in range(storm_clients):
         t = threading.Thread(
             target=_storm_worker,
-            args=(client, stop_all, cycle_min_s, cycle_max_s, cycles_by_worker[i]),
+            args=(client, stop_all, cycle_min_s, cycle_max_s, cycles_by_worker[i],
+                  max_silence_s, liveness_cycle_every),
             name=f"reconnect-storm-{i}", daemon=True,
         )
         threads.append(t)
         t.start()
 
-    time.sleep(duration_s)
+    storm_started = time.monotonic()
+
+    def _progress(full: bool) -> ProgressSnapshot:
+        """This driver's ProgressSource. Cycles are its natural unit.
+
+        Unlike the soak, this driver keeps no status poller of its own, so the
+        controller-side half costs one extra GET /api/status -- but only on a
+        heartbeat (full), never on the once-a-second status line. Four extra
+        requests across a two-minute storm is negligible against a storm that
+        opens and RSTs a stream every 0.5-3s per worker, and it is the only
+        way the recovery ladder and the refusal counters are visible while the
+        storm is running rather than only after it.
+        """
+        # A copy per worker: these lists are appended to by their own worker
+        # thread while this reads them, and a copy cannot see a half-built
+        # view of one.
+        observed = [cycle for worker in cycles_by_worker for cycle in list(worker)]
+        headline: dict = {
+            "cycles": len(observed),
+            "streamsOpened": sum(1 for c in observed if c.status_code == 200),
+            "capacityRefusals": sum(
+                1 for c in observed
+                if schema.enforces_sse_client_cap and c.status_code == 503
+            ),
+            "connectFailures": sum(1 for c in observed if not c.connect_ok),
+            "frames": sum(c.frame_count for c in observed),
+            # The liveness census as it stands, so an operator can see the
+            # storm accumulating evidence rather than only learn at the end
+            # whether it had any.
+            "delivered": sum(1 for c in observed if c.liveness == LIVENESS_DELIVERED),
+            "silent": sum(1 for c in observed if c.liveness == LIVENESS_SILENT),
+            "notAssessed": sum(
+                1 for c in observed if c.liveness == LIVENESS_NOT_ASSESSED),
+        }
+        fields: dict = {}
+        if full:
+            try:
+                body = capture_status(client)
+            except TRANSPORT_EXCEPTIONS as error:
+                # Reported, never absorbed: a controller that has stopped
+                # answering /api/status mid-storm is exactly what an operator
+                # is watching for, and the storm carries on either way.
+                fields["statusPoll"] = f"unreachable ({error})"
+                monitor.detail(f"reconnect_storm: status poll unreachable: {error}")
+            except json.JSONDecodeError as error:
+                fields["statusPoll"] = f"not JSON ({error})"
+                monitor.detail(f"reconnect_storm: status poll was not JSON: {error}")
+            else:
+                fields["clients"] = _progress_int(body, schema.sse_clients_field)
+                fields.update(progress_status_fields(schema, body))
+        return monitor.snapshot(
+            "reconnect_storm", elapsed_s=time.monotonic() - storm_started,
+            total_s=duration_s, headline=headline, fields=fields,
+        )
+
+    monitor.tick(_progress, force=True)
+    monitor.wait(duration_s, _progress)
+    duration_s_observed = time.monotonic() - storm_started
+    if monitor.interrupted:
+        monitor.line(
+            f"reconnect_storm: interrupt ({monitor.signal_name}) after "
+            f"{format_duration(duration_s_observed)} of {format_duration(duration_s)} -- "
+            "stopping the workers and reporting the cycles already completed",
+            kind="warn",
+        )
     stop_all.set()
     for t in threads:
         t.join(timeout=cycle_max_s + 10.0)
 
+    # The settle window still runs after an interrupt: the post-storm readings
+    # it makes possible (did the client count come back, did the heap recover)
+    # are the storm's own evidence, and skipping them to exit a second sooner
+    # would throw away the measurement the interrupt was trying to preserve. A
+    # second signal kills the process outright (RunMonitor.install_signal_
+    # handlers), so this is never an unkillable wait.
     time.sleep(settle_s)
     post = capture_status(client)
     post_sse_clients = schema.sse_clients(post, "post-storm /api/status")
@@ -2646,11 +3780,29 @@ def run_reconnect_storm(
         return schema.enforces_sse_client_cap and cycle.status_code == 503
 
     capacity_refusals = [c for c in all_cycles if is_capacity_refusal(c)]
+    # A read window that expired is NOT a transport fault. It is this cycle's
+    # silence budget elapsing, and whether that means the stream stalled is the
+    # liveness question below -- judged from how long the cycle actually
+    # watched, not from the fact that a socket timeout fired. Conflating the
+    # two is what made this driver fail a healthy 1 Hz stream.
     unexpected_errors = [
         c for c in all_cycles
         if c.connect_ok and c.error is not None and not is_capacity_refusal(c)
+        and not c.read_timed_out
     ]
     streams_opened = [c for c in all_cycles if c.status_code == 200]
+
+    # What the storm is entitled to say about the stream staying alive. Every
+    # cycle lands in exactly one bucket, and the third one is the point: a
+    # cycle that watched for less than one silence budget saw too small a
+    # window to judge a stream that ticks about once a second, so it says
+    # nothing rather than saying "fine".
+    delivered = [c for c in all_cycles if c.liveness == LIVENESS_DELIVERED]
+    silent = [c for c in all_cycles if c.liveness == LIVENESS_SILENT]
+    not_assessed = [c for c in all_cycles if c.liveness == LIVENESS_NOT_ASSESSED]
+    # Cycles deliberately held longer than the budget, so that receiving
+    # nothing during one is a stall rather than an unremarkable short look.
+    liveness_holds = [c for c in all_cycles if c.hold_s >= max_silence_s]
 
     heap_floor = baseline_heap * (1 - heap_tolerance_pct / 100.0)
     restart_detected = schema.restart_detected(baseline_restart_marker, [post_restart_marker])
@@ -2675,6 +3827,24 @@ def run_reconnect_storm(
             f"deliberate hold window, before the harness aborted it: "
             f"{[c.error for c in unexpected_errors][:5]}"
         )
+    if silent:
+        reasons.append(
+            f"{len(silent)} cycle(s) held an open SSE stream for at least {max_silence_s}s "
+            f"and received no frame at all (longest watched {max(c.observed_s for c in silent):.1f}s) "
+            "-- the stream stopped delivering while it was held open"
+        )
+    elif streams_opened and not delivered:
+        # The vacuity guard, and the reason this driver cannot pass by having
+        # stopped looking: not one cycle watched an open stream long enough to
+        # see a frame OR long enough for its absence to mean anything, so this
+        # run has no evidence either way about the stream surviving the storm.
+        reasons.append(
+            f"no cycle produced any liveness evidence: {len(streams_opened)} stream(s) were "
+            f"opened but none received a frame and none was held for the {max_silence_s}s "
+            "silence budget, so this run has not shown the stream survives the storm. Raise "
+            "--storm-cycle-max-s, lower --storm-max-silence-s, or set "
+            "--storm-liveness-cycle-every to a non-zero value"
+        )
     if post_sse_clients > baseline_sse_clients:
         reasons.append(
             f"{schema.sse_clients_field} did not return to baseline after settling "
@@ -2691,7 +3861,16 @@ def run_reconnect_storm(
             f"{post_restart_marker} during the reconnect storm (the P4 rebooted)"
         )
 
-    verdict = "FAIL" if reasons else "PASS"
+    # Same rule as the soak, and for the same reason: a storm stopped after
+    # 20 of its 120 seconds has neither passed nor failed. Several of the
+    # reasons above are absence-shaped ("zero cycles", "none opened a
+    # stream"), so a truncated run would manufacture them against a healthy
+    # controller.
+    if monitor.interrupted:
+        reasons.insert(0, monitor.truncation_reason(duration_s_observed, duration_s))
+        verdict = VERDICT_INTERRUPTED_DRIVER
+    else:
+        verdict = "FAIL" if reasons else "PASS"
     report = {
         "driver": "reconnect_storm",
         "verdict": verdict,
@@ -2700,6 +3879,8 @@ def run_reconnect_storm(
         "reasons": reasons,
         "stormClients": storm_clients,
         "durationSRequested": duration_s,
+        # Empty unless the storm was cut short -- see run_sse_soak().
+        **monitor.truncation_fields(duration_s_observed),
         "cycleMinS": cycle_min_s,
         "cycleMaxS": cycle_max_s,
         "cycleCount": len(all_cycles),
@@ -2708,6 +3889,26 @@ def run_reconnect_storm(
         "totalFramesReceived": total_frames,
         "connectFailures": len(connect_failures),
         "unexpectedErrorsDuringHold": len(unexpected_errors),
+        # Which cycles carried liveness evidence, and which could not. The
+        # three counts always sum to cycleCount, so a reader can see at a
+        # glance how much of the run was actually able to judge the stream.
+        "sseMaxSilenceLimitS": max_silence_s,
+        "livenessHoldCycleEvery": liveness_cycle_every,
+        "livenessHoldCycles": len(liveness_holds),
+        "cyclesDeliveredFrames": len(delivered),
+        "cyclesSilentPastBudget": len(silent),
+        "cyclesLivenessNotAssessed": len(not_assessed),
+        "livenessNotAssessedNote": (
+            "Not Assessed: a cycle that held an open stream for less than the silence budget "
+            "watched too small a window to judge a stream that ticks about once a second, so "
+            "it records no liveness result at all. It is still judged on what it CAN judge -- "
+            "whether it connected, whether the cap refused it, and whether it tore down "
+            "cleanly. What was not observed reads as not measured, never as healthy, and a "
+            "run in which nothing was assessed fails rather than passes"
+        ),
+        "readWindowExpiries": sum(1 for c in all_cycles if c.read_timed_out),
+        "longestCycleObservedS": round(
+            max((c.observed_s for c in all_cycles), default=0.0), 3),
         "baselineSseClientsConnected": baseline_sse_clients,
         "postSseClientsConnected": post_sse_clients,
         "baselineLargestFree8bitBlock": baseline_heap,
@@ -2729,7 +3930,9 @@ def run_reconnect_storm(
 def run_c6_reset_recovery(
     client: BenchClient, schema: StatusSchema, recovery_timeout_s: float, poll_interval_s: float,
     heap_tolerance_pct: float, sse_resume_timeout_s: float,
+    monitor: Optional[RunMonitor] = None,
 ) -> dict:
+    monitor = monitor or RunMonitor.disabled()
     # Refused here, before any request is sent, rather than skipped by the
     # orchestrator: this driver's whole claim is that it provoked a C6 reset
     # and watched the link come back, and on an image with no reset route
@@ -2830,16 +4033,39 @@ def run_c6_reset_recovery(
     # which /api/status never answered has no readiness evidence to quote.
     link_why_not = ""
     deadline = request_accepted_at + recovery_timeout_s
+
+    def _progress(full: bool) -> ProgressSnapshot:
+        """This driver's ProgressSource. No request goes out for it even when
+        full: the recovery loop below already polls /api/status every
+        poll_interval_s, so the heartbeat reads its most recent sample."""
+        headline: dict = {
+            "recovered": recovered,
+            "polls": len(ladder_status_samples),
+            "sawUnreachable": saw_unreachable,
+        }
+        fields = progress_status_fields(schema, last_status) if full else {}
+        return monitor.snapshot(
+            "c6_reset_recovery", elapsed_s=time.monotonic() - request_accepted_at,
+            # A budget, not a plan: recovering at 4s of a 30s window is the
+            # GOOD outcome, so the clock is shown as a timeout counting down to
+            # giving up, never as a percentage of progress toward completion.
+            total_s=recovery_timeout_s, total_kind="timeout",
+            headline=headline, fields=fields,
+        )
+
+    monitor.tick(_progress, force=True)
     while time.monotonic() < deadline:
+        if monitor.interrupted:
+            break
         try:
             last_status = capture_status(client)
         except TRANSPORT_EXCEPTIONS:
             saw_unreachable = True
-            time.sleep(poll_interval_s)
+            monitor.wait(poll_interval_s, _progress)
             continue
         except json.JSONDecodeError:
             saw_unreachable = True
-            time.sleep(poll_interval_s)
+            monitor.wait(poll_interval_s, _progress)
             continue
 
         # Recorded on every reachable poll regardless of what the rest of
@@ -2852,7 +4078,7 @@ def run_c6_reset_recovery(
             poll_schema_anomalies.append(
                 f"poll sample missing/invalid {schema.restart_field}: {last_status!r}"
             )
-            time.sleep(poll_interval_s)
+            monitor.wait(poll_interval_s, _progress)
             continue
         if schema.restart_detected(baseline_restart_marker, [restart_marker_field]):
             recovery_reasons.append(
@@ -2876,9 +4102,16 @@ def run_c6_reset_recovery(
             recovered = True
             break
 
-        time.sleep(poll_interval_s)
+        monitor.wait(poll_interval_s, _progress)
 
     recovered_at_s = time.monotonic() - request_accepted_at
+    if monitor.interrupted:
+        monitor.line(
+            f"c6_reset_recovery: interrupt ({monitor.signal_name}) after "
+            f"{format_duration(recovered_at_s)} of the {format_duration(recovery_timeout_s)} "
+            "recovery budget -- reporting what was observed",
+            kind="warn",
+        )
 
     # Batch-extract the recovery-ladder telemetry gathered above, the same
     # way run_sse_soak() extracts its poll samples: soft per-field
@@ -2942,7 +4175,15 @@ def run_c6_reset_recovery(
         resume_stop = threading.Event()
 
         def _resume_timer(resume_stop: threading.Event = resume_stop) -> None:
-            resume_stop.wait(sse_resume_timeout_s)
+            # Ends the resume window on its own timeout, on the second frame
+            # (on_frame sets resume_stop) or on an operator interrupt. Polled
+            # rather than waited on, because threading.Event cannot wait on
+            # two events at once and a resume window that ignores Ctrl-C is a
+            # ten-second hang at the very end of a run.
+            resume_deadline = time.monotonic() + sse_resume_timeout_s
+            while time.monotonic() < resume_deadline:
+                if resume_stop.wait(0.1) or monitor.interrupted:
+                    break
             resume_stop.set()
 
         timer = threading.Thread(target=_resume_timer, daemon=True)
@@ -2991,7 +4232,16 @@ def run_c6_reset_recovery(
                 f"({post_heap} < floor {heap_floor:.0f}, baseline {baseline_heap})"
             )
 
-    verdict = "PASS" if recovered and sse_resumed and not recovery_reasons else "FAIL"
+    # Same rule as the other two drivers. It bites hardest here: an interrupt
+    # inside the recovery window leaves `recovered` False and would otherwise
+    # be reported as FAIL -- "the C6 never rejoined" -- when what actually
+    # happened is that nobody waited to find out.
+    if monitor.interrupted:
+        recovery_reasons.insert(
+            0, monitor.truncation_reason(recovered_at_s, recovery_timeout_s))
+        verdict = VERDICT_INTERRUPTED_DRIVER
+    else:
+        verdict = "PASS" if recovered and sse_resumed and not recovery_reasons else "FAIL"
 
     report = {
         "driver": "c6_reset_recovery",
@@ -2999,6 +4249,10 @@ def run_c6_reset_recovery(
         "image": schema.name,
         "statusFieldsRead": schema.fields_read(),
         "reasons": recovery_reasons,
+        # Empty unless the recovery window was cut short. This driver has no
+        # durationSRequested of its own, so the truncation block carries the
+        # recovery budget alongside the time actually spent in it.
+        **monitor.truncation_fields(recovered_at_s, recovery_timeout_s),
         "requestId": reset_body.get("requestId"),
         "responseGraceMs": response_grace_ms,
         "resetPulseMsFromStatus": (last_status or {}).get("resetPulseMs"),
@@ -3085,6 +4339,14 @@ def _run_driver_safely(name: str, fn: Callable[..., dict], *args: Any) -> dict:
 
 def _compose_overall_verdict(driver_results: dict[str, dict]) -> tuple[str, int]:
     verdicts = [d["verdict"] for d in driver_results.values()]
+    # Ranked above everything else, and deliberately so: a run the operator
+    # stopped has not covered the contract it was asked to cover, so no
+    # conclusion drawn from it is safe in either direction -- neither a pass,
+    # nor a failure manufactured out of an observation window that was cut
+    # short. The exit code is EXIT_INVALID_UNKNOWN, "the required evidence is
+    # missing"; the mapping is not extended, only reached from one more state.
+    if any(v == VERDICT_INTERRUPTED_DRIVER for v in verdicts):
+        return VERDICT_INTERRUPTED_RUN, EXIT_INVALID_UNKNOWN
     if any(v == "INVALID" for v in verdicts):
         return "INVALID / UNKNOWN", EXIT_INVALID_UNKNOWN
     if any(v == "FAIL" for v in verdicts):
@@ -3103,7 +4365,36 @@ def _compose_overall_verdict(driver_results: dict[str, dict]) -> tuple[str, int]
     return "NO IMMEDIATE BLOCKER", EXIT_NO_IMMEDIATE_BLOCKER
 
 
-def run(args: argparse.Namespace) -> tuple[dict, int]:
+# How long each driver intends to occupy, from the arguments it was given.
+# Used for the planned-duration clocks in the header and in the JSON, so a
+# reader can tell "this run is 12 minutes into a planned 3 hours" without
+# adding the flags up by hand.
+#
+# Every value is derived from the caller's own arguments; nothing here is a
+# constant, because a plan built from a constant would be wrong for the next
+# board and for the next set of flags.
+def planned_driver_duration_s(name: str, args: argparse.Namespace) -> Optional[float]:
+    """Seconds this driver plans to take, or None where there is no plan.
+
+    Not an ETA and not a promise: c6_reset_recovery's number is a BUDGET it
+    hopes not to spend (it stops as soon as the link is back), which is why
+    the progress clock labels that one "timeout" rather than counting down to
+    completion.
+    """
+    if name == "sse_soak":
+        return args.duration
+    if name == "reconnect_storm":
+        # The settle window is part of the wall-clock cost of this driver even
+        # though nothing is being driven during it, and an operator waiting for
+        # the run to end is waiting for it too.
+        return args.storm_duration + args.storm_settle_s
+    if name == "c6_reset_recovery":
+        return args.reset_recovery_timeout_s + args.sse_resume_timeout_s
+    return None
+
+
+def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple[dict, int]:
+    monitor = monitor or RunMonitor.disabled()
     client = BenchClient(args.device, args.port, connect_timeout_s=args.connect_timeout_s)
     schema = SCHEMAS[args.image]
     build_env = args.build_env or schema.build_env
@@ -3112,6 +4403,37 @@ def run(args: argparse.Namespace) -> tuple[dict, int]:
         "image": schema.name, "buildEnv": build_env,
         "statusFieldsRead": schema.fields_read(),
     }
+
+    drivers_to_run = (
+        ["sse_soak", "reconnect_storm", "c6_reset_recovery"] if args.driver == "all" else [args.driver]
+    )
+    monitor.start_run(len(drivers_to_run))
+    planned = {name: planned_driver_duration_s(name, args) for name in drivers_to_run}
+    planned_total_s = sum(value for value in planned.values() if value is not None)
+    # One record per driver that started, appended as each finishes: the
+    # per-phase durations the report publishes, and what the footer reads to
+    # name the slowest phase. A driver that never ran leaves no phase, which is
+    # the truth -- a zero-second phase would claim it ran and took no time.
+    phases: list[dict] = []
+    started_at = monitor.started_at
+
+    def finish(payload: dict, exit_code: int) -> tuple[dict, int]:
+        """Every exit from this function goes through here, so the clocks are
+        on the report whether the run measured anything or refused at
+        preflight. Appended after the payload, so nothing that existed before
+        them moved."""
+        ended_at = time.time()
+        return dict(header, **payload, **{
+            "startedAt": format_timestamp(started_at),
+            "endedAt": format_timestamp(ended_at),
+            "durationS": round(monitor.run_elapsed_s, 3),
+            "plannedDurationS": planned_total_s,
+            "phases": phases,
+            # Where the plain transcript of this run went, so the next tool
+            # does not have to parse a terminal to find it. null when no
+            # transcript was written (a driver driven directly by a test).
+            "logPath": None if monitor.log_path is None else str(monitor.log_path),
+        }), exit_code
 
     # The admission floor is resolved before the first request. A run this
     # harness cannot judge is INVALID whether or not the device answers, and
@@ -3128,14 +4450,16 @@ def run(args: argparse.Namespace) -> tuple[dict, int]:
         # #194: an unresolvable floor is INVALID, never a default. A verdict
         # taken against a number this harness picked would read like evidence
         # and be none.
-        return dict(header, **{
+        reason = (
+            f"the admission floor for --image {schema.name} (build environment "
+            f"{build_env!r}) could not be determined: {unresolved}"
+        )
+        monitor.line(reason, kind="fail")
+        return finish({
             "verdict": "INVALID / UNKNOWN",
-            "reasons": [
-                f"the admission floor for --image {schema.name} (build environment "
-                f"{build_env!r}) could not be determined: {unresolved}"
-            ],
+            "reasons": [reason],
             "drivers": {},
-        }), EXIT_INVALID_UNKNOWN
+        }, EXIT_INVALID_UNKNOWN)
 
     # Preflight: an unreachable device, or a C6 that never came up, cannot
     # produce any of the required evidence -- #184's INVALID/UNKNOWN row
@@ -3144,24 +4468,37 @@ def run(args: argparse.Namespace) -> tuple[dict, int]:
     try:
         preflight_status = capture_status(client)
     except TRANSPORT_EXCEPTIONS as error:
-        return dict(header, **{
+        reason = f"device unreachable at {args.device}:{args.port}: {error}"
+        monitor.line(reason, kind="fail")
+        return finish({
             "verdict": "INVALID / UNKNOWN",
-            "reasons": [f"device unreachable at {args.device}:{args.port}: {error}"],
+            "reasons": [reason],
             "drivers": {},
-        }), EXIT_INVALID_UNKNOWN
+        }, EXIT_INVALID_UNKNOWN)
     except json.JSONDecodeError as error:
         # Answered, but not with JSON. Same INVALID/UNKNOWN row as
         # unreachable -- the required evidence never arrived -- and reported
         # rather than raised, so a run started overnight leaves a verdict
         # instead of a traceback.
-        return dict(header, **{
+        reason = (
+            f"{args.device}:{args.port}{DEFAULT_STATUS_PATH} answered with a body that is "
+            f"not JSON: {error}"
+        )
+        monitor.line(reason, kind="fail")
+        return finish({
             "verdict": "INVALID / UNKNOWN",
-            "reasons": [
-                f"{args.device}:{args.port}{DEFAULT_STATUS_PATH} answered with a body that is "
-                f"not JSON: {error}"
-            ],
+            "reasons": [reason],
             "drivers": {},
-        }), EXIT_INVALID_UNKNOWN
+        }, EXIT_INVALID_UNKNOWN)
+
+    # The board half of the header. It cannot be printed with the rest of the
+    # header in main(), because these two values are only knowable once the
+    # controller has answered -- and stating them from anywhere but the board
+    # itself is how a soak ends up describing the wrong firmware.
+    monitor.rows([
+        ("firmware", str(preflight_status.get("firmwareVersion", PROGRESS_ABSENT))),
+        ("filesystem", str(preflight_status.get("fsVersion", PROGRESS_ABSENT))),
+    ])
 
     # The declared --image is checked against the payload before anything is
     # measured. Without this every subsequent read would silently re-label
@@ -3177,55 +4514,142 @@ def run(args: argparse.Namespace) -> tuple[dict, int]:
             if looks_like is not None and looks_like.name != schema.name
             else ""
         )
-        return dict(header, **{
+        reason = (
+            f"--image {schema.name} was declared, but /api/status does not match that "
+            f"image's payload: {mismatches}.{hint}"
+        )
+        monitor.line(
+            f"--image {schema.name} does not match this board's /api/status payload.{hint}",
+            kind="fail",
+        )
+        return finish({
             "verdict": "INVALID / UNKNOWN",
-            "reasons": [
-                f"--image {schema.name} was declared, but /api/status does not match that "
-                f"image's payload: {mismatches}.{hint}"
-            ],
+            "reasons": [reason],
             "drivers": {},
-        }), EXIT_INVALID_UNKNOWN
+        }, EXIT_INVALID_UNKNOWN)
 
     link_ready, why_not = schema.link_readiness(preflight_status)
     if not link_ready:
-        return dict(header, **{
+        monitor.line(why_not, kind="fail")
+        return finish({
             "verdict": "INVALID / UNKNOWN",
             "reasons": [why_not],
             "drivers": {},
-        }), EXIT_INVALID_UNKNOWN
+        }, EXIT_INVALID_UNKNOWN)
 
-    drivers_to_run = (
-        ["sse_soak", "reconnect_storm", "c6_reset_recovery"] if args.driver == "all" else [args.driver]
-    )
     driver_results: dict[str, dict] = {}
-
-    if "sse_soak" in drivers_to_run:
-        driver_results["sse_soak"] = _run_driver_safely(
-            "sse_soak", run_sse_soak, client, schema, args.num_clients, args.duration,
-            args.status_poll_interval_s, admission_floor, args.early_stall_check_s,
-            args.sse_max_silence_s,
-        )
-    if "reconnect_storm" in drivers_to_run:
-        driver_results["reconnect_storm"] = _run_driver_safely(
-            "reconnect_storm", run_reconnect_storm, client, schema, args.storm_clients,
-            args.storm_duration, args.storm_cycle_min_s, args.storm_cycle_max_s,
-            args.storm_settle_s, args.heap_recovery_tolerance_pct,
-        )
-    if "c6_reset_recovery" in drivers_to_run:
-        driver_results["c6_reset_recovery"] = _run_driver_safely(
-            "c6_reset_recovery", run_c6_reset_recovery, client, schema,
-            args.reset_recovery_timeout_s, args.reset_poll_interval_s,
+    # One dispatch table rather than three `if name in drivers_to_run` blocks:
+    # the interrupt check, the announcement and the checkpoint boundary have to
+    # happen around every driver, and three copies of that is three places for
+    # one of them to drift. The iteration order is drivers_to_run's, so
+    # driver_results is keyed in the same order it always was.
+    driver_calls: dict[str, tuple[Callable[..., dict], tuple]] = {
+        "sse_soak": (run_sse_soak, (
+            client, schema, args.num_clients, args.duration, args.status_poll_interval_s,
+            admission_floor, args.early_stall_check_s, args.sse_max_silence_s,
+        )),
+        "reconnect_storm": (run_reconnect_storm, (
+            client, schema, args.storm_clients, args.storm_duration, args.storm_cycle_min_s,
+            args.storm_cycle_max_s, args.storm_settle_s, args.heap_recovery_tolerance_pct,
+            args.storm_max_silence_s, args.storm_liveness_cycle_every,
+        )),
+        "c6_reset_recovery": (run_c6_reset_recovery, (
+            client, schema, args.reset_recovery_timeout_s, args.reset_poll_interval_s,
             args.heap_recovery_tolerance_pct, args.sse_resume_timeout_s,
+        )),
+    }
+
+    def _checkpoint_report(snapshot: Optional[ProgressSnapshot]) -> dict:
+        """The mid-run artefact: what has been collected so far, and nothing
+        that looks like a conclusion. VERDICT_CHECKPOINT is not a verdict any
+        finished run can carry, so a consumer that finds one is holding
+        evidence from a run that had not reached its own conclusion -- which
+        is the honest description of a checkpoint."""
+        report, _ = finish({
+            "checkpoint": True,
+            "verdict": VERDICT_CHECKPOINT,
+            "reasons": [
+                "mid-run checkpoint: written periodically so a hard kill or a power loss "
+                "still leaves the measurements taken up to this point. It is replaced by "
+                "the final report when the run ends, and it carries no verdict -- the "
+                "drivers it names have not finished"
+            ],
+            "driverInFlight": None if snapshot is None else snapshot.as_dict(),
+            "drivers": dict(driver_results),
+        }, EXIT_INVALID_UNKNOWN)
+        return report
+
+    monitor.bind_checkpoint_source(_checkpoint_report)
+    for index, name in enumerate(drivers_to_run, start=1):
+        if monitor.interrupted:
+            # Recorded, never omitted: a driver missing from the report reads
+            # as "not asked for", and a driver that collected nothing reads as
+            # "measured nothing wrong" unless it says otherwise itself.
+            monitor.begin_driver(index, name)
+            monitor.line(
+                f"{name}: not started -- the run was already interrupted", kind="warn")
+            driver_results[name] = {
+                "driver": name,
+                "verdict": VERDICT_INTERRUPTED_DRIVER,
+                "image": schema.name,
+                "reasons": [
+                    f"the run was interrupted ({monitor.signal_name}) before this driver "
+                    "started, so it collected no evidence at all -- which is not the same "
+                    "as having measured nothing wrong"
+                ],
+                "started": False,
+            }
+            continue
+        fn, call_args = driver_calls[name]
+        monitor.begin_driver(index, name)
+        phase_started = time.monotonic()
+        result = _run_driver_safely(name, fn, *call_args, monitor)
+        driver_results[name] = result
+        phases.append({
+            "driver": name,
+            "verdict": result["verdict"],
+            "durationS": round(time.monotonic() - phase_started, 3),
+            "plannedDurationS": planned[name],
+        })
+        monitor.line(
+            f"{name}: {result['verdict']} in "
+            f"{format_duration(phases[-1]['durationS'])}",
+            kind=("ok" if result["verdict"] in DRIVER_VERDICTS_WITHOUT_A_FINDING else "fail"),
         )
+        # A driver boundary is the most valuable checkpoint there is: it is
+        # the only moment a whole driver's evidence exists and the next one
+        # has not started perturbing the controller yet.
+        monitor.checkpoint()
 
     verdict, exit_code = _compose_overall_verdict(driver_results)
-    return dict(header, **{
+    interrupt_fields: dict = {}
+    if monitor.interrupted:
+        # Deliberately redundant with the VERDICT_INTERRUPTED_DRIVER rank in
+        # _compose_overall_verdict(): two independent paths -- the run-level
+        # flag and the per-driver verdicts -- have to agree that a truncated
+        # run is not a pass. This harness exists because earlier attempts at it
+        # shipped verification that could not judge itself, and one check
+        # standing alone between a truncated run and a green exit code is the
+        # shape of that failure.
+        verdict, exit_code = VERDICT_INTERRUPTED_RUN, EXIT_INVALID_UNKNOWN
+        interrupt_fields = {
+            "interrupted": True,
+            "interruptSignal": monitor.signal_name,
+            "reasons": [
+                f"the run was interrupted ({monitor.signal_name}); it covers only the "
+                "window actually observed and therefore carries no go/no-go verdict. Each "
+                "driver's own report says how far it got"
+            ],
+        }
+    return finish({
         "verdict": verdict,
+        # Empty on a run that finished, so a completed report is unchanged.
+        **interrupt_fields,
         "driversUnavailableOnThisImage": [
             name for name, result in driver_results.items() if result["verdict"] == "UNAVAILABLE"
         ],
         "drivers": driver_results,
-    }), exit_code
+    }, exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -3311,6 +4735,13 @@ FIXTURE_SHIPPING_STATUS_BODY = {
     "acceptMinLargestBlockSeen": 40000,
     "refusedInflightCap": 0,
     "refusedSseCap": 0,
+    # :433-439. Stalled-client evictions and how long ago the last one fired
+    # (-1 until one has). Emitted by the same unconditional snprintf as the
+    # rest of this block, so a fixture without them is not shaped like the
+    # payload; the progress line reads sseEvicted and would otherwise only
+    # ever see it absent.
+    "sseEvicted": 0,
+    "sseEvictAgeMs": -1,
     "refusedHeapFloor": 0,
     "refusedHeapFloorDiag": 0,
     "wifiRssi": -55,
@@ -3493,6 +4924,25 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
                     "rc", '{"ch":[1500,1500]}', 400000 + index * 200),
                 count=25, interval_s=0.2,
             )
+        elif mode == "silent_stream":
+            # A stream that opens correctly and then says nothing. This is
+            # what a real stall looks like from the client side, and it is the
+            # only way to prove the storm's silence budget can still fail --
+            # the budget was pushed to 5s precisely because the old 0.25s one
+            # failed healthy streams, and a budget that can no longer fail
+            # anything would be the worse defect.
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                time.sleep(0.05)
+            self.close_connection = True
+        elif mode == "empty_stream":
+            # Opens with the right status and content type and then hangs up
+            # without a single frame. Too short a look to call a stall, which
+            # is exactly why it must read as "not assessed" rather than as
+            # "fine" -- and why a storm made only of these has to say it
+            # measured nothing.
+            self.wfile.flush()
+            self.close_connection = True
         elif mode == "shipping_nameless":
             # Exactly what the bench stream looks like: no id:, no event:,
             # a bare counter payload. A shipping reader pointed at it must
@@ -4146,11 +5596,19 @@ def _run_end_to_end_driver_scenarios(failures: list[str]) -> None:
                 storm = run_reconnect_storm(
                     client, schema, storm_clients=1, duration_s=0.6, cycle_min_s=0.1,
                     cycle_max_s=0.2, settle_s=0.1, heap_tolerance_pct=20.0,
+                    max_silence_s=0.5, liveness_cycle_every=1,
                 )
                 assert storm["verdict"] == "PASS", storm["reasons"]
                 assert storm["image"] == image, storm["image"]
                 assert storm["cycleCount"] > 0 and storm["streamsOpened"] > 0, storm
                 assert storm["capacityRefusals"] == 0, storm
+                # The fixture streams a frame every 200ms, so every cycle that
+                # opened one saw frames: liveness is genuinely assessed, and
+                # no cycle is silent.
+                assert storm["cyclesDeliveredFrames"] > 0, storm
+                assert storm["cyclesSilentPastBudget"] == 0, storm
+                assert (storm["cyclesDeliveredFrames"] + storm["cyclesSilentPastBudget"]
+                        + storm["cyclesLivenessNotAssessed"]) == storm["cycleCount"], storm
                 if image == "bench":
                     assert storm["baselineBootCount"] == 1, storm
                 else:
@@ -4407,6 +5865,171 @@ def _run_heap_verdict_scenarios(failures: list[str]) -> None:
         FIXTURE_ARTOO_STATUS_BODY, ["--build-env", "native"], unresolvable, failures)
 
 
+def _run_storm_liveness_scenarios(failures: list[str]) -> None:
+    """What the reconnect storm is entitled to conclude about the stream
+    staying alive, driven through run_reconnect_storm() itself.
+
+    The driver used to fail every healthy board: it passed its 0.25s abort
+    granularity to stream_sse() as the read window, and an expired read window
+    was reported as a stalled stream -- so any stream slower than 4 Hz was
+    "stalled", which is every stream this harness drives. Fixing that moves the
+    line between pass and fail, so these three scenarios pin BOTH sides of it:
+    a healthy stream must pass, a genuinely silent one must still fail, and a
+    storm that never watched long enough to know must say so rather than pass.
+    """
+    def storm_against(mode: str, **kwargs) -> dict:
+        server, thread = _start_fixture_server(
+            status_body=FIXTURE_ARTOO_STATUS_BODY, sse_mode=mode)
+        try:
+            client = BenchClient("127.0.0.1", server.server_address[1], connect_timeout_s=5.0)
+            options = dict(
+                storm_clients=1, duration_s=1.2, cycle_min_s=0.1, cycle_max_s=0.2,
+                settle_s=0.1, heap_tolerance_pct=20.0, max_silence_s=0.5,
+                liveness_cycle_every=1,
+            )
+            options.update(kwargs)
+            return run_reconnect_storm(client, SCHEMAS["artoo"], **options)
+        finally:
+            _stop_fixture_server(server, thread)
+
+    def a_one_hz_stream_is_not_a_stall() -> None:
+        # 1 Hz is four times slower than the old fixed 0.25s window, so this
+        # is the exact shape of stream the driver used to fail.
+        storm = storm_against("shipping_live", duration_s=2.5, max_silence_s=3.0,
+                              cycle_min_s=1.2, cycle_max_s=1.5, liveness_cycle_every=0)
+        assert storm["verdict"] == "PASS", storm["reasons"]
+        assert storm["cyclesSilentPastBudget"] == 0, storm
+        assert storm["cyclesDeliveredFrames"] > 0, storm
+        assert storm["unexpectedErrorsDuringHold"] == 0, storm
+
+    _record_scenario(
+        "a stream slower than the old read window is no longer called a stall",
+        a_one_hz_stream_is_not_a_stall, failures)
+
+    def a_silent_stream_still_fails() -> None:
+        storm = storm_against("silent_stream")
+        assert storm["verdict"] == "FAIL", storm
+        assert storm["cyclesSilentPastBudget"] > 0, storm
+        assert storm["cyclesDeliveredFrames"] == 0, storm
+        assert any("received no frame at all" in reason for reason in storm["reasons"]), (
+            storm["reasons"]
+        )
+
+    _record_scenario(
+        "a stream that opens and then says nothing is still a stall",
+        a_silent_stream_still_fails, failures)
+
+    def a_storm_that_never_looked_says_so() -> None:
+        # The server hangs up before a frame can arrive, so every cycle
+        # watched too little to judge. That must not read as a pass.
+        storm = storm_against("empty_stream", liveness_cycle_every=0)
+        assert storm["verdict"] == "FAIL", storm
+        assert storm["cyclesDeliveredFrames"] == 0, storm
+        assert storm["cyclesSilentPastBudget"] == 0, storm
+        assert storm["cyclesLivenessNotAssessed"] == storm["cycleCount"], storm
+        assert any("liveness evidence" in reason for reason in storm["reasons"]), (
+            storm["reasons"]
+        )
+
+    _record_scenario(
+        "a storm that never watched long enough reports that, rather than passing",
+        a_storm_that_never_looked_says_so, failures)
+
+
+def _run_interrupt_scenarios(failures: list[str]) -> None:
+    """An interrupted run, driven through run() -- main()'s own entry point,
+    through the real argument parser -- against a live fixture.
+
+    This is the most dangerous code in the harness, because a truncated run is
+    exactly where "verification that cannot judge itself" comes back: a soak
+    stopped after twenty seconds has neither passed nor failed, and reporting
+    either would be a claim about a window nobody watched. So an operator at
+    the bench can prove the property here, without the repo's test suite.
+
+    No signal is sent: a real SIGTERM would land on whatever process is
+    running the self-test. The interrupt flag is set directly, which is the
+    only thing the signal handler itself does.
+    """
+    server, thread = _start_fixture_server(
+        status_body=FIXTURE_ARTOO_STATUS_BODY, sse_mode="shipping_live")
+    try:
+        port = server.server_address[1]
+
+        def interrupted_run(driver: str, after_s: Optional[float]) -> tuple[dict, int]:
+            """Run `driver` and interrupt it after `after_s` seconds, or before
+            it starts at all when that is None."""
+            interrupt = threading.Event()
+            timer: Optional[threading.Timer] = None
+            if after_s is None:
+                interrupt.set()
+            else:
+                timer = threading.Timer(after_s, interrupt.set)
+                timer.daemon = True
+                timer.start()
+            monitor = RunMonitor(interval_s=0.0, quiet=True, interrupt=interrupt)
+            monitor._signal_name = "SIGTERM"
+            args = build_parser().parse_args([
+                "--device", "127.0.0.1", "--port", str(port), "--image", "artoo",
+                "--driver", driver, "--duration", "30.0", "--num-clients", "1",
+                "--status-poll-interval-s", "0.2", "--early-stall-check-s", "1.0",
+                "--storm-duration", "30.0", "--storm-clients", "1",
+                "--storm-cycle-min-s", "0.1", "--storm-cycle-max-s", "0.2",
+                "--storm-settle-s", "0.1",
+            ])
+            try:
+                return run(args, monitor)
+            finally:
+                if timer is not None:
+                    timer.cancel()
+
+        def a_truncated_soak_is_not_a_pass() -> None:
+            report, exit_code = interrupted_run("sse_soak", after_s=0.8)
+            assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report["verdict"])
+            assert report["verdict"] == VERDICT_INTERRUPTED_RUN, report["verdict"]
+            soak = report["drivers"]["sse_soak"]
+            assert soak["verdict"] == VERDICT_INTERRUPTED_DRIVER, soak["verdict"]
+            assert soak["verdict"] != "PASS", soak
+            assert soak["interrupted"] is True, soak
+            assert soak["durationSObserved"] < soak["durationSRequested"], soak
+            assert any("interrupted" in reason for reason in soak["reasons"]), soak["reasons"]
+
+        _record_scenario(
+            "an interrupted soak reports INTERRUPTED, not PASS, and records both durations",
+            a_truncated_soak_is_not_a_pass, failures)
+
+        def a_truncated_storm_keeps_what_it_collected() -> None:
+            report, exit_code = interrupted_run("reconnect_storm", after_s=0.8)
+            assert exit_code == EXIT_INVALID_UNKNOWN, (exit_code, report["verdict"])
+            storm = report["drivers"]["reconnect_storm"]
+            assert storm["verdict"] == VERDICT_INTERRUPTED_DRIVER, storm["verdict"]
+            # The post-storm evidence is still gathered: the settle window runs
+            # even on an interrupt, because those readings are the storm's own
+            # measurement and are what the interrupt was trying to preserve.
+            assert "postSseClientsConnected" in storm, storm
+
+        _record_scenario(
+            "an interrupted storm still reports the cycles and readings it did take",
+            a_truncated_storm_keeps_what_it_collected, failures)
+
+        def every_driver_is_accounted_for() -> None:
+            report, _ = interrupted_run("all", after_s=None)
+            assert set(report["drivers"]) == {
+                "sse_soak", "reconnect_storm", "c6_reset_recovery"}, report["drivers"]
+            for name, result in report["drivers"].items():
+                assert result["verdict"] == VERDICT_INTERRUPTED_DRIVER, (name, result)
+                assert result["started"] is False, (name, result)
+            assert report["phases"] == [], (
+                "a driver that never ran must leave no phase; a zero-second phase would "
+                f"claim it ran and took no time: {report['phases']}"
+            )
+
+        _record_scenario(
+            "a driver the interrupt reached before it started is recorded, never omitted",
+            every_driver_is_accounted_for, failures)
+    finally:
+        _stop_fixture_server(server, thread)
+
+
 def _run_json_scenarios(failures: list[str]) -> None:
     server, thread = _start_fixture_server()
     try:
@@ -4490,6 +6113,12 @@ def run_self_test() -> int:
 
     print("\nall three images, drivers end to end:")
     _run_end_to_end_driver_scenarios(failures)
+
+    print("\nreconnect storm liveness:")
+    _run_storm_liveness_scenarios(failures)
+
+    print("\ninterrupted runs, driven through run():")
+    _run_interrupt_scenarios(failures)
 
     if failures:
         print(f"\n{len(failures)} self-test failure(s) detected.")
@@ -4586,6 +6215,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--storm-cycle-min-s", type=float, default=0.5)
     parser.add_argument("--storm-cycle-max-s", type=float, default=3.0)
     parser.add_argument("--storm-settle-s", type=float, default=5.0)
+    parser.add_argument(
+        "--storm-max-silence-s", type=float, default=5.0,
+        help="reconnect_storm liveness budget: how long a held-open stream may go with no "
+             "frame before that cycle counts as a stall. The same 5s default and the same "
+             "reasoning as --sse-max-silence-s -- both /api/events implementations tick "
+             "about once a second, so 5s allows several missed ticks of scheduling jitter "
+             "without accepting silence. This is ALSO the socket read window, which used to "
+             "be a fixed 0.25s poll interval whose every expiry was reported as a stalled "
+             "stream: that classified any stream slower than 4 Hz as broken, which is every "
+             "stream this harness drives",
+    )
+    parser.add_argument(
+        "--storm-liveness-cycle-every", type=int, default=4,
+        help="hold every Nth cycle per worker for longer than --storm-max-silence-s, so "
+             "that receiving no frame during it is a real stall rather than an "
+             "unremarkable short look (default 4). Without such a cycle the storm's "
+             "ordinary sub-second holds can never conclude anything about the stream "
+             "staying alive. 0 disables them, in which case a run whose short cycles "
+             "happen to see no frames reports that it could not judge liveness rather "
+             "than passing",
+    )
     parser.add_argument("--reset-recovery-timeout-s", type=float, default=30.0)
     parser.add_argument("--reset-poll-interval-s", type=float, default=0.5)
     parser.add_argument("--sse-resume-timeout-s", type=float, default=10.0)
@@ -4599,8 +6249,71 @@ def build_parser() -> argparse.ArgumentParser:
              "(--build-env), because a percentage of an arbitrary sample says nothing about "
              "whether the controller was still serving (#194)",
     )
-    parser.add_argument("--json", default=None, help="also write the full report to this path")
+    parser.add_argument(
+        "--progress-interval-s", type=float, default=DEFAULT_PROGRESS_INTERVAL_S,
+        help="seconds between heartbeat lines on stderr and between --json checkpoint "
+             f"writes (default {DEFAULT_PROGRESS_INTERVAL_S:g}). 0 disables both. A "
+             "heartbeat carries the run and driver clocks, the driver's own activity, and "
+             "whatever the declared image publishes of the heap floor, the admission and "
+             "eviction counters and the recovery ladder; a reading this image publishes "
+             f"but a given sample did not carry prints as {PROGRESS_ABSENT!r}, and a "
+             "reading the image does not publish at all is left off the line entirely -- "
+             "never a zero. On a terminal a single status line also refreshes once a "
+             "second between heartbeats, so a wait never looks like a hang. All of it is "
+             "stderr: stdout carries the JSON report and nothing else",
+    )
+    parser.add_argument(
+        "--no-progress", action="store_true",
+        help="silence stderr progress: no header, no heartbeats, no status line, no "
+             "footer. The transcript log and the --json checkpoints are unaffected, "
+             "because a quiet run still wants a record and still wants its artefact to "
+             "survive a kill",
+    )
+    parser.add_argument(
+        "--log", default=None,
+        help="path for the plain transcript of this run -- every line stderr showed, with "
+             "no colour and no cursor control, so it can be read, grepped and archived. "
+             "Always written: defaults to the --json path with '.log' appended, or to "
+             "./soak-<timestamp>.log when there is no --json. Appended to, never "
+             "truncated, so pointing two runs at one path keeps both transcripts. The "
+             "path is recorded in the report as logPath so the next tool does not have to "
+             "parse a terminal to find it",
+    )
+    parser.add_argument(
+        "--json", default=None,
+        help="also write the full report to this path. Written periodically during the "
+             "run as well as at the end (see --progress-interval-s), through a temporary "
+             "file in the same directory and os.replace(), so a hard kill leaves the last "
+             "checkpoint intact rather than a half-written file. A checkpoint carries the "
+             f"verdict {VERDICT_CHECKPOINT!r} and can never be mistaken for a finished run",
+    )
     return parser
+
+
+def default_log_path(json_path: Optional[Path], started_at: float) -> Path:
+    """Where the transcript goes when --log was not given.
+
+    Beside the --json artefact when there is one, so a run's two files travel
+    together and an operator who tars up a results directory gets both.
+    Otherwise a timestamped file in the working directory, because a run with
+    no transcript is exactly the state this harness was in when a three-hour
+    soak produced nothing at all.
+    """
+    if json_path is not None:
+        return json_path.with_suffix(json_path.suffix + ".log")
+    return Path(f"soak-{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}.log")
+
+
+def first_failure(report: dict) -> Optional[str]:
+    """The first reason from the first driver that did not pass, for the
+    footer. None when every driver passed -- a footer that invented a failure
+    line would be worse than one that omits it."""
+    for name, result in report.get("drivers", {}).items():
+        if result.get("verdict") in DRIVER_VERDICTS_WITHOUT_A_FINDING:
+            continue
+        reasons = result.get("reasons") or []
+        return f"{name}: {reasons[0] if reasons else result.get('verdict')}"
+    return None
 
 
 def main(argv: list[str]) -> int:
@@ -4617,11 +6330,112 @@ def main(argv: list[str]) -> int:
     if args.storm_clients < 1:
         parser.error("--storm-clients must be >= 1")
 
-    report, exit_code = run(args)
+    json_path: Optional[Path] = None
+    if args.json:
+        json_path = Path(args.json)
+        # Checked before the device is touched, not after the run. A missing
+        # directory used to surface as an exception at the very last statement
+        # of a multi-hour run, which threw the whole run away -- the same
+        # all-or-nothing failure the checkpointing exists to remove.
+        if not json_path.parent.is_dir():
+            parser.error(
+                f"--json {json_path}: directory {json_path.parent} does not exist, so "
+                "neither the checkpoints nor the final report could be written"
+            )
+
+    started_at = time.time()
+    log_path = Path(args.log) if args.log else default_log_path(json_path, started_at)
+    if not log_path.parent.is_dir():
+        parser.error(f"--log {log_path}: directory {log_path.parent} does not exist")
+
+    console = RunConsole(quiet=args.no_progress, log_path=log_path)
+    monitor = RunMonitor(
+        interval_s=args.progress_interval_s,
+        quiet=args.no_progress,
+        console=console,
+        started_at=started_at,
+        checkpoint_writer=(
+            None if json_path is None
+            else lambda checkpoint, path=json_path: write_json_artifact(
+                path, json.dumps(checkpoint, indent=2, default=str) + "\n")
+        ),
+    )
+    # Installed before anything long-running starts, so a Ctrl-C two seconds in
+    # is handled the same way as one two hours in.
+    monitor.install_signal_handlers()
+
+    drivers_to_run = (
+        ["sse_soak", "reconnect_storm", "c6_reset_recovery"]
+        if args.driver == "all" else [args.driver]
+    )
+    planned = {name: planned_driver_duration_s(name, args) for name in drivers_to_run}
+    monitor.rule("protoArtoo soak")
+    monitor.rows([
+        ("started", format_timestamp(started_at)),
+        ("device", f"{args.device}:{args.port}"),
+        # "image mode" and "soak driver" are the project's words for these
+        # (CONTEXT.md): the image whose /api/status schema is read, declared
+        # here and checked against the payload at preflight, and the named
+        # Soak Drivers this run will attempt.
+        ("image mode", f"{args.image} (build env {args.build_env or SCHEMAS[args.image].build_env})"),
+        ("soak drivers", ", ".join(
+            f"{name} {format_duration(seconds)}" if seconds is not None else name
+            for name, seconds in planned.items())),
+        ("planned", format_duration(
+            sum(value for value in planned.values() if value is not None))),
+        ("log", str(log_path)),
+        ("report", str(json_path) if json_path is not None else "<stdout only>"),
+    ])
+    console.start_status_line()
+
+    try:
+        report, exit_code = run(args, monitor)
+    except BaseException as failure:
+        # Recorded in the transcript and then re-raised untouched: a harness
+        # bug must still reach the operator as a traceback (AGENTS.md, never
+        # swallow an error), but a multi-hour run whose log simply stops is a
+        # log that does not say why it stopped.
+        console.stop_status_line()
+        monitor.line(f"run aborted: {type(failure).__name__}: {failure}", kind="fail")
+        console.close()
+        raise
+    finally:
+        # The status line goes away before anything reaches stdout; the
+        # transcript stays open for the footer below.
+        console.stop_status_line()
+
     rendered = json.dumps(report, indent=2, default=str)
     print(rendered)
-    if args.json:
-        Path(args.json).write_text(rendered + "\n")
+    if json_path is not None:
+        # The same bytes the pre-checkpoint harness wrote, through the atomic
+        # write so the final report cannot be the one truncated write either.
+        write_json_artifact(json_path, rendered + "\n")
+
+    slowest = max(report.get("phases") or [], key=lambda phase: phase["durationS"], default=None)
+    failure = first_failure(report)
+    verdict_kind = (
+        "ok" if exit_code == EXIT_NO_IMMEDIATE_BLOCKER
+        else "warn" if exit_code == EXIT_INVALID_UNKNOWN else "fail"
+    )
+    monitor.rule("finished")
+    monitor.rows([
+        ("elapsed", f"{format_duration(report['durationS'])} of a planned "
+                    f"{format_duration(report['plannedDurationS'])}"),
+        ("soak drivers", ", ".join(
+            f"{name} {result['verdict']}"
+            for name, result in report.get("drivers", {}).items()) or "<none ran>"),
+        ("slowest", "<none ran>" if slowest is None
+                    else f"{slowest['driver']} {format_duration(slowest['durationS'])}"),
+        ("first failure", failure or "<none>"),
+        ("log", str(log_path)),
+        ("report", str(json_path) if json_path is not None else "<stdout only>"),
+    ])
+    # The word, not the string: the verdict itself is interpolated from the
+    # report, so a later rewording of the verdict vocabulary (ADR 0035) does
+    # not have to unpick this line.
+    monitor.line(f"run verdict: {report['verdict']} (exit {exit_code})", kind=verdict_kind)
+    console.close()
+
     # The yardstick is printed next to the verdict, not only buried in the
     # JSON: a reader scanning the tail of a run has to be able to see WHICH
     # environment's floor the heap verdict was taken against without going
@@ -4637,6 +6451,13 @@ def main(argv: list[str]) -> int:
         )
     elif isinstance(floor_report, str):
         print(f"\nAdmission floor: {floor_report}", file=sys.stderr)
+    if report.get("interrupted"):
+        print(
+            f"\nInterrupted by {report.get('interruptSignal')}: the report above covers "
+            "only the window actually observed and carries no go/no-go verdict"
+            + (f". Written to {json_path}" if json_path is not None else ""),
+            file=sys.stderr,
+        )
     print(f"\nVerdict: {report['verdict']} (exit {exit_code})", file=sys.stderr)
     return exit_code
 
