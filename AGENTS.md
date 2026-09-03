@@ -204,14 +204,14 @@ Console, and it does three things rather than one. It **captures** a boot log
 (`make monitor`; `--until <string> --timeout <s>` for a bounded wait instead of
 a fixed window). It opens an **interactive** session you can type at
 (`make console`). And it runs a **scripted** list of commands against either
-Console Adapter -- serial via `--port`, the dashboard's `POST /api/console` via
-`--http` -- printing the records that came back in one grammar, so a transcript
+Console Adapter — serial via `--port`, the dashboard's `POST /api/console` via
+`--http` — printing the records that came back in one grammar, so a transcript
 from one adapter diffs line for line against the other.
 
 That third mode is what makes bench evidence replayable. `tools/bench_rows/`
 holds one sheet per board, split into named `@row` blocks; `--rows <names>` runs
 a selection in the order given and `--skip-manual` runs every row that needs
-nobody standing at the bench -- the agent-runnable set. `make bench-rows
+nobody standing at the bench — the agent-runnable set. `make bench-rows
 BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1]` replays one
 with the port resolved the same way `make flash` resolves it.
 

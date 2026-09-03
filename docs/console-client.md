@@ -53,8 +53,11 @@ make monitor                                            # resolves the port for 
 
 `--until` is the one to reach for in a verification script: it exits as soon as
 the string appears rather than burning the whole window. If the string never
-appears it prints `TIMEOUT: '<string>' not seen within time limit` and **exits
-1**. `--timeout` bounds that wait and defaults to `--duration`.
+appears it prints `TIMEOUT: '<string>' not seen within time limit` to stderr and
+**exits 1**. `--timeout` bounds that wait and defaults to `--duration`.
+
+`--baud` defaults to 115200, which is what both boards run at; it applies to
+every mode.
 
 This mode opens the port read-only. It cannot send a command, so it is not a way
 into the Console: `make monitor` shows you the log going past, and nothing you
@@ -74,7 +77,9 @@ Your terminal goes into raw mode, so Tab, Backspace and the arrow keys reach the
 firmware's line editor unedited and the firmware's own echo is what you see.
 **Ctrl-C ends the session**; it is consumed locally and never sent to the board,
 matching every other supported Console terminal. Raw mode is restored on every
-exit path, including a crash or a `SIGTERM`.
+exit path, including a crash or a `SIGTERM` - a tool that leaves your terminal in
+raw mode costs you the shell it was running in. The session exits 0 when you
+leave it, and 1 if the port could not be opened or the link failed mid-session.
 
 Serial only - the Console over HTTP is a request/response endpoint with no
 stream to sit in, so `--interactive` with `--http` is not a thing that exists.
@@ -282,7 +287,7 @@ what it is a transcript *of*. Capture and interactive modes print none of them.
 ```
 PORT: /dev/ttyUSB0 (usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0)
 BAUD: 115200
-HOST-TIME: 2026-09-04T09:12:03Z
+HOST-TIME: 2026-09-03T22:07:10Z
 REPO: ed500ab6
 BOARD: artoo-esp32 (unseated bench) (asserted)
 IMAGE: firmwareVersion=v1.0.0 fsVersion=fs-v1.0.0
@@ -333,6 +338,8 @@ measured, and two of those seven left the board stranded in the ROM download
 stub, silent on serial and absent from WiFi. It is refused for `--interactive`
 and for scripted mode, and survives only for read-only comparison captures.
 troubleshooting.md has the recovery procedure for a stranded board.
+
+---
 
 ## A detach mid-run
 

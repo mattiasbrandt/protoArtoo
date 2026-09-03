@@ -159,7 +159,7 @@ uploaded too, and `fs-version.json` must match.
 Where an epic has Console bench runbooks, replay the rows rather than typing a
 session: `tools/bench_rows/<board>.txt` holds one sheet per board and
 `make bench-rows BENCH_ROWS=<sheet> [ROWS=a,b] [SKIP_MANUAL=1]` runs it with the
-port resolved -- `SKIP_MANUAL=1` is the subset needing nobody at the bench. The
+port resolved - `SKIP_MANUAL=1` is the subset needing nobody at the bench. The
 transcript is the evidence comment's body; what a row is expected to answer stays
 on the runbook ticket. Reference: `docs/console-client.md`.
 

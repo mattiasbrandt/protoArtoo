@@ -56,8 +56,9 @@ class EveryConsoleClientCallResolvesItsPort(unittest.TestCase):
                 self.assertNotRegex(line, r"--port\s+/dev/")
 
     def test_every_port_comes_from_the_resolver(self):
-        """Either resolved in the same recipe ($(RESOLVE_PORT) -> $$port) or,
-        for the flash targets, the port PlatformIO was just given."""
+        """Every one of them resolves in its own recipe: $(RESOLVE_PORT) into
+        $$port, then --port $$port. There is no second way to reach a port here,
+        and there must not be."""
         for line in self.lines:
             with self.subTest(line=line.strip()[:90]):
                 self.assertIn("--port $$port", line)
