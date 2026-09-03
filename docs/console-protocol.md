@@ -335,6 +335,16 @@ buffered command. No line is ever interleaved inside another.
   inside a record.
 - Editor-only cursor sequences (section 8) are distinct from records and are
   never part of a result.
+- **Every line the serial sink writes ends CR LF** - Console Records, and the
+  boot-time log lines that share the same framed writer - which is the
+  terminator embedded-cli's interactive log path already uses. A Console
+  session attaches in raw mode (section 8), and raw mode turns off the host
+  kernel's NL->CR-NL translation: a bare LF would feed the line down without
+  returning the carriage, so records would staircase down-right across the
+  terminal while log lines on the same wire stayed at column 0. Every
+  supported client treats the CR as line-terminator whitespace, so a
+  transcript is unchanged by it. The browser adapter is unaffected: it builds
+  a JSON response and has no line terminator on the wire at all.
 - A serial record waits briefly for USB CDC transmit room before it is
   written, and is dropped whole (never split, never sent short) if that room
   never clears (ADR 0036); log lines stay best-effort and never wait. **For
