@@ -8,10 +8,13 @@
 // tracking (Serial's operator bool()) observes a debounced false->true
 // transition - a host attaching or re-attaching to the transport (native USB
 // CDC on the FireBeetle 2; inert on artoo-esp32, see console_task.cpp for
-// why). Never touches lib/embedded-cli/** (fenced, #260's pinned coordinator
-// comment; the vendored patch set is already at its five-patch ceiling) -
+// why). Never touches lib/embedded-cli/** (fenced on #260, whose pinned
+// coordinator comment held the vendored patch set closed for that ticket) -
 // this is exactly the "caller-side work" the ticket asks for, built only
-// from the library's existing public API.
+// from the library's existing public API. The set is not closed in general:
+// it stood at five patches when this was written and is seven now (#262
+// added Patch 7, which is why embeddedCliResetInput() also clears a pending
+// line-too-long refusal - see the call below).
 //
 // HEADER-ONLY DELIBERATELY, same reason as console_completion.h:
 // platformio.ini's native build_src_filter is fenced for this ticket, so a
