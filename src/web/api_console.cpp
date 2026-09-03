@@ -103,6 +103,35 @@ struct ConsoleWebSink {
     bool itemsTruncated;
 };
 
+// #266: this struct alone was ~3.1 KB on the real 32-bit target, and living
+// on handleConsolePost()'s stack (alongside two 256-byte command buffers) was
+// enough by itself to overflow the httpd task's 8 KB stack on the very first
+// POST, for every command including the smallest possible one - measured via
+// `-fstack-usage` (handleConsolePost()'s frame: 3776 B before, 240 B after
+// moving it and the buffers to static storage; see handleConsolePost()'s own
+// comment). Guards against this struct growing back into stack-sized
+// territory unnoticed: a future field addition that trips this budget must
+// re-measure the static chain (this struct is now `static`, so it costs .bss
+// - RAM budget in tools/build_budgets.json - not stack, but a large
+// ADDITIONAL request-scoped struct like this one, declared as a stack local
+// elsewhere in this file or a new adapter, would reopen exactly this defect)
+// rather than silently raising the number here.
+//
+// PA_NATIVE_TEST_STUBS-gated out: the native test build compiles this same
+// struct for the HOST'S pointer width, not the target's. ConsoleRecord holds
+// seven `const char*` fields, so a 64-bit host makes this struct ~1 KB larger
+// than the real ESP32/ESP32-P4 build (measured: 4136 B host vs 3092 B
+// target) for a reason with zero bearing on either chip's actual stack
+// (native tests never run on an httpd task) - asserting the target's number
+// against a host-compiled size would either false-fail on every native build
+// or have to be loosened past the point of guarding anything.
+#if !defined(PA_NATIVE_TEST_STUBS)
+static_assert(sizeof(ConsoleWebSink) <= 3200,
+              "ConsoleWebSink grew past its #266 stack-safety budget - "
+              "re-measure handleConsolePost()'s -fstack-usage frame before "
+              "raising this number");
+#endif
+
 static ConsoleWebSink* g_currentWebSink = nullptr;
 
 // Helper: copy string into arena, return pointer.
@@ -341,8 +370,26 @@ static size_t fillOperationsResponse(uint8_t* output, size_t capacity, size_t of
 }
 
 void handleConsolePost(WebRequest& req) {
-    char command[256] = {};
-    ConsoleWebSink webSink = {};
+    // Static, not stack (#266): ConsoleWebSink alone is ~3.1 KB (records[32] +
+    // the 2 KB value arena) and this function's other locals brought the
+    // frame to 3776 B (measured via `-fstack-usage`) - on an 8 KB httpd task
+    // stack that is also carrying the PsychicHttp/esp_http_server/lwIP
+    // dispatch chain beneath every route AND consoleExecuteCommand()'s own
+    // fixed ~1.9 KB frame (paid on every call regardless of which operation
+    // runs - console_module.cpp's lineBuf[256] plus its dispatch switch),
+    // that was enough on its own to overflow the task stack on the very
+    // first POST, for every command including the smallest possible one
+    // (#266's measurement). Same fix, same reasoning as api_status.cpp's
+    // `body[3072]` comment on handleStatusGet(): one "httpd" task processes
+    // one request at a time (PsychicHttp's default synchronous dispatch, the
+    // same assumption g_currentWebSink/g_operationsCommand below already
+    // make), so a static buffer here is race-free and costs .bss instead of
+    // stack. Explicitly reset every field below rather than relying on
+    // static zero-init, which only runs once at boot, not per request.
+    static char command[256];
+    memset(command, 0, sizeof(command));
+    static ConsoleWebSink webSink;
+    memset(&webSink, 0, sizeof(webSink));
 
     // Check for truncation in form parameter (D13: detect oversized command)
     const char* paramValue = req.paramRef("command");
@@ -403,7 +450,11 @@ void handleConsolePost(WebRequest& req) {
             // so this file and the module can never disagree about which
             // command names it, including when whitespace between the name
             // and "type=" is more than one space.
-            char routeScratch[sizeof(command)];
+            // Static for the same reason as `command`/`webSink` above (#266):
+            // one httpd-task request in flight at a time, so no reset is
+            // needed beyond the snprintf() below, which always fully
+            // (re)terminates it before use.
+            static char routeScratch[sizeof(command)];
             snprintf(routeScratch, sizeof(routeScratch), "%s", command);
             char* routeName = nullptr;
             char* routeArgsUnused = nullptr;
@@ -419,8 +470,10 @@ void handleConsolePost(WebRequest& req) {
             }
 
             // system.status.logs (#239): the ring can hold up to
-            // LOG_RING_MAX_LINES (48, include/log_buffer.h) lines - more than
-            // the bounded path below can safely hold (webOnRecordItem_impl's
+            // LOG_RING_MAX_LINES lines - chip-dependent, not one fixed number
+            // (include/log_buffer.h:97-116): 48 on artoo-esp32, 112 on the
+            // ESP32-P4 - more than the bounded path below can safely hold on
+            // either board (webOnRecordItem_impl's
             // two independent limits: CONSOLE_RESPONSE_RECORDS_MAX's record
             // array, reserving 2 slots for begin/end, and
             // CONSOLE_RECORD_VALUE_ARENA's value arena, reserving
