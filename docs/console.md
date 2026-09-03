@@ -12,12 +12,12 @@ anyone extending the firmware) is [console-protocol.md](console-protocol.md).
 
 > [!NOTE]
 > **The Console isn't finished yet.** Reading status (`system.status.*`),
-> discovering commands (`help`, `operations`), and running most sound/dome
-> actions all work today. Drive and dome-speed motion, and every
-> `config`-type command (reading or changing a setting), do not run through
-> the Console yet — see [What doesn't work here yet](#what-doesnt-work-here-yet)
-> before you rely on this for anything beyond diagnostics and sound/sequence
-> triggers.
+> discovering commands (`help`, `operations`), running most sound/dome
+> actions, and a growing list of `config` reads and writes all work today.
+> Drive and dome-speed motion still don't run through the Console — see
+> [What doesn't work here yet](#what-doesnt-work-here-yet) for exactly which
+> `config` settings are wired up and which still route through the
+> **Setup** page instead.
 
 ## Two ways in
 
@@ -38,17 +38,21 @@ command without reaching for a cable.
 **Use a raw-mode terminal, not a plain one.** The Console's line editor
 draws the prompt with cursor-movement codes (the same codes vi/nano use), so
 a terminal that is not in raw mode shows those codes as literal text instead
-of moving the cursor — Backspace looks broken, Tab does nothing useful. Two
-terminals that behave correctly out of the box:
+of moving the cursor — Backspace looks broken, Tab does nothing useful.
+Three terminals behave correctly out of the box: the two below, plus this
+repo's own `python3 tools/serial_monitor.py --interactive` (nothing extra to
+install). [troubleshooting.md](troubleshooting.md#console-interactive-session)
+is the authoritative list — exact flags, why each one is safe to open, and
+the key that detaches each one, which is **not the same for all three**:
 
 ```bash
 # PlatformIO's own monitor, already configured for raw mode on this project
 pio device monitor -e artoo_esp32       # artoo-esp32, USB-serial bridge
 pio device monitor -e firebeetle2       # FireBeetle 2, native USB
 
-# picocom (any Linux box with it installed)
-picocom -b 115200 /dev/ttyUSB0          # artoo-esp32
-picocom -b 115200 /dev/ttyACM0          # FireBeetle 2
+# picocom (any Linux box with it installed) -- flags keep it byte-for-byte raw
+picocom -b 115200 -q --imap "" --omap "" /dev/ttyUSB0   # artoo-esp32
+picocom -b 115200 -q --imap "" --omap "" /dev/ttyACM0   # FireBeetle 2
 ```
 
 Both boards run at **115200 baud**. Do not attach with `make monitor` — that
@@ -67,10 +71,15 @@ Controller Console ready. Type 'help' for commands, Ctrl-C to leave.
 >
 ```
 
-Type a command and press Enter. **Ctrl-C detaches** — that is your terminal
-program's own default key, not something the firmware does; the firmware
-never closes a terminal on its own, and there is no `quit` or `exit` command
-to type.
+Type a command and press Enter. **Ctrl-C detaches** on `pio device monitor`
+and `tools/serial_monitor.py --interactive` — that is the terminal program's
+own default key, not something the firmware does; the firmware never closes
+a terminal on its own, and there is no `quit` or `exit` command to type.
+**picocom is the exception**: it does not act on Ctrl-C at all and forwards
+it to the port as ordinary data instead, so it looks like nothing happened —
+**Ctrl-A Ctrl-X** is what leaves picocom. See
+[troubleshooting.md](troubleshooting.md#console-interactive-session) for
+this and every other client-specific key to know about before you attach.
 
 ### Don't reset the board by attaching
 
@@ -98,6 +107,11 @@ in the same `< id=... type=...` shape a serial terminal would show, with an
 error record shown in red. Up/Down cycles through commands you've sent this
 session, and that history is saved in your browser, so it survives a reload.
 Tab completes the same way it does on serial (below).
+
+An unusually long reply — [`system.status.logs`](#reading-the-log-ring) is
+the one likely to produce one — can come back shorter than the full answer
+here, with nothing on screen to say so; see [api.md](api.md) for exactly
+when that happens. Read `/api/logs` directly if you need the whole thing.
 
 ## Typing a command
 
@@ -151,7 +165,11 @@ dome.action.marcduino-sequence value=30
   `type=config`, or `type=event` to see only one kind. Nothing is hidden
   because it happens to be unavailable on this board or not included in
   this firmware — you see the full list either way, with the reason
-  attached to the ones that can't run.
+  attached to the ones that can't run. The profiler and heap-trace rows are
+  the clearest example: they show up in `operations` on every image, marked
+  `not-in-this-build` on a board not running the profiler build — try to
+  run one there and you get the matching `unavailable reason=not-in-this-build`,
+  not a missing-command error.
 - **Tab** completes an operation name, or — once you've typed the operation
   and a space — one of its argument keys. One match fills it in; several
   share a prefix and Tab fills in that much; a second Tab lists every match
@@ -200,8 +218,8 @@ A simple action or an error is one line:
 ```
 
 A query answers with a group — `begin`, one `field`/`item` line per value,
-then `end` (abridged — `system.status.health` answers with eleven fields,
-not three):
+then `end`. The example below is abridged for space; run the command
+yourself to see the complete answer:
 
 ```text
 > system.status.health
@@ -251,14 +269,22 @@ never carries one. The tokens are stable — safe to match on in a script:
 ## Web control: what actions need
 
 Enable **Web control** (the **✓ Enable Web Control** button under Safety
-Controls on the Drive page, or `POST /api/web-control/enable`) before
-running an action-type command — this applies from serial too, not just the
-dashboard. Until it's on, an action answers `blocked reason=blocked-by-state`:
+Controls on the Drive page, `POST /api/web-control/enable`, or the command
+`system.action.enable-web-control`) before running an action-type command —
+this applies from serial too, not just the dashboard. Until it's on, an
+action answers `blocked reason=blocked-by-state`:
 
 ```text
 > sound.action.random-humming
 < id=7 type=result status=err outcome=blocked reason=blocked-by-state
 ```
+
+`system.action.enable-web-control` and `system.action.disable-web-control`
+need no Web control of their own to run and answer `applied` right away —
+so a serial terminal with no network reaches this switch by itself, without
+the dashboard route above. `system.action.reboot` works the same way: no
+arguments, no Web control needed, and it restarts the firmware straight
+away.
 
 `system.action.estop` always answers `blocked` this way, on purpose — this
 interface never triggers an estop; use the dashboard's E-Stop control or
@@ -340,6 +366,52 @@ just the same, but it cannot match them to a known field, so the line stays in
 that session's history. If that happens, restart the controller (serial) or
 clear the browser's site data (dashboard).
 
+## Setting the log level
+
+`system.config.log-level` reads and changes how much detail the controller
+writes to its log — over serial and on the dashboard's Live Logs panel
+alike. Read it with no arguments; write it with either the plain number or
+the word, either case — `value=4` and `value=debug` set the same thing:
+
+| Number | Word |
+|---|---|
+| `1` | `error` |
+| `2` | `warning` |
+| `3` | `info` |
+| `4` | `debug` |
+
+```text
+> system.config.log-level value=debug
+< id=11 type=result status=ok outcome=applied
+```
+
+The change applies immediately and is saved, the same as the other
+settings that answer `applied` right away (see
+[below](#what-doesnt-work-here-yet)) — nothing to restart for, and it holds
+across a reboot too.
+
+## Reading the log ring
+
+`system.status.logs` prints the controller's own recent log lines back to
+you — the same lines the dashboard's **📋 Live Logs** panel shows — one line
+per `item` record, oldest first, no arguments needed:
+
+```text
+> system.status.logs
+< id=12 type=item value=[52340][I][WebServer] client connected, heapFree=173152
+< id=12 type=item value=[54012][W][WebServer] accept rejected: heap floor
+< id=12 type=end status=ok outcome=completed
+```
+
+The ring only keeps a fixed number of the most recent lines — how many
+depends on the board and the current log level — so a long gap between
+checks pushes older lines out before you read them. For a record that needs
+to survive that, or a wider window than the ring holds, pull `/api/logs`
+instead ([api.md](api.md)); it reads the same ring over HTTP. On the
+dashboard, a reply this long can also come back shorter than the full ring
+with no on-screen sign that anything was cut — see
+[Use the Console from the dashboard](#use-the-console-from-the-dashboard).
+
 ## What doesn't work here yet
 
 - **Drive and dome-speed motion** (`drive.action.move`, `drive.action.speed`,
@@ -349,18 +421,17 @@ clear the browser's site data (dashboard).
   (`drive.action.speed`, `drive.action.steer`, `dome.action.set-speed`)
   answer `unavailable reason=not-executable`. Drive the droid from the
   dashboard or RC for now.
-- **Most `config`-type commands** don't run here yet, but some now do.
-  Working today: the fifteen Component Toggles (`system.config.enable_drive`,
-  `system.config.enable_audio`, `system.config.enable_arm1` and the rest) —
-  changing one answers `staged-until-reboot`, and it takes effect at the next
-  restart, not immediately; `system.config.mood`; the grouped WiFi write
-  `wifi.config.settings` ([above](#wifi-settings-as-one-command)); and four
-  settings that take effect straight away and answer `applied` —
-  `drive.config.speed-limit`, `aux.config.led-pin`, `aux.config.led-count`
-  and `rc.config.mode`. Every other `config` entry answers
-  `unavailable reason=executor-not-ready` whether or not you supply a value.
-  `operations type=config` lists them all, so you can see which exist; change
-  the rest from the **Setup** page in the meantime.
+- **Most `config`-type commands** don't run here yet, but a growing number
+  do. `operations type=config` shows you which, live: an entry with no
+  reason attached works today, and `executor-not-ready` means it doesn't
+  yet — change that one from the **Setup** page instead. Among the ones
+  that work, a Component Toggle (`system.config.enable_*`) always answers
+  `staged-until-reboot` — saved, but only takes effect at the next restart;
+  the grouped WiFi write `wifi.config.settings`
+  ([above](#wifi-settings-as-one-command)) answers either that or
+  `applied`, depending on whether anything actually changed; and the rest
+  — including [`system.config.log-level`](#setting-the-log-level) — answer
+  `applied` right away, with nothing to restart for.
 - **Events** (`type=event` entries) are output only — logs and state
   changes you'll see printed on their own — never something you run; typing
   one answers `unavailable reason=not-executable`.
