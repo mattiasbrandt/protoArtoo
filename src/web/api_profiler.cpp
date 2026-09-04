@@ -108,17 +108,25 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // PROF_TASK_MAX and ProfilerTaskStack are declared in api_profiler.h, beside
 // the rest of the reading's shape.
 
-// Names must match xTaskCreatePinnedToCore() calls in main.cpp.
+// Names must match the xTaskCreatePinnedToCore() calls in src/, wherever they
+// are -- not only the ones in main.cpp.
 //
-// Nothing enforces that, and it drifted: "SeqDisp" was missing until #250, so
-// /api/profiler silently reported nine of the ten tasks and the tenth could not
-// be measured at all. That is worse than an obviously absent endpoint, because
-// the response looks complete -- a task that is never listed reads the same as
-// a task that is disabled. If you add a task in main.cpp, add it here.
+// Nothing enforced that, and it drifted twice. "SeqDisp" was missing until
+// #250, so /api/profiler silently reported nine of the ten tasks in main.cpp.
+// The guard written then scanned main.cpp alone, so the three tasks created
+// elsewhere stayed invisible to both the endpoint and the guard until #271:
+// WebEvents and ArduinoOTA (web_server.cpp) and HostedRecovery
+// (web_network_manager_hosted.cpp, ESP32-P4 only -- it reports not-found on
+// artoo-esp32, like any task this image does not run).
+//
+// That is worse than an obviously absent endpoint, because the response looks
+// complete -- a task that is never listed reads the same as a task that is
+// disabled. If you create a task anywhere in src/, add it here.
+// test/test_tools/test_profiler_task_list.py now scans the whole tree.
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
     "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
-    "SeqDisp", "Console"
+    "SeqDisp", "Console", "WebEvents", "ArduinoOTA", "HostedRecovery"
 };
 
 static ProfilerTaskStack s_taskHwm[PROF_TASK_MAX];
