@@ -3269,21 +3269,36 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
 
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
-            // means this action has no RC-bindable target yet - a
-            // not-yet-wired action #227 owns, or a motion target #222
-            // owns - unchanged from before this ticket.
+            // means this action has no RC-bindable target yet - a motion
+            // target #222 owns, or one of the twelve rows below.
             //
-            // Two of the rows that land here on purpose, not by omission:
-            // dome.api.get-sequence (seqStoreReadFileSlice()) and
-            // dome.api.get-layout (domeLayoutCacheReadChunk()) are byte-slice
-            // readers over one stored document (a Learned Sequence JSON v1
-            // file; the dome's cached composed-layout JSON) - #206's own
-            // "document/bulk transfer ... keeps its dedicated mechanisms"
-            // exclusion, the same one dome.action.save-sequence's write side
-            // cites (include/console_direct_action_dome.h). They answer
-            // EXECUTOR_NOT_READY here like any other unwired action row;
-            // the registry entries carry the same reasoning (docs/action-
-            // registry.yaml, #221 remainder).
+            // EVERY action row that still answers EXECUTOR_NOT_READY lands
+            // here on purpose, and each one has a recorded reason on its own
+            // docs/action-registry.yaml entry (#221). They are twelve, in
+            // three groups; test_the_executor_not_ready_set_is_exactly_the_
+            // recorded_rows (test/test_native/test_console_module) names them
+            // and fails if a thirteenth appears, so a new unwired row cannot
+            // join this set silently.
+            //
+            // 1. #206's document/bulk-transfer exclusion - the transfer IS the
+            //    operation, and the Console's one-line key=value grammar has
+            //    no shape for it:
+            //      dome.api.get-sequence      seqStoreReadFileSlice()
+            //      dome.api.get-layout        domeLayoutCacheReadChunk()
+            //      dome.action.save-sequence  a whole Learned Sequence JSON v1
+            //      rc.api.get-map             the RC-map document, read half
+            //      rc.action.set-map          the RC-map document, write half
+            //      system.api.get-coredump    the raw ELF image
+            //      system.action.upload-firmware / -filesystem  OTA images
+            // 2. A real core the Console module cannot reach without editing a
+            //    file this ticket fences. Probed, not assumed - the compiler and
+            //    linker errors are quoted on each registry entry:
+            //      system.api.get-coredump-status   esp_core_dump_image_get()
+            //      system.action.erase-coredump     esp_core_dump_image_erase()
+            //      system.api.get-admission-trace   webAdmissionTraceInstance()
+            // 3. Not an operation at all:
+            //      system.console  is the browser Console Adapter itself
+            //                      (POST /api/console, ADR 0034)
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion

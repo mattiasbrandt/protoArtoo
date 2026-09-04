@@ -906,6 +906,16 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the request body is a whole Learned
+  # Sequence JSON v1 document, up to SEQ_FILE_MAX_BYTES with a steps array
+  # (handleSeqPost(), src/web/api_seq.cpp:220-230). #206's "document/bulk
+  # transfer ... keeps its dedicated mechanisms" exclusion names sequence
+  # documents outright, and the Console's one-line key=value argument grammar
+  # (docs/console-protocol.md s.1.2) has no shape for an arbitrarily large body
+  # - inventing one would be a new Console Record shape, not a wiring gap.
+  # dome.api.list-sequences carries the metadata index; the body stays REST-only
+  # (this row's own api_path). The dispatch site records the same reasoning
+  # (include/console_direct_action_dome.h).
   executor: seqStoreSave
 - name: dome.action.delete-sequence
   display_name: Memory Wipe
@@ -3459,6 +3469,15 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # No core the Console module can reach (#221, reported on that issue rather
+  # than guessed): the only accessor is ESP-IDF's esp_core_dump_image_get(),
+  # called inline in src/web/api_system.cpp:156 behind #include <esp_core_dump.h>.
+  # src/console/console_module.cpp compiles in [env:native] too, and that header
+  # does not exist there - a probe adds "fatal error: esp_core_dump.h: No such
+  # file or directory". Reaching it needs an ESP-IDF stub under test/stubs/
+  # include/ or an entry in platformio.ini's native build_src_filter, both
+  # fenced on this ticket. Not a missing executor and not an exclusion - a
+  # blocked one, recorded so the next slice starts from the reason.
   executor: none
 - name: system.api.get-coredump
   display_name: Download Coredump
@@ -3477,6 +3496,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the answer is the raw ELF coredump
+  # image streamed straight off the partition a chunk at a time
+  # (handleCoredumpGet(), src/web/api_system.cpp:163-183). #206's
+  # document/bulk-transfer exclusion names the coredump outright. HTTP stays
+  # the only way to fetch it, which is what docs/troubleshooting.md's decode
+  # procedure already assumes.
   executor: none
 - name: system.action.erase-coredump
   display_name: Erase Coredump
@@ -3493,6 +3518,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Blocked for the same reason as system.api.get-coredump-status above (#221):
+  # esp_core_dump_image_erase() is an ESP-IDF call reached through
+  # <esp_core_dump.h> (src/web/api_system.cpp:187), a header the native build of
+  # src/console/console_module.cpp has no copy of, and both places one could be
+  # supplied are fenced on this ticket.
   executor: esp_core_dump_image_erase
 - name: system.api.get-admission-trace
   display_name: Get Admission Trace
@@ -3510,6 +3540,15 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # No core the Console module can reach (#221, reported on that issue): the
+  # ring's one accessor, webAdmissionTraceInstance()
+  # (src/web/api_admission_trace.cpp:32), lives in a translation unit
+  # [env:native]'s build_src_filter allowlist does not include, and there is no
+  # stub for it - a probe links with "undefined reference to
+  # webAdmissionTraceInstance()". Both files that could fix that (platformio.ini,
+  # src/native_test_stubs.cpp) are fenced on this ticket. Note this row answers
+  # not-in-this-build on any image built without PA_ADMISSION_TRACE, which is
+  # every shipping one.
   executor: fillAdmissionTraceResponse
 - name: system.api.get-validation
   display_name: Get Validation Snapshot
@@ -3557,6 +3596,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): a multipart image streamed chunk by
+  # chunk straight into the flash partition through the Update library
+  # (handleFirmwareUploadChunk(), src/web/api_upload.cpp:214-216) - #206's
+  # document/bulk-transfer exclusion names firmware images outright, and that
+  # file's own header comment already says so. There is no executor to point at
+  # because there is no queue or core in the path at all.
   executor: none
 - name: system.action.upload-filesystem
   display_name: Upload Filesystem
@@ -3575,6 +3620,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the same reason as system.action.upload-firmware above
+  # (#221): a LittleFS image streamed into the data partition through the
+  # Update library (handleFilesystemUploadChunk(), src/web/api_upload.cpp:226),
+  # which #206 excludes as an FS image. LittleFS is unmounted for the duration,
+  # so the Console's own help file is unreadable mid-write - a second reason
+  # this belongs to the dedicated mechanism and not to a Console record.
   executor: none
 - name: system.api.event-stream
   display_name: Event Stream
@@ -3669,6 +3720,18 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the read half of the RC-map document,
+  # which #206's document/bulk-transfer exclusion names alongside sequence and
+  # configuration documents. Unlike dome.api.list-sequences, which reads a real
+  # item-indexed accessor (seqStoreIndexAt()), there is no per-binding accessor
+  # here at all: populateRcMapJson() (src/web/api_config.cpp:229) assembles the
+  # whole document, choosing each backbone binding by input mode
+  # (rcMapSelectBackboneForMode()) and walking eleven named trigger slots. An
+  # item-record answer would have to reproduce that selection rule - a second
+  # implementation of a real rule, which is the duplication this epic exists to
+  # avoid - or render through the JSON builder, which the Console's status
+  # executors do not do. rc.status.snapshot answers live RC state; the binding
+  # map stays REST-only, with its write side (rc.action.set-map above).
   executor: populateRcMapJson
 - name: rc.action.set-map
   display_name: Set RC Map
@@ -3687,6 +3750,13 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the write half of the RC-map document.
+  # rcMapApply() (src/web/api_rc_map_apply.cpp:85) reads one whole JSON body
+  # through a ConfigParamSource - "map body required", then a map array of
+  # binding objects - which is exactly the "RC-map document" #206's
+  # document/bulk-transfer exclusion names. The Console's one-line key=value
+  # grammar has no shape for it, and its read half is excluded for the same
+  # reason (rc.api.get-map below).
   executor: rcMapApply
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
@@ -4011,4 +4081,10 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Not an operation the Console executes (#221): this row IS the browser
+  # Console Adapter - POST /api/console, the transport that carries every other
+  # operation (ADR 0034, src/web/api_console.cpp:108). Running it from the
+  # Console would be the adapter invoking itself. It stays in the registry
+  # because the route exists and the inventory tracks routes; it is not a
+  # wiring gap and never will be one.
   executor: consoleExecuteCommand

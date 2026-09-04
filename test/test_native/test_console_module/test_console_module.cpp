@@ -2049,6 +2049,62 @@ void test_scoped_non_motion_actions_are_not_executor_not_ready() {
                               "every non-motion, non-parameterized action must dispatch");
 }
 
+// The closing guard for #221 (epic row #46): the action rows that still answer
+// executor-not-ready are exactly these twelve, each carrying a true, specific
+// reason on its own docs/action-registry.yaml entry and in the dispatch-site
+// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A thirteenth row
+// joining the set fails here, so the next unwired operation cannot arrive
+// unexplained; a row leaving it fails here too, so the list cannot rot.
+//
+// Update this list only together with the reason at both sites - never to make
+// the row green.
+void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
+    static const char* const kRecorded[] = {
+        // #206 document / bulk transfer
+        "dome.api.get-sequence",
+        "dome.api.get-layout",
+        "dome.action.save-sequence",
+        "rc.api.get-map",
+        "rc.action.set-map",
+        "system.api.get-coredump",
+        "system.action.upload-firmware",
+        "system.action.upload-filesystem",
+        // core unreachable from this module without editing a fenced file
+        "system.api.get-coredump-status",
+        "system.action.erase-coredump",
+        "system.api.get-admission-trace",
+        // the browser Console Adapter itself, not an operation
+        "system.console",
+    };
+    const size_t kRecordedCount = sizeof(kRecorded) / sizeof(kRecorded[0]);
+
+    robotState.webControlEnabled = true;
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+
+    int notReady = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_ACTION) != 0) continue;
+        runQuery(entries[i].name);
+        if (g_cap.reason != CONSOLE_REASON_EXECUTOR_NOT_READY) continue;
+        notReady++;
+
+        bool recorded = false;
+        for (size_t r = 0; r < kRecordedCount; ++r) {
+            if (strcmp(kRecorded[r], entries[i].name) == 0) {
+                recorded = true;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(recorded, entries[i].name);
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)kRecordedCount, notReady,
+                                  "a recorded row started dispatching, or a new row stopped - "
+                                  "update this list together with its reason at the registry "
+                                  "and the dispatch site");
+}
+
 // Diagnostic (not an assertion beyond "ran"): reports the whole registry's
 // action-type executor-not-ready count so the ticket's closing comment can
 // cite a real number instead of an estimate. Everything outside #220's scope
@@ -4975,6 +5031,7 @@ int main(int, char**) {
     RUN_TEST(test_action_dispatch_attributes_serial_source);
     RUN_TEST(test_action_dispatch_attributes_web_source);
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
+    RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
     RUN_TEST(test_action_executor_not_ready_count_report);
 
     RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);
