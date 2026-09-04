@@ -419,16 +419,16 @@ Full guide: [console.md](console.md). Two specific symptoms:
 
 ### A long command on serial comes back as `line-too-long`
 
-The serial Console's input line holds only about 60 characters — far shorter
-than the dashboard's 255-byte limit. Past that point extra keystrokes stop
-appearing, and pressing Enter throws the whole line away with
+The serial Console's input line holds **62 bytes** — far shorter than the
+dashboard's 255-byte limit. Past that point extra keystrokes stop appearing,
+and pressing Enter throws the whole line away with
 `invalid reason=line-too-long` rather than running the part that fit. That is
 deliberate: a command shortened halfway through a value is not the command you
 typed, so it never runs. Backspacing back under the limit does not help — the
 characters that were dropped were never stored, so the line is still refused.
 
 Retype the command in the dashboard's Live Logs command box, where the limit is
-255 characters, or keep serial commands short.
+255 bytes, or keep serial commands short.
 
 ### An action answers `blocked reason=blocked-by-state` or `unavailable reason=temporarily-unavailable`
 

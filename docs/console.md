@@ -151,15 +151,15 @@ dome.action.marcduino-sequence value=30
 
 ### Two things that will bite you if you don't know them
 
-- **The serial line is short.** The default input line on serial holds only
-  about 60 characters. A long command with a quoted value (a WiFi network
-  name, say) can run out of room — extra keystrokes stop appearing. Press
-  Enter and the whole line is thrown away with
-  `invalid reason=line-too-long`; the part that fit does **not** run. That is
-  the same answer the dashboard gives, where the limit is more generous
-  (255 characters). So a long command is refused on serial and accepted in
-  the dashboard — if you need to type one, use the dashboard's command box,
-  or shorten it.
+- **The serial line is short.** The input line on serial holds **62 bytes** —
+  62 plain characters, and fewer once a quoted value carries accents or emoji.
+  A long command with a quoted value (a WiFi network name, say) can run out of
+  room — extra keystrokes stop appearing. Press Enter and the whole line is
+  thrown away with `invalid reason=line-too-long`; the part that fit does
+  **not** run. That is the same answer the dashboard gives, where the limit is
+  more generous (255 bytes). So a long command is refused on serial and
+  accepted in the dashboard — if you need to type one, use the dashboard's
+  command box, or shorten it.
 - **A bare word is not a command by itself.** `speed=200` on its own line,
   or a value that needed quotes and didn't get them, comes back as
   `invalid reason=malformed-argument` rather than being guessed at.
