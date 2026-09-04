@@ -56,7 +56,7 @@ sound.action.play-track-sw-theme|Play Star Wars Theme|Play the Star Wars main th
 sound.action.play-track-imperial-march|Play Imperial March|Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)|audioQueuePlayTrackBanked|
 sound.action.play-track-startup|Play Startup Sound|Play the startup / boot track (AUDIO_TRACK_STARTUP)|audioQueuePlayTrackBanked|
 sound.action.play-track-disco|Play Disco|Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)|audioQueuePlayTrackBanked|
-sound.api.get-catalog|Get Catalog|Return cached CHIRP catalog banks and entries from the active audio backend|audioGetCatalogEntries|bank:uint8:0
+sound.api.get-catalog|Get Catalog|Cached CHIRP catalog entries from the active audio backend, one per sound. GET /api/audio/catalog also accepts a bank= filter and returns the bank directory alongside the entries; the Console answers the unfiltered entry list (each entry carries its own bank, so the filter adds nothing a reader cannot do) and no params:, keeping its schema honest about what it runs - type: status entries take no arguments (docs/console-catalog-contributing.md).\n|audioGetCatalogEntries|
 sound.api.refresh-catalog|Refresh Catalog|Queue CHIRP catalog refresh (GMAN plus GNME enumeration)|audioQueueRefreshCatalog|
 sound.api.play-banked|Play Banked Entry|Play a CHIRP sound by explicit bank, page, and index|audioQueuePlayTrackBanked|bank:uint8:1|page:string:1|index:uint16:1
 sound.api.get-mood-map|Get Mood Category Map|Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)|configCacheRead|
@@ -152,7 +152,7 @@ system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, fil
 system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
 system.status.logs|Logs|Recent firmware log lines|copyLogLineAt|
 system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|captureWifiStatusSnapshot|
-wifi.config.settings|WiFi Settings|How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi provisioning page.|wifiApply|mode:string:0|sta-ssid:string:0|ap-ssid:string:0|sta-password:string:0|ap-password:string:0
+wifi.config.settings|WiFi Settings|How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi page, under Device WiFi Settings.|wifiApply|mode:string:0|sta-ssid:string:0|ap-ssid:string:0|sta-password:string:0|ap-password:string:0
 dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|
 system.action.set-identity|Set Droid Identity|Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in|configCacheApply|droidName:string:1|mdnsUseName:bool:0
@@ -173,7 +173,7 @@ rc.api.get-bindable-actions|List Bindable Actions|JSON array of all RC-bindable 
 rc.api.get-map|Get RC Map|Current RC channel-to-action binding map|populateRcMapJson|
 rc.action.set-map|Set RC Map|Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.\n|rcMapApply|
 rc.action.test-bindable|Test Bindable Action|Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing|dispatchRcTriggerActionTest|token:string:1
-rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|rcMapApply|
+rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|configApply|
 dome.seq.vader|DM:VADER — Imperial March|47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.|sequenceStart|
 dome.seq.hello|DM:HELLO — Hello There|4-second greeting: logic text + P1 panel wave. Body-owned flat sequence.|sequenceStart|
 dome.seq.nod|DM:NOD — Acknowledgment nod|3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence.|sequenceStart|

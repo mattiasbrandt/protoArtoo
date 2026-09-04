@@ -866,17 +866,12 @@ rows:
   - executor reference not in registry
   notes: dome-rx only; increments volume by 1
 - name: sound.api.get-catalog
-  type: action
+  type: status
   registry_api_path: /api/audio/catalog
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_audio.cpp
   registry_sse_event: null
   registry_nvs_key: null
-  registry_params:
-  - name: bank
-    type: uint8
-    range: '[1, 6]'
-    required: false
   registry_requires_web_control: false
   registry_sources:
   - web_api
@@ -893,7 +888,7 @@ rows:
   - console_alias not in registry
   notes: returns CHIRP catalog via chunked response
 - name: sound.api.get-mood-map
-  type: action
+  type: status
   registry_api_path: /api/audio/mood-map
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_audio.cpp

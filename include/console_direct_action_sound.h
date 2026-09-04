@@ -611,6 +611,122 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
     }
 }
 
+// A backend with no CHIRP catalog can never serve one: the driver is chosen at
+// compile time by PA_AUDIO_DRIVER (src/tasks/audio_task.cpp:54-66), so
+// AUDIO_CAP_CATALOG is a property of the built image read back at runtime, not
+// something an operator can turn on. handleAudioCatalogGet()/
+// handleAudioCatalogRefreshPost()/handleAudioPlayBankedPost() all answer 404
+// "catalog unsupported by active backend" for it; the Console's equivalent is
+// `unavailable reason=not-in-this-build` - "the feature was built out of this
+// image" (docs/console-protocol.md s.3.3), which is what this is. Deliberately
+// not a new reason token: the protocol says the Console never invents a synonym
+// for an availability answer it already has a word for.
+static void consoleAnswerCatalogUnsupported(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                            CONSOLE_REASON_NOT_IN_THIS_BUILD);
+    }
+}
+
+// sound.api.refresh-catalog: no arguments, the same audioQueueRefreshCatalog()
+// call handleAudioCatalogRefreshPost() (POST /api/audio/catalog/refresh,
+// src/web/api_audio.cpp) makes behind the same catalog-support gate. That
+// handler applies no sleep gate before the queue send - a catalog enumeration
+// is not playback - and none is added here either.
+static void consoleExecuteSoundRefreshCatalog(uint32_t requestId, const char* operationName,
+                                              const ConsoleArgs& args, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    if (!consoleAudioCatalogSupported()) {
+        consoleAnswerCatalogUnsupported(requestId, sink);
+        return;
+    }
+    if (!audioQueueRefreshCatalog(consoleCommandSourceFor(source))) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+// sound.api.play-banked: bank=<1..6> page=<A..Z> index=<1..65535>, the three
+// form fields handleAudioPlayBankedPost() (POST /api/audio/play-banked,
+// src/web/api_audio.cpp) reads, in that handler's own gate order - sleep
+// first, then catalog support, then the values - reaching the same
+// audioQueuePlayTrackBanked() queue call.
+//
+// One deliberate NARROWING, recorded rather than hidden: the REST route's
+// parseChirpPage() (src/web/api_audio.cpp:136, file-static) upper-cases a
+// single letter before range-checking it, so `page=a` reaches it as 'A'. The
+// registry publishes this parameter's enum as A-Z and `help` shows exactly
+// that, so the Console enforces what it publishes and answers
+// `invalid reason=out-of-range argument=page` for a lower-case letter. That is
+// a smaller accepted set than REST's, never a larger one - "no widening" is
+// the rule this ticket carries, and a schema the Console prints but does not
+// enforce would be the worse half of the trade.
+static void consoleExecuteSoundPlayBanked(uint32_t requestId, const char* operationName,
+                                          const ConsoleArgs& args, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (sleeping) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+        }
+        return;
+    }
+
+    if (!consoleAudioCatalogSupported()) {
+        consoleAnswerCatalogUnsupported(requestId, sink);
+        return;
+    }
+
+    // Schema already confirmed bank/index parse and sit in range and that page
+    // is one of the published letters - reparsed with the SAME parser the
+    // schema check used (consoleParamParseNumeric(), include/console_args.h),
+    // the reparse-after-schema precedent dome.action.move and the servo
+    // executors both set.
+    double bank = 0.0;
+    double index = 0.0;
+    consoleParamParseNumeric(CONSOLE_PARAM_TYPE_UINT8, consoleArgsFind(args, "bank"), &bank);
+    consoleParamParseNumeric(CONSOLE_PARAM_TYPE_UINT16, consoleArgsFind(args, "index"), &index);
+    const char page = consoleArgsFind(args, "page")[0];
+
+    if (!audioQueuePlayTrackBanked((uint16_t)index, (uint8_t)bank, page,
+                                   consoleCommandSourceFor(source))) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_soundDirectActionExecutors[] = {
     {"sound.action.play-track", consoleExecuteSoundPlayTrack},
     {"sound.action.set-volume", consoleExecuteSoundSetVolume},
@@ -636,6 +752,8 @@ static const ConsoleDirectActionExecutorEntry g_soundDirectActionExecutors[] = {
     {"sound.action.query-status", consoleExecuteSoundQueryStatus},
     {"sound.action.set-mood-map", consoleExecuteSoundSetMoodMap},
     {"sound.action.set-category-range", consoleExecuteSoundSetCategoryRange},
+    {"sound.api.refresh-catalog", consoleExecuteSoundRefreshCatalog},
+    {"sound.api.play-banked", consoleExecuteSoundPlayBanked},
 };
 static const size_t kSoundDirectActionExecutorCount =
     sizeof(g_soundDirectActionExecutors) / sizeof(g_soundDirectActionExecutors[0]);

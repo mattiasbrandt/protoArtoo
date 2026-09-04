@@ -100,3 +100,12 @@ const ConsoleCatalogEntry* consoleCatalogFindByName(const char* name);
 // Get count of operations
 size_t consoleCatalogGetCount(void);
 
+// Named body/dome sequence for an operation, or NULL when the operation is not
+// one. Generated from the registry's `marcduino_cmd:` for the action rows whose
+// value is a literal DM:<NAME> (the dome.seq.* family) and for no others - the
+// field also carries documentation placeholders and prose, which is why the
+// generator filters and the firmware never sees the raw string. The dispatcher
+// asks this instead of carrying a list of operation names, the same way
+// read_only above keeps the config refusal in the registry.
+const char* consoleCatalogSequenceFor(const char* operationName);
+

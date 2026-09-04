@@ -42,6 +42,8 @@
 #include "api_audio.h"
 #include "audio_task.h"
 #include "rc_diagnostics_snapshot.h"
+#include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot() -
+                                 // the Zone Snapshot behind GET /api/validation
 #include "action_registry.h"  // ACTION_REGISTRY[]: canonical name -> RobotActionId (#220)
 #include "api_actions.h"      // evaluateActionTestGuard(), robotActionIsWebTestable() - the
                               // existing guard core (#220), reused verbatim, not duplicated
@@ -444,6 +446,49 @@ static ConsoleOperationType consoleGetOperationType(const char* operationName) {
 // executor runs, so each executor only emits fields (and its own onRecordEnd).
 // =============================================================================
 
+// Whether the active audio backend serves a CHIRP catalog. Reproduces
+// api_audio.cpp's anonymous-namespace audioCatalogSupported() (internal
+// linkage - unreachable from a second translation unit) rather than exporting
+// a REST-private helper, the same "read their logic, call their shared
+// functions" precedent the direct-action executors already set for
+// isSleepModeActive(). Lives above the status executors rather than in one
+// domain header because three callers now need it, and the earliest of them -
+// sound.api.get-catalog's status executor below - has to see it first:
+// g_statusExecutors[] takes the address of that executor, so everything it
+// calls must already be declared. The other two are
+// include/console_direct_action_sound.h's sound.action.set-category-range and
+// the sound.config.* rows further down this file.
+static bool consoleAudioCatalogSupported() {
+    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
+// The four per-mood CHIRP category masks, emitted as field records under
+// GET /api/audio/mood-map's own JSON keys (formatMoodCategoryMapJson(),
+// include/mood_sound_mapping.h). Shared by the two Console rows that answer
+// this value - sound.api.get-mood-map (the api-named read) and
+// sound.config.mood-category-map's read branch - so the two cannot drift
+// apart, and masked exactly as handleAudioMoodMapGet() masks them so all
+// three surfaces answer the same number for the same stored word.
+static void consoleEmitMoodCategoryMasks(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    const uint16_t values[] = {
+        (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX),
+    };
+    static const char* const kMoodMapKeys[] = {"quiet", "mid", "full", "awakeplus"};
+
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)values[i]);
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, kMoodMapKeys[i], buf);
+        }
+    }
+}
+
 static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRecordSink* sink) {
     HealthSnapshot snap = {};
     captureHealthSnapshot(&snap);
@@ -824,6 +869,196 @@ static void consoleExecuteSystemApiGetProfiler(uint32_t requestId, const Console
 }
 #endif  // PA_HEAP_PROFILE
 
+// sound.api.get-mood-map (#221): the api-named READ of the four masks
+// sound.config.mood-category-map writes - two typed views of one value, the
+// same relationship sound.config.volume has to sound.action.set-volume. Both
+// go through consoleEmitMoodCategoryMasks() above, so there is one emitter and
+// no way for the two rows to answer differently.
+static void consoleExecuteSoundApiGetMoodMap(uint32_t requestId, const ConsoleRecordSink* sink) {
+    consoleEmitMoodCategoryMasks(requestId, sink);
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// sound.api.get-catalog (#221): the cached CHIRP catalog, read through
+// audioGetCatalogEntries() (include/audio_task.h) - the same accessor
+// handleAudioCatalogGet() hands to its chunked writer (src/web/api_audio.cpp).
+//
+// Answered as one `ready` field followed by one `item` per entry: the
+// composition of the two record types docs/console-protocol.md s.3.1 already
+// defines, not a new shape. `ready` is the only scalar top-level key
+// fillCatalogResponse() emits, and it is load-bearing - without it an empty
+// answer cannot be told apart from a catalog that has not been enumerated yet.
+// The bank directory that REST returns beside the entries stays REST-only, the
+// documented-subset precedent dome.api.get-sequence-last-run set.
+//
+// A backend with no catalog answers not-in-this-build rather than an empty
+// list, matching the REST route's own 404 - see consoleAnswerCatalogUnsupported()
+// (include/console_direct_action_sound.h) for why that is the right token. It
+// is answered here through onRecordEnd rather than that helper's onRecordResult
+// because the cascade has already opened a `begin` record for a query.
+//
+// Bounded by AUDIO_CATALOG_MAX_ENTRIES (300, include/audio_driver.h), so the
+// answer has a fixed ceiling the same way `operations` and system.status.logs
+// do, and needs no paging protocol of its own. The entry table is owned by the
+// audio driver on Core 0 and refreshed only by AudioTask; the count is read
+// once, up front, the same way system.status.logs fixes its own depth.
+static void consoleExecuteSoundApiGetCatalog(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (!consoleAudioCatalogSupported()) {
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                             CONSOLE_REASON_NOT_IN_THIS_BUILD);
+        }
+        return;
+    }
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "ready", audioIsCatalogReady() ? "true" : "false");
+    }
+
+    // Pointer AND count re-read together on every iteration, not captured once.
+    // A catalog refresh runs on AudioTask, a separate task on this same core, and
+    // AudioDriverChirp::ensureEntryStorage() (src/drivers/audio_chirp.cpp) grows
+    // the entry array by delete[]/new - its callers zero the count *before* the
+    // swap precisely so a concurrent reader sees an empty catalog rather than a
+    // freed pointer. That mitigation only works for a reader that re-reads both
+    // together, which is what this loop does; capturing the pair once (the shape
+    // GET /api/audio/catalog's chunked writer uses, src/web/api_audio.cpp) leaves
+    // the window open. Two virtual calls per entry, at most 300, on an
+    // operator-typed query.
+    uint16_t count = 0;
+    (void)audioGetCatalogEntries(&count);
+    for (uint16_t i = 0; i < count; ++i) {
+        uint16_t liveCount = 0;
+        const AudioCatalogEntry* entries = audioGetCatalogEntries(&liveCount);
+        if (entries == nullptr || i >= liveCount) {
+            break;  // refreshed out from under us; the listing ends where it is
+        }
+        if (sink->onRecordItem) {
+            char itemBuf[96];
+            // fillCatalogResponse()'s own per-entry keys, colon-separated per
+            // field rather than "=" - the same convention dome.api.list-sequences
+            // uses, so an item value can never be read as a second key=value pair
+            // on the wire.
+            snprintf(itemBuf, sizeof(itemBuf), "bank:%u page:%c index:%u name:%s",
+                     (unsigned)entries[i].bank, entries[i].page, (unsigned)entries[i].index,
+                     entries[i].name);
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// system.api.get-identity (#221): the two ConfigSnapshot fields GET
+// /api/identity answers with, under formatIdentityJson()'s own JSON keys
+// (src/web/api_identity_serializers.cpp). The manifest that route also emits
+// (`board_capabilities`/`build_flags`, and `board`) is deliberately not
+// reproduced - see this row's registry comment for both reasons.
+static void consoleExecuteSystemApiGetIdentity(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "droidName", snap.system.droid_name);
+        sink->onRecordField(requestId, "mdnsUseName",
+                            snap.system.mdns_use_name ? "true" : "false");
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// system.api.get-validation (#221): captureValidationSnapshot() - the same
+// Zone Snapshot handleValidationGet() takes (src/web/api_validation.cpp) -
+// rendered as populateValidationJson()'s five real top-level keys. `updatedMs`
+// is the one scalar; `drive`, `domeLink`, `audio` and `rc` are nested objects
+// collapsed to one whitespace-free summary token each, the shape
+// consoleFormatRcSourceSummary() above already sets for exactly this problem.
+// Each token carries the sub-keys that decide whether a validation run passed,
+// under those sub-keys' own JSON names.
+static void consoleExecuteSystemApiGetValidation(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ValidationSnapshot snap = {};
+    captureValidationSnapshot(&snap);
+
+    char tempBuf[160] = {};
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.updatedMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "updatedMs", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf),
+             "estop:%s,webDriveExpired:%s,sbusSignalLost:%s,sbusHwFailsafe:%s,failsafeCount:%lu,"
+             "triggerToZeroMs:%lu,watchdogMs:%lu",
+             snap.drive.estop ? "true" : "false", snap.drive.webDriveExpired ? "true" : "false",
+             snap.drive.sbusSignalLost ? "true" : "false",
+             snap.drive.sbusHwFailsafe ? "true" : "false", (unsigned long)snap.drive.failsafeCount,
+             (unsigned long)snap.drive.triggerToZeroMs, (unsigned long)snap.drive.watchdogMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "drive", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf), "state:%s,hbTx:%lu,hbRx:%lu,lastRxMs:%ld",
+             snap.domeLink.state != nullptr ? snap.domeLink.state : "",
+             (unsigned long)snap.domeLink.hbTx, (unsigned long)snap.domeLink.hbRx,
+             (long)snap.domeLink.lastRxMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "domeLink", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf), "enabled:%s,active:%s,activeMood:%u,randomMin:%u,randomMax:%u",
+             snap.audio.enabled ? "true" : "false", snap.audio.active ? "true" : "false",
+             (unsigned)snap.audio.activeMood, (unsigned)snap.audio.randomMin,
+             (unsigned)snap.audio.randomMax);
+    if (sink->onRecordField) sink->onRecordField(requestId, "audio", tempBuf);
+
+    // sources[] is collapsed to its count rather than expanded: rc.status.snapshot
+    // is the Console row that carries per-source RC detail, and reproducing it
+    // here would be a second answer to one question.
+    snprintf(tempBuf, sizeof(tempBuf), "mode:%s,timeoutMs:%lu,sources:%u",
+             snap.rc.mode != nullptr ? snap.rc.mode : "", (unsigned long)snap.rc.timeoutMs,
+             (unsigned)snap.rc.sourceCount);
+    if (sink->onRecordField) sink->onRecordField(requestId, "rc", tempBuf);
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// rc.api.get-bindable-actions (#221): item-indexed over ACTION_REGISTRY[]
+// (src/web/action_registry.cpp) - the same table GET /api/actions serializes,
+// read element by element the way dome.api.list-sequences reads
+// seqStoreIndexAt(), not through that route's chunked JSON writer (which is
+// file-static in src/web/api_actions_json.cpp anyway). Each item mirrors the
+// REST row's own key names for the fields an operator binding an RC channel
+// needs: the token POST /api/rc/map accepts, whether the action is testable,
+// and whether it is a one-shot button. The prose fields (display_name,
+// description) stay REST-only - `help <op>` is the Console's own answer for
+// those, and repeating them here would put the same 9 KB of text on the wire
+// twice.
+static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
+                                                  const ConsoleRecordSink* sink) {
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        if (sink->onRecordItem) {
+            char itemBuf[128];
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "%s token:%s domain:%s safetyCritical:%s testable:%s oneShot:%s",
+                     ACTION_REGISTRY[i].name, robotActionIdToString(ACTION_REGISTRY[i].id),
+                     ACTION_REGISTRY[i].domain,
+                     ACTION_REGISTRY[i].safety_critical ? "true" : "false",
+                     robotActionIsWebTestable(ACTION_REGISTRY[i].id) ? "true" : "false",
+                     robotActionIsOneShotButton(ACTION_REGISTRY[i].id) ? "true" : "false");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -852,6 +1087,11 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"dome.api.get-sequence-last-run", consoleExecuteDomeApiGetSequenceLastRun},
     {"dome.api.list-sequences", consoleExecuteDomeApiListSequences},
     {"dome.api.list-builtin-sequences", consoleExecuteDomeApiListBuiltinSequences},
+    {"sound.api.get-mood-map", consoleExecuteSoundApiGetMoodMap},
+    {"sound.api.get-catalog", consoleExecuteSoundApiGetCatalog},
+    {"system.api.get-identity", consoleExecuteSystemApiGetIdentity},
+    {"system.api.get-validation", consoleExecuteSystemApiGetValidation},
+    {"rc.api.get-bindable-actions", consoleExecuteRcApiGetBindableActions},
 #if PA_HEAP_PROFILE
     {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
 #endif
@@ -1431,11 +1671,11 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
 }
 
 // rc.config.mode: value=standard_pwm|single_sbus|dual_sbus (rcInputMode).
-// Registry drift note: docs/action-registry.yaml lists this row's executor
-// as rcMapApply, which is wrong - rcMapApply() handles the RC BINDING
-// table, not the input-mode enum; configApply()'s own "rcInputMode" param
-// (src/web/api_config_apply.cpp) is the real one. Not fixed in the registry
-// here since that edit reaches fenced data/console_help.txt (status comment).
+// The registry used to name this row's executor as rcMapApply, which handles
+// the RC BINDING table rather than the input-mode enum; it now names
+// configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
+// is the real writer. #221 corrected it once data/console_help.txt was in the
+// same slice's hands - the reason it was only reported before.
 static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
                                  ConsoleCommandSource source, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
@@ -1598,18 +1838,6 @@ static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char*
 // Toggles above; this is a live, non-hardware runtime flag).
 static bool consoleMoodIdValid(uint8_t moodId) {
     return moodId == 10 || moodId == 11 || moodId == 13 || moodId == 14;
-}
-
-// Whether the active audio backend serves a CHIRP catalog. Reproduces
-// api_audio.cpp's anonymous-namespace audioCatalogSupported() (internal
-// linkage - unreachable from a second translation unit) rather than exporting
-// a REST-private helper, the same "read their logic, call their shared
-// functions" precedent the direct-action executors already set for
-// isSleepModeActive(). Lives here rather than in one domain header because
-// two of them need it: include/console_direct_action_sound.h's
-// sound.action.set-category-range and the sound.config.* rows below.
-static bool consoleAudioCatalogSupported() {
-    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 }
 
 // The provenance every shared setter and Commit Step this module calls wants
@@ -2453,33 +2681,16 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
     (void)source;  // audioMoodMapCommitApplied() takes no CommandSource either.
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
     if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        // Masked exactly as handleAudioMoodMapGet() masks them, so the
-        // Console read and GET /api/audio/mood-map answer the same number for
-        // the same stored word.
-        const uint16_t values[] = {
-            (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX),
-        };
-        // GET /api/audio/mood-map's JSON keys verbatim
-        // (formatMoodCategoryMapJson(), include/mood_sound_mapping.h), which
-        // are also this row's registry param names and this core's parameter
-        // names - one vocabulary across the read, the write and REST.
-        static const char* const kMoodMapKeys[] = {"quiet", "mid", "full", "awakeplus"};
-
+        // One emitter for both typed views of these four masks - this row and
+        // sound.api.get-mood-map (#221). It masks them exactly as
+        // handleAudioMoodMapGet() does and names them with GET
+        // /api/audio/mood-map's own JSON keys, which are also this row's
+        // registry param names: one vocabulary across the read, the write and
+        // REST.
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, entry->name);
         }
-        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
-            char buf[8] = {};
-            snprintf(buf, sizeof(buf), "%u", (unsigned)values[i]);
-            if (sink->onRecordField) {
-                sink->onRecordField(requestId, kMoodMapKeys[i], buf);
-            }
-        }
+        consoleEmitMoodCategoryMasks(requestId, sink);
         if (sink->onRecordEnd) {
             sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
                               CONSOLE_REASON_NONE);
@@ -3042,23 +3253,65 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
+            // Named body/dome sequences (the dome.seq.* family), decided by
+            // the CATALOG and nothing else - the same rule read_only follows
+            // in the config case below. consoleCatalogSequenceFor()
+            // (include/console_catalog.h) answers with the literal DM:<NAME>
+            // the registry's own `marcduino_cmd:` records for that row, so
+            // this dispatcher carries no list of sixteen operation names and
+            // a seventeenth row added to docs/action-registry.yaml executes
+            // with no edit here.
+            //
+            // Placed after the per-domain direct executors so an operation
+            // that has one keeps it: dome.action.dome-sequence's
+            // `marcduino_cmd:` is the placeholder 'DM:<NAME>', not a name -
+            // the generator's filter already excludes it, and this order
+            // means even a future placeholder that slipped through could not
+            // displace a real executor.
+            if (entry != nullptr && consoleCatalogSequenceFor(entry->name) != nullptr) {
+                ConsoleArgs parsedArgs = {};
+                ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+                if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+                    consoleEmitArgParseError(request->requestId, parseStatus, sink);
+                    break;
+                }
+                consoleExecuteDomeNamedSequence(request->requestId, entry->name, parsedArgs,
+                                                request->source, sink);
+                break;
+            }
+
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
-            // means this action has no RC-bindable target yet - a
-            // not-yet-wired action #227 owns, or a motion target #222
-            // owns - unchanged from before this ticket.
+            // means this action has no RC-bindable target yet - a motion
+            // target #222 owns, or one of the twelve rows below.
             //
-            // Two of the rows that land here on purpose, not by omission:
-            // dome.api.get-sequence (seqStoreReadFileSlice()) and
-            // dome.api.get-layout (domeLayoutCacheReadChunk()) are byte-slice
-            // readers over one stored document (a Learned Sequence JSON v1
-            // file; the dome's cached composed-layout JSON) - #206's own
-            // "document/bulk transfer ... keeps its dedicated mechanisms"
-            // exclusion, the same one dome.action.save-sequence's write side
-            // cites (include/console_direct_action_dome.h). They answer
-            // EXECUTOR_NOT_READY here like any other unwired action row;
-            // the registry entries carry the same reasoning (docs/action-
-            // registry.yaml, #221 remainder).
+            // EVERY action row that still answers EXECUTOR_NOT_READY lands
+            // here on purpose, and each one has a recorded reason on its own
+            // docs/action-registry.yaml entry (#221). They are twelve, in
+            // three groups; test_the_executor_not_ready_set_is_exactly_the_
+            // recorded_rows (test/test_native/test_console_module) names them
+            // and fails if a thirteenth appears, so a new unwired row cannot
+            // join this set silently.
+            //
+            // 1. #206's document/bulk-transfer exclusion - the transfer IS the
+            //    operation, and the Console's one-line key=value grammar has
+            //    no shape for it:
+            //      dome.api.get-sequence      seqStoreReadFileSlice()
+            //      dome.api.get-layout        domeLayoutCacheReadChunk()
+            //      dome.action.save-sequence  a whole Learned Sequence JSON v1
+            //      rc.api.get-map             the RC-map document, read half
+            //      rc.action.set-map          the RC-map document, write half
+            //      system.api.get-coredump    the raw ELF image
+            //      system.action.upload-firmware / -filesystem  OTA images
+            // 2. A real core the Console module cannot reach without editing a
+            //    file this ticket fences. Probed, not assumed - the compiler and
+            //    linker errors are quoted on each registry entry:
+            //      system.api.get-coredump-status   esp_core_dump_image_get()
+            //      system.action.erase-coredump     esp_core_dump_image_erase()
+            //      system.api.get-admission-trace   webAdmissionTraceInstance()
+            // 3. Not an operation at all:
+            //      system.console  is the browser Console Adapter itself
+            //                      (POST /api/console, ADR 0034)
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion

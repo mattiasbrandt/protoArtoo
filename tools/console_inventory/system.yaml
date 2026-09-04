@@ -458,7 +458,7 @@ rows:
   missing_metadata: []
   notes: Delegates to ESP-IDF esp_core_dump_image_get(); no project executor
 - name: system.api.get-identity
-  type: action
+  type: status
   registry_api_path: /api/identity
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_identity.cpp
@@ -478,7 +478,7 @@ rows:
   missing_metadata: []
   notes: ''
 - name: system.api.get-profiler
-  type: action
+  type: status
   registry_api_path: /api/profiler
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_profiler.cpp
@@ -503,7 +503,7 @@ rows:
     now an adapter over it rather than the only reader of the profiler muxes.
   missing_metadata: []
 - name: system.api.get-validation
-  type: action
+  type: status
   registry_api_path: /api/validation
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_validation.cpp

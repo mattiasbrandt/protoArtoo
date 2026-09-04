@@ -906,6 +906,16 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the request body is a whole Learned
+  # Sequence JSON v1 document, up to SEQ_FILE_MAX_BYTES with a steps array
+  # (handleSeqPost(), src/web/api_seq.cpp:220-230). #206's "document/bulk
+  # transfer ... keeps its dedicated mechanisms" exclusion names sequence
+  # documents outright, and the Console's one-line key=value argument grammar
+  # (docs/console-protocol.md s.1.2) has no shape for an arbitrarily large body
+  # - inventing one would be a new Console Record shape, not a wiring gap.
+  # dome.api.list-sequences carries the metadata index; the body stays REST-only
+  # (this row's own api_path). The dispatch site records the same reasoning
+  # (include/console_direct_action_dome.h).
   executor: seqStoreSave
 - name: dome.action.delete-sequence
   display_name: Memory Wipe
@@ -1160,9 +1170,16 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
-  description: Return cached CHIRP catalog banks and entries from the active audio backend
+  description: 'Cached CHIRP catalog entries from the active audio backend, one per
+    sound. GET /api/audio/catalog also accepts a bank= filter and returns the bank
+    directory alongside the entries; the Console answers the unfiltered entry list
+    (each entry carries its own bank, so the filter adds nothing a reader cannot do)
+    and no params:, keeping its schema honest about what it runs - type: status
+    entries take no arguments (docs/console-catalog-contributing.md).
+
+    '
   domain: sound
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/audio/catalog
   sse_event: null
@@ -1172,14 +1189,18 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  params:
-  - name: bank
-    type: uint8
-    range:
-    - 1
-    - 6
-    required: false
   nvs_key: null
+  # #221: `ready` is the one scalar top-level key fillCatalogResponse()
+  # (src/web/api_audio.cpp) answers with; `banks` and `entries` are arrays with no
+  # scalar-field shape, so the entries come back as item records beside it - the
+  # `field` + repeated `item` composition docs/console-protocol.md s.3.1 already
+  # defines, not a new record type. AUDIO_CATALOG_MAX_ENTRIES (300,
+  # include/audio_driver.h) bounds the answer by construction, the same way
+  # SEQ_STORE_MAX bounds dome.api.list-sequences, so no paging protocol is needed.
+  # The bank directory stays REST-only: a documented subset, like
+  # dome.api.get-sequence-last-run's.
+  fields:
+  - ready
   executor: audioGetCatalogEntries
 - name: sound.api.refresh-catalog
   display_name: Refresh Catalog
@@ -1262,7 +1283,7 @@ entries:
   display_name: Get Mood Category Map
   description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
   domain: sound
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/audio/mood-map
   sse_event: null
@@ -1273,6 +1294,19 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: the api-named READ of the four masks sound.config.mood-category-map
+  # writes - the same two typed views of one value sound.config.volume and
+  # sound.action.set-volume already are. fields: are
+  # formatMoodCategoryMapJson()'s JSON keys verbatim
+  # (include/mood_sound_mapping.h), which are also the write side's registry
+  # param names, so one vocabulary covers REST, the read and the write. Both
+  # Console rows read through one shared emitter (src/console/console_module.cpp)
+  # so the two answers cannot drift apart.
+  fields:
+  - quiet
+  - mid
+  - full
+  - awakeplus
   executor: configCacheRead
 - name: sound.action.set-mood-map
   display_name: Set Mood Category Map
@@ -3221,7 +3255,7 @@ entries:
   - networkRecovery
 - name: wifi.config.settings
   display_name: WiFi Settings
-  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi provisioning page.
+  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi page, under Device WiFi Settings.
   domain: wifi
   type: config
   marcduino_cmd: null
@@ -3286,7 +3320,7 @@ entries:
   display_name: Get Droid Identity
   description: Current cosmetic droid name and mDNS opt-in
   domain: system
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/identity
   sse_event: null
@@ -3297,6 +3331,22 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: a plain read of two ConfigSnapshot fields, so #223's field-based
+  # query shape fits directly. fields: is a deliberate SUBSET of
+  # formatIdentityJson()'s top-level keys (src/web/api_identity_serializers.cpp):
+  # `board_capabilities` and `build_flags` are nested manifest objects with no
+  # scalar-field shape, and the Console already answers that manifest where it
+  # is actionable - per operation, as available_on_board/available_in_build on
+  # `help` and `operations` (ADR 0029) - so duplicating it here would be a
+  # second copy of the same facts. `board` is dropped for a different reason:
+  # boardVariantId() is file-static inside that serializer's anonymous
+  # namespace (src/web/api_identity_serializers.cpp:51, inside the namespace
+  # opened at :15), so reaching it would mean a second copy of its
+  # #if PA_BOARD ladder. Documented subset, not silently narrowed - the same
+  # shape dome.api.get-sequence-last-run uses.
+  fields:
+  - droidName
+  - mdnsUseName
   executor: sendIdentityResponse
 - name: system.action.set-identity
   display_name: Set Droid Identity
@@ -3419,6 +3469,15 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # No core the Console module can reach (#221, reported on that issue rather
+  # than guessed): the only accessor is ESP-IDF's esp_core_dump_image_get(),
+  # called inline in src/web/api_system.cpp:156 behind #include <esp_core_dump.h>.
+  # src/console/console_module.cpp compiles in [env:native] too, and that header
+  # does not exist there - a probe adds "fatal error: esp_core_dump.h: No such
+  # file or directory". Reaching it needs an ESP-IDF stub under test/stubs/
+  # include/ or an entry in platformio.ini's native build_src_filter, both
+  # fenced on this ticket. Not a missing executor and not an exclusion - a
+  # blocked one, recorded so the next slice starts from the reason.
   executor: none
 - name: system.api.get-coredump
   display_name: Download Coredump
@@ -3437,6 +3496,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the answer is the raw ELF coredump
+  # image streamed straight off the partition a chunk at a time
+  # (handleCoredumpGet(), src/web/api_system.cpp:163-183). #206's
+  # document/bulk-transfer exclusion names the coredump outright. HTTP stays
+  # the only way to fetch it, which is what docs/troubleshooting.md's decode
+  # procedure already assumes.
   executor: none
 - name: system.action.erase-coredump
   display_name: Erase Coredump
@@ -3453,6 +3518,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Blocked for the same reason as system.api.get-coredump-status above (#221):
+  # esp_core_dump_image_erase() is an ESP-IDF call reached through
+  # <esp_core_dump.h> (src/web/api_system.cpp:187), a header the native build of
+  # src/console/console_module.cpp has no copy of, and both places one could be
+  # supplied are fenced on this ticket.
   executor: esp_core_dump_image_erase
 - name: system.api.get-admission-trace
   display_name: Get Admission Trace
@@ -3470,12 +3540,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # No core the Console module can reach (#221, reported on that issue): the
+  # ring's one accessor, webAdmissionTraceInstance()
+  # (src/web/api_admission_trace.cpp:32), lives in a translation unit
+  # [env:native]'s build_src_filter allowlist does not include, and there is no
+  # stub for it - a probe links with "undefined reference to
+  # webAdmissionTraceInstance()". Both files that could fix that (platformio.ini,
+  # src/native_test_stubs.cpp) are fenced on this ticket. Note this row answers
+  # not-in-this-build on any image built without PA_ADMISSION_TRACE, which is
+  # every shipping one.
   executor: fillAdmissionTraceResponse
 - name: system.api.get-validation
   display_name: Get Validation Snapshot
   description: Consolidated hardware-validation snapshot (Phase 4 closure checks)
   domain: system
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/validation
   sse_event: null
@@ -3486,6 +3565,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: captureValidationSnapshot() (include/validation_snapshot.h) is the
+  # Zone Snapshot behind GET /api/validation, so the Console reads the same
+  # struct the REST route serializes. fields: are populateValidationJson()'s
+  # real top-level keys; `updatedMs` is its one scalar and the other four are
+  # nested objects, answered as one whitespace-free summary token each - the
+  # same collapse rc.status.snapshot already applies to its own nested
+  # sources.* (src/console/console_module.cpp), under the real JSON key rather
+  # than an invented one. The per-RC-source detail underneath `rc` stays
+  # REST-only; rc.status.snapshot is the Console row that carries it.
+  fields:
+  - updatedMs
+  - drive
+  - domeLink
+  - audio
+  - rc
   executor: populateValidationJson
 - name: system.action.upload-firmware
   display_name: Upload Firmware
@@ -3502,6 +3596,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): a multipart image streamed chunk by
+  # chunk straight into the flash partition through the Update library
+  # (handleFirmwareUploadChunk(), src/web/api_upload.cpp:214-216) - #206's
+  # document/bulk-transfer exclusion names firmware images outright, and that
+  # file's own header comment already says so. There is no executor to point at
+  # because there is no queue or core in the path at all.
   executor: none
 - name: system.action.upload-filesystem
   display_name: Upload Filesystem
@@ -3520,6 +3620,12 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the same reason as system.action.upload-firmware above
+  # (#221): a LittleFS image streamed into the data partition through the
+  # Update library (handleFilesystemUploadChunk(), src/web/api_upload.cpp:226),
+  # which #206 excludes as an FS image. LittleFS is unmounted for the duration,
+  # so the Console's own help file is unreadable mid-write - a second reason
+  # this belongs to the dedicated mechanism and not to a Console record.
   executor: none
 - name: system.api.event-stream
   display_name: Event Stream
@@ -3578,7 +3684,7 @@ entries:
   display_name: List Bindable Actions
   description: JSON array of all RC-bindable robot actions with token + testability metadata
   domain: rc
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/actions
   sse_event: null
@@ -3589,7 +3695,16 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: item-indexed over ACTION_REGISTRY[] (src/web/action_registry.cpp), a
+  # flash-resident const table read element by element exactly the way
+  # dome.api.list-sequences reads seqStoreIndexAt() - the same no-fields:/
+  # is_query:-true shape #239 established for an answer that is a sequence of
+  # item records rather than scalar JSON keys. ACTION_REGISTRY_SIZE bounds it by
+  # construction, so no paging protocol is needed. This is the one Console row
+  # that carries an action's RC token and testability; `operations` lists the
+  # catalog and does not.
   executor: fillActionsResponse
+  is_query: true
 - name: rc.api.get-map
   display_name: Get RC Map
   description: Current RC channel-to-action binding map
@@ -3605,6 +3720,18 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the read half of the RC-map document,
+  # which #206's document/bulk-transfer exclusion names alongside sequence and
+  # configuration documents. Unlike dome.api.list-sequences, which reads a real
+  # item-indexed accessor (seqStoreIndexAt()), there is no per-binding accessor
+  # here at all: populateRcMapJson() (src/web/api_config.cpp:229) assembles the
+  # whole document, choosing each backbone binding by input mode
+  # (rcMapSelectBackboneForMode()) and walking eleven named trigger slots. An
+  # item-record answer would have to reproduce that selection rule - a second
+  # implementation of a real rule, which is the duplication this epic exists to
+  # avoid - or render through the JSON builder, which the Console's status
+  # executors do not do. rc.status.snapshot answers live RC state; the binding
+  # map stays REST-only, with its write side (rc.action.set-map above).
   executor: populateRcMapJson
 - name: rc.action.set-map
   display_name: Set RC Map
@@ -3623,6 +3750,13 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Out of scope for the Console (#221): the write half of the RC-map document.
+  # rcMapApply() (src/web/api_rc_map_apply.cpp:85) reads one whole JSON body
+  # through a ConfigParamSource - "map body required", then a map array of
+  # binding objects - which is exactly the "RC-map document" #206's
+  # document/bulk-transfer exclusion names. The Console's one-line key=value
+  # grammar has no shape for it, and its read half is excluded for the same
+  # reason (rc.api.get-map below).
   executor: rcMapApply
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
@@ -3659,7 +3793,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_rcMode
-  executor: rcMapApply
+  # configApply(), not rcMapApply(): rcMapApply() owns the RC BINDING table
+  # (src/web/api_rc_map_apply.cpp), while this row is the input-mode enum, whose
+  # only writer is configApply()'s own "rcInputMode" param
+  # (src/web/api_config_apply.cpp:315-323).
+  executor: configApply
 - name: dome.seq.vader
   display_name: "DM:VADER \u2014 Imperial March"
   description: '47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.'
@@ -3947,4 +4085,10 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # Not an operation the Console executes (#221): this row IS the browser
+  # Console Adapter - POST /api/console, the transport that carries every other
+  # operation (ADR 0034, src/web/api_console.cpp:108). Running it from the
+  # Console would be the adapter invoking itself. It stays in the registry
+  # because the route exists and the inventory tracks routes; it is not a
+  # wiring gap and never will be one.
   executor: consoleExecuteCommand
