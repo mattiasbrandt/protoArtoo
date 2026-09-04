@@ -1,0 +1,24 @@
+diff --git i/data/app.js w/data/app.js
+index ba526b09..97c08944 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -1028,6 +1028,9 @@
+       // Parse and display Console Records from the response.
+       // postForm returns {ok, status, data}, so access result.data (not result.records).
+       if (result?.data?.records && Array.isArray(result.data.records)) {
++        if (result.data.truncated === true) {
++          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
++        }
+         for (const record of result.data.records) {
+           formatAndAppendConsoleRecord(record);
+         }
+@@ -1053,9 +1056,6 @@
+         // controller raises this flag exclusively when it drops an `item`
+         // (webOnRecordItem_impl, src/web/api_console.cpp). A guard on either
+         // would be a branch no firmware can reach.
+-        if (result.data.truncated === true) {
+-          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
+-        }
+       } else {
+         appendCommandLine("[ERROR] invalid response format", " log-line-command-error");
+       }
