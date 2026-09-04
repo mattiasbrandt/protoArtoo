@@ -82,6 +82,50 @@ it to the port as ordinary data instead, so it looks like nothing happened —
 [troubleshooting.md](troubleshooting.md#console-interactive-session) for
 this and every other client-specific key to know about before you attach.
 
+### The artoo-esp32's serial port
+
+On the artoo-esp32 the Console comes out of the controller's own **UART0**
+pins and crosses to your computer through a **USB-UART bridge chip** on the
+board (a CP2102), which is why this board turns up as a `/dev/ttyUSB*` port
+(usually `ttyUSB0`) while the FireBeetle 2, which speaks USB itself, turns up
+as `/dev/ttyACM0`. The link runs at **115200 8N1** — 115200 baud, eight data
+bits, no parity, one stop bit — which is what every client above opens by
+default, so there is nothing to set. The bridge is its own chip rather than
+something the firmware brings up, so the port is already live before the
+application starts — that is why a reset prints the boot ROM's own `rst:0x...`
+line on the same terminal you were already watching.
+
+**Unseat the controller for a Console session.** Every measurement behind
+this page was taken with the ESP32 out of the PCB. Seated in the droid, the
+only half of this port the project has proven is *reading* — watching the log
+go by — because the seated board's USB path shares a pin with the SBUS
+receiver
+([troubleshooting.md](troubleshooting.md#3-flashing-constraint-read-before-collecting-usb-evidence)).
+Whether a seated controller takes commands you type has never been measured,
+so don't plan around it: unseat the board, or use the dashboard's **Live
+Logs** command box, which needs no cable at all.
+
+**The line you type is 62 bytes long.** That cap belongs to this transport,
+not to the Console — the dashboard's command box takes 255. Go over it and the
+whole line is refused with `invalid reason=line-too-long`, and nothing
+shortened runs; see [Two things that will bite you if you don't know
+them](#two-things-that-will-bite-you-if-you-dont-know-them).
+
+**What a healthy session looks like.** Answers come back in the shapes under
+[Reading the answer](#reading-the-answer) — `begin`, one `field` line per
+value, then `end` for a question; a single `result` line for an action. The
+Request IDs are the quickest health check you have: the controller counts them
+up from 1 when it boots and **keeps counting across a detach**. Unplug the
+terminal, attach again, type a command, and the answer carries the next number
+along, not `id=1`. A counter that has started over means the board restarted
+while you were away.
+
+Measured on an unseated artoo-esp32 over the bridge on 2026-09-04, running
+firmware and filesystem `v1.0.0-656-g48a26523+epic-serial-console`: one sheet
+of commands replayed twice with a detach in between ran ids 1 to 19 and then
+20 to 38, `uptimeMs` climbed from 54 817 to 102 537, and `resetReason` stayed
+`SOFTWARE` across both attaches.
+
 ### Don't reset the board by attaching
 
 Changing a serial port's control lines (DTR/RTS) after it is already open can
@@ -91,6 +135,18 @@ monitor`, `picocom`, or `tools/console_client.py` — and never toggle DTR/RTS
 once the port is open. The full measured results, the recovery steps if a
 board does get stranded, and how to tell a real reset from a missed capture
 are in [troubleshooting.md](troubleshooting.md#serial-monitor-caveat).
+
+**On the artoo-esp32 that was measured, and one client fails it.** Simply
+attaching does **not** reset this board: the five safe methods in that matrix
+— `pio device monitor`, `picocom`, `tools/console_client.py`'s default
+backend, and `cat` under either `hupcl` setting — were each opened five times,
+with zero resets between them. `tools/console_client.py --pyserial` is the
+exception, and it is not an occasional one — it reset the board **every time
+it was tried**, seven out of seven, and two of those seven left the board
+stranded in the boot ROM's download stub, silent on serial and gone from the
+network until it was recovered by hand. Never reach for `--pyserial` to open a
+Console session; the tool itself refuses it for `--interactive` and for
+scripted runs for exactly this reason.
 
 **Port not showing up, or acting flaky right after you plug it in?** On
 Linux, ModemManager sometimes probes a freshly-enumerated serial port before
@@ -151,15 +207,15 @@ dome.action.marcduino-sequence value=30
 
 ### Two things that will bite you if you don't know them
 
-- **The serial line is short.** The default input line on serial holds only
-  about 60 characters. A long command with a quoted value (a WiFi network
-  name, say) can run out of room — extra keystrokes stop appearing. Press
-  Enter and the whole line is thrown away with
-  `invalid reason=line-too-long`; the part that fit does **not** run. That is
-  the same answer the dashboard gives, where the limit is more generous
-  (255 characters). So a long command is refused on serial and accepted in
-  the dashboard — if you need to type one, use the dashboard's command box,
-  or shorten it.
+- **The serial line is short.** The input line on serial holds **62 bytes** —
+  62 plain characters, and fewer once a quoted value carries accents or emoji.
+  A long command with a quoted value (a WiFi network name, say) can run out of
+  room — extra keystrokes stop appearing. Press Enter and the whole line is
+  thrown away with `invalid reason=line-too-long`; the part that fit does
+  **not** run. That is the same answer the dashboard gives, where the limit is
+  more generous (255 bytes). So a long command is refused on serial and
+  accepted in the dashboard — if you need to type one, use the dashboard's
+  command box, or shorten it.
 - **A bare word is not a command by itself.** `speed=200` on its own line,
   or a value that needed quotes and didn't get them, comes back as
   `invalid reason=malformed-argument` rather than being guessed at.
