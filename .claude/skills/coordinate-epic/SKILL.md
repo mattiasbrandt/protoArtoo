@@ -48,6 +48,15 @@ reflex - a pool that grows one-line tickets faster than it closes them is the
 failure this clause exists to prevent. AGENTS.md "Small Finds Ride Along" is
 canonical.
 
+The verification tail is **one** sub-issue, the Closing Ticket (AGENTS.md
+"Verification Scale"; CONTEXT.md "Closing Ticket"): bench rows, soak, audit and
+closure PR together. Do not create runbook, audit, integration-readiness or
+gathering tickets. Before writing any acceptance criterion that names an
+instrument, a counter or a number, check it exists on this bench and in this
+firmware; if it does not, the criterion is not written and the risk becomes a
+note in the file that owns the truth. A ticket with every box ticked closes in
+the same pass - never left open for one unobtainable number.
+
 ## Assignment (you set up, then hand the worker its worktree)
 
 `<base>` throughout this skill is the epic's integration branch - read it
@@ -274,6 +283,20 @@ nobody can action. One image at a time; before any acceptance run, confirm
 `firmwareVersion` matches the intended commit - a `-dirty` or stale image
 invalidates the run. If the fix changed `data/`, the FS image must be
 uploaded too, and `fs-version.json` must match.
+
+Replay the sheet rather than typing a session: `tools/bench_rows/<board>.txt` is
+the Bench Runbook for that board and `make bench-rows BENCH_ROWS=<sheet> [ROWS=a,b]
+[SKIP_MANUAL=1]` runs it with the port resolved - `SKIP_MANUAL=1` is the subset
+needing nobody at the bench. The transcript is the evidence comment's body; what a
+row is expected to answer stays on the epic's Closing Ticket, and the comment goes
+there. Reference: `docs/console-client.md`.
+
+Size the bench day to the sheet. A row earns its place by a safety invariant the
+change could violate, a defect this repo has shipped, or a behaviour that only
+exists on hardware; a cell a native seam test already proves, or a second adapter
+for a guard that lives in the shared core, is cut and named in the Closing
+Ticket's "Cut on purpose" table. "The criterion says measure X" is not a reason to
+build a path to X.
 
 ## Builds and toolchain (serialized - one build machine-wide)
 

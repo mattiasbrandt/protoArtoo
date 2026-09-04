@@ -110,6 +110,58 @@ Filing on the operator's explicit request is always fine. When you think a find
 deserves a number, say so in your report and let the operator or coordinator
 make the call.
 
+## Verification Scale (Non-Negotiable)
+
+protoArtoo is a small hobby project with one known user, the operator. Verification
+is sized to that, not to a production product with a support obligation. Operator
+decision, 2026-09-04, after epic #206 ended with seven open sub-issues that were all
+bench rows, audit bookkeeping and closure steps for one bench day (folded into #274).
+
+The Effort Policy above governs depth *inside* a scope. This section bounds how much
+verification scope exists. Where the two seem to pull apart: this section decides
+what gets verified, that one decides how honestly each piece is done.
+
+- **An epic's verification tail is one ticket.** Bench rows, soak, audit, budget
+  table and closure PR live in one Closing Ticket (CONTEXT.md). Never a runbook
+  ticket per board, never a separate audit ticket, never a separate
+  integration-readiness ticket, never a gathering ticket that stays open by design.
+- **A device check is tracked in one place.** The executable form of a bench row is
+  `tools/bench_rows/<board>.txt`; a ticket points at the sheet and does not restate
+  it. The same transcript is never a criterion on one ticket, a row on another and
+  a matrix line on the epic.
+- **A criterion is written only after checking the bench can measure it today.**
+  Before naming an instrument, a counter, a signal or a number in a criterion,
+  confirm it exists on this bench and in this firmware. If it does not, the
+  criterion is not written; a real but unmeasurable risk goes into the file that
+  owns that hardware truth as a note, the way `docs/pin_map.md` carries the
+  GPIO 48-52 LDO item.
+- **"The criterion says measure X" is not a reason to build a path to X.** Ask first
+  whether X is worth measuring on a hobby droid. A bench row earns its place by one
+  of three things: a safety invariant the change could violate, a defect this repo
+  has actually shipped, or a behaviour that only exists on hardware (a transport, a
+  timing, a boot). A cell a native seam test already proves, a second adapter for a
+  guard that lives in the shared core, a both-boards duplicate of a board-independent
+  behaviour: cut it, and say so.
+- **All boxes ticked closes the ticket.** A ticket whose every criterion is ticked
+  closes in the same pass. It does not stay open for one unobtainable number, a row
+  nobody can run, or "in case something turns up". The remainder is a one-line note
+  where the truth lives, never an open ticket.
+- **Bookkeeping is not a criterion.** "Every row executed at least once", "notify
+  #n", "every closed ticket appears in the log", "close the runbooks": delete them.
+  A checkbox with no product or safety content is not acceptance.
+- **What the gate already enforces is not re-listed.** The slice gate runs the
+  suites, the build, the budgets and the drift check on every merge. An audit that
+  lists them again as criteria is ceremony.
+- **Cuts are visible.** When a verification tail is trimmed, the ticket carries a
+  short "Cut on purpose" table so the operator can veto a cut. Trimmed is fine;
+  hidden is not.
+
+What this does not relax: the safety invariants (Architecture Guardrails above, and
+the Safety-Critical Rules in `.claude/CLAUDE.md`) are still proven to the maximum
+the bench allows, the slice gate's one-test floor stands, and the critic still reads
+the production diff first. It bounds how many tickets, rows and cells exist, not how
+truthfully each one is run.
+
 ## Memory (MemPalace)
 
 Long-term project memory lives in MemPalace (MCP server plus a user-level
@@ -248,7 +300,9 @@ the platform is unproven, the go/no-go gate has not returned a verdict, the
 hardware has not run the real firmware — test effort is near-zero priority. The
 bar is: it builds, it runs on the board, here is the log. Test depth is bought
 back deliberately at **epic closing** and during **robustness work**, when there
-is something proven enough to be worth protecting.
+is something proven enough to be worth protecting - and within the bound in
+"Verification Scale": one Closing Ticket, rows that earn their place, no
+bookkeeping criteria.
 
 Two consequences, both binding:
 
@@ -351,7 +405,8 @@ confirmation is a desirable outcome, not a precondition for closing work.
 - **This does not relax the safety invariants.** The contracts in "Safety-Critical
   Rules" are still proven to the maximum the available hardware allows, and a gap
   is named explicitly rather than assumed away. Not being able to reach the droid
-  is a reason to record a limit, never a reason to skip a check the bench can run.
+  is a reason to record a limit, never a reason to skip a check the bench can run
+  and "Verification Scale" keeps.
 
 Never use "bench verified" or "bench-tested" — too ambiguous. Public docs use plain
 evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller").
