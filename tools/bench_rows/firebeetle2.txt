@@ -73,6 +73,11 @@ raw system.status.
 key enter
 raw dome.action.dr
 key tab
+# Submit the completed fragment so the next row starts on an empty line:
+# Tab leaves `dome.action.droid-sequence-` buffered, and row 220's first send
+# was appended to it on 2026-09-05 (#274). One unknown-operation record is
+# the expected cost.
+key enter
 
 # #220 (closed) - one non-motion action parity transcript per adapter: serial
 # and browser giving the same outcome and reason. Enable Web control first
