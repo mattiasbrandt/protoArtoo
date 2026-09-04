@@ -478,7 +478,7 @@ rows:
   missing_metadata: []
   notes: ''
 - name: system.api.get-profiler
-  type: action
+  type: status
   registry_api_path: /api/profiler
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_profiler.cpp

@@ -533,7 +533,7 @@ rows:
       - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.api.get-sequence-last-run
-    type: action
+    type: status
     registry_api_path: /api/seq/last-run
     registry_cpp_enum: null
     registry_cpp_file: src/web/api_seq.cpp
@@ -553,7 +553,7 @@ rows:
     missing_metadata: []
     notes: ""
   - name: dome.api.list-builtin-sequences
-    type: action
+    type: status
     registry_api_path: /api/seq/builtins
     registry_cpp_enum: null
     registry_cpp_file: src/web/api_seq.cpp
@@ -578,7 +578,7 @@ rows:
       - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.api.list-sequences
-    type: action
+    type: status
     registry_api_path: /api/seq/list
     registry_cpp_enum: null
     registry_cpp_file: src/web/api_seq.cpp
