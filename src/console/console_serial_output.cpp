@@ -186,16 +186,25 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom) {
     }
 
     if (waitForRoom) {
+        // Never reserve more room than this transport can ever report having
+        // (CONSOLE_SERIAL_TX_ROOM_MAX, console_serial_output.h). Asking for
+        // more is a wait that cannot succeed: it burns the whole bound and
+        // then drops a frame the transport would have accepted. Above the
+        // ceiling the reservation means "as empty as this transport gets",
+        // and the transport's own write path carries the remainder -- blocking
+        // on UART0, chunked through the TX ring on the CDC.
+        const size_t reserve = len < CONSOLE_SERIAL_TX_ROOM_MAX ? len : CONSOLE_SERIAL_TX_ROOM_MAX;
+
         // Outside the mutex, on purpose (see the CONSTRAINT in the header):
         // a TWDT-subscribed task's paLogLine() takes the same mutex with
         // portMAX_DELAY, and this wait must never be something it inherits.
         uint32_t waitedMs = 0;
-        while (Serial && Serial.availableForWrite() < (int)len &&
+        while (Serial && Serial.availableForWrite() < (int)reserve &&
                waitedMs < CONSOLE_RECORD_ROOM_WAIT_BOUND_MS) {
             vTaskDelay(pdMS_TO_TICKS(1));
             waitedMs++;
         }
-        if (!Serial || Serial.availableForWrite() < (int)len) {
+        if (!Serial || Serial.availableForWrite() < (int)reserve) {
             // Room never cleared (or the host was never connected to begin
             // with): drop the frame whole. Nothing is written, and the
             // mutex is never taken -- a half-sent line is exactly the

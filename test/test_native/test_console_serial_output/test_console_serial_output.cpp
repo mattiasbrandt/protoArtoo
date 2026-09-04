@@ -552,6 +552,50 @@ void test_framed_line_room_reservation_covers_both_terminator_bytes(void) {
                                   "the whole line and both terminator bytes must reach the wire");
 }
 
+// A frame longer than the transport's whole buffer must still be sent.
+//
+// WORKER TEST (#270): `Serial.availableForWrite()` has a ceiling -- the CDC's
+// 256-byte TX ring, UART0's 128-byte FIFO (CONSOLE_SERIAL_TX_ROOM_MAX,
+// console_serial_output.h, with the vendor citations). Reserving `lineLen + 2`
+// unconditionally therefore asked for room that can never exist once a line
+// passed that ceiling, waited out the whole 100 ms bound, and dropped a frame
+// both transports would have accepted: UART0 cannot short-write at all, and
+// the CDC chunks anything larger than its ring regardless. The reservation is
+// capped at the ceiling, which this pins from both sides -- room equal to the
+// ceiling sends, one byte less still drops, so neither the cap nor the wait
+// itself can quietly disappear.
+void test_room_reservation_is_capped_at_what_the_transport_can_offer(void) {
+    char line[201];
+    memset(line, 'R', sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+    const size_t lineLen = strlen(line);
+    TEST_ASSERT_TRUE_MESSAGE(lineLen + 2 > CONSOLE_SERIAL_TX_ROOM_MAX,
+                             "fixture line must be longer than the transport ceiling");
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = (int)CONSOLE_SERIAL_TX_ROOM_MAX;
+    bool sentAtCeiling = consoleSerialEmitFramedLine(line, lineLen, /*waitForRoom=*/true);
+
+    TEST_ASSERT_TRUE_MESSAGE(sentAtCeiling,
+                             "a frame past the transport's ceiling must be sent once the "
+                             "transport is as empty as it can report, not dropped waiting for "
+                             "room that can never exist");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
+                                  "the frame must still reach the wire in exactly one call");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(lineLen + 2), (int)SerialStub::capturedLen,
+                                  "the whole line and both terminator bytes must be written");
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = (int)CONSOLE_SERIAL_TX_ROOM_MAX - 1;
+    bool sentBelowCeiling = consoleSerialEmitFramedLine(line, lineLen, /*waitForRoom=*/true);
+
+    TEST_ASSERT_FALSE_MESSAGE(sentBelowCeiling,
+                              "one byte below the ceiling the transport is not as empty as it "
+                              "gets: the wait must still run and the frame must still drop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach Serial.write() for a dropped frame");
+}
+
 // consoleSerialFormatDroppedSuffix: absent (empty, zero-length) when nothing
 // was dropped, present with the exact count otherwise. This is the piece of
 // ADR 0036's wire format proved on the host because
@@ -745,6 +789,7 @@ int main(int, char**) {
     RUN_TEST(test_framed_line_without_wait_flag_never_waits_for_room);
     RUN_TEST(test_framed_line_terminates_with_cr_lf_on_both_policies);
     RUN_TEST(test_framed_line_room_reservation_covers_both_terminator_bytes);
+    RUN_TEST(test_room_reservation_is_capped_at_what_the_transport_can_offer);
     RUN_TEST(test_dropped_suffix_absent_when_zero);
     RUN_TEST(test_dropped_suffix_present_with_exact_count_when_nonzero);
     RUN_TEST(test_dropped_suffix_too_small_buffer_emits_nothing);

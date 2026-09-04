@@ -63,6 +63,38 @@ typedef struct EmbeddedCli EmbeddedCli;
 //    10 ms cadence, which is what makes spending any of it here affordable.
 static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 
+// The most transmit room `Serial.availableForWrite()` can EVER report on this
+// board, and therefore the largest reservation a room-wait may ask for. A
+// waiter that asks for more than this waits out its whole bound and then drops
+// a frame the transport would have taken -- room that can never exist is not a
+// reason to throw a line away. Read from the two vendor cores in
+// ~/.platformio*/packages/framework-arduinoespressif32, not guessed:
+//
+//  - CDC-on-boot build (FireBeetle 2): `Serial` is HWCDC.
+//    HWCDC::availableForWrite() returns xRingbufferGetCurFreeSize(tx_ring_buf)
+//    and HWCDC::begin() creates that ring with setTxBufferSize(256)
+//    (HWCDC.cpp), so 256 is the ceiling. Above it, HWCDC::write() chunks the
+//    payload by xRingbufferGetMaxItemSize() anyway, so a reservation of the
+//    whole frame was never what made the write whole.
+//  - artoo-esp32: `Serial` is HardwareSerial on UART0 with the TX ring
+//    DISABLED (_txBufferSize 0, HardwareSerial.cpp:148). uartAvailableForWrite()
+//    then falls back to uart_ll_get_txfifo_len() -- free space in the 128-byte
+//    hardware FIFO -- because uart_get_tx_buffer_free_size() reports 0 with no
+//    ring installed (esp32-hal-uart.c; esp_driver_uart/src/uart.c). 128 is the
+//    ceiling there, which is why every record longer than ~126 bytes waited
+//    the full 100 ms and was then dropped whole on that board. Nothing was
+//    lost by writing it instead: with tx_buf_size 0, uart_tx_all() loops on
+//    tx_fifo_sem with portMAX_DELAY until every byte is in the FIFO, so UART0
+//    cannot short-write or drop a byte at all.
+//
+// The native test build is neither, and takes the smaller ceiling: a host test
+// that pins the reservation must pin the tighter of the two transports.
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+static constexpr size_t CONSOLE_SERIAL_TX_ROOM_MAX = 256;
+#else
+static constexpr size_t CONSOLE_SERIAL_TX_ROOM_MAX = 128;
+#endif
+
 // Largest frame consoleSerialEmitLine can compose, from the pieces
 // embedded-cli writes for one mid-entry redraw (lib/embedded-cli's
 // clearCurrentLine/embeddedCliPrint):
@@ -175,7 +207,9 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 //    CONSOLE_RECORD_ROOM_WAIT_BOUND_MS for Serial.availableForWrite() to
 //    clear room for the whole line INCLUDING both terminator bytes (the
 //    reservation is lineLen + 2, never lineLen + 1: a record written short
-//    by its CR is the drop this reservation exists to prevent), and only
+//    by its CR is the drop this reservation exists to prevent), capped at
+//    CONSOLE_SERIAL_TX_ROOM_MAX because a reservation larger than the
+//    transport's whole buffer can never be satisfied, and only
 //    while `Serial` (bool) reports a connected host -- the same
 //    board-portable check console_task.cpp's
 //    #260 host-attach debounce already uses (HWCDC::isCDC_Connected() on the
