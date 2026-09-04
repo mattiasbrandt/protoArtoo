@@ -296,6 +296,84 @@ void test_a_drained_line_waits_for_transmit_room(void) {
                              "a drained log line must ask for transmit room, not skip the check");
 }
 
+// ----------------------------------------------------------------------------
+// 6. The drain's time bound (#229)
+// ----------------------------------------------------------------------------
+
+// Fill the ring to its own depth. `paLogLine` after the bind only appends, so
+// nothing reaches the wire until a drain runs.
+static void fillTheRing(size_t lines) {
+    char text[64];
+    for (size_t i = 0; i < lines; ++i) {
+        snprintf(text, sizeof(text), "[I][x] ring-line-%zu", i);
+        paLogLine(text);
+    }
+}
+
+// THE #229 criterion. A transport that has stopped taking bytes charges every
+// drained line the full CONSOLE_RECORD_ROOM_WAIT_BOUND_MS, and the drain's
+// only other bound is the ring's depth -- so one call used to hold the Console
+// task for depth x that bound (4.8 s on this chip target's DEBUG ring, 11.2 s
+// on the P4's) with no input read in any of it. That is long enough for an
+// over-length input line to overrun the transport's own receive queue and lose
+// the CR that is the only thing that triggers its `line-too-long` refusal, so
+// the refusal is deferred to the NEXT line's CR and consumes that command
+// instead (#215 issuecomment-5544566152).
+//
+// The room-wait is measured here in availableForWrite() calls rather than in
+// milliseconds, because vTaskDelay() is a no-op on the host: the wait loop
+// asks once per millisecond of its bound, plus once more on the way out, so
+// the call count IS the time the Console task spent not reading input.
+void test_one_drain_call_spends_at_most_one_room_wait_bound(void) {
+    fixtureSetUp(LOG_RING_MAX_LINES);
+    bindWireToConsole();
+
+    fillTheRing(LOG_RING_MAX_LINES);
+
+    // Attached, but taking nothing: the room-wait's worst case, and the state
+    // a host that has stopped reading leaves the CDC in.
+    SerialStub::connectedValue = true;
+    SerialStub::availableForWriteValue = 0;
+
+    const uint32_t drained = consoleSerialDrainLogs();
+
+    // Deliberately asserted against the RECORD bound, not against
+    // CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS: the property is "a drain point costs
+    // at most what one record costs", which is a statement about the wire and
+    // is checkable against a build that has no budget constant at all.
+    TEST_ASSERT_TRUE_MESSAGE(
+        SerialStub::availableForWriteCallCount <= (int)CONSOLE_RECORD_ROOM_WAIT_BOUND_MS + 10,
+        "one drain call waited for transmit room past its budget: with no room "
+        "ever clearing it charged the whole ring depth a full room-wait each, "
+        "and the Console task read no input for all of it");
+    TEST_ASSERT_TRUE_MESSAGE(drained <= 2,
+                             "the drain kept emitting after its room-wait budget was spent");
+
+    // The budget DEFERS the rest of the ring, it does not discard it: with
+    // room back, the very next drain writes everything the budget left.
+    SerialStub::availableForWriteValue = 100000;
+    const uint32_t rest = consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+        (uint32_t)LOG_RING_MAX_LINES - drained, rest,
+        "the lines the budget left behind did not reach the wire at the next drain point");
+}
+
+// The budget is spent on WAITING, so a drain that never has to wait never
+// spends any of it: a keeping-up transport still empties the whole ring in one
+// call, exactly as it did before the bound existed.
+void test_a_drain_with_room_still_empties_the_whole_ring_in_one_call(void) {
+    fixtureSetUp(LOG_RING_MAX_LINES);
+    bindWireToConsole();
+
+    fillTheRing(LOG_RING_MAX_LINES);
+
+    const uint32_t drained = consoleSerialDrainLogs();
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+        (uint32_t)LOG_RING_MAX_LINES, drained,
+        "the room-wait budget cost a healthy drain lines it used to write in one call");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_a_line_logged_before_the_bind_reaches_the_wire_directly);
@@ -305,5 +383,7 @@ int main(void) {
     RUN_TEST(test_ring_eviction_emits_one_counted_marker_before_the_drain_continues);
     RUN_TEST(test_no_marker_when_the_drain_kept_up);
     RUN_TEST(test_a_drained_line_waits_for_transmit_room);
+    RUN_TEST(test_one_drain_call_spends_at_most_one_room_wait_bound);
+    RUN_TEST(test_a_drain_with_room_still_empties_the_whole_ring_in_one_call);
     return UNITY_END();
 }
