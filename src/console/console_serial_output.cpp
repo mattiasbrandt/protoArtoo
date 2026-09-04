@@ -29,6 +29,24 @@ extern "C" {
 // Static reference to the bound CLI instance, set during console task init
 static EmbeddedCli* g_boundCli = nullptr;
 
+// The room-wait, the framed emit and the redraw emit, each with the
+// milliseconds they spent waiting reported back to the caller. Only
+// consoleSerialDrainLogs() asks: it is the one caller that emits a whole run
+// of lines and must stop before that run turns into seconds of Core 0 with no
+// input read (#229, CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS). The public entry
+// points below are the same functions with nothing to report to.
+//
+// `waitedMs` ACCUMULATES into the caller's own counter rather than assigning
+// to it, so one counter can span a run of emits -- an eviction marker and the
+// line behind it are two emits and one unit of the drain's budget. A nullptr
+// means "nobody is accounting", never "no wait happened"; a caller that does
+// account is charged for every wait, including the ones a dropped frame paid
+// for and got nothing.
+static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom, uint32_t* waitedMs);
+static bool emitFramedLineCounted(const char* line, size_t len, bool waitForRoom,
+                                  uint32_t* waitedMs);
+static void emitLineCounted(const char* line, uint32_t* waitedMs);
+
 // =============================================================================
 // Per-Character Writer
 // =============================================================================
@@ -71,6 +89,10 @@ void consoleSerialWriteText(const char* text) {
 }
 
 void consoleSerialEmitLine(const char* line) {
+    emitLineCounted(line, nullptr);
+}
+
+static void emitLineCounted(const char* line, uint32_t* waitedMs) {
     if (line == nullptr) {
         return;
     }
@@ -92,7 +114,7 @@ void consoleSerialEmitLine(const char* line) {
         // its own through the same single-write seam. Reachable only before
         // the bind, and paLogLine() takes the same path there for the same
         // reason; kept as a guard rather than an assumption.
-        consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/false);
+        emitFramedLineCounted(lineToEmit, lineLen, /*waitForRoom=*/false, waitedMs);
         return;
     }
 
@@ -118,7 +140,7 @@ void consoleSerialEmitLine(const char* line) {
         // sees a prompt redrawn one line later than the editor believes,
         // which their next keystroke or the next drained line repairs. The
         // line itself is never lost: /api/logs still has it.
-        consoleSerialWriteFrame(frame, frameLen, /*waitForRoom=*/true);
+        writeFrameCounted(frame, frameLen, /*waitForRoom=*/true, waitedMs);
         return;
     }
 
@@ -126,7 +148,7 @@ void consoleSerialEmitLine(const char* line) {
     // was left untouched. Send the line on its own, whole, through the
     // same single-write seam: the operator still sees the line, and the
     // prompt comes back with their next keystroke or the next log line.
-    consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/true);
+    emitFramedLineCounted(lineToEmit, lineLen, /*waitForRoom=*/true, waitedMs);
 }
 
 uint32_t consoleSerialDrainLogs(void) {
@@ -156,6 +178,7 @@ uint32_t consoleSerialDrainLogs(void) {
     uint32_t reads = 0;
     char line[LOG_LINE_MAX];
     uint32_t evicted = 0;
+    uint32_t roomWaitMs = 0;
 
     // Bounded at the ring's own depth. The ring cannot hold more lines than
     // that, so one call always catches up with everything already written;
@@ -163,8 +186,21 @@ uint32_t consoleSerialDrainLogs(void) {
     // appending as fast as the wire drains, which at a record boundary would
     // stall the command that is mid-answer. Whatever is left waits for the
     // next of this function's three call sites.
-    while (reads < LOG_RING_MAX_LINES && paLogDrainNextLine(line, sizeof(line), &evicted)) {
+    //
+    // And bounded a second time, in TIME, at CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS
+    // of room-waiting accumulated across this call (#229). The depth bound
+    // alone let a transport that had stopped taking bytes charge every line
+    // the full CONSOLE_RECORD_ROOM_WAIT_BOUND_MS, so one drain call could hold
+    // the Console task for LOG_RING_MAX_LINES times that -- seconds during
+    // which it read no input at all, long enough for an over-length input line
+    // to overrun the transport's own receive queue and lose the CR that is the
+    // only thing that triggers its refusal. The budget is checked BEFORE the
+    // next line is popped, so the drain never takes a line off the ring that
+    // it is not going to write: the cursor and the wire stay in step.
+    while (reads < LOG_RING_MAX_LINES && roomWaitMs < CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS &&
+           paLogDrainNextLine(line, sizeof(line), &evicted)) {
         reads++;
+        uint32_t waitedMs = 0;
         if (evicted > 0) {
             // Ring eviction is the only remaining way a log line is lost from
             // the wire, and it is marked rather than silent (ADR 0037). The
@@ -175,11 +211,17 @@ uint32_t consoleSerialDrainLogs(void) {
             char suffix[24];
             consoleSerialFormatDroppedSuffix(suffix, sizeof(suffix), evicted);
             snprintf(marker, sizeof(marker), "[log]%s", suffix);
-            consoleSerialEmitLine(marker);
+            emitLineCounted(marker, &waitedMs);
             written++;
         }
-        consoleSerialEmitLine(line);
+        emitLineCounted(line, &waitedMs);
         written++;
+        // The marker and its line are one unit -- the marker exists to say
+        // what is missing in front of the line that follows it -- so both are
+        // always emitted and their waits are charged together, after the fact.
+        // Splitting the budget check between them would be the one way to put
+        // a marker on the wire and leave its line for the next call.
+        roomWaitMs += waitedMs;
     }
     return written;
 }
@@ -189,6 +231,11 @@ uint32_t consoleSerialDrainLogs(void) {
 // =============================================================================
 
 bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom) {
+    return emitFramedLineCounted(line, len, waitForRoom, nullptr);
+}
+
+static bool emitFramedLineCounted(const char* line, size_t len, bool waitForRoom,
+                                  uint32_t* waitedMs) {
     if (line == nullptr) {
         return true;  // nothing to drop
     }
@@ -222,10 +269,15 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
     // short for want of the CR.
     size_t total = lineLen + 2;
 
-    return consoleSerialWriteFrame(buf, total, waitForRoom);
+    return writeFrameCounted(buf, total, waitForRoom, waitedMs);
 }
 
 bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom) {
+    return writeFrameCounted(bytes, len, waitForRoom, nullptr);
+}
+
+static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
+                              uint32_t* waitedMs) {
     if (bytes == nullptr || len == 0) {
         return true;  // nothing to send, so nothing to drop
     }
@@ -245,11 +297,18 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom) {
         // what ADR 0037 changed: the wait used to be reachable from any
         // logging task's context, which is why ADR 0036 had to keep it
         // strictly outside the lock.
-        uint32_t waitedMs = 0;
+        uint32_t spentMs = 0;
         while (Serial && Serial.availableForWrite() < (int)reserve &&
-               waitedMs < CONSOLE_RECORD_ROOM_WAIT_BOUND_MS) {
+               spentMs < CONSOLE_RECORD_ROOM_WAIT_BOUND_MS) {
             vTaskDelay(pdMS_TO_TICKS(1));
-            waitedMs++;
+            spentMs++;
+        }
+        // Charged to the caller's running total whether or not the room ever
+        // came: a frame dropped after the full bound cost the Console task
+        // exactly as much time as one that was written after it, and time
+        // away from the transport is what the drain's budget is counting.
+        if (waitedMs != nullptr) {
+            *waitedMs += spentMs;
         }
         if (!Serial || Serial.availableForWrite() < (int)reserve) {
             // Room never cleared (or the host was never connected to begin

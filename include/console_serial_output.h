@@ -72,6 +72,31 @@ typedef struct EmbeddedCli EmbeddedCli;
 //    10 ms cadence, which is what makes spending any of it here affordable.
 static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 
+// The most time ONE consoleSerialDrainLogs() call may spend waiting for
+// transmit room before it stops and leaves the rest of the Log Ring to the
+// next drain point (#229).
+//
+// The drain's other bound -- the ring's own depth -- bounds how many LINES one
+// call writes, and says nothing about how long that takes. Every drained line
+// waits for room under CONSOLE_RECORD_ROOM_WAIT_BOUND_MS above, so a transport
+// that has stopped taking bytes turns the depth bound into a time bound of
+// LOG_RING_MAX_LINES x that wait: 4.8 s on artoo-esp32 and 11.2 s on the P4 at
+// DEBUG depth, doubled again when every line is preceded by an eviction
+// marker. The Console task spends all of it inside one call, and while it is
+// in there it is not reading the transport -- which is how an input line long
+// enough to fill the CDC's own receive queue loses the bytes at its end,
+// including the CR that is the only thing that triggers its `line-too-long`
+// refusal (#229, docs/console-protocol.md 1.3). ADR 0037's stated consequence,
+// "serial log latency is bounded by the poll cadence and by record
+// boundaries", was not true of the shipped drain; this is what makes it true.
+//
+// One wait bound per call is the unit, not a new number: a drain point costs
+// at most what a single record costs, and the depth bound still limits the
+// lines. A healthy transport spends none of this budget -- the wait returns on
+// its first look when there is room -- so a drain that is keeping up still
+// empties the whole ring in one call, exactly as before.
+static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROOM_WAIT_BOUND_MS;
+
 // The most transmit room `Serial.availableForWrite()` can EVER report on this
 // board, and therefore the largest reservation a room-wait may ask for. A
 // waiter that asks for more than this waits out its whole bound and then drops
@@ -192,10 +217,18 @@ void consoleSerialEmitLine(const char* line);
 // continues. Keeping that true is why the drain does nothing at all while no
 // host is attached: see the guard at the top of its implementation.
 //
-// Bounded per call at the ring's own depth: the ring cannot hold more than
-// that, so one call always catches up with everything already written, and a
-// writer appending faster than the wire drains cannot hold the Console task
-// inside this function -- it resumes at the next poll.
+// Bounded per call TWICE, because the two bounds answer different questions.
+// At the ring's own depth: the ring cannot hold more than that, so one call
+// always catches up with everything already written, and a writer appending
+// faster than the wire drains cannot hold the Console task inside this
+// function -- it resumes at the next poll. And at
+// CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS of accumulated room-waiting, which is what
+// bounds the call in TIME rather than in lines: without it a transport that
+// has stopped taking bytes made every drained line cost a full
+// CONSOLE_RECORD_ROOM_WAIT_BOUND_MS and the depth bound became seconds of
+// Core 0 during which the Console task read no input at all (#229). Whatever
+// the budget leaves behind is written at the next of this function's three
+// call sites.
 //
 // CONSTRAINT: the Console task only, and never from inside a render.
 uint32_t consoleSerialDrainLogs(void);

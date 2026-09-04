@@ -345,6 +345,20 @@ void requestSystemRestart(uint32_t delayMs) {
 }
 
 void setup() {
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // BEFORE begin(), deliberately: HWCDC::begin() only creates its receive
+    // queue `if (rx_queue == NULL)`, so this is the one call that can size it
+    // without vQueueDelete()ing a queue the RX interrupt may already be
+    // pushing into. Why the default is too small for a line this Console has
+    // to refuse: include/console_task.h's CONSOLE_SERIAL_RX_QUEUE_BYTES (#229).
+    //
+    // The result is deliberately not checked, and the failure is still safe:
+    // on a failed allocation HWCDC::setRxBufferSize() leaves rx_queue NULL and
+    // begin() below then creates the driver's own 256-byte default, which is
+    // the pre-#229 behaviour rather than a broken one. There is also no logger
+    // to report it to here - paLogInit() runs after begin().
+    Serial.setRxBufferSize(CONSOLE_SERIAL_RX_QUEUE_BYTES);
+#endif
     Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     // Serial is the USB-Serial-JTAG CDC (HWCDC). When the host stops draining

@@ -79,6 +79,23 @@ wifi.config.settings mode=client sta-ssid="Workshop WiFi"
   static buffer sizes on this project are measured on real boards, not chosen
   from a host. Until that measurement exists, a command between 63 and 255
   bytes is refused on serial and accepted in the browser - visibly, on both.
+- **The refusal is answered when the line ends, so the line's ending has to
+  arrive.** On serial that is a property of the transport rather than of the
+  Console. The controller's USB CDC driver discards input it has no room for,
+  and it does so silently - no flag, no counter, nothing a reader can notice
+  afterwards - so the bytes at risk on an over-length line are the ones at its
+  end, which is exactly where its terminator is. Losing the terminator does not
+  lose the refusal; it **defers** it to the next line's terminator, which then
+  answers for both, so the over-length line's `line-too-long` arrives late
+  against the wrong request and the command typed after it is never answered
+  at all. The controller therefore holds a whole over-length line - four times
+  the longest line this protocol defines - in its serial input queue, and reads
+  that queue every millisecond while input is arriving instead of every ten
+  (`include/console_task.h`, `src/tasks/console_task.cpp`). One host write
+  larger than that queue can still lose its tail, and the driver still reports
+  nothing when it does: that is the one remaining case in which an over-length
+  line's refusal can be late, and it is outside the line lengths this protocol
+  defines.
 - A NUL byte or malformed UTF-8 in a quoted value fails explicitly
   (`invalid` with a reason); nothing is silently dropped or "fixed".
 
@@ -173,8 +190,8 @@ pairs; the first pair is always the Request ID.
 > system.config.log-level value=debug
 < id=20 type=result status=ok outcome=applied operation=system.config.log-level
 
-> profiler.action.start
-< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=profiler.action.start
+> system.action.profiler-trace-start
+< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=system.action.profiler-trace-start
 ```
 
 | `type=` | Meaning |
@@ -359,11 +376,12 @@ from there. Nothing else in the controller writes this port.
 That has two consequences you can see on the wire:
 
 - **Log lines are ordered against Console Records**, to within one record or
-  one poll of the Console's 10 ms cadence. The Console empties the ring at each
+  one poll of the Console's cadence - 10 ms when nothing is being typed, 1 ms
+  while input is arriving (section 1.3). The Console empties the ring at each
   poll, before it starts a command, and between the records of a command's
   answer - so a log line emitted during a long listing appears between two of
   its records, not after the whole thing.
-- **The one way a log line can be lost from the port is now announced.** If the
+- **The way a log line is lost from the port is announced.** If the
   controller logs faster than the port can carry for long enough that the ring
   wraps, the Console prints one counted marker line before it carries on:
 
@@ -373,8 +391,12 @@ That has two consequences you can see on the wire:
 
   It is the same `dropped=<n>` token a Console Record's closing line carries
   (section 3.3), and it means the same thing: exactly that many lines are
-  missing at that point. Nothing is missing without it. The lines themselves
-  are gone from the ring too, so `/api/logs` does not have them either.
+  missing at that point. The lines themselves are gone from the ring too, so
+  `/api/logs` does not have them either. One loss is **not** covered by that
+  marker, and section 7 is where it is described: a host that is attached but
+  has stopped reading can make a single line miss its transmit-room wait, and
+  that line is then absent from the port with nothing to mark it. `/api/logs`
+  still has that one.
 
 One thing serial no longer shows: a log line written by the Console itself
 inside a command that crashes the controller before its next record stays in
@@ -400,19 +422,22 @@ the task and a backtrace on its own path.
   supported client treats the CR as line-terminator whitespace, so a
   transcript is unchanged by it. The browser adapter is unaffected: it builds
   a JSON response and has no line terminator on the wire at all.
-- A serial record waits briefly for USB CDC transmit room before it is
-  written, and is dropped whole (never split, never sent short) if that room
-  never clears (ADR 0036); log lines stay best-effort and never wait. **For
-  records**, this is one write or none - a record that starts on the wire
-  always finishes on it. A runtime log line does not carry the same
-  guarantee: once the console task has bound its CLI, a log line is echoed
-  through embedded-cli's interactive redraw path one byte per `Serial.write()`
-  call (needed for the input-line clear/redraw behavior in section 6, not for
-  delivery atomicity), and can still tear under the same zero-timeout
-  backpressure. Only the boot-time fallback used before that binding (early
-  setup log lines) got the same single-write fix as records; ADR 0036
-  deliberately left the interactive log path's best-effort contract (#245)
-  unchanged.
+- A serial line waits briefly for USB CDC transmit room before it is written,
+  and is dropped whole (never split, never sent short) if that room never
+  clears. This is **one write or none** - a line that starts on the wire always
+  finishes on it - and it now covers both kinds of line the Console writes.
+  Console Records were the first (ADR 0036); a log line arriving mid-entry is a
+  whole redraw rather than just a line, and it reached the wire one byte per
+  `Serial.write()` call until the line editor could render that redraw into a
+  buffer, which is what made the same rule reachable for it. Since the Console
+  became the only writer of the port, a drained log line also waits for room
+  under the same bound as a record instead of being best-effort (ADR 0037
+  supersedes ADR 0036's "log lines stay best-effort"). What a dropped line
+  costs differs by kind: a record is counted on its request's closing line as
+  `dropped=<n>`, while a log line that misses its wait is simply absent from
+  the port - `/api/logs` still has it (section 6). The browser adapter is
+  unaffected: it builds a JSON response and has no line terminator on the wire
+  at all.
 
 ## 8. Serial terminal
 

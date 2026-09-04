@@ -21,7 +21,8 @@
 //    wire (AGENTS.md Architecture Guardrails: Core 1 is real-time, real-time
 //    paths must not block; and drive zero-frame continuity at 50 Hz).
 //  - Drain the ring at three points, which is what keeps wire order to within
-//    one record or one poll: each 10 ms poll, before dispatching a command,
+//    one record or one poll: each poll (10 ms idle, 1 ms while input is
+//    arriving - see CONSOLE_POLL_IDLE_MS), before dispatching a command,
 //    and at every record boundary while a command runs. Ring eviction - the
 //    only remaining way a log line is lost from the wire - is marked with one
 //    counted `dropped=<n>` line before the drain continues.
@@ -64,6 +65,16 @@ extern "C" {
 }
 
 static const char* TAG = "ConsoleTask";
+
+// The task's two poll cadences (#229). CONSOLE_POLL_IDLE_MS is THE 10 ms
+// cadence every ordering guarantee in this subsystem is written against (ADR
+// 0037, docs/console-protocol.md 6); CONSOLE_POLL_ACTIVE_MS is what the loop
+// uses instead for as long as bytes keep arriving, so the transport's receive
+// queue is never asked to hold more than one poll's worth of input. See the
+// vTaskDelay at the bottom of consoleTask() for why that is a correctness
+// property and not a throughput one.
+static constexpr uint32_t CONSOLE_POLL_IDLE_MS = 10;
+static constexpr uint32_t CONSOLE_POLL_ACTIVE_MS = 1;
 
 // =============================================================================
 // Forward declarations for record sink callbacks
@@ -583,9 +594,11 @@ void consoleTask(void* pvParameters) {
         // decision, and printLiveAutocompletion) already ran once per byte
         // inside its drain loop, so what is added is the loop preamble, not
         // the per-character handling.
+        bool consumedInput = false;
         while (Serial.available()) {
             int byte = Serial.read();
             if (byte >= 0) {
+                consumedInput = true;
                 // Feed character to embedded-cli (non-blocking)
                 // Calls onCommand when a complete line is ready
                 embeddedCliReceiveChar(embeddedCli, (char)byte);
@@ -600,7 +613,33 @@ void consoleTask(void* pvParameters) {
         // operator typed nothing.
         embeddedCliProcess(embeddedCli);
 
-        // Yield to prevent starving other tasks
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Yield to prevent starving other tasks.
+        //
+        // Two cadences, and the fast one is not an optimisation (#229). The
+        // gap between two reads of the transport is the window in which the
+        // driver's own receive queue can fill and start discarding bytes
+        // silently - including the CR that is the only thing that triggers an
+        // over-length line's refusal (include/console_task.h's
+        // CONSOLE_SERIAL_RX_QUEUE_BYTES has the mechanism and the cost of
+        // losing it). Sizing that queue bounds the length up to which a line
+        // survives; reading it more often is what keeps a line PAST that
+        // length arriving in order, because the queue then never has to hold
+        // more than one poll's worth at a time.
+        //
+        // So: the idle cadence stays 10 ms, which is the figure ADR 0037,
+        // docs/console-protocol.md 6 and this file's own record-ordering
+        // guarantee are written against, and it is what the task costs when
+        // nobody is typing. The moment a byte actually arrives the next poll
+        // is 1 ms away instead of 10, for as long as input keeps coming and
+        // not one tick longer. Ordering guarantees quoted elsewhere are
+        // stated as "within one poll" and only tighten under this.
+        //
+        // The #260 host-attach debounce above is unaffected: it needs two
+        // consecutive connected polls, and an attach edge is by definition a
+        // moment when no input has arrived yet, so it is still debounced over
+        // 10 ms ticks. Input already flowing means a host is already driving
+        // the link, which is not the flap that debounce exists to filter.
+        vTaskDelay(pdMS_TO_TICKS(consumedInput ? CONSOLE_POLL_ACTIVE_MS
+                                               : CONSOLE_POLL_IDLE_MS));
     }
 }
