@@ -39,8 +39,8 @@
 #include <vector>
 
 #include <freertos/semphr.h>  // paStubMutexReset()/paStubMutexStorage()/PaStubMutex -
-                              // simulates the OTHER Console adapter holding
-                              // s_configWriteMutex (#226 defect 1 rework)
+                              // simulates another config writer holding the
+                              // config write lock (#226 defect 1 rework, #269)
 
 #include "action_registry.h"
 #include "api_config_apply.h"  // configApply()/ConfigApplyResult/ConfigParamSource -
@@ -1956,21 +1956,21 @@ void test_scalar_config_write_rejects_an_unknown_argument() {
 // Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
 // is the sole reader/writer of s_consoleConfigApplyResult, and both Console
 // adapters (serial task, browser's psychic server task - both pinned to
-// Core 0) can call it concurrently. s_configWriteMutex serializes the whole
-// configApply() -> error check -> configCommitApplied() window; these tests
-// simulate the OTHER adapter holding it via the native mutex stub's exposed
-// singleton (paStubMutexStorage()) - consoleModuleInit() creates
-// s_configWriteMutex via xSemaphoreCreateMutexStatic(), which the stub always
-// backs with that same singleton, matching the precedent
+// Core 0) can call it concurrently. The config write lock (ConfigWriteLock,
+// include/api_config.h) serializes the whole configApply() -> error check ->
+// configCommitApplied() window, and since #269 the REST config routes take
+// the same one; these tests simulate another writer holding it via the native
+// mutex stub's exposed singleton (paStubMutexStorage()), which is what every
+// xSemaphoreCreateMutexStatic() returns natively, matching the precedent
 // test_console_serial_output.cpp already set for inspecting/driving
 // paGetSerialMutex()'s stub state the same way.
 // =============================================================================
 
 void test_config_write_reports_busy_when_the_mutex_is_already_held() {
-    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    consoleModuleInit();  // idempotent
     paStubMutexReset();
     struct PaStubMutex* m = paStubMutexStorage();
-    m->held = 1;  // simulate the OTHER Console adapter mid-write
+    m->held = 1;  // simulate another config writer mid-write
 
     runQuery("system.config.enable_arm1 value=true");
 
@@ -3953,14 +3953,14 @@ void test_reason_matrix_blocked_by_state_from_sleep() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
 }
 
-// 4/5 temporarily-unavailable: the shared config-write mutex already held by
-// the other adapter mid-write - "busy right now; try again", and the reason
-// the Console must not simply queue behind it.
+// 4/5 temporarily-unavailable: the shared config write lock already held by
+// another writer mid-write - "busy right now; try again", and the reason the
+// Console must not simply queue behind it.
 void test_reason_matrix_temporarily_unavailable_from_a_busy_config_write() {
-    consoleModuleInit();  // idempotent: creates s_configWriteMutex on first call only
+    consoleModuleInit();  // idempotent
     paStubMutexReset();
     struct PaStubMutex* m = paStubMutexStorage();
-    m->held = 1;  // simulate the OTHER Console adapter mid-write
+    m->held = 1;  // simulate another config writer mid-write
 
     runQuery("system.config.enable_arm1 value=true");
 
