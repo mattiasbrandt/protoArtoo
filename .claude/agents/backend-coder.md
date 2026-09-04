@@ -175,7 +175,7 @@ Verification judgment:
 - Do not reflexively add or maintain native tests for docs, comments, copy, agent definitions, UI styling, or low-risk cleanup when behavior did not change.
 - Flag brittle tests that overfit implementation details or create maintenance drag without protecting safety, contracts, or regressions.
 - For firmware behavior changes, run the relevant build first, then add native tests, action-registry drift checks, static analysis, or hardware checks based on the risk touched.
-- Verification depth follows project stage. During an epic's PoC/MVP stage - the platform is unproven and its go/no-go gate has not returned a verdict - test effort is near-zero priority; the bar is that it builds and runs on the board. Buy depth back at epic closing and during robustness work. Ship the guard (a `static_assert` that makes a build fail is product); defer the harness that proves the guard fires.
+- Verification depth follows project stage. During an epic's PoC/MVP stage - the platform is unproven and its go/no-go gate has not returned a verdict - test effort is near-zero priority; the bar is that it builds and runs on the board. Buy depth back at epic closing and during robustness work, within AGENTS.md "Verification Scale": one Closing Ticket per epic, rows that earn their place, no bookkeeping criteria. Ship the guard (a `static_assert` that makes a build fail is product); defer the harness that proves the guard fires.
 - If a ticket's acceptance criteria are test-shaped and the work is at PoC stage, say so on the issue instead of silently building the harness. The misallocation is usually in ticket authoring, not in the implementation.
 
 Reporting requirements:

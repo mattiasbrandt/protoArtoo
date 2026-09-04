@@ -145,6 +145,9 @@ none.
 - Do not use "bench verified" or "bench-tested" as a status. Public docs should
   use plain evidence phrases instead of internal labels.
 - For hardware-touching changes, state what was and was not proven.
+- Verification is sized by AGENTS.md "Verification Scale": one Closing Ticket per
+  epic, bench rows in `tools/bench_rows/`, no criterion naming an instrument or
+  number the bench cannot produce today, all boxes ticked closes the ticket.
 
 ## References
 

@@ -15,6 +15,10 @@ the available hardware supports, name what is still unproven, and finish. Do not
 propose a droid-hardware verification ticket as a precondition - see AGENTS.md
 "Verification and Reporting".
 
+A ticket with every criterion ticked closes in the same pass. Verification scope is
+bounded by AGENTS.md "Verification Scale": one Closing Ticket per epic, no criterion
+the bench cannot measure today, no bookkeeping checkboxes.
+
 ## Risk-based backend checks
 
 Automated tests are evidence, not the goal. Choose checks based on the risk touched:

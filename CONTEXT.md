@@ -466,8 +466,12 @@ Attaching anything — a jumper, a probe, a meter — is a **special case, not s
 _Avoid_: bench verified, bench tested, bench-attachable peripherals, scoping pin-level electrical checks as bench work, treating an exceptional measurement as a routine one, using bench work as integrated-hardware evidence
 
 **Bench Runbook**:
-One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
-_Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
+The replayable sheet for one Board Variant, `tools/bench_rows/<board>.txt`: named `@row` blocks of Console Client directives, `pause` lines where a human must act, commands only. It is a file, not a ticket. The epic's Closing Ticket points at the sheet, states what each row must show, and receives the dated evidence comment a replay leaves. (Redefined 2026-09-04, operator; until then a Bench Runbook was one ticket per board, which is how epic #206 grew two runbook tickets beside its audit ticket.)
+_Avoid_: a runbook ticket per board, copying rows from the sheet into a ticket, runbook as the acceptance record, per-ticket bench sessions
+
+**Closing Ticket**:
+The one sub-issue that carries an epic's whole verification tail: the bench rows to replay, the handful of measurements not on a sheet, the audit lines that decide closure, and the closure PR. Sized by AGENTS.md "Verification Scale": rows that earn their place, no criterion the bench cannot measure today, no bookkeeping checkboxes, a visible "Cut on purpose" table. Every box ticked closes it.
+_Avoid_: runbook ticket, audit ticket, integration-readiness ticket, gathering ticket, a verification tail spread across several sub-issues
 
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.
@@ -615,7 +619,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - An **Operation** of type config is an **Apply Core** plus its **Commit Step**; of type status, a **Zone Snapshot** rendered as **Console Records**; of type action, the existing dispatch core returning an outcome instead of nothing.
 - Every **Console Record** carries one **Request ID**; a write that entered through a **Console Adapter** carries its **Console Source** as its Command Source.
 - A **Console Client** drives exactly one **Console Adapter** per session and adds no behaviour to the **Controller Console**; a scripted client may address either adapter, which is what makes a parity transcript a one-program job.
-- A **Bench Runbook** row is replayed by a **Console Client** script that carries commands only; what the row expects stays on the runbook ticket, and each replay still leaves one dated evidence comment.
+- A **Bench Runbook** row is replayed by a **Console Client** script that carries commands only; what the row expects stays on the epic's **Closing Ticket**, and each replay still leaves one dated evidence comment there.
 - A **Known-but-unavailable** Operation reports exactly one **Availability Reason**; `not-in-this-build` and `not-on-this-board` are the two **Feature Availability** states, and `component-disabled` is a **Component Toggle** that is off.
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
 - A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike

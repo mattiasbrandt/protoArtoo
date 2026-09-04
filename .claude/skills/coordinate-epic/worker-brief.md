@@ -54,6 +54,13 @@ came from replaying a bench sheet against real hardware, not from unit tests -
 two live defects sat behind a fully green suite. If you are adding the
 fifteenth assertion to a parser table, stop and go prove the thing works.
 
+Verification is sized to the project (AGENTS.md "Verification Scale"): a small
+hobby project with one user. Prove the change where it runs, once. Do not build
+a harness, a matrix or a soak the ticket did not ask for, and do not propose one.
+If a criterion names an instrument, a counter or a number this bench or this
+firmware cannot produce, say so on the issue and stop on that criterion - do not
+build a path to it.
+
 If your slice is a classification table, the evidence column is the
 deliverable. Scripts gather (fields, call sites, citations); you decide every
 row by reading. A row cites `file:line` at both its registration site and
