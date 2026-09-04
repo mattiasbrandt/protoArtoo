@@ -2,12 +2,30 @@
 // include/console_serial_output.h
 //
 // Serial output coordination for Console task (ADR 0034, ADR 0036)
-// Routes log/event/record output through embeddedCliPrint() under serial mutex
-// so that lines arriving mid-entry clear the input line, print atomically,
-// then redraw the prompt and buffered command. Console Records use the
-// single-write framed emitter below instead: they never interact with the
-// interactive input line (docs/console-protocol.md 3.1's per-line locking),
-// and ADR 0036 gives them a room-wait policy logs must not inherit.
+//
+// ONE contract, one seam: every byte the Console puts on the wire goes through
+// consoleSerialWriteFrame() below, in exactly one Serial.write() call per unit,
+// under the serial mutex. There are two kinds of unit and they differ only in
+// their room policy (ADR 0036) -- never in how they are framed:
+//
+//  - a Console Record: the line and its CR LF, waiting for transmit room, and
+//    dropped whole if the room never comes (consoleSerialEmitFramedLine);
+//  - a log or event line arriving mid-entry: the WHOLE redraw -- input line
+//    cleared, the line, the break, the prompt, the buffered command -- rendered
+//    by embedded-cli into one buffer and written as one frame, best-effort
+//    (consoleSerialEmitLine).
+//
+// The redraw used to be written character by character through
+// embeddedCliPrint(): ~70 transport calls with the serial mutex held, and ~70
+// openings for the Console task's own echo -- which holds no lock, because it
+// runs inside embeddedCliProcess() (src/tasks/console_task.cpp) -- to land a
+// byte inside the log line. That is the interleaving docs/console-protocol.md
+// section 6 forbids, and on artoo-esp32, where Serial.write() blocks until the
+// UART accepts the byte, those calls hold the wire for ~6 ms at 115200 baud
+// (#268). ADR 0036 had already decided "every line, record or log, is written
+// with one call that includes the newline"; the interactive log path is the
+// place that decision could not reach until embedded-cli could render into a
+// buffer (lib/embedded-cli/VENDORED.md Patch 8).
 // =============================================================================
 #pragma once
 
@@ -45,11 +63,38 @@ typedef struct EmbeddedCli EmbeddedCli;
 //    10 ms cadence, which is what makes spending any of it here affordable.
 static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 
+// Largest frame consoleSerialEmitLine can compose, from the pieces
+// embedded-cli writes for one mid-entry redraw (lib/embedded-cli's
+// clearCurrentLine/embeddedCliPrint):
+//
+//   clear      1 CR + (inputLineLength <= cmdBufferSize 64) + invitation 2 + 1 CR
+//   the line   PA_LOG_SERIAL_LINE_MAX - 1 (the cap every serial-bound line has)
+//   break      2 (CR LF)
+//   prompt     2 (the "> " invitation)
+//   command    cmdBufferSize - 1
+//   cursor     8 ("\x1B[65535D" at its widest)
+//
+// = 68 + 255 + 2 + 2 + 63 + 8 = 398 at today's embeddedCliDefaultConfig()
+// sizes. 448 leaves room for a longer invitation or command buffer without
+// silently starting to refuse renders; a render that still does not fit is
+// reported, not truncated (embeddedCliPrintToBuffer returns 0 and
+// consoleSerialEmitLine falls back to sending the line on its own).
+static constexpr size_t CONSOLE_SERIAL_FRAME_MAX = 448;
+
 // Per-character writer for embedded-cli output.
 // Exported for embedded-cli binding as cli->writeChar.
-// Called by embeddedCliPrint() for every character.
-// CONSTRAINT: The caller (consoleSerialEmitLine) holds the serial mutex.
-// This writer must NOT attempt to take the mutex.
+//
+// This is the ECHO path and nothing else: embeddedCliProcess() calls it while
+// the operator types, from the Console task, holding no lock. It therefore
+// takes the serial mutex for its own single byte, so an echoed character
+// lands either before or after a log line's frame and never inside it.
+//
+// CONSTRAINT: must be called WITHOUT the serial mutex held. The mutex is
+// NON-RECURSIVE (xSemaphoreCreateMutexStatic), so a caller that drives
+// embedded-cli while holding it would deadlock here on the first character.
+// consoleSerialEmitLine() used to be exactly that caller; it now renders
+// through embeddedCliPrintToBuffer() and never reaches this writer, which is
+// what makes taking the mutex here safe (#268).
 void consoleSerialWriteChar(EmbeddedCli* cli, char c);
 
 // Bind the serial output coordinator to an embedded-cli instance.
@@ -58,9 +103,19 @@ void consoleSerialWriteChar(EmbeddedCli* cli, char c);
 void consoleSerialBindCli(EmbeddedCli* cli);
 
 // Emit a complete line through the serial output coordinator.
-// Takes the serial mutex, calls embeddedCliPrint() (which clears the current
-// input line, prints the line, and redraws the prompt + buffered command),
-// then gives the mutex. Safe for log/event/record emission from any Core 0 path.
+//
+// Takes the serial mutex, renders the whole mid-entry redraw -- input line
+// cleared, the line, the break, the prompt, the buffered command -- into one
+// buffer with embeddedCliPrintToBuffer(), writes that buffer in ONE frame, and
+// gives the mutex back. Safe for log/event/record emission from any Core 0
+// path. Best-effort, never waiting for transmit room: #245's log contract, and
+// /api/logs is the authoritative record either way (ADR 0036).
+//
+// If the redraw does not fit CONSOLE_SERIAL_FRAME_MAX the render is refused
+// whole rather than truncated, and the line alone is sent through
+// consoleSerialEmitFramedLine(). The line is still written whole; only the
+// prompt redraw is lost, and the operator's next keystroke or log line draws
+// it again.
 //
 // CONSTRAINT: The mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic creates
 // non-recursive). Nothing called from inside this function may emit another log
@@ -69,14 +124,36 @@ void consoleSerialBindCli(EmbeddedCli* cli);
 // inside consoleSerialEmitLine will block forever.
 void consoleSerialEmitLine(const char* line);
 
+// The ONE place a Console byte reaches the wire: optionally wait for transmit
+// room (outside the mutex), take the serial mutex, write `len` bytes in a
+// SINGLE Serial.write() call, give the mutex back.
+//
+// `bytes` is written verbatim -- this function adds no terminator and applies
+// no length cap, because its two callers have already composed exactly what
+// belongs on the wire: a record line plus its CR LF
+// (consoleSerialEmitFramedLine) or a whole rendered redraw
+// (consoleSerialEmitLine). Callers must keep `len` within what they own.
+//
+// waitForRoom selects ADR 0036's two policies; see
+// consoleSerialEmitFramedLine below for what each one means and why the wait
+// happens BEFORE the mutex take.
+//
+// Returns false only when a waiting caller gave up: nothing was written and
+// the mutex was never taken. A non-waiting caller always returns true.
+//
+// CONSTRAINT: must be called WITHOUT the serial mutex already held.
+bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
+
 // Emit exactly one line, plus its trailing CR LF, in a SINGLE Serial.write()
-// call, under the serial mutex (ADR 0036). This is the one emit helper both
-// the Console Record sink (src/tasks/console_task.cpp's emitRecordLine) and
-// the pre-console-task log fallback (this file's consoleSerialEmitLine, the
-// "no coordination available" branch) call, so the framing fix and the wait
-// seam live in exactly one place. `line` is truncated to
+// call, under the serial mutex (ADR 0036). This is the one emit helper the
+// Console Record sink (src/tasks/console_task.cpp's emitRecordLine), the
+// pre-console-task log fallback (this file's consoleSerialEmitLine, the "no
+// coordination available" branch) and consoleSerialEmitLine's
+// render-did-not-fit fallback all call, so the framing and the wait policy
+// live in exactly one place. `line` is truncated to
 // PA_LOG_SERIAL_LINE_MAX - 1 bytes first, matching every other serial-bound
-// line in this file.
+// line in this file. The write itself is consoleSerialWriteFrame's, so a
+// record and a redraw reach the wire through the same seam.
 //
 // The terminator is CR LF, not a bare LF (#267). A Console session is
 // attached in raw mode so Tab and cursor bytes reach the firmware unedited
