@@ -46,6 +46,8 @@
 #include "commanded_modes.h"              // commandedSetStationary/Sleep/WebControl()
 #include "drive_arbiter.h"                // driveArbiterSubmit(), DriveSource
 #include "web_server.h"                   // requestStatusBroadcastNow()
+#include "failsafe_gate.h"                // failsafeClearEstop() - the single
+                                          // explicit-intent ESTOP release path
 #include "mood.h"                         // applyMood()
 #include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
 #include "api_helpers.h"                  // normalizeDroidName(), parseBoolValue()
@@ -389,6 +391,32 @@ static void consoleExecuteDirectReboot(uint32_t requestId, const char* operation
     requestSystemRestart(500);
 }
 
+// system.action.estop-clear: no arguments, the same failsafeClearEstop() +
+// requestStatusBroadcastNow() pair handleEstopClearPost() (POST
+// /api/estop/clear, src/web/api_estop.cpp) runs, in that order.
+//
+// The latch itself is untouched: failsafeClearEstop() (src/failsafe_gate.cpp)
+// remains the single explicit-intent path that can release ESTOP, and this
+// adds a caller to it rather than a second way to clear. #206's "trusted
+// physical access, no safety bypass" applies both ways here - the REST route
+// applies no webControlEnabled gate before clearing (clearing is the operator
+// re-enabling drive, not commanding it), so none is invented here either.
+static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* operationName,
+                                           const ConsoleArgs& args, ConsoleCommandSource source,
+                                           const ConsoleRecordSink* sink) {
+    (void)source;  // failsafeClearEstop() takes no CommandSource; neither does the REST route.
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    failsafeClearEstop();
+    requestStatusBroadcastNow();
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = {
     {"system.action.set-mode", consoleExecuteDirectSetMode},
     {"system.action.sleep", consoleExecuteDirectSleep},
@@ -398,6 +426,7 @@ static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = 
     {"system.action.set-mood", consoleExecuteDirectSetMood},
     {"system.action.set-identity", consoleExecuteDirectSetIdentity},
     {"system.action.reboot", consoleExecuteDirectReboot},
+    {"system.action.estop-clear", consoleExecuteDirectEstopClear},
 #if PA_HEAP_TRACING
     {"system.action.profiler-trace-start", consoleExecuteDirectProfilerTraceStart},
     {"system.action.profiler-trace-stop", consoleExecuteDirectProfilerTraceStop},

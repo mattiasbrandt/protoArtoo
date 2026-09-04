@@ -307,9 +307,11 @@ static const char* const g_fields_sound_status_current[] = { "driver", "capabili
 static const char* const g_fields_system_status_health[] = { "estop", "sbusSignalLost", "sbusHwFailsafe", "webControlEnabled", "wifiConnected", "wifiClientConnected", "littleFsReady", "heapFree", "heapMin", "heapLargestBlock", "wifiRssi", "uptimeMs", "resetReason", NULL };
 static const char* const g_fields_system_status_wifi[] = { "apSsid", "apIp", "staEnabled", "staConnected", "staIp", "staSsid", "wifiRssi", "networkRecovery", NULL };
 static const char* const g_fields_dome_status_serial_link[] = { "active", "heartbeatRx", "heartbeatTx", NULL };
+static const char* const g_fields_system_api_get_identity[] = { "droidName", "mdnsUseName", NULL };
+static const char* const g_fields_system_api_get_validation[] = { "updatedMs", "drive", "domeLink", "audio", "rc", NULL };
 static const char* const g_fields_rc_status_snapshot[] = { "mode", "sbus1", "sbus2", NULL };
 
-// Total field-name arrays: 9
+// Total field-name arrays: 11
 
 // =============================================================================
 // Complete Operation Catalog
@@ -2658,7 +2660,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     },
     {
         "system.api.get-identity",
-        "action",
+        "status",
         NULL,  // aliases
         NULL,
         1,  // available_on_board
@@ -2667,7 +2669,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // safety_critical
         23413,  // help_offset
         108,  // help_length
-        NULL,  // fields
+        g_fields_system_api_get_identity,  // fields
         true,  // is_query
         false,  // read_only
     },
@@ -2793,7 +2795,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     },
     {
         "system.api.get-validation",
-        "action",
+        "status",
         NULL,  // aliases
         NULL,
         1,  // available_on_board
@@ -2802,7 +2804,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // safety_critical
         25455,  // help_offset
         140,  // help_length
-        NULL,  // fields
+        g_fields_system_api_get_validation,  // fields
         true,  // is_query
         false,  // read_only
     },
@@ -2883,7 +2885,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
     },
     {
         "rc.api.get-bindable-actions",
-        "action",
+        "status",
         NULL,  // aliases
         NULL,
         1,  // available_on_board

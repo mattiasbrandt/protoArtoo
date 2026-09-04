@@ -42,6 +42,8 @@
 #include "api_audio.h"
 #include "audio_task.h"
 #include "rc_diagnostics_snapshot.h"
+#include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot() -
+                                 // the Zone Snapshot behind GET /api/validation
 #include "action_registry.h"  // ACTION_REGISTRY[]: canonical name -> RobotActionId (#220)
 #include "api_actions.h"      // evaluateActionTestGuard(), robotActionIsWebTestable() - the
                               // existing guard core (#220), reused verbatim, not duplicated
@@ -940,6 +942,110 @@ static void consoleExecuteSoundApiGetCatalog(uint32_t requestId, const ConsoleRe
     }
 }
 
+// system.api.get-identity (#221): the two ConfigSnapshot fields GET
+// /api/identity answers with, under formatIdentityJson()'s own JSON keys
+// (src/web/api_identity_serializers.cpp). The manifest that route also emits
+// (`board_capabilities`/`build_flags`, and `board`) is deliberately not
+// reproduced - see this row's registry comment for both reasons.
+static void consoleExecuteSystemApiGetIdentity(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "droidName", snap.system.droid_name);
+        sink->onRecordField(requestId, "mdnsUseName",
+                            snap.system.mdns_use_name ? "true" : "false");
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// system.api.get-validation (#221): captureValidationSnapshot() - the same
+// Zone Snapshot handleValidationGet() takes (src/web/api_validation.cpp) -
+// rendered as populateValidationJson()'s five real top-level keys. `updatedMs`
+// is the one scalar; `drive`, `domeLink`, `audio` and `rc` are nested objects
+// collapsed to one whitespace-free summary token each, the shape
+// consoleFormatRcSourceSummary() above already sets for exactly this problem.
+// Each token carries the sub-keys that decide whether a validation run passed,
+// under those sub-keys' own JSON names.
+static void consoleExecuteSystemApiGetValidation(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ValidationSnapshot snap = {};
+    captureValidationSnapshot(&snap);
+
+    char tempBuf[160] = {};
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", (unsigned long)snap.updatedMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "updatedMs", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf),
+             "estop:%s,webDriveExpired:%s,sbusSignalLost:%s,sbusHwFailsafe:%s,failsafeCount:%lu,"
+             "triggerToZeroMs:%lu,watchdogMs:%lu",
+             snap.drive.estop ? "true" : "false", snap.drive.webDriveExpired ? "true" : "false",
+             snap.drive.sbusSignalLost ? "true" : "false",
+             snap.drive.sbusHwFailsafe ? "true" : "false", (unsigned long)snap.drive.failsafeCount,
+             (unsigned long)snap.drive.triggerToZeroMs, (unsigned long)snap.drive.watchdogMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "drive", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf), "state:%s,hbTx:%lu,hbRx:%lu,lastRxMs:%ld",
+             snap.domeLink.state != nullptr ? snap.domeLink.state : "",
+             (unsigned long)snap.domeLink.hbTx, (unsigned long)snap.domeLink.hbRx,
+             (long)snap.domeLink.lastRxMs);
+    if (sink->onRecordField) sink->onRecordField(requestId, "domeLink", tempBuf);
+
+    snprintf(tempBuf, sizeof(tempBuf), "enabled:%s,active:%s,activeMood:%u,randomMin:%u,randomMax:%u",
+             snap.audio.enabled ? "true" : "false", snap.audio.active ? "true" : "false",
+             (unsigned)snap.audio.activeMood, (unsigned)snap.audio.randomMin,
+             (unsigned)snap.audio.randomMax);
+    if (sink->onRecordField) sink->onRecordField(requestId, "audio", tempBuf);
+
+    // sources[] is collapsed to its count rather than expanded: rc.status.snapshot
+    // is the Console row that carries per-source RC detail, and reproducing it
+    // here would be a second answer to one question.
+    snprintf(tempBuf, sizeof(tempBuf), "mode:%s,timeoutMs:%lu,sources:%u",
+             snap.rc.mode != nullptr ? snap.rc.mode : "", (unsigned long)snap.rc.timeoutMs,
+             (unsigned)snap.rc.sourceCount);
+    if (sink->onRecordField) sink->onRecordField(requestId, "rc", tempBuf);
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// rc.api.get-bindable-actions (#221): item-indexed over ACTION_REGISTRY[]
+// (src/web/action_registry.cpp) - the same table GET /api/actions serializes,
+// read element by element the way dome.api.list-sequences reads
+// seqStoreIndexAt(), not through that route's chunked JSON writer (which is
+// file-static in src/web/api_actions_json.cpp anyway). Each item mirrors the
+// REST row's own key names for the fields an operator binding an RC channel
+// needs: the token POST /api/rc/map accepts, whether the action is testable,
+// and whether it is a one-shot button. The prose fields (display_name,
+// description) stay REST-only - `help <op>` is the Console's own answer for
+// those, and repeating them here would put the same 9 KB of text on the wire
+// twice.
+static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
+                                                  const ConsoleRecordSink* sink) {
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        if (sink->onRecordItem) {
+            char itemBuf[128];
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "%s token:%s domain:%s safetyCritical:%s testable:%s oneShot:%s",
+                     ACTION_REGISTRY[i].name, robotActionIdToString(ACTION_REGISTRY[i].id),
+                     ACTION_REGISTRY[i].domain,
+                     ACTION_REGISTRY[i].safety_critical ? "true" : "false",
+                     robotActionIsWebTestable(ACTION_REGISTRY[i].id) ? "true" : "false",
+                     robotActionIsOneShotButton(ACTION_REGISTRY[i].id) ? "true" : "false");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -970,6 +1076,9 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"dome.api.list-builtin-sequences", consoleExecuteDomeApiListBuiltinSequences},
     {"sound.api.get-mood-map", consoleExecuteSoundApiGetMoodMap},
     {"sound.api.get-catalog", consoleExecuteSoundApiGetCatalog},
+    {"system.api.get-identity", consoleExecuteSystemApiGetIdentity},
+    {"system.api.get-validation", consoleExecuteSystemApiGetValidation},
+    {"rc.api.get-bindable-actions", consoleExecuteRcApiGetBindableActions},
 #if PA_HEAP_PROFILE
     {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
 #endif

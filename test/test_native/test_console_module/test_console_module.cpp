@@ -43,6 +43,11 @@
                               // config write lock (#226 defect 1 rework, #269)
 
 #include "action_registry.h"
+#include "api_identity.h"        // formatIdentityJson(), IDENTITY_JSON_MAX_BYTES -
+                                  // system.api.get-identity's JSON-builder leg (#221)
+#include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot(),
+                                   // populateValidationJson() - system.api.get-validation's
+                                   // snapshot and JSON-builder legs (#221)
 #include "api_config_apply.h"  // configApply()/ConfigApplyResult/ConfigParamSource -
                                  // drives the real Apply Core directly for defect 2's
                                  // table-drift test, bypassing the Console dispatch layer
@@ -1159,6 +1164,143 @@ void test_action_dome_sequence_catalog_name_queues_through_the_dispatcher() {
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// =============================================================================
+// The system.* and rc.api.* rows (#221)
+// =============================================================================
+
+// system.action.estop-clear calls the one explicit-intent release path
+// (failsafeClearEstop(), src/failsafe_gate.cpp), so a latched estop is cleared
+// and the drive gate reopens - the same effect POST /api/estop/clear has.
+void test_estop_clear_releases_the_latched_estop() {
+    failsafeTrigger(FailsafeLayer::ESTOP);
+    TEST_ASSERT_TRUE(robotState.estop);
+
+    runQuery("system.action.estop-clear");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_FALSE(robotState.estop);
+}
+
+void test_estop_clear_rejects_any_argument_and_leaves_the_latch_alone() {
+    failsafeTrigger(FailsafeLayer::ESTOP);
+
+    runQuery("system.action.estop-clear force=true");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("force", capturedValue("argument"));
+    TEST_ASSERT_TRUE_MESSAGE(robotState.estop, "a refused command must not clear the latch");
+}
+
+// Three-way field match for system.api.get-identity: the registry's fields:,
+// formatIdentityJson()'s real top-level keys, and the emitted names. Subset
+// match on the JSON side - the manifest keys are deliberately not answered
+// (see the registry entry's comment).
+void test_system_api_get_identity_three_way_field_match() {
+    char json[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(json, sizeof(json), "R2D2", true));
+    std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
+
+    std::vector<std::string> registryFields = catalogFieldNames("system.api.get-identity");
+    TEST_ASSERT_TRUE(registryFields == (std::vector<std::string>{"droidName", "mdnsUseName"}));
+    for (const auto& field : registryFields) {
+        TEST_ASSERT_TRUE_MESSAGE(std::binary_search(jsonKeys.begin(), jsonKeys.end(), field),
+                                 field.c_str());
+    }
+
+    runQuery("system.api.get-identity");
+    TEST_ASSERT_TRUE(registryFields == emittedFieldNames());
+}
+
+void test_system_api_get_identity_carries_real_config_state() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "%s", "Chopper");
+    snap.system.mdns_use_name = true;
+    configCacheApply(snap);
+
+    runQuery("system.api.get-identity");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("Chopper", capturedValue("droidName"));
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("mdnsUseName"));
+}
+
+// Three-way field match for system.api.get-validation. The four nested keys
+// are answered as summary tokens, so the field NAMES still match
+// populateValidationJson()'s top-level keys exactly - which is the point of
+// collapsing under the real key rather than inventing flattened ones.
+void test_system_api_get_validation_three_way_field_match() {
+    ValidationSnapshot snap = {};
+    captureValidationSnapshot(&snap);
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateValidationJson(doc, snap));
+    char json[2048];
+    TEST_ASSERT_GREATER_THAN(0, (int)serializeJson(doc, json, sizeof(json)));
+    std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
+
+    std::vector<std::string> registryFields = catalogFieldNames("system.api.get-validation");
+    TEST_ASSERT_TRUE(registryFields == jsonKeys);
+
+    runQuery("system.api.get-validation");
+    TEST_ASSERT_TRUE(registryFields == emittedFieldNames());
+}
+
+// The summary tokens carry live state, not placeholders: a latched estop shows
+// up inside the `drive` token.
+void test_system_api_get_validation_drive_summary_carries_real_state() {
+    failsafeTrigger(FailsafeLayer::ESTOP);
+
+    runQuery("system.api.get-validation");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    const char* drive = capturedValue("drive");
+    TEST_ASSERT_NOT_NULL(drive);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(drive, "estop:true"), drive);
+    // Whitespace-free, so the token cannot be read as a second key=value pair
+    // on the wire (the consoleFormatRcSourceSummary() convention).
+    TEST_ASSERT_NULL_MESSAGE(strchr(drive, ' '), drive);
+}
+
+// rc.api.get-bindable-actions streams ACTION_REGISTRY[] as items - one per
+// entry, carrying the RC token POST /api/rc/map accepts.
+void test_rc_api_get_bindable_actions_streams_the_registry_as_items() {
+    runSeqItemQuery("rc.api.get-bindable-actions");
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)ACTION_REGISTRY_SIZE, g_seqItemCap.count,
+                                  "every ACTION_REGISTRY[] row must be listed");
+
+    // The first row's item line, checked against the registry entry itself
+    // rather than a hand-typed string, so a renamed action cannot pass.
+    TEST_ASSERT_NOT_NULL(strstr(g_seqItemCap.values[0], ACTION_REGISTRY[0].name));
+    char expectedToken[64];
+    snprintf(expectedToken, sizeof(expectedToken), "token:%s",
+             robotActionIdToString(ACTION_REGISTRY[0].id));
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(g_seqItemCap.values[0], expectedToken),
+                                 g_seqItemCap.values[0]);
+}
+
+// The guarded estop row is safety_critical and not web-testable; the listing
+// must report both honestly rather than flattening them to a default.
+void test_rc_api_get_bindable_actions_reports_testability_per_row() {
+    runSeqItemQuery("rc.api.get-bindable-actions");
+
+    bool sawEstop = false;
+    for (int i = 0; i < g_seqItemCap.count; ++i) {
+        if (strstr(g_seqItemCap.values[i], "system.action.estop ") == nullptr) continue;
+        sawEstop = true;
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(g_seqItemCap.values[i], "safetyCritical:true"),
+                                     g_seqItemCap.values[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(g_seqItemCap.values[i], "testable:false"),
+                                     g_seqItemCap.values[i]);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(sawEstop, "system.action.estop must appear in the listing");
 }
 
 // =============================================================================
@@ -4871,6 +5013,14 @@ int main(int, char**) {
     RUN_TEST(test_sound_get_catalog_rejects_the_dropped_bank_filter);
     RUN_TEST(test_sound_get_mood_map_three_way_field_match);
     RUN_TEST(test_sound_get_mood_map_matches_the_config_row_for_the_same_state);
+    RUN_TEST(test_estop_clear_releases_the_latched_estop);
+    RUN_TEST(test_estop_clear_rejects_any_argument_and_leaves_the_latch_alone);
+    RUN_TEST(test_system_api_get_identity_three_way_field_match);
+    RUN_TEST(test_system_api_get_identity_carries_real_config_state);
+    RUN_TEST(test_system_api_get_validation_three_way_field_match);
+    RUN_TEST(test_system_api_get_validation_drive_summary_carries_real_state);
+    RUN_TEST(test_rc_api_get_bindable_actions_streams_the_registry_as_items);
+    RUN_TEST(test_rc_api_get_bindable_actions_reports_testability_per_row);
     RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
     RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);

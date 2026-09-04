@@ -449,7 +449,7 @@ rows:
   missing_metadata: []
   notes: Web-API. Calls commandedSetRcDebug (robot state command setter). No web control guard.
 - name: rc.api.get-bindable-actions
-  type: action
+  type: status
   registry_api_path: /api/actions
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_actions.cpp

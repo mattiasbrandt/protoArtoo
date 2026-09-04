@@ -3310,7 +3310,7 @@ entries:
   display_name: Get Droid Identity
   description: Current cosmetic droid name and mDNS opt-in
   domain: system
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/identity
   sse_event: null
@@ -3321,6 +3321,22 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: a plain read of two ConfigSnapshot fields, so #223's field-based
+  # query shape fits directly. fields: is a deliberate SUBSET of
+  # formatIdentityJson()'s top-level keys (src/web/api_identity_serializers.cpp):
+  # `board_capabilities` and `build_flags` are nested manifest objects with no
+  # scalar-field shape, and the Console already answers that manifest where it
+  # is actionable - per operation, as available_on_board/available_in_build on
+  # `help` and `operations` (ADR 0029) - so duplicating it here would be a
+  # second copy of the same facts. `board` is dropped for a different reason:
+  # boardVariantId() is file-static inside that serializer's anonymous
+  # namespace (src/web/api_identity_serializers.cpp:51, inside the namespace
+  # opened at :15), so reaching it would mean a second copy of its
+  # #if PA_BOARD ladder. Documented subset, not silently narrowed - the same
+  # shape dome.api.get-sequence-last-run uses.
+  fields:
+  - droidName
+  - mdnsUseName
   executor: sendIdentityResponse
 - name: system.action.set-identity
   display_name: Set Droid Identity
@@ -3499,7 +3515,7 @@ entries:
   display_name: Get Validation Snapshot
   description: Consolidated hardware-validation snapshot (Phase 4 closure checks)
   domain: system
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/validation
   sse_event: null
@@ -3510,6 +3526,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: captureValidationSnapshot() (include/validation_snapshot.h) is the
+  # Zone Snapshot behind GET /api/validation, so the Console reads the same
+  # struct the REST route serializes. fields: are populateValidationJson()'s
+  # real top-level keys; `updatedMs` is its one scalar and the other four are
+  # nested objects, answered as one whitespace-free summary token each - the
+  # same collapse rc.status.snapshot already applies to its own nested
+  # sources.* (src/console/console_module.cpp), under the real JSON key rather
+  # than an invented one. The per-RC-source detail underneath `rc` stays
+  # REST-only; rc.status.snapshot is the Console row that carries it.
+  fields:
+  - updatedMs
+  - drive
+  - domeLink
+  - audio
+  - rc
   executor: populateValidationJson
 - name: system.action.upload-firmware
   display_name: Upload Firmware
@@ -3602,7 +3633,7 @@ entries:
   display_name: List Bindable Actions
   description: JSON array of all RC-bindable robot actions with token + testability metadata
   domain: rc
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/actions
   sse_event: null
@@ -3613,7 +3644,16 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: item-indexed over ACTION_REGISTRY[] (src/web/action_registry.cpp), a
+  # flash-resident const table read element by element exactly the way
+  # dome.api.list-sequences reads seqStoreIndexAt() - the same no-fields:/
+  # is_query:-true shape #239 established for an answer that is a sequence of
+  # item records rather than scalar JSON keys. ACTION_REGISTRY_SIZE bounds it by
+  # construction, so no paging protocol is needed. This is the one Console row
+  # that carries an action's RC token and testability; `operations` lists the
+  # catalog and does not.
   executor: fillActionsResponse
+  is_query: true
 - name: rc.api.get-map
   display_name: Get RC Map
   description: Current RC channel-to-action binding map
