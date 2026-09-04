@@ -21,8 +21,7 @@
 // contents entirely (see below), so the exact size does not matter for
 // correctness here; sized generously (96 B, comfortably above the real
 // struct's ~80 B on a 32-bit target) so callers that declare static storage
-// for one (src/console/console_module.cpp's config-write mutex, matching
-// src/main.cpp's own logSerialMutexStorage precedent) compile natively.
+// for one (src/web/api_config.cpp's config write lock) compile natively.
 typedef struct { unsigned char reserved[96]; } StaticSemaphore_t;
 
 // Opaque-enough mutex model for host tests: a holder token plus a depth count.
