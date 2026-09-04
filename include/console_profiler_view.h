@@ -118,9 +118,9 @@ inline void consoleEmitProfilerReading(uint32_t requestId, const ProfilerReading
         // Empty on RISC-V, where esp_backtrace_* is not implemented - the
         // field is emitted anyway so "no backtrace" is visible rather than
         // indistinguishable from a dropped field.
-        char btBuf[PROF_FAIL_BT_MAX * 12] = {};
+        char btBuf[FAILED_ALLOC_BT_MAX * 12] = {};
         size_t used = 0;
-        for (uint8_t i = 0; i < reading.lastFailBtDepth && i < PROF_FAIL_BT_MAX; ++i) {
+        for (uint8_t i = 0; i < reading.lastFailBtDepth && i < FAILED_ALLOC_BT_MAX; ++i) {
             size_t remaining = sizeof(btBuf) - used;
             if (remaining <= 1) break;
             int n = snprintf(btBuf + used, remaining, "%s0x%08x", (used > 0) ? "," : "",

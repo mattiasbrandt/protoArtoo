@@ -16,6 +16,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// FAILED_ALLOC_BT_MAX and the counter the reading below copies. The tracker is
+// compiled into every build; this header only renders what it already counted.
+#include "failed_alloc_tracker.h"
+
 // =============================================================================
 // Profiler reading - the shared core beneath every profiler adapter (ADR 0034)
 //
@@ -33,7 +37,6 @@
 // =============================================================================
 
 #define PROF_LABEL_MAX 20
-#define PROF_FAIL_BT_MAX 12
 #define PROF_SNAPSHOT_MAX 8
 // Thirteen project-created tasks plus loopTask. Raised from 11 at #271, when
 // the three created outside src/main.cpp joined the list (api_profiler.cpp).
@@ -84,7 +87,7 @@ typedef struct {
     uint32_t lastFailSize;
     uint32_t lastFailCaps;
     uint8_t lastFailBtDepth;
-    uint32_t lastFailBt[PROF_FAIL_BT_MAX];
+    uint32_t lastFailBt[FAILED_ALLOC_BT_MAX];
 
     // The currently open mode window, if any
     bool currentWindowOpen;
@@ -112,8 +115,10 @@ static inline const char* profilerHwmStatus(uint32_t hwmBytes) {
 
 #include "web_request.h"
 
-// Call once at task start (SafetyMonitorTask) to register the failed-alloc
-// callback and open the initial "boot" monitoring window.
+// Call once at task start (SafetyMonitorTask) to open the initial "boot"
+// monitoring window. Registering the failed-alloc hook is NOT part of this:
+// that counter runs on every build and is registered by
+// failedAllocTrackerInit() beside this call.
 void profilerInit();
 
 // Close the current monitoring window (reading its local low-water mark via
