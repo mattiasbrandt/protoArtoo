@@ -489,9 +489,9 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
 // same audioMoodMapApply() + audioMoodMapCommitApplied() sequence
 // handleAudioMoodMapPost() runs (src/web/api_audio.cpp), reusing the ADR
 // 0011 Apply Core and its Commit Step (include/api_audio.h) exactly as
-// extracted for this purpose ("No Console operation reaches these yet ...
-// the extraction stands ready for whichever ticket wires them" -
-// audioMoodMapCommitApplied()'s own comment in include/api_audio.h).
+// extracted for this purpose. sound.config.mood-category-map, the config-
+// typed view of the same value, reaches the identical pair
+// (src/console/console_module.cpp).
 // consoleArgsAsParamSource() (include/console_args.h) is the SAME
 // ConfigParamSource adapter #226 already established for Console-sourced
 // Apply Core calls, reused verbatim rather than a second bridge. All four
