@@ -152,7 +152,7 @@ system.status.health|Health|System health snapshot: estop, SBUS, WiFi, heap, fil
 system.status.dashboard-health|Dashboard Health Signals|Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)|buildStatusJson|
 system.status.logs|Logs|Recent firmware log lines|copyLogLineAt|
 system.status.wifi|WiFi|WiFi connection status, mode, IP addresses, and signal strength|captureWifiStatusSnapshot|
-wifi.config.settings|WiFi Settings|How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi provisioning page.|wifiApply|mode:string:0|sta-ssid:string:0|ap-ssid:string:0|sta-password:string:0|ap-password:string:0
+wifi.config.settings|WiFi Settings|How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi page, under Device WiFi Settings.|wifiApply|mode:string:0|sta-ssid:string:0|ap-ssid:string:0|sta-password:string:0|ap-password:string:0
 dome.status.serial-link|Dome Serial Link|Dome serial link status and heartbeat timing|captureDomeSerialLinkSnapshot|
 system.api.get-identity|Get Droid Identity|Current cosmetic droid name and mDNS opt-in|sendIdentityResponse|
 system.action.set-identity|Set Droid Identity|Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in|configCacheApply|droidName:string:1|mdnsUseName:bool:0

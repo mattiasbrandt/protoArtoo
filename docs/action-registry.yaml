@@ -3221,7 +3221,7 @@ entries:
   - networkRecovery
 - name: wifi.config.settings
   display_name: WiFi Settings
-  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi provisioning page.
+  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi page, under Device WiFi Settings.
   domain: wifi
   type: config
   marcduino_cmd: null
