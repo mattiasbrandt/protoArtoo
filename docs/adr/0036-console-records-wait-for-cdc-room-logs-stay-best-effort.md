@@ -93,5 +93,23 @@ the only writer of the serial wire: loggers append to the Log Ring and the
 Console task drains it, so the reason logs could not wait - a TWDT-subscribed
 task blocked on the CDC - is gone. Log lines now wait for room under the same
 bound as records, and the only loss is ring eviction, marked on the wire. The
-record rule stands unchanged: wait outside any lock, one write per line,
-`dropped=<n>` on the closing record.
+record rule stands unchanged: one write per line, `dropped=<n>` on the closing
+record. "Outside any lock" is no longer a rule that needs stating: there is no
+lock, and only the Console task - which is not TWDT-subscribed - ever spends
+the wait.
+
+Two of this ADR's own Consequences are settled by the same slice (#270):
+
+- The `HWCDC::flush()` question. `src/main.cpp`'s two calls are **removed**;
+  the Arduino loop task does not own this wire, and on a CDC-on-boot build the
+  call discarded the TX ring rather than draining it. `console_task.cpp`'s call
+  survives, guarded to artoo-esp32, because there it is the wire's owner
+  waiting for its own banner on a transport where `flush()` genuinely waits.
+- *"The wait condition is transport-neutral, so the sink ticket measures that
+  it adds nothing on UART0."* Read rather than measured, and it was not
+  neutral: `Serial.availableForWrite()` cannot exceed the 128-byte hardware
+  FIFO on artoo-esp32 (the TX ring is disabled there), so a reservation for
+  any line longer than that could never be satisfied and every such record was
+  dropped whole after the full 100 ms wait - on a transport whose `write()`
+  cannot lose a byte in the first place. The reservation is now capped at what
+  the transport can report (`CONSOLE_SERIAL_TX_ROOM_MAX`).
