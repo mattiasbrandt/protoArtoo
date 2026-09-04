@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index ba526b09..ef0abb0a 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -1054,7 +1054,7 @@
+         // (webOnRecordItem_impl, src/web/api_console.cpp). A guard on either
+         // would be a branch no firmware can reach.
+         if (result.data.truncated === true) {
+-          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
++          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-error");
+         }
+       } else {
+         appendCommandLine("[ERROR] invalid response format", " log-line-command-error");

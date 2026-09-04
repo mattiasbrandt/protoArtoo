@@ -460,6 +460,15 @@
   // did not come back as log text (#261). Two phrases for one fact is the copy
   // defect docs/ui-copy-voice.md exists to prevent.
   const LOG_UNREACHABLE_TEXT = "[connection lost — retrying…]";
+  // Shown under a console reply the controller could not carry whole (#240).
+  // "[CUT]" is its own tag rather than "[ERROR]": the command ran, the group
+  // closed, and every line printed above this one is real - what is wrong is
+  // that there were more of them. Says "some lines are missing" and not which
+  // ones, because the controller does not say: the answer it sends back is
+  // the newest lines for the log ring (docs/api.md), and nothing more
+  // specific is true for whatever query bounds out next.
+  const CONSOLE_TRUNCATED_TEXT =
+    "[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.";
   const COMMAND_HISTORY_MAX = 20;
   const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
@@ -1021,6 +1030,31 @@
       if (result?.data?.records && Array.isArray(result.data.records)) {
         for (const record of result.data.records) {
           formatAndAppendConsoleRecord(record);
+        }
+        // The controller reports a bounded answer on the response ENVELOPE -
+        // "truncated":true beside "records", never as a Console Record
+        // (docs/api.md, POST /api/console) - so a truncated group still
+        // arrives complete-looking: every record well-formed, the `end`
+        // present, nothing in the printed transcript to say lines were left
+        // out. Reading the flag here is what keeps a bounded reply from
+        // reading as a full one (#240).
+        //
+        // Printed AFTER the records, as a line in the same log, for the same
+        // reason tools/console_client.py prints its own capped line there:
+        // the notice belongs to the reply it follows, and the panel keeps
+        // scrolling. A banner elsewhere on the page would come loose from the
+        // answer it describes the moment the next line arrives.
+        //
+        // Only this dispatch path reads the flag, and that is not an
+        // oversight: the page's other two /api/console callers cannot receive
+        // it. `operations` (loadConsoleCatalog) is answered by the streaming
+        // path, which has no envelope field at all, and `help <op>`
+        // (fetchConsoleOperationParams) emits `field` records only - the
+        // controller raises this flag exclusively when it drops an `item`
+        // (webOnRecordItem_impl, src/web/api_console.cpp). A guard on either
+        // would be a branch no firmware can reach.
+        if (result.data.truncated === true) {
+          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
         }
       } else {
         appendCommandLine("[ERROR] invalid response format", " log-line-command-error");

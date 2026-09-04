@@ -12,9 +12,11 @@ The real handler is served on an ephemeral port; nothing is reimplemented here.
 """
 
 import importlib.util
+import json
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import HTTPServer
 from pathlib import Path
@@ -48,6 +50,16 @@ class FixtureRouteTest(unittest.TestCase):
     def get(self, path):
         with urllib.request.urlopen(f"{self.base}{path}", timeout=5) as response:
             return response.status, response.headers.get("Content-type"), response.read()
+
+    def post_console(self, command):
+        request = urllib.request.Request(
+            f"{self.base}/api/console",
+            data=urllib.parse.urlencode({"command": command}).encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read())
 
     def test_logs_route_answers_as_log_text(self):
         status, content_type, body = self.get("/api/logs")
@@ -93,6 +105,63 @@ class FixtureRouteTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertIn("application/json", content_type)
+
+    def test_console_route_answers_records_for_a_known_command(self):
+        status, payload = self.post_console("system.status.health")
+
+        self.assertEqual(status, 200)
+        # The dashboard reads the records off the envelope's "records" key and
+        # reports "invalid response format" for anything else.
+        self.assertIsInstance(payload.get("records"), list)
+        types = [record["type"] for record in payload["records"]]
+        self.assertEqual(types[0], "begin", "a record group opens with begin")
+        self.assertEqual(types[-1], "end", "a record group is closed by end")
+
+    def test_console_route_omits_truncated_on_an_answer_that_fit(self):
+        _, payload = self.post_console("system.status.health")
+
+        # Present exactly when the answer was cut - the dashboard reads its
+        # absence as "this reply is whole" (#240).
+        self.assertNotIn("truncated", payload)
+
+    def test_console_logs_answer_is_cut_and_says_so(self):
+        _, payload = self.post_console("system.status.logs")
+
+        items = [r for r in payload["records"] if r["type"] == "item"]
+        self.assertEqual(
+            len(items),
+            fixture_server.CONSOLE_LOG_ITEM_CAP,
+            "the fixture must cut this answer where the adapter does, so the "
+            "dashboard's truncated state is reachable offline",
+        )
+        self.assertTrue(
+            payload.get("truncated"),
+            "an answer this route cut must carry the envelope flag the "
+            "dashboard reads",
+        )
+        # Cut like the adapter cuts: oldest lines discarded, newest kept.
+        self.assertEqual(items[-1]["value"], fixture_server.FIXTURE_LOG_LINES[-1])
+        self.assertEqual(payload["records"][-1]["type"], "end", "the group still closes")
+
+    def test_console_route_refuses_a_body_with_no_command(self):
+        request = urllib.request.Request(
+            f"{self.base}/api/console", data=b"", method="POST"
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=5)
+
+        self.assertEqual(caught.exception.code, 400)
+
+    def test_unknown_post_path_is_404_not_501(self):
+        request = urllib.request.Request(
+            f"{self.base}/api/nope", data=b"", method="POST"
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=5)
+
+        # 501 reaches the page as "Not supported by device", which reads like a
+        # firmware answer rather than a missing fixture route.
+        self.assertEqual(caught.exception.code, 404)
 
     def test_page_routes_still_fall_back_to_the_shell(self):
         status, content_type, body = self.get("/")

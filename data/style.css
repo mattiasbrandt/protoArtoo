@@ -1316,6 +1316,13 @@ input.input-narrow:focus {
   color: var(--danger);
 }
 
+/* A reply the controller could not carry whole (#240). Warning amber, not
+   danger red: the command ran and every line above the notice is real -
+   there were simply more of them than fit. */
+.log-line-command-cut {
+  color: var(--warning);
+}
+
 .log-command-input {
   width: 100%;
   box-sizing: border-box;
