@@ -36,6 +36,14 @@ Two-part rule:
 This is provisional on n=4 single-session readings and should tighten as more
 production-build passes accumulate.
 
+> Note, 2026-09-04: the band above describes the build #54 measured. On the Framework
+> Envelope build (`epic/serial-console`, `platformio.ini` `[artoo_envelope]`), measured
+> 2026-09-03 with the same procedure, `heapLargest8bit` rested at 36,852 B fresh and
+> 31,732 B warmed -- about 16 KB above the band; the retention shape (a few KB lost to
+> warm-up, then stable) still matched. The two-part rule is the criterion and stands
+> unchanged; the band is history, not a pass/fail number. Evidence: #216
+> issuecomment-5532183341, gathered on #233.
+
 ## Cooldown duration
 
 Normal load / normal refresh: sample `heapLargest8bit` every 2-3s for up to 15s after
