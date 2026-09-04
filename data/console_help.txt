@@ -173,7 +173,7 @@ rc.api.get-bindable-actions|List Bindable Actions|JSON array of all RC-bindable 
 rc.api.get-map|Get RC Map|Current RC channel-to-action binding map|populateRcMapJson|
 rc.action.set-map|Set RC Map|Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.\n|rcMapApply|
 rc.action.test-bindable|Test Bindable Action|Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing|dispatchRcTriggerActionTest|token:string:1
-rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|rcMapApply|
+rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|configApply|
 dome.seq.vader|DM:VADER — Imperial March|47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.|sequenceStart|
 dome.seq.hello|DM:HELLO — Hello There|4-second greeting: logic text + P1 panel wave. Body-owned flat sequence.|sequenceStart|
 dome.seq.nod|DM:NOD — Acknowledgment nod|3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence.|sequenceStart|

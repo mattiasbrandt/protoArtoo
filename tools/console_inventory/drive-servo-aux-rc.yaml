@@ -506,11 +506,13 @@ rows:
   - src/web/api_config_apply.cpp:318 - mode parsing from params
   - src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)
   - include/config_store.h:447 - bool configSaveSystem (Commit Step)
-  executor_or_core: rcMapApply
+  executor_or_core: configApply
   missing_metadata:
   - enum values not in registry
   - parameter name not in registry
-  notes: NVS key cfg_rcMode. Apply Core (ADR 0011).
+  notes: NVS key cfg_rcMode. Apply Core (ADR 0011). Was recorded as rcMapApply, which
+    owns the RC binding table, not this input-mode enum; the evidence lines above always
+    pointed at configApply's own rcInputMode param.
 - name: rc.status.snapshot
   type: status
   registry_api_path: /api/rc

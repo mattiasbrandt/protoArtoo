@@ -1658,11 +1658,11 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
 }
 
 // rc.config.mode: value=standard_pwm|single_sbus|dual_sbus (rcInputMode).
-// Registry drift note: docs/action-registry.yaml lists this row's executor
-// as rcMapApply, which is wrong - rcMapApply() handles the RC BINDING
-// table, not the input-mode enum; configApply()'s own "rcInputMode" param
-// (src/web/api_config_apply.cpp) is the real one. Not fixed in the registry
-// here since that edit reaches fenced data/console_help.txt (status comment).
+// The registry used to name this row's executor as rcMapApply, which handles
+// the RC BINDING table rather than the input-mode enum; it now names
+// configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
+// is the real writer. #221 corrected it once data/console_help.txt was in the
+// same slice's hands - the reason it was only reported before.
 static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
                                  ConsoleCommandSource source, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');

@@ -3793,7 +3793,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_rcMode
-  executor: rcMapApply
+  # configApply(), not rcMapApply(): rcMapApply() owns the RC BINDING table
+  # (src/web/api_rc_map_apply.cpp), while this row is the input-mode enum, whose
+  # only writer is configApply()'s own "rcInputMode" param
+  # (src/web/api_config_apply.cpp:315-323).
+  executor: configApply
 - name: dome.seq.vader
   display_name: "DM:VADER \u2014 Imperial March"
   description: '47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.'
