@@ -372,16 +372,20 @@ A pure module behind a write path: it reads parameters through a Param Source (a
 _Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
 
 **Commit Step**:
-The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function) and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy (ADR 0034).
-_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0034; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
+_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function, adapter-held lock, snapshot-returning outcome
+
+**Working Snapshot**:
+The one per-request copy of the configuration that a write acts on: the Apply Core validates and applies onto it, the Commit Step commits it and refreshes it with the committed state, and the adapter renders from it. A write makes exactly one; nothing below the seam makes another. Distinct from a Zone Snapshot, which is a read of live state (ADR 0011).
+_Avoid_: by-value snapshot, post-commit copy, "the snapshot" without saying which
 
 **State Zone**:
 A commented block of `RobotState` fields with exactly one owning writer (a task or the failsafe gate). The owner writes its fields directly; every multi-field read crosses the seam through the zone's snapshot (ADR 0012). Zones make the shared struct navigable: to change a field, find its zone; to read related fields consistently, capture its snapshot.
 _Avoid_: global blackboard access, ad hoc multi-field reads
 
 **Commanded Mode**:
-A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
-_Avoid_: inline mode writes, per-surface transition rules
+A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache by field, never NVS and never a whole-snapshot round trip.
+_Avoid_: inline mode writes, per-surface transition rules, snapshot round trip for one field
 
 **Zone Snapshot**:
 The atomic multi-field read for a State Zone: a plain struct plus `copy<Zone>Locked()` (caller holds the mux) and `capture<Zone>()` (takes the mux). Consumer captures compose several zone copies inside one critical section, so a page response reads one generation of state. First instance: `FailsafeDiagnostics` (ADR 0012).
@@ -486,8 +490,16 @@ The one command language, Operation Catalog, validation, availability and safety
 _Avoid_: serial console (when the shared thing is meant), CLI, debug shell, recovery console, command subset
 
 **Console Adapter**:
-A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own.
-_Avoid_: frontend, shell, REPL, second backend
+A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own. The serial adapter is also the sole writer of the serial wire once it has bound: every other task's log line reaches serial through the Log Ring, never directly (ADR 0037).
+_Avoid_: frontend, shell, REPL, second backend, shared serial writer, log mutex
+
+**Log Ring**:
+The in-memory, size-bounded record of every log line the firmware emits, read by the log endpoint and by the serial adapter's drain. It is the authoritative copy of a log line; a line is lost only when newer lines evict it before a reader reaches it, and the serial drain marks such a gap on the wire. A transport never drops a log line on its own.
+_Avoid_: serial log, log buffer (when the ring is meant), best-effort serial copy
+
+**Measured Chain**:
+A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0038).
+_Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
 
 **Console Client**:
 A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
@@ -606,6 +618,9 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - A **Bench Runbook** row is replayed by a **Console Client** script that carries commands only; what the row expects stays on the runbook ticket, and each replay still leaves one dated evidence comment.
 - A **Known-but-unavailable** Operation reports exactly one **Availability Reason**; `not-in-this-build` and `not-on-this-board` are the two **Feature Availability** states, and `component-disabled` is a **Component Toggle** that is off.
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
+- A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike
+- Every log line is written once, to the **Log Ring**; the serial **Console Adapter** is its only serial reader and the only writer of the serial wire after it binds
+- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its chain; the sizing margin above the chain is a per-chip judgement recorded beside the constant
 
 ## Example Dialogue
 
@@ -668,3 +683,5 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - "web control" read as a network-authentication gate; resolved as **Non-RC Control**, a motion-consent **Commanded Mode** - the `webControlEnabled` identifier and page copy follow in the Controller Console epic.
 - "action registry" holds status, config and event rows too; resolved by making **Operation** the umbrella for what the **Controller Console** can run or query while "action" stays a registry type, and by keeping rows that only describe a field inside an aggregate response as metadata rather than standalone Operations.
 - The Console plan drafted `not_included` / `unsupported_on_board` beside the browser's `not-in-this-build` / `not-on-this-board`; resolved by reusing the browser tokens and one kebab-case convention for every token the protocol defines - field names are carried from the API's JSON keys and are not tokens.
+- "the Apply Core contract" was used (2026-09-04, #226) to mean the calling convention of the seam - resolved: the contract is the response bytes and the plain outcome; how a **Working Snapshot** crosses the seam is not part of it
+- "one seam" (2026-09-04, #268) was used to mean one function every serial byte passes through - resolved: ownership of the serial wire is by task; the function seam is a consequence, not the invariant

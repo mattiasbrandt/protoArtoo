@@ -85,3 +85,13 @@ record, and log lines do not.**
 - artoo-esp32 keeps its blocking UART write. The wait condition is
   transport-neutral, so the sink ticket measures that it adds nothing on UART0
   and does not move #219 R1's shared-wire behaviour or the ADR 0017 budgets.
+
+## Amended 2026-09-04 (ADR 0037)
+
+"Log lines stay best-effort" no longer holds. ADR 0037 makes the Console task
+the only writer of the serial wire: loggers append to the Log Ring and the
+Console task drains it, so the reason logs could not wait - a TWDT-subscribed
+task blocked on the CDC - is gone. Log lines now wait for room under the same
+bound as records, and the only loss is ring eviction, marked on the wire. The
+record rule stands unchanged: wait outside any lock, one write per line,
+`dropped=<n>` on the closing record.
