@@ -30,6 +30,7 @@
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
+#include "../../include/failed_alloc_tracker.h"
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
@@ -273,6 +274,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t lastSbus2Ms;
     uint32_t sbus1LostFrameCount;
     uint32_t sbus2LostFrameCount;
+    uint32_t queueOverflowCount;
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
@@ -329,6 +331,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     lastSbus2Ms = robotState.lastSbus2Ms;
     sbus1LostFrameCount = robotState.sbus1LostFrameCount;
     sbus2LostFrameCount = robotState.sbus2LostFrameCount;
+    queueOverflowCount = robotState.queueOverflowCount;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
@@ -405,14 +408,21 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"queueOverflowCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"failedAllocs\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
         (double)domeTargetSpeed, enableDome ? "true" : "false",
         speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
         (unsigned long)diag.failsafeTriggerCount, (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs, (unsigned long)diag.failsafeLastTriggerToZeroMs,
-        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
+        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource,
+        // Every non-blocking enqueue that found its queue full, from any task
+        // (logQueueDrop(), src/queue_drop_tracker.cpp). Published beside the
+        // failsafe counters because it is the other half of "was Core 1
+        // degraded across this run" - read here rather than only from a
+        // profiler build, which is the build that measurement forbids.
+        (unsigned long)queueOverflowCount,
+        uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock,
         // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
@@ -420,6 +430,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // wildly from what the guards actually see; both are emitted so the
         // divergence itself is observable.
         (unsigned long)largestFreeBlock8Bit(),
+        // Failed allocations since boot, from the always-compiled tracker
+        // (include/failed_alloc_tracker.h). ADR 0017's heap rule wants this
+        // flat across a load wave, and wants it on a production image - the
+        // one build /api/profiler, which reports the same counter, is absent
+        // from.
+        (unsigned long)failedAllocTrackerCount(),
         // Open event streams; the client cap keys on this, so stuck or leaked
         // entries become visible instead of silently denying new streams.
         (unsigned)webEventStreamClientCount(), (unsigned long)g_webSseClientsPeak,

@@ -368,12 +368,12 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 5888,
-          "product_bytes": 5888,
-          "profiler_bytes": 5888,
+          "chain_bytes": 5904,
+          "product_bytes": 5904,
+          "profiler_bytes": 5904,
           "rule": "declined",
-          "reason": "#248's tight-heap reason, named on #256: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 256 B.",
-          "note": "#256 recorded this arm from the profiler image because the product image's body was emitted as data (.xt.prop) then. It decodes in both images at this tip and they agree, so the arm is walked from the product image."
+          "reason": "#248's tight-heap reason, named on #256: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 240 B.",
+          "note": "Re-walked at #228 from 5888: buildStatusJson()'s frame, the deepest in this chain, grew 16 B when failedAllocs and queueOverflowCount joined the /api/status payload. Both images walk 5904. #256 recorded this arm from the profiler image because the product image's body was emitted as data (.xt.prop) then. It decodes in both images at this tip and they agree, so the arm is walked from the product image."
         },
         "esp32p4": {
           "env": "firebeetle2",

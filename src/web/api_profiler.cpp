@@ -16,7 +16,9 @@
 //     heap_caps_get_info()    -> multi_heap_info_t
 //     uxTaskGetStackHighWaterMark()
 //     heap_caps_monitor_local_minimum_free_size_start/stop() - scoped low-water marks
-//     heap_caps_register_failed_alloc_callback()
+//     heap_caps_register_failed_alloc_callback() - NOT here: the hook and its
+//       counter are compiled into every build (src/failed_alloc_tracker.cpp),
+//       because /api/status publishes the count on a production image too
 //   Tier 2 (CONFIG_HEAP_TASK_TRACKING only):
 //     heap_caps_alloc_all_task_stat_arrays()
 //     heap_caps_get_all_task_stat()         -> heap_all_tasks_stat_t
@@ -37,7 +39,6 @@
 #include "api_profiler.h"
 
 #include <Arduino.h>
-#include <esp_debug_helpers.h>   // esp_backtrace_get_start/next_frame (failed-alloc backtrace)
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -52,6 +53,7 @@
 #endif
 
 #include "api_json_response.h"
+#include "failed_alloc_tracker.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "web_server.h"
@@ -133,74 +135,6 @@ static ProfilerTaskStack s_taskHwm[PROF_TASK_MAX];
 static portMUX_TYPE s_hwmMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
-// Failed-allocation counter (Tier 1 - heap_caps_register_failed_alloc_callback)
-// =============================================================================
-
-static uint32_t s_failedAllocCount = 0;
-
-// Last failed allocation, captured ALLOCATION-FREE for /api/profiler to report.
-//
-// This hook runs IN the context of the failing allocation, on the stack of
-// whichever task hit it (IDF heap_caps.c: heap_caps_alloc_failed calls the hook
-// inline, then optionally aborts). It MUST NOT allocate: a previous version
-// logged via Arduino Print::printf, which mallocs its own buffer - so under heap
-// exhaustion that malloc ALSO failed and re-entered this hook, recursing until a
-// task stack overflowed (coredump analysis found a 64-byte mDNS alloc crash on the
-// lwIP 'tiT' task). IDF's own abort path
-// (fmt_abort_str/hex_to_str) likewise formats with manual hex + memcpy, never
-// printf. So: only count, capture raw values + backtrace PCs (esp_backtrace_*
-// walks the stack and does not allocate), guard against re-entry, and let the
-// /api/profiler handler format them where allocation is safe.
-// PROF_FAIL_BT_MAX is declared in api_profiler.h with the reading's shape.
-static volatile bool     s_inFailedAllocCb = false;
-static volatile uint32_t s_lastFailSize    = 0;
-static volatile uint32_t s_lastFailCaps    = 0;
-static uint32_t          s_lastFailBt[PROF_FAIL_BT_MAX];
-static volatile uint8_t  s_lastFailBtDepth = 0;
-
-static void failedAllocCb(size_t requested_size, uint32_t caps, const char* function_name) {
-    (void)function_name;
-    __atomic_fetch_add(&s_failedAllocCount, 1U, __ATOMIC_RELAXED);
-
-    // Reentrancy guard - belt-and-suspenders now that nothing below allocates.
-    if (s_inFailedAllocCb) {
-        return;
-    }
-    s_inFailedAllocCb = true;
-    s_lastFailSize = (uint32_t)requested_size;
-    s_lastFailCaps = caps;
-
-    // Backtrace capture is Xtensa-only. ESP-IDF DECLARES esp_backtrace_get_start()
-    // and esp_backtrace_get_next_frame() in esp_debug_helpers.h for every target, but
-    // only IMPLEMENTS them for Xtensa -- they are hand-written assembly that walks
-    // register windows, which RISC-V does not have. So on the ESP32-P4 the calls
-    // compile cleanly and the link fails with "undefined reference"; verified against
-    // the framework archives, where the symbol is defined once for esp32 and zero
-    // times for esp32p4_es.
-    //
-    // The rest of the record -- the failure count, requested size and caps -- is
-    // architecture-neutral and still the most useful part, so RISC-V keeps it and
-    // simply reports a zero-depth backtrace. /api/profiler already renders a depth of
-    // 0 as an empty list, so no consumer changes.
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
-    esp_backtrace_frame_t frame;
-    esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
-    uint8_t depth = 0;
-    for (; depth < PROF_FAIL_BT_MAX; ++depth) {
-        s_lastFailBt[depth] = frame.pc;
-        if (!esp_backtrace_get_next_frame(&frame)) {
-            ++depth;
-            break;
-        }
-    }
-    s_lastFailBtDepth = depth;
-#else
-    s_lastFailBtDepth = 0;
-#endif
-    s_inFailedAllocCb = false;
-}
-
-// =============================================================================
 // Tier 2 - per-task heap allocation stats (CONFIG_HEAP_TASK_TRACKING only)
 // Uses heap_caps_alloc_all_task_stat_arrays / get_all_task_stat / free.
 // =============================================================================
@@ -268,7 +202,11 @@ static int s_profilerHwmTick = 0;
 // =============================================================================
 
 void profilerInit() {
-    heap_caps_register_failed_alloc_callback(failedAllocCb);
+    // The failed-alloc hook is NOT registered here. It counts on every build,
+    // not only a profiler one (/api/status publishes "failedAllocs"), and IDF
+    // keeps a single hook slot - so src/failed_alloc_tracker.cpp owns it and
+    // safetyMonitorTask registers it unconditionally, immediately before this
+    // call.
     for (int i = 0; i < PROF_TASK_MAX; i++) {
         s_taskHwm[i].name = s_taskNames[i];
         s_taskHwm[i].hwmBytes = 0;
@@ -500,12 +438,17 @@ void profilerRead(ProfilerReading* out) {
     out->totalBlocks = (uint32_t)info.total_blocks;
     out->windowMinFree = (uint32_t)info.minimum_free_bytes;
 
-    out->failedAllocs = __atomic_load_n(&s_failedAllocCount, __ATOMIC_RELAXED);
-    out->lastFailSize = s_lastFailSize;
-    out->lastFailCaps = s_lastFailCaps;
-    out->lastFailBtDepth = s_lastFailBtDepth;
-    for (uint8_t i = 0; i < PROF_FAIL_BT_MAX; ++i) {
-        out->lastFailBt[i] = s_lastFailBt[i];
+    // Failed allocations come from the always-compiled tracker
+    // (include/failed_alloc_tracker.h), which owns the IDF hook. The profiler
+    // renders that one counter; it does not keep a second.
+    FailedAllocReading failedAlloc = {};
+    failedAllocTrackerRead(&failedAlloc);
+    out->failedAllocs = failedAlloc.count;
+    out->lastFailSize = failedAlloc.lastSize;
+    out->lastFailCaps = failedAlloc.lastCaps;
+    out->lastFailBtDepth = failedAlloc.btDepth;
+    for (uint8_t i = 0; i < FAILED_ALLOC_BT_MAX; ++i) {
+        out->lastFailBt[i] = failedAlloc.bt[i];
     }
 
     // Acquire s_windowMux first

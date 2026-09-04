@@ -1483,6 +1483,11 @@ Returns controller status snapshot.
 - Top-level fixed fields include:
 - `estop`, `webControlEnabled`, `sbusSignalLost`, `sbusHwFailsafe`, `webDriveExpired`
 - `failsafeSource`, `failsafeCount`, `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, `failsafeTriggerSource`
+- `queueOverflowCount` — non-blocking enqueues that found their queue full,
+  summed across every task that enqueues (`logQueueDrop()`). Read it beside
+  `failsafeCount` when judging whether the real-time core was degraded across a
+  run: both are cumulative since boot, so the evidence is the delta between two
+  readings, not the absolute value.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `fsVersion`, `resetReason`
@@ -1494,6 +1499,11 @@ Returns controller status snapshot.
     36 KB regardless of real heap pressure. Use `heapLargest8bit` for any
     heap-health judgement. (Note: `/api/health` has always reported the 8-bit
     value under the `heapLargestBlock` name.)
+- `failedAllocs` — allocations the heap refused since boot, counted by the IDF
+  failed-allocation hook. Reported on every build, production included;
+  `/api/profiler` reports the same counter plus the failing request's size,
+  capability mask and backtrace, but only exists when `PA_HEAP_PROFILE=1`. ADR
+  0017's memory-recovery rule wants this flat across a load wave.
 - `sseClients` — registered `/api/events` clients (admission cap is 3)
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
