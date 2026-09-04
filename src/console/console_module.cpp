@@ -74,6 +74,9 @@
                                   // drive.action.speed-preset-{slow,normal,turbo} executors
                                   // reuse this verbatim, the same function
                                   // src/web/api_drive.cpp's handleSpeedPresetPost() calls
+#include "mood_sound_mapping.h"  // MOOD_CATEGORY_MASK_MAX - the same mask
+                                 // handleAudioMoodMapGet() applies before rendering the
+                                 // four mood-category words (sound.config.mood-category-map)
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
                                // real executor (registry drift note: the registry's own
                                // `executor:` field for system.config.mood says configApply,
@@ -1589,6 +1592,18 @@ static bool consoleMoodIdValid(uint8_t moodId) {
     return moodId == 10 || moodId == 11 || moodId == 13 || moodId == 14;
 }
 
+// Whether the active audio backend serves a CHIRP catalog. Reproduces
+// api_audio.cpp's anonymous-namespace audioCatalogSupported() (internal
+// linkage - unreachable from a second translation unit) rather than exporting
+// a REST-private helper, the same "read their logic, call their shared
+// functions" precedent the direct-action executors already set for
+// isSleepModeActive(). Lives here rather than in one domain header because
+// two of them need it: include/console_direct_action_sound.h's
+// sound.action.set-category-range and the sound.config.* rows below.
+static bool consoleAudioCatalogSupported() {
+    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
 static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                      char* rawArgs, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
@@ -1970,6 +1985,540 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
                                                  : CONSOLE_OUTCOME_APPLIED,
                              CONSOLE_REASON_NONE);
     }
+}
+
+// =============================================================================
+// Private: sound.config.* - the rows whose write path is an audio Apply Core
+// (#226).
+//
+// Nine config rows reaching the three ADR 0011 audio Apply Cores and their
+// ADR 0034 Commit Steps (include/api_audio.h) exactly as POST /api/audio/
+// tracks, /api/audio/category-range and /api/audio/mood-map reach them.
+// Nothing new is built here: both halves already existed - api_audio.h's own
+// Commit Step comment called them ready "for whichever ticket wires them" -
+// and what was missing was a Console dispatch pointing at them, which the
+// config cascade's fall-through comment below used to say in as many words.
+//
+// These follow the wifi.config.settings GROUPED-WRITE shape above, not the
+// single-field consoleWriteScalarConfigField() one: each row hands its whole
+// argument set to its core in one call and renders the core's verdict, so
+// range, key-pair and enum rules stay the core's and this module adds no
+// validation of its own.
+//
+// Argument keys are the CORE's own parameter names verbatim - key/track,
+// lo_key/hi_key/lo/hi, quiet/mid/full/awakeplus - so consoleArgsAsParamSource()
+// (include/console_args.h) bridges straight through with no translation table
+// at all. wifi.config.settings needs one only because POST /api/wifi's body
+// keys are camelCase where the protocol's tokens are kebab-case; these cores'
+// parameter names are already legal Console keys, and renaming them would be
+// the third vocabulary that section's own comment warns against. This is the
+// same reuse sound.action.set-mood-map and sound.action.set-category-range
+// already make (include/console_direct_action_sound.h).
+//
+// Ranges are deliberately NOT declared in these rows' registry schemas, so
+// consoleValidateArgsAgainstSchema() checks shape and leaves every bound to
+// the core - the precedent sound.action.set-category-range states for the
+// identical parameters ("the apply core's own validation is the real gate
+// here, not the schema"). A value the core refuses is answered as
+// out-of-range, the same undifferentiated classification every other Apply
+// Core rejection in this module gets, because a grouped rule (lo>hi, an
+// unusable key pair) has no one attributable argument to name.
+//
+// bank/page/clear_binding - REST's optional CHIRP-binding extension to two of
+// these routes - are absent from every one of these schemas, so they are
+// refused as unknown arguments before a core sees them: the Console exposes a
+// subset of what REST accepts, never a superset ("no widening").
+//
+// Read field names are GET /api/audio/tracks' and GET /api/audio/mood-map's
+// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the key
+// vocabulary src/config_store.cpp's AUDIO_TRACK_KEYS map uses - so a value a
+// read prints is addressable by a write under the same spelling, and the two
+// halves cannot drift into separate name sets.
+//
+// Response size, measured against the OTHER adapter rather than assumed
+// (#239's lesson): the widest read here is sound.config.category-ranges at 24
+// fields plus begin+end = 26 records, inside the browser adapter's
+// CONSOLE_RESPONSE_RECORDS_MAX of 32 (src/web/api_console.cpp), with 1-5
+// digit decimal values nowhere near its 2048-byte value arena.
+// =============================================================================
+
+// GET /api/audio/tracks' field order for the 20 named tracks, the 7 system
+// tracks and the 12 category lo/hi pairs (src/web/api_audio.cpp's
+// fillTracksResponse()), split into the three sets the registry splits these
+// rows into. Spellings are that response's keys, which are also
+// AUDIO_TRACK_KEYS' - note snd_cat_snrk_* , whose wire name is the short form
+// even though the config member is snd_cat_snarky_* .
+static const char* const kSoundNamedTrackKeys[] = {
+    "scream",  "faint",  "leia",   "cantina_s", "sw_theme", "imp_march", "cantina_l",
+    "startup", "doodoo", "failure", "disco",    "mahna",    "inlove",    "macho",
+    "gangnam", "uptown", "celebr", "stayin",    "harlem",   "pbjtime",
+};
+static const size_t kSoundNamedTrackKeyCount =
+    sizeof(kSoundNamedTrackKeys) / sizeof(kSoundNamedTrackKeys[0]);
+
+static const char* const kSoundSystemTrackKeys[] = {
+    "sys_boot", "sys_mode_n", "sys_mode_s", "sys_mode_t", "sys_drv_on", "sys_dome_on",
+    "sys_net_down",
+};
+static const size_t kSoundSystemTrackKeyCount =
+    sizeof(kSoundSystemTrackKeys) / sizeof(kSoundSystemTrackKeys[0]);
+
+static const char* const kSoundCategoryRangeKeys[] = {
+    "snd_cat_gen_lo",  "snd_cat_gen_hi",  "snd_cat_chat_lo", "snd_cat_chat_hi",
+    "snd_cat_hap_lo",  "snd_cat_hap_hi",  "snd_cat_proc_lo", "snd_cat_proc_hi",
+    "snd_cat_sad_lo",  "snd_cat_sad_hi",  "snd_cat_sent_lo", "snd_cat_sent_hi",
+    "snd_cat_hum_lo",  "snd_cat_hum_hi",  "snd_cat_scrm_lo", "snd_cat_scrm_hi",
+    "snd_cat_ooh_lo",  "snd_cat_ooh_hi",  "snd_cat_alrm_lo", "snd_cat_alrm_hi",
+    "snd_cat_snrk_lo", "snd_cat_snrk_hi", "snd_cat_whis_lo", "snd_cat_whis_hi",
+};
+static const size_t kSoundCategoryRangeKeyCount =
+    sizeof(kSoundCategoryRangeKeys) / sizeof(kSoundCategoryRangeKeys[0]);
+
+// Emit one audio configuration value as a Console field, named by the same
+// key the write side addresses it with.
+static void consoleEmitAudioTrackField(uint32_t requestId, const AudioConfig& audio,
+                                       const char* key, const ConsoleRecordSink* sink) {
+    uint16_t value = 0;
+    if (!configAudioGetTrackByKey(audio, key, &value)) {
+        // Unreachable while the tables above hold only keys AUDIO_TRACK_KEYS
+        // declares, which a native test pins. Logged rather than dropped: a
+        // key that stopped resolving would otherwise leave a hole in a read
+        // that still reported ok.
+        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not in the track key map", key);
+        return;
+    }
+    char buf[8] = {};
+    snprintf(buf, sizeof(buf), "%u", (unsigned)value);
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, key, buf);
+    }
+}
+
+// Emit every key in one of the three sets above as its own field.
+static void consoleEmitAudioTrackFieldSet(uint32_t requestId, const char* const* keys, size_t count,
+                                          const ConsoleRecordSink* sink) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    for (size_t i = 0; i < count; ++i) {
+        consoleEmitAudioTrackField(requestId, snap.audio, keys[i], sink);
+    }
+}
+
+// Tokenize and schema-check a write for one of these rows. Returns false once
+// it has already answered the request. Identical sequence to
+// consoleExecuteWifiSettings()'s own opening, factored out because four
+// executors below repeat it verbatim; the secret refusal that section also
+// runs has no counterpart here (no audio parameter is a secret, and none is
+// registry write_excluded).
+static bool consoleParseAudioConfigWrite(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                         char* rawArgs, ConsoleArgs* outArgs,
+                                         const ConsoleRecordSink* sink) {
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, outArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return false;
+    }
+    if (outArgs->count == 0) {
+        // rawArgs held non-whitespace but tokenized to nothing - malformed,
+        // not a silent read (the same rule consoleWriteScalarConfigField()
+        // and consoleExecuteWifiSettings() apply).
+        consoleEmitArgParseError(requestId, CONSOLE_ARGS_PARSE_MALFORMED, sink);
+        return false;
+    }
+
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schema =
+        consoleValidateArgsAgainstSchema(entry->params, *outArgs, badKey, sizeof(badKey));
+    if (schema != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = CONSOLE_REASON_OUT_OF_RANGE;
+        if (schema == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY) {
+            reason = CONSOLE_REASON_UNKNOWN_ARGUMENT;
+        } else if (schema == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED) {
+            reason = CONSOLE_REASON_MISSING_ARGUMENT;
+        }
+        consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
+        return false;
+    }
+    return true;
+}
+
+// Answer a Commit Step that could not reach NVS. "A failed NVS write is an
+// explicit error" (#226), the same shape every other config write in this
+// module uses: no dedicated persistence-failure token exists in the
+// hand-maintained ConsoleReason set (include/console_module.h) and none is
+// added for these call sites.
+static void consoleAnswerAudioCommitFailure(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
+// Answer a write that arrived while another config writer held the window.
+static void consoleAnswerConfigWriteBusy(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                             CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+    }
+}
+
+// Bridges a Console write onto audioTracksApply()'s two parameter names.
+// `fixedKey` is set for the five rows whose operation name IS the key it
+// writes (sound.config.random-min and friends), so those rows take only
+// `track=` and cannot address any other field; it is NULL for the two
+// aggregate rows, where the operator supplies `key=` from the enum their
+// registry schema declares and the row's identity is that key set.
+struct AudioTracksArg {
+    const ConsoleArgs* args;
+    const char* fixedKey;
+};
+
+static const char* consoleAudioTracksParamGet(void* ctx, const char* name) {
+    const AudioTracksArg* adapter = static_cast<const AudioTracksArg*>(ctx);
+    if (adapter->fixedKey != nullptr && strcmp(name, "key") == 0) {
+        return adapter->fixedKey;
+    }
+    return consoleArgsFind(*adapter->args, name);
+}
+
+// The shared write half of every audioTracksApply row. The config write lock
+// spans the snapshot read, the core and the Commit Step for the reason
+// s_consoleConfigApplyResult's declaration gives above: audioTracksCommitApplied()
+// read-modify-writes the shared config cache and then writes NVS, so an
+// interleaved config write on any adapter would lose one of the two updates.
+// Reading the snapshot outside the guard would reopen that window one
+// statement earlier.
+static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                         const char* fixedKey, const ConsoleArgs& args,
+                                         const ConsoleRecordSink* sink) {
+    AudioTracksArg adapter{&args, fixedKey};
+    ConfigParamSource params;
+    params.ctx = &adapter;
+    params.get = consoleAudioTracksParamGet;
+
+    // ~190 B, unlike ConfigApplyResult's ~2.5 KB - small enough to be an
+    // ordinary local on the Console task's stack, so it needs neither a
+    // module static nor the sharing hazard one would bring (pin fact 4).
+    AudioTracksApplyResult result;
+    AudioTracksCommitOutcome commit;
+    bool applyHadError = false;
+    {
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        audioTracksApply(params, consoleAudioCatalogSupported(), &working, &result);
+        applyHadError = result.error.hasError;
+        if (!applyHadError) {
+            commit = audioTracksCommitApplied(&working, result);
+        }
+    }  // guard released here, after the Commit Step's last shared-state write
+
+    if (applyHadError) {
+        // The core reports its refusal as a human sentence, not a field id
+        // (its contract; POST /api/audio/tracks renders it verbatim). For a
+        // row whose key is fixed there is exactly one operator-supplied
+        // field to name, and for the aggregate rows the failure can be
+        // either the key or the value, so `track` is named only when the
+        // operator supplied a key the core accepted.
+        consoleEmitArgFailure(requestId, entry->name,
+                              (fixedKey != nullptr) ? "track" : "key",
+                              CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (!commit.ok) {
+        consoleAnswerAudioCommitFailure(requestId, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        // A track assignment takes effect for the next play, with no reboot
+        // owed and nothing staged - `applied`, the same outcome every other
+        // live, persisted config value in this module reports.
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
+// One config row that reads and writes a single audio field addressed by a
+// key the operation name fixes.
+struct ConsoleAudioTrackKeyRow {
+    const char* operationName;
+    const char* audioKey;
+};
+
+static const ConsoleAudioTrackKeyRow g_audioTrackKeyConfigRows[] = {
+    {"sound.config.random-min", "rand_min"},
+    {"sound.config.random-max", "rand_max"},
+    {"sound.config.startup-track", "startup"},
+    {"sound.config.boot-complete-track", "sys_boot"},
+    {"sound.config.network-down-track", "sys_net_down"},
+};
+static const size_t kAudioTrackKeyConfigRowCount =
+    sizeof(g_audioTrackKeyConfigRows) / sizeof(g_audioTrackKeyConfigRows[0]);
+
+static const ConsoleAudioTrackKeyRow* consoleFindAudioTrackKeyRow(const char* canonicalName) {
+    for (size_t i = 0; i < kAudioTrackKeyConfigRowCount; ++i) {
+        if (strcmp(g_audioTrackKeyConfigRows[i].operationName, canonicalName) == 0) {
+            return &g_audioTrackKeyConfigRows[i];
+        }
+    }
+    return nullptr;
+}
+
+static void consoleExecuteAudioTrackKeyConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                              const char* audioKey, char* rawArgs,
+                                              const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        consoleEmitAudioTrackFieldSet(requestId, &audioKey, 1, sink);
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    if (!consoleParseAudioConfigWrite(requestId, entry, rawArgs, &parsedArgs, sink)) {
+        return;
+    }
+    consoleWriteAudioTracksField(requestId, entry, audioKey, parsedArgs, sink);
+}
+
+// sound.config.track-assignments / sound.config.system-track-assignments: the
+// two aggregate rows. Read lists that row's whole key set; write sets one of
+// them, which is POST /api/audio/tracks' own one-key-per-request contract -
+// not an adapter-side batch, and not a widening of it. A bulk write could not
+// be offered here even if it were wanted: CONSOLE_ARGS_MAX is 8 key=value
+// pairs (include/console_args.h) against these rows' 20 and 7 fields.
+static void consoleExecuteAudioTrackSetConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                              const char* const* keys, size_t keyCount,
+                                              char* rawArgs, const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        consoleEmitAudioTrackFieldSet(requestId, keys, keyCount, sink);
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    if (!consoleParseAudioConfigWrite(requestId, entry, rawArgs, &parsedArgs, sink)) {
+        return;
+    }
+    consoleWriteAudioTracksField(requestId, entry, nullptr, parsedArgs, sink);
+}
+
+static void consoleExecuteSoundTrackAssignments(uint32_t requestId,
+                                                const ConsoleCatalogEntry* entry, char* rawArgs,
+                                                ConsoleCommandSource source,
+                                                const ConsoleRecordSink* sink) {
+    (void)source;  // audioTracksCommitApplied() takes no CommandSource - the REST handler
+                   // it mirrors does not attribute this NVS write to a source either.
+    consoleExecuteAudioTrackSetConfig(requestId, entry, kSoundNamedTrackKeys,
+                                      kSoundNamedTrackKeyCount, rawArgs, sink);
+}
+
+static void consoleExecuteSoundSystemTrackAssignments(uint32_t requestId,
+                                                      const ConsoleCatalogEntry* entry,
+                                                      char* rawArgs, ConsoleCommandSource source,
+                                                      const ConsoleRecordSink* sink) {
+    (void)source;  // as above
+    consoleExecuteAudioTrackSetConfig(requestId, entry, kSoundSystemTrackKeys,
+                                      kSoundSystemTrackKeyCount, rawArgs, sink);
+}
+
+// sound.config.category-ranges: lo_key=/hi_key=/lo=/hi= through
+// audioCategoryRangeApply() and audioCategoryRangeCommitApplied() - the same
+// pair handleAudioCategoryRangePost() runs, and the same pair
+// sound.action.set-category-range already reaches from the Console
+// (include/console_direct_action_sound.h). This row is that action's
+// config-typed view: identical parameters, plus the read the action row has
+// no way to offer.
+static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                              char* rawArgs, ConsoleCommandSource source,
+                                              const ConsoleRecordSink* sink) {
+    (void)source;  // audioCategoryRangeCommitApplied() takes no CommandSource either.
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        consoleEmitAudioTrackFieldSet(requestId, kSoundCategoryRangeKeys,
+                                      kSoundCategoryRangeKeyCount, sink);
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    if (!consoleParseAudioConfigWrite(requestId, entry, rawArgs, &parsedArgs, sink)) {
+        return;
+    }
+
+    AudioCategoryRangeApplyResult result;
+    AudioCategoryRangeCommitOutcome commit;
+    bool applyHadError = false;
+    {
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        audioCategoryRangeApply(consoleArgsAsParamSource(parsedArgs), consoleAudioCatalogSupported(),
+                                &working, &result);
+        applyHadError = result.error.hasError;
+        if (!applyHadError) {
+            commit = audioCategoryRangeCommitApplied(&working, result);
+        }
+    }  // guard released here
+
+    if (applyHadError) {
+        // Any of: an unusable lo_key/hi_key pair, an out-of-range bound, or
+        // lo>hi. One undifferentiated `invalid`, for the reason
+        // consoleExecuteSoundSetCategoryRange() gives for the identical core:
+        // a multi-field range rule has no single attributable argument.
+        consoleEmitArgFailure(requestId, entry->name, "lo_key", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (!commit.ok) {
+        consoleAnswerAudioCommitFailure(requestId, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
+// sound.config.mood-category-map: quiet=/mid=/full=/awakeplus= through
+// audioMoodMapApply() and audioMoodMapCommitApplied(). Same relationship to
+// sound.action.set-mood-map as the row above has to
+// sound.action.set-category-range, and the same registry schema - this row's
+// params: predate this ticket and are reused unchanged, ranges included
+// (0-4095 is MOOD_CATEGORY_MASK_MAX, so the schema and the core agree by
+// construction rather than by a second rule).
+//
+// This core touches neither the config cache nor a ConfigSnapshot: its Commit
+// Step calls configUpdateAudioMoodMasks(), which bundles validate+apply+persist
+// for one atomic write (include/api_audio_mood_map_apply.h). The write lock is
+// still taken - the NVS namespace and the mood masks inside it are the same
+// shared store every other config writer here serializes on.
+static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                               char* rawArgs, ConsoleCommandSource source,
+                                               const ConsoleRecordSink* sink) {
+    (void)source;  // audioMoodMapCommitApplied() takes no CommandSource either.
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        // Masked exactly as handleAudioMoodMapGet() masks them, so the
+        // Console read and GET /api/audio/mood-map answer the same number for
+        // the same stored word.
+        const uint16_t values[] = {
+            (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX),
+            (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX),
+            (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX),
+            (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX),
+        };
+        // GET /api/audio/mood-map's JSON keys verbatim
+        // (formatMoodCategoryMapJson(), include/mood_sound_mapping.h), which
+        // are also this row's registry param names and this core's parameter
+        // names - one vocabulary across the read, the write and REST.
+        static const char* const kMoodMapKeys[] = {"quiet", "mid", "full", "awakeplus"};
+
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+            char buf[8] = {};
+            snprintf(buf, sizeof(buf), "%u", (unsigned)values[i]);
+            if (sink->onRecordField) {
+                sink->onRecordField(requestId, kMoodMapKeys[i], buf);
+            }
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    if (!consoleParseAudioConfigWrite(requestId, entry, rawArgs, &parsedArgs, sink)) {
+        return;
+    }
+
+    AudioMoodMapApplyResult result;
+    AudioMoodMapCommitOutcome commit;
+    bool applyHadError = false;
+    {
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        audioMoodMapApply(consoleArgsAsParamSource(parsedArgs), &result);
+        applyHadError = result.error.hasError;
+        if (!applyHadError) {
+            commit = audioMoodMapCommitApplied(result);
+        }
+    }  // guard released here
+
+    if (applyHadError) {
+        // All four fields are required with range 0-4095 in the registry
+        // schema, so the schema check above already refused everything this
+        // core can refuse - handled explicitly rather than assumed away, the
+        // same way consoleExecuteSoundSetMoodMap() handles its own.
+        consoleEmitArgFailure(requestId, entry->name, "quiet", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (!commit.ok) {
+        consoleAnswerAudioCommitFailure(requestId, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
+// The rows above that carry their own argument set, rather than having their
+// key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
+// Same executor signature as g_scalarConfigExecutors[] so the cascade below
+// dispatches both the same way; a separate table because these are grouped
+// writes through an audio core, not single-field writes through configApply().
+static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
+    {"sound.config.track-assignments", consoleExecuteSoundTrackAssignments},
+    {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
+    {"sound.config.category-ranges", consoleExecuteSoundCategoryRanges},
+    {"sound.config.mood-category-map", consoleExecuteSoundMoodCategoryMap},
+};
+static const size_t kAudioConfigExecutorCount =
+    sizeof(g_audioConfigExecutors) / sizeof(g_audioConfigExecutors[0]);
+
+static ConsoleScalarConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
+    for (size_t i = 0; i < kAudioConfigExecutorCount; ++i) {
+        if (strcmp(g_audioConfigExecutors[i].operationName, canonicalName) == 0) {
+            return g_audioConfigExecutors[i].executor;
+        }
+    }
+    return nullptr;
 }
 
 // =============================================================================
@@ -2455,6 +3004,25 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
+            // sound.config.* - the nine rows whose write path is one of the
+            // three audio Apply Cores (#226). Two tables, because the rows
+            // split two ways: those whose operation name fixes the audio key
+            // they address, and those that carry their own argument set.
+            const ConsoleAudioTrackKeyRow* audioTrackKeyRow =
+                (entry != nullptr) ? consoleFindAudioTrackKeyRow(entry->name) : nullptr;
+            if (audioTrackKeyRow != nullptr) {
+                consoleExecuteAudioTrackKeyConfig(request->requestId, entry,
+                                                  audioTrackKeyRow->audioKey, rawArgs, sink);
+                break;
+            }
+
+            ConsoleScalarConfigExecutorFn audioExecutor =
+                (entry != nullptr) ? consoleFindAudioConfigExecutor(entry->name) : nullptr;
+            if (audioExecutor != nullptr) {
+                audioExecutor(request->requestId, entry, rawArgs, request->source, sink);
+                break;
+            }
+
             ConsoleScalarConfigExecutorFn scalarExecutor =
                 (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
             if (scalarExecutor != nullptr) {
@@ -2462,12 +3030,10 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
-            // Every other type=config row not yet added as a row above (the
-            // remaining scalar entries with no real Apply Core to reuse -
-            // sound.config.volume, sound.config.mood-interval-*, see this
-            // section's own header comment - or the other grouped writes,
-            // audio and rc-map, whose own Apply Cores no ticket has pointed
-            // this dispatch at yet) is not wired.
+            // Every other type=config row not yet added as a row above is not
+            // wired. sound.config.volume is the one such row left after this
+            // ticket's audio-core rows landed above; it reaches its own
+            // Commit Step in the next slice.
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);

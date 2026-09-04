@@ -4039,6 +4039,259 @@ void test_estop_latched_after_a_successful_run_changes_the_execution_answer() {
 }
 
 // =============================================================================
+// sound.config.* - the nine rows whose write path is an audio Apply Core (#226)
+//
+// Driven through consoleExecuteCommand() - the entry point both adapters call
+// - against the REAL cores and Commit Steps: src/web/api_audio.cpp and all
+// three api_audio_*_apply.cpp are in [env:native]'s build_src_filter, so
+// audioTracksApply()/audioTracksCommitApplied() here are the same functions
+// handleAudioTracksPost() runs, not stand-ins. Each write is read back out of
+// the config cache the Commit Step writes, so "went through the core" is a
+// checked claim and not a structural one.
+// =============================================================================
+
+static void seedAudioTrack(const char* key, uint16_t value) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_TRUE_MESSAGE(configAudioSetTrackByKey(&snap.audio, key, value),
+                             "test seed used a key AUDIO_TRACK_KEYS does not declare");
+    configCacheApply(snap);
+}
+
+static uint16_t audioTrackValue(const char* key) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    uint16_t value = 0;
+    TEST_ASSERT_TRUE_MESSAGE(configAudioGetTrackByKey(snap.audio, key, &value),
+                             "read-back used a key AUDIO_TRACK_KEYS does not declare");
+    return value;
+}
+
+void test_sound_config_random_min_reads_the_stored_bound() {
+    seedAudioTrack("rand_min", 12);
+
+    runQuery("sound.config.random-min");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT(1, g_cap.fieldCount);
+    // The field name is GET /api/audio/tracks' own JSON key, which is also
+    // the key the write side addresses (docs/console-protocol.md s.3.5).
+    TEST_ASSERT_EQUAL_STRING("12", capturedValue("rand_min"));
+}
+
+void test_sound_config_random_min_write_reaches_the_tracks_core() {
+    seedAudioTrack("rand_min", 12);
+
+    runQuery("sound.config.random-min track=44");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(44, audioTrackValue("rand_min"));
+}
+
+// The core is the only gate on the value, not a copy of its rules in this
+// module: these two rows take the identical argument and get opposite
+// verdicts, because audioTracksApply()'s zero-allowed key list contains
+// sys_boot and not startup (src/web/api_audio_tracks_apply.cpp). No
+// adapter-side check could tell them apart without duplicating that list.
+void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
+    seedAudioTrack("startup", 5);
+
+    runQuery("sound.config.startup-track track=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(5, audioTrackValue("startup"),
+                                     "a refused write must not have reached the config cache");
+}
+
+void test_sound_config_boot_complete_track_accepts_zero_the_way_rest_does() {
+    seedAudioTrack("sys_boot", 5);
+
+    runQuery("sound.config.boot-complete-track track=0");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(0, audioTrackValue("sys_boot"));
+}
+
+void test_sound_config_network_down_track_write_reaches_the_tracks_core() {
+    seedAudioTrack("sys_net_down", 1);
+
+    runQuery("sound.config.network-down-track track=77");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(77, audioTrackValue("sys_net_down"));
+}
+
+// A row whose operation name fixes the key it writes cannot be pointed at
+// another field: `key` is not in its registry schema at all.
+void test_sound_config_fixed_key_row_refuses_a_key_argument() {
+    runQuery("sound.config.random-min key=scream track=3");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("key", capturedValue("argument"));
+}
+
+// No widening: bank/page are POST /api/audio/tracks' optional CHIRP-binding
+// extension and are in no Console row's schema, so they are refused before a
+// core sees them.
+void test_sound_config_track_rows_refuse_the_chirp_binding_extension() {
+    runQuery("sound.config.random-min track=3 bank=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bank", capturedValue("argument"));
+}
+
+void test_sound_config_track_assignments_reads_every_named_track() {
+    seedAudioTrack("scream", 21);
+    seedAudioTrack("pbjtime", 34);
+
+    runQuery("sound.config.track-assignments");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(20, g_cap.fieldCount,
+                                  "the row's read must list its whole key set");
+    TEST_ASSERT_EQUAL_STRING("21", capturedValue("scream"));
+    TEST_ASSERT_EQUAL_STRING("34", capturedValue("pbjtime"));
+}
+
+void test_sound_config_track_assignments_write_reaches_the_tracks_core() {
+    seedAudioTrack("leia", 3);
+
+    runQuery("sound.config.track-assignments key=leia track=88");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(88, audioTrackValue("leia"));
+}
+
+// The two aggregate rows are scoped by the key enum their registry schema
+// declares, so the named-track row cannot write a system track and vice
+// versa - the Console offers a subset of what the one REST route accepts,
+// never a superset.
+void test_sound_config_track_assignments_refuses_a_system_key() {
+    seedAudioTrack("sys_boot", 4);
+
+    runQuery("sound.config.track-assignments key=sys_boot track=9");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(4, audioTrackValue("sys_boot"),
+                                     "an out-of-scope key must not reach the core");
+}
+
+void test_sound_config_system_track_assignments_reads_and_writes() {
+    seedAudioTrack("sys_drv_on", 6);
+
+    runQuery("sound.config.system-track-assignments");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT(7, g_cap.fieldCount);
+    TEST_ASSERT_EQUAL_STRING("6", capturedValue("sys_drv_on"));
+
+    runQuery("sound.config.system-track-assignments key=sys_drv_on track=19");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(19, audioTrackValue("sys_drv_on"));
+}
+
+void test_sound_config_category_ranges_reads_all_twelve_pairs() {
+    seedAudioTrack("snd_cat_gen_lo", 2);
+    seedAudioTrack("snd_cat_whis_hi", 300);
+
+    runQuery("sound.config.category-ranges");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    // 24 fields plus begin+end is 26 records - inside the browser adapter's
+    // CONSOLE_RESPONSE_RECORDS_MAX of 32 (src/web/api_console.cpp).
+    TEST_ASSERT_EQUAL_INT(24, g_cap.fieldCount);
+    TEST_ASSERT_EQUAL_STRING("2", capturedValue("snd_cat_gen_lo"));
+    TEST_ASSERT_EQUAL_STRING("300", capturedValue("snd_cat_whis_hi"));
+}
+
+void test_sound_config_category_ranges_write_reaches_the_category_core() {
+    runQuery("sound.config.category-ranges lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=5 hi=60");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT16(5, audioTrackValue("snd_cat_gen_lo"));
+    TEST_ASSERT_EQUAL_UINT16(60, audioTrackValue("snd_cat_gen_hi"));
+}
+
+// lo>hi is a grouped rule with no single attributable argument, and it lives
+// in the core - this module never re-tests it.
+void test_sound_config_category_ranges_refuses_an_inverted_pair() {
+    seedAudioTrack("snd_cat_hap_lo", 10);
+    seedAudioTrack("snd_cat_hap_hi", 20);
+
+    runQuery("sound.config.category-ranges lo_key=snd_cat_hap_lo hi_key=snd_cat_hap_hi lo=90 hi=8");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT16(10, audioTrackValue("snd_cat_hap_lo"));
+    TEST_ASSERT_EQUAL_UINT16(20, audioTrackValue("snd_cat_hap_hi"));
+}
+
+void test_sound_config_mood_category_map_reads_the_four_masks() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.audio.snd_moodcat_quiet = 0x001;
+    snap.audio.snd_moodcat_mid = 0x012;
+    snap.audio.snd_moodcat_full = 0x123;
+    snap.audio.snd_moodcat_awakeplus = 0xFFF;
+    configCacheApply(snap);
+
+    runQuery("sound.config.mood-category-map");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT(4, g_cap.fieldCount);
+    TEST_ASSERT_EQUAL_STRING("1", capturedValue("quiet"));
+    TEST_ASSERT_EQUAL_STRING("18", capturedValue("mid"));
+    TEST_ASSERT_EQUAL_STRING("291", capturedValue("full"));
+    TEST_ASSERT_EQUAL_STRING("4095", capturedValue("awakeplus"));
+}
+
+void test_sound_config_mood_category_map_write_reaches_the_mood_map_core() {
+    runQuery("sound.config.mood-category-map quiet=1 mid=2 full=3 awakeplus=4");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT16(1, snap.audio.snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(2, snap.audio.snd_moodcat_mid);
+    TEST_ASSERT_EQUAL_UINT16(3, snap.audio.snd_moodcat_full);
+    TEST_ASSERT_EQUAL_UINT16(4, snap.audio.snd_moodcat_awakeplus);
+}
+
+// All four masks are required as a set - a partial write is not a state the
+// mood map has, the same grouped rule wifi.config.settings enforces.
+void test_sound_config_mood_category_map_requires_all_four_masks() {
+    runQuery("sound.config.mood-category-map quiet=1 mid=2");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
+// Every one of these rows answers a bare read, which is what takes them out
+// of the executor-not-ready count the ticket closes on.
+void test_sound_config_audio_core_rows_all_answer_a_read() {
+    static const char* const kRows[] = {
+        "sound.config.random-min",        "sound.config.random-max",
+        "sound.config.startup-track",     "sound.config.boot-complete-track",
+        "sound.config.network-down-track", "sound.config.track-assignments",
+        "sound.config.system-track-assignments", "sound.config.category-ranges",
+        "sound.config.mood-category-map",
+    };
+    for (size_t i = 0; i < sizeof(kRows) / sizeof(kRows[0]); ++i) {
+        runQuery(kRows[i]);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome, kRows[i]);
+        TEST_ASSERT_TRUE_MESSAGE(g_cap.fieldCount > 0, kRows[i]);
+    }
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -4162,6 +4415,24 @@ int main(int, char**) {
     RUN_TEST(test_config_write_reports_busy_when_the_mutex_is_already_held);
     RUN_TEST(test_config_write_releases_the_mutex_after_a_successful_write);
     RUN_TEST(test_config_write_rejected_before_apply_never_touches_the_mutex);
+    RUN_TEST(test_sound_config_random_min_reads_the_stored_bound);
+    RUN_TEST(test_sound_config_random_min_write_reaches_the_tracks_core);
+    RUN_TEST(test_sound_config_startup_track_rejects_zero_the_way_rest_does);
+    RUN_TEST(test_sound_config_boot_complete_track_accepts_zero_the_way_rest_does);
+    RUN_TEST(test_sound_config_network_down_track_write_reaches_the_tracks_core);
+    RUN_TEST(test_sound_config_fixed_key_row_refuses_a_key_argument);
+    RUN_TEST(test_sound_config_track_rows_refuse_the_chirp_binding_extension);
+    RUN_TEST(test_sound_config_track_assignments_reads_every_named_track);
+    RUN_TEST(test_sound_config_track_assignments_write_reaches_the_tracks_core);
+    RUN_TEST(test_sound_config_track_assignments_refuses_a_system_key);
+    RUN_TEST(test_sound_config_system_track_assignments_reads_and_writes);
+    RUN_TEST(test_sound_config_category_ranges_reads_all_twelve_pairs);
+    RUN_TEST(test_sound_config_category_ranges_write_reaches_the_category_core);
+    RUN_TEST(test_sound_config_category_ranges_refuses_an_inverted_pair);
+    RUN_TEST(test_sound_config_mood_category_map_reads_the_four_masks);
+    RUN_TEST(test_sound_config_mood_category_map_write_reaches_the_mood_map_core);
+    RUN_TEST(test_sound_config_mood_category_map_requires_all_four_masks);
+    RUN_TEST(test_sound_config_audio_core_rows_all_answer_a_read);
     RUN_TEST(test_config_executor_not_ready_count_report);
 
     RUN_TEST(test_wifi_settings_read_reports_the_saved_posture_and_no_password);

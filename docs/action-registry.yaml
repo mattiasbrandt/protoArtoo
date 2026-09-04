@@ -1863,6 +1863,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: cfg_sndRandMin
   executor: audioTracksApply
 - name: sound.config.random-max
@@ -1879,6 +1883,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: cfg_sndRandMax
   executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
@@ -1959,6 +1967,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_startup
   executor: audioTracksApply
 - name: sound.config.boot-complete-track
@@ -1975,6 +1987,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_sys_boot
   executor: audioTracksApply
 
@@ -1991,6 +2007,10 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_sys_netdown
   executor: audioTracksApply
 - name: sound.config.track-assignments
@@ -2007,6 +2027,34 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: key
+    type: string
+    values:
+    - scream
+    - faint
+    - leia
+    - cantina_s
+    - sw_theme
+    - imp_march
+    - cantina_l
+    - startup
+    - doodoo
+    - failure
+    - disco
+    - mahna
+    - inlove
+    - macho
+    - gangnam
+    - uptown
+    - celebr
+    - stayin
+    - harlem
+    - pbjtime
+    required: true
+  - name: track
+    type: uint16
+    required: true
   nvs_keys:
   - snd_scream
   - snd_faint
@@ -2043,6 +2091,21 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: key
+    type: string
+    values:
+    - sys_boot
+    - sys_mode_n
+    - sys_mode_s
+    - sys_mode_t
+    - sys_drv_on
+    - sys_dome_on
+    - sys_net_down
+    required: true
+  - name: track
+    type: uint16
+    required: true
   nvs_keys:
   - snd_sys_boot
   - snd_sys_mode_n
@@ -2066,6 +2129,19 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: lo_key
+    type: string
+    required: true
+  - name: hi_key
+    type: string
+    required: true
+  - name: lo
+    type: uint16
+    required: true
+  - name: hi
+    type: uint16
+    required: true
   nvs_keys:
   - snd_cat_gen_lo
   - snd_cat_gen_hi

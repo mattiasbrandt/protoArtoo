@@ -159,15 +159,12 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
     }
 }
 
-// Reproduces api_audio.cpp's anonymous-namespace audioCatalogSupported()
-// (internal linkage - unreachable from here, a second translation unit)
-// rather than exporting a REST-private helper, the same "read their logic,
-// call their shared functions" precedent consoleExecuteSoundPlayTrack()
-// above already set for isSleepModeActive() (also private to that same
-// anonymous namespace).
-static bool consoleAudioCatalogSupported() {
-    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
-}
+// consoleAudioCatalogSupported() used to live here. It moved to
+// src/console/console_module.cpp when #226's sound.config.* executors became
+// its second caller - that file's header comment lists the small
+// cross-cutting helpers every domain's bodies call as belonging there, and
+// this one now is one. The bodies below still see it by ordinary
+// same-translation-unit visibility.
 
 // Shared body for every zero-argument $-letter dollar shortcut this file
 // wires (named-track plays, quiet, random-on/off, volume shortcuts): the
