@@ -603,9 +603,9 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // VLA, not alloca: every frame on the chain is reported fixed, and the only
 // cycles the walk cuts sit in the ESP-IDF heap and log tail underneath it -- a
 // cut edge makes the reported total a LOWER bound, so it cannot be where the
-// number came from. Three nested frames on the config-write path each carry a
+// number came from. Three nested frames on the config-write path each carried a
 // ConfigSnapshot (944 B) by value --
-// consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it gets
+// consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it got
 // back (944 + 948 in one frame), and commandedSetStationary's `cfg` -- on top of
 // consoleExecuteCommand's own 1888 B and the ~2.3 KB newlib tail that every
 // PA_LOG_* from this task pays through embedded-cli's print path.
@@ -620,40 +620,59 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
 //
 // chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame
-// (8608 + 320 + 80 on ESP32; 8688 + 336 + 96 on ESP32-P4). embeddedCliProcess's
-// frame already contains parseCommand and onControlInput, which GCC inlines into
-// it -- both are ABSENT as symbols, which is what confirms it rather than a
-// missing measurement.
+// (8608 + 320 + 80 on ESP32; 8688 + 336 + 96 on ESP32-P4 when the panic was
+// diagnosed). embeddedCliProcess's frame already contains parseCommand and
+// onControlInput, which GCC inlines into it -- both are ABSENT as symbols, which
+// is what confirms it rather than a missing measurement.
 //
-// Where on the chain the peak sits, which the bench observed independently: the
-// value reads back unchanged after the reboot, so the frame blows before the NVS
-// write commits. The walk says the same thing -- the deepest point is
+// Where on the chain the peak sat, which the bench observed independently: the
+// value read back unchanged after the reboot, so the frame blew before the NVS
+// write committed. The walk said the same thing -- the deepest point was
 // commandedSetStationary and the log emit under it, which configCommitApplied()
-// reaches before it opens Preferences. No configuration is ever half-applied by
-// this fault.
+// reaches before it opens Preferences. No configuration was ever half-applied by
+// that fault.
 //
-// Why the standard margin here and not a smaller one bought by shrinking the
-// frame: the two shrinks available move the bytes rather than remove them.
-// Hoisting `working` and the commit outcome into the module's existing
-// mutex-guarded static area costs 1892 B of .bss to save 2048 B of stack after
-// the rule: 156 B of DRAM back, bought with nearly all of artoo-esp32's
-// remaining static-RAM budget (107 908 B of 110 000 at the time of writing --
-// 2092 B free, and tools/build_budgets.json is not raised for this).
-// Teaching the shared Commit Step to write its post-commit snapshot
-// back through `working` instead of returning one saves 948 B, but it changes
-// the contract POST /api/config's byte-identical response is pinned to. Removing
-// the copies for real means ConfigSnapshot stops crossing these seams by value,
-// which is a change to the Apply Core contract with its own verification story,
-// not part of fixing the panic. So this stack pays the rule every other stack in
-// this block pays.
+// The raise was the correct first move and was never the resting state: it paid
+// the rule on a chain carrying 1892 B of snapshot copies that did not have to be
+// there. ADR 0011's 2026-09-04 amendment took them out (#269) -- the Commit Step
+// writes its post-commit snapshot back through `working` instead of returning
+// one, and the Commanded Mode setters sync the config cache by field instead of
+// round-tripping the whole snapshot -- and these are the chains re-measured
+// afterwards, by the same stitched invocation above, on the same product images:
+//
+//                   raised   ESP32 chain    ESP32-P4 chain
+//   ConsoleTask     11264/     7568           7552      <- both chips 1.4-1.6 KB
+//                   11776                                  below the raised chain
+//
+// The two frames that lost a snapshot each: consoleWriteScalarConfigField
+// 2064 -> 1104 (1120 on ESP32-P4) and commandedSetStationary 1264 -> 320. The
+// walk's deepest branch is no longer the config write at all -- it now runs
+// through the RC trigger dispatch the Console action executor shares
+// (processTriggerAction and the newlib tail below it), which is why the chain
+// falls by less than the 1904 B those two frames gave back.
+//
+// 7568 * 1.25 = 9460 -> 9728 on ESP32; 7552 * 1.25 = 9440 -> 9728 on ESP32-P4.
+// The two chips land on the same 512-byte step for the first time here, which is
+// coincidence and not a reason to merge the arms: the chains still differ, and
+// the next field on either side moves them independently.
+//
+// Why the standard margin here and not a smaller one: the chains above are LOWER
+// bounds in the same two ways the raised ones were -- objdump emits Xtensa bodies
+// as data, and the walk cuts cycles in the ESP-IDF heap and log tail -- so 25% is
+// buying headroom against what the tool cannot see, not against what it measured.
+// The one shrink that was available and rejected at the time, hoisting `working`
+// and the commit outcome into the module's static area, stays rejected: 1892 B of
+// .bss to save stack was never the trade to make when the copies themselves could
+// go, and they now have.
 //
 // What the rule costs, stated because DomeLinkTask above declines to pay it on
-// artoo-esp32: +6144 B of heap-allocated task stack there (against 42 692 B of
-// measured free heap) and +6656 B on the ESP32-P4. DomeLinkTask's ESP32 arm was
-// held at 6144 because its raise bought margin no measurement could confirm.
-// This is the opposite case -- the under-size is not inferred from a walk that
-// might be over-counting, it is two reboots on two boards -- so the same
-// tight-heap argument points the other way.
+// artoo-esp32: +4608 B of heap-allocated task stack there (against 42 692 B of
+// measured free heap) and +4608 B on the ESP32-P4, both down from the +6144 and
+// +6656 the raise cost. DomeLinkTask's ESP32 arm was held at 6144 because its
+// raise bought margin no measurement could confirm. This is the opposite case --
+// the under-size was not inferred from a walk that might be over-counting, it was
+// two reboots on two boards -- so the same tight-heap argument points the other
+// way.
 //
 // One block for every per-chip task stack. #248 and #250 each added a pair and
 // arrived here by separate branches; keeping two adjacent, identical #if ladders
@@ -668,8 +687,8 @@ constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 9120;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11776;  // 9120 * 1.25 = 11400 -> 11776
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7552;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // 7552 * 1.25 = 9440 -> 9728
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
 constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
@@ -679,8 +698,8 @@ constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 9008;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // 9008 * 1.25 = 11260 -> 11264
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7568;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // 7568 * 1.25 = 9460 -> 9728
 #else
   #error "task stack sizes have no value for this chip target"
 #endif
