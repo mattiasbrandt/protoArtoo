@@ -3242,3 +3242,43 @@ const ConsoleCatalogEntry* consoleCatalogFindByName(const char* name) {
 size_t consoleCatalogGetCount(void) {
     return g_catalogCount;
 }
+
+// =============================================================================
+// Named Body/Dome Sequences (registry marcduino_cmd, literal DM:<NAME> only)
+// =============================================================================
+
+typedef struct {
+    const char* operationName;
+    const char* sequence;
+} ConsoleSequenceRow;
+
+static const ConsoleSequenceRow g_sequenceRows[] = {
+    {"dome.seq.vader", "DM:VADER"},
+    {"dome.seq.hello", "DM:HELLO"},
+    {"dome.seq.nod", "DM:NOD"},
+    {"dome.seq.flutter", "DM:FLUTTER"},
+    {"dome.seq.bloom", "DM:BLOOM"},
+    {"dome.seq.leia", "DM:LEIA"},
+    {"dome.seq.alarm", "DM:ALARM"},
+    {"dome.seq.heart", "DM:HEART"},
+    {"dome.seq.reset", "DM:RESET"},
+    {"dome.seq.pies", "DM:PIES"},
+    {"dome.seq.low", "DM:LOW"},
+    {"dome.seq.openall", "DM:OPENALL"},
+    {"dome.seq.cantina", "DM:CANTINA"},
+    {"dome.seq.rockmarch", "DM:ROCKMARCH"},
+    {"dome.seq.scream", "DM:SCREAM"},
+    {"dome.seq.overload", "DM:OVERLOAD"},
+};
+
+static const size_t g_sequenceRowCount = sizeof(g_sequenceRows) / sizeof(g_sequenceRows[0]);
+
+const char* consoleCatalogSequenceFor(const char* operationName) {
+    if (!operationName) return NULL;
+    for (size_t i = 0; i < g_sequenceRowCount; ++i) {
+        if (strcmp(g_sequenceRows[i].operationName, operationName) == 0) {
+            return g_sequenceRows[i].sequence;
+        }
+    }
+    return NULL;
+}

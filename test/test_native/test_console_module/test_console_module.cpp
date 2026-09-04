@@ -1138,6 +1138,66 @@ void test_action_dome_sequence_catalog_name_queues_through_the_dispatcher() {
 }
 
 // =============================================================================
+// Named body sequences - the dome.seq.* rows (#221)
+// =============================================================================
+
+// The sixteen dome.seq.* rows name one Factory sequence each. They reach the
+// same sequenceStart() choke point dome.action.dome-sequence above does, with
+// the DM: name read out of the catalog rather than typed as an argument.
+void test_dome_seq_named_row_queues_through_the_dispatcher() {
+    runQuery("dome.seq.vader");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// The operation name is the whole command, so a supplied key is unknown -
+// the same answer every other no-argument action gives, with the key named.
+void test_dome_seq_named_row_rejects_any_argument() {
+    runQuery("dome.seq.hello value=DM:VADER");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+}
+
+// The generator's filter is the thing under test here: consoleCatalogSequenceFor()
+// must answer for a row whose registry marcduino_cmd is a literal DM:<NAME> and
+// must NOT answer for dome.action.dome-sequence, whose marcduino_cmd is the
+// documentation placeholder "DM:<NAME>". A filter that let the placeholder
+// through would hand sequenceStart() the literal string "DM:<NAME>".
+void test_catalog_sequence_lookup_answers_only_for_literal_dm_rows() {
+    TEST_ASSERT_EQUAL_STRING("DM:VADER", consoleCatalogSequenceFor("dome.seq.vader"));
+    TEST_ASSERT_EQUAL_STRING("DM:OVERLOAD", consoleCatalogSequenceFor("dome.seq.overload"));
+    TEST_ASSERT_NULL_MESSAGE(consoleCatalogSequenceFor("dome.action.dome-sequence"),
+                             "the DM:<NAME> placeholder must not read as a sequence name");
+    TEST_ASSERT_NULL(consoleCatalogSequenceFor("system.status.health"));
+    TEST_ASSERT_NULL(consoleCatalogSequenceFor(nullptr));
+}
+
+// Every catalog row the sequence table names dispatches - no name list in
+// console_module.cpp to fall out of step with the registry, so this sweeps
+// the catalog rather than naming the sixteen.
+void test_every_named_sequence_row_dispatches() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int named = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (consoleCatalogSequenceFor(entries[i].name) == nullptr) continue;
+        named++;
+        runQuery(entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_QUEUED, g_cap.outcome, entries[i].name);
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason,
+                                      entries[i].name);
+    }
+
+    TEST_ASSERT_EQUAL_MESSAGE(16, named,
+                              "the registry's literal DM: action rows - update this count "
+                              "with the registry, never to make the row green");
+}
+
+// =============================================================================
 // Argument tokenizer + schema validation wired into real dispatch (#221,
 // ADR 0034, docs/console-protocol.md s.1.2). These run through
 // consoleExecuteCommand() with a real combined "operation args" line, the
@@ -4565,6 +4625,10 @@ int main(int, char**) {
     RUN_TEST(test_action_dome_sequence_rejects_a_value_too_long_for_dome_tx);
     RUN_TEST(test_action_dome_sequence_unknown_dm_name_forwards_to_dome_fallback);
     RUN_TEST(test_action_dome_sequence_catalog_name_queues_through_the_dispatcher);
+    RUN_TEST(test_dome_seq_named_row_queues_through_the_dispatcher);
+    RUN_TEST(test_dome_seq_named_row_rejects_any_argument);
+    RUN_TEST(test_catalog_sequence_lookup_answers_only_for_literal_dm_rows);
+    RUN_TEST(test_every_named_sequence_row_dispatches);
     RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
     RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);

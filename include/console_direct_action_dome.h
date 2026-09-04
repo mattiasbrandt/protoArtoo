@@ -387,6 +387,56 @@ static void consoleExecuteDomeTestSequence(uint32_t requestId, const char* opera
     }
 }
 
+// dome.seq.<name>: the sixteen registry rows that name one body-owned
+// sequence outright (dome.seq.vader ... dome.seq.overload), as opposed to
+// dome.action.dome-sequence above, which takes the name as an argument. They
+// reach the SAME choke point - sequenceStart() (include/sequence_dispatcher.h),
+// which handleDomeCmdPost() also calls for a DM: body (src/web/api_drive.cpp) -
+// with the name the registry already records in `marcduino_cmd:`, read back
+// through consoleCatalogSequenceFor() (include/console_catalog.h).
+//
+// Not registered by name in the table below, and deliberately so: sixteen rows
+// here would be a second list of operation names to keep in step with the
+// registry, which is the shape ADR 0035 deleted from the catalog. The cascade
+// in consoleExecuteCommand() asks the catalog whether an operation names a
+// sequence and calls this when it does, so a seventeenth DM: row added to
+// docs/action-registry.yaml executes with no edit to this file.
+//
+// No arguments: the operation name IS the whole command, so any supplied key
+// is unknown rather than ignored. No estop/sleep/component gate, matching
+// consoleExecuteDomeSequence() above and handleDomeCmdPost() itself - "no
+// widening" cuts both ways, and a guard REST does not apply is not invented
+// here.
+static void consoleExecuteDomeNamedSequence(uint32_t requestId, const char* operationName,
+                                            const ConsoleArgs& args, ConsoleCommandSource source,
+                                            const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    const char* sequence = consoleCatalogSequenceFor(operationName);
+    if (sequence == nullptr) {
+        // Unreachable through the cascade, which only calls this after the
+        // same lookup returned non-NULL. Answered rather than dereferenced so
+        // a future second caller cannot turn a missing row into a crash.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                CONSOLE_REASON_EXECUTOR_NOT_READY);
+        }
+        return;
+    }
+
+    if (!sequenceStart(sequence, consoleCommandSourceFor(source))) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_domeDirectActionExecutors[] = {
     {"dome.action.send-command", consoleExecuteDomeSendCommand},
     {"dome.action.dome-sequence", consoleExecuteDomeSequence},

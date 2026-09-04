@@ -3042,6 +3042,33 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
+            // Named body/dome sequences (the dome.seq.* family), decided by
+            // the CATALOG and nothing else - the same rule read_only follows
+            // in the config case below. consoleCatalogSequenceFor()
+            // (include/console_catalog.h) answers with the literal DM:<NAME>
+            // the registry's own `marcduino_cmd:` records for that row, so
+            // this dispatcher carries no list of sixteen operation names and
+            // a seventeenth row added to docs/action-registry.yaml executes
+            // with no edit here.
+            //
+            // Placed after the per-domain direct executors so an operation
+            // that has one keeps it: dome.action.dome-sequence's
+            // `marcduino_cmd:` is the placeholder 'DM:<NAME>', not a name -
+            // the generator's filter already excludes it, and this order
+            // means even a future placeholder that slipped through could not
+            // displace a real executor.
+            if (entry != nullptr && consoleCatalogSequenceFor(entry->name) != nullptr) {
+                ConsoleArgs parsedArgs = {};
+                ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+                if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+                    consoleEmitArgParseError(request->requestId, parseStatus, sink);
+                    break;
+                }
+                consoleExecuteDomeNamedSequence(request->requestId, entry->name, parsedArgs,
+                                                request->source, sink);
+                break;
+            }
+
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a

@@ -11,6 +11,7 @@ The catalog is the machine-readable part (names, types, argument keys, availabil
 Help text (description, display_name, parameter schema, executor details) goes into the FS partition.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +30,27 @@ def load_registry(registry_path):
     if not data or 'entries' not in data:
         raise ValueError(f"Invalid registry format in {registry_path}")
     return data['entries']
+
+# A registry `marcduino_cmd:` is prose as often as it is a wire command: it
+# holds documentation placeholders ('DM:<NAME>', '$...', 'M<nn>') and even a
+# sentence ('#PASL (tx), #APSL (rx sync)'). So the raw field must never reach
+# the firmware - only the rows this pattern accepts do, and every one of those
+# is a literal name sequenceStart() (include/sequence_dispatcher.h) can be
+# handed verbatim. The filter lives here, in the generator, so the in-image
+# table carries data the Console can execute without re-deciding what it is.
+NAMED_SEQUENCE_RE = re.compile(r'^DM:[A-Z0-9]+$')
+
+def named_sequence_rows(entries):
+    """Return [(operation name, DM:<NAME>)] for every action row whose
+    marcduino_cmd is a literal body/dome sequence name."""
+    rows = []
+    for entry in entries:
+        if entry.get('type') != 'action':
+            continue
+        cmd = entry.get('marcduino_cmd')
+        if isinstance(cmd, str) and NAMED_SEQUENCE_RE.match(cmd):
+            rows.append((entry['name'], cmd))
+    return rows
 
 def build_rc_token_map(entries):
     """Build a map from operation name to rc_token value.
@@ -146,6 +168,15 @@ const ConsoleCatalogEntry* consoleCatalogFindByName(const char* name);
 
 // Get count of operations
 size_t consoleCatalogGetCount(void);
+
+// Named body/dome sequence for an operation, or NULL when the operation is not
+// one. Generated from the registry's `marcduino_cmd:` for the action rows whose
+// value is a literal DM:<NAME> (the dome.seq.* family) and for no others - the
+// field also carries documentation placeholders and prose, which is why the
+// generator filters and the firmware never sees the raw string. The dispatcher
+// asks this instead of carrying a list of operation names, the same way
+// read_only above keeps the config refusal in the registry.
+const char* consoleCatalogSequenceFor(const char* operationName);
 
 """
 
@@ -478,6 +509,35 @@ size_t consoleCatalogGetCount(void) {
 }
 """
 
+    # Named body/dome sequences: the action rows whose registry marcduino_cmd is
+    # a literal DM:<NAME>. Emitted as its own small table rather than as a field
+    # on every ConsoleCatalogEntry, because only these rows have one and the
+    # field's raw values are not all machine-readable (see NAMED_SEQUENCE_RE).
+    sequence_rows = named_sequence_rows(entries)
+    source += "\n// ============================================================================="
+    source += "\n// Named Body/Dome Sequences (registry marcduino_cmd, literal DM:<NAME> only)"
+    source += "\n// =============================================================================\n\n"
+    source += "typedef struct {\n"
+    source += "    const char* operationName;\n"
+    source += "    const char* sequence;\n"
+    source += "} ConsoleSequenceRow;\n\n"
+    source += "static const ConsoleSequenceRow g_sequenceRows[] = {\n"
+    for name, cmd in sequence_rows:
+        source += f"    {{\"{name}\", \"{cmd}\"}},\n"
+    source += "};\n\n"
+    source += ("static const size_t g_sequenceRowCount = "
+               "sizeof(g_sequenceRows) / sizeof(g_sequenceRows[0]);\n\n")
+    source += """const char* consoleCatalogSequenceFor(const char* operationName) {
+    if (!operationName) return NULL;
+    for (size_t i = 0; i < g_sequenceRowCount; ++i) {
+        if (strcmp(g_sequenceRows[i].operationName, operationName) == 0) {
+            return g_sequenceRows[i].sequence;
+        }
+    }
+    return NULL;
+}
+"""
+
     with open(output_path, 'w') as f:
         f.write(source)
 
@@ -501,6 +561,8 @@ def main():
     # Count build flags for diagnostic output
     build_flag_count = sum(1 for e in entries if e.get('build_flag'))
     print(f"Found {build_flag_count} entries with build_flag")
+
+    print(f"Found {len(named_sequence_rows(entries))} action entries with a literal DM: sequence")
 
     # Generate files
     catalog_h = repo_root / 'include' / 'console_catalog.h'
