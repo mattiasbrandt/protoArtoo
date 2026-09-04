@@ -23,8 +23,13 @@
 // that packet and every packet behind it are discarded until the queue drains
 // again - with no flag, no counter, no callback and nothing a reader can
 // notice afterwards. The Console task empties that queue once per poll of its
-// 10 ms cadence, and USB delivers far more than 256 bytes in 10 ms, so a
-// single host write larger than the queue lost its tail.
+// 10 ms cadence, and one 64-byte USB packet per 1 ms frame - the conservative
+// floor ADR 0036 already reads off this driver for the other direction - puts
+// ~640 bytes into it between two polls, 2.5x what it can hold. So a single
+// host write larger than the queue lost its tail, and tools/console_client.py
+// sends a scripted line in ONE os.write (SerialTransport._write_marked), which
+// is why the bench sheet's `sendlen 260` is one 261-byte burst rather than
+// something the poll can keep up with.
 //
 // WHY THAT TAIL MATTERS MORE THAN ITS BYTES. The tail of a submitted line is
 // its CR, and the CR is the only thing that triggers the serial adapter's
