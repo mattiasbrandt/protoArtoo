@@ -148,6 +148,16 @@ class ImageChains:
             images.append(sur.Image("rom", rom_elf, objdump, arch))
         self.img = images[0]
         self.walker = sur.Walker(images, sur.DEFAULT_PRUNE)
+        # The bodies whose extent the symbol table does not give, so the walker
+        # still reads them "until the next symbol". Those are the only bodies
+        # that can still absorb a literal pool, so a chain running through one
+        # is the only chain whose reproducibility across a relink is not
+        # structurally guaranteed. Named on the row rather than assumed away.
+        self.unsized_names = {
+            self.img.funcs[addr].name
+            for addr in self.img.unsized
+            if addr in self.img.funcs
+        }
 
     def chain_total(self, name: str) -> tuple[int, list[str]]:
         """(worst-case chain from this root, notes). Raises when absent.
@@ -164,7 +174,7 @@ class ImageChains:
             notes.append(
                 f"{name}: {len(cands)} symbols with this name; deepest taken"
             )
-        best = 0
+        best, best_chain = 0, []
         for fn in cands:
             if fn.frame_kind == "undecoded":
                 notes.append(
@@ -172,8 +182,20 @@ class ImageChains:
                     "the recorded walk cannot be reproduced from this image"
                 )
                 continue
-            sub, _, _ = self.walker.depth(self.img, fn)
-            best = max(best, fn.frame + sub)
+            sub, chain, _ = self.walker.depth(self.img, fn)
+            if fn.frame + sub > best:
+                best, best_chain = fn.frame + sub, chain
+        through = sorted(
+            {entry[0] for entry in best_chain if entry[0] in self.unsized_names}
+        )
+        if through:
+            notes.append(
+                f"{name}: the deepest chain runs through {len(through)} symbol(s) "
+                f"carrying no size ({', '.join(through[:3])}"
+                f"{', ...' if len(through) > 3 else ''}), whose extent is read as "
+                "'until the next symbol'; this arm is not structurally protected "
+                "against a relink moving its chain"
+            )
         return best, notes
 
     def own_frame(self, name: str) -> tuple[int, list[str]]:
