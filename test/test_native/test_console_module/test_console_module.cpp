@@ -146,11 +146,18 @@ static void seedTestSeqIndex(const char* name) {
 // =============================================================================
 
 static const int kMaxFields = 24;
+static const int kMaxItems = 8;
 
 struct CapturedRecord {
     char names[kMaxFields][40];
     char values[kMaxFields][160];
     int fieldCount;
+    // item records, for a query that answers with both scalars and a list -
+    // sound.api.get-catalog (#221) is the first. The item-only captures
+    // further down (CapturedLogItems/CapturedSeqItems/CapturedOperationItems)
+    // stay as they are: they exist for queries that emit no fields at all.
+    char items[kMaxItems][96];
+    int itemCount;
     bool beginCalled;
     bool resultCalled;
     bool endCalled;
@@ -172,7 +179,11 @@ static void capField(uint32_t, const char* name, const char* value) {
     g_cap.fieldCount++;
 }
 
-static void capItem(uint32_t, const char*) {}
+static void capItem(uint32_t, const char* value) {
+    if (g_cap.itemCount >= kMaxItems) return;
+    snprintf(g_cap.items[g_cap.itemCount], sizeof(g_cap.items[0]), "%s", value);
+    g_cap.itemCount++;
+}
 
 static void capResult(uint32_t, ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason) {
     g_cap.resultCalled = true;
@@ -316,6 +327,19 @@ void setUp() {
     g_test_audio_dollar_calls = 0;
     g_test_audio_last_dollar[0] = '\0';
     g_test_aux_led_queue_ok = true;
+
+    // #221: the CHIRP catalog rows (sound.api.get-catalog/-refresh-catalog/
+    // -play-banked) gate on the driver's capability word. Default to a
+    // catalog-capable backend so each test states only the thing it is
+    // about; the not-in-this-build path sets it to 0 explicitly.
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_ready = false;
+    g_test_audio_catalog_entry_count = 0;
+    g_test_audio_refresh_catalog_calls = 0;
+    g_test_audio_play_banked_calls = 0;
+    g_test_audio_last_banked_index = 0;
+    g_test_audio_last_banked_bank = 0;
+    g_test_audio_last_banked_page = '\0';
 
     // #222: drive.action.move submits through the REAL arbiter, so the
     // arbiter must be initialized and reset per test the same way
@@ -1135,6 +1159,209 @@ void test_action_dome_sequence_catalog_name_queues_through_the_dispatcher() {
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// =============================================================================
+// The sound.api.* rows (#221)
+// =============================================================================
+
+void test_sound_refresh_catalog_queues_through_the_audio_queue() {
+    runQuery("sound.api.refresh-catalog");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_refresh_catalog_calls);
+}
+
+void test_sound_refresh_catalog_rejects_any_argument() {
+    runQuery("sound.api.refresh-catalog bank=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bank", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_refresh_catalog_calls);
+}
+
+// A backend with no AUDIO_CAP_CATALOG is a compile-time driver choice
+// (PA_AUDIO_DRIVER), which is what not-in-this-build means - the same fact the
+// REST route answers 404 for.
+void test_sound_refresh_catalog_without_a_catalog_backend_is_not_in_this_build() {
+    g_test_audio_capabilities = 0;
+
+    runQuery("sound.api.refresh-catalog");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_refresh_catalog_calls);
+}
+
+// The three values reach audioQueuePlayTrackBanked() unchanged - the same
+// queue call handleAudioPlayBankedPost() makes.
+void test_sound_play_banked_passes_bank_page_index_to_the_queue() {
+    runQuery("sound.api.play-banked bank=3 page=C index=42");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_play_banked_calls);
+    TEST_ASSERT_EQUAL_UINT(3u, g_test_audio_last_banked_bank);
+    TEST_ASSERT_EQUAL_UINT(42u, g_test_audio_last_banked_index);
+    TEST_ASSERT_EQUAL_CHAR('C', g_test_audio_last_banked_page);
+}
+
+void test_sound_play_banked_missing_key_names_it() {
+    runQuery("sound.api.play-banked bank=3 page=C");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("index", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+void test_sound_play_banked_unknown_key_names_it() {
+    runQuery("sound.api.play-banked bank=3 page=C index=42 volume=9");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("volume", capturedValue("argument"));
+}
+
+// bank is uint8 range 1-6 in the registry; the schema, not the executor,
+// refuses 7 - the "type, range, enum" half of this ticket's criterion.
+void test_sound_play_banked_bank_out_of_registry_range_is_refused() {
+    runQuery("sound.api.play-banked bank=7 page=C index=42");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bank", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+// page is an A-Z enum in the registry. `9` is outside it; so is a lower-case
+// letter, which the REST route would have upper-cased - the one recorded
+// narrowing, asserted so it stays deliberate.
+void test_sound_play_banked_page_outside_the_published_enum_is_refused() {
+    runQuery("sound.api.play-banked bank=3 page=9 index=42");
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("page", capturedValue("argument"));
+
+    runQuery("sound.api.play-banked bank=3 page=c index=42");
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("page", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+void test_sound_play_banked_is_blocked_while_sleeping() {
+    robotState.sleepMode = true;
+
+    runQuery("sound.api.play-banked bank=3 page=C index=42");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+// sound.api.get-catalog answers `ready` as a field and one item per entry.
+void test_sound_get_catalog_answers_ready_and_one_item_per_entry() {
+    g_test_audio_catalog_ready = true;
+    g_test_audio_catalog_entry_count = 2;
+    g_test_audio_catalog_entries[0] = AudioCatalogEntry{};
+    g_test_audio_catalog_entries[0].bank = 1;
+    g_test_audio_catalog_entries[0].page = 'A';
+    g_test_audio_catalog_entries[0].index = 7;
+    snprintf(g_test_audio_catalog_entries[0].name,
+             sizeof(g_test_audio_catalog_entries[0].name), "%s", "Alarm");
+    g_test_audio_catalog_entries[1] = AudioCatalogEntry{};
+    g_test_audio_catalog_entries[1].bank = 2;
+    g_test_audio_catalog_entries[1].page = 'B';
+    g_test_audio_catalog_entries[1].index = 9;
+    snprintf(g_test_audio_catalog_entries[1].name,
+             sizeof(g_test_audio_catalog_entries[1].name), "%s", "Chirp");
+
+    runQuery("sound.api.get-catalog");
+
+    TEST_ASSERT_TRUE(g_cap.beginCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("ready"));
+    TEST_ASSERT_EQUAL_INT(2, g_cap.itemCount);
+    TEST_ASSERT_EQUAL_STRING("bank:1 page:A index:7 name:Alarm", g_cap.items[0]);
+    TEST_ASSERT_EQUAL_STRING("bank:2 page:B index:9 name:Chirp", g_cap.items[1]);
+}
+
+// An unenumerated catalog is `ready=false` with no items - which is why the
+// field is there at all: it separates "nothing enumerated yet" from "the
+// backend has no sounds".
+void test_sound_get_catalog_reports_an_unenumerated_catalog_as_not_ready() {
+    runQuery("sound.api.get-catalog");
+
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("ready"));
+    TEST_ASSERT_EQUAL_INT(0, g_cap.itemCount);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+}
+
+void test_sound_get_catalog_without_a_catalog_backend_is_not_in_this_build() {
+    g_test_audio_capabilities = 0;
+
+    runQuery("sound.api.get-catalog");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_IN_THIS_BUILD, g_cap.reason);
+    TEST_ASSERT_EQUAL_INT(0, g_cap.itemCount);
+}
+
+// A status query takes no arguments; the key is named rather than ignored.
+void test_sound_get_catalog_rejects_the_dropped_bank_filter() {
+    runQuery("sound.api.get-catalog bank=1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("bank", capturedValue("argument"));
+}
+
+// Three-way field match for sound.api.get-mood-map: the registry's fields:,
+// formatMoodCategoryMapJson()'s real JSON keys, and the names the executor
+// emitted.
+void test_sound_get_mood_map_three_way_field_match() {
+    MoodCategoryMaskConfig masks{};
+    masks.quiet = 1;
+    masks.mid = 2;
+    masks.full = 3;
+    masks.awakeplus = 4;
+    char json[192];
+    size_t n = formatMoodCategoryMapJson(json, sizeof(json), masks);
+    TEST_ASSERT_LESS_THAN(sizeof(json), n);
+    std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
+
+    std::vector<std::string> registryFields = catalogFieldNames("sound.api.get-mood-map");
+    TEST_ASSERT_TRUE(registryFields == jsonKeys);
+
+    runQuery("sound.api.get-mood-map");
+    TEST_ASSERT_TRUE(registryFields == emittedFieldNames());
+}
+
+// The api-named read and the config-named read are two views of one value and
+// share one emitter, so they must answer identically for the same stored word.
+void test_sound_get_mood_map_matches_the_config_row_for_the_same_state() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.audio.snd_moodcat_quiet = 11;
+    snap.audio.snd_moodcat_mid = 22;
+    snap.audio.snd_moodcat_full = 33;
+    snap.audio.snd_moodcat_awakeplus = 44;
+    configCacheApply(snap);
+
+    runQuery("sound.api.get-mood-map");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("11", capturedValue("quiet"));
+    TEST_ASSERT_EQUAL_STRING("22", capturedValue("mid"));
+    TEST_ASSERT_EQUAL_STRING("33", capturedValue("full"));
+    TEST_ASSERT_EQUAL_STRING("44", capturedValue("awakeplus"));
+
+    runQuery("sound.config.mood-category-map");
+    TEST_ASSERT_EQUAL_STRING("11", capturedValue("quiet"));
+    TEST_ASSERT_EQUAL_STRING("22", capturedValue("mid"));
+    TEST_ASSERT_EQUAL_STRING("33", capturedValue("full"));
+    TEST_ASSERT_EQUAL_STRING("44", capturedValue("awakeplus"));
 }
 
 // =============================================================================
@@ -4629,6 +4856,21 @@ int main(int, char**) {
     RUN_TEST(test_dome_seq_named_row_rejects_any_argument);
     RUN_TEST(test_catalog_sequence_lookup_answers_only_for_literal_dm_rows);
     RUN_TEST(test_every_named_sequence_row_dispatches);
+    RUN_TEST(test_sound_refresh_catalog_queues_through_the_audio_queue);
+    RUN_TEST(test_sound_refresh_catalog_rejects_any_argument);
+    RUN_TEST(test_sound_refresh_catalog_without_a_catalog_backend_is_not_in_this_build);
+    RUN_TEST(test_sound_play_banked_passes_bank_page_index_to_the_queue);
+    RUN_TEST(test_sound_play_banked_missing_key_names_it);
+    RUN_TEST(test_sound_play_banked_unknown_key_names_it);
+    RUN_TEST(test_sound_play_banked_bank_out_of_registry_range_is_refused);
+    RUN_TEST(test_sound_play_banked_page_outside_the_published_enum_is_refused);
+    RUN_TEST(test_sound_play_banked_is_blocked_while_sleeping);
+    RUN_TEST(test_sound_get_catalog_answers_ready_and_one_item_per_entry);
+    RUN_TEST(test_sound_get_catalog_reports_an_unenumerated_catalog_as_not_ready);
+    RUN_TEST(test_sound_get_catalog_without_a_catalog_backend_is_not_in_this_build);
+    RUN_TEST(test_sound_get_catalog_rejects_the_dropped_bank_filter);
+    RUN_TEST(test_sound_get_mood_map_three_way_field_match);
+    RUN_TEST(test_sound_get_mood_map_matches_the_config_row_for_the_same_state);
     RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
     RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);

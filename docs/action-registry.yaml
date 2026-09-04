@@ -1160,9 +1160,16 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
-  description: Return cached CHIRP catalog banks and entries from the active audio backend
+  description: 'Cached CHIRP catalog entries from the active audio backend, one per
+    sound. GET /api/audio/catalog also accepts a bank= filter and returns the bank
+    directory alongside the entries; the Console answers the unfiltered entry list
+    (each entry carries its own bank, so the filter adds nothing a reader cannot do)
+    and no params:, keeping its schema honest about what it runs - type: status
+    entries take no arguments (docs/console-catalog-contributing.md).
+
+    '
   domain: sound
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/audio/catalog
   sse_event: null
@@ -1172,14 +1179,18 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  params:
-  - name: bank
-    type: uint8
-    range:
-    - 1
-    - 6
-    required: false
   nvs_key: null
+  # #221: `ready` is the one scalar top-level key fillCatalogResponse()
+  # (src/web/api_audio.cpp) answers with; `banks` and `entries` are arrays with no
+  # scalar-field shape, so the entries come back as item records beside it - the
+  # `field` + repeated `item` composition docs/console-protocol.md s.3.1 already
+  # defines, not a new record type. AUDIO_CATALOG_MAX_ENTRIES (300,
+  # include/audio_driver.h) bounds the answer by construction, the same way
+  # SEQ_STORE_MAX bounds dome.api.list-sequences, so no paging protocol is needed.
+  # The bank directory stays REST-only: a documented subset, like
+  # dome.api.get-sequence-last-run's.
+  fields:
+  - ready
   executor: audioGetCatalogEntries
 - name: sound.api.refresh-catalog
   display_name: Refresh Catalog
@@ -1262,7 +1273,7 @@ entries:
   display_name: Get Mood Category Map
   description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
   domain: sound
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/audio/mood-map
   sse_event: null
@@ -1273,6 +1284,19 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+  # #221: the api-named READ of the four masks sound.config.mood-category-map
+  # writes - the same two typed views of one value sound.config.volume and
+  # sound.action.set-volume already are. fields: are
+  # formatMoodCategoryMapJson()'s JSON keys verbatim
+  # (include/mood_sound_mapping.h), which are also the write side's registry
+  # param names, so one vocabulary covers REST, the read and the write. Both
+  # Console rows read through one shared emitter (src/console/console_module.cpp)
+  # so the two answers cannot drift apart.
+  fields:
+  - quiet
+  - mid
+  - full
+  - awakeplus
   executor: configCacheRead
 - name: sound.action.set-mood-map
   display_name: Set Mood Category Map

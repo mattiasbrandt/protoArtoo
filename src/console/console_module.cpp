@@ -444,6 +444,49 @@ static ConsoleOperationType consoleGetOperationType(const char* operationName) {
 // executor runs, so each executor only emits fields (and its own onRecordEnd).
 // =============================================================================
 
+// Whether the active audio backend serves a CHIRP catalog. Reproduces
+// api_audio.cpp's anonymous-namespace audioCatalogSupported() (internal
+// linkage - unreachable from a second translation unit) rather than exporting
+// a REST-private helper, the same "read their logic, call their shared
+// functions" precedent the direct-action executors already set for
+// isSleepModeActive(). Lives above the status executors rather than in one
+// domain header because three callers now need it, and the earliest of them -
+// sound.api.get-catalog's status executor below - has to see it first:
+// g_statusExecutors[] takes the address of that executor, so everything it
+// calls must already be declared. The other two are
+// include/console_direct_action_sound.h's sound.action.set-category-range and
+// the sound.config.* rows further down this file.
+static bool consoleAudioCatalogSupported() {
+    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
+// The four per-mood CHIRP category masks, emitted as field records under
+// GET /api/audio/mood-map's own JSON keys (formatMoodCategoryMapJson(),
+// include/mood_sound_mapping.h). Shared by the two Console rows that answer
+// this value - sound.api.get-mood-map (the api-named read) and
+// sound.config.mood-category-map's read branch - so the two cannot drift
+// apart, and masked exactly as handleAudioMoodMapGet() masks them so all
+// three surfaces answer the same number for the same stored word.
+static void consoleEmitMoodCategoryMasks(uint32_t requestId, const ConsoleRecordSink* sink) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    const uint16_t values[] = {
+        (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX),
+        (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX),
+    };
+    static const char* const kMoodMapKeys[] = {"quiet", "mid", "full", "awakeplus"};
+
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)values[i]);
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, kMoodMapKeys[i], buf);
+        }
+    }
+}
+
 static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRecordSink* sink) {
     HealthSnapshot snap = {};
     captureHealthSnapshot(&snap);
@@ -824,6 +867,79 @@ static void consoleExecuteSystemApiGetProfiler(uint32_t requestId, const Console
 }
 #endif  // PA_HEAP_PROFILE
 
+// sound.api.get-mood-map (#221): the api-named READ of the four masks
+// sound.config.mood-category-map writes - two typed views of one value, the
+// same relationship sound.config.volume has to sound.action.set-volume. Both
+// go through consoleEmitMoodCategoryMasks() above, so there is one emitter and
+// no way for the two rows to answer differently.
+static void consoleExecuteSoundApiGetMoodMap(uint32_t requestId, const ConsoleRecordSink* sink) {
+    consoleEmitMoodCategoryMasks(requestId, sink);
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
+// sound.api.get-catalog (#221): the cached CHIRP catalog, read through
+// audioGetCatalogEntries() (include/audio_task.h) - the same accessor
+// handleAudioCatalogGet() hands to its chunked writer (src/web/api_audio.cpp).
+//
+// Answered as one `ready` field followed by one `item` per entry: the
+// composition of the two record types docs/console-protocol.md s.3.1 already
+// defines, not a new shape. `ready` is the only scalar top-level key
+// fillCatalogResponse() emits, and it is load-bearing - without it an empty
+// answer cannot be told apart from a catalog that has not been enumerated yet.
+// The bank directory that REST returns beside the entries stays REST-only, the
+// documented-subset precedent dome.api.get-sequence-last-run set.
+//
+// A backend with no catalog answers not-in-this-build rather than an empty
+// list, matching the REST route's own 404 - see consoleAnswerCatalogUnsupported()
+// (include/console_direct_action_sound.h) for why that is the right token. It
+// is answered here through onRecordEnd rather than that helper's onRecordResult
+// because the cascade has already opened a `begin` record for a query.
+//
+// Bounded by AUDIO_CATALOG_MAX_ENTRIES (300, include/audio_driver.h), so the
+// answer has a fixed ceiling the same way `operations` and system.status.logs
+// do, and needs no paging protocol of its own. The entry table is owned by the
+// audio driver on Core 0 and refreshed only by AudioTask; the count is read
+// once, up front, the same way system.status.logs fixes its own depth.
+static void consoleExecuteSoundApiGetCatalog(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (!consoleAudioCatalogSupported()) {
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                             CONSOLE_REASON_NOT_IN_THIS_BUILD);
+        }
+        return;
+    }
+
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "ready", audioIsCatalogReady() ? "true" : "false");
+    }
+
+    uint16_t count = 0;
+    const AudioCatalogEntry* entries = audioGetCatalogEntries(&count);
+    if (entries != nullptr) {
+        for (uint16_t i = 0; i < count; ++i) {
+            if (sink->onRecordItem) {
+                char itemBuf[96];
+                // fillCatalogResponse()'s own per-entry keys, colon-separated
+                // per field rather than "=" - the same convention
+                // dome.api.list-sequences uses, so an item value can never be
+                // read as a second key=value pair on the wire.
+                snprintf(itemBuf, sizeof(itemBuf), "bank:%u page:%c index:%u name:%s",
+                         (unsigned)entries[i].bank, entries[i].page, (unsigned)entries[i].index,
+                         entries[i].name);
+                sink->onRecordItem(requestId, itemBuf);
+            }
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                         CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -852,6 +968,8 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"dome.api.get-sequence-last-run", consoleExecuteDomeApiGetSequenceLastRun},
     {"dome.api.list-sequences", consoleExecuteDomeApiListSequences},
     {"dome.api.list-builtin-sequences", consoleExecuteDomeApiListBuiltinSequences},
+    {"sound.api.get-mood-map", consoleExecuteSoundApiGetMoodMap},
+    {"sound.api.get-catalog", consoleExecuteSoundApiGetCatalog},
 #if PA_HEAP_PROFILE
     {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
 #endif
@@ -1598,18 +1716,6 @@ static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char*
 // Toggles above; this is a live, non-hardware runtime flag).
 static bool consoleMoodIdValid(uint8_t moodId) {
     return moodId == 10 || moodId == 11 || moodId == 13 || moodId == 14;
-}
-
-// Whether the active audio backend serves a CHIRP catalog. Reproduces
-// api_audio.cpp's anonymous-namespace audioCatalogSupported() (internal
-// linkage - unreachable from a second translation unit) rather than exporting
-// a REST-private helper, the same "read their logic, call their shared
-// functions" precedent the direct-action executors already set for
-// isSleepModeActive(). Lives here rather than in one domain header because
-// two of them need it: include/console_direct_action_sound.h's
-// sound.action.set-category-range and the sound.config.* rows below.
-static bool consoleAudioCatalogSupported() {
-    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 }
 
 // The provenance every shared setter and Commit Step this module calls wants
@@ -2453,33 +2559,16 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
     (void)source;  // audioMoodMapCommitApplied() takes no CommandSource either.
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
     if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        // Masked exactly as handleAudioMoodMapGet() masks them, so the
-        // Console read and GET /api/audio/mood-map answer the same number for
-        // the same stored word.
-        const uint16_t values[] = {
-            (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX),
-            (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX),
-        };
-        // GET /api/audio/mood-map's JSON keys verbatim
-        // (formatMoodCategoryMapJson(), include/mood_sound_mapping.h), which
-        // are also this row's registry param names and this core's parameter
-        // names - one vocabulary across the read, the write and REST.
-        static const char* const kMoodMapKeys[] = {"quiet", "mid", "full", "awakeplus"};
-
+        // One emitter for both typed views of these four masks - this row and
+        // sound.api.get-mood-map (#221). It masks them exactly as
+        // handleAudioMoodMapGet() does and names them with GET
+        // /api/audio/mood-map's own JSON keys, which are also this row's
+        // registry param names: one vocabulary across the read, the write and
+        // REST.
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, entry->name);
         }
-        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
-            char buf[8] = {};
-            snprintf(buf, sizeof(buf), "%u", (unsigned)values[i]);
-            if (sink->onRecordField) {
-                sink->onRecordField(requestId, kMoodMapKeys[i], buf);
-            }
-        }
+        consoleEmitMoodCategoryMasks(requestId, sink);
         if (sink->onRecordEnd) {
             sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
                               CONSOLE_REASON_NONE);

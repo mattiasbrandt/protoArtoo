@@ -56,7 +56,7 @@ sound.action.play-track-sw-theme|Play Star Wars Theme|Play the Star Wars main th
 sound.action.play-track-imperial-march|Play Imperial March|Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)|audioQueuePlayTrackBanked|
 sound.action.play-track-startup|Play Startup Sound|Play the startup / boot track (AUDIO_TRACK_STARTUP)|audioQueuePlayTrackBanked|
 sound.action.play-track-disco|Play Disco|Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)|audioQueuePlayTrackBanked|
-sound.api.get-catalog|Get Catalog|Return cached CHIRP catalog banks and entries from the active audio backend|audioGetCatalogEntries|bank:uint8:0
+sound.api.get-catalog|Get Catalog|Cached CHIRP catalog entries from the active audio backend, one per sound. GET /api/audio/catalog also accepts a bank= filter and returns the bank directory alongside the entries; the Console answers the unfiltered entry list (each entry carries its own bank, so the filter adds nothing a reader cannot do) and no params:, keeping its schema honest about what it runs - type: status entries take no arguments (docs/console-catalog-contributing.md).\n|audioGetCatalogEntries|
 sound.api.refresh-catalog|Refresh Catalog|Queue CHIRP catalog refresh (GMAN plus GNME enumeration)|audioQueueRefreshCatalog|
 sound.api.play-banked|Play Banked Entry|Play a CHIRP sound by explicit bank, page, and index|audioQueuePlayTrackBanked|bank:uint8:1|page:string:1|index:uint16:1
 sound.api.get-mood-map|Get Mood Category Map|Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)|configCacheRead|
