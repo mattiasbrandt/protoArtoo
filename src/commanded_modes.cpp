@@ -27,12 +27,13 @@ void commandedSetStationary(bool stationary, CommandSource source) {
     }
     taskEXIT_CRITICAL(&robotStateMux);
 
-    // Keep config cache in sync so the next /api/config save persists the
-    // commanded mode rather than reverting it from the stale cache.
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    cfg.system.stationary = stationary;
-    configCacheApply(cfg);
+    // Keep the config cache in sync so the next /api/config save persists the
+    // commanded mode rather than reverting it from the stale cache. By field:
+    // this runs on the SBUS path (Core 1, once per drive frame), so a
+    // whole-snapshot round trip here cost 944 B of stack on this frame and
+    // marked the RC mapping dirty for a field the RC processor config does not
+    // contain.
+    configCacheSetStationary(stationary);
 
     // Was "(void)source; Reserved for future logging/telemetry" until #220:
     // the Controller Console adds two new sources (SRC_SERIAL_CONSOLE,

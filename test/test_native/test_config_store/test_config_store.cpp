@@ -954,6 +954,57 @@ void test_configCacheApply_does_not_touch_runtime_fields() {
     TEST_ASSERT_EQUAL_INT(456, robotState.driveOutputSteer);
 }
 
+// The Commanded Mode setters sync the config cache BY FIELD (ADR 0011's
+// 2026-09-04 amendment). commandedSetStationary() is the Core 1 caller - the
+// SBUS drive path calls it once per frame while driving - and it used to read
+// all 944 B of ConfigSnapshot out of the cache, set one bool, and write all
+// 944 B back through configCacheApply().
+//
+// Put the round trip back (configCacheRead / set / configCacheApply) and both
+// assertions below go red: the RC mapping is marked dirty for a field the RC
+// processor config does not contain, and any cache write that happened between
+// this caller's read and its write-back is reverted.
+void test_configCacheSetStationary_writes_only_that_field() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    seeded.drive.speedLimitMax = 321;
+    seeded.audio.audioVolume = 17;
+    seeded.system.logLevel = 2;
+    seeded.system.stationary = false;
+    seeded.system.enable_arm1 = true;
+    configCacheApply(seeded);
+
+    configCacheSetStationary(true);
+
+    ConfigSnapshot expected = seeded;
+    expected.system.stationary = true;
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_TRUE_MESSAGE(after.system.stationary, "the field the setter owns did not change");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(&expected, &after, sizeof(ConfigSnapshot)),
+                                  "the by-field setter touched something other than stationary");
+}
+
+void test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    configCacheApply(seeded);
+
+    // configCacheApply() above legitimately raised the flag; RcInputTask
+    // clears it after a rebuild, and this is that cleared state.
+    robotState.rcConfigDirty = false;
+
+    configCacheSetStationary(true);
+    TEST_ASSERT_FALSE_MESSAGE(robotState.rcConfigDirty,
+                              "a stationary toggle marked the RC mapping dirty - stationary is not "
+                              "in the RC processor config");
+
+    configCacheSetStationary(false);
+    TEST_ASSERT_FALSE_MESSAGE(robotState.rcConfigDirty,
+                              "a stationary toggle marked the RC mapping dirty");
+}
+
 void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
@@ -1342,6 +1393,8 @@ int main() {
     RUN_TEST(test_configCacheRead_save_round_trip);
     RUN_TEST(test_configCacheApply_applies_all_categories);
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
+    RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
+    RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);
