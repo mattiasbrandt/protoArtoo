@@ -89,20 +89,22 @@ send sound.action.random-humming
 send help dome.action.marcduino-command
 send help dome.action.send-command
 
-# #222 (closed) - motion actions and Non-RC Control consent. Motion is not
-# wired through the Console yet (docs/console.md "What doesn't work here
-# yet"): the expected answer today is `unavailable reason=executor-not-ready`.
+# #222 (closed) - motion actions and Non-RC Control consent. What each send
+# must answer is on #274; the `executor-not-ready` reason this comment once
+# predicted was deleted by #263.
 @row 222 motion-and-non-rc-control
 send drive.action.move speed=100 steer=0
 send drive.action.speed value=100
 send drive.action.steer value=0
 
-# #224 - profiling operations and known-but-unavailable behaviour.
-# profiler.action.start is docs/console-protocol.md 3.1's own worked example
-# (`reason=not-in-this-build` on a non-profiler image).
+# #224 - profiling operations and known-but-unavailable behaviour. The
+# canonical names are system.api.get-profiler and
+# system.action.profiler-trace-start; `profiler.action.start` never existed in
+# the registry (#224, 2026-09-04). What the row must show is on #274.
 @row 224 profiling-and-unavailable
 send operations type=action
-send profiler.action.start
+send system.api.get-profiler
+send system.action.profiler-trace-start
 
 # #225 (closed) - the Survival Path answers below the admission floor while
 # HTTP refuses. Pressing the admission floor needs several open browser tabs
@@ -159,3 +161,23 @@ send system.status.health
 @row 240 response-caps
 send operations
 send system.status.logs
+
+# #274 - guards and typing: motion refused under estop / sleep / web control
+# off, each with a reason; then a partial command buffered under DEBUG logs
+# executes exactly as typed once completed. What each send must answer is on #274.
+@row 274 guards-and-typing
+send system.status.health
+send system.action.enable-web-control
+send drive.action.move speed=100 steer=0
+send system.action.sleep
+send drive.action.move speed=100 steer=0
+send system.action.wake
+send system.action.disable-web-control
+send drive.action.move speed=100 steer=0
+send system.config.log-level value=debug
+raw system.status.hea
+listen 5
+raw lth
+key enter
+listen 2
+send system.config.log-level value=info

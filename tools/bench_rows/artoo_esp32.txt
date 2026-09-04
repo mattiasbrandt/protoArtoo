@@ -61,8 +61,8 @@ send sound.action.random-humming
 
 # #222 (closed) - motion actions and Non-RC Control consent, plus queue/state
 # evidence (DriveTask frame counters or a logic-level capture -- bench-read,
-# not console-expressible). Motion is not wired through the Console yet
-# (docs/console.md): expected today is `unavailable reason=executor-not-ready`.
+# not console-expressible). What each send must answer is on #274; the
+# `executor-not-ready` reason this comment once predicted was deleted by #263.
 @row 222 motion-and-non-rc-control
 send drive.action.move speed=100 steer=0
 send drive.action.speed value=100
@@ -102,4 +102,24 @@ send help
 send system.config.log-level value=debug
 listen 5
 sendlen 70 sys.status.
+send system.config.log-level value=info
+
+# #274 - guards and typing: motion refused under estop / sleep / web control
+# off, each with a reason; then a partial command buffered under DEBUG logs
+# executes exactly as typed once completed. What each send must answer is on #274.
+@row 274 guards-and-typing
+send system.status.health
+send system.action.enable-web-control
+send drive.action.move speed=100 steer=0
+send system.action.sleep
+send drive.action.move speed=100 steer=0
+send system.action.wake
+send system.action.disable-web-control
+send drive.action.move speed=100 steer=0
+send system.config.log-level value=debug
+raw system.status.hea
+listen 5
+raw lth
+key enter
+listen 2
 send system.config.log-level value=info
