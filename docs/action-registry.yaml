@@ -1848,7 +1848,7 @@ entries:
     - 30
     required: true
   nvs_key: cfg_sndVol
-  executor: configApply
+  executor: audioSetVolumeCommitApplied
 - name: sound.config.random-min
   display_name: Random Min Track
   description: Lowest track number in the random playback pool

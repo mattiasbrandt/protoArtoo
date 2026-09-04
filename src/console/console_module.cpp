@@ -1604,6 +1604,15 @@ static bool consoleAudioCatalogSupported() {
     return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 }
 
+// The provenance every shared setter and Commit Step this module calls wants
+// (include/robot_state.h's CommandSource). Defined here, above its first
+// caller, rather than beside the direct-action executors it was written for:
+// the sound.config.* rows below reach audioSetVolumeCommitApplied() with the
+// same provenance sound.action.set-volume does, so both need it.
+static CommandSource consoleCommandSourceFor(ConsoleCommandSource source) {
+    return (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+}
+
 static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                      char* rawArgs, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
@@ -2498,6 +2507,98 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
     }
 }
 
+// sound.config.volume: the config-typed VIEW of the value
+// sound.action.set-volume exposes as an action - the same
+// system.config.mood / system.action.set-mood pattern already in the cascade,
+// where one mechanism is reachable both ways and the config row is the half
+// that can also be read. Both halves call the one ADR 0034 Commit Step,
+// audioSetVolumeCommitApplied() (include/api_audio.h), which is also what
+// handleAudioPost()'s action=volume branch calls: apply through the audio
+// queue, then persist as the new default so it survives a reboot.
+//
+// The registry names this row's executor audioSetVolumeCommitApplied, not
+// configApply. configApply() has no volume parameter at all
+// (src/web/api_config_apply.cpp), so the registry's previous claim described
+// a path that does not exist; the module comment that called this value "set
+// inline in the handler" predated the Commit Step's extraction and is gone
+// with it.
+//
+// Unlike consoleExecuteMoodConfig() above, which hand-checks its enum because
+// its registry row declares no params, this row's `volume` param carries
+// type and range in the registry (uint8, 0-30) - so the shared schema
+// validator is the whole check and there is no second copy of the bound
+// here. `volume` is also POST /api/audio's own parameter spelling for this
+// value and GET /api/audio/tracks' JSON key for it, so the read field name
+// is that key verbatim (docs/console-protocol.md s.3.5) and a read is
+// pasteable straight back into a write.
+//
+// Not staged: a volume change takes effect immediately and is persisted in
+// the same step, so the honest outcome is `applied` (ADR 0027's staging
+// covers the 15 Component Toggles, not this).
+static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                            char* rawArgs, ConsoleCommandSource source,
+                                            const ConsoleRecordSink* sink) {
+    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+    if (!isWrite) {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        char buf[8] = {};
+        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.audio.audioVolume);
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, entry->name);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "volume", buf);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                              CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    ConsoleArgs parsedArgs = {};
+    if (!consoleParseAudioConfigWrite(requestId, entry, rawArgs, &parsedArgs, sink)) {
+        return;
+    }
+
+    // Range-checked by the schema above, so this cannot be out of the uint8
+    // the Commit Step takes.
+    const long level = strtol(consoleArgsFind(parsedArgs, "volume"), nullptr, 10);
+
+    AudioSetVolumeCommitOutcome commit;
+    {
+        // The Commit Step read-modify-writes the shared config-cache snapshot
+        // and then writes NVS, the same window every other config write in
+        // this module serializes on.
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        commit = audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
+    }  // guard released here
+
+    if (!commit.queued) {
+        // The live apply never reached AudioTask, so nothing was persisted
+        // either - the same answer sound.action.set-volume gives for the same
+        // refusal (include/console_direct_action_sound.h).
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                                 CONSOLE_REASON_QUEUE_FULL);
+        }
+        return;
+    }
+    if (!commit.saved) {
+        consoleAnswerAudioCommitFailure(requestId, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                             CONSOLE_REASON_NONE);
+    }
+}
+
 // The rows above that carry their own argument set, rather than having their
 // key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
 // Same executor signature as g_scalarConfigExecutors[] so the cascade below
@@ -2508,6 +2609,7 @@ static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
     {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
     {"sound.config.category-ranges", consoleExecuteSoundCategoryRanges},
     {"sound.config.mood-category-map", consoleExecuteSoundMoodCategoryMap},
+    {"sound.config.volume", consoleExecuteSoundVolumeConfig},
 };
 static const size_t kAudioConfigExecutorCount =
     sizeof(g_audioConfigExecutors) / sizeof(g_audioConfigExecutors[0]);
@@ -2578,9 +2680,6 @@ static ConsoleScalarConfigExecutorFn consoleFindAudioConfigExecutor(const char* 
 
 #include "console_direct_action_types.h"
 
-static CommandSource consoleCommandSourceFor(ConsoleCommandSource source) {
-    return (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-}
 
 #include "console_direct_action_system.h"
 #include "console_direct_action_drive.h"
@@ -3031,9 +3130,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             }
 
             // Every other type=config row not yet added as a row above is not
-            // wired. sound.config.volume is the one such row left after this
-            // ticket's audio-core rows landed above; it reaches its own
-            // Commit Step in the next slice.
+            // wired.
             if (sink->onRecordResult) {
                 sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
                                     CONSOLE_OUTCOME_UNAVAILABLE, CONSOLE_REASON_EXECUTOR_NOT_READY);

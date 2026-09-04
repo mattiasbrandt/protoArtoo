@@ -87,7 +87,7 @@ sound.action.random-alert|Random Alert|Play one random track from the configured
 sound.action.random-snarky|Random Snarky|Play one random track from the configured Snarky category range|audioQueuePlayTrack|
 sound.action.random-whistle|Random Whistle|Play one random track from the configured Whistle category range|audioQueuePlayTrack|
 sound.status.current|Sound Status|Current playback state, volume, and module health|captureAudioStatusSnapshot|
-sound.config.volume|Volume|Default audio volume (0–30)|configApply|volume:uint8:1
+sound.config.volume|Volume|Default audio volume (0–30)|audioSetVolumeCommitApplied|volume:uint8:1
 sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|track:uint16:1
 sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|track:uint16:1
 sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood|configApply|

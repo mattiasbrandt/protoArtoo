@@ -1330,10 +1330,12 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:190 - uint8_t audioVolume;
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON
+  - src/web/api_audio.cpp:716 - audioSetVolumeCommitApplied() applies through the audio queue
+    and persists the level as the boot default
+  - src/web/api_audio.cpp:950 - POST /api/audio action=volume calls that same Commit Step
   - src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioSetVolumeCommitApplied
   missing_metadata:
   - executor reference not in registry
   - console_alias not in registry

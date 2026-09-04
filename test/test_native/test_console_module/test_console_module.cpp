@@ -4291,6 +4291,76 @@ void test_sound_config_audio_core_rows_all_answer_a_read() {
     }
 }
 
+
+// -----------------------------------------------------------------------------
+// sound.config.volume - the config-typed view of sound.action.set-volume's
+// value, over the one Commit Step both halves and POST /api/audio share.
+// -----------------------------------------------------------------------------
+
+void test_sound_config_volume_reads_the_stored_default() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.audio.audioVolume = 17;
+    configCacheApply(snap);
+
+    runQuery("sound.config.volume");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_INT(1, g_cap.fieldCount);
+    // POST /api/audio's own parameter spelling and GET /api/audio/tracks'
+    // JSON key for this value (docs/console-protocol.md s.3.5).
+    TEST_ASSERT_EQUAL_STRING("17", capturedValue("volume"));
+}
+
+void test_sound_config_volume_write_reaches_the_volume_commit_step() {
+    g_test_audio_queue_ok = true;
+    g_test_audio_volume_calls = 0;
+    g_test_audio_last_volume = 0;
+
+    runQuery("sound.config.volume volume=23");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    // The live apply half of the Commit Step: the same audio queue call
+    // handleAudioPost()'s action=volume branch makes.
+    TEST_ASSERT_EQUAL_UINT(1, g_test_audio_volume_calls);
+    TEST_ASSERT_EQUAL_UINT8(23, g_test_audio_last_volume);
+    // ...and the persist half, read back out of the config cache the Commit
+    // Step writes.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_EQUAL_UINT8(23, snap.audio.audioVolume);
+}
+
+// The bound is the registry's own (uint8, 0-30) read through the shared schema
+// validator - not a second copy of it in this module.
+void test_sound_config_volume_rejects_a_level_above_the_registry_range() {
+    g_test_audio_queue_ok = true;
+    g_test_audio_volume_calls = 0;
+
+    runQuery("sound.config.volume volume=31");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("volume", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_audio_volume_calls,
+                                   "a refused level must not reach the audio queue");
+}
+
+void test_sound_config_volume_reports_queue_full_when_the_audio_queue_refuses() {
+    g_test_audio_queue_ok = false;
+
+    runQuery("sound.config.volume volume=12");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUE_FULL, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_QUEUE_FULL, g_cap.reason);
+
+    g_test_audio_queue_ok = true;
+}
+
 // =============================================================================
 // Test Runner
 // =============================================================================
@@ -4433,6 +4503,10 @@ int main(int, char**) {
     RUN_TEST(test_sound_config_mood_category_map_write_reaches_the_mood_map_core);
     RUN_TEST(test_sound_config_mood_category_map_requires_all_four_masks);
     RUN_TEST(test_sound_config_audio_core_rows_all_answer_a_read);
+    RUN_TEST(test_sound_config_volume_reads_the_stored_default);
+    RUN_TEST(test_sound_config_volume_write_reaches_the_volume_commit_step);
+    RUN_TEST(test_sound_config_volume_rejects_a_level_above_the_registry_range);
+    RUN_TEST(test_sound_config_volume_reports_queue_full_when_the_audio_queue_refuses);
     RUN_TEST(test_config_executor_not_ready_count_report);
 
     RUN_TEST(test_wifi_settings_read_reports_the_saved_posture_and_no_password);
