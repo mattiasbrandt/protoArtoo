@@ -75,6 +75,13 @@ record, and log lines do not.**
   environment compiles and which already has a suite; `console_task.cpp` only
   calls it. The single-write framing and the wait seam are proven natively;
   the burst evidence is the P4 row on #215.
+- "Every line, record or log, is written with one call" reached the record sink
+  and the pre-console-task log fallback in #265, and the **interactive** log
+  path - a line arriving mid-entry, which is a whole redraw and not just a line
+  - in #268. That path went through `embeddedCliPrint()`, one write per
+  character, which is why it could not simply inherit the rule: embedded-cli
+  had to be able to render a redraw into a buffer first
+  (`lib/embedded-cli/VENDORED.md` Patch 8).
 - artoo-esp32 keeps its blocking UART write. The wait condition is
   transport-neutral, so the sink ticket measures that it adds nothing on UART0
   and does not move #219 R1's shared-wire behaviour or the ADR 0017 budgets.

@@ -24,8 +24,13 @@
 //    2.1 records the no-paging decision this line-level design makes
 //    affordable. The only invariant that survives is section 6's "no line is
 //    ever interleaved inside another".
-//  - Log arriving mid-entry clears the input line, writes the log via consoleSerialEmitLine(),
-//    then redraws the prompt and buffered command via embeddedCliPrint()
+//  - Log arriving mid-entry clears the input line, writes the log, then redraws
+//    the prompt and buffered command - all of it composed by
+//    consoleSerialEmitLine() into ONE frame and written in ONE Serial.write()
+//    call (#268). This task's own echo (below) holds no lock while it runs, so
+//    a redraw delivered character by character is a redraw another writer can
+//    land a byte inside; one write is what makes docs/console-protocol.md
+//    section 6's "no line is ever interleaved inside another" true here.
 //  - An input line that lost bytes - past the fixed command buffer, or to an
 //    rx FIFO overrun - is refused whole by the library and answered here with
 //    the same `invalid reason=line-too-long` record the browser adapter emits
@@ -394,7 +399,16 @@ void consoleTask(void* pvParameters) {
         return;
     }
 
-    // Set up embedded-cli callbacks
+    // Set up embedded-cli callbacks.
+    //
+    // writeChar is the ECHO path only: embeddedCliProcess() calls it as the
+    // operator types, from this task, which deliberately does NOT hold the
+    // serial mutex across that call (a command dispatched from inside it emits
+    // its records through the same non-recursive mutex - #219 R1's per-line
+    // locking). The writer therefore takes the mutex for its own byte
+    // (src/console/console_serial_output.cpp), which is what keeps an echoed
+    // character outside a concurrently emitted log line's frame rather than
+    // inside it (#268). Log/event redraws do not come through here at all.
     embeddedCli->writeChar = consoleSerialWriteChar;
     embeddedCli->onCommand = onCliCommand;
     // Tab completion (#238): operation names and argument keys from the

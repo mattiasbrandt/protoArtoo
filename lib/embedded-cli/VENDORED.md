@@ -15,7 +15,7 @@ Rationale documented in `tasks/serial-interface-embedded-cli-deep-dive.md`:
 - Complete line editing with history, tab completion
 - Overflow-safe command buffer with built-in line ending support
 - Structured dispatch via `onCommand` callback with catch-all
-- Small footprint: 3.6 KB flash object (xtensa, all seven patches), 20 B static regardless of catalog size (none of Patch 5's catalog completion callback, Patch 6's history filter or Patch 7's line-too-long notification pays a per-entry RAM cost)
+- Small footprint: 3.7 KB flash object (xtensa, all eight patches), 20 B static regardless of catalog size (none of Patch 5's catalog completion callback, Patch 6's history filter, Patch 7's line-too-long notification or Patch 8's single-write redraw pays a per-entry RAM cost)
 - Stack frame 96 B max (see measured table below)
 
 ## Configuration
@@ -34,7 +34,8 @@ config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
 Object Size Analysis (Measured at commit 9950006; Patch 5 row re-measured 2026-08-29;
-Patch 6 rows measured 2026-09-02; Patch 7 rows measured 2026-09-03)
+Patch 6 rows measured 2026-09-02; Patch 7 rows measured 2026-09-03; Patch 8 rows
+measured 2026-09-04)
 
 Measured with both toolchains under `-Os`:
 
@@ -46,11 +47,13 @@ Measured with both toolchains under `-Os`:
 | xtensa | patched (1-5), re-measured 2026-09-02 | 3,506 B | 118 B | 20 B | 80 B |
 | xtensa | patched (1-6) | 3,526 B | 118 B | 20 B | 80 B |
 | xtensa | patched (1-7) | 3,586 B | 118 B | 20 B | 80 B |
+| xtensa | patched (1-8) | 3,734 B | 118 B | 20 B | 80 B |
 | riscv32 | upstream | 4,342 B | 259 B | 20 B | 112 B |
 | riscv32 | patched (1-4) | 3,854 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-5) | 4,284 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-6) | 4,308 B | 132 B | 20 B | 96 B |
 | riscv32 | patched (1-7) | 4,364 B | 132 B | 20 B | 96 B |
+| riscv32 | patched (1-8) | 4,550 B | 132 B | 20 B | 96 B |
 
 **Deltas (patched 1-4 - upstream):**
 - xtensa: .text -240 B, .rodata -120 B, .bss 0, max frame 0 B
@@ -105,6 +108,22 @@ pointer).
 > the Patch 6 delta above is stated against the re-measured baseline, not
 > against the 2026-08-29 number.
 
+**Deltas (patched 1-8 - patched 1-7), both measured in one session with the
+same two compilers named above:**
+- xtensa: .text +148 B, .rodata 0, .bss 0, max frame 0 B
+- riscv32: .text +186 B, .rodata 0, .bss 0, max frame 0 B
+
+The `patched (1-7)` rows were re-run from `git show HEAD:...` in that same
+session and reproduced exactly - 3,586/118/20/80 and 4,364/132/20/96 - so this
+is a true before/after on one toolchain. The cost is one NULL test on the
+output path (every character now goes through `writeCharOut` instead of
+straight to `cli->writeChar`) plus the new `embeddedCliPrintToBuffer` entry
+point. `.bss` is unchanged for the same reason as Patches 6 and 7: the new
+state lives in `struct EmbeddedCliImpl`, which the caller allocates. That cost
+is **+16 B of the caller's `cliBuffer`** - `sizeof(EmbeddedCliImpl)` measured
+at 72 B on xtensa with this patch against 56 B without, `sizeof(EmbeddedCli)`
+unchanged at 28 B - and `embeddedCliRequiredSize()` grows by exactly that.
+
 `.bss` is unchanged by Patch 5 in `embedded_cli.c` itself - the new candidate pool
 (`pa_console_completion::g_argCandidatePool`, 256 B) lives in
 `include/console_completion.h`, compiled into the *caller's* translation unit
@@ -139,7 +158,7 @@ binding path other callers may use):**
 **As shipped, neither board uses the binding path for completion at all**
 (zero bindings registered - Patch 5's catalog completion callback,
 "Board Differences" below). Both boards' actual cost is the library object
-itself (3.6 KB flash, all seven patches, xtensa; 4.4 KB riscv32) plus the
+itself (3.7 KB flash, all eight patches, xtensa; 4.6 KB riscv32) plus the
 ~256 B RAM candidate pool in `include/console_completion.h` - a flat cost
 independent of catalog size, replacing the per-board binding-subset sizing
 this subsection originally worked through. #238's closing comment on the
@@ -148,7 +167,7 @@ boards against the #233 baseline.
 
 ## Patches Applied
 
-The vendored source includes seven required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
+The vendored source includes eight required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
 
 ### Patch 1: Safe Enter - No Auto-completion on Enter
 
@@ -552,6 +571,84 @@ record the serial adapter emits in response is byte-for-byte the one
 (`include/console_line_overflow.h`) - since the whole point of the patch is
 that the two adapters stop disagreeing.
 
+### Patch 8: Single-Write Redraw
+
+**Problem**: `embeddedCliPrint()` writes a mid-entry redraw one character at a
+time through `cli->writeChar`. For a 59-byte log line with a partial command
+buffered that is ~70 separate calls into the transport - the input line clear,
+the line, the break, the invitation, the buffered command, the cursor move -
+and every gap between them is an opening for another writer on the same wire.
+
+On this project the wire has two writers by construction. Log lines arrive from
+any Core 0 task through `src/console/console_serial_output.cpp`, while the
+Console task's own echo comes out of `embeddedCliProcess()` in
+`src/tasks/console_task.cpp`, and the two are not serialized against each other
+(#268). On artoo-esp32 `Serial.write()` blocks until the byte is queued, so at
+115200 baud those ~70 calls hold the wire for ~6 ms - a very wide window for a
+byte to land inside the line. `docs/console-protocol.md` section 6 promises the
+opposite: "No line is ever interleaved inside another."
+
+The transport can only make that promise for a unit it can hand over in one
+call. ADR 0036 already decided that for Console Records ("every line, record or
+log, is written with one call that includes the newline"); the interactive log
+path was the one place that decision could not be applied, because the redraw
+existed only as a stream of `writeChar` calls.
+
+**Solution**: `embeddedCliPrintToBuffer(cli, string, buffer, bufferSize)` -
+render exactly what `embeddedCliPrint()` writes into a caller-supplied buffer
+instead of onto the transport, and return its length. The caller then issues
+one write. Internally the two entry points share one body (`printAndRedraw`),
+so they cannot drift into two redraw contracts, and every character the library
+emits now goes through one internal writer (`writeCharOut`) that appends to the
+capture target when one is set and calls `cli->writeChar` otherwise. Outside
+that one call the behaviour is upstream's, character by character.
+
+Three decisions inside it:
+
+- **A render that does not fit reports 0 and writes nothing usable.** Half a
+  redraw on the wire is worse than none: the caller can still send the line on
+  its own, but it cannot repair a torn one.
+- **A refused render leaves the line editor untouched.** `inputLineLength` and
+  `cursorPos` describe what is on the operator's screen; advancing them for a
+  redraw that never reached the wire would make the next `clearCurrentLine()`
+  erase a line this call never drew.
+- **Not re-entrant.** A render started from inside a render is a caller
+  emitting a line from inside its own emission - the recursion a transport's
+  non-recursive output lock exists to forbid. It is refused, not interleaved.
+  `cli->writeChar` never runs during a render, so this is unreachable from the
+  transport side today; it guards the way back in that a future
+  `getCompletionCandidate`-style callback would open.
+
+**File**: `include/embedded_cli.h`, `src/embedded_cli.c`
+**Lines**:
+- `include/embedded_cli.h`: `#include <stddef.h>` for `size_t`; the new
+  `embeddedCliPrintToBuffer()` declaration next to `embeddedCliPrint()`.
+- `src/embedded_cli.c`: the four capture fields on `struct EmbeddedCliImpl`;
+  the new `writeCharOut()` and every internal `cli->writeChar(cli, ...)` call
+  site routed through it; `embeddedCliPrint()`'s body extracted to
+  `printAndRedraw()`; the new `embeddedCliPrintToBuffer()`.
+
+**RAM ownership**: no static RAM is added to `embedded_cli.c` (`.bss`
+unchanged, see the Object Size Analysis table). The capture state lives in
+`struct EmbeddedCliImpl`, which the caller allocates, so the cost is **+16 B of
+the caller's `cliBuffer`** and `embeddedCliRequiredSize()` grows by exactly
+that. `src/tasks/console_task.cpp`'s 2 KB static buffer checks the required
+size at init and has room.
+
+**Upstream candidacy**: Yes. Any consumer whose transport is shared - an RTOS
+with more than one logging task, a USB CDC ring that short-writes - has the
+same problem, and the change is additive: a new entry point plus one internal
+indirection, with `embeddedCliPrint()` behaviour unchanged.
+
+**Test**: `test/test_native/test_cli_print_to_buffer/` - the buffered render is
+byte-for-byte the per-character render of the same state (the property that
+keeps it one contract rather than two), nothing reaches `writeChar` during a
+buffered render, the render ends with the invitation and the buffered command,
+and an overflowing render reports 0 without moving the line editor.
+`test/test_native/test_console_serial_output/` covers the consumer side: the
+whole redraw reaching `Serial` in one write, and a keystroke arriving mid-
+emission landing outside the line rather than inside it.
+
 ## Integration Notes
 
 ### Static Buffer Allocation
@@ -589,16 +686,28 @@ The dispatcher calls `embeddedCliTokenizeArgs` after routing, so the Console can
 
 ### Output
 
-Call `embeddedCliPrint` under the log mutex for asynchronous output (logs, events) that arrives while the operator is typing:
+Asynchronous output (logs, events) arriving while the operator is typing is
+rendered with Patch 8's `embeddedCliPrintToBuffer` and handed to the transport
+in **one** write, under the serial mutex:
 
 ```c
-portMUX_TYPE *logMutex = /* the existing log output lock */;
-taskENTER_CRITICAL(logMutex);
-embeddedCliPrint(cli, logLine);
-taskEXIT_CRITICAL(logMutex);
+char frame[CONSOLE_SERIAL_FRAME_MAX];
+size_t len = embeddedCliPrintToBuffer(cli, logLine, frame, sizeof(frame));
+// one write, so no other writer on this wire can land a byte inside the line
+consoleSerialWriteFrame(frame, len, /*waitForRoom=*/false);
 ```
 
-`embeddedCliPrint` handles the redraw atomically; the typed line remains visible after the output.
+`src/console/console_serial_output.cpp` is that caller. The redraw is atomic
+only if the transport delivers it in one call: `embeddedCliPrint`'s
+character-at-a-time route leaves ~70 openings for the Console task's own echo
+to interleave, which is the defect Patch 8 exists to remove (#268). The typed
+line remains visible after the output either way.
+
+The earlier advice here was to wrap `embeddedCliPrint` in
+`taskENTER_CRITICAL`/`taskEXIT_CRITICAL`. That was never what this project did
+and is not safe on this transport: a critical section disables interrupts on
+the core, and the write inside it blocks until the UART driver accepts every
+byte. The lock is a FreeRTOS mutex (`src/main.cpp`'s `logSerialMutex`).
 
 ### Board Differences
 

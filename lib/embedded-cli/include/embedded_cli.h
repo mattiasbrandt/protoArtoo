@@ -13,6 +13,9 @@ extern "C" {
 
 // cstdint is available only since C++11, so use C header
 #include <stdint.h>
+// [PATCH: Single-write redraw] size_t for embeddedCliPrintToBuffer below.
+// stdint.h is not required to declare it; stddef.h is the header that does.
+#include <stddef.h>
 
 // used for proper alignment of cli buffer
 #if UINTPTR_MAX == 0xFFFF
@@ -356,6 +359,32 @@ const char *embeddedCliGetCmdBuffer(const EmbeddedCli *cli);
  * @param string
  */
 void embeddedCliPrint(EmbeddedCli *cli, const char *string);
+
+/**
+ * [PATCH: Single-write redraw] Render exactly what embeddedCliPrint() would
+ * write - clear the input line, the string, a line break, the invitation, the
+ * buffered command, the cursor move - into `buffer` instead of handing it to
+ * cli->writeChar one character at a time. The line-editor state is updated
+ * identically; only the destination differs.
+ *
+ * A transport whose write can be interleaved by another writer, or torn by
+ * backpressure, needs the whole redraw as ONE write. Character-at-a-time gives
+ * every other writer on that wire ~70 openings to land a byte inside the line,
+ * which is the interleaving docs/console-protocol.md section 6 forbids.
+ *
+ * Not re-entrant: calling this from inside a render (through cli->writeChar,
+ * say) returns 0 rather than interleaving two renders in one buffer.
+ *
+ * @param cli
+ * @param string
+ * @param buffer     destination, not NUL-terminated by this function
+ * @param bufferSize capacity of buffer
+ * @return bytes written to buffer, or 0 if the render did not fit (nothing is
+ *         then usable in buffer, and the line-editor state is left as it was,
+ *         so the caller may fall back to sending the string on its own)
+ */
+size_t embeddedCliPrintToBuffer(EmbeddedCli *cli, const char *string,
+                                char *buffer, size_t bufferSize);
 
 /**
  * Free allocated for cli memory

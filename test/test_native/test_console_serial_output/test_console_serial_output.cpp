@@ -18,6 +18,27 @@
 // `consoleSerialEmitLine` must route through embeddedCliPrint() - which already
 // implements clear/print/redraw (lib/embedded-cli/src/embedded_cli.c:590-619) -
 // while holding the serial mutex for the whole emission.
+//
+// WORKER NOTE (#268, reported on the issue, not edited silently): sections 1
+// and 6 below read the emitted bytes back through SerialStub (the wire) rather
+// than through the CLI's per-character `writeChar` (`g_capture`). Not one
+// assertion is weakened - each one is the same string, in the same order, with
+// the same message - but their probe had to move, because the emission no
+// longer reaches the wire one character at a time. #268 renders the whole
+// redraw with embeddedCliPrintToBuffer() and writes it in a single
+// Serial.write(), which is what stops the Console task's own unlocked echo
+// from landing a byte inside a log line. `writeChar` is the echo path now, so
+// a probe there can no longer see an emission at all. Section 7 is the new
+// coverage for that property.
+//
+// The `g_capture`/`writeChar` probe itself stays - it is what section 4's
+// echo-proportionality test measures - but its two lookup helpers went with
+// the assertions that used them rather than being left orphaned.
+//
+// The fixture also now sets `enableAutoComplete = false`, which is what
+// src/tasks/console_task.cpp sets. Nothing here depended on the default; a
+// redraw rendered under a configuration production does not use is simply a
+// weaker fixture, and section 7 asserts the exact tail of a frame.
 // =============================================================================
 
 #include <unity.h>
@@ -54,17 +75,24 @@ static void captureWriteChar(EmbeddedCli* cli, char c) {
     }
 }
 
-// Index of the first occurrence of `needle` at or after `from`, or -1.
-static int indexOfFrom(const char* needle, int from) {
-    if (from < 0 || (size_t)from > g_captureLen) {
+// Index of the first occurrence of `needle` at or after `from`, or -1, over
+// what actually reached the wire (SerialStub) - see the WORKER NOTE at the top
+// of this file for why the emission tests read the wire and not `g_capture`.
+static int wireIndexOfFrom(const char* needle, int from) {
+    if (from < 0 || (size_t)from > SerialStub::capturedLen) {
         return -1;
     }
-    const char* hit = strstr(g_capture + from, needle);
-    return hit == nullptr ? -1 : (int)(hit - g_capture);
+    // capturedBuf is not NUL-terminated by the stub's write(); terminate a
+    // scratch copy so strstr has a string to search.
+    static char scratch[sizeof(SerialStub::capturedBuf) + 1];
+    memcpy(scratch, SerialStub::capturedBuf, SerialStub::capturedLen);
+    scratch[SerialStub::capturedLen] = '\0';
+    const char* hit = strstr(scratch + from, needle);
+    return hit == nullptr ? -1 : (int)(hit - scratch);
 }
 
-static int indexOf(const char* needle) {
-    return indexOfFrom(needle, 0);
+static int wireIndexOf(const char* needle) {
+    return wireIndexOfFrom(needle, 0);
 }
 
 // ----------------------------------------------------------------------------
@@ -76,11 +104,16 @@ static EmbeddedCli* g_cli;
 
 static void cliFixtureSetUp(void) {
     captureReset();
+    serialStubReset();
     paStubMutexReset();
 
     EmbeddedCliConfig* config = embeddedCliDefaultConfig();
     config->cliBuffer = g_cliBuffer;
     config->cliBufferSize = sizeof(g_cliBuffer);
+    // As the Console task configures it (src/tasks/console_task.cpp): live
+    // autocompletion off, so a redraw ends at the buffered command rather than
+    // at a cursor save/restore pair no production redraw carries.
+    config->enableAutoComplete = false;
 
     TEST_ASSERT_TRUE_MESSAGE(embeddedCliRequiredSize(config) <= sizeof(g_cliBuffer),
                              "harness CLI buffer too small for default config");
@@ -113,28 +146,28 @@ void test_log_midentry_clears_input_line_then_redraws_prompt_and_buffer(void) {
 
     // Everything the editor echoed for the typed text is behind us; measure only
     // what the emission itself produces.
-    captureReset();
+    serialStubReset();
 
     consoleSerialEmitLine("[INFO] DriveTask heartbeat");
 
-    const int logAt = indexOf("[INFO] DriveTask heartbeat");
+    const int logAt = wireIndexOf("[INFO] DriveTask heartbeat");
     TEST_ASSERT_TRUE_MESSAGE(logAt >= 0, "the emitted line never reached the port");
 
     // The input line is cleared BEFORE the log text: embedded-cli's
     // clearCurrentLine() starts with a carriage return.
-    const int crAt = indexOf("\r");
+    const int crAt = wireIndexOf("\r");
     TEST_ASSERT_TRUE_MESSAGE(crAt >= 0, "no carriage return: the input line was never cleared");
     TEST_ASSERT_TRUE_MESSAGE(crAt < logAt,
                              "the log text was written before the input line was cleared");
 
     // The prompt is redrawn AFTER the log text.
-    const int promptAt = indexOfFrom("> ", logAt);
+    const int promptAt = wireIndexOfFrom("> ", logAt);
     TEST_ASSERT_TRUE_MESSAGE(promptAt > logAt,
                              "the prompt was not redrawn after the emitted line");
 
     // The operator's buffered command is restored AFTER the prompt, so what they
     // typed is still on screen and still editable.
-    const int bufferAt = indexOfFrom("system.stat", promptAt);
+    const int bufferAt = wireIndexOfFrom("system.stat", promptAt);
     TEST_ASSERT_TRUE_MESSAGE(bufferAt > promptAt,
                              "the buffered command was not redrawn after the prompt");
 }
@@ -143,15 +176,15 @@ void test_log_midentry_clears_input_line_then_redraws_prompt_and_buffer(void) {
 // be emitted exactly once and the prompt must come back.
 void test_log_with_empty_input_line_still_emits_once_and_restores_prompt(void) {
     cliFixtureSetUp();
-    captureReset();
+    serialStubReset();
 
     consoleSerialEmitLine("[WARN] rc link degraded");
 
-    TEST_ASSERT_TRUE_MESSAGE(indexOf("[WARN] rc link degraded") >= 0, "line not emitted");
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf("[WARN] rc link degraded") >= 0, "line not emitted");
     TEST_ASSERT_EQUAL_INT_MESSAGE(
-        -1, indexOfFrom("[WARN] rc link degraded", indexOf("[WARN] rc link degraded") + 1),
+        -1, wireIndexOfFrom("[WARN] rc link degraded", wireIndexOf("[WARN] rc link degraded") + 1),
         "the line was emitted more than once");
-    TEST_ASSERT_TRUE_MESSAGE(indexOf("> ") >= 0, "the prompt was not restored");
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf("> ") >= 0, "the prompt was not restored");
 }
 
 // ----------------------------------------------------------------------------
@@ -251,13 +284,13 @@ void test_long_lines_are_truncated_to_serial_max(void) {
     memset(longLine, 'X', sizeof(longLine) - 1);
     longLine[sizeof(longLine) - 1] = '\0';
 
-    captureReset();
+    serialStubReset();
     consoleSerialEmitLine(longLine);
 
     // Check that captured output is truncated to PA_LOG_SERIAL_LINE_MAX
-    // The output should be at most PA_LOG_SERIAL_LINE_MAX - 1 characters (plus \r, \n, etc from embeddedCliPrint)
+    // The output should be at most PA_LOG_SERIAL_LINE_MAX - 1 characters (plus \r, \n, etc from the redraw)
     // For this test, we check that we don't receive the entire 512-char string verbatim
-    size_t capturedLen = strlen(g_capture);
+    size_t capturedLen = SerialStub::capturedLen;
 
     // A line of 512 X's would result in much more than 256 characters in the output
     // If truncation works, the output should be bounded
@@ -554,6 +587,148 @@ void test_dropped_suffix_too_small_buffer_emits_nothing() {
 }
 
 // =============================================================================
+// 7. #268 - the redraw is ONE write, so nothing can land inside it
+// =============================================================================
+//
+// On artoo-esp32 a log line arriving while a partial command was buffered sent
+// the UART0 sink into a self-sustaining redraw loop. The sink's own defect,
+// cited: the interactive log path rendered its redraw through
+// embeddedCliPrint(), one Serial.write() per character - ~70 of them for a
+// 59-byte line - while the Console task's echo (embeddedCliProcess, which
+// holds no lock, src/tasks/console_task.cpp) writes to the same wire. ADR 0036
+// had already ruled that out for Console Records ("every line, record or log,
+// is written with one call"); the redraw is where that decision had not
+// reached.
+//
+// These assert the property, not the absence of a loop: one write per
+// emission, no opening inside it for another writer, and output per log line
+// bounded by the line plus its redraw.
+
+static const char* const MIDENTRY_LOG_LINE =
+    "[65485][I][WebServer] slowest response phase now 144 ms (0)";
+
+// The whole redraw - clear, line, break, prompt, buffered command - reaches
+// the wire in a single Serial.write() call. Character-at-a-time is what gave
+// the other writer on this wire ~70 openings.
+void test_midentry_redraw_reaches_the_wire_in_one_write(void) {
+    cliFixtureSetUp();
+    typeChars("sys");
+
+    serialStubReset();
+    consoleSerialEmitLine(MIDENTRY_LOG_LINE);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
+                                  "the mid-entry redraw must reach the wire in ONE write; "
+                                  "every extra call is an opening for another writer to "
+                                  "land a byte inside the log line");
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf(MIDENTRY_LOG_LINE) >= 0,
+                             "the log line did not reach the wire whole");
+}
+
+// A deterministically placed preemption, in the shape test_console_concurrency
+// uses: the Console task's poll runs from inside the emission, at a character
+// that is part of the log line's own text. Whether it CAN run there is the
+// property - with the redraw delivered in one write there is no such point,
+// so the echo lands before or after the frame and never inside it.
+static EmbeddedCli* g_interleaveCli;
+static bool g_interleaveArmed;
+static bool g_interleaveFired;
+static int g_interleaveCharCount;
+
+static void interleavingWriteChar(EmbeddedCli* cli, char c) {
+    consoleSerialWriteChar(cli, c);  // the production echo path, onto the wire
+    ++g_interleaveCharCount;
+    // Char 10 of a redraw is inside the log line's text: clearCurrentLine
+    // writes 7 (CR + "sys" + "> " worth of spaces + CR) before the line starts.
+    if (g_interleaveArmed && g_interleaveCharCount == 10) {
+        g_interleaveArmed = false;
+        g_interleaveFired = true;
+        embeddedCliReceiveChar(g_interleaveCli, 'X');
+        embeddedCliProcess(g_interleaveCli);  // echoes 'X' through this writer
+    }
+}
+
+void test_console_echo_cannot_land_inside_a_midentry_redraw(void) {
+    captureReset();
+    serialStubReset();
+    paStubMutexReset();
+
+    EmbeddedCliConfig* config = embeddedCliDefaultConfig();
+    config->cliBuffer = g_cliBuffer;
+    config->cliBufferSize = sizeof(g_cliBuffer);
+    config->enableAutoComplete = false;
+    g_interleaveCli = embeddedCliNew(config);
+    TEST_ASSERT_NOT_NULL(g_interleaveCli);
+    g_interleaveCli->writeChar = interleavingWriteChar;
+    embeddedCliProcess(g_interleaveCli);
+    consoleSerialBindCli(g_interleaveCli);
+
+    for (const char* p = "sys"; *p != '\0'; ++p) {
+        embeddedCliReceiveChar(g_interleaveCli, *p);
+    }
+    embeddedCliProcess(g_interleaveCli);
+
+    serialStubReset();
+    g_interleaveCharCount = 0;
+    g_interleaveFired = false;
+    g_interleaveArmed = true;
+
+    consoleSerialEmitLine(MIDENTRY_LOG_LINE);
+
+    TEST_ASSERT_FALSE_MESSAGE(g_interleaveFired,
+                              "the Console task's echo path ran from inside a log emission: "
+                              "the redraw is still being handed to the transport character "
+                              "by character, so another writer can land a byte inside it");
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOf(MIDENTRY_LOG_LINE) >= 0,
+                             "the log line is not contiguous on the wire - something was "
+                             "written inside it (docs/console-protocol.md section 6)");
+
+    consoleSerialBindCli(nullptr);  // leave no dangling instance for later tests
+}
+
+// What comes back after the line is the prompt and the OPERATOR'S buffered
+// command - not a fragment of the line just printed, which is what the board
+// was repeating for megabytes.
+void test_redraw_ends_with_prompt_and_buffered_command(void) {
+    cliFixtureSetUp();
+    typeChars("sys");
+
+    serialStubReset();
+    consoleSerialEmitLine(MIDENTRY_LOG_LINE);
+
+    TEST_ASSERT_TRUE(SerialStub::capturedLen >= 5);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(
+        "> sys", SerialStub::capturedBuf + SerialStub::capturedLen - 5, 5,
+        "the redraw must end with the prompt and the buffered command, not with a "
+        "fragment of the log line");
+}
+
+// Sustained log traffic with a command buffered: output stays bounded by the
+// input that caused it - one write and one redraw's worth of bytes per line,
+// however many lines arrive.
+void test_sustained_log_traffic_stays_bounded_per_line(void) {
+    cliFixtureSetUp();
+    typeChars("sys");
+
+    serialStubReset();
+
+    const int lines = 20;
+    for (int i = 0; i < lines; ++i) {
+        consoleSerialEmitLine(MIDENTRY_LOG_LINE);
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(lines, SerialStub::writeCallCount,
+                                  "each log line must cost exactly one write");
+
+    // Per line: the clear (CR + prompt+command worth of spaces + CR), the line,
+    // CR LF, the prompt, the command back. 16 bytes covers the fixed parts and
+    // any cursor move at these sizes.
+    const size_t perLineBound = strlen(MIDENTRY_LOG_LINE) + 2 * strlen("sys") + 16;
+    TEST_ASSERT_TRUE_MESSAGE(SerialStub::capturedLen <= perLineBound * (size_t)lines,
+                             "output grew faster than the log traffic that caused it");
+}
+
+// =============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -573,5 +748,9 @@ int main(int, char**) {
     RUN_TEST(test_dropped_suffix_absent_when_zero);
     RUN_TEST(test_dropped_suffix_present_with_exact_count_when_nonzero);
     RUN_TEST(test_dropped_suffix_too_small_buffer_emits_nothing);
+    RUN_TEST(test_midentry_redraw_reaches_the_wire_in_one_write);
+    RUN_TEST(test_console_echo_cannot_land_inside_a_midentry_redraw);
+    RUN_TEST(test_redraw_ends_with_prompt_and_buffered_command);
+    RUN_TEST(test_sustained_log_traffic_stays_bounded_per_line);
     return UNITY_END();
 }

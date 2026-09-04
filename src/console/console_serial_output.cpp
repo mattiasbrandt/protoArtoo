@@ -2,9 +2,11 @@
 // src/console/console_serial_output.cpp
 //
 // Serial output coordinator for Console task (ADR 0034, ADR 0036)
-// Routes log/event/record output through embeddedCliPrint() under serial mutex.
-// Proves the serial output coordinator criterion from #217, and the
-// single-write-framing / room-wait seam from #265.
+// Every log/event/record byte reaches the wire through consoleSerialWriteFrame
+// below: one Serial.write() per unit, under the serial mutex. Proves the serial
+// output coordinator criterion from #217, the single-write-framing / room-wait
+// seam from #265, and #268's extension of that framing to the interactive
+// redraw itself (see the header for the interleaving it removes).
 // =============================================================================
 
 #include "console_serial_output.h"
@@ -25,17 +27,33 @@ extern "C" {
 // Static reference to the bound CLI instance, set during console task init
 static EmbeddedCli* g_boundCli = nullptr;
 
+// The single Serial.write() call every Console byte reaches the wire through.
+// One call per unit is the whole point (ADR 0036, #268): a unit delivered in
+// one call cannot be interleaved by another writer on this wire, and cannot be
+// half-delivered by a transport that short-writes.
+//
+// CONSTRAINT: the serial mutex must already be held. consoleSerialWriteFrame()
+// is the entry point that takes it; consoleSerialEmitLine() calls this
+// directly because it holds the mutex across its render as well as its write,
+// and the mutex is non-recursive.
+static void consoleSerialWriteFrameLocked(const char* bytes, size_t len) {
+    Serial.write((const uint8_t*)bytes, len);
+}
+
 // =============================================================================
 // Per-Character Writer
 // =============================================================================
 
 // Exported for seam testing and embedded-cli binding.
-// Called by embeddedCliPrint() for every character of output.
-// CONSTRAINT: The mutex is held by the caller (consoleSerialEmitLine).
-// This writer must NOT attempt to take the mutex or any other blocking operation.
+// The ECHO path: embeddedCliProcess() calls this for every character the line
+// editor puts on screen while the operator types, from the Console task, which
+// holds no lock there (src/tasks/console_task.cpp's main loop). So the byte
+// takes the serial mutex itself -- one character is its own frame -- and lands
+// either before or after a log line's frame, never inside it.
+// CONSTRAINT: must be called WITHOUT the serial mutex held; see the header.
 void consoleSerialWriteChar(EmbeddedCli* cli, char c) {
     (void)cli;  // Unused
-    Serial.write((uint8_t)c);
+    consoleSerialWriteFrame(&c, 1, /*waitForRoom=*/false);
 }
 
 // =============================================================================
@@ -67,14 +85,17 @@ void consoleSerialEmitLine(const char* line) {
         return;
     }
 
-    // Take the serial mutex for the entire emission (atomic under the lock)
+    // Take the serial mutex for the entire emission (atomic under the lock).
+    // It covers the render as well as the write: the frame buffer below is
+    // static (see its comment) and embeddedCliPrintToBuffer mutates the line
+    // editor's own state, so two logging tasks must not be inside it at once.
     if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
         // Should not happen with portMAX_DELAY, but fail gracefully
         return;
     }
 
-    // For the bound path with embeddedCliPrint, truncate if needed inside the lock
-    // to avoid data races. Create a local buffer only if truncation is required.
+    // For the bound path, truncate if needed inside the lock to avoid data
+    // races. Create a local buffer only if truncation is required.
     size_t lineLen = strlen(line);
     const char* lineToEmit = line;
     char lineBuf[PA_LOG_SERIAL_LINE_MAX];
@@ -84,18 +105,38 @@ void consoleSerialEmitLine(const char* line) {
         strncpy(lineBuf, line, PA_LOG_SERIAL_LINE_MAX - 1);
         lineBuf[PA_LOG_SERIAL_LINE_MAX - 1] = '\0';
         lineToEmit = lineBuf;
+        lineLen = PA_LOG_SERIAL_LINE_MAX - 1;
     }
 
-    // Use embeddedCliPrint() which implements the coordinator:
-    // - clears the current input line (carriage return + spaces + carriage return)
-    // - writes the line plus a line break
-    // - redraws the prompt
-    // - redraws the buffered command
-    // - restores cursor position
-    embeddedCliPrint(g_boundCli, lineToEmit);
+    // Render what embeddedCliPrint() would have written -- clear the input
+    // line, the log line, the break, the prompt, the buffered command, the
+    // cursor move -- into one buffer (lib/embedded-cli/VENDORED.md Patch 8)
+    // and put it on the wire in ONE write. Character-at-a-time is what let
+    // another writer on this wire land a byte inside the line (#268).
+    //
+    // The buffer is static, not a local: any task can log, and 448 bytes on
+    // every logging task's stack is a cost none of them budgeted for. The
+    // serial mutex held here is what makes one shared buffer safe.
+    static char frame[CONSOLE_SERIAL_FRAME_MAX];
+    const size_t frameLen =
+        embeddedCliPrintToBuffer(g_boundCli, lineToEmit, frame, sizeof(frame));
+
+    if (frameLen > 0) {
+        consoleSerialWriteFrameLocked(frame, frameLen);
+    }
 
     // Give the mutex back
     xSemaphoreGive(mutex);
+
+    if (frameLen == 0) {
+        // The redraw did not fit, so nothing was rendered and the line editor
+        // was left untouched. Send the line on its own, whole, through the
+        // same single-write seam: the operator still sees the line, and the
+        // prompt comes back with their next keystroke or the next log line.
+        // Outside the mutex on purpose -- consoleSerialEmitFramedLine takes
+        // it, and it is non-recursive.
+        consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/false);
+    }
 }
 
 // =============================================================================
@@ -136,19 +177,27 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
     // short for want of the CR.
     size_t total = lineLen + 2;
 
+    return consoleSerialWriteFrame(buf, total, waitForRoom);
+}
+
+bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom) {
+    if (bytes == nullptr || len == 0) {
+        return true;  // nothing to send, so nothing to drop
+    }
+
     if (waitForRoom) {
         // Outside the mutex, on purpose (see the CONSTRAINT in the header):
         // a TWDT-subscribed task's paLogLine() takes the same mutex with
         // portMAX_DELAY, and this wait must never be something it inherits.
         uint32_t waitedMs = 0;
-        while (Serial && Serial.availableForWrite() < (int)total &&
+        while (Serial && Serial.availableForWrite() < (int)len &&
                waitedMs < CONSOLE_RECORD_ROOM_WAIT_BOUND_MS) {
             vTaskDelay(pdMS_TO_TICKS(1));
             waitedMs++;
         }
-        if (!Serial || Serial.availableForWrite() < (int)total) {
+        if (!Serial || Serial.availableForWrite() < (int)len) {
             // Room never cleared (or the host was never connected to begin
-            // with): drop the record whole. Nothing is written, and the
+            // with): drop the frame whole. Nothing is written, and the
             // mutex is never taken -- a half-sent line is exactly the
             // #245-era failure mode this function exists to remove.
             return false;
@@ -159,7 +208,7 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
     if (mutex != nullptr) {
         xSemaphoreTake(mutex, portMAX_DELAY);
     }
-    Serial.write((const uint8_t*)buf, total);
+    consoleSerialWriteFrameLocked(bytes, len);
     if (mutex != nullptr) {
         xSemaphoreGive(mutex);
     }

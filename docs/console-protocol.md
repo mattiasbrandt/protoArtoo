@@ -327,6 +327,12 @@ On serial, a log line arriving while a command is being typed clears the
 visible input line, prints the log line whole, and redraws the prompt with the
 buffered command. No line is ever interleaved inside another.
 
+That last sentence is a property of how the redraw is sent, not a hope about
+timing: the clear, the line, the prompt and the buffered command are composed
+into one sequence and handed to the port in a **single write**, so nothing the
+controller writes concurrently - your own keystrokes echoing back, a Console
+Record from a command already running - can land inside it.
+
 ## 7. Transport-safe text
 
 - The record envelope - keys, record types, tokens, numbers, booleans - is
