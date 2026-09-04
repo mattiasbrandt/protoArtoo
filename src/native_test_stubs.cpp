@@ -10,8 +10,9 @@
 // =============================================================================
 #ifdef PA_NATIVE_TEST_STUBS
 
-#include "Arduino.h"      // SerialStub (from test/stubs/include)
-#include "logging.h"      // logging sink declarations
+#include "Arduino.h"                  // SerialStub (from test/stubs/include)
+#include "console_serial_output.h"     // consoleSerialEmitFramedLine (pre-bind log path)
+#include "logging.h"                   // logging sink declarations
 #include "robot_state.h"  // RobotState, portMUX_TYPE, QueueHandle_t
 
 // Zero-initialised global state. Test cases populate cfg_* fields as needed
@@ -26,14 +27,11 @@ SerialStub Serial;
 // Minimal stub with zero values — avoids affecting other 1756 tests
 ESPClass ESP;
 
-// Logging sinks  --  no-op in native test builds
+// Logging sinks. Defined further down, beside the log ring stand-in they are
+// built on -- see "Log ring stand-in" below. paLogInit() stays a no-op here:
+// the ring is lazily initialised on first use so a test that fills
+// g_test_log_buffer itself is never re-initialised out from under.
 void paLogInit() {
-}
-
-void paLogLine(const char* /*line*/) {
-}
-
-void paLogLineRaw(const char* /*line*/) {
 }
 
 // millis() stub  --  used by the failsafe gate for diagnostics, and by anything
@@ -482,6 +480,48 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
 LogBuffer g_test_log_buffer = {};
 char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
 static char s_testLogsBody[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
+
+// The log SINK stand-in (#270, ADR 0037). main.cpp keeps the ring, the drain
+// cursor and the ownership flag together under logMux; native tests are
+// single-threaded, so no lock is needed here, but the SHAPE is deliberately
+// the production one: paLogLine() writes the ring once and consults ownership
+// to decide whether it also writes the wire, and after the bind only
+// consoleSerialDrainLogs() (src/console/console_serial_output.cpp, the real
+// one) does. Declared in include/log_buffer_test_hooks.h, which also carries
+// why this is a second ring rather than g_test_log_buffer above.
+LogBuffer g_test_log_sink_buffer = {};
+char g_test_log_sink_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
+bool g_test_log_wire_owned = false;
+uint32_t g_test_log_drain_cursor = 0;
+
+static void testLogSinkEnsureInit() {
+    if (g_test_log_sink_buffer.lines == nullptr) {
+        logBufferInit(&g_test_log_sink_buffer, g_test_log_sink_storage, LOG_RING_MAX_LINES);
+    }
+}
+
+void paLogLine(const char* line) {
+    if (line == nullptr) {
+        return;
+    }
+    testLogSinkEnsureInit();
+    logBufferAppend(&g_test_log_sink_buffer, line);
+    if (!g_test_log_wire_owned) {
+        consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
+    }
+}
+
+void paLogWireBindToConsole() {
+    testLogSinkEnsureInit();
+    g_test_log_drain_cursor = g_test_log_sink_buffer.totalWritten;
+    g_test_log_wire_owned = true;
+}
+
+bool paLogDrainNextLine(char* out, size_t outSize, uint32_t* evicted) {
+    testLogSinkEnsureInit();
+    return logBufferDrainNext(&g_test_log_sink_buffer, &g_test_log_drain_cursor, out, outSize,
+                              evicted);
+}
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
     return logBufferCopy(&g_test_log_buffer, buffer, bufferSize);
 }
@@ -866,12 +906,6 @@ esp_reset_reason_t esp_reset_reason() {
 // Default false in native tests (minimal impact on other 1756 tests)
 bool webLittleFsMounted() {
     return false;
-}
-
-// Serial mutex accessor — used by console_serial_output.cpp and paLogLine
-// Returns the test harness mutex from test/stubs/include/freertos/semphr.h
-SemaphoreHandle_t paGetSerialMutex() {
-    return (SemaphoreHandle_t)paStubMutexStorage();
 }
 
 // -----------------------------------------------------------------------------

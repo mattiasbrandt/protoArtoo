@@ -9,28 +9,32 @@
 //  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - Emit Console Records to serial with PER-LINE atomicity: each sink callback
-//    takes the serial mutex, writes its own one record line whole, and gives the
-//    mutex back before returning (see console_task.cpp:135-246 for mutex discipline).
-//    A multi-record response (begin -> field/item* -> end) is NOT held as one
-//    locked block - #219 R1 measured operations' 190-entry catalog listing at
-//    10985 B / ~0.95 s @115200 8N1, and the old per-group lock blocked every
-//    PA_LOG_* caller for that whole window, including Core 1 prio-5 rcInputTask
-//    and driveTask logging inside their loops (AGENTS.md Architecture Guardrails:
-//    Core 1 is real-time, real-time paths must not block; and drive zero-frame
-//    continuity at 50 Hz). Per-line locking is what docs/console-protocol.md
-//    already specifies: section 3.1 says records of one request "may be
-//    separated by other lines" (the Request ID reassembles them), and section
-//    2.1 records the no-paging decision this line-level design makes
-//    affordable. The only invariant that survives is section 6's "no line is
-//    ever interleaved inside another".
-//  - Log arriving mid-entry clears the input line, writes the log, then redraws
+//  - OWN THE SERIAL WIRE (ADR 0037). After consoleSerialBindCli() below, no
+//    other task writes it: a log line is written once, to the Log Ring, and
+//    this task drains it (consoleSerialDrainLogs). There is no serial mutex -
+//    it coordinated writers that no longer exist. #219 R1's per-line locking
+//    is superseded for the log path by the same change; what it was protecting
+//    against, a 190-entry `operations` listing (10985 B, ~0.95 s @115200 8N1)
+//    blocking every PA_LOG_* caller including Core 1's rcInputTask and
+//    driveTask, cannot happen at all now: a Core 1 task's PA_LOG_* costs one
+//    bounded critical section and a copy into the ring, and never touches the
+//    wire (AGENTS.md Architecture Guardrails: Core 1 is real-time, real-time
+//    paths must not block; and drive zero-frame continuity at 50 Hz).
+//  - Drain the ring at three points, which is what keeps wire order to within
+//    one record or one poll: each 10 ms poll, before dispatching a command,
+//    and at every record boundary while a command runs. Ring eviction - the
+//    only remaining way a log line is lost from the wire - is marked with one
+//    counted `dropped=<n>` line before the drain continues.
+//  - Emit Console Records one line at a time. docs/console-protocol.md section
+//    3.1 says records of one request "may be separated by other lines" (the
+//    Request ID reassembles them), and section 2.1 records the no-paging
+//    decision this line-level design makes affordable. The only invariant that
+//    survives is section 6's "no line is ever interleaved inside another",
+//    which single ownership plus one-write framing makes structural.
+//  - A drained log line clears the input line, writes the log, then redraws
 //    the prompt and buffered command - all of it composed by
 //    consoleSerialEmitLine() into ONE frame and written in ONE Serial.write()
-//    call (#268). This task's own echo (below) holds no lock while it runs, so
-//    a redraw delivered character by character is a redraw another writer can
-//    land a byte inside; one write is what makes docs/console-protocol.md
-//    section 6's "no line is ever interleaved inside another" true here.
+//    call (#268).
 //  - An input line that lost bytes - past the fixed command buffer, or to an
 //    rx FIFO overrun - is refused whole by the library and answered here with
 //    the same `invalid reason=line-too-long` record the browser adapter emits
@@ -41,7 +45,6 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <freertos/semphr.h>
 #include <string.h>
 #include <cstdio>
 
@@ -111,9 +114,14 @@ static uint32_t g_recordsDroppedThisRequest = 0;
 // processing input yet); on re-attach it is supplied by
 // consoleResetInputForAttach()'s queued synthetic Enter instead, so the
 // caller does not print it twice.
+//
+// Terminated CR LF, not a bare LF (#267): a Console session is attached in raw
+// mode, which disables the kernel's ONLCR NL->CR-NL translation, so a bare LF
+// left the banner's carriage where it was and started the invitation one
+// column in. Every other line on this wire already agrees on CR LF.
 static const char CONSOLE_READY_BANNER[] =
     "Controller Console ready. Type 'help' for commands, "
-    CONSOLE_DETACH_KEY_SERIAL " to leave.\n";
+    CONSOLE_DETACH_KEY_SERIAL " to leave.\r\n";
 
 // =============================================================================
 // Embedded-CLI Callbacks
@@ -184,6 +192,11 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     // Create sink for record output (implemented inline below)
     ConsoleRecordSink sink = consoleTaskRecordSink();
 
+    // Drain before dispatch (ADR 0037): anything logged between the last poll
+    // and this Enter belongs on the wire ahead of the answer to the command,
+    // not behind it.
+    consoleSerialDrainLogs();
+
     // Execute through Console module (ADR 0034)
     consoleExecuteCommand(&request, &sink);
 }
@@ -222,29 +235,29 @@ static bool onCliShouldStoreHistory(EmbeddedCli* cli, const char* line) {
 // Console Record Sink Callbacks (output formatting)
 // =============================================================================
 
-// Emit one fully-formatted record line atomically: wait for CDC transmit
-// room (ADR 0036), take the serial mutex, write the line + newline in one
-// call, give the mutex back. This is the ONLY unit of atomicity the wire
-// format needs (docs/console-protocol.md section 6: "no line is ever
-// interleaved inside another"). A multi-record response
-// (begin -> field/item* -> end) is deliberately NOT held as one locked block
-// across this call boundary -- see the file header for why (#219 R1).
+// Emit one fully-formatted record line atomically: wait for transmit room
+// (ADR 0036), write the line + terminator in one call. That single write is
+// the ONLY unit of atomicity the wire format needs
+// (docs/console-protocol.md section 6: "no line is ever interleaved inside
+// another"), and with one owner on the wire (ADR 0037) nothing is competing
+// for it: a multi-record response (begin -> field/item* -> end) is a sequence
+// of independent lines by design, not a block that has to be held -- see the
+// file header (#219 R1).
 //
 // The wait and the single-write framing live in consoleSerialEmitFramedLine()
 // (src/console/console_serial_output.cpp) -- the one emit helper both the
-// record sink here and the log fallback path there call, per ADR 0036. This
-// function's own job is just to count what that helper reports dropped.
+// record sink here and the pre-bind log path call, per ADR 0036. This
+// function's own job is to drain first and then count what that helper
+// reports dropped.
 //
-// CONSTRAINT: the mutex is NON-RECURSIVE (xSemaphoreCreateMutexStatic). Do
-// not call PA_LOG_* (or anything else that takes paGetSerialMutex()) between
-// the take and the give inside consoleSerialEmitFramedLine() -- paLogLine
-// routes through consoleSerialEmitLine(), which takes the same mutex with
-// portMAX_DELAY, and a non-recursive mutex self-deadlocks the calling task.
-// None of the sink callbacks below log while formatting a record, so this
-// holds; it is the narrower, still-live form of the warning this file used
-// to state at the whole-group level (begin..end) before #219 R1 moved
-// locking to per-line.
+// Every record boundary is also a drain point (ADR 0037): whatever this task
+// has logged since the last one goes out FIRST, so a log line emitted while a
+// command runs lands between records rather than after the whole answer. That
+// is what bounds wire order to "within one record". The drain cannot recurse
+// back in here - it emits log lines, never records - and nothing in the sink
+// callbacks below logs while formatting a record.
 static void emitRecordLine(const char* line, size_t len) {
+    consoleSerialDrainLogs();
     if (!consoleSerialEmitFramedLine(line, len, /*waitForRoom=*/true)) {
         g_recordsDroppedThisRequest++;
     }
@@ -402,13 +415,11 @@ void consoleTask(void* pvParameters) {
     // Set up embedded-cli callbacks.
     //
     // writeChar is the ECHO path only: embeddedCliProcess() calls it as the
-    // operator types, from this task, which deliberately does NOT hold the
-    // serial mutex across that call (a command dispatched from inside it emits
-    // its records through the same non-recursive mutex - #219 R1's per-line
-    // locking). The writer therefore takes the mutex for its own byte
-    // (src/console/console_serial_output.cpp), which is what keeps an echoed
-    // character outside a concurrently emitted log line's frame rather than
-    // inside it (#268). Log/event redraws do not come through here at all.
+    // operator types, from this task. It takes no lock, and needs none - this
+    // task is the wire's only writer (ADR 0037), so an echoed byte has
+    // nothing to be interleaved with. Drained log lines do not come through
+    // here at all: they are rendered whole into one frame
+    // (consoleSerialEmitLine) and written in one call.
     embeddedCli->writeChar = consoleSerialWriteChar;
     embeddedCli->onCommand = onCliCommand;
     // Tab completion (#238): operation names and argument keys from the
@@ -429,19 +440,13 @@ void consoleTask(void* pvParameters) {
     // Bind the CLI to the serial output coordinator (routes log/event/record lines)
     consoleSerialBindCli(embeddedCli);
 
-    // Print the ready banner and initial prompt under serial mutex. See
-    // CONSOLE_READY_BANNER's own comment for why the two print sites (here
-    // and the re-attach path below) split banner text from the "> "
-    // invitation differently.
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-    }
-    Serial.print(CONSOLE_READY_BANNER);
-    Serial.print("> ");
-    if (mutex != nullptr) {
-        xSemaphoreGive(mutex);
-    }
+    // Print the ready banner and initial prompt through the one seam that
+    // writes this wire (ADR 0037) rather than straight at `Serial` under a
+    // hand-taken mutex. See CONSOLE_READY_BANNER's own comment for why the
+    // two print sites (here and the re-attach path below) split banner text
+    // from the "> " invitation differently.
+    consoleSerialWriteText(CONSOLE_READY_BANNER);
+    consoleSerialWriteText("> ");
 #if !(ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE)
     // artoo-esp32 only (ADR 0036's flush() decision, #265). On UART0 this is
     // a real, harmless wait for the driver to finish draining the banner
@@ -458,9 +463,12 @@ void consoleTask(void* pvParameters) {
     // it here would silently drop whatever of the banner/prompt the host
     // has not yet picked up, and would report the host as disconnected to
     // this same task's own host-attach read of `Serial` a few lines below --
-    // strictly worse than not calling it. src/main.cpp:540 and :554 have the
-    // identical defect (fenced, out of this ticket's scope) and are reported
-    // as such rather than fixed; see #265's status comment.
+    // strictly worse than not calling it. src/main.cpp had two calls with the
+    // identical defect, reported as out of scope by #265 and removed by #270:
+    // the wire has an owner now, and neither of them was this task.
+    //
+    // This one stays, and it is the wire owner's own call: the scan test
+    // (test/test_tools/test_one_serial_seam.py) allowlists it on that basis.
     Serial.flush();
 #endif
 
@@ -498,6 +506,12 @@ void consoleTask(void* pvParameters) {
 
     // Main loop: read from UART and process through embedded-cli
     while (true) {
+        // Drain the Log Ring first (ADR 0037). Anything any task logged while
+        // this one slept belongs on the wire before this poll's keystrokes
+        // echo back, and the redraw each drained line carries repaints the
+        // prompt and whatever the operator had half-typed.
+        consoleSerialDrainLogs();
+
         // Log stack high water mark once after first command is processed
         // Measured value guides stack depth sizing for future runs (ADR 0034)
         //
@@ -536,14 +550,7 @@ void consoleTask(void* pvParameters) {
             if (hostRawPrevConnected && !hostConfirmedConnected) {
                 hostConfirmedConnected = true;
 
-                SemaphoreHandle_t attachMutex = paGetSerialMutex();
-                if (attachMutex != nullptr) {
-                    xSemaphoreTake(attachMutex, portMAX_DELAY);
-                }
-                Serial.print(CONSOLE_READY_BANNER);
-                if (attachMutex != nullptr) {
-                    xSemaphoreGive(attachMutex);
-                }
+                consoleSerialWriteText(CONSOLE_READY_BANNER);
 
                 consoleResetInputForAttach(embeddedCli);
                 PA_LOG_INFO(TAG, "host attached: line reset, prompt reprinted");

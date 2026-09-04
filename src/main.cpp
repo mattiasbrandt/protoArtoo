@@ -10,8 +10,9 @@
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <cstddef>
+#include <cstring>
+#include <esp_log.h>
 #include <esp_task_wdt.h>
-#include <freertos/semphr.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
@@ -52,8 +53,18 @@ static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
-static StaticSemaphore_t logSerialMutexStorage = {};
-static SemaphoreHandle_t logSerialMutex = nullptr;
+// Who owns the serial wire, and how far the owner has drained the ring
+// (ADR 0037). Both live under logMux with the ring itself, which is what makes
+// the hand-over exact: paLogLine() reads the flag in the same critical section
+// it appends in, so a line arriving as ownership changes is either written
+// directly (flag still clear, and the cursor is placed past it) or drained
+// (flag set, and the cursor was placed before it) - never both, never neither.
+//
+// There is no serial mutex any more. It existed because any task could write
+// the wire if it took the lock; after this ADR the Console task is the only
+// writer, so the lock had nothing left to coordinate (#270).
+static bool logWireOwnedByConsole = false;
+static uint32_t logDrainCursor = 0;
 // Static bootstrap ring: captures the few lines logged before NVS config loads
 // (schema migration, mount problems). paLogRingApplyBootDepth() replaces it
 // with a heap ring sized to the saved log level and carries these lines over.
@@ -88,18 +99,58 @@ void logBootHealth() {
 
 }  // namespace
 
-void paLogInit() {
-    if (logSerialMutex == nullptr) {
-        logSerialMutex = xSemaphoreCreateMutexStatic(&logSerialMutexStorage);
+// The ESP-IDF logger's output hook (ADR 0037).
+//
+// ESP_LOGx does not go through paLogLine(): it formats and hands the result to
+// the IDF's own vprintf, which writes stdout - UART0 - with no project lock
+// and no knowledge of who owns the wire. src/drivers/sbus_decoder.cpp (8
+// sites) and src/drivers/ledc_pwm.cpp (7 sites) log that way, from RCInputTask
+// and ServoTask, which is a second writer on a wire that now has an owner.
+// Pointing the hook at the Log Ring makes those lines ordinary log lines: they
+// land in /api/logs like everything else and the Console task drains them.
+//
+// The panic handler is deliberately NOT affected and needs no exception here.
+// Read, not assumed: panic.c's panic_print_str()/panic_print_char() drive the
+// UART and USB-serial-JTAG registers directly, and the core dump's own
+// ESP_COREDUMP_LOG* macros expand to esp_rom_printf()
+// (espcoredump/include_core_dump/esp_core_dump_types.h). Neither goes through
+// esp_log_vprintf, so neither can reach this hook - the panic path keeps its
+// own direct route exactly as ADR 0037 requires, and ADR 0031's rule that
+// nothing be added to that path is not touched. That matters here beyond
+// tidiness: this hook takes the ring's critical section, which a panicking
+// core must never be made to wait on.
+//
+// The formatted line is bounded by PA_LOG_SERIAL_LINE_MAX like every other
+// serial-bound line, and its trailing newline is stripped because the ring
+// stores lines, not terminators - the drain and /api/logs both add their own.
+// This runs in the calling task's context, so it costs that task one
+// PA_LOG_SERIAL_LINE_MAX buffer on its stack, the same as any PA_LOG_* call
+// already does (include/logging.h's _PA_LOG_FORMAT).
+//
+// Nothing here may call ESP_LOGx: it is what the logger calls.
+static int paLogIdfVprintf(const char* format, va_list args) {
+    char buf[PA_LOG_SERIAL_LINE_MAX];
+    const int written = vsnprintf(buf, sizeof(buf), format, args);
+    if (written <= 0) {
+        return written;
     }
+    size_t len = ((size_t)written < sizeof(buf)) ? (size_t)written : sizeof(buf) - 1;
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+        buf[--len] = '\0';
+    }
+    if (len > 0) {
+        paLogLine(buf);
+    }
+    return written;
+}
+
+void paLogInit() {
     if (recentLogBuf.lines == nullptr) {
         logBufferInit(&recentLogBuf, logBootstrapStorage, LOG_RING_BOOTSTRAP_LINES);
     }
-}
-
-// Accessor for console_task to coordinate atomic serial output (ADR 0034)
-SemaphoreHandle_t paGetSerialMutex() {
-    return logSerialMutex;
+    // Install before anything can ESP_LOGx, so the two driver files never get
+    // a boot window in which they still write UART0 directly.
+    esp_log_set_vprintf(paLogIdfVprintf);
 }
 
 // Size the log ring and the /api/logs body from the operator's saved log
@@ -143,10 +194,18 @@ char* recentLogsBodyBuffer(size_t* size) {
     return logsBodyBuf;
 }
 
-void paLogLineRaw(const char* line) {
+void paLogWireBindToConsole() {
     taskENTER_CRITICAL(&logMux);
-    logBufferAppend(&recentLogBuf, line);
+    logDrainCursor = recentLogBuf.totalWritten;
+    logWireOwnedByConsole = true;
     taskEXIT_CRITICAL(&logMux);
+}
+
+bool paLogDrainNextLine(char* out, size_t outSize, uint32_t* evicted) {
+    taskENTER_CRITICAL(&logMux);
+    bool got = logBufferDrainNext(&recentLogBuf, &logDrainCursor, out, outSize, evicted);
+    taskEXIT_CRITICAL(&logMux);
+    return got;
 }
 
 void paLogLine(const char* line) {
@@ -154,12 +213,31 @@ void paLogLine(const char* line) {
         return;
     }
 
-    // Route through the serial output coordinator once the Console task binds the CLI.
-    // Before the Console task starts, write directly (boot messages, early logs).
-    // consoleSerialEmitLine handles the serial mutex, line length cap, and coordinates with console input.
-    consoleSerialEmitLine(line);
+    // ONE write, to the Log Ring, under the ring's own critical section. The
+    // ring was already this line's authoritative record (#245); ADR 0037 makes
+    // the serial copy something produced FROM it rather than beside it, so a
+    // logging task on either core now pays one bounded critical section and a
+    // copy, and nothing that depends on the wire.
+    //
+    // The ownership flag is read here, inside the same section, and not from
+    // the sink: reading it outside would leave a window in which a line is
+    // appended before the hand-over and its wire decision taken after it (or
+    // the reverse), which duplicates or loses exactly one line at boot.
+    bool wireOwned;
+    taskENTER_CRITICAL(&logMux);
+    logBufferAppend(&recentLogBuf, line);
+    wireOwned = logWireOwnedByConsole;
+    taskEXIT_CRITICAL(&logMux);
 
-    paLogLineRaw(line);
+    if (!wireOwned) {
+        // Before the bind there is no Console task to drain the ring, so the
+        // line goes straight out - the boot log, unchanged. One framed write,
+        // best-effort, exactly as the pre-bind path has always been (#245's
+        // contract, ADR 0036's framing). After the bind this branch is dead by
+        // construction and the drain is the only writer
+        // (consoleSerialDrainLogs, src/console/console_serial_output.cpp).
+        consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
+    }
 }
 
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
@@ -544,7 +622,16 @@ void setup() {
     }
 
     PA_LOG_INFO("main", "init complete");
-    Serial.flush();
+    // No Serial.flush() here. The Console task exists by this point (created
+    // above), so this line is already the Console task's to put on the wire,
+    // and flushing a wire this task does not own is what ADR 0037 removes.
+    // It was never doing the job it looked like it was doing either: on a
+    // CDC-on-boot build main.cpp's own setTxTimeoutMs(0) makes HWCDC::flush()
+    // take its `tries == 0` path, which DISCARDS the TX ring and forces the
+    // `connected` latch false - so it dropped whatever of the boot log the
+    // host had not yet picked up (ADR 0036's Consequences named these two
+    // sites; src/tasks/console_task.cpp:#265 reported them as out of scope
+    // then, and this ticket owns src/main.cpp).
 }
 
 void loop() {
@@ -558,7 +645,13 @@ void loop() {
 
     if (shouldRestart) {
         PA_LOG_INFO("main", "restarting controller");
-        Serial.flush();
+        // No Serial.flush() here either, for the reason setup()'s tail gives:
+        // the Arduino loop task does not own this wire. The line above is in
+        // the ring, the Console task drains it within its 10 ms poll, and the
+        // delay(100) below is well past the ~4 ms a line of this length takes
+        // at 115200 8N1 - so the restart notice still reaches the operator,
+        // and on the CDC it now reaches them at all (flush() there discarded
+        // the ring rather than draining it).
         // Deinit TWDT before restart  --  prevents esp_restart() from being
         // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
         esp_task_wdt_deinit();

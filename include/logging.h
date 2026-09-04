@@ -13,6 +13,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <stdint.h>
 
 #include "config.h"
 #include "log_buffer.h"
@@ -20,8 +21,33 @@
 static constexpr size_t PA_LOG_SERIAL_LINE_MAX = 256;
 
 void paLogInit();
+
+// Record one log line.
+//
+// It is written ONCE, to the Log Ring, under the ring's own critical section.
+// Whether it also reaches the serial wire depends on who owns that wire
+// (ADR 0037): before the Console task binds the serial adapter this writes the
+// line straight out, because there is no task to drain it yet; afterwards the
+// Console task owns the wire and its drain is the only thing that puts a log
+// line on it. The decision is read inside the same critical section the append
+// happens in, so a line arriving at the instant ownership changes is written
+// exactly once - never twice, never not at all.
 void paLogLine(const char* line);
-void paLogLineRaw(const char* line);
+
+// Hand the serial wire to the Console task (ADR 0037). Called once, from
+// consoleSerialBindCli(), the moment the Console task has an embedded-cli
+// instance to render redraws with. Places the drain cursor at the ring's
+// current head so nothing already on the wire is drained a second time.
+void paLogWireBindToConsole();
+
+// Read the next log line the Console task owes the wire, advancing the drain
+// cursor. `evicted` reports how many lines the ring overwrote before this one
+// (0 when the drain kept up) so the drain can mark the loss.
+// Returns false when the drain has caught up with the writers.
+// See logBufferDrainNext() (log_buffer.h) for the cursor semantics; this wraps
+// it in the ring's critical section.
+bool paLogDrainNextLine(char* out, size_t outSize, uint32_t* evicted);
+
 uint8_t configCurrentLogLevel();
 
 // Inline helper  --  reads the live log level under the config cache lock.
