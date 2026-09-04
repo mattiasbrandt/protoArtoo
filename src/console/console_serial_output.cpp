@@ -1,12 +1,15 @@
 // =============================================================================
 // src/console/console_serial_output.cpp
 //
-// Serial output coordinator for Console task (ADR 0034, ADR 0036)
-// Every log/event/record byte reaches the wire through consoleSerialWriteFrame
-// below: one Serial.write() per unit, under the serial mutex. Proves the serial
-// output coordinator criterion from #217, the single-write-framing / room-wait
-// seam from #265, and #268's extension of that framing to the interactive
-// redraw itself (see the header for the interleaving it removes).
+// Serial output coordinator for Console task (ADR 0034, ADR 0036, ADR 0037)
+// This file is the ONLY writer of the serial wire in the firmware: every
+// record, log line, echoed character and banner reaches it through
+// consoleSerialWriteFrame below, one Serial.write() per unit, and after the
+// bind only the Console task calls any of it. Proves the serial output
+// coordinator criterion from #217, the single-write-framing / room-wait seam
+// from #265, #268's extension of that framing to the interactive redraw, and
+// #270's single ownership (test/test_tools/test_one_serial_seam.py enforces
+// the "only writer" half against the whole tree).
 // =============================================================================
 
 #include "console_serial_output.h"
@@ -15,7 +18,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 #include <freertos/task.h>
 
 #include "logging.h"
@@ -27,30 +29,18 @@ extern "C" {
 // Static reference to the bound CLI instance, set during console task init
 static EmbeddedCli* g_boundCli = nullptr;
 
-// The single Serial.write() call every Console byte reaches the wire through.
-// One call per unit is the whole point (ADR 0036, #268): a unit delivered in
-// one call cannot be interleaved by another writer on this wire, and cannot be
-// half-delivered by a transport that short-writes.
-//
-// CONSTRAINT: the serial mutex must already be held. consoleSerialWriteFrame()
-// is the entry point that takes it; consoleSerialEmitLine() calls this
-// directly because it holds the mutex across its render as well as its write,
-// and the mutex is non-recursive.
-static void consoleSerialWriteFrameLocked(const char* bytes, size_t len) {
-    Serial.write((const uint8_t*)bytes, len);
-}
-
 // =============================================================================
 // Per-Character Writer
 // =============================================================================
 
 // Exported for seam testing and embedded-cli binding.
 // The ECHO path: embeddedCliProcess() calls this for every character the line
-// editor puts on screen while the operator types, from the Console task, which
-// holds no lock there (src/tasks/console_task.cpp's main loop). So the byte
-// takes the serial mutex itself -- one character is its own frame -- and lands
-// either before or after a log line's frame, never inside it.
-// CONSTRAINT: must be called WITHOUT the serial mutex held; see the header.
+// editor puts on screen while the operator types, from the Console task
+// (src/tasks/console_task.cpp's main loop). No lock: the Console task is the
+// only writer of this wire (ADR 0037), so an echoed byte has nothing to be
+// interleaved with. Best-effort like every other keystroke echo -- a
+// character the transport refuses is one the operator retypes, and waiting
+// per byte would put the room-wait bound on every keystroke.
 void consoleSerialWriteChar(EmbeddedCli* cli, char c) {
     (void)cli;  // Unused
     consoleSerialWriteFrame(&c, 1, /*waitForRoom=*/false);
@@ -62,6 +52,22 @@ void consoleSerialWriteChar(EmbeddedCli* cli, char c) {
 
 void consoleSerialBindCli(EmbeddedCli* cli) {
     g_boundCli = cli;
+    // The bind IS the switch to ring-only logging (ADR 0037): from here on
+    // paLogLine() only appends, and consoleSerialDrainLogs() below is what
+    // puts a log line on the wire. Placing the drain cursor and raising the
+    // ownership flag happen together, inside the ring's own critical section,
+    // so the line-in-flight at this instant is written exactly once
+    // (src/main.cpp's paLogWireBindToConsole).
+    paLogWireBindToConsole();
+}
+
+void consoleSerialWriteText(const char* text) {
+    if (text == nullptr) {
+        return;
+    }
+    // Best-effort: see the header. A wait would refuse to write while the CDC
+    // reports no host, which is the state a cold-booted FireBeetle 2 is in.
+    consoleSerialWriteFrame(text, strlen(text), /*waitForRoom=*/false);
 }
 
 void consoleSerialEmitLine(const char* line) {
@@ -69,33 +75,6 @@ void consoleSerialEmitLine(const char* line) {
         return;
     }
 
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex == nullptr || g_boundCli == nullptr) {
-        // No coordination available (boot, before console task binds the
-        // CLI - consoleSerialBindCli() runs from consoleTask(), so every
-        // paLogLine() call made during setup() lands here). Best-effort:
-        // routes through the single shared framed writer with
-        // waitForRoom=false, same #245 contract as always. This used to
-        // write the line and its newline as two independent Serial.write()
-        // calls -- the exact shape ADR 0036 measured dropping whole lines
-        // while keeping their newline (a blank-line drop signature) -- so it
-        // now goes through the one place that fix lives, same as the record
-        // sink.
-        consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
-        return;
-    }
-
-    // Take the serial mutex for the entire emission (atomic under the lock).
-    // It covers the render as well as the write: the frame buffer below is
-    // static (see its comment) and embeddedCliPrintToBuffer mutates the line
-    // editor's own state, so two logging tasks must not be inside it at once.
-    if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
-        // Should not happen with portMAX_DELAY, but fail gracefully
-        return;
-    }
-
-    // For the bound path, truncate if needed inside the lock to avoid data
-    // races. Create a local buffer only if truncation is required.
     size_t lineLen = strlen(line);
     const char* lineToEmit = line;
     char lineBuf[PA_LOG_SERIAL_LINE_MAX];
@@ -108,35 +87,101 @@ void consoleSerialEmitLine(const char* line) {
         lineLen = PA_LOG_SERIAL_LINE_MAX - 1;
     }
 
+    if (g_boundCli == nullptr) {
+        // Nothing to render a redraw against (no CLI bound). Send the line on
+        // its own through the same single-write seam. Reachable only before
+        // the bind, and paLogLine() takes the same path there for the same
+        // reason; kept as a guard rather than an assumption.
+        consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/false);
+        return;
+    }
+
     // Render what embeddedCliPrint() would have written -- clear the input
     // line, the log line, the break, the prompt, the buffered command, the
     // cursor move -- into one buffer (lib/embedded-cli/VENDORED.md Patch 8)
     // and put it on the wire in ONE write. Character-at-a-time is what let
     // another writer on this wire land a byte inside the line (#268).
     //
-    // The buffer is static, not a local: any task can log, and 448 bytes on
-    // every logging task's stack is a cost none of them budgeted for. The
-    // serial mutex held here is what makes one shared buffer safe.
-    static char frame[CONSOLE_SERIAL_FRAME_MAX];
+    // The buffer is a LOCAL, and that is the point of ADR 0037's ownership
+    // change. It used to be static, because any task could be inside this
+    // function and 448 bytes on every logging task's stack is a cost none of
+    // them budgeted for. Only the Console task reaches it now, so the frame
+    // lives on that one task's stack and artoo-esp32 gets the .bss back.
+    char frame[CONSOLE_SERIAL_FRAME_MAX];
     const size_t frameLen =
         embeddedCliPrintToBuffer(g_boundCli, lineToEmit, frame, sizeof(frame));
 
     if (frameLen > 0) {
-        consoleSerialWriteFrameLocked(frame, frameLen);
+        // Waits for transmit room under the record bound (ADR 0037). If the
+        // room never comes the frame is dropped whole and the render has
+        // already advanced the editor's screen bookkeeping -- the operator
+        // sees a prompt redrawn one line later than the editor believes,
+        // which their next keystroke or the next drained line repairs. The
+        // line itself is never lost: /api/logs still has it.
+        consoleSerialWriteFrame(frame, frameLen, /*waitForRoom=*/true);
+        return;
     }
 
-    // Give the mutex back
-    xSemaphoreGive(mutex);
+    // The redraw did not fit, so nothing was rendered and the line editor
+    // was left untouched. Send the line on its own, whole, through the
+    // same single-write seam: the operator still sees the line, and the
+    // prompt comes back with their next keystroke or the next log line.
+    consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/true);
+}
 
-    if (frameLen == 0) {
-        // The redraw did not fit, so nothing was rendered and the line editor
-        // was left untouched. Send the line on its own, whole, through the
-        // same single-write seam: the operator still sees the line, and the
-        // prompt comes back with their next keystroke or the next log line.
-        // Outside the mutex on purpose -- consoleSerialEmitFramedLine takes
-        // it, and it is non-recursive.
-        consoleSerialEmitFramedLine(lineToEmit, lineLen, /*waitForRoom=*/false);
+uint32_t consoleSerialDrainLogs(void) {
+    // No host on the other end: leave the lines in the ring rather than
+    // writing them into a transport that will refuse them.
+    //
+    // This is what keeps ADR 0037's "the only loss is ring eviction" true on
+    // the FireBeetle 2. A drained line waits for room like a record, and the
+    // room-wait refuses outright while `Serial` reports no connected host -
+    // so draining into a detached CDC would advance the cursor over lines
+    // that never reached anyone, silently. Holding the cursor instead means
+    // the ring fills, and the operator who attaches gets the marker plus
+    // whatever the ring still holds. On artoo-esp32 `Serial` reports only
+    // that the UART driver is installed (HardwareSerial::operator bool()),
+    // which is true from setup() onwards, so this guard is inert there.
+    //
+    // The residual, stated rather than hidden: a host that is attached but has
+    // stopped reading can still make a single frame miss its room wait, and
+    // that one line is then lost from the wire without a marker. That is ADR
+    // 0036's record policy applied to logs, which is what ADR 0037 asked for;
+    // /api/logs still has the line either way.
+    if (!Serial) {
+        return 0;
     }
+
+    uint32_t written = 0;
+    uint32_t reads = 0;
+    char line[LOG_LINE_MAX];
+    uint32_t evicted = 0;
+
+    // Bounded at the ring's own depth. The ring cannot hold more lines than
+    // that, so one call always catches up with everything already written;
+    // what the bound refuses is being held here indefinitely by writers
+    // appending as fast as the wire drains, which at a record boundary would
+    // stall the command that is mid-answer. Whatever is left waits for the
+    // next of this function's three call sites.
+    while (reads < LOG_RING_MAX_LINES && paLogDrainNextLine(line, sizeof(line), &evicted)) {
+        reads++;
+        if (evicted > 0) {
+            // Ring eviction is the only remaining way a log line is lost from
+            // the wire, and it is marked rather than silent (ADR 0037). The
+            // count is formatted through the same helper a record's closing
+            // line uses, so the `dropped=<n>` idiom cannot drift between the
+            // two things that can be dropped.
+            char marker[48];
+            char suffix[24];
+            consoleSerialFormatDroppedSuffix(suffix, sizeof(suffix), evicted);
+            snprintf(marker, sizeof(marker), "[log]%s", suffix);
+            consoleSerialEmitLine(marker);
+            written++;
+        }
+        consoleSerialEmitLine(line);
+        written++;
+    }
+    return written;
 }
 
 // =============================================================================
@@ -186,32 +231,40 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom) {
     }
 
     if (waitForRoom) {
-        // Outside the mutex, on purpose (see the CONSTRAINT in the header):
-        // a TWDT-subscribed task's paLogLine() takes the same mutex with
-        // portMAX_DELAY, and this wait must never be something it inherits.
+        // Never reserve more room than this transport can ever report having
+        // (CONSOLE_SERIAL_TX_ROOM_MAX, console_serial_output.h). Asking for
+        // more is a wait that cannot succeed: it burns the whole bound and
+        // then drops a frame the transport would have accepted. Above the
+        // ceiling the reservation means "as empty as this transport gets",
+        // and the transport's own write path carries the remainder -- blocking
+        // on UART0, chunked through the TX ring on the CDC.
+        const size_t reserve = len < CONSOLE_SERIAL_TX_ROOM_MAX ? len : CONSOLE_SERIAL_TX_ROOM_MAX;
+
+        // Only the Console task ever spends this wait, and it is not
+        // TWDT-subscribed (src/tasks/console_task.cpp's file header). That is
+        // what ADR 0037 changed: the wait used to be reachable from any
+        // logging task's context, which is why ADR 0036 had to keep it
+        // strictly outside the lock.
         uint32_t waitedMs = 0;
-        while (Serial && Serial.availableForWrite() < (int)len &&
+        while (Serial && Serial.availableForWrite() < (int)reserve &&
                waitedMs < CONSOLE_RECORD_ROOM_WAIT_BOUND_MS) {
             vTaskDelay(pdMS_TO_TICKS(1));
             waitedMs++;
         }
-        if (!Serial || Serial.availableForWrite() < (int)len) {
+        if (!Serial || Serial.availableForWrite() < (int)reserve) {
             // Room never cleared (or the host was never connected to begin
-            // with): drop the frame whole. Nothing is written, and the
-            // mutex is never taken -- a half-sent line is exactly the
-            // #245-era failure mode this function exists to remove.
+            // with): drop the frame whole. Nothing is written -- a half-sent
+            // line is exactly the #245-era failure mode this function exists
+            // to remove.
             return false;
         }
     }
 
-    SemaphoreHandle_t mutex = paGetSerialMutex();
-    if (mutex != nullptr) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-    }
-    consoleSerialWriteFrameLocked(bytes, len);
-    if (mutex != nullptr) {
-        xSemaphoreGive(mutex);
-    }
+    // The one Serial.write() in the firmware. One call per unit is the whole
+    // point (ADR 0036, #268): a unit delivered in one call cannot be
+    // half-delivered by a transport that short-writes, and with a single
+    // owner (ADR 0037) there is nothing else on this wire to interleave it.
+    Serial.write((const uint8_t*)bytes, len);
     return true;
 }
 

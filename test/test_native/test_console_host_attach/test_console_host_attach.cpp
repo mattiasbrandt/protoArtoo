@@ -6,10 +6,25 @@
  * lib/embedded-cli source (not a mock of it), the same way
  * test_cli_safe_overflow.cpp and test_console_completion.cpp already do.
  *
- * Case 1 is the "prove it can fail" control: it calls ONLY
- * embeddedCliResetInput() - the naive fix a maintainer might reach for
- * instead of console_host_attach.h - and shows it corrupts the next typed
- * command instead of cleanly starting it. Cases 2-4 exercise the actual fix.
+ * Case 1 calls ONLY embeddedCliResetInput() - the naive fix a maintainer
+ * might reach for instead of console_host_attach.h - and pins what that
+ * primitive does and does not do on its own. Cases 2-6 exercise the actual
+ * fix.
+ *
+ * REWRITTEN 2026-09-04 (#270, reported on the issue, not edited silently).
+ * Case 1 used to assert that the primitive CORRUPTS the next typed command,
+ * because embeddedCliResetInput() zeroed cmdSize while leaving the old line's
+ * bytes in cmdBuffer and the cursor where it was. ADR 0037 gives the line
+ * editor a single owner, and #270 fixed the primitive itself
+ * (lib/embedded-cli/VENDORED.md, Patch 2's correction note): the buffer and
+ * the cursor are now cleared with the count. Asserting the defect still
+ * exists would have been asserting the bug back into the library, so the case
+ * now pins the boundary that is actually left - the primitive resets the
+ * INPUT BUFFER, and console_host_attach.h's queued synthetic Enter is what
+ * repaints the SCREEN (invitation, inputLineLength, history cursor). If a
+ * future change collapses console_host_attach.h down to a bare
+ * embeddedCliResetInput() call, the missing invitation asserted below is what
+ * catches it.
  */
 
 #include <unity.h>
@@ -79,17 +94,13 @@ void tearDown(void) {
 }
 
 /**
- * Case 1 (control, expected to demonstrate the defect): embeddedCliResetInput()
- * alone, with no follow-up, leaves the command buffer's actual bytes and
- * cursor position stale. The very next real keystrokes are inserted at
- * strlen(cmdBuffer) - cursorPos (embedded_cli.c onCharInput), not at the
- * front of an empty line, so the resulting command is neither the stale
- * fragment nor the newly typed text - a silently corrupted first command,
- * exactly fault #3 in #260's issue body. If a future change collapses
- * console_host_attach.h back down to a bare embeddedCliResetInput() call,
- * this assertion is what should catch it.
+ * Case 1: embeddedCliResetInput() alone empties the input buffer, so the next
+ * typed command is exactly what the operator typed - but it draws nothing, so
+ * a re-attaching operator would face a blank screen with no invitation. That
+ * is the whole reason console_host_attach.h queues a synthetic Enter on top of
+ * it rather than calling the primitive and stopping.
  */
-void test_reset_input_alone_corrupts_next_command(void) {
+void test_reset_input_alone_clears_the_buffer_but_draws_nothing(void) {
     static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
     EmbeddedCli *cli = newTestCli(cliBuffer, sizeof(cliBuffer));
 
@@ -98,20 +109,29 @@ void test_reset_input_alone_corrupts_next_command(void) {
     feedString(cli, "driv");
     embeddedCliProcess(cli);
 
-    // The naive "fix": clear cmdSize only.
+    outputCaptureLen = 0;
+    outputCapture[0] = '\0';
+
+    // The primitive on its own: clears the input buffer, writes nothing.
     embeddedCliResetInput(cli);
 
-    // Operator reattaches and types a short, unrelated command.
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", embeddedCliGetCmdBuffer(cli),
+                                     "the reset primitive must leave an empty command buffer");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+        "", outputCapture,
+        "the reset primitive must not draw: repainting the line is the "
+        "synthetic Enter's job (include/console_host_attach.h)");
+
+    // Operator reattaches and types a short, unrelated command. It is theirs,
+    // uncorrupted - the stale-strlen insertion #260 named is gone at the
+    // source (#270).
     feedString(cli, "go");
     embeddedCliReceiveChar(cli, '\r');
     embeddedCliProcess(cli);
 
     TEST_ASSERT_EQUAL_INT(1, commandCount);
-    // The defect: the submitted command is not the clean "go" the operator
-    // typed. (What it actually is depends on embedded-cli's internal
-    // cmdSize/parseCommand interaction with the stale buffer - the point of
-    // this test is that it is wrong, not what specific garbage results.)
-    TEST_ASSERT_NOT_EQUAL(0, strcmp(lastCommand, "go"));
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("go", lastCommand,
+                                     "the first command after a bare reset must be what was typed");
 
     embeddedCliFree(cli);
 }
@@ -249,7 +269,7 @@ void test_reset_for_attach_reprints_invitation(void) {
 
 int main() {
     UNITY_BEGIN();
-    RUN_TEST(test_reset_input_alone_corrupts_next_command);
+    RUN_TEST(test_reset_input_alone_clears_the_buffer_but_draws_nothing);
     RUN_TEST(test_reset_for_attach_clears_buffer_without_executing);
     RUN_TEST(test_reset_for_attach_next_command_is_clean);
     RUN_TEST(test_reset_for_attach_clears_nonzero_cursor);

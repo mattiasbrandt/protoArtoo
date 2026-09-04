@@ -71,3 +71,46 @@ size_t logBufferCopy(const LogBuffer* buf, char* out, size_t outSize) {
     out[used] = '\0';
     return used;
 }
+
+bool logBufferDrainNext(const LogBuffer* buf, uint32_t* cursor, char* out, size_t outSize,
+                        uint32_t* evicted) {
+    if (evicted != nullptr) {
+        *evicted = 0;
+    }
+    if (buf == nullptr || cursor == nullptr || out == nullptr || outSize == 0 ||
+        buf->lines == nullptr || buf->capacity == 0) {
+        return false;
+    }
+
+    const uint32_t total = buf->totalWritten;
+    const uint32_t count = (uint32_t)buf->count;
+    // The sequence number of the oldest line the ring still holds. Everything
+    // below it has been overwritten.
+    const uint32_t oldest = (total >= count) ? (total - count) : 0;
+
+    if (*cursor > total) {
+        // Ahead of the writer, which means the ring was reset under the reader
+        // rather than that lines were lost. Rejoin at the newest line instead
+        // of reading the whole ring again as if it were all new.
+        *cursor = total;
+    }
+    if (*cursor < oldest) {
+        // The writer overtook the reader. Report the gap once, then continue
+        // from the oldest line the ring still has: a reader that silently
+        // resumed would turn lost history into an unexplained jump.
+        if (evicted != nullptr) {
+            *evicted = oldest - *cursor;
+        }
+        *cursor = oldest;
+    }
+    if (*cursor >= total) {
+        return false;
+    }
+
+    const size_t start = (buf->head + buf->capacity - buf->count) % buf->capacity;
+    const size_t idx = (start + (size_t)(*cursor - oldest)) % buf->capacity;
+    strncpy(out, buf->lines[idx], outSize - 1);
+    out[outSize - 1] = '\0';
+    (*cursor)++;
+    return true;
+}

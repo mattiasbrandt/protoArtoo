@@ -328,10 +328,38 @@ visible input line, prints the log line whole, and redraws the prompt with the
 buffered command. No line is ever interleaved inside another.
 
 That last sentence is a property of how the redraw is sent, not a hope about
-timing: the clear, the line, the prompt and the buffered command are composed
-into one sequence and handed to the port in a **single write**, so nothing the
-controller writes concurrently - your own keystrokes echoing back, a Console
-Record from a command already running - can land inside it.
+timing, and it now rests on two things. The clear, the line, the prompt and the
+buffered command are composed into one sequence and handed to the port in a
+**single write**; and the Console is the **only writer of the serial port**.
+Firmware log lines are written once, to the controller's log ring - the same
+ring `/api/logs` and `system.status.logs` read - and the Console takes them
+from there. Nothing else in the controller writes this port.
+
+That has two consequences you can see on the wire:
+
+- **Log lines are ordered against Console Records**, to within one record or
+  one poll of the Console's 10 ms cadence. The Console empties the ring at each
+  poll, before it starts a command, and between the records of a command's
+  answer - so a log line emitted during a long listing appears between two of
+  its records, not after the whole thing.
+- **The one way a log line can be lost from the port is now announced.** If the
+  controller logs faster than the port can carry for long enough that the ring
+  wraps, the Console prints one counted marker line before it carries on:
+
+  ```
+  [log] dropped=7
+  ```
+
+  It is the same `dropped=<n>` token a Console Record's closing line carries
+  (section 3.3), and it means the same thing: exactly that many lines are
+  missing at that point. Nothing is missing without it. The lines themselves
+  are gone from the ring too, so `/api/logs` does not have them either.
+
+One thing serial no longer shows: a log line written by the Console itself
+inside a command that crashes the controller before its next record stays in
+the ring and is lost with the reboot. The command echo and everything up to
+that point are already on the port, and the crash handler prints the fault,
+the task and a backtrace on its own path.
 
 ## 7. Transport-safe text
 

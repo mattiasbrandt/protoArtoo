@@ -8,16 +8,17 @@
 // What this proves, on the host, with no board:
 //   1. A line emitted while the operator is mid-entry CLEARS the visible input
 //      line, writes the line, then REDRAWS prompt + buffered command.
-//   2. The serial mutex is taken and given in matched pairs on every path,
-//      including the guard paths that emit without a preceding begin record.
-//   3. The console never self-deadlocks on the non-recursive mutex.
+//   2. No path takes a serial mutex, on any path, including the guard paths
+//      that emit without a preceding begin record (was: "taken and given in
+//      matched pairs" - see the #270 WORKER NOTE below for the inversion).
+//   3. The console cannot self-deadlock on a lock it does not have.
 //
 // The seam under test (worker implements; see the coordinator note on #217):
 //   void consoleSerialBindCli(EmbeddedCli* cli);
 //   void consoleSerialEmitLine(const char* line);
-// `consoleSerialEmitLine` must route through embeddedCliPrint() - which already
-// implements clear/print/redraw (lib/embedded-cli/src/embedded_cli.c:590-619) -
-// while holding the serial mutex for the whole emission.
+// `consoleSerialEmitLine` must render clear/print/redraw as embeddedCliPrint()
+// does (lib/embedded-cli/src/embedded_cli.c) and put the whole thing on the
+// wire in one write.
 //
 // WORKER NOTE (#268, reported on the issue, not edited silently): sections 1
 // and 6 below read the emitted bytes back through SerialStub (the wire) rather
@@ -34,6 +35,32 @@
 // The `g_capture`/`writeChar` probe itself stays - it is what section 4's
 // echo-proportionality test measures - but its two lookup helpers went with
 // the assertions that used them rather than being left orphaned.
+//
+// WORKER NOTE (#270, reported on the issue, not edited silently): section 2's
+// and section 5's four "the mutex was taken exactly once" assertions now read
+// "the mutex was never taken". ADR 0037 makes the Console task the only writer
+// of this wire, and #270's acceptance requires `logSerialMutex` and its
+// accessor to be DELETED - so an assertion that an emission takes a serial
+// mutex is an assertion that the ticket was not done. Nothing is weakened:
+// each one is INVERTED, not dropped, and an inverted assertion is the tighter
+// one here. `takeCount >= 2` was satisfiable by any number of takes; `== 0`
+// admits none, so it is the deletion itself that is now pinned, on every path
+// section 2 and section 5 already covered. The PaStubMutex singleton the
+// assertions read is unchanged and still exercised for real by
+// test_console_module.cpp and test_console_concurrency.cpp, which drive the
+// Console module's own config-write mutex through it.
+//
+// The properties those four cases existed to protect are kept, and are now
+// structural rather than disciplinary:
+//  - "no unmatched give" and "never left held": nothing takes or gives, so
+//    neither can happen. Asserted as zero takes plus zero unmatched gives.
+//  - "the per-character writer must not nest a take inside the emission's":
+//    section 3 keeps its `failedTakes == 0`, which stays meaningful - a
+//    writeChar that reached for ANY mutex would show there.
+//  - "the console never self-deadlocks on the non-recursive mutex": there is
+//    no mutex to deadlock on. What replaced the hazard is
+//    embeddedCliPrintToBuffer()'s own re-entrancy refusal, covered by
+//    test/test_native/test_cli_print_to_buffer/.
 //
 // The fixture also now sets `enableAutoComplete = false`, which is what
 // src/tasks/console_task.cpp sets. Nothing here depended on the default; a
@@ -188,13 +215,16 @@ void test_log_with_empty_input_line_still_emits_once_and_restores_prompt(void) {
 }
 
 // ----------------------------------------------------------------------------
-// 2. Mutex discipline
+// 2. No lock on the wire (#270; was "mutex discipline")
 // ----------------------------------------------------------------------------
 
-// Every emission takes and gives the serial mutex in a matched pair and leaves
-// it free. An unmatched give is the attempt-2 defect: onRecordEnd released a
-// mutex that the guard paths never took.
-void test_emission_leaves_mutex_free_with_matched_take_and_give(void) {
+// No emission touches a serial mutex, because there is not one to touch (ADR
+// 0037: the Console task is the only writer, so the lock had nothing left to
+// coordinate). The attempt-2 defect this case was written for - onRecordEnd
+// releasing a mutex the guard paths never took - is unreachable for the same
+// reason, and both halves are still asserted: zero takes, zero unmatched
+// gives.
+void test_emission_takes_no_serial_mutex_at_all(void) {
     cliFixtureSetUp();
     paStubMutexReset();
 
@@ -202,26 +232,28 @@ void test_emission_leaves_mutex_free_with_matched_take_and_give(void) {
     consoleSerialEmitLine("[INFO] two");
 
     struct PaStubMutex* m = paStubMutexStorage();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the serial mutex was left held after emission");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount,
+                                  "an emission took a serial mutex; #270 deletes it, and a "
+                                  "lock on this path means a writer other than the Console "
+                                  "task is still assumed to exist");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was left held after emission");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives,
-                                  "the serial mutex was given without having been taken");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(m->takeCount, m->giveCount,
-                                  "takes and gives are not balanced");
-    TEST_ASSERT_TRUE_MESSAGE(m->takeCount >= 2, "emission did not take the serial mutex at all");
+                                  "a mutex was given without having been taken");
 }
 
-// The mutex is non-recursive. An emission path that re-enters itself - for
-// example by logging while holding the mutex - would block forever on the
-// target; on the host the second take fails, so a nested emission must not
-// silently corrupt the pairing.
-void test_nested_emission_does_not_corrupt_mutex_pairing(void) {
+// A completed emission leaves no lock state behind on any path. This used to
+// be about the non-recursive mutex's self-deadlock (an emission that re-entered
+// itself by logging while holding it); that hazard is gone with the mutex, and
+// the re-entrancy that replaced it is refused by embeddedCliPrintToBuffer()
+// itself (test/test_native/test_cli_print_to_buffer/).
+void test_completed_emission_leaves_no_lock_state_behind(void) {
     cliFixtureSetUp();
     paStubMutexReset();
 
     consoleSerialEmitLine("[INFO] outer");
 
     struct PaStubMutex* m = paStubMutexStorage();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "mutex still held after a completed emission");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was still held after a completed emission");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give after emission");
 }
 
@@ -234,12 +266,14 @@ void test_nested_emission_does_not_corrupt_mutex_pairing(void) {
 // production per-character writer and could not see the defect below. That was a
 // gap in the harness, not in the worker's reading of it.
 //
-// consoleSerialEmitLine() holds the serial mutex and then calls
-// embeddedCliPrint(), which writes through `cli->writeChar` for every character.
-// If that writer also tries to take the same NON-RECURSIVE mutex, every single
-// byte performs a take that must fail - and whatever the writer does on that
-// failure path is what actually reaches the port. The mutex belongs to the
-// emission-level caller; the per-character writer must not touch it.
+// consoleSerialEmitLine() used to hold the serial mutex and then call
+// embeddedCliPrint(), which writes through `cli->writeChar` for every
+// character. If that writer also tried to take the same NON-RECURSIVE mutex,
+// every single byte performed a take that must fail - and whatever the writer
+// did on that failure path was what actually reached the port. #270 removes
+// the mutex outright, so the case now asserts what remains true and is worth
+// asserting: neither the emission nor the per-character writer reaches for a
+// lock at all.
 //
 // Seam requirement: `consoleSerialWriteChar` is exported from
 // console_serial_output.cpp and bound as `cli->writeChar` by the Console task,
@@ -266,11 +300,11 @@ void test_emission_performs_no_nested_take_through_writechar(void) {
     struct PaStubMutex* m = paStubMutexStorage();
     TEST_ASSERT_EQUAL_INT_MESSAGE(
         0, m->failedTakes,
-        "the per-character writer tried to take the serial mutex the emission already holds; "
-        "the mutex belongs to consoleSerialEmitLine, not to writeChar");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount,
-                                  "an emission must take the serial mutex exactly once");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the serial mutex was left held");
+        "the per-character writer reached for a mutex during an emission; it has no lock to "
+        "take and no lock to contend with (ADR 0037)");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount,
+                                  "an emission must take no serial mutex at all (#270)");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was left held");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->unmatchedGives, "unmatched give during emission");
 }
 
@@ -361,9 +395,10 @@ void test_keystroke_echo_output_stays_proportional_to_input(void) {
 // The seam under test here is consoleSerialEmitFramedLine() and
 // consoleSerialFormatDroppedSuffix() (console_serial_output.h). Both are pure
 // with respect to this file's fixtures: they talk to `Serial` (SerialStub,
-// test/stubs/include/Arduino.h) and paGetSerialMutex() (the same PaStubMutex
-// section 2 above already exercises), so every assertion below reads back
-// through those two test doubles rather than a board.
+// test/stubs/include/Arduino.h) and, since #270, to nothing else - so every
+// assertion below reads back through that one test double rather than a
+// board. The PaStubMutex checks that remain are there to prove the absence of
+// a lock, not its discipline (see the WORKER NOTE at the top of this file).
 
 static void framedLineFixtureSetUp(void) {
     serialStubReset();
@@ -403,9 +438,9 @@ void test_framed_line_with_room_writes_once_including_newline(void) {
                                   "the single write must end in the newline, not a separate call");
 
     struct PaStubMutex* m = paStubMutexStorage();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount, "the mutex must be taken exactly once to write");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->giveCount, "the mutex must be given back");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the mutex must not be left held");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "writing a record must take no mutex (#270)");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->giveCount, "nothing was taken, so nothing may be given");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was left held");
     TEST_ASSERT_TRUE_MESSAGE(SerialStub::availableForWriteCallCount > 0,
                              "a waiting caller must actually check for room, not skip the check");
 }
@@ -488,8 +523,9 @@ void test_framed_line_without_wait_flag_never_waits_for_room() {
         "a non-waiting caller must never even ask about transmit room or connection state");
 
     struct PaStubMutex* m = paStubMutexStorage();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, m->takeCount, "a log line still writes under the mutex");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "the mutex must not be left held");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount,
+                                  "the pre-bind log path must take no mutex either (#270)");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was left held");
 }
 
 // #267 - the terminator itself, on both paths.
@@ -550,6 +586,50 @@ void test_framed_line_room_reservation_covers_both_terminator_bytes(void) {
                              "room for the line plus CR LF is enough: the record must be sent");
     TEST_ASSERT_EQUAL_INT_MESSAGE(lineLen + 2, (int)SerialStub::capturedLen,
                                   "the whole line and both terminator bytes must reach the wire");
+}
+
+// A frame longer than the transport's whole buffer must still be sent.
+//
+// WORKER TEST (#270): `Serial.availableForWrite()` has a ceiling -- the CDC's
+// 256-byte TX ring, UART0's 128-byte FIFO (CONSOLE_SERIAL_TX_ROOM_MAX,
+// console_serial_output.h, with the vendor citations). Reserving `lineLen + 2`
+// unconditionally therefore asked for room that can never exist once a line
+// passed that ceiling, waited out the whole 100 ms bound, and dropped a frame
+// both transports would have accepted: UART0 cannot short-write at all, and
+// the CDC chunks anything larger than its ring regardless. The reservation is
+// capped at the ceiling, which this pins from both sides -- room equal to the
+// ceiling sends, one byte less still drops, so neither the cap nor the wait
+// itself can quietly disappear.
+void test_room_reservation_is_capped_at_what_the_transport_can_offer(void) {
+    char line[201];
+    memset(line, 'R', sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+    const size_t lineLen = strlen(line);
+    TEST_ASSERT_TRUE_MESSAGE(lineLen + 2 > CONSOLE_SERIAL_TX_ROOM_MAX,
+                             "fixture line must be longer than the transport ceiling");
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = (int)CONSOLE_SERIAL_TX_ROOM_MAX;
+    bool sentAtCeiling = consoleSerialEmitFramedLine(line, lineLen, /*waitForRoom=*/true);
+
+    TEST_ASSERT_TRUE_MESSAGE(sentAtCeiling,
+                             "a frame past the transport's ceiling must be sent once the "
+                             "transport is as empty as it can report, not dropped waiting for "
+                             "room that can never exist");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, SerialStub::writeCallCount,
+                                  "the frame must still reach the wire in exactly one call");
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(lineLen + 2), (int)SerialStub::capturedLen,
+                                  "the whole line and both terminator bytes must be written");
+
+    framedLineFixtureSetUp();
+    SerialStub::availableForWriteValue = (int)CONSOLE_SERIAL_TX_ROOM_MAX - 1;
+    bool sentBelowCeiling = consoleSerialEmitFramedLine(line, lineLen, /*waitForRoom=*/true);
+
+    TEST_ASSERT_FALSE_MESSAGE(sentBelowCeiling,
+                              "one byte below the ceiling the transport is not as empty as it "
+                              "gets: the wait must still run and the frame must still drop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach Serial.write() for a dropped frame");
 }
 
 // consoleSerialFormatDroppedSuffix: absent (empty, zero-length) when nothing
@@ -734,8 +814,8 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_log_midentry_clears_input_line_then_redraws_prompt_and_buffer);
     RUN_TEST(test_log_with_empty_input_line_still_emits_once_and_restores_prompt);
-    RUN_TEST(test_emission_leaves_mutex_free_with_matched_take_and_give);
-    RUN_TEST(test_nested_emission_does_not_corrupt_mutex_pairing);
+    RUN_TEST(test_emission_takes_no_serial_mutex_at_all);
+    RUN_TEST(test_completed_emission_leaves_no_lock_state_behind);
     RUN_TEST(test_emission_performs_no_nested_take_through_writechar);
     RUN_TEST(test_long_lines_are_truncated_to_serial_max);
     RUN_TEST(test_keystroke_echo_output_stays_proportional_to_input);
@@ -745,6 +825,7 @@ int main(int, char**) {
     RUN_TEST(test_framed_line_without_wait_flag_never_waits_for_room);
     RUN_TEST(test_framed_line_terminates_with_cr_lf_on_both_policies);
     RUN_TEST(test_framed_line_room_reservation_covers_both_terminator_bytes);
+    RUN_TEST(test_room_reservation_is_capped_at_what_the_transport_can_offer);
     RUN_TEST(test_dropped_suffix_absent_when_zero);
     RUN_TEST(test_dropped_suffix_present_with_exact_count_when_nonzero);
     RUN_TEST(test_dropped_suffix_too_small_buffer_emits_nothing);
