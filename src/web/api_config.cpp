@@ -666,14 +666,20 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
     }
 
-    configCacheRead(&outcome.snap);
+    // Write the post-commit state back through `working` rather than out
+    // through the outcome. This is the same read the outcome's own snapshot
+    // used to take, at the same point in the sequence - after the cache apply
+    // and after the stationary resync - so the bytes the caller renders are
+    // unchanged; what goes away is the 944-B snapshot that used to ride home
+    // inside ConfigCommitOutcome and be copied again into the caller's local.
+    configCacheRead(working);
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
         outcome.persisted = false;
         return outcome;
     }
-    if (!configSave(prefs, outcome.snap)) {
+    if (!configSave(prefs, *working)) {
         prefs.end();
         outcome.persisted = false;
         return outcome;
@@ -772,13 +778,14 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
 
+    // configCommitApplied() leaves the post-commit snapshot in `working`.
     ConfigCommitOutcome commit = configCommitApplied(&working, result, SRC_WEB_API);
     if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist config");
         return;
     }
 
-    sendConfigSnapshot(req, commit.snap);
+    sendConfigSnapshot(req, working);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).

@@ -38,12 +38,24 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // provenance (#221) - the web route always passes SRC_WEB_API, the Console
 // passes SRC_SERIAL_CONSOLE/SRC_WEB_CONSOLE.
 //
-// ConfigCommitOutcome is small (one bool + one ConfigSnapshot, no log-record
-// payload) - safe as a stack local, unlike ConfigApplyResult.
+// The outcome is the plain verdict only. The post-commit snapshot is written
+// back through `working`, which is how identitySetCommitApplied()
+// (include/api_identity.h) and the audio Commit Steps (include/api_audio.h)
+// already hand a snapshot back, and what ADR 0011's 2026-09-04 amendment
+// settles for this one: the Apply Core contract is the response bytes and the
+// plain outcome, not the calling convention.
+//
+// It used to carry a whole ConfigSnapshot under a comment calling the struct
+// small. ConfigSnapshot measures 944 B, so that one by-value crossing put
+// ~1892 B of snapshot copies on the serial config-write path and helped
+// overflow the Console task on both chips (#226). `working` already holds a snapshot the caller owns; writing the
+// post-commit state back into it costs no second copy.
 struct ConfigCommitOutcome {
     bool persisted = false;  // false -> caller reports "failed to persist config"
-    ConfigSnapshot snap;     // the post-apply, post-cache-resync snapshot
 };
+
+// On return `*working` holds the post-apply, post-cache-resync snapshot - the
+// bytes the REST handler renders - whether or not persistence succeeded.
 ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
                                          CommandSource source);
 

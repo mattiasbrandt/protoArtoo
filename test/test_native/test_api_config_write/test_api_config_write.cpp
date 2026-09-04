@@ -102,6 +102,56 @@ void test_config_post_accepts_a_raw_json_body_under_the_plain_name() {
     TEST_ASSERT_EQUAL_UINT32(250, readSnapshot().drive.sbusTimeoutMs);
 }
 
+// The Commit Step hands its post-commit snapshot back through `working`
+// instead of returning one (ADR 0011's 2026-09-04 amendment), so what the
+// caller renders has to be the state the config cache actually ended up in.
+// Drop configCacheApply(*working) from configCommitApplied() and this goes
+// red: `working` still carries the caller's intent while the cache never
+// moved.
+void test_config_commit_leaves_working_agreeing_with_the_config_cache() {
+    ConfigSnapshot working = readSnapshot();
+    working.drive.speedLimitMax = 80;
+    working.system.logLevel = 3;
+    working.audio.audioVolume = 22;
+
+    // ConfigApplyResult is ~2.5 KB; static here for the same reason the
+    // handlers keep theirs static rather than on the stack.
+    static ConfigApplyResult result;
+    result = ConfigApplyResult{};
+
+    ConfigCommitOutcome commit = configCommitApplied(&working, result, SRC_WEB_API);
+
+    TEST_ASSERT_TRUE(commit.persisted);
+    const ConfigSnapshot cached = readSnapshot();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(&working, &cached, sizeof(ConfigSnapshot)),
+                                  "working does not hold the committed config cache state");
+}
+
+// The REST handler renders `working` after the commit, which must be the
+// committed snapshot and not the one the request arrived with. Rendering a
+// pre-commit copy instead turns this red: the POST body would still show the
+// old speedLimitMax while GET shows the new one.
+void test_config_post_body_matches_a_read_of_the_committed_config() {
+    const WebRequestTestParam params[] = {{"speedLimitMax", "80"}, {"audioVolume", "22"}};
+    WebRequestTestBackend postBackend;
+    postBackend.params = params;
+    postBackend.paramCount = 2;
+    WebRequest postReq(&postBackend);
+
+    handleConfigPost(postReq);
+    TEST_ASSERT_EQUAL_INT(200, postBackend.sentCode);
+
+    WebRequestTestBackend getBackend;
+    WebRequest getReq(&getBackend);
+    handleConfigGet(getReq);
+    TEST_ASSERT_EQUAL_INT(200, getBackend.sentCode);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(getBackend.sentBodyLength, postBackend.sentBodyLength,
+                                     "POST and GET bodies differ in length");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(getBackend.sentBody, postBackend.sentBody,
+                                     "the POST body is not a read of the committed config");
+}
+
 void test_config_post_syncs_stationary_and_broadcasts_status() {
     const WebRequestTestParam params[] = {{"stationary", "true"}};
     WebRequestTestBackend backend;
@@ -249,6 +299,8 @@ int main() {
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
+    RUN_TEST(test_config_commit_leaves_working_agreeing_with_the_config_cache);
+    RUN_TEST(test_config_post_body_matches_a_read_of_the_committed_config);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);
