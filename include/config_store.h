@@ -435,8 +435,11 @@ struct ConfigSnapshot {
 //
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the
-// Console task's chain (the recipe is in include/config.h beside
-// CONSOLE_TASK_MEASURED_CHAIN_BYTES) before updating the value here.
+// Console task's chain before updating the value here. The recipe moved out of
+// include/config.h's comment block at #271: it is now a row in
+// tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
+// it against a linked image, so the re-measure is a re-run rather than a
+// procedure to follow by hand.
 static_assert(sizeof(ConfigSnapshot) == 944,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");

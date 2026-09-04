@@ -70,7 +70,7 @@ EXPECTED_BY_BOARD = {
         # reproduced device fault rather than a walk - then re-derived by #269
         # once the config-write path stopped carrying three ConfigSnapshot
         # copies, and again at #271 from a walk on the merged tree:
-        # 7024 * 1.25 = 8780 -> 9216.
+        # 7360 * 1.25 = 9200 -> 9216.
         "console_stack": 9216,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
@@ -96,10 +96,10 @@ EXPECTED_BY_BOARD = {
         "audio_stack": 6144,
         "web_events_stack": 7680,
         # ConsoleTask by the same rule (#226, re-derived by #269 and again at
-        # #271): 7136 * 1.25 = 8920 -> 9216. The panic the original raise fixed
-        # was captured on this board. The two chips land on the same 512-byte
-        # step here by coincidence; their chains still differ.
-        "console_stack": 9216,
+        # #271, after #226 wave 10 put a deeper branch on the chain):
+        # 7984 * 1.25 = 9980 -> 10240. The panic the original raise fixed was
+        # captured on this board.
+        "console_stack": 10240,
     },
 }
 
@@ -453,14 +453,14 @@ class BoardChipSizedConstants(unittest.TestCase):
         """The rule is what each arm must follow, not "P4 is the bigger one".
 
         The Console chains differ per chip (ESP32_STACK_CHAINS vs
-        P4_STACK_CHAINS) and since #269 they round to the same 512-byte step.
-        A strictly-greater assertion would read that coincidence as the P4 arm
-        inheriting artoo's number, which is the opposite of what happened - so
-        this asserts the thing that actually matters instead: each arm is
-        EXACTLY what the #248 rule gives for its OWN measured chain. An arm
-        copied from the other chip fails here the moment the chains diverge
-        again, and a hand-edited value that clears its chain but not the rule
-        fails immediately.
+        P4_STACK_CHAINS). Between #269 and #226 wave 10 they briefly rounded to
+        the same 512-byte step, and a strictly-greater assertion would have read
+        that coincidence as the P4 arm inheriting artoo's number - the opposite
+        of what happened. So this asserts the thing that actually matters in
+        either case: each arm is EXACTLY what the #248 rule gives for its OWN
+        measured chain. An arm copied from the other chip fails here the moment
+        the chains diverge, and a hand-edited value that clears its chain but
+        not the rule fails immediately.
         """
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")

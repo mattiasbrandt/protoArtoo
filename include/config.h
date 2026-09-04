@@ -548,9 +548,9 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //  - ESP32-P4: every arm is exactly the rule applied to its own chain. The
 //    board has the free heap to buy the margin, and #245/#248/#250/#256 already
 //    put eight of them there.
-//  - artoo-esp32: five arms are the rule, two sit ABOVE it because an earlier
-//    ticket deliberately raised them past it, and five DECLINE it on #248's
-//    reason -- raising all five costs 5632 B against ~42.7 KB of measured free
+//  - artoo-esp32: four arms are the rule, two sit ABOVE it because an earlier
+//    ticket deliberately raised them past it, and six DECLINE it on #248's
+//    reason -- raising all six costs 6144 B against ~42.7 KB of measured free
 //    heap, for margin the Xtensa walk cannot confirm. Each decline is recorded
 //    beside its constant. Declining the rule never declines the floor: every
 //    arm still covers its own chain, and the static_asserts below are what say
@@ -661,13 +661,22 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // (processTriggerAction and the newlib tail below it), which is why the chain
 // falls by less than the 1904 B those two frames gave back.
 //
-// The constants below are re-derived from a walk at this tip, not carried from
-// either branch: #269 measured 7568/7552 on its own branch and #270 measured
-// 8512 on its own, both cutting the same deepest branch, so neither figure
-// describes the merged tree -- it is shorter than either. The two chips land on
-// the same 512-byte step, which is coincidence and not a reason to merge the
-// arms: the chains still differ, and the next field on either side moves them
-// independently.
+// The constants below are re-derived from a walk at this tip, and a walk is the
+// only thing they may be derived from: #269 measured 7568/7552 on its own
+// branch and #270 measured 8512 on its own, both cutting the same deepest
+// branch, so neither figure described the merged tree. Then #226 wave 10 put a
+// deeper branch back: consoleExecuteCommand now reaches
+// consoleWriteAudioTracksField (1216 B) and audioTracksCommitApplied (1280 B)
+// on its way to the newlib tail, and the chain rose to 7360 on ESP32 and 7984
+// on the ESP32-P4. The two chips no longer land on the same 512-byte step, and
+// the reason they briefly did was coincidence: the chains differ, and each
+// field on either side moves them independently.
+//
+// The two chips also moved by different amounts -- +336 B on ESP32 against
+// +848 B on the ESP32-P4, for the same source change -- and that asymmetry is
+// the Xtensa lower bound showing itself: the new branch is partly invisible on
+// an image where a third of the function bodies are emitted as data. Read the
+// ESP32 figure as the smaller of two truths, not as the better outcome.
 //
 // Why the standard margin here and not a smaller one: the chains are LOWER
 // bounds in the same two ways the raised ones were -- objdump emits Xtensa bodies
@@ -709,12 +718,12 @@ constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3984;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
 constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7360;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3184;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;  // rule: 3184 -> 3980 -> 4096
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3216;
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
 constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4448;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4448 -> 5560 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7136;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7136 -> 8920 -> 9216
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7984;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10240;  // rule: 7984 -> 9980 -> 10240
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5808;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5808 -> 7260 -> 7680
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
@@ -744,8 +753,13 @@ constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
 // one interrupt entry -- and it is the pre-existing shipping value, recorded
 // here as a known exposure rather than raised by this ticket (#271).
 constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4672;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 5840 -> 6144
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5280;
+// rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
+// when #226 wave 10 landed, and the growth is the walk seeing further rather
+// than this task running deeper -- the extra frames are an ESP-IDF log/queue
+// tail below esp_cache_get_alignment() that the product image still reports as
+// 4528 because a body on the way is emitted as data. Floor holds by 864 B.
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3504;
 // rule declined (4608, +512 B): #248's tight-heap reason. Floor holds by 592 B.
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
@@ -764,8 +778,8 @@ constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
 constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7024;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7024 -> 8780 -> 9216
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7360;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5888;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
 // holds by 256 B.

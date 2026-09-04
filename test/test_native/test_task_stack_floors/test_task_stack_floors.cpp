@@ -19,8 +19,8 @@
 //               earlier ticket raised it on evidence the rule does not carry.
 //               Lowering such an arm "to match the rule" would undo that.
 //   declined  - the stack is below the rule and still covers the chain. This is
-//               #248's tight-heap argument: raising all five declined arms on
-//               this board costs 5632 B against ~42.7 KB of measured free heap,
+//               #248's tight-heap argument: raising all six declined arms on
+//               this board costs 6144 B against ~42.7 KB of measured free heap,
 //               for margin the Xtensa walk cannot confirm. ADR 0038 requires
 //               the decline to be recorded; include/config.h carries the reason
 //               beside each constant.
@@ -71,12 +71,12 @@ static const TaskStackArm kArms[] = {
     {"RCInputTask", 5248U, 7168U, RULE_ABOVE},
     {"ServoTask", 3200U, 4096U, RULE_APPLIED},
     {"DomeTask", 2992U, 3072U, RULE_DECLINED},
-    {"AudioTask", 4672U, 6144U, RULE_APPLIED},
+    {"AudioTask", 5280U, 6144U, RULE_DECLINED},
     {"AuxLedTask", 3504U, 4096U, RULE_DECLINED},
     {"DomeLinkTask", 5872U, 6144U, RULE_DECLINED},
     {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
     {"SeqDisp", 4336U, 5632U, RULE_APPLIED},
-    {"Console", 7024U, 9216U, RULE_APPLIED},
+    {"Console", 7360U, 9216U, RULE_APPLIED},
     {"WebEvents", 5888U, 6144U, RULE_DECLINED},
     {"ArduinoOTA", 3696U, 4096U, RULE_DECLINED},
 };
@@ -90,7 +90,7 @@ static const TaskStackArm kDeclared[] = {
     {"RCInputTask", RC_INPUT_TASK_MEASURED_CHAIN_BYTES, RC_INPUT_TASK_STACK_BYTES, RULE_ABOVE},
     {"ServoTask", SERVO_TASK_MEASURED_CHAIN_BYTES, SERVO_TASK_STACK_BYTES, RULE_APPLIED},
     {"DomeTask", DOME_TASK_MEASURED_CHAIN_BYTES, DOME_TASK_STACK_BYTES, RULE_DECLINED},
-    {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_APPLIED},
+    {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_DECLINED},
     {"AuxLedTask", AUX_LED_TASK_MEASURED_CHAIN_BYTES, AUX_LED_TASK_STACK_BYTES, RULE_DECLINED},
     {"DomeLinkTask", DOME_LINK_TASK_MEASURED_CHAIN_BYTES, DOME_LINK_TASK_STACK_BYTES,
      RULE_DECLINED},

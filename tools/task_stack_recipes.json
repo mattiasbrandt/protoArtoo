@@ -13,8 +13,14 @@
       "Measured at #271 against artoo_esp32 / artoo_esp32_profiler (Xtensa) and firebeetle2 / firebeetle2_profiler (RISC-V), each built with PLATFORMIO_BUILD_SRC_FLAGS=\"-Wall -Wextra -Werror -fstack-usage\"."
     ],
     "envs": {
-      "esp32": {"product": "artoo_esp32", "profiler": "artoo_esp32_profiler"},
-      "esp32p4": {"product": "firebeetle2", "profiler": "firebeetle2_profiler"}
+      "esp32": {
+        "product": "artoo_esp32",
+        "profiler": "artoo_esp32_profiler"
+      },
+      "esp32p4": {
+        "product": "firebeetle2",
+        "profiler": "firebeetle2_profiler"
+      }
     }
   },
   "tasks": [
@@ -26,7 +32,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["driveTask"],
+          "roots": [
+            "driveTask"
+          ],
           "frames": [],
           "chain_bytes": 4080,
           "product_bytes": 4080,
@@ -36,7 +44,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["driveTask"],
+          "roots": [
+            "driveTask"
+          ],
           "frames": [],
           "chain_bytes": 4368,
           "product_bytes": 4368,
@@ -53,7 +63,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["rcInputTask"],
+          "roots": [
+            "rcInputTask"
+          ],
           "frames": [],
           "chain_bytes": 5248,
           "product_bytes": 5248,
@@ -63,7 +75,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["rcInputTask"],
+          "roots": [
+            "rcInputTask"
+          ],
           "frames": [],
           "chain_bytes": 5360,
           "product_bytes": 5360,
@@ -81,7 +95,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["servoTask"],
+          "roots": [
+            "servoTask"
+          ],
           "frames": [],
           "chain_bytes": 3200,
           "product_bytes": 3200,
@@ -90,7 +106,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["servoTask"],
+          "roots": [
+            "servoTask"
+          ],
           "frames": [],
           "chain_bytes": 3488,
           "product_bytes": 3488,
@@ -107,7 +125,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["domeTask"],
+          "roots": [
+            "domeTask"
+          ],
           "frames": [],
           "chain_bytes": 2992,
           "product_bytes": 2992,
@@ -117,7 +137,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["domeTask"],
+          "roots": [
+            "domeTask"
+          ],
           "frames": [],
           "chain_bytes": 3280,
           "product_bytes": 3280,
@@ -134,17 +156,22 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["audioTask"],
+          "roots": [
+            "audioTask"
+          ],
           "frames": [],
-          "chain_bytes": 4672,
+          "chain_bytes": 5280,
           "product_bytes": 4528,
-          "profiler_bytes": 4672,
-          "deeper_image": "artoo_esp32_profiler - 4672 B against the product image's 4528 B. The constant is compiled into both images, so it takes the deeper one (the same call #245 made for SafetyMonitor).",
-          "rule": "applied"
+          "profiler_bytes": 5280,
+          "deeper_image": "artoo_esp32_profiler - 5280 B against the product image's 4528 B. The extra depth is an ESP-IDF log/queue tail below esp_cache_get_alignment() that the product image's walk does not reach, because a body on the way is emitted as data there. The constant is compiled into both images, so it takes the deeper one.",
+          "rule": "declined",
+          "reason": "#248's tight-heap reason: the rule (6656) costs +512 B for margin the Xtensa walk cannot confirm. Floor holds by 864 B. This arm was on the rule until #226 wave 10 landed and the profiler-image chain grew 608 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["audioTask"],
+          "roots": [
+            "audioTask"
+          ],
           "frames": [],
           "chain_bytes": 4848,
           "product_bytes": 4848,
@@ -161,7 +188,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["auxLedTask"],
+          "roots": [
+            "auxLedTask"
+          ],
           "frames": [],
           "chain_bytes": 3504,
           "product_bytes": 3504,
@@ -171,7 +200,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["auxLedTask"],
+          "roots": [
+            "auxLedTask"
+          ],
           "frames": [],
           "chain_bytes": 3984,
           "product_bytes": 3984,
@@ -188,7 +219,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["domeLinkTask"],
+          "roots": [
+            "domeLinkTask"
+          ],
           "frames": [],
           "chain_bytes": 5872,
           "product_bytes": 5872,
@@ -198,7 +231,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["domeLinkTask"],
+          "roots": [
+            "domeLinkTask"
+          ],
           "frames": [],
           "chain_bytes": 7360,
           "product_bytes": 7360,
@@ -216,7 +251,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["safetyMonitorTask"],
+          "roots": [
+            "safetyMonitorTask"
+          ],
           "frames": [],
           "chain_bytes": 3088,
           "product_bytes": 2944,
@@ -226,12 +263,14 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["safetyMonitorTask"],
+          "roots": [
+            "safetyMonitorTask"
+          ],
           "frames": [],
-          "chain_bytes": 3184,
+          "chain_bytes": 3216,
           "product_bytes": 2752,
-          "profiler_bytes": 3184,
-          "deeper_image": "firebeetle2_profiler - 3184 B against the product image's 2752 B. #245 sized this arm from the profiler image for the same reason and recorded 3152 B; the extra 32 B is drift since that ticket.",
+          "profiler_bytes": 3216,
+          "deeper_image": "firebeetle2_profiler - 3216 B against the product image's 2752 B. #245 sized this arm from the profiler image for the same reason and recorded 3152 B; the extra 64 B is drift since that ticket.",
           "rule": "applied"
         }
       }
@@ -244,7 +283,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["sequenceDispatcherTask"],
+          "roots": [
+            "sequenceDispatcherTask"
+          ],
           "frames": [],
           "chain_bytes": 4336,
           "product_bytes": 4336,
@@ -254,7 +295,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["sequenceDispatcherTask"],
+          "roots": [
+            "sequenceDispatcherTask"
+          ],
           "frames": [],
           "chain_bytes": 4448,
           "product_bytes": 4448,
@@ -271,27 +314,46 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["onCliCommand"],
-          "frames": ["consoleTask", "embeddedCliProcess"],
+          "roots": [
+            "onCliCommand"
+          ],
+          "frames": [
+            "consoleTask",
+            "embeddedCliProcess"
+          ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement.",
-          "chain_bytes": 7024,
-          "product_bytes": 7024,
-          "profiler_bytes": 7024,
-          "components": {"onCliCommand": 6624, "consoleTask": 320, "embeddedCliProcess": 80},
+          "chain_bytes": 7360,
+          "product_bytes": 7360,
+          "profiler_bytes": 7360,
+          "components": {
+            "onCliCommand": 6960,
+            "consoleTask": 320,
+            "embeddedCliProcess": 80
+          },
           "rule": "applied"
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["onCliCommand"],
-          "frames": ["consoleTask", "embeddedCliProcess"],
+          "roots": [
+            "onCliCommand"
+          ],
+          "frames": [
+            "consoleTask",
+            "embeddedCliProcess"
+          ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
-          "chain_bytes": 7136,
-          "product_bytes": 7136,
-          "profiler_bytes": 7136,
-          "components": {"onCliCommand": 6704, "consoleTask": 336, "embeddedCliProcess": 96},
+          "chain_bytes": 7984,
+          "product_bytes": 7984,
+          "profiler_bytes": 7984,
+          "components": {
+            "onCliCommand": 7552,
+            "consoleTask": 336,
+            "embeddedCliProcess": 96
+          },
           "rule": "applied"
         }
-      }
+      },
+      "note": "Re-walked after #226 wave 10 (323c4a20) merged fourteen sound.config rows into src/console/console_module.cpp. That merge put a new deepest branch on this chain: consoleExecuteCommand -> consoleWriteAudioTracksField (1216 B) -> audioTracksCommitApplied (1280 B) -> audioQueueRefreshBindings -> the newlib snprintf/_dtoa_r tail. The chain rose from 7024 to 7360 on ESP32 and from 7136 to 7984 on the ESP32-P4 - different amounts for the same source change, because the Xtensa walk is a lower bound and the new branch is partly invisible on an image that emits a third of its function bodies as data. The ESP32-P4 stack moves to 10240 with it; the ESP32 arm's 9216 still satisfies the rule."
     },
     {
       "task": "WebEvents",
@@ -301,7 +363,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["eventStreamTask"],
+          "roots": [
+            "eventStreamTask"
+          ],
           "frames": [],
           "chain_bytes": 5888,
           "product_bytes": 5888,
@@ -312,7 +376,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["eventStreamTask"],
+          "roots": [
+            "eventStreamTask"
+          ],
           "frames": [],
           "chain_bytes": 5808,
           "product_bytes": 5808,
@@ -331,7 +397,9 @@
       "chips": {
         "esp32": {
           "env": "artoo_esp32",
-          "roots": ["otaServiceTask"],
+          "roots": [
+            "otaServiceTask"
+          ],
           "frames": [],
           "chain_bytes": 3696,
           "product_bytes": 3696,
@@ -342,7 +410,9 @@
         },
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["otaServiceTask"],
+          "roots": [
+            "otaServiceTask"
+          ],
           "frames": [],
           "chain_bytes": 4000,
           "product_bytes": 4000,
@@ -361,7 +431,9 @@
       "chips": {
         "esp32p4": {
           "env": "firebeetle2",
-          "roots": ["hostedRecoveryTaskFn"],
+          "roots": [
+            "hostedRecoveryTaskFn"
+          ],
           "frames": [],
           "chain_bytes": 3648,
           "product_bytes": 3648,

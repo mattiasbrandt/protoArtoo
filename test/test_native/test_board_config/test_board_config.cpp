@@ -116,7 +116,7 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
 // env:native always builds PA_BOARD_ARTOO_ESP32); it is proven by the
 // cross-board compiler probe in test/test_tools/test_board_chip_sized_constants.py.
 void test_console_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(7024U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(7360U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(9216U, CONSOLE_TASK_STACK_BYTES);
 
     // #248 rule: worst-case chain + 25%, rounded up to the next 512 bytes.
