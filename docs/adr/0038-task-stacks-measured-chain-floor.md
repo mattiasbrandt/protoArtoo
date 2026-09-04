@@ -79,8 +79,23 @@ short of its chain on both chips, and gave it the first compile-enforced floor:
   becomes true.
 - The Console's constants are re-derived after the decision-1 slice removes
   the copies from its chain (ADR 0011, 2026-09-04).
-- `uxTaskGetStackHighWaterMark()` returns bytes on ESP-IDF (`portSTACK_TYPE`
+- ~~`uxTaskGetStackHighWaterMark()` returns bytes on ESP-IDF (`portSTACK_TYPE`
   is `uint8_t`); `api_profiler.cpp`'s "returns words" comment multiplies by one
-  and is corrected in passing.
+  and is corrected in passing.~~ **Wrong, corrected 2026-09-04 before anyone
+  acted on it.** It returns **words**: both it and its `...2()` sibling return
+  through `prvTaskCheckFreeStackSpace()`, which ends
+  `ulCount /= ( uint32_t ) sizeof( StackType_t )`
+  (`framework-espidf/components/freertos/FreeRTOS-Kernel/tasks.c:4807-4820`,
+  read in the installed toolchain). So `api_profiler.cpp`'s
+  `* sizeof(StackType_t)` is what keeps `/api/profiler` honest, and removing it
+  would have divided every reported high-water mark by four - on the endpoint
+  this ADR's own floors are read from. The stale text is the **vendored
+  `task.h` doc comment**, which claims the return is "in bytes (as opposed to
+  words in the standard FreeRTOS documentation)", a leftover from the older
+  ESP-IDF FreeRTOS fork that did not divide; that is where this error came
+  from, and correcting it is #271's criterion instead. The genuinely wrong
+  site was `console_task.cpp`'s boot log printing a word count as bytes, fixed
+  by #270 (`8eb5066d`). Found by the #270 worker reading the toolchain rather
+  than this ADR.
 - Cross-epic: #182 is told before the surface is touched, per the standing
   contract on `platformio.ini`, `config.h` and the gate.
