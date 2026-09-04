@@ -500,10 +500,25 @@ void consoleTask(void* pvParameters) {
     while (true) {
         // Log stack high water mark once after first command is processed
         // Measured value guides stack depth sizing for future runs (ADR 0034)
-        // ESP-IDF's uxTaskGetStackHighWaterMark() returns bytes, unlike vanilla FreeRTOS which returns words
+        //
+        // uxTaskGetStackHighWaterMark() returns WORDS, so the reading is
+        // scaled here. What this line used to say - "ESP-IDF's
+        // uxTaskGetStackHighWaterMark() returns bytes, unlike vanilla
+        // FreeRTOS which returns words" - is what the vendored task.h still
+        // claims in its own doc comment ("in bytes (as opposed to words in
+        // the standard FreeRTOS documentation)"), and that doc comment is
+        // stale: the implementation it sits above divides the byte count by
+        // sizeof(StackType_t) before returning
+        // (components/freertos/FreeRTOS-Kernel/tasks.c,
+        // prvTaskCheckFreeStackSpace(); the SMP kernel's copy does the same;
+        // checked in both toolchains at ESP-IDF 5.5.5, #270). Unscaled, this
+        // line under-reported the free stack by 4x on the one task whose
+        // stack a bench operator reads straight off the wire.
+        // src/web/api_profiler.cpp scales the same reading the same way.
         if (!hwmLogged && currentRequestId > 0) {
-            UBaseType_t freeStack = uxTaskGetStackHighWaterMark(nullptr);
-            PA_LOG_INFO(TAG, "stack HWM: %u bytes free after first command", (unsigned)freeStack);
+            UBaseType_t freeStackWords = uxTaskGetStackHighWaterMark(nullptr);
+            PA_LOG_INFO(TAG, "stack HWM: %u bytes free after first command",
+                        (unsigned)((uint32_t)freeStackWords * sizeof(StackType_t)));
             hwmLogged = true;
         }
 

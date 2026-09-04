@@ -320,7 +320,19 @@ void profilerCollectHwm() {
         TaskHandle_t h = xTaskGetHandle(s_taskNames[i]);
         tmp[i].name = s_taskNames[i];
         tmp[i].found = (h != nullptr);
-        // uxTaskGetStackHighWaterMark returns words; convert to bytes.
+        // uxTaskGetStackHighWaterMark returns WORDS; convert to bytes.
+        //
+        // Verified against the implementation rather than the header (#270):
+        // the vendored task.h doc comment claims "in bytes (as opposed to
+        // words in the standard FreeRTOS documentation)", but
+        // prvTaskCheckFreeStackSpace() - the function both
+        // uxTaskGetStackHighWaterMark() and its ...2() sibling return through
+        // - divides the counted fill bytes by sizeof(StackType_t) before
+        // returning (components/freertos/FreeRTOS-Kernel/tasks.c and the SMP
+        // kernel's copy, ESP-IDF 5.5.5 in both toolchains). The doc comment
+        // is a leftover from the older ESP-IDF FreeRTOS fork that did not
+        // divide. Do not "correct" this multiply away on the strength of the
+        // header: it would divide every reported HWM by 4.
         tmp[i].hwmBytes = tmp[i].found
             ? (uint32_t)uxTaskGetStackHighWaterMark(h) * sizeof(StackType_t)
             : 0U;
