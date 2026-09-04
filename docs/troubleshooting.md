@@ -195,6 +195,11 @@ firewall the default instead of moving it, so the rule above keeps working.
 > the ESP32" advice that stood here before that session was wrong for five of the
 > six methods tested, and it is replaced by the matrix below.
 
+**The transport.** The artoo-esp32 brings the controller's UART0 out through an
+on-board CP2102 USB-UART bridge, so the host sees `/dev/ttyUSB*` at 115200 8N1.
+Every trial below ran over that link with the controller **unseated** -- the
+ESP32 out of the PCB; the seated arm is addressed at the end of this section.
+
 **Safe: use any of these.** Five trials each, zero resets.
 
 | Attach method | resets |
@@ -253,6 +258,24 @@ stream, **and** `resetReason` + `uptimeMs` from `/api/status` over HTTP either
 side of the attach. The HTTP anchor does not travel over the serial path.
 `resetReason` distinguishes causes: `PANIC` = real crash; `POWERON`/`EXT` =
 external/serial reset.
+
+**A third anchor, and the only one that lives entirely on the serial path: the
+Console's Request ID.** The counter is a firmware global initialised to 1 at
+boot (`g_nextRequestId`, `src/console/console_module.cpp`) and shared by both
+adapters, so it can skip numbers while someone is using the dashboard but it
+restarts only when the firmware restarts. Detach, attach again, send one
+command: an id that carries on from where the last session stopped is proof
+the board stayed up, with no HTTP call and no boot-banner capture needed.
+
+**Re-confirmed on a current image, 2026-09-04.** Unseated artoo-esp32 over the
+UART0 bridge, default POSIX no-control-line backend, firmware and filesystem
+`v1.0.0-656-g48a26523+epic-serial-console`: one command sheet replayed twice
+with a detach in between ran request ids **1 -> 19** and then **20 -> 38**,
+`uptimeMs` climbed 54 817 -> 102 537, and `resetReason` stayed `SOFTWARE`
+across both attaches (#216 issuecomment-5544441040). That is #214's attach
+rule holding behaviourally on a tip several waves later than the matrix above;
+it is still not a waveform measurement, and the `UNKNOWN` note above stands
+unchanged.
 
 USB serial *read* works seated (RX only); only flashing needs the blocked
 TX/bootloader path (GPIO15/SBUS strapping). **The seated arm of this matrix was
