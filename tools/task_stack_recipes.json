@@ -1,0 +1,448 @@
+{
+  "metadata": {
+    "description": "One Measured Chain recipe per project-created task per chip target (ADR 0038, #271)",
+    "unit": "bytes",
+    "rule": "stack = ceil_512(ceil(chain * 1.25)); in integer arithmetic, need = (chain * 5 + 3) // 4, stack = ((need + 511) // 512) * 512",
+    "notes": [
+      "Thirteen tasks: the ten created in src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp) and HostedRecovery (src/web/web_network_manager_hosted.cpp). HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, so artoo-esp32 has twelve and the ESP32-P4 thirteen. ADR 0038 and #271 both say 'twelve' and then list thirteen; the list is right and the count is not.",
+      "loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini and is deliberately outside this table.",
+      "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why.",
+      "'env' is the image tools/check_task_stack_chains.py re-walks for that arm - always the product image for the chip. 'chain_bytes' is the recorded constant and equals the DEEPER of the product and profiler images, because include/config.h is compiled into both; 'deeper_image' records that substitution where the two differ.",
+      "Every figure is a LOWER bound: indirect calls are not followed and call-graph cycles are cut. On artoo-esp32 objdump additionally emits ~37% of function bodies as data (.xt.prop) and counts their frames as zero; the ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
+      "Interrupt and exception frames are not counted: both ports spill some state to the interrupted task's stack before switching to the ISR stack. The rule's 25% is what covers that, so an arm that declines the rule has less cover for it than one that does not.",
+      "Every figure here is from the BOUNDED walk (#271): tools/stack_usage_report.py reads each function body to its ELF symbol size rather than to the next symbol objdump prints. Before that, a literal-pool word decoding as a call to a real entry became a followed edge, and which words did so changed when the image was relinked - two builds of identical source returned WebEvents chains 688 B apart. Figures recorded by #245, #248, #250 and #256 predate the bound and were not necessarily reproducible; the chains here were re-derived and are identical across two builds whose ELF layouts differ.",
+      "Measured at #271 against artoo_esp32 / artoo_esp32_profiler (Xtensa) and firebeetle2 / firebeetle2_profiler (RISC-V), each built with PLATFORMIO_BUILD_SRC_FLAGS=\"-Wall -Wextra -Werror -fstack-usage\"."
+    ],
+    "envs": {
+      "esp32": {
+        "product": "artoo_esp32",
+        "profiler": "artoo_esp32_profiler"
+      },
+      "esp32p4": {
+        "product": "firebeetle2",
+        "profiler": "firebeetle2_profiler"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "task": "DriveTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "DRIVE_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "DRIVE_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "driveTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4080,
+          "product_bytes": 4080,
+          "profiler_bytes": 4080,
+          "rule": "above",
+          "reason": "#250 raised the 50 Hz drive loop on both chips rather than only where an overrun is provable, because the Xtensa figure is the floor of an unknown. Lowering this arm onto the rule (5120) would undo that decision."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "driveTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4368,
+          "product_bytes": 4368,
+          "profiler_bytes": 4368,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "RCInputTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "RC_INPUT_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "RC_INPUT_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "rcInputTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5248,
+          "product_bytes": 5248,
+          "profiler_bytes": 5248,
+          "rule": "above",
+          "reason": "The pre-#256 literal, kept rather than lowered onto a Xtensa figure that can prove an overrun and cannot prove a margin."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "rcInputTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5360,
+          "product_bytes": 5360,
+          "profiler_bytes": 5360,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "ServoTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "SERVO_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "SERVO_TASK_STACK_BYTES",
+      "first_measured": "#271 - a Core 1 real-time task whose 4096 came from a high-water mark",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "servoTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3200,
+          "product_bytes": 3200,
+          "profiler_bytes": 3200,
+          "rule": "applied"
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "servoTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3488,
+          "product_bytes": 3488,
+          "profiler_bytes": 3488,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "DomeTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "DOME_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "DOME_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "domeTask"
+          ],
+          "frames": [],
+          "chain_bytes": 2992,
+          "product_bytes": 2992,
+          "profiler_bytes": 2992,
+          "rule": "declined",
+          "reason": "#248's tight-heap reason: the rule (4608) costs +1536 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "domeTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3280,
+          "product_bytes": 3280,
+          "profiler_bytes": 3280,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "AudioTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "AUDIO_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "AUDIO_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "audioTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5280,
+          "product_bytes": 4528,
+          "profiler_bytes": 5280,
+          "deeper_image": "artoo_esp32_profiler - 5280 B against the product image's 4528 B. The extra depth is an ESP-IDF log/queue tail below esp_cache_get_alignment() that the product image's walk does not reach, because a body on the way is emitted as data there. The constant is compiled into both images, so it takes the deeper one.",
+          "rule": "declined",
+          "reason": "#248's tight-heap reason: the rule (6656) costs +512 B for margin the Xtensa walk cannot confirm. Floor holds by 864 B. This arm was on the rule until #226 wave 10 landed and the profiler-image chain grew 608 B."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "audioTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4848,
+          "product_bytes": 4848,
+          "profiler_bytes": 4848,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "AuxLedTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "AUX_LED_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "AUX_LED_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "auxLedTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3504,
+          "product_bytes": 3504,
+          "profiler_bytes": 3504,
+          "rule": "declined",
+          "reason": "#248's tight-heap reason: the rule (4608) costs +512 B for margin the Xtensa walk cannot confirm. Floor holds by 592 B."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "auxLedTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3984,
+          "product_bytes": 3984,
+          "profiler_bytes": 3984,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "DomeLinkTask",
+      "created_in": "src/main.cpp",
+      "chain_constant": "DOME_LINK_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "DOME_LINK_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "domeLinkTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5872,
+          "product_bytes": 5872,
+          "profiler_bytes": 5872,
+          "rule": "declined",
+          "reason": "#248's tight-heap reason, named on #250: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 272 B."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "domeLinkTask"
+          ],
+          "frames": [],
+          "chain_bytes": 7360,
+          "product_bytes": 7360,
+          "profiler_bytes": 7360,
+          "rule": "applied",
+          "note": "This task's own frame is 2256 B on RISC-V, split by GCC into two `addi sp,sp,-N` instructions because the allocation exceeds the 12-bit immediate. Reading only the first gave 224 B and hid the overrun until tools/stack_usage_report.py was taught to accumulate them (#250)."
+        }
+      }
+    },
+    {
+      "task": "SafetyMonitor",
+      "created_in": "src/main.cpp",
+      "chain_constant": "SAFETY_MONITOR_MEASURED_CHAIN_BYTES",
+      "stack_constant": "SAFETY_MONITOR_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "safetyMonitorTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3088,
+          "product_bytes": 2944,
+          "profiler_bytes": 3088,
+          "deeper_image": "artoo_esp32_profiler - 3088 B against the product image's 2944 B. This is the one arm in the table where the floor did NOT already hold: the constant was 3072, which the profiler image exceeds by 16 B. Raised by the rule at #271.",
+          "rule": "applied"
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "safetyMonitorTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3216,
+          "product_bytes": 2752,
+          "profiler_bytes": 3216,
+          "deeper_image": "firebeetle2_profiler - 3216 B against the product image's 2752 B. #245 sized this arm from the profiler image for the same reason and recorded 3152 B; the extra 64 B is drift since that ticket.",
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "SeqDisp",
+      "created_in": "src/main.cpp",
+      "chain_constant": "SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "SEQ_DISPATCHER_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "sequenceDispatcherTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4336,
+          "product_bytes": 4336,
+          "profiler_bytes": 4336,
+          "rule": "applied",
+          "note": "The depth is the Learned Sequence load on this task's own stack: seqStorePrepare -> protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use heap/log-mutex tail (#250)."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "sequenceDispatcherTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4448,
+          "product_bytes": 4448,
+          "profiler_bytes": 4448,
+          "rule": "applied"
+        }
+      }
+    },
+    {
+      "task": "Console",
+      "created_in": "src/main.cpp",
+      "chain_constant": "CONSOLE_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "CONSOLE_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "onCliCommand"
+          ],
+          "frames": [
+            "consoleTask",
+            "embeddedCliProcess"
+          ],
+          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement.",
+          "chain_bytes": 7360,
+          "product_bytes": 7360,
+          "profiler_bytes": 7360,
+          "components": {
+            "onCliCommand": 6960,
+            "consoleTask": 320,
+            "embeddedCliProcess": 80
+          },
+          "rule": "applied"
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "onCliCommand"
+          ],
+          "frames": [
+            "consoleTask",
+            "embeddedCliProcess"
+          ],
+          "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
+          "chain_bytes": 7984,
+          "product_bytes": 7984,
+          "profiler_bytes": 7984,
+          "components": {
+            "onCliCommand": 7552,
+            "consoleTask": 336,
+            "embeddedCliProcess": 96
+          },
+          "rule": "applied"
+        }
+      },
+      "note": "Re-walked after #226 wave 10 (323c4a20) merged fourteen sound.config rows into src/console/console_module.cpp. That merge put a new deepest branch on this chain: consoleExecuteCommand -> consoleWriteAudioTracksField (1216 B) -> audioTracksCommitApplied (1280 B) -> audioQueueRefreshBindings -> the newlib snprintf/_dtoa_r tail. The chain rose from 7024 to 7360 on ESP32 and from 7136 to 7984 on the ESP32-P4 - different amounts for the same source change, because the Xtensa walk is a lower bound and the new branch is partly invisible on an image that emits a third of its function bodies as data. The ESP32-P4 stack moves to 10240 with it; the ESP32 arm's 9216 still satisfies the rule."
+    },
+    {
+      "task": "WebEvents",
+      "created_in": "src/web/web_server.cpp",
+      "chain_constant": "WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "WEB_EVENTS_TASK_STACK_BYTES",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "eventStreamTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5888,
+          "product_bytes": 5888,
+          "profiler_bytes": 5888,
+          "rule": "declined",
+          "reason": "#248's tight-heap reason, named on #256: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 256 B.",
+          "note": "#256 recorded this arm from the profiler image because the product image's body was emitted as data (.xt.prop) then. It decodes in both images at this tip and they agree, so the arm is walked from the product image."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "eventStreamTask"
+          ],
+          "frames": [],
+          "chain_bytes": 5808,
+          "product_bytes": 5808,
+          "profiler_bytes": 5808,
+          "rule": "applied",
+          "note": "The one arm #256 had to move: 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on RISC-V, so the chain sat past the inherited 6144 before the 25% margin."
+        }
+      }
+    },
+    {
+      "task": "ArduinoOTA",
+      "created_in": "src/web/web_server.cpp",
+      "chain_constant": "OTA_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "OTA_TASK_STACK_BYTES",
+      "first_measured": "#271 - an unmeasured literal until then",
+      "chips": {
+        "esp32": {
+          "env": "artoo_esp32",
+          "roots": [
+            "otaServiceTask"
+          ],
+          "frames": [],
+          "chain_bytes": 3696,
+          "product_bytes": 3696,
+          "profiler_bytes": 3696,
+          "rule": "declined",
+          "reason": "#248's tight-heap reason applied to this task's first measurement: the rule (5120) costs +1024 B for margin the Xtensa walk cannot confirm. Floor holds by 400 B.",
+          "note": "The task entry was an anonymous lambda until #271. Its root symbol was then `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)`, which renumbers if a lambda is added above it in that function, and which no name-extracting scan of the xTaskCreatePinnedToCore() call site can reach past. Hoisted to a named static function so both this recipe and test/test_tools/test_profiler_task_list.py have something stable to read."
+        },
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "otaServiceTask"
+          ],
+          "frames": [],
+          "chain_bytes": 4000,
+          "product_bytes": 4000,
+          "profiler_bytes": 4000,
+          "rule": "applied",
+          "note": "4096 covered this chain by 96 B before #271 raised it by the rule - thinner than one interrupt entry, on the board that can afford the margin."
+        }
+      }
+    },
+    {
+      "task": "HostedRecovery",
+      "created_in": "src/web/web_network_manager_hosted.cpp",
+      "chain_constant": "HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES",
+      "stack_constant": "HOSTED_RECOVERY_TASK_STACK_BYTES",
+      "first_measured": "#271 - an unmeasured literal until then",
+      "chips": {
+        "esp32p4": {
+          "env": "firebeetle2",
+          "roots": [
+            "hostedRecoveryTaskFn"
+          ],
+          "frames": [],
+          "chain_bytes": 3648,
+          "product_bytes": 3648,
+          "profiler_bytes": 3648,
+          "rule": "applied"
+        }
+      },
+      "note": "No esp32 arm: src/web/web_network_manager_hosted.cpp is whole-file guarded on PA_CAP_HOSTED_WIFI, which is 0 on artoo-esp32, so this task is in no artoo image and there is nothing there to walk."
+    }
+  ]
+}

@@ -1,9 +1,9 @@
-"""The profiler's task list must name every task main.cpp creates (#250).
+"""The profiler's task list must name every task the tree creates (#250, #271).
 
 `src/web/api_profiler.cpp` carries a hardcoded `s_taskNames[]` and a comment
-saying it "must match xTaskCreatePinnedToCore() calls in main.cpp". Nothing
-enforced that, and it drifted: `SeqDisp` was absent, so `/api/profiler`
-reported nine of the ten tasks for an unknown length of time.
+saying it "must match xTaskCreatePinnedToCore() calls". Nothing enforced that,
+and it drifted: `SeqDisp` was absent, so `/api/profiler` reported nine of the
+ten tasks for an unknown length of time.
 
 That drift is worse than a missing endpoint. The response still looks complete,
 and an absent task is indistinguishable from one whose Component Toggle is off
@@ -11,16 +11,23 @@ and an absent task is indistinguishable from one whose Component Toggle is off
 the ticket asked for SeqDisp's runtime high-water mark, and no bench session
 could ever have produced it.
 
-This test is the enforcement the comment always implied.
+This test is the enforcement the comment always implied. It scans the whole
+tree, not `src/main.cpp` (#271, ADR 0038): the criterion is the task, not the
+file it happens to be created in, and the main.cpp-only scan was blind to all
+three tasks created elsewhere -- WebEvents and the ArduinoOTA task in
+src/web/web_server.cpp, HostedRecovery in
+src/web/web_network_manager_hosted.cpp. The same blind spot, in the same shape,
+as the one this file was written to close.
 """
 
 import re
 import unittest
 from pathlib import Path
 
+from task_create_sites import EXTERNALLY_CREATED, created_task_names
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MAIN_CPP = REPO_ROOT / "src" / "main.cpp"
 API_PROFILER = REPO_ROOT / "src" / "web" / "api_profiler.cpp"
 # PROF_TASK_MAX moved to the header when #224 extracted ProfilerReading, which
 # sizes its taskStacks[] with it: the bound is now part of what an adapter
@@ -32,25 +39,10 @@ PROF_TASK_MAX_FILES = (
     API_PROFILER,
 )
 
-# Second argument of xTaskCreatePinnedToCore(fn, "Name", ...) is the task name
-# FreeRTOS registers, and it is the name xTaskGetHandle() looks up.
-TASK_CREATE_RE = re.compile(
-    r"xTaskCreatePinnedToCore\s*\(\s*[^,]+,\s*\"([^\"]+)\"", re.MULTILINE
-)
 TASK_NAMES_BLOCK_RE = re.compile(
     r"s_taskNames\s*\[\s*PROF_TASK_MAX\s*\]\s*=\s*\{(.*?)\}\s*;", re.DOTALL
 )
 PROF_TASK_MAX_RE = re.compile(r"#define\s+PROF_TASK_MAX\s+(\d+)")
-
-# Tasks the profiler legitimately watches that main.cpp does not create itself.
-# loopTask is spawned by arduino-esp32's core, which calls our setup()/loop();
-# we size it through ARDUINO_LOOP_STACK_SIZE in platformio.ini rather than with
-# xTaskCreatePinnedToCore, so it will never appear in the scan above.
-EXTERNALLY_CREATED = {"loopTask"}
-
-
-def created_task_names() -> set:
-    return set(TASK_CREATE_RE.findall(MAIN_CPP.read_text()))
 
 
 def profiled_task_names() -> list:
@@ -67,7 +59,7 @@ class ProfilerTaskListTest(unittest.TestCase):
         self.assertEqual(
             missing,
             [],
-            f"main.cpp creates {missing} but api_profiler.cpp does not list them, so "
+            f"src/ creates {missing} but api_profiler.cpp does not list them, so "
             f"/api/profiler will silently omit them. Add them to s_taskNames[] and "
             f"raise PROF_TASK_MAX.",
         )
@@ -82,7 +74,7 @@ class ProfilerTaskListTest(unittest.TestCase):
         self.assertEqual(
             phantom,
             [],
-            f"api_profiler.cpp lists {phantom}, which main.cpp does not create.",
+            f"api_profiler.cpp lists {phantom}, which src/ does not create.",
         )
 
     def test_prof_task_max_matches_the_list(self):
@@ -107,6 +99,38 @@ class ProfilerTaskListTest(unittest.TestCase):
     def test_seqdisp_specifically(self):
         """The task whose absence cost #250 its acceptance criterion."""
         self.assertIn("SeqDisp", profiled_task_names())
+
+    def test_the_three_tasks_created_outside_main_cpp_are_profiled(self):
+        """The blind spot the main.cpp-only scan had (#271).
+
+        All three were created, running and unlistable: an operator reading
+        /api/profiler could not see the high-water mark of the task that
+        services OTA, the one that pushes every SSE event, or the one that
+        recovers the ESP32-P4's radio co-processor.
+        """
+        profiled = profiled_task_names()
+        for name in ("WebEvents", "ArduinoOTA", "HostedRecovery"):
+            with self.subTest(task=name):
+                self.assertIn(name, profiled)
+
+    def test_the_scan_actually_reaches_outside_main_cpp(self):
+        """Guard the guard: a scan narrowed back to main.cpp must fail here.
+
+        Without this, narrowing created_task_names() would make every test above
+        pass vacuously -- the profiler list would simply be checked against a
+        smaller set, which is precisely how the original blind spot read as
+        healthy.
+        """
+        from task_create_sites import created_task_sites
+
+        sites = created_task_sites()
+        outside = {name: path for name, path in sites.items() if path != "src/main.cpp"}
+        self.assertEqual(
+            sorted(outside),
+            ["ArduinoOTA", "HostedRecovery", "WebEvents"],
+            f"the xTaskCreate scan found {sorted(outside)} outside src/main.cpp; "
+            "if a task moved or was added, update this expectation deliberately",
+        )
 
 
 if __name__ == "__main__":

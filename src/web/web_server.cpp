@@ -916,6 +916,86 @@ void eventStreamTask(void*) {
     }
 }
 
+// ArduinoOTA task entry. Named rather than the lambda it used to be, because
+// two things in this project read task entry points by name and neither can
+// see an anonymous one (#271):
+//
+//  - tools/task_stack_recipes.json walks this chain from a root symbol, and a
+//    lambda's is `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)` --
+//    which renumbers if another lambda is added above it in this function.
+//  - test/test_tools/test_profiler_task_list.py extracts the registered task
+//    name from the xTaskCreatePinnedToCore() call site. Its second argument is
+//    the name; with a multi-line lambda as the first, no name-extracting scan
+//    can reach past the lambda body's commas, so this task was invisible to
+//    the guard that exists to stop /api/profiler silently omitting a task.
+static void otaServiceTask(void*) {
+    // Delay OTA init to let WiFi event handler complete first
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    char hostname[DROID_NAME_MAX_LEN + 1] = {};
+    configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
+    ArduinoOTA.setHostname(hostname);
+    ArduinoOTA.setMdnsEnabled(false);
+    ArduinoOTA.setTimeout(OTA_RECEIVE_TIMEOUT_MS);
+    ArduinoOTA.onStart([]() {
+        const char* type = (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
+        s_otaActive = true;
+        s_otaProgressPct = 0;
+        s_lastOtaLoggedPct = 255;
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
+        PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
+        logOtaHeapCheckpoint("start");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        if (total == 0) {
+            return;
+        }
+        uint8_t pct = (uint8_t)((progress * 100U) / total);
+        if (pct > 100U) {
+            pct = 100U;
+        }
+        s_otaProgressPct = pct;
+        if (s_lastOtaLoggedPct == 255 || pct == 100U ||
+            pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
+            s_lastOtaLoggedPct = pct;
+            PA_LOG_INFO("ArduinoOTA", "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
+                        (unsigned)pct, (unsigned long)ESP.getFreeHeap(),
+                        (unsigned long)ESP.getMinFreeHeap(),
+                        (unsigned long)largestFreeBlock8Bit());
+        }
+    });
+    ArduinoOTA.onEnd([]() {
+        logOtaHeapCheckpoint("complete");
+        s_otaProgressPct = 100;
+        s_otaActive = false;
+        s_lastOtaLoggedPct = 255;
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
+        PA_LOG_INFO(TAG, "ArduinoOTA complete");
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        unsigned int updateError = 0;
+        const char* updateErrorText = "unavailable";
+#ifdef ARDUINO
+        updateError = Update.getError();
+        updateErrorText = Update.errorString();
+#endif
+        logOtaHeapCheckpoint("error");
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "arduino:%d update:%u", (int)error,
+                 updateError);
+        s_otaActive = false;
+        s_lastOtaLoggedPct = 255;
+        PA_LOG_ERROR(TAG, "ArduinoOTA error: %d update=%u %s", (int)error, updateError,
+                     updateErrorText);
+    });
+    ArduinoOTA.begin();
+    PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);
+
+    for (;;) {
+        ArduinoOTA.handle();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void startHttpServerOnce() {
     if (serverStarted) {
         return;
@@ -944,79 +1024,15 @@ void startHttpServerOnce() {
     }
 
     // Start OTA task in background - MUST NOT block WiFi event handler (causes TWDT)
+    //
+    // Size is chip-target specific; OTA_TASK_STACK_BYTES in include/config.h carries the
+    // measured chain and the sizing rule. This task had no static measurement at all
+    // until #271 walked it, and the 4096 it used to hard-code covers its artoo-esp32
+    // chain by 400 B -- on a walk that is a lower bound. On the ESP32-P4 that same
+    // 4096 had 96 B to spare, thinner than one interrupt entry, and was raised.
     if (!otaTaskStarted) {
-        xTaskCreatePinnedToCore(
-            [](void*) {
-                // Delay OTA init to let WiFi event handler complete first
-                vTaskDelay(pdMS_TO_TICKS(500));
-
-                char hostname[DROID_NAME_MAX_LEN + 1] = {};
-                configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
-                ArduinoOTA.setHostname(hostname);
-                ArduinoOTA.setMdnsEnabled(false);
-                ArduinoOTA.setTimeout(OTA_RECEIVE_TIMEOUT_MS);
-                ArduinoOTA.onStart([]() {
-                    const char* type =
-                        (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
-                    s_otaActive = true;
-                    s_otaProgressPct = 0;
-                    s_lastOtaLoggedPct = 255;
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
-                    PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
-                    logOtaHeapCheckpoint("start");
-                });
-                ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-                    if (total == 0) {
-                        return;
-                    }
-                    uint8_t pct = (uint8_t)((progress * 100U) / total);
-                    if (pct > 100U) {
-                        pct = 100U;
-                    }
-                    s_otaProgressPct = pct;
-                    if (s_lastOtaLoggedPct == 255 || pct == 100U ||
-                        pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
-                        s_lastOtaLoggedPct = pct;
-                        PA_LOG_INFO("ArduinoOTA",
-                                    "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
-                                    (unsigned)pct,
-                                    (unsigned long)ESP.getFreeHeap(),
-                                    (unsigned long)ESP.getMinFreeHeap(),
-                                    (unsigned long)largestFreeBlock8Bit());
-                    }
-                });
-                ArduinoOTA.onEnd([]() {
-                    logOtaHeapCheckpoint("complete");
-                    s_otaProgressPct = 100;
-                    s_otaActive = false;
-                    s_lastOtaLoggedPct = 255;
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
-                    PA_LOG_INFO(TAG, "ArduinoOTA complete");
-                });
-                ArduinoOTA.onError([](ota_error_t error) {
-                    unsigned int updateError = 0;
-                    const char* updateErrorText = "unavailable";
-#ifdef ARDUINO
-                    updateError = Update.getError();
-                    updateErrorText = Update.errorString();
-#endif
-                    logOtaHeapCheckpoint("error");
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "arduino:%d update:%u",
-                             (int)error, updateError);
-                    s_otaActive = false;
-                    s_lastOtaLoggedPct = 255;
-                    PA_LOG_ERROR(TAG, "ArduinoOTA error: %d update=%u %s", (int)error,
-                                 updateError, updateErrorText);
-                });
-                ArduinoOTA.begin();
-                PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);
-
-                for (;;) {
-                    ArduinoOTA.handle();
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                }
-            },
-            "ArduinoOTA", 4096, nullptr, 1, nullptr, 0);
+        xTaskCreatePinnedToCore(otaServiceTask, "ArduinoOTA", OTA_TASK_STACK_BYTES, nullptr, 1,
+                                nullptr, 0);
         otaTaskStarted = true;
     }
 }

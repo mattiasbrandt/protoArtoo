@@ -472,9 +472,14 @@ void setup() {
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
                                 nullptr, 5, nullptr, 1);
     }
-    xTaskCreatePinnedToCore(
-        servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
-        1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
+    // Size is chip-target specific; SERVO_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. What this line used to say
+    // -- "HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096"
+    // -- was a high-water mark, the same evidence class that let the Console
+    // stand 4 KB under its chain (#226). This is a Core 1 real-time task and it
+    // had no static measurement at all until #271 walked it.
+    xTaskCreatePinnedToCore(servoTask, "ServoTask", SERVO_TASK_STACK_BYTES, nullptr, 4, nullptr,
+                            1);
     if (bootCfg.system.enable_dome_esc) {
         // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
         // carries the measured chain and the sizing rule. The note this line used
@@ -539,12 +544,13 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    // 5632: the static worst-case chain is 4336 B on this image (#250), 240 B past the
-    // old 4096  --  Learned Sequence load on this task's own stack (seqStorePrepare ->
-    // protocolCheck -> pcFailAt -> snprintf float formatting -> first-use heap/log-mutex
-    // tail). Sized by the #248 rule, chain + 25% rounded up to the next 512 B
-    // (4336 * 1.25 = 5420 -> 5632); the ESP32-P4 chain (4448 B) lands on the same 5632.
-    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 5632, nullptr, 3, nullptr, 0);
+    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. The depth is the Learned Sequence
+    // load on this task's own stack (seqStorePrepare -> protocolCheck -> pcFailAt ->
+    // snprintf float formatting -> first-use heap/log-mutex tail), 240 B past the 4096
+    // this used to be (#250). Both chips land on the same 512-byte step.
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", SEQ_DISPATCHER_TASK_STACK_BYTES,
+                            nullptr, 3, nullptr, 0);
 
     // ConsoleTask: Core 0 (non-RT)  --  serial console adapter using embedded-cli.
     // ADR 0034: persistent Controller Console, no network dependency, no dynamic
