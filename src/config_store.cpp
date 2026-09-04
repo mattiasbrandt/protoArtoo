@@ -528,6 +528,15 @@ void configCacheApply(const ConfigSnapshot& snap) {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
+// See declaration comment in config_cache.h. Deliberately NOT a call to
+// configCacheApply(): the point of this setter is to touch one field and to
+// leave the RC mapping dirty flag alone.
+void configCacheSetStationary(bool stationary) {
+    taskENTER_CRITICAL(&configCacheMux);
+    configCache.system.stationary = stationary;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
 // Project SystemConfig into the RC values that take effect only at boot. main
 // calls this after NVS load so later saves remain pending without changing the
 // running decoder/mapping/reporting posture (ADR 0027).

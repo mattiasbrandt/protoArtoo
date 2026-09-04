@@ -38,6 +38,23 @@ void configCacheReadWifi(WifiConfig* out);
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);
 
+// configCacheSetStationary: write the one field the Commanded Mode setters
+// mirror into the cache, by field.
+//
+// commandedSetStationary() (src/commanded_modes.cpp) keeps this in step with
+// RobotState.stationary so the next config save persists the commanded mode
+// instead of reverting it from a stale cache. It used to do that with a
+// whole-snapshot round trip - read all 944 B of ConfigSnapshot out, set one
+// bool, write all 944 B back through configCacheApply() - on the SBUS path
+// (Core 1, once per frame while driving, src/tasks/rc_input.cpp), on the httpd
+// task and on the Console alike. That also marked RobotState.rcConfigDirty on
+// every toggle, making RcInputTask rebuild its cached mapping config for a
+// field the RC processor config does not contain at all
+// (include/rc_input_processor.h reads stationary only as stationaryLocked
+// state). By field: no snapshot copy on the caller's stack, and no dirty
+// flag (ADR 0011, 2026-09-04 amendment).
+void configCacheSetStationary(bool stationary);
+
 // Project the boot SystemConfig into the immutable RC settings that actually
 // govern decoder startup, dispatch gates, and RC reporting. main calls this
 // once after NVS load so saved staged changes cannot partially apply at runtime

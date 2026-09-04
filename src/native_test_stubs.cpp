@@ -528,6 +528,17 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 #include "web_request_test_backend.h"
 
 static const char* testParamLookup(const WebRequestTestBackend* b, const char* name) {
+    // The staged preemption, if the test staged one. Cleared before the call
+    // so one request is interrupted once and a callback that drives another
+    // handler cannot recurse into itself. See onFirstParamRead's declaration
+    // in web_request_test_backend.h for why a parameter read is the point.
+    WebRequestTestBackend* mutableBackend = const_cast<WebRequestTestBackend*>(b);
+    if (mutableBackend->onFirstParamRead != nullptr) {
+        void (*hook)() = mutableBackend->onFirstParamRead;
+        mutableBackend->onFirstParamRead = nullptr;
+        hook();
+    }
+
     for (size_t i = 0; i < b->paramCount; i++) {
         if (strcmp(b->params[i].name, name) == 0) {
             return b->params[i].value;

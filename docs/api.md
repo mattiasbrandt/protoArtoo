@@ -55,7 +55,7 @@ The HTTP status code (4xx, 5xx) indicates the error class:
 - `400` — invalid input (missing field, bad format, out of range)
 - `409` — conflict with current state (e.g., drive blocked by estop)
 - `423` — transient resource unavailable (e.g., sleeping, resource in use)
-- `503` — service unavailable (queue full, hardware link down)
+- `503` — service unavailable (queue full, hardware link down, config write window busy)
 - `500` — server error
 
 Example with hint and field:
@@ -1164,6 +1164,9 @@ Updates supported config fields and persists to NVS.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields
 - `500` failed persistence or response build/alloc failure
+- `503` `{"ok":false,"error":"config write busy"}` — another config writer (the
+  Controller Console, or another form POST) held the config write window for
+  longer than one second. Nothing was applied; retry.
 
 #### Example request (form)
 
@@ -1251,6 +1254,8 @@ Replaces entire RC map.
 - Errors:
 - `400` with `{"ok":false,"error":"..."}` and optional `entry` object
 - `500` `{"ok":false,"error":"failed to persist config"}`
+- `503` `{"ok":false,"error":"config write busy"}` — another config writer held
+  the config write window; nothing was applied
 
 #### Example request
 
@@ -1590,7 +1595,7 @@ the end-to-end operator flow this endpoint backs.
 - `apSsid` is required (non-empty) once the resulting mode is `standalone_ap`
 - `apPassword` must be empty or 8..63 characters (ESP32 SoftAP/WPA2 requirement)
 - Success: `200` with `{"ok":true,"wifi":{...}}` (same password-safe `wifi` shape as `GET /api/config`'s `wifi` block) and marks the settings provisioned
-- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure
+- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure; `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window (nothing was applied)
 
 #### Example request
 

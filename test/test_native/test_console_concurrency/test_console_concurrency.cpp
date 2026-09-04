@@ -34,9 +34,11 @@
  *    below read the outer's answer after the interruption precisely so that
  *    would show.
  *  - The config-write critical section (`s_consoleConfigApplyResult` under
- *    `s_configWriteMutex`, landed by 86a1d051). The mutex tests below drive
- *    it from BOTH sources, which the existing coverage in
- *    test_console_module.cpp does only from the serial one.
+ *    the config write lock, ConfigWriteLock in include/api_config.h - the one
+ *    every config writer takes since #269, this module's two adapters and the
+ *    REST routes alike). The lock tests below drive it from BOTH Console
+ *    sources, which the existing coverage in test_console_module.cpp does only
+ *    from the serial one; test_config_write_lock.cpp drives the REST side.
  */
 
 #include <unity.h>
@@ -48,7 +50,7 @@
                               // mutex stub's exposed singleton, which
                               // xSemaphoreCreateMutexStatic() always returns, so a
                               // test can inspect the real take/give accounting of
-                              // console_module.cpp's s_configWriteMutex
+                              // the config write lock (src/web/api_config.cpp)
 
 #include "config_cache.h"
 #include "console_catalog.h"
@@ -191,7 +193,7 @@ static void runInto(Capture* cap, ConsoleCommandSource source, const char* comma
 void setUp(void) {
     ConfigSnapshot snap = {};
     configCacheApply(snap);
-    consoleModuleInit();  // idempotent; creates s_configWriteMutex once
+    consoleModuleInit();  // idempotent
     paStubMutexReset();
     captureReset(&g_outer);
     captureReset(&g_inner);

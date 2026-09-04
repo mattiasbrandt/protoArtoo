@@ -87,9 +87,11 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
     TEST_ASSERT_EQUAL_UINT32(6144U, WEB_EVENTS_TASK_STACK_BYTES);
 }
 
-// The Console task stack (#226), the one stack in include/config.h that was
-// already proven too small on hardware: a scalar config write over the serial
-// Console Adapter panicked both boards at 5120 B.
+// The Console task stack (#226/#269), the one stack in include/config.h that
+// was already proven too small on hardware: a scalar config write over the
+// serial Console Adapter panicked both boards at 5120 B. The chain it is
+// derived from shrank once the config-write path stopped carrying three
+// ConfigSnapshot copies (#269), and the constant was re-derived with it.
 //
 // Each assertion guards a different way the raise could be undone. The ESP32
 // arm is pinned so it cannot be "simplified" onto a later P4 change. The chain
@@ -100,15 +102,15 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
 //
 // Put the constant back to 5120 and none of these run at all: config.h's own
 // static_assert fails the compile first, which is the intended order. What
-// these catch is the value that still compiles -- 9216, say, which clears the
+// these catch is the value that still compiles -- 8192, say, which clears the
 // chain but not the rule.
 //
 // The ESP32-P4 arm is unreachable from a native binary (platformio.ini
 // env:native always builds PA_BOARD_ARTOO_ESP32); it is proven by the
 // cross-board compiler probe in test/test_tools/test_board_chip_sized_constants.py.
 void test_console_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(9008U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(11264U, CONSOLE_TASK_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(7568U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(9728U, CONSOLE_TASK_STACK_BYTES);
 
     // #248 rule: worst-case chain + 25%, rounded up to the next 512 bytes.
     const uint32_t byTheRule =

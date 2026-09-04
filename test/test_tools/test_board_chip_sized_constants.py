@@ -65,9 +65,11 @@ EXPECTED_BY_BOARD = {
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 6144,
-        # Raised from 5120 by #226. The only stack here whose under-size was a
-        # reproduced device fault rather than a walk: 9008 * 1.25 = 11260 -> 11264.
-        "console_stack": 11264,
+        # Raised from 5120 by #226 - the only stack here whose under-size was a
+        # reproduced device fault rather than a walk - then re-derived by #269
+        # once the config-write path stopped carrying three ConfigSnapshot
+        # copies: 7568 * 1.25 = 9460 -> 9728.
+        "console_stack": 9728,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -91,9 +93,11 @@ EXPECTED_BY_BOARD = {
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 7680,
-        # ConsoleTask by the same rule (#226): 9120 * 1.25 = 11400 -> 11776. The
-        # panic this fixes was captured on this board.
-        "console_stack": 11776,
+        # ConsoleTask by the same rule (#226, re-derived by #269):
+        # 7552 * 1.25 = 9440 -> 9728. The panic the original raise fixed was
+        # captured on this board. The two chips land on the same 512-byte step
+        # here by coincidence; their chains still differ.
+        "console_stack": 9728,
     },
 }
 
@@ -107,7 +111,7 @@ P4_STACK_CHAINS = {
     "rc_input_stack": 5376,
     "audio_stack": 4848,
     "web_events_stack": 5808,
-    "console_stack": 9120,
+    "console_stack": 7552,
 }
 ESP32_STACK_CHAINS = {
     "rc_input_stack": 5248,
@@ -118,7 +122,7 @@ ESP32_STACK_CHAINS = {
     # embeddedCliProcess's own frames, because embedded-cli reaches the command
     # callback through cli->onCommand and the walker does not follow indirect
     # calls (include/config.h carries the invocation).
-    "console_stack": 9008,
+    "console_stack": 7568,
 }
 
 
@@ -416,15 +420,48 @@ class BoardChipSizedConstants(unittest.TestCase):
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")
         self.assertNotEqual(artoo, firebeetle)
+        # console_stack is deliberately absent: see
+        # test_console_stack_is_derived_per_chip_even_where_they_coincide.
         for key in ("seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
                     "evid_record_bytes", "log_ring_max_lines",
-                    "web_events_stack", "console_stack"):
+                    "web_events_stack"):
             with self.subTest(key=key):
                 self.assertGreater(
                     firebeetle[key], artoo[key],
                     f"{key}: the ESP32-P4 must not inherit artoo-esp32's sizing",
                 )
+
+    def test_console_stack_is_derived_per_chip_even_where_they_coincide(self):
+        """The rule is what each arm must follow, not "P4 is the bigger one".
+
+        The Console chains differ per chip (ESP32_STACK_CHAINS vs
+        P4_STACK_CHAINS) and since #269 they round to the same 512-byte step.
+        A strictly-greater assertion would read that coincidence as the P4 arm
+        inheriting artoo's number, which is the opposite of what happened - so
+        this asserts the thing that actually matters instead: each arm is
+        EXACTLY what the #248 rule gives for its OWN measured chain. An arm
+        copied from the other chip fails here the moment the chains diverge
+        again, and a hand-edited value that clears its chain but not the rule
+        fails immediately.
+        """
+        artoo = self._values("PA_BOARD_ARTOO_ESP32")
+        firebeetle = self._values("PA_BOARD_FIREBEETLE2")
+        self.assertEqual(
+            stack_size_for_chain(ESP32_STACK_CHAINS["console_stack"]),
+            artoo["console_stack"],
+            "the artoo-esp32 Console stack does not follow the #248 rule for its chain",
+        )
+        self.assertEqual(
+            stack_size_for_chain(P4_STACK_CHAINS["console_stack"]),
+            firebeetle["console_stack"],
+            "the ESP32-P4 Console stack does not follow the #248 rule for its chain",
+        )
+        self.assertNotEqual(
+            ESP32_STACK_CHAINS["console_stack"],
+            P4_STACK_CHAINS["console_stack"],
+            "the two chains became identical - one of them was copied, not measured",
+        )
 
     def test_every_chip_arm_declares_every_constant(self):
         """A third chip target cannot inherit one of these by omission.
