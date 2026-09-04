@@ -372,16 +372,20 @@ A pure module behind a write path: it reads parameters through a Param Source (a
 _Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
 
 **Commit Step**:
-The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function) and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy (ADR 0034).
-_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0034; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
+_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function, adapter-held lock, snapshot-returning outcome
+
+**Working Snapshot**:
+The one per-request copy of the configuration that a write acts on: the Apply Core validates and applies onto it, the Commit Step commits it and refreshes it with the committed state, and the adapter renders from it. A write makes exactly one; nothing below the seam makes another. Distinct from a Zone Snapshot, which is a read of live state (ADR 0011).
+_Avoid_: by-value snapshot, post-commit copy, "the snapshot" without saying which
 
 **State Zone**:
 A commented block of `RobotState` fields with exactly one owning writer (a task or the failsafe gate). The owner writes its fields directly; every multi-field read crosses the seam through the zone's snapshot (ADR 0012). Zones make the shared struct navigable: to change a field, find its zone; to read related fields consistently, capture its snapshot.
 _Avoid_: global blackboard access, ad hoc multi-field reads
 
 **Commanded Mode**:
-A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
-_Avoid_: inline mode writes, per-surface transition rules
+A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache by field, never NVS and never a whole-snapshot round trip.
+_Avoid_: inline mode writes, per-surface transition rules, snapshot round trip for one field
 
 **Zone Snapshot**:
 The atomic multi-field read for a State Zone: a plain struct plus `copy<Zone>Locked()` (caller holds the mux) and `capture<Zone>()` (takes the mux). Consumer captures compose several zone copies inside one critical section, so a page response reads one generation of state. First instance: `FailsafeDiagnostics` (ADR 0012).
