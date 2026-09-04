@@ -89,6 +89,17 @@ ALLOWED_WIRE_WRITERS: dict[str, tuple[int, str]] = {
         "exists - there is nothing to own the wire yet, and the Console task "
         "cannot bring up the transport it is later handed.",
     ),
+    "src/main.cpp:setRxBufferSize": (
+        1,
+        "TRANSPORT POLICY, same pre-task setup block, and INPUT rather than "
+        "output. Sizes the CDC receive queue so a whole over-length command "
+        "line - terminator included - is still there when the Console task "
+        "reads it; the driver discards input it has no room for and reports "
+        "nothing, and the byte it discards first is the CR that triggers the "
+        "line's `line-too-long` refusal (#229, include/console_task.h). Must "
+        "run BEFORE Serial.begin(), which only sizes the queue if nothing "
+        "else has. Configures the transport; writes no bytes.",
+    ),
     "src/main.cpp:setTxTimeoutMs": (
         1,
         "TRANSPORT POLICY, same pre-task setup block. Sets the CDC write "
