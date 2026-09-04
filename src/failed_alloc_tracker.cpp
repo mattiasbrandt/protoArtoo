@@ -13,7 +13,6 @@
 
 #include "failed_alloc_tracker.h"
 
-#include <Arduino.h>
 #include <esp_debug_helpers.h>  // esp_backtrace_get_start/next_frame
 #include <esp_heap_caps.h>
 
