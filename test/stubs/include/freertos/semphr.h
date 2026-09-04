@@ -3,12 +3,19 @@
 // FreeRTOS semaphore stub for native host builds.
 //
 // Models a NON-RECURSIVE mutex with real ownership semantics, because that is
-// what src/main.cpp creates (xSemaphoreCreateMutexStatic, main.cpp:84) and
-// what the Console serial output coordinator has to be correct against.
+// what the project's remaining static mutex is: src/console/console_module.cpp's
+// config-write window (xSemaphoreCreateMutexStatic), which both adapters must
+// be correct against - test_console_module.cpp and test_console_concurrency.cpp
+// drive it through this stub's exposed singleton.
+//
+// This used to name src/main.cpp's serial mutex instead. That mutex is gone
+// (#270, ADR 0037): the Console task is the only writer of the serial wire, so
+// there is nothing left for a lock to coordinate there, and the serial output
+// coordinator's own suite now asserts that it takes NO mutex at all.
 //
 // A stub that always fails to take, or always returns a null handle, silently
-// forces every caller down its "no coordination" branch and makes the
-// coordinator untestable. Do not reintroduce one.
+// forces every caller down its "no coordination" branch and makes the config
+// window untestable. Do not reintroduce one.
 // =============================================================================
 #pragma once
 
@@ -19,10 +26,19 @@
 // StaticSemaphore_t* (a fixed-size opaque buffer the kernel places the real
 // queue/semaphore control block into) - this stub ignores the buffer's
 // contents entirely (see below), so the exact size does not matter for
-// correctness here; sized generously (96 B, comfortably above the real
-// struct's ~80 B on a 32-bit target) so callers that declare static storage
-// for one (src/console/console_module.cpp's config-write mutex, matching
-// src/main.cpp's own logSerialMutexStorage precedent) compile natively.
+// correctness here. 96 B, which is above the real struct: measured at 92 B on
+// artoo-esp32 at this IDF/sdkconfig (`xtensa-esp32-elf-nm --print-size` on a
+// firmware.elf, symbol size 0x5c), not the "~80 B on a 32-bit target" this
+// comment used to estimate. The margin is 4 bytes, not 16; a future
+// configUSE_* that grows StaticQueue_t would need this raised, and the stub
+// ignoring the contents is what stops that from being a correctness problem
+// here.
+//
+// The one caller that declares static storage for a mutex is
+// src/console/console_module.cpp's config-write window. It used to be cited as
+// "matching src/main.cpp's own logSerialMutexStorage precedent"; that
+// precedent was deleted with the serial mutex (#270), so this is now the only
+// one.
 typedef struct { unsigned char reserved[96]; } StaticSemaphore_t;
 
 // Opaque-enough mutex model for host tests: a holder token plus a depth count.
