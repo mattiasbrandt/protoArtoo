@@ -111,7 +111,15 @@ Tab completes the same way it does on serial (below).
 
 An unusually long reply — [`system.status.logs`](#reading-the-log-ring) is
 the one likely to produce one — can come back shorter than the full answer
-here, with nothing on screen to say so; see [api.md](api.md) for exactly
+here. When it does, the log says so in amber on the line under the reply it
+belongs to:
+
+```text
+< id=12 type=end status=ok outcome=completed
+[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.
+```
+
+The lines you do get are the newest ones; see [api.md](api.md) for exactly
 when that happens. Read `/api/logs` directly if you need the whole thing.
 
 ## Typing a command
@@ -409,8 +417,9 @@ depends on the board and the current log level — so a long gap between
 checks pushes older lines out before you read them. For a record that needs
 to survive that, or a wider window than the ring holds, pull `/api/logs`
 instead ([api.md](api.md)); it reads the same ring over HTTP. On the
-dashboard, a reply this long can also come back shorter than the full ring
-with no on-screen sign that anything was cut — see
+dashboard, a reply this long can also come back shorter than the full ring —
+you get the newest lines, and the log prints a `[CUT]` line under the reply
+to say so; see
 [Use the Console from the dashboard](#use-the-console-from-the-dashboard).
 
 ## What doesn't work here yet
