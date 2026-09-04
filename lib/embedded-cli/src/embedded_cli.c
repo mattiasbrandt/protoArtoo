@@ -187,10 +187,39 @@ struct EmbeddedCliImpl {
     uint8_t flags;
 
     /**
-     * Cursor position for current command from right to left 
+     * Cursor position for current command from right to left
      * 0 = end of command
      */
     uint16_t cursorPos;
+
+    /**
+     * [PATCH: Single-write redraw] Capture target for embeddedCliPrintToBuffer.
+     * While non-NULL, every character this library would hand to
+     * cli->writeChar is appended here instead (writeCharOut below), so a
+     * caller can render a whole redraw and hand it to its transport in ONE
+     * write. NULL - the state outside that one call - restores the upstream
+     * behavior exactly: straight through to cli->writeChar, character by
+     * character.
+     */
+    char *outBuffer;
+
+    /**
+     * Capacity of outBuffer. Meaningful only while outBuffer is non-NULL.
+     */
+    size_t outCapacity;
+
+    /**
+     * Bytes appended to outBuffer so far.
+     */
+    size_t outLength;
+
+    /**
+     * Set when a character did not fit outBuffer. The partial content is then
+     * never handed back: a half-rendered redraw on the wire is worse than no
+     * redraw at all, so embeddedCliPrintToBuffer reports the whole render as
+     * not fitting and the caller falls back to whatever it can send whole.
+     */
+    bool outOverflow;
 };
 
 struct AutocompletedCommand {
@@ -373,6 +402,28 @@ static void clearCurrentLine(EmbeddedCli *cli);
  * @param str
  */
 static void writeToOutput(EmbeddedCli *cli, const char *str);
+
+/**
+ * [PATCH: Single-write redraw] The one place a character leaves this library.
+ * Appends to the capture target when embeddedCliPrintToBuffer set one, and
+ * otherwise calls cli->writeChar exactly as upstream did. Every internal
+ * writer goes through here so a capture is complete by construction: a single
+ * call site left calling cli->writeChar directly would leak that character
+ * onto the transport in the middle of a render.
+ * @param cli
+ * @param c
+ */
+static void writeCharOut(EmbeddedCli *cli, char c);
+
+/**
+ * [PATCH: Single-write redraw] The body shared by embeddedCliPrint and
+ * embeddedCliPrintToBuffer: clear the input line, print the string, redraw
+ * the invitation and the buffered command. One implementation, so the two
+ * entry points cannot drift into two different redraw contracts.
+ * @param cli
+ * @param string
+ */
+static void printAndRedraw(EmbeddedCli *cli, const char *string);
 
 /**
  * Move cursor forward (right) by given number of positions
@@ -642,10 +693,7 @@ const char *embeddedCliGetCmdBuffer(const EmbeddedCli *cli) {
     return impl->cmdBuffer;
 }
 
-void embeddedCliPrint(EmbeddedCli *cli, const char *string) {
-    if (cli->writeChar == NULL)
-        return;
-
+static void printAndRedraw(EmbeddedCli *cli, const char *string) {
     PREPARE_IMPL(cli);
 
     // Save cursor position
@@ -671,6 +719,62 @@ void embeddedCliPrint(EmbeddedCli *cli, const char *string) {
 
         printLiveAutocompletion(cli);
     }
+}
+
+void embeddedCliPrint(EmbeddedCli *cli, const char *string) {
+    if (cli->writeChar == NULL)
+        return;
+
+    printAndRedraw(cli, string);
+}
+
+// [PATCH: Single-write redraw]
+size_t embeddedCliPrintToBuffer(EmbeddedCli *cli, const char *string,
+                                char *buffer, size_t bufferSize) {
+    if (cli == NULL || string == NULL || buffer == NULL || bufferSize == 0)
+        return 0;
+
+    PREPARE_IMPL(cli);
+
+    // Not re-entrant, and deliberately not made so: a second render started
+    // from inside the first would be a caller emitting a line from inside its
+    // own emission, which is the recursion the transport's non-recursive
+    // output lock exists to forbid. Refuse rather than interleave two renders
+    // in one buffer. Unreachable through cli->writeChar (which never runs
+    // during a render, by construction); this guards the way back in that a
+    // future getCompletionCandidate-style callback would open.
+    if (impl->outBuffer != NULL)
+        return 0;
+
+    // Line-editor bookkeeping is advanced by the render (inputLineLength and
+    // cursorPos describe what is now on the operator's screen). If the render
+    // does not fit, nothing reaches the wire, so that bookkeeping must not be
+    // advanced either - otherwise the next clearCurrentLine() would erase a
+    // line this call never drew.
+    uint16_t inputLineLengthSave = impl->inputLineLength;
+    uint16_t cursorPosSave = impl->cursorPos;
+
+    impl->outBuffer = buffer;
+    impl->outCapacity = bufferSize;
+    impl->outLength = 0;
+    impl->outOverflow = false;
+
+    printAndRedraw(cli, string);
+
+    size_t rendered = impl->outLength;
+    bool overflowed = impl->outOverflow;
+
+    impl->outBuffer = NULL;
+    impl->outCapacity = 0;
+    impl->outLength = 0;
+    impl->outOverflow = false;
+
+    if (overflowed) {
+        impl->inputLineLength = inputLineLengthSave;
+        impl->cursorPos = cursorPosSave;
+        return 0;
+    }
+    return rendered;
 }
 
 void embeddedCliFree(EmbeddedCli *cli) {
@@ -878,7 +982,7 @@ static void onCharInput(EmbeddedCli *cli, char c) {
     if (impl->cursorPos > 0)
         writeToOutput(cli, escSeqInsertChar); // Insert Character
 
-    cli->writeChar(cli, c);
+    writeCharOut(cli, c);
 }
 
 static void onControlInput(EmbeddedCli *cli, char c) {
@@ -1028,7 +1132,7 @@ static void parseCommand(EmbeddedCli *cli) {
 
 static void printBindingHelp(EmbeddedCli *cli, CliCommandBinding *binding) {
     if (binding->help != NULL) {
-        cli->writeChar(cli, '\t');
+        writeCharOut(cli, '\t');
         writeToOutput(cli, binding->help);
         writeToOutput(cli, lineBreak);
     }
@@ -1079,7 +1183,7 @@ static void onHelp(EmbeddedCli *cli, char *tokens, void *context) {
             writeToOutput(cli, " * ");
             writeToOutput(cli, cmdName);
             writeToOutput(cli, lineBreak);
-            cli->writeChar(cli, '\t');
+            writeCharOut(cli, '\t');
             writeToOutput(cli, helpStr);
             writeToOutput(cli, lineBreak);
         } else if (found) {
@@ -1235,11 +1339,11 @@ static void printLiveAutocompletion(EmbeddedCli *cli) {
 
     // print live autocompletion (or nothing, if it doesn't exist)
     for (size_t i = impl->cmdSize; i < cmd.autocompletedLen; ++i) {
-        cli->writeChar(cli, cmd.firstCandidate[i]);
+        writeCharOut(cli, cmd.firstCandidate[i]);
     }
     // replace with spaces previous autocompletion
     for (size_t i = cmd.autocompletedLen; i < impl->inputLineLength; ++i) {
-        cli->writeChar(cli, ' ');
+        writeCharOut(cli, ' ');
     }
     impl->inputLineLength = cmd.autocompletedLen;
 
@@ -1366,11 +1470,11 @@ static void clearCurrentLine(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
     size_t len = impl->inputLineLength + strlen(impl->invitation);
 
-    cli->writeChar(cli, '\r');
+    writeCharOut(cli, '\r');
     for (size_t i = 0; i < len; ++i) {
-        cli->writeChar(cli, ' ');
+        writeCharOut(cli, ' ');
     }
-    cli->writeChar(cli, '\r');
+    writeCharOut(cli, '\r');
     impl->inputLineLength = 0;
 
     impl->cursorPos = 0;
@@ -1380,7 +1484,23 @@ static void writeToOutput(EmbeddedCli *cli, const char *str) {
     size_t len = strlen(str);
 
     for (size_t i = 0; i < len; ++i) {
-        cli->writeChar(cli, str[i]);
+        writeCharOut(cli, str[i]);
+    }
+}
+
+// [PATCH: Single-write redraw]
+static void writeCharOut(EmbeddedCli *cli, char c) {
+    PREPARE_IMPL(cli);
+
+    if (impl->outBuffer == NULL) {
+        cli->writeChar(cli, c);
+        return;
+    }
+
+    if (impl->outLength < impl->outCapacity) {
+        impl->outBuffer[impl->outLength++] = c;
+    } else {
+        impl->outOverflow = true;
     }
 }
 
