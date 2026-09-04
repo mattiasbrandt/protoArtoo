@@ -535,8 +535,10 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //
 // The Xtensa measurement is much weaker than the RISC-V one: objdump emits
 // ~37% of the artoo image's function bodies as data rather than instructions
-// (2530 of 6793 at this tip), so any artoo chain crossing one is truncated,
-// while the ESP32-P4 image decodes whole (0 of 7448). Artoo numbers can prove
+// (2530 of roughly 6800 at this tip -- tools/check_task_stack_chains.py prints
+// the exact figure for the image it just read, which moves by a function or two
+// between builds), so any artoo chain crossing one is truncated, while the
+// ESP32-P4 image decodes whole (none of roughly 7450). Artoo numbers can prove
 // an overrun and cannot prove a margin. That asymmetry is exactly what makes
 // the re-walk safe to fail a build on: it can MISS growth and cannot report
 // FALSE growth.
