@@ -497,6 +497,10 @@ _Avoid_: frontend, shell, REPL, second backend, shared serial writer, log mutex
 The in-memory, size-bounded record of every log line the firmware emits, read by the log endpoint and by the serial adapter's drain. It is the authoritative copy of a log line; a line is lost only when newer lines evict it before a reader reaches it, and the serial drain marks such a gap on the wire. A transport never drops a log line on its own.
 _Avoid_: serial log, log buffer (when the ring is meant), best-effort serial copy
 
+**Measured Chain**:
+A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0038).
+_Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
+
 **Console Client**:
 A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
 _Avoid_: serial monitor (for the program), bench driver, test harness, the console (for the host side), terminal (when the program rather than the operator's shell is meant)
@@ -616,6 +620,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
 - A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike
 - Every log line is written once, to the **Log Ring**; the serial **Console Adapter** is its only serial reader and the only writer of the serial wire after it binds
+- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its chain; the sizing margin above the chain is a per-chip judgement recorded beside the constant
 
 ## Example Dialogue
 
@@ -680,4 +685,3 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - The Console plan drafted `not_included` / `unsupported_on_board` beside the browser's `not-in-this-build` / `not-on-this-board`; resolved by reusing the browser tokens and one kebab-case convention for every token the protocol defines - field names are carried from the API's JSON keys and are not tokens.
 - "the Apply Core contract" was used (2026-09-04, #226) to mean the calling convention of the seam - resolved: the contract is the response bytes and the plain outcome; how a **Working Snapshot** crosses the seam is not part of it
 - "one seam" (2026-09-04, #268) was used to mean one function every serial byte passes through - resolved: ownership of the serial wire is by task; the function seam is a consequence, not the invariant
-
