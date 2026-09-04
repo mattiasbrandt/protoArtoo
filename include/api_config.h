@@ -46,7 +46,8 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // plain outcome, not the calling convention.
 //
 // It used to carry a whole ConfigSnapshot under a comment calling the struct
-// small. ConfigSnapshot measures 944 B, so that one by-value crossing put
+// small. ConfigSnapshot measures 944 B (static_assert in config_store.h),
+// so that one by-value crossing put
 // ~1892 B of snapshot copies on the serial config-write path and helped
 // overflow the Console task on both chips (#226). `working` already holds a snapshot the caller owns; writing the
 // post-commit state back into it costs no second copy.

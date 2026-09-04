@@ -348,8 +348,9 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
 }  // namespace
 
 // =============================================================================
-// Shared defaults  --  ConfigSnapshot is 744 bytes, too large for the 6144-byte
-// loop task stack. Static BSS allocation; populated once on first use.
+// Shared defaults  --  ConfigSnapshot is 944 bytes (static_assert in
+// config_store.h), too large for the 6144-byte loop task stack. Static BSS
+// allocation; populated once on first use.
 // =============================================================================
 
 static ConfigSnapshot s_defaults;
