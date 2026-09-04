@@ -61,7 +61,7 @@ EXPECTED_BY_BOARD = {
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
         # Pre-#256 literals, unchanged. WebEvents is 6144 here even though the
-        # #248 rule on its 5888 B chain would raise it -- the tight-heap decline
+        # #248 rule on its 5904 B chain would raise it -- the tight-heap decline
         # recorded beside the constant in include/config.h.
         "rc_input_stack": 7168,
         "audio_stack": 6144,

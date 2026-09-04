@@ -780,9 +780,11 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
 constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7360;
 constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5888;
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
-// holds by 256 B.
+// holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
+// the deepest in this chain, and publishing failedAllocs and queueOverflowCount
+// grew it 16 B. Xtensa only -- the ESP32-P4 arm re-walked unchanged.
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3696;
 // rule declined (5120, +1024 B): #248's tight-heap reason, applied to this

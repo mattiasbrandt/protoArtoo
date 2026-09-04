@@ -77,7 +77,7 @@ static const TaskStackArm kArms[] = {
     {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
     {"SeqDisp", 4336U, 5632U, RULE_APPLIED},
     {"Console", 7360U, 9216U, RULE_APPLIED},
-    {"WebEvents", 5888U, 6144U, RULE_DECLINED},
+    {"WebEvents", 5904U, 6144U, RULE_DECLINED},
     {"ArduinoOTA", 3696U, 4096U, RULE_DECLINED},
 };
 static const size_t kArmCount = sizeof(kArms) / sizeof(kArms[0]);
