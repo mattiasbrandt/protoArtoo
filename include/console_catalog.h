@@ -81,6 +81,14 @@ typedef struct {
                                           // row only describes a field inside another query's
                                           // response (registry carries is_query: false, #212).
                                           // Always true for non-status types.
+    bool read_only;                      // registry `read_only: true`: the operation reads, but
+                                          // nothing in the firmware writes the value it names, so
+                                          // a write is refused with `invalid reason=read-only`
+                                          // (docs/console-protocol.md s.4.2). The operation-level
+                                          // counterpart of a parameter's write_excluded above,
+                                          // and the same rule: the fact lives in the registry, so
+                                          // the dispatcher never carries a list of names and a row
+                                          // marked tomorrow is refused with no code change.
 } ConsoleCatalogEntry;
 
 // Get the complete catalog

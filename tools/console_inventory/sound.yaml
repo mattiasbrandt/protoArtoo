@@ -1111,10 +1111,13 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:223 - snd_int_awake field in AudioConfig
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_awake in JSON
+  - src/config_store.cpp:62 - "snd_int_awake" is an AUDIO_TRACK_KEYS entry, so the
+    /api/audio/tracks apply core resolves it
+  - src/web/api_audio_tracks_apply.cpp:55 - audioTracksApply() classifies snd_int_*
+    keys as intervals and bounds them 0-3600 s
   - src/tasks/audio_config_map.cpp:42 - intervalAwakeS = cfg.audio.snd_int_awake
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
   notes: mood interval for awake+ mode (milliseconds between idle track plays)
@@ -1132,10 +1135,13 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:222 - snd_int_full field in AudioConfig
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_full in JSON
+  - src/config_store.cpp:62 - "snd_int_full" is an AUDIO_TRACK_KEYS entry, so the
+    /api/audio/tracks apply core resolves it
+  - src/web/api_audio_tracks_apply.cpp:55 - audioTracksApply() classifies snd_int_*
+    keys as intervals and bounds them 0-3600 s
   - src/tasks/audio_config_map.cpp:41 - intervalFullS = cfg.audio.snd_int_full
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
   notes: mood interval for full mood (ms between idle track plays)
@@ -1153,10 +1159,13 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:221 - snd_int_mid field in AudioConfig
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_mid in JSON
+  - src/config_store.cpp:62 - "snd_int_mid" is an AUDIO_TRACK_KEYS entry, so the
+    /api/audio/tracks apply core resolves it
+  - src/web/api_audio_tracks_apply.cpp:55 - audioTracksApply() classifies snd_int_*
+    keys as intervals and bounds them 0-3600 s
   - src/tasks/audio_config_map.cpp:40 - intervalMidS = cfg.audio.snd_int_mid
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
   notes: mood interval for mid mood (ms between idle track plays)
@@ -1174,10 +1183,13 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:220 - snd_int_quiet field in AudioConfig
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_quiet in JSON
+  - src/config_store.cpp:62 - "snd_int_quiet" is an AUDIO_TRACK_KEYS entry, so the
+    /api/audio/tracks apply core resolves it
+  - src/web/api_audio_tracks_apply.cpp:55 - audioTracksApply() classifies snd_int_*
+    keys as intervals and bounds them 0-3600 s
   - src/tasks/audio_config_map.cpp:39 - intervalQuietS = cfg.audio.snd_int_quiet
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioTracksApply
   missing_metadata:
   - executor reference not in registry
   notes: mood interval for quiet mood (ms between idle track plays)
@@ -1330,10 +1342,12 @@ rows:
   anchor_kind: config
   evidence:
   - include/config_store.h:190 - uint8_t audioVolume;
-  - src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON
+  - src/web/api_audio.cpp:716 - audioSetVolumeCommitApplied() applies through the audio queue
+    and persists the level as the boot default
+  - src/web/api_audio.cpp:950 - POST /api/audio action=volume calls that same Commit Step
   - src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;
   - include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)
-  executor_or_core: configApply
+  executor_or_core: audioSetVolumeCommitApplied
   missing_metadata:
   - executor reference not in registry
   - console_alias not in registry

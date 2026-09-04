@@ -93,13 +93,14 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
 
 // Commit Steps (ADR 0034 criterion 1): the handler-owned post-apply side
 // effects for each of the three audio write Apply Cores, extracted so a
-// future non-REST caller (the Controller Console) reaches the identical
+// non-REST caller (the Controller Console) reaches the identical
 // NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
-// No Console operation reaches these yet (#226 scope note: these three cores
-// are per-key or grouped writes - "key=<name>&track=N", paired lo/hi, a
-// four-value mood map - not the single "value=" scalar shape criterion 3
-// covers), so the REST handlers below remain the sole callers today; the
-// extraction stands ready for whichever ticket wires them.
+// Both callers exist now: the REST handlers below, and the Console - its
+// sound.action.set-mood-map / set-category-range executors
+// (include/console_direct_action_sound.h) and its sound.config.* rows
+// (src/console/console_module.cpp), which reach these through the same
+// per-key or grouped shapes REST uses ("key=<name>&track=N", paired lo/hi, a
+// four-value mood map).
 struct AudioMoodMapCommitOutcome {
     bool ok = false;  // false -> caller reports "NVS write failed"
 };

@@ -87,19 +87,19 @@ sound.action.random-alert|Random Alert|Play one random track from the configured
 sound.action.random-snarky|Random Snarky|Play one random track from the configured Snarky category range|audioQueuePlayTrack|
 sound.action.random-whistle|Random Whistle|Play one random track from the configured Whistle category range|audioQueuePlayTrack|
 sound.status.current|Sound Status|Current playback state, volume, and module health|captureAudioStatusSnapshot|
-sound.config.volume|Volume|Default audio volume (0–30)|configApply|volume:uint8:1
-sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|
-sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|
-sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood|configApply|
-sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between random sound plays in Mid-Awake mood|configApply|
-sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound plays in Full-Awake mood|configApply|
-sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood|configApply|
-sound.config.startup-track|Startup Boot Sound Track ($B)|Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event|audioTracksApply|
-sound.config.boot-complete-track|Boot Complete System Track|Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)|audioTracksApply|
-sound.config.network-down-track|Network Link Lost System Track|Automatic system-event sound fired once when the ESP-Hosted C6 link supervisor exhausts its recovery ladder and settles into the terminal degraded state (#189)|audioTracksApply|
-sound.config.track-assignments|Track Assignments|Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)|audioTracksApply|
-sound.config.system-track-assignments|System Sound Assignments|System-event sound track assignments (T09), including automatic boot-complete playback|audioTracksApply|
-sound.config.category-ranges|Category Ranges|Min/max track ranges for RC random-by-category sound actions (T07/T10)|audioCategoryRangeApply|
+sound.config.volume|Volume|Default audio volume (0–30)|audioSetVolumeCommitApplied|volume:uint8:1
+sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|track:uint16:1
+sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|track:uint16:1
+sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between random sound plays in Mid-Awake mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound plays in Full-Awake mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.startup-track|Startup Boot Sound Track ($B)|Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event|audioTracksApply|track:uint16:1
+sound.config.boot-complete-track|Boot Complete System Track|Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)|audioTracksApply|track:uint16:1
+sound.config.network-down-track|Network Link Lost System Track|Automatic system-event sound fired once when the ESP-Hosted C6 link supervisor exhausts its recovery ladder and settles into the terminal degraded state (#189)|audioTracksApply|track:uint16:1
+sound.config.track-assignments|Track Assignments|Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)|audioTracksApply|key:string:1|track:uint16:1
+sound.config.system-track-assignments|System Sound Assignments|System-event sound track assignments (T09), including automatic boot-complete playback|audioTracksApply|key:string:1|track:uint16:1
+sound.config.category-ranges|Category Ranges|Min/max track ranges for RC random-by-category sound actions (T07/T10)|audioCategoryRangeApply|lo_key:string:1|hi_key:string:1|lo:uint16:1|hi:uint16:1
 sound.config.mood-category-map|Mood Category Map|Per-mood bitmask selecting which of the 12 sound categories contribute to idle random chatter. One uint16 per mood (bits 0–11, one per category in T07 registration order). Stored as four NVS uint16 values. Configurable via GET/POST /api/audio/mood-map. Default bitmasks reflect suggested character-appropriate presets (see T11 spec). A bitmask of 0x0000 disables category-based selection for that mood and falls back to the flat [randMin, randMax] pool.\n|audioMoodMapApply|quiet:uint16:1|mid:uint16:1|full:uint16:1|awakeplus:uint16:1
 servo.action.open|Open|Open a servo-driven panel or arm to its open position|servoCmdQueue|target:string:1
 servo.action.close|Close|Close a servo-driven panel or arm to its closed position|servoCmdQueue|target:string:1

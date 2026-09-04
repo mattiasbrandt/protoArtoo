@@ -1848,7 +1848,7 @@ entries:
     - 30
     required: true
   nvs_key: cfg_sndVol
-  executor: configApply
+  executor: audioSetVolumeCommitApplied
 - name: sound.config.random-min
   display_name: Random Min Track
   description: Lowest track number in the random playback pool
@@ -1863,6 +1863,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: cfg_sndRandMin
   executor: audioTracksApply
 - name: sound.config.random-max
@@ -1879,11 +1883,15 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: cfg_sndRandMax
   executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
   display_name: Quiet Mode Interval
-  description: Seconds between random sound plays in Quiet mood
+  description: Seconds between random sound plays in Quiet mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1896,10 +1904,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_quiet
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-mid
   display_name: Mid-Awake Interval
-  description: Seconds between random sound plays in Mid-Awake mood
+  description: Seconds between random sound plays in Mid-Awake mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1912,10 +1921,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_mid
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-full
   display_name: Full-Awake Interval
-  description: Seconds between random sound plays in Full-Awake mood
+  description: Seconds between random sound plays in Full-Awake mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1928,10 +1938,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_full
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-awake-plus
   display_name: Awake+ Interval
-  description: Seconds between random sound plays in Awake+ mood
+  description: Seconds between random sound plays in Awake+ mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1944,7 +1955,8 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_awake
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.startup-track
   display_name: Startup Boot Sound Track ($B)
   description: Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event
@@ -1959,6 +1971,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_startup
   executor: audioTracksApply
 - name: sound.config.boot-complete-track
@@ -1975,6 +1991,10 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_sys_boot
   executor: audioTracksApply
 
@@ -1991,6 +2011,10 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: track
+    type: uint16
+    required: true
   nvs_key: snd_sys_netdown
   executor: audioTracksApply
 - name: sound.config.track-assignments
@@ -2007,6 +2031,34 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: key
+    type: string
+    values:
+    - scream
+    - faint
+    - leia
+    - cantina_s
+    - sw_theme
+    - imp_march
+    - cantina_l
+    - startup
+    - doodoo
+    - failure
+    - disco
+    - mahna
+    - inlove
+    - macho
+    - gangnam
+    - uptown
+    - celebr
+    - stayin
+    - harlem
+    - pbjtime
+    required: true
+  - name: track
+    type: uint16
+    required: true
   nvs_keys:
   - snd_scream
   - snd_faint
@@ -2043,6 +2095,21 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: key
+    type: string
+    values:
+    - sys_boot
+    - sys_mode_n
+    - sys_mode_s
+    - sys_mode_t
+    - sys_drv_on
+    - sys_dome_on
+    - sys_net_down
+    required: true
+  - name: track
+    type: uint16
+    required: true
   nvs_keys:
   - snd_sys_boot
   - snd_sys_mode_n
@@ -2066,6 +2133,19 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
+  params:
+  - name: lo_key
+    type: string
+    required: true
+  - name: hi_key
+    type: string
+    required: true
+  - name: lo
+    type: uint16
+    required: true
+  - name: hi
+    type: uint16
+    required: true
   nvs_keys:
   - snd_cat_gen_lo
   - snd_cat_gen_hi

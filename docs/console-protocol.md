@@ -236,13 +236,14 @@ never type an ID.
   | `temporarily-unavailable` | busy right now; try again |
 
   Other reasons name the specific failure: `line-too-long`,
-  `secret-not-settable`, `unknown-operation`, `unknown-argument`,
-  `missing-argument`, `out-of-range`, `malformed-argument` (a quoted value's
-  escaping/quoting/UTF-8 did not parse, or a bare word appeared where
-  `key=value` was required - section 1.2/1.3), `not-executable` (an event),
-  and during development only `executor-not-ready` (an operation whose
-  executor is not yet wired; the count must be zero when the feature is
-  complete).
+  `secret-not-settable`, `read-only` (the operation reads, but nothing in the
+  firmware writes the value it names - section 4.2), `unknown-operation`,
+  `unknown-argument`, `missing-argument`, `out-of-range`,
+  `malformed-argument` (a quoted value's escaping/quoting/UTF-8 did not parse,
+  or a bare word appeared where `key=value` was required - section 1.2/1.3),
+  `not-executable` (an event), and during development only
+  `executor-not-ready` (an operation whose executor is not yet wired; the
+  count must be zero when the feature is complete).
 
 - `not-in-this-build` and `not-on-this-board` are the same tokens the browser
   already uses for Feature Availability; the Console never invents a synonym.
@@ -299,6 +300,26 @@ Password writes are **excluded**. Every non-secret WiFi field is settable; a
 password argument is rejected with `invalid reason=secret-not-settable`, `help`
 marks the field as write-excluded, and passwords are entered through the WiFi
 provisioning page. No read ever returns a secret value.
+
+### 4.2 Read-only values
+
+A few configuration rows **read but do not write**: the value is a real setting
+the Console can report, and nothing on this interface sets it. A write is
+rejected with `invalid reason=read-only`, and `help` reports `read_only=true`
+for the operation; the entry's own description says where the value is set
+instead.
+
+`read-only` is not `executor-not-ready`, which promises wiring that has not
+happened yet and must reach zero before a feature is complete, and it is not
+`secret-not-settable`, which is a value deliberately withheld from this
+transport (section 4.1). The distinction is stable: a row's answer here does
+not change as the firmware is finished.
+
+The fact belongs to the **operation**, and it comes from the action registry
+(`read_only: true`) through the generated operation catalog - the same route a
+parameter's write-exclusion takes. Neither adapter carries a list of
+read-only operation names, so marking one more row is a registry edit, not a
+code change.
 
 ## 5. Actions, safety and provenance
 

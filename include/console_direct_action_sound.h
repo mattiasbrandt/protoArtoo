@@ -159,15 +159,12 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
     }
 }
 
-// Reproduces api_audio.cpp's anonymous-namespace audioCatalogSupported()
-// (internal linkage - unreachable from here, a second translation unit)
-// rather than exporting a REST-private helper, the same "read their logic,
-// call their shared functions" precedent consoleExecuteSoundPlayTrack()
-// above already set for isSleepModeActive() (also private to that same
-// anonymous namespace).
-static bool consoleAudioCatalogSupported() {
-    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
-}
+// consoleAudioCatalogSupported() used to live here. It moved to
+// src/console/console_module.cpp when #226's sound.config.* executors became
+// its second caller - that file's header comment lists the small
+// cross-cutting helpers every domain's bodies call as belonging there, and
+// this one now is one. The bodies below still see it by ordinary
+// same-translation-unit visibility.
 
 // Shared body for every zero-argument $-letter dollar shortcut this file
 // wires (named-track plays, quiet, random-on/off, volume shortcuts): the
@@ -492,9 +489,9 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
 // same audioMoodMapApply() + audioMoodMapCommitApplied() sequence
 // handleAudioMoodMapPost() runs (src/web/api_audio.cpp), reusing the ADR
 // 0011 Apply Core and its Commit Step (include/api_audio.h) exactly as
-// extracted for this purpose ("No Console operation reaches these yet ...
-// the extraction stands ready for whichever ticket wires them" -
-// audioMoodMapCommitApplied()'s own comment in include/api_audio.h).
+// extracted for this purpose. sound.config.mood-category-map, the config-
+// typed view of the same value, reaches the identical pair
+// (src/console/console_module.cpp).
 // consoleArgsAsParamSource() (include/console_args.h) is the SAME
 // ConfigParamSource adapter #226 already established for Console-sourced
 // Apply Core calls, reused verbatim rather than a second bridge. All four
