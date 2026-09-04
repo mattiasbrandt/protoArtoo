@@ -108,8 +108,16 @@ SLICE WORKFLOW (AGENTS.md, binding)
   1. Before your first slice, create your status comment with a marker first
      line, writing the body to a file and passing it with --body-file:
      gh issue comment {ISSUE} --body-file <file>
-  2. Find its id once: gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
-     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE} -->")) | .id'
+     The marker MUST be unique to THIS dispatch, not just to the issue:
+     <!-- worker-status-{ISSUE}-<short-slug-of-your-branch> -->. A ticket
+     re-dispatched in a later wave otherwise gets two comments sharing one
+     marker, step 2 returns BOTH ids, and the step-3 `gh api .../<id>` then
+     fails on the embedded newline. That happened on #221.
+  2. Find its id once - and CHECK IT RETURNED EXACTLY ONE:
+     gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
+     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE}-<slug> -->")) | .id'
+     Two ids means your marker is not unique; pick a narrower one and re-post
+     rather than patching whichever came back first.
   3. Update that id thereafter, from a file:
      python3 -c "import json,pathlib,sys; print(json.dumps({'body': pathlib.Path(sys.argv[1]).read_text()}))" <file> > /tmp/patch.json
      gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input /tmp/patch.json
