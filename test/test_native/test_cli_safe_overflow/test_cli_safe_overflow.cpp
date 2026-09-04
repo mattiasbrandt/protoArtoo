@@ -225,10 +225,90 @@ void test_safe_overflow_recovery(void) {
     embeddedCliFree(cli);
 }
 
+/**
+ * Test 4 (#270): the reset leaves an EMPTY command buffer, not just a zero
+ * count.
+ *
+ * embeddedCliResetInput() zeroed cmdSize and left the old line's bytes in
+ * cmdBuffer. Every other mutator keeps strlen(cmdBuffer) == cmdSize, and
+ * every insertion position the editor computes is
+ * `strlen(cmdBuffer) - cursorPos` (onCharInput), so the next real keystroke
+ * landed at the stale strlen() offset - past a fragment the operator cannot
+ * see - and the line they then submitted was not the line they typed.
+ *
+ * Tests 2 and 3 above could not see this: both reach the reset through an rx
+ * FIFO overflow, and embeddedCliProcess()'s own overflow discard already
+ * clears cmdBuffer[0]. The live production caller does not - a host
+ * (re)attach calls embeddedCliResetInput() directly on an ordinary,
+ * mid-edited line (include/console_host_attach.h, #260), which is the P4
+ * attach path.
+ *
+ * The cursor is moved left first, so this also pins the second half: with an
+ * emptied buffer a non-zero cursorPos makes that subtraction underflow.
+ */
+void test_reset_clears_the_command_buffer_and_the_cursor(void) {
+    static CLI_UINT cliBuffer[4096 / sizeof(CLI_UINT)];
+
+    EmbeddedCliConfig config = {
+        .invitation = "> ",
+        .rxBufferSize = 256,
+        .cmdBufferSize = 256,
+        .historyBufferSize = 256,
+        .maxBindingCount = 10,
+        .cliBuffer = cliBuffer,
+        .cliBufferSize = sizeof(cliBuffer),
+        .enableAutoComplete = false,
+    };
+
+    EmbeddedCli *cli = embeddedCliNew(&config);
+    TEST_ASSERT_NOT_NULL(cli);
+    cli->onCommand = onCommand;
+    cli->writeChar = writeChar;
+
+    // An ordinary half-typed line, with the cursor moved two characters left
+    // (VT100 "\x1B[D" twice) - the state a cable pull can leave behind.
+    const char *typed = "abcdef";
+    for (const char *p = typed; *p; p++) {
+        embeddedCliReceiveChar(cli, *p);
+    }
+    for (int i = 0; i < 2; i++) {
+        embeddedCliReceiveChar(cli, 0x1B);
+        embeddedCliReceiveChar(cli, '[');
+        embeddedCliReceiveChar(cli, 'D');
+    }
+    embeddedCliProcess(cli);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("abcdef", embeddedCliGetCmdBuffer(cli),
+                                     "fixture did not leave the typed line in the buffer");
+
+    embeddedCliResetInput(cli);
+
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+        "", embeddedCliGetCmdBuffer(cli),
+        "the reset left the old line's bytes in cmdBuffer; every insertion "
+        "position the editor computes is strlen(cmdBuffer) - cursorPos");
+
+    // The operator's next command must be exactly what they type.
+    commandCount = 0;
+    lastCommand[0] = '\0';
+    const char *next = "hi";
+    for (const char *p = next; *p; p++) {
+        embeddedCliReceiveChar(cli, *p);
+    }
+    embeddedCliReceiveChar(cli, '\r');
+    embeddedCliProcess(cli);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, commandCount, "the next line did not execute");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("hi", lastCommand,
+                                     "the first command after a reset was not what was typed");
+
+    embeddedCliFree(cli);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_safe_overflow_valid_length_accepted);
     RUN_TEST(test_safe_overflow_exceeds_buffer_rejected);
     RUN_TEST(test_safe_overflow_recovery);
+    RUN_TEST(test_reset_clears_the_command_buffer_and_the_cursor);
     return UNITY_END();
 }

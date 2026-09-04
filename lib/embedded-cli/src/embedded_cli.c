@@ -649,6 +649,13 @@ void embeddedCliProcess(EmbeddedCli *cli) {
     if (IS_FLAG_SET(impl->flags, CLI_FLAG_OVERFLOW)) {
         impl->cmdSize = 0;
         impl->cmdBuffer[impl->cmdSize] = '\0';
+        // [PATCH: Safe overflow] Same invariant embeddedCliResetInput() now
+        // keeps: an emptied buffer cannot have characters to the right of the
+        // cursor. Upstream left cursorPos alone here, so an overflow arriving
+        // while the operator was mid-line-edit (cursor moved left, then a
+        // paste larger than the rx FIFO) made onCharInput's
+        // `strlen(cmdBuffer) - cursorPos` underflow on the next keystroke.
+        impl->cursorPos = 0;
         UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
         // [PATCH: Explicit line-too-long] Upstream discards the partial
         // command here and tells nobody, which is the same silent loss
@@ -678,6 +685,21 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
     // Allows the listener to explicitly clear the partial command without discarding other state.
     PREPARE_IMPL(cli);
     impl->cmdSize = 0;
+    // [PATCH: Safe overflow] Zeroing cmdSize alone left the OLD line's bytes
+    // in cmdBuffer, breaking the strlen(cmdBuffer) == cmdSize invariant every
+    // other mutator maintains - and every insertion position the editor
+    // computes is `strlen(cmdBuffer) - cursorPos` (onCharInput), so the next
+    // real keystroke landed at the stale strlen() offset and the line the
+    // operator then submitted was not the line they typed. The host re-attach
+    // path (include/console_host_attach.h) is a live caller. Cleared the same
+    // way embeddedCliProcess()'s own overflow discard clears it, so the two
+    // reset paths agree.
+    impl->cmdBuffer[impl->cmdSize] = '\0';
+    // cursorPos counts the characters to the RIGHT of the cursor, so an empty
+    // buffer forces it to zero: leaving it non-zero (the operator was
+    // mid-line-edit) would make that same subtraction underflow on the next
+    // keystroke and memmove() a huge count.
+    impl->cursorPos = 0;
     UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
     // [PATCH: Explicit line-too-long] An outright input reset abandons the
     // line, so the pending refusal for it is abandoned with it - otherwise

@@ -226,15 +226,43 @@ Example:
 void embeddedCliResetInput(EmbeddedCli *cli) {
     PREPARE_IMPL(cli);
     impl->cmdSize = 0;
+    impl->cmdBuffer[impl->cmdSize] = '\0';
+    impl->cursorPos = 0;
     UNSET_U8FLAG(impl->flags, CLI_FLAG_OVERFLOW);
+    UNSET_U8FLAG(impl->flags, CLI_FLAG_LINE_TOO_LONG);  /* Patch 7 */
 }
 ```
+
+> [!IMPORTANT]
+> **Corrected 2026-09-04 (#270, ADR 0037).** The shipped version zeroed
+> `cmdSize` and left the old line's bytes in `cmdBuffer`, so
+> `strlen(cmdBuffer) == cmdSize` - the invariant every other mutator in this
+> library maintains - did not hold after a reset. Every insertion position the
+> editor computes is `strlen(cmdBuffer) - cursorPos` (`onCharInput`), so the
+> operator's next keystroke after a reset landed at the stale `strlen()`
+> offset, past a fragment they cannot see, and the line they submitted was not
+> the line they typed. `cursorPos` is cleared with it: it counts the characters
+> to the RIGHT of the cursor, so an emptied buffer with a non-zero `cursorPos`
+> makes that subtraction underflow into a `memmove()` of a huge count.
+>
+> `embeddedCliProcess()`'s own rx-overflow discard already cleared
+> `cmdBuffer[0]` (`impl->cmdSize = 0; impl->cmdBuffer[impl->cmdSize] = '\0';`),
+> which is why the two existing tests here - both of which reach the reset
+> through an rx-FIFO overflow - could not see it. The live caller that does not
+> is the host (re)attach path (`include/console_host_attach.h`, #260): a P4
+> cable pull leaves an ordinary, mid-edited line behind. The same
+> `cursorPos = 0` was added to that overflow discard, for the same reason.
+>
+> `include/console_host_attach.h` still queues its synthetic Enter: the reset
+> primitive clears the input *buffer*, while the Enter is what redraws the
+> invitation and clears `inputLineLength` and the history cursor. That file's
+> own header explains the split.
 
 **Alternative (workaround)**: Listener feeds NUL bytes (count = bytes that exceeded buffer) to reset the buffer without a patch.
 
 **Upstream candidacy**: Yes, defensive programming.
 
-**Test**: `test/test_native/test_cli_safe_overflow/test_cli_safe_overflow.cpp` - covers `embeddedCliResetInput()` as a primitive: the buffer is cleared, no command executes afterwards, and the next line still works. The tests call it from the test body, because no production listener ever did. What the *product* does with an over-length line is Patch 7's, and is covered by `test/test_native/test_cli_line_too_long/`.
+**Test**: `test/test_native/test_cli_safe_overflow/test_cli_safe_overflow.cpp` - covers `embeddedCliResetInput()` as a primitive: the buffer is cleared, no command executes afterwards, the next line still works, and (#270) the first command typed after a reset of a mid-edited line is exactly what was typed. The tests call it from the test body, because no production listener ever did. What the *product* does with an over-length line is Patch 7's, and is covered by `test/test_native/test_cli_line_too_long/`.
 
 ### Patch 3: UTF-8 Ingestion - Accept High-Bit Bytes
 
