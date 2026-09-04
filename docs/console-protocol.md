@@ -79,6 +79,23 @@ wifi.config.settings mode=client sta-ssid="Workshop WiFi"
   static buffer sizes on this project are measured on real boards, not chosen
   from a host. Until that measurement exists, a command between 63 and 255
   bytes is refused on serial and accepted in the browser - visibly, on both.
+- **The refusal is answered when the line ends, so the line's ending has to
+  arrive.** On serial that is a property of the transport rather than of the
+  Console. The controller's USB CDC driver discards input it has no room for,
+  and it does so silently - no flag, no counter, nothing a reader can notice
+  afterwards - so the bytes at risk on an over-length line are the ones at its
+  end, which is exactly where its terminator is. Losing the terminator does not
+  lose the refusal; it **defers** it to the next line's terminator, which then
+  answers for both, so the over-length line's `line-too-long` arrives late
+  against the wrong request and the command typed after it is never answered
+  at all. The controller therefore holds a whole over-length line - four times
+  the longest line this protocol defines - in its serial input queue, and reads
+  that queue every millisecond while input is arriving instead of every ten
+  (`include/console_task.h`, `src/tasks/console_task.cpp`). One host write
+  larger than that queue can still lose its tail, and the driver still reports
+  nothing when it does: that is the one remaining case in which an over-length
+  line's refusal can be late, and it is outside the line lengths this protocol
+  defines.
 - A NUL byte or malformed UTF-8 in a quoted value fails explicitly
   (`invalid` with a reason); nothing is silently dropped or "fixed".
 
