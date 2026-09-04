@@ -87,6 +87,38 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
     TEST_ASSERT_EQUAL_UINT32(6144U, WEB_EVENTS_TASK_STACK_BYTES);
 }
 
+// The Console task stack (#226), the one stack in include/config.h that was
+// already proven too small on hardware: a scalar config write over the serial
+// Console Adapter panicked both boards at 5120 B.
+//
+// Each assertion guards a different way the raise could be undone. The ESP32
+// arm is pinned so it cannot be "simplified" onto a later P4 change. The chain
+// is pinned so config.h's floor cannot be lowered to meet a shrunk constant
+// instead of the other way round. The constant is re-derived from the chain by
+// the #248 rule rather than restated, so a hand-edited value that no longer
+// follows the rule is red.
+//
+// Put the constant back to 5120 and none of these run at all: config.h's own
+// static_assert fails the compile first, which is the intended order. What
+// these catch is the value that still compiles -- 9216, say, which clears the
+// chain but not the rule.
+//
+// The ESP32-P4 arm is unreachable from a native binary (platformio.ini
+// env:native always builds PA_BOARD_ARTOO_ESP32); it is proven by the
+// cross-board compiler probe in test/test_tools/test_board_chip_sized_constants.py.
+void test_console_stack_covers_its_measured_chain_on_esp32() {
+    TEST_ASSERT_EQUAL_UINT32(9008U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(11264U, CONSOLE_TASK_STACK_BYTES);
+
+    // #248 rule: worst-case chain + 25%, rounded up to the next 512 bytes.
+    const uint32_t byTheRule =
+        (((CONSOLE_TASK_MEASURED_CHAIN_BYTES * 5U / 4U) + 511U) / 512U) * 512U;
+    TEST_ASSERT_EQUAL_UINT32(byTheRule, CONSOLE_TASK_STACK_BYTES);
+
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(CONSOLE_TASK_MEASURED_CHAIN_BYTES,
+                                        CONSOLE_TASK_STACK_BYTES);
+}
+
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
@@ -173,5 +205,6 @@ int main() {
     RUN_TEST(test_safety_monitor_stack_unchanged_on_esp32);
     RUN_TEST(test_dome_and_aux_led_stacks_unchanged_on_esp32);
     RUN_TEST(test_rc_audio_webevents_stacks_unchanged_on_esp32);
+    RUN_TEST(test_console_stack_covers_its_measured_chain_on_esp32);
     return UNITY_END();
 }

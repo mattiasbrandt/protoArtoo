@@ -470,9 +470,16 @@ void setup() {
 
     // ConsoleTask: Core 0 (non-RT)  --  serial console adapter using embedded-cli.
     // ADR 0034: persistent Controller Console, no network dependency, no dynamic
-    // allocation in its loop. Stack sized from measured high-water mark with margin.
-    // Created on both boards (P4 USB CDC, artoo UART0 bridge).
-    xTaskCreatePinnedToCore(consoleTask, "Console", 5120, nullptr, 2, nullptr, 0);
+    // allocation in its loop. Created on both boards (P4 USB CDC, artoo UART0 bridge).
+    //
+    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. What this line used to say --
+    // "stack sized from measured high-water mark with margin" -- is why 5120 stood:
+    // a high-water mark reports only the paths that have actually run, and no
+    // config write could reach this task when it was taken. The first one that did
+    // overflowed the stack on the board (#226).
+    xTaskCreatePinnedToCore(consoleTask, "Console", CONSOLE_TASK_STACK_BYTES, nullptr, 2, nullptr,
+                            0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.

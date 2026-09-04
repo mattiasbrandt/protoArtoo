@@ -574,6 +574,87 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // measurement cannot confirm. AudioTask's ESP32 4672 is also the profiler
 // (deeper than the product's 4048); the rule lands on the current 6144.
 //
+// ConsoleTask, sized the same way (#226). It is the only stack in this block
+// whose under-size was reproduced as a device fault rather than inferred from a
+// walk, and it was reproduced on BOTH boards: `system.config.log-level
+// value=debug` over the serial Console Adapter reboots the FireBeetle 2 with a
+// RISC-V "Stack protection fault" (SP 476 B below the 5120 B bounds) and the
+// artoo-esp32 with the Xtensa spelling of the same event, "Stack canary
+// watchpoint triggered (Console)". The same write over HTTP answers normally on
+// both boards: it shares configApply()/configCommitApplied() and every
+// ConfigSnapshot copy below them, and differs only in the task it runs on --
+// the web server task has 8 KB.
+//
+// So this is not the P4 chain divergence the rest of this block is about. The
+// literal was justified by a measured high-water mark, which is exactly the
+// evidence that cannot see a path that has not run yet, and no config write
+// could reach this task until the write path landed. The firmware's own
+// instrumentation says both boards were already close after one trivial
+// command: 1448 B free on artoo-esp32, 900-1124 B on the FireBeetle 2.
+//
+//                   old    ESP32 chain    ESP32-P4 chain
+//   ConsoleTask    5120       9008           9120       <- both chips over, by ~4 KB
+//
+// The cause is frame depth, and it is provable without leaving project code:
+// consoleTask 320 + embeddedCliProcess 80 + onCliCommand 64 +
+// consoleExecuteCommand 1888 + consoleWriteScalarConfigField 2064 +
+// configCommitApplied 320 + commandedSetStationary 1264 = 6000 B on ESP32
+// (6048 on ESP32-P4) before one byte of newlib or ESP-IDF. Not recursion, not a
+// VLA, not alloca: every frame on the chain is reported fixed, and the only
+// cycles the walk cuts sit in the ESP-IDF heap and log tail underneath it -- a
+// cut edge makes the reported total a LOWER bound, so it cannot be where the
+// number came from. Three nested frames on the config-write path each carry a
+// ConfigSnapshot (944 B) by value --
+// consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it gets
+// back (944 + 948 in one frame), and commandedSetStationary's `cfg` -- on top of
+// consoleExecuteCommand's own 1888 B and the ~2.3 KB newlib tail that every
+// PA_LOG_* from this task pays through embedded-cli's print path.
+//
+// Reproducing it needs the two halves stitched by hand, because embedded-cli
+// reaches the command callback through `cli->onCommand`, an indirect call the
+// walker does not follow:
+//
+//   export PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage"
+//   make build BUILD_ENV=<env>
+//   python3 tools/stack_usage_report.py --env <env> --root onCliCommand
+//   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
+//
+// chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame
+// (8608 + 320 + 80 on ESP32; 8688 + 336 + 96 on ESP32-P4). embeddedCliProcess's
+// frame already contains parseCommand and onControlInput, which GCC inlines into
+// it -- both are ABSENT as symbols, which is what confirms it rather than a
+// missing measurement.
+//
+// Where on the chain the peak sits, which the bench observed independently: the
+// value reads back unchanged after the reboot, so the frame blows before the NVS
+// write commits. The walk says the same thing -- the deepest point is
+// commandedSetStationary and the log emit under it, which configCommitApplied()
+// reaches before it opens Preferences. No configuration is ever half-applied by
+// this fault.
+//
+// Why the standard margin here and not a smaller one bought by shrinking the
+// frame: the two shrinks available move the bytes rather than remove them.
+// Hoisting `working` and the commit outcome into the module's existing
+// mutex-guarded static area costs 1892 B of .bss to save 2048 B of stack after
+// the rule: 156 B of DRAM back, bought with nearly all of artoo-esp32's
+// remaining static-RAM budget (107 908 B of 110 000 at the time of writing --
+// 2092 B free, and tools/build_budgets.json is not raised for this).
+// Teaching the shared Commit Step to write its post-commit snapshot
+// back through `working` instead of returning one saves 948 B, but it changes
+// the contract POST /api/config's byte-identical response is pinned to. Removing
+// the copies for real means ConfigSnapshot stops crossing these seams by value,
+// which is a change to the Apply Core contract with its own verification story,
+// not part of fixing the panic. So this stack pays the rule every other stack in
+// this block pays.
+//
+// What the rule costs, stated because DomeLinkTask above declines to pay it on
+// artoo-esp32: +6144 B of heap-allocated task stack there (against 42 692 B of
+// measured free heap) and +6656 B on the ESP32-P4. DomeLinkTask's ESP32 arm was
+// held at 6144 because its raise bought margin no measurement could confirm.
+// This is the opposite case -- the under-size is not inferred from a walk that
+// might be over-counting, it is two reboots on two boards -- so the same
+// tight-heap argument points the other way.
+//
 // One block for every per-chip task stack. #248 and #250 each added a pair and
 // arrived here by separate branches; keeping two adjacent, identical #if ladders
 // would mean a third ticket adds a third, and a reader has to check all of them
@@ -587,6 +668,8 @@ constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 9120;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11776;  // 9120 * 1.25 = 11400 -> 11776
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
 constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
@@ -596,9 +679,22 @@ constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 9008;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // 9008 * 1.25 = 11260 -> 11264
 #else
   #error "task stack sizes have no value for this chip target"
 #endif
+
+// The floor is compile-enforced rather than promised by the comment above,
+// because this is the one stack here that has already been trimmed below its
+// own chain once and taken the board down for it. A later edit that lowers the
+// constant without re-measuring fails at the declaration, on both chips, in
+// every environment that includes this header. The other tasks' chains are
+// recorded in the comment block only -- giving them the same floor means
+// re-measuring their chains, not copying these two numbers across.
+static_assert(CONSOLE_TASK_STACK_BYTES >= CONSOLE_TASK_MEASURED_CHAIN_BYTES,
+              "CONSOLE_TASK_STACK_BYTES is below the Console task's measured "
+              "worst-case static chain");
 
 // -----------------------------------------------------------------------------
 // NVS

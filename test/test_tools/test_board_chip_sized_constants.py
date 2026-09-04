@@ -65,6 +65,9 @@ EXPECTED_BY_BOARD = {
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 6144,
+        # Raised from 5120 by #226. The only stack here whose under-size was a
+        # reproduced device fault rather than a walk: 9008 * 1.25 = 11260 -> 11264.
+        "console_stack": 11264,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -88,6 +91,9 @@ EXPECTED_BY_BOARD = {
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 7680,
+        # ConsoleTask by the same rule (#226): 9120 * 1.25 = 11400 -> 11776. The
+        # panic this fixes was captured on this board.
+        "console_stack": 11776,
     },
 }
 
@@ -101,11 +107,18 @@ P4_STACK_CHAINS = {
     "rc_input_stack": 5376,
     "audio_stack": 4848,
     "web_events_stack": 5808,
+    "console_stack": 9120,
 }
 ESP32_STACK_CHAINS = {
     "rc_input_stack": 5248,
     "audio_stack": 4672,
     "web_events_stack": 5888,
+    # The ConsoleTask chain is the product image on both chips, and it is the
+    # stitched figure: onCliCommand's total plus consoleTask's and
+    # embeddedCliProcess's own frames, because embedded-cli reaches the command
+    # callback through cli->onCommand and the walker does not follow indirect
+    # calls (include/config.h carries the invocation).
+    "console_stack": 9008,
 }
 
 
@@ -161,7 +174,7 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "#include <cstdio>",
                 "int main() {",
                 '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu '
-                '%u %u %u\\n",',
+                '%u %u %u %u\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
                 "        (int)SEQ_EVID_CMD_LEN, (int)SEQ_EVID_TX_CAP,",
                 "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence),",
@@ -170,7 +183,8 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "        LOG_RING_MAX_LINES,",
                 "        (unsigned)RC_INPUT_TASK_STACK_BYTES,",
                 "        (unsigned)AUDIO_TASK_STACK_BYTES,",
-                "        (unsigned)WEB_EVENTS_TASK_STACK_BYTES);",
+                "        (unsigned)WEB_EVENTS_TASK_STACK_BYTES,",
+                "        (unsigned)CONSOLE_TASK_STACK_BYTES);",
                 "    return 0;",
                 "}",
                 "",
@@ -201,7 +215,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 15, run_result.stdout)
+        self.assertEqual(len(fields), 16, run_result.stdout)
         values = {
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
@@ -218,6 +232,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             "rc_input_stack": fields[12],
             "audio_stack": fields[13],
             "web_events_stack": fields[14],
+            "console_stack": fields[15],
         }
         self._cache[board_macro] = values
         return values
@@ -404,7 +419,7 @@ class BoardChipSizedConstants(unittest.TestCase):
         for key in ("seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
                     "evid_record_bytes", "log_ring_max_lines",
-                    "web_events_stack"):
+                    "web_events_stack", "console_stack"):
             with self.subTest(key=key):
                 self.assertGreater(
                     firebeetle[key], artoo[key],
