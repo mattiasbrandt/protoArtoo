@@ -223,6 +223,14 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
                            entry->available_in_build ? "true" : "false");
         sink->onRecordField(requestId, "requires_web_control",
                            entry->requires_web_control ? "true" : "false");
+        // Not an availability fact like the three above - the operation is
+        // available, it just has no write half (docs/console-protocol.md
+        // s.4.2). Reported here because it is the operation-level twin of a
+        // parameter's write-excluded disposition below, and an operator
+        // asking `help` about a config row wants to know before typing a
+        // value that only a refusal can follow. Where to set it instead is
+        // the entry's own description, the same answer write_excluded gives.
+        sink->onRecordField(requestId, "read_only", entry->read_only ? "true" : "false");
     }
 
     // Aliases: comma-joined into one field value. Neither adapter's record
@@ -2264,6 +2272,17 @@ static const ConsoleAudioTrackKeyRow g_audioTrackKeyConfigRows[] = {
     {"sound.config.startup-track", "startup"},
     {"sound.config.boot-complete-track", "sys_boot"},
     {"sound.config.network-down-track", "sys_net_down"},
+    // The four mood intervals. They READ here like every row above; a write
+    // never reaches this table at all, because the registry marks them
+    // read_only and the cascade refuses one before dispatch (see the
+    // CONSOLE_OP_CONFIG case below). They are rows here rather than a
+    // separate read-only table precisely so that flag is the only thing
+    // deciding it: clear it in docs/action-registry.yaml and the row writes,
+    // with no code change.
+    {"sound.config.mood-interval-quiet", "snd_int_quiet"},
+    {"sound.config.mood-interval-mid", "snd_int_mid"},
+    {"sound.config.mood-interval-full", "snd_int_full"},
+    {"sound.config.mood-interval-awake-plus", "snd_int_awake"},
 };
 static const size_t kAudioTrackKeyConfigRowCount =
     sizeof(g_audioTrackKeyConfigRows) / sizeof(g_audioTrackKeyConfigRows[0]);
@@ -3077,6 +3096,30 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // comment for why this row is hand-written rather than a
             // catalog-driven table like g_statusExecutors).
             const ConsoleCatalogEntry* entry = consoleFindByNameOrAlias(opName);
+
+            // Read-only rows, decided by the CATALOG and nothing else. The
+            // registry's `read_only: true` reaches this flag through the
+            // generator (include/console_catalog.h), the same way a
+            // parameter's write_excluded does for secrets - so a row marked
+            // read-only tomorrow is refused here with no edit to this file,
+            // and this dispatcher never carries a list of operation names.
+            // A list would pass every test this ticket writes and be wrong
+            // the moment a fifth such row appeared.
+            //
+            // Placed before every executor lookup below, including the
+            // Component Toggle branch, because the rule belongs to the
+            // operation rather than to whichever executor happens to serve
+            // it. A bare read falls straight through: read_only refuses the
+            // WRITE, it does not make the row unanswerable.
+            const bool isConfigWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
+            if (entry != nullptr && entry->read_only && isConfigWrite) {
+                if (sink->onRecordResult) {
+                    sink->onRecordResult(request->requestId, CONSOLE_STATUS_ERR,
+                                        CONSOLE_OUTCOME_INVALID, CONSOLE_REASON_READ_ONLY);
+                }
+                break;
+            }
+
             const ComponentToggleField* toggleField =
                 (entry != nullptr) ? consoleFindComponentToggleField(entry->name) : nullptr;
             if (toggleField != nullptr) {

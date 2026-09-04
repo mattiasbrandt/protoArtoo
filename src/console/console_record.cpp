@@ -91,6 +91,8 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "queue-full";
         case CONSOLE_REASON_MALFORMED_ARGUMENT:
             return "malformed-argument";
+        case CONSOLE_REASON_READ_ONLY:
+            return "read-only";
         default:
             return "unknown";
     }

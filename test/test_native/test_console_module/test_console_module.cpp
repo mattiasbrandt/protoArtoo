@@ -55,6 +55,8 @@
                                     // driving the real Apply Core, not a comment's promise
 #include "console_catalog.h"
 #include "console_module.h"
+#include "console_record.h"  // consoleReasonString() - pins the wire spelling of the
+                             // read-only reason, not just its enum value (#226)
 #include "drive_arbiter.h"  // driveArbiterInit/Reset/Submit/Resolve() - #222's motion
                             // executors submit through the REAL arbiter, so its own
                             // resolve() is the queue/state evidence these tests read
@@ -4361,6 +4363,135 @@ void test_sound_config_volume_reports_queue_full_when_the_audio_queue_refuses() 
     g_test_audio_queue_ok = true;
 }
 
+
+// =============================================================================
+// The four sound.config.mood-interval-* rows - read, but no write (#226)
+//
+// The load-bearing claim is not "these four names are refused" but "the
+// refusal is driven from the registry", so the tests below check the RULE
+// against the catalog flag rather than against the names: every read_only
+// entry is refused, every other config row is not, and the flag is what
+// separates them. A hardcoded name list in the cascade would pass a
+// name-based test and fail these.
+// =============================================================================
+
+void test_mood_interval_rows_read_their_stored_value() {
+    static const char* const kRows[][2] = {
+        {"sound.config.mood-interval-quiet", "snd_int_quiet"},
+        {"sound.config.mood-interval-mid", "snd_int_mid"},
+        {"sound.config.mood-interval-full", "snd_int_full"},
+        {"sound.config.mood-interval-awake-plus", "snd_int_awake"},
+    };
+    for (size_t i = 0; i < sizeof(kRows) / sizeof(kRows[0]); ++i) {
+        seedAudioTrack(kRows[i][1], (uint16_t)(30 + i));
+        runQuery(kRows[i][0]);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_OK, g_cap.status, kRows[i][0]);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome, kRows[i][0]);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_cap.fieldCount, kRows[i][0]);
+        char expected[8] = {};
+        snprintf(expected, sizeof(expected), "%u", (unsigned)(30 + i));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(expected, capturedValue(kRows[i][1]), kRows[i][0]);
+    }
+}
+
+void test_mood_interval_write_answers_invalid_read_only() {
+    seedAudioTrack("snd_int_quiet", 30);
+
+    runQuery("sound.config.mood-interval-quiet value=120");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_READ_ONLY, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("read-only", consoleReasonString(g_cap.reason));
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(30, audioTrackValue("snd_int_quiet"),
+                                     "a read-only refusal must not have changed the value");
+}
+
+// The refusal does not depend on the argument spelling: read_only is a
+// property of the operation, so ANY argument is refused the same way, before
+// a schema or an executor is consulted.
+void test_mood_interval_write_is_refused_whatever_the_argument_is_called() {
+    static const char* const kLines[] = {
+        "sound.config.mood-interval-mid value=1",
+        "sound.config.mood-interval-mid track=1",
+        "sound.config.mood-interval-mid nonsense=1",
+        "sound.config.mood-interval-mid not-even-a-pair",
+    };
+    for (size_t i = 0; i < sizeof(kLines) / sizeof(kLines[0]); ++i) {
+        runQuery(kLines[i]);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_READ_ONLY, g_cap.reason, kLines[i]);
+    }
+}
+
+// The rule, stated over the catalog rather than over four names: a write is
+// refused with read-only exactly when the catalog says the row is read-only.
+// This is the test a hardcoded name list in the cascade could not pass once
+// a fifth row was marked - and the one that says a fifth row works for free.
+void test_read_only_refusal_follows_the_catalog_flag_not_a_name_list() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    int readOnlyRows = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_CONFIG) != 0) continue;
+
+        char line[160] = {};
+        snprintf(line, sizeof(line), "%s value=1", entries[i].name);
+        runQuery(line);
+
+        if (entries[i].read_only) {
+            readOnlyRows++;
+            TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_READ_ONLY, g_cap.reason, entries[i].name);
+        } else {
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(CONSOLE_REASON_READ_ONLY, g_cap.reason,
+                                          entries[i].name);
+        }
+    }
+
+    // Every row the registry marks is a row the catalog carries the flag for.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(4, readOnlyRows,
+                                  "the catalog lost the registry's read_only rows");
+}
+
+// A read is never refused by the flag - read_only withholds the write half
+// only, which is what keeps these rows out of the executor-not-ready count.
+void test_read_only_rows_still_answer_a_bare_read() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    for (size_t i = 0; i < count; ++i) {
+        if (!entries[i].read_only) continue;
+        runQuery(entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_OK, g_cap.status, entries[i].name);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome, entries[i].name);
+        TEST_ASSERT_TRUE_MESSAGE(g_cap.fieldCount > 0, entries[i].name);
+    }
+}
+
+// help reports the fact, so an operator learns it before typing a value that
+// only a refusal can follow.
+void test_help_reports_read_only_for_a_row_that_has_no_write() {
+    runQuery("help sound.config.mood-interval-full");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL_STRING("true", capturedValue("read_only"));
+
+    runQuery("help sound.config.volume");
+    TEST_ASSERT_EQUAL_STRING("false", capturedValue("read_only"));
+}
+
+// The closing criterion, asserted rather than only reported: no type=config
+// row answers executor-not-ready any more.
+void test_no_config_row_answers_executor_not_ready() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].type, CONSOLE_CATALOG_TYPE_CONFIG) != 0) continue;
+        runQuery(entries[i].name);
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason,
+                                      entries[i].name);
+    }
+}
+
 // =============================================================================
 // Test Runner
 // =============================================================================
@@ -4507,6 +4638,13 @@ int main(int, char**) {
     RUN_TEST(test_sound_config_volume_write_reaches_the_volume_commit_step);
     RUN_TEST(test_sound_config_volume_rejects_a_level_above_the_registry_range);
     RUN_TEST(test_sound_config_volume_reports_queue_full_when_the_audio_queue_refuses);
+    RUN_TEST(test_mood_interval_rows_read_their_stored_value);
+    RUN_TEST(test_mood_interval_write_answers_invalid_read_only);
+    RUN_TEST(test_mood_interval_write_is_refused_whatever_the_argument_is_called);
+    RUN_TEST(test_read_only_refusal_follows_the_catalog_flag_not_a_name_list);
+    RUN_TEST(test_read_only_rows_still_answer_a_bare_read);
+    RUN_TEST(test_help_reports_read_only_for_a_row_that_has_no_write);
+    RUN_TEST(test_no_config_row_answers_executor_not_ready);
     RUN_TEST(test_config_executor_not_ready_count_report);
 
     RUN_TEST(test_wifi_settings_read_reports_the_saved_posture_and_no_password);

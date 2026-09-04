@@ -89,6 +89,15 @@ typedef enum {
     // line parsed into key=value pairs in the first place - this reason
     // fires when it never did.
     CONSOLE_REASON_MALFORMED_ARGUMENT = 15,
+    // The operation exists and reads, but nothing in the firmware writes the
+    // value it names, so no argument can be accepted for it
+    // (docs/console-protocol.md s.4.2). Distinct from EXECUTOR_NOT_READY,
+    // which promises wiring that has not happened yet, and from
+    // SECRET_NOT_SETTABLE, which is about a value deliberately withheld from
+    // this transport rather than one with no write path at all. Carried by
+    // the operation, from the registry's `read_only: true` through the
+    // generated catalog - never from a list of names in the dispatcher.
+    CONSOLE_REASON_READ_ONLY = 16,
 } ConsoleReason;
 
 // =============================================================================

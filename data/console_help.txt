@@ -90,10 +90,10 @@ sound.status.current|Sound Status|Current playback state, volume, and module hea
 sound.config.volume|Volume|Default audio volume (0–30)|audioSetVolumeCommitApplied|volume:uint8:1
 sound.config.random-min|Random Min Track|Lowest track number in the random playback pool|audioTracksApply|track:uint16:1
 sound.config.random-max|Random Max Track|Highest track number in the random playback pool|audioTracksApply|track:uint16:1
-sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood|configApply|
-sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between random sound plays in Mid-Awake mood|configApply|
-sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound plays in Full-Awake mood|configApply|
-sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood|configApply|
+sound.config.mood-interval-quiet|Quiet Mode Interval|Seconds between random sound plays in Quiet mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between random sound plays in Mid-Awake mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-full|Full-Awake Interval|Seconds between random sound plays in Full-Awake mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
+sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between random sound plays in Awake+ mood. Read-only on the Controller Console; set it on the Sound page|audioTracksApply|
 sound.config.startup-track|Startup Boot Sound Track ($B)|Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event|audioTracksApply|track:uint16:1
 sound.config.boot-complete-track|Boot Complete System Track|Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)|audioTracksApply|track:uint16:1
 sound.config.network-down-track|Network Link Lost System Track|Automatic system-event sound fired once when the ESP-Hosted C6 link supervisor exhausts its recovery ladder and settles into the terminal degraded state (#189)|audioTracksApply|track:uint16:1

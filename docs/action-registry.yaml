@@ -1891,7 +1891,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
   display_name: Quiet Mode Interval
-  description: Seconds between random sound plays in Quiet mood
+  description: Seconds between random sound plays in Quiet mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1904,10 +1904,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_quiet
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-mid
   display_name: Mid-Awake Interval
-  description: Seconds between random sound plays in Mid-Awake mood
+  description: Seconds between random sound plays in Mid-Awake mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1920,10 +1921,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_mid
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-full
   display_name: Full-Awake Interval
-  description: Seconds between random sound plays in Full-Awake mood
+  description: Seconds between random sound plays in Full-Awake mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1936,10 +1938,11 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_full
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.mood-interval-awake-plus
   display_name: Awake+ Interval
-  description: Seconds between random sound plays in Awake+ mood
+  description: Seconds between random sound plays in Awake+ mood. Read-only on the Controller Console; set it on the Sound page
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1952,7 +1955,8 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_awake
-  executor: configApply
+  read_only: true
+  executor: audioTracksApply
 - name: sound.config.startup-track
   display_name: Startup Boot Sound Track ($B)
   description: Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event
