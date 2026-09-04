@@ -1460,6 +1460,55 @@ void test_sound_get_catalog_rejects_the_dropped_bank_filter() {
     TEST_ASSERT_EQUAL_STRING("bank", capturedValue("argument"));
 }
 
+// The catalog listing re-reads the driver's pointer and count together on every
+// iteration, because AudioTask can grow the entry array (delete[]/new in
+// AudioDriverChirp::ensureEntryStorage()) while this walk is in progress. This
+// drives that race directly: the sink shrinks the catalog to zero the moment the
+// first item lands, which is what a concurrent refresh looks like to this loop.
+// A listing that captured the pair once would walk into freed memory here; this
+// one stops and still closes its record group.
+static int g_catalogShrinkAfter = 0;
+static int g_catalogShrinkItems = 0;
+
+static void shrinkingCatalogItem(uint32_t, const char*) {
+    g_catalogShrinkItems++;
+    if (g_catalogShrinkItems >= g_catalogShrinkAfter) {
+        g_test_audio_catalog_entry_count = 0;
+    }
+}
+
+void test_sound_get_catalog_stops_when_the_catalog_is_refreshed_mid_listing() {
+    g_test_audio_catalog_ready = true;
+    g_test_audio_catalog_entry_count = 4;
+    for (uint16_t i = 0; i < 4; ++i) {
+        g_test_audio_catalog_entries[i] = AudioCatalogEntry{};
+        g_test_audio_catalog_entries[i].bank = 1;
+        g_test_audio_catalog_entries[i].page = 'A';
+        g_test_audio_catalog_entries[i].index = (uint16_t)(i + 1);
+    }
+    g_catalogShrinkAfter = 1;
+    g_catalogShrinkItems = 0;
+
+    ConsoleRecordSink sink = {};
+    sink.onRecordBegin = capBegin;
+    sink.onRecordField = capField;
+    sink.onRecordItem = shrinkingCatalogItem;
+    sink.onRecordResult = capResult;
+    sink.onRecordEnd = capEnd;
+    memset(&g_cap, 0, sizeof(g_cap));
+
+    ConsoleRequest req = {};
+    req.requestId = 1;
+    req.source = CONSOLE_SOURCE_SERIAL;
+    req.operationName = "sound.api.get-catalog";
+    consoleExecuteCommand(&req, &sink);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, g_catalogShrinkItems,
+                                  "the walk must stop at the refresh, not run on the old count");
+    TEST_ASSERT_TRUE_MESSAGE(g_cap.endCalled, "the record group must still be closed");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+}
+
 // Three-way field match for sound.api.get-mood-map: the registry's fields:,
 // formatMoodCategoryMapJson()'s real JSON keys, and the names the executor
 // emitted.
@@ -5068,6 +5117,7 @@ int main(int, char**) {
     RUN_TEST(test_sound_get_catalog_reports_an_unenumerated_catalog_as_not_ready);
     RUN_TEST(test_sound_get_catalog_without_a_catalog_backend_is_not_in_this_build);
     RUN_TEST(test_sound_get_catalog_rejects_the_dropped_bank_filter);
+    RUN_TEST(test_sound_get_catalog_stops_when_the_catalog_is_refreshed_mid_listing);
     RUN_TEST(test_sound_get_mood_map_three_way_field_match);
     RUN_TEST(test_sound_get_mood_map_matches_the_config_row_for_the_same_state);
     RUN_TEST(test_estop_clear_releases_the_latched_estop);

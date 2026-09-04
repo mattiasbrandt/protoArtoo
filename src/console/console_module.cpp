@@ -918,21 +918,34 @@ static void consoleExecuteSoundApiGetCatalog(uint32_t requestId, const ConsoleRe
         sink->onRecordField(requestId, "ready", audioIsCatalogReady() ? "true" : "false");
     }
 
+    // Pointer AND count re-read together on every iteration, not captured once.
+    // A catalog refresh runs on AudioTask, a separate task on this same core, and
+    // AudioDriverChirp::ensureEntryStorage() (src/drivers/audio_chirp.cpp) grows
+    // the entry array by delete[]/new - its callers zero the count *before* the
+    // swap precisely so a concurrent reader sees an empty catalog rather than a
+    // freed pointer. That mitigation only works for a reader that re-reads both
+    // together, which is what this loop does; capturing the pair once (the shape
+    // GET /api/audio/catalog's chunked writer uses, src/web/api_audio.cpp) leaves
+    // the window open. Two virtual calls per entry, at most 300, on an
+    // operator-typed query.
     uint16_t count = 0;
-    const AudioCatalogEntry* entries = audioGetCatalogEntries(&count);
-    if (entries != nullptr) {
-        for (uint16_t i = 0; i < count; ++i) {
-            if (sink->onRecordItem) {
-                char itemBuf[96];
-                // fillCatalogResponse()'s own per-entry keys, colon-separated
-                // per field rather than "=" - the same convention
-                // dome.api.list-sequences uses, so an item value can never be
-                // read as a second key=value pair on the wire.
-                snprintf(itemBuf, sizeof(itemBuf), "bank:%u page:%c index:%u name:%s",
-                         (unsigned)entries[i].bank, entries[i].page, (unsigned)entries[i].index,
-                         entries[i].name);
-                sink->onRecordItem(requestId, itemBuf);
-            }
+    (void)audioGetCatalogEntries(&count);
+    for (uint16_t i = 0; i < count; ++i) {
+        uint16_t liveCount = 0;
+        const AudioCatalogEntry* entries = audioGetCatalogEntries(&liveCount);
+        if (entries == nullptr || i >= liveCount) {
+            break;  // refreshed out from under us; the listing ends where it is
+        }
+        if (sink->onRecordItem) {
+            char itemBuf[96];
+            // fillCatalogResponse()'s own per-entry keys, colon-separated per
+            // field rather than "=" - the same convention dome.api.list-sequences
+            // uses, so an item value can never be read as a second key=value pair
+            // on the wire.
+            snprintf(itemBuf, sizeof(itemBuf), "bank:%u page:%c index:%u name:%s",
+                     (unsigned)entries[i].bank, entries[i].page, (unsigned)entries[i].index,
+                     entries[i].name);
+            sink->onRecordItem(requestId, itemBuf);
         }
     }
 
