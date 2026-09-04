@@ -190,8 +190,8 @@ pairs; the first pair is always the Request ID.
 > system.config.log-level value=debug
 < id=20 type=result status=ok outcome=applied operation=system.config.log-level
 
-> profiler.action.start
-< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=profiler.action.start
+> system.action.profiler-trace-start
+< id=21 type=result status=err outcome=unavailable reason=not-in-this-build operation=system.action.profiler-trace-start
 ```
 
 | `type=` | Meaning |
