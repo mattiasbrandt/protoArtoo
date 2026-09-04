@@ -341,8 +341,14 @@ static void hostedRegisterLinkSupervision() {
     // "handler registered" and "task created" would set phase=Armed, skip
     // the notify (null handle), and then be permanently unrecoverable: no
     // later event can re-arm from Armed, only from Idle.
+    //
+    // Size: HOSTED_RECOVERY_TASK_STACK_BYTES in include/config.h carries the measured
+    // chain and the sizing rule. This task had no static measurement at all until #271
+    // walked it, and it is declared on the ESP32-P4 arm only because
+    // PA_CAP_HOSTED_WIFI is set on no other chip.
     const BaseType_t taskResult = xTaskCreatePinnedToCore(hostedRecoveryTaskFn, "HostedRecovery",
-                                                           4096, nullptr, 2,
+                                                           HOSTED_RECOVERY_TASK_STACK_BYTES,
+                                                           nullptr, 2,
                                                            &g_hostedRecoveryTaskHandle, 0);
     if (taskResult != pdPASS) {
         PA_LOG_ERROR(TAG,

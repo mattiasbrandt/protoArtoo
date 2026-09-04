@@ -487,15 +487,34 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // -----------------------------------------------------------------------------
 // Task stacks (chip-target specific)
 // -----------------------------------------------------------------------------
-// Three task stacks differ per chip target. The cause is not the boards, and it
-// is not a general "RISC-V frames are wider": the deepest call chain under each
+// EVERY project-created task has a Measured Chain and a compile-enforced floor
+// here, on both chip arms (ADR 0038). Thirteen of them: the ten created in
+// src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp)
+// and HostedRecovery (src/web/web_network_manager_hosted.cpp, which exists only
+// where PA_CAP_HOSTED_WIFI is 1, so twelve tasks on artoo-esp32 and thirteen on
+// the ESP32-P4). loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini
+// and stays outside.
+//
+// The chain is a `*_MEASURED_CHAIN_BYTES` constant rather than a number in this
+// comment, and `static_assert(*_STACK_BYTES >= *_MEASURED_CHAIN_BYTES)` below
+// makes a stack that no longer covers its own measurement fail at the
+// declaration. The recipe that produced each chain -- environment, root
+// symbols, the frames stitched by hand across an indirect call, the
+// profiler-image substitution -- is tools/task_stack_recipes.json, and
+// tools/check_task_stack_chains.py re-walks every one of them from a linked
+// image, so a slice that deepens a chain past its constant fails there instead
+// of on a board. That is the half #226 found the expensive way: the assert
+// stops the CONSTANT being trimmed; only the re-walk notices the CHAIN growing.
+//
+// Task stacks differ per chip target. The cause is not the boards, and it is
+// not a general "RISC-V frames are wider": the deepest call chain under several
 // of these tasks runs through newlib, whose float-formatting frames are much
 // wider on RISC-V (_svfprintf_r 800 -> 1152 B, _dtoa_r 160 -> 416) while the
 // P4's allocator frames are smaller and partly cancel it (#245).
 //
-// SIZING RULE, applied to all three: the stack holds the measured worst-case
-// static chain plus 25%, rounded up to the next 512 bytes. Two things make that
-// a rule rather than a preference:
+// SIZING RULE: the stack holds the measured worst-case static chain plus 25%,
+// rounded up to the next 512 bytes. Two things make that a rule rather than a
+// preference:
 //
 //  - It reproduces, from the measurement alone, the size #245 arrived at by
 //    judgement: that chain is 3152 B, and 3152 * 1.25 = 3940 -> 4096.
@@ -506,73 +525,67 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //    task's* stack before any switch to the ISR stack -- so a nested pair of
 //    interrupts costs 320 B here, on top of every number below.
 //
-// Measured chains (tools/stack_usage_report.py against the linked firebeetle2
-// image, #248):
+// #248 raised DomeTask (3072 was 208 B SHORT of its P4 chain), AuxLedTask and
+// SafetyMonitor on the ESP32-P4 by that rule; their chains are the constants
+// below now, re-walked at this tip rather than restated from that ticket.
 //
-//   DomeTask       3280 B   -> 4100 -> 4608     was 3072, i.e. 208 B SHORT
-//   AuxLedTask     3984 B   -> 4980 -> 5120     was 4096, i.e. 112 B of margin
-//   SafetyMonitor  3152 B   -> 3940 -> 4096     profiler image, the deeper one
+// Every chain is a LOWER bound: indirect calls are not followed, and a cycle in
+// the call graph is cut. Read the margin as cover for what the measurement
+// cannot see, not as slack to spend.
 //
-// Every chain is a LOWER bound: indirect calls are not followed. Read the margin
-// as cover for what the measurement cannot see, not as slack to spend.
+// The Xtensa measurement is much weaker than the RISC-V one: objdump emits
+// ~37% of the artoo image's function bodies as data rather than instructions
+// (2530 of 6793 at this tip), so any artoo chain crossing one is truncated,
+// while the ESP32-P4 image decodes whole (0 of 7448). Artoo numbers can prove
+// an overrun and cannot prove a margin. That asymmetry is exactly what makes
+// the re-walk safe to fail a build on: it can MISS growth and cannot report
+// FALSE growth.
 //
-// The ESP32 values below are unchanged, and that is a scope decision rather than
-// a clean bill of health -- #248 required the artoo image to stay put. The
-// Xtensa measurement is also much weaker than the RISC-V one: objdump emits
-// ~44% of that image's function bodies as data rather than instructions, so any
-// artoo chain crossing one is truncated. Those numbers can prove an overrun and
-// cannot prove a margin. See #248 for the artoo figures and that caveat.
+// Which arms get the rule, and why the two chips answer differently:
+//
+//  - ESP32-P4: every arm is exactly the rule applied to its own chain. The
+//    board has the free heap to buy the margin, and #245/#248/#250/#256 already
+//    put eight of them there.
+//  - artoo-esp32: five arms are the rule, two sit ABOVE it because an earlier
+//    ticket deliberately raised them past it, and five DECLINE it on #248's
+//    reason -- raising all five costs 5632 B against ~42.7 KB of measured free
+//    heap, for margin the Xtensa walk cannot confirm. Each decline is recorded
+//    beside its constant. Declining the rule never declines the floor: every
+//    arm still covers its own chain, and the static_asserts below are what say
+//    so.
 //
 // `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
 // only for the selected chip (see "Chip target mapping" above), not 0/1 Board
 // Capability Gates, so `#if` on the undefined one would silently take the wrong
 // branch. Keying on the chip target rather than on PA_BOARD also means a second
 // board variant on either chip inherits the right size without a new case here.
-// DriveTask and DomeLinkTask, sized the same way and for the same reason (#250).
-// Both exceed their old stacks on ESP32-P4; on ESP32 only DriveTask is at risk.
-//
-//                   old    ESP32 chain    ESP32-P4 chain
-//   DriveTask      4096       4064            4368  <- P4 over by 272
-//   DomeLinkTask   6144       5856            7360  <- P4 over by 1216
-//
-// Sized by the #248 rule (worst-case chain + 25%, rounded up to the next 512).
+// DriveTask and DomeLinkTask were sized the same way and for the same reason
+// (#250): both exceeded their old stacks on ESP32-P4, and on ESP32 DriveTask
+// was at risk.
 //
 // Why the two chips diverge here at all: DomeLinkTask's own frame is 2256 B on
 // RISC-V against far less on Xtensa, because GCC splits an allocation past
 // 2032 B into two `addi sp,sp,-N` instructions -- the same split that hid this
 // overrun until tools/stack_usage_report.py was taught to accumulate them.
 //
-// ⚠️ The ESP32 numbers above are LOWER BOUNDS, not margins. objdump emits 3371
-// of 7649 Xtensa function bodies as data via .xt.prop, so the tool cannot walk
-// them and counts their frames as zero (#250). DriveTask's apparent 32 B of
-// ESP32 headroom is therefore not headroom -- it is the floor of an unknown --
-// which is why the 50 Hz drive loop is raised on both chips rather than only
-// where an overrun is provable. DomeLinkTask's ESP32 figure is left at 6144
-// deliberately: raising every task by the rule costs 11,264 B against 42,692 B
-// of free heap measured on the board, and a tight-heap build cannot pay that
-// for margins no measurement can currently confirm. Its numbers are recorded
-// on #250 instead.
+// ⚠️ DriveTask's ESP32 arm was raised past its own figure deliberately: that
+// figure read as 32 B under the old 4096 and is the floor of an unknown, not
+// headroom, so the 50 Hz drive loop is raised on both chips rather than only
+// where an overrun is provable (#250). DomeLinkTask's ESP32 arm was held at
+// 6144 by the same tight-heap argument that holds it there now.
 //
-// RCInputTask, AudioTask and WebEvents, sized the same way (#256). These three
-// were still single-valued artoo-era literals. tools/stack_usage_report.py
-// against the linked firebeetle2 image (product and profiler match):
+// RCInputTask, AudioTask and WebEvents were sized the same way (#256). These
+// three were still single-valued artoo-era literals. WebEvents is the one that
+// moved: its own comment already named the risk -- 4096 overflowed on ESP32 in
+// _dtoa_r, and that frame is 160 -> 416 B on RISC-V -- and the P4 chain sat
+// past the inherited 6144 before the 25% margin.
 //
-//                   old    ESP32 chain    ESP32-P4 chain
-//   RCInputTask    7168       5248            5376  <- P4 rule lands on 7168
-//   AudioTask      6144       4672            4848  <- P4 rule lands on 6144
-//   WebEvents      6144       5888            5808  <- P4 over by 336
-//
-// WebEvents is the one that moves. Its own comment already named the risk:
-// 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on
-// RISC-V. The P4 chain is 5808 B -- 336 B past 6144 before the 25% margin --
-// so 5808 * 1.25 = 7260 -> 7680.
-//
-// ESP32 WebEvents: the product image's body is emitted as data (.xt.prop), so
-// the 5888 B figure is from the profiler image where the body decodes. 5888
-// sits 256 B under 6144. Same call as DomeLinkTask above: Xtensa chains are
-// lower bounds and a tight-heap build does not pay 1536 B for a margin the
-// measurement cannot confirm. AudioTask's ESP32 4672 is also the profiler
-// (deeper than the product's 4048); the rule lands on the current 6144.
+// ESP32 WebEvents was recorded from the profiler image at #256, because the
+// product image's body was emitted as data (.xt.prop) then. It decodes in both
+// images at this tip and they agree, so the arm is walked from the product
+// image now; AudioTask's ESP32 arm is still the profiler image, which is the
+// deeper of the two. Both substitutions are recorded per arm in
+// tools/task_stack_recipes.json rather than only here.
 //
 // ConsoleTask, sized the same way (#226). It is the only stack in this block
 // whose under-size was reproduced as a device fault rather than inferred from a
@@ -637,12 +650,7 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // there. ADR 0011's 2026-09-04 amendment took them out (#269) -- the Commit Step
 // writes its post-commit snapshot back through `working` instead of returning
 // one, and the Commanded Mode setters sync the config cache by field instead of
-// round-tripping the whole snapshot -- and these are the chains re-measured
-// afterwards, by the same stitched invocation above, on the same product images:
-//
-//                   raised   ESP32 chain    ESP32-P4 chain
-//   ConsoleTask     11264/     7568           7552      <- both chips 1.4-1.6 KB
-//                   11776                                  below the raised chain
+// round-tripping the whole snapshot -- and the chain fell again with them.
 //
 // The two frames that lost a snapshot each: consoleWriteScalarConfigField
 // 2064 -> 1104 (1120 on ESP32-P4) and commandedSetStationary 1264 -> 320. The
@@ -651,12 +659,15 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // (processTriggerAction and the newlib tail below it), which is why the chain
 // falls by less than the 1904 B those two frames gave back.
 //
-// 7568 * 1.25 = 9460 -> 9728 on ESP32; 7552 * 1.25 = 9440 -> 9728 on ESP32-P4.
-// The two chips land on the same 512-byte step for the first time here, which is
-// coincidence and not a reason to merge the arms: the chains still differ, and
-// the next field on either side moves them independently.
+// The constants below are re-derived from a walk at this tip, not carried from
+// either branch: #269 measured 7568/7552 on its own branch and #270 measured
+// 8512 on its own, both cutting the same deepest branch, so neither figure
+// describes the merged tree -- it is shorter than either. The two chips land on
+// the same 512-byte step, which is coincidence and not a reason to merge the
+// arms: the chains still differ, and the next field on either side moves them
+// independently.
 //
-// Why the standard margin here and not a smaller one: the chains above are LOWER
+// Why the standard margin here and not a smaller one: the chains are LOWER
 // bounds in the same two ways the raised ones were -- objdump emits Xtensa bodies
 // as data, and the walk cuts cycles in the ESP-IDF heap and log tail -- so 25% is
 // buying headroom against what the tool cannot see, not against what it measured.
@@ -665,55 +676,151 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // .bss to save stack was never the trade to make when the copies themselves could
 // go, and they now have.
 //
-// What the rule costs, stated because DomeLinkTask above declines to pay it on
-// artoo-esp32: +4608 B of heap-allocated task stack there (against 42 692 B of
-// measured free heap) and +4608 B on the ESP32-P4, both down from the +6144 and
-// +6656 the raise cost. DomeLinkTask's ESP32 arm was held at 6144 because its
-// raise bought margin no measurement could confirm. This is the opposite case --
-// the under-size was not inferred from a walk that might be over-counting, it was
-// two reboots on two boards -- so the same tight-heap argument points the other
-// way.
+// The Console pays the rule on artoo-esp32 where DomeLinkTask above declines it,
+// and the difference is the evidence, not the size: DomeLinkTask's raise would
+// buy margin no measurement could confirm, while the Console's under-size was two
+// reboots on two boards. The same tight-heap argument points the other way.
 //
 // One block for every per-chip task stack. #248 and #250 each added a pair and
 // arrived here by separate branches; keeping two adjacent, identical #if ladders
 // would mean a third ticket adds a third, and a reader has to check all of them
 // to answer "what is this task's stack on this chip".
+//
+// Each arm carries the task's chain and its stack, in that order, with the
+// derivation in the trailing comment: `rule` where the stack is exactly the
+// chain by the rule, `above rule` where an earlier ticket deliberately went
+// further, and `rule declined` with the reason where the arm pays the floor
+// only. Sorted the same way on both arms so the two are diffable side by side.
 #if defined(PA_CHIP_TARGET_ESP32P4)
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7552;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // 7552 * 1.25 = 9440 -> 9728
+// Every arm below is exactly the rule applied to its own chain.
+constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4368;
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;  // rule: 4368 -> 5460 -> 5632
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5360;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5360 -> 6700 -> 7168
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3488;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 4608;  // rule: 3488 -> 4360 -> 4608
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3280;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;  // rule: 3280 -> 4100 -> 4608
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4848;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // rule: 4848 -> 6060 -> 6144
+constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3984;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7360;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3184;
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;  // rule: 3184 -> 3980 -> 4096
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4448;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4448 -> 5560 -> 5632
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7136;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7136 -> 8920 -> 9216
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5808;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5808 -> 7260 -> 7680
+constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
+constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
+// HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
+// chip alone (src/web/web_network_manager_hosted.cpp is whole-file guarded on
+// it), so its pair is declared on this arm only. A future board on another chip
+// that turns the capability on fails at the static_assert below rather than
+// inheriting a number measured on someone else's silicon.
+constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 3648;
+constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 4608;  // rule: 3648 -> 4560 -> 4608
 #elif defined(PA_CHIP_TARGET_ESP32)
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 3072;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
+constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
+// above rule (5120): #250 raised the 50 Hz drive loop on both chips rather than
+// only where an overrun is provable, because this figure is the floor of an
+// unknown. Not lowered to the rule here -- that would undo that decision.
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5248;
+// above rule (6656): the pre-#256 literal, kept rather than lowered onto a
+// Xtensa figure that can prove an overrun and cannot prove a margin.
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3200;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3200 -> 4000 -> 4096
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
+// rule declined (4608, +1536 B): #248's tight-heap reason. This is the thinnest
+// floor in the block -- 80 B on a lower-bound walk, which is under the cost of
+// one interrupt entry -- and it is the pre-existing shipping value, recorded
+// here as a known exposure rather than raised by this ticket (#271).
+constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4672;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 5840 -> 6144
+constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3504;
+// rule declined (4608, +512 B): #248's tight-heap reason. Floor holds by 592 B.
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5872;
+// rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
+// holds by 272 B.
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
+// rule: 3088 -> 3860 -> 4096. Raised from 3072 by #271, and this is the one arm
+// in the block where the floor did NOT already hold: the artoo profiler image
+// (PA_LOG_LEVEL=4, PA_HEAP_PROFILE=1 -- the image you flash when the board is
+// already misbehaving) walks 3088 B here against the product image's 2944, and
+// the constant is compiled into both. #245 sized the ESP32-P4 arm from the same
+// deeper image for the same reason. A floor that fails is not the margin
+// question #248 declined; it is an overrun, so the rule is paid.
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7024;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7024 -> 8780 -> 9216
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5888;
+// rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
+// holds by 256 B.
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7568;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // 7568 * 1.25 = 9460 -> 9728
+constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3696;
+// rule declined (5120, +1024 B): #248's tight-heap reason, applied to this
+// task's first measurement (#271). Floor holds by 400 B.
+constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;
 #else
   #error "task stack sizes have no value for this chip target"
 #endif
 
 // The floor is compile-enforced rather than promised by the comment above,
-// because this is the one stack here that has already been trimmed below its
-// own chain once and taken the board down for it. A later edit that lowers the
-// constant without re-measuring fails at the declaration, on both chips, in
-// every environment that includes this header. The other tasks' chains are
-// recorded in the comment block only -- giving them the same floor means
-// re-measuring their chains, not copying these two numbers across.
+// because a comment is what let ConsoleTask stand 4 KB below its own chain until
+// it took both boards down (#226). A later edit that lowers a stack below its
+// chain, or raises a chain past its stack, fails at the declaration -- on both
+// chips, in every environment that includes this header.
+//
+// This is half the guard. It fixes the constant to the chain; nothing here can
+// notice the CHAIN growing, because the chain is itself a recorded number. That
+// half is tools/check_task_stack_chains.py, which re-walks every recipe in
+// tools/task_stack_recipes.json against a linked image (ADR 0038).
+static_assert(DRIVE_TASK_STACK_BYTES >= DRIVE_TASK_MEASURED_CHAIN_BYTES,
+              "DRIVE_TASK_STACK_BYTES is below DriveTask's measured worst-case static chain");
+static_assert(RC_INPUT_TASK_STACK_BYTES >= RC_INPUT_TASK_MEASURED_CHAIN_BYTES,
+              "RC_INPUT_TASK_STACK_BYTES is below RCInputTask's measured worst-case static chain");
+static_assert(SERVO_TASK_STACK_BYTES >= SERVO_TASK_MEASURED_CHAIN_BYTES,
+              "SERVO_TASK_STACK_BYTES is below ServoTask's measured worst-case static chain");
+static_assert(DOME_TASK_STACK_BYTES >= DOME_TASK_MEASURED_CHAIN_BYTES,
+              "DOME_TASK_STACK_BYTES is below DomeTask's measured worst-case static chain");
+static_assert(AUDIO_TASK_STACK_BYTES >= AUDIO_TASK_MEASURED_CHAIN_BYTES,
+              "AUDIO_TASK_STACK_BYTES is below AudioTask's measured worst-case static chain");
+static_assert(AUX_LED_TASK_STACK_BYTES >= AUX_LED_TASK_MEASURED_CHAIN_BYTES,
+              "AUX_LED_TASK_STACK_BYTES is below AuxLedTask's measured worst-case static chain");
+static_assert(DOME_LINK_TASK_STACK_BYTES >= DOME_LINK_TASK_MEASURED_CHAIN_BYTES,
+              "DOME_LINK_TASK_STACK_BYTES is below DomeLinkTask's measured worst-case static "
+              "chain");
+static_assert(SAFETY_MONITOR_STACK_BYTES >= SAFETY_MONITOR_MEASURED_CHAIN_BYTES,
+              "SAFETY_MONITOR_STACK_BYTES is below SafetyMonitorTask's measured worst-case static "
+              "chain");
+static_assert(SEQ_DISPATCHER_TASK_STACK_BYTES >= SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES,
+              "SEQ_DISPATCHER_TASK_STACK_BYTES is below SequenceDispatcherTask's measured "
+              "worst-case static chain");
 static_assert(CONSOLE_TASK_STACK_BYTES >= CONSOLE_TASK_MEASURED_CHAIN_BYTES,
               "CONSOLE_TASK_STACK_BYTES is below the Console task's measured "
               "worst-case static chain");
+static_assert(WEB_EVENTS_TASK_STACK_BYTES >= WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES,
+              "WEB_EVENTS_TASK_STACK_BYTES is below the WebEvents task's measured worst-case "
+              "static chain");
+static_assert(OTA_TASK_STACK_BYTES >= OTA_TASK_MEASURED_CHAIN_BYTES,
+              "OTA_TASK_STACK_BYTES is below the ArduinoOTA task's measured worst-case static "
+              "chain");
+#if PA_CAP_HOSTED_WIFI
+static_assert(HOSTED_RECOVERY_TASK_STACK_BYTES >= HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES,
+              "HOSTED_RECOVERY_TASK_STACK_BYTES is below the HostedRecovery task's measured "
+              "worst-case static chain");
+#endif
 
 // -----------------------------------------------------------------------------
 // NVS
