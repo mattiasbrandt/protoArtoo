@@ -81,6 +81,9 @@ extern "C" {
 }
 
 #include "console_serial_output.h"
+#include "log_buffer.h"
+#include "log_buffer_test_hooks.h"
+#include "logging.h"
 
 // ----------------------------------------------------------------------------
 // Capture writer
@@ -809,6 +812,220 @@ void test_sustained_log_traffic_stays_bounded_per_line(void) {
 }
 
 // =============================================================================
+// 8. #276 - sustained Serial Backpressure is reported, never refused
+// =============================================================================
+//
+// The state (CONTEXT.md): a host is present on the wire but its transmit path
+// is not draining, so frames are dropped whole after their room-wait. The
+// sink counts consecutive such drops; the third owes one WARN to the Log
+// Ring naming it, and the next frame that reaches the wire after a room-wait
+// owes one INFO with `dropped=<n>` for the whole episode. Both are written at
+// the next drain point - the entry of consoleSerialDrainLogs(), which every
+// record boundary and every poll passes through (console_serial_output.h, at
+// CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT, for why not at the drop itself) -
+// and nothing is refused: a dropped frame is still dropped exactly as
+// section 5 has it. Decided at the 2026-09-05 grilling; the threshold is the
+// literal 3 here on purpose, pinning the decision rather than whatever the
+// constant currently says.
+//
+// The ring these cases read is the native stand-in for the sink
+// (log_buffer_test_hooks.h): after the bind paLogLine() appends there and
+// only the drain writes the wire, the shape src/main.cpp has.
+
+static const char* const BACKPRESSURE_WARN = "[W][ConsoleTask] serial backpressure";
+static const char* const BACKPRESSURE_OVER = "[I][ConsoleTask] serial backpressure over";
+
+// Occurrences of `needle` across every line the sink ring holds.
+static int ringOccurrences(const char* needle) {
+    static char flat[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
+    logBufferCopy(&g_test_log_sink_buffer, flat, sizeof(flat));
+    int count = 0;
+    const size_t len = strlen(needle);
+    for (const char* p = flat; (p = strstr(p, needle)) != nullptr; p += len) {
+        count++;
+    }
+    return count;
+}
+
+// The post-bind state with the sink's count at zero and the ring empty. The
+// count lives in the sink across every case in this binary, so one frame that
+// reaches the wire after a room-wait ends whatever an earlier case left
+// behind, and one drain point writes whatever that owed; the ring is emptied
+// AFTER both, so nothing from an earlier case is counted against this one.
+static void backpressureFixtureSetUp(void) {
+    cliFixtureSetUp();
+    const char* settle = "< id=0 type=result status=ok outcome=completed";
+    TEST_ASSERT_TRUE(consoleSerialEmitFramedLine(settle, strlen(settle), /*waitForRoom=*/true));
+    consoleSerialDrainLogs();
+    logBufferInit(&g_test_log_sink_buffer, g_test_log_sink_storage, LOG_RING_MAX_LINES);
+    g_test_log_drain_cursor = 0;
+    serialStubReset();
+}
+
+// One Console Record the way src/tasks/console_task.cpp's emitRecordLine
+// sends it: a drain point first, then the record through the room-wait -
+// dropped when the stub offers no room, written when it does.
+static bool emitOneRecord(void) {
+    consoleSerialDrainLogs();
+    const char* line = "< id=13 type=field name=heapFree value=42120";
+    return consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/true);
+}
+
+// The onset: silent at one and two drops, one WARN owed at the third and
+// written at the next drain point, still one after more - and the WARN is a
+// ring line only, never a write of its own onto the wire that just refused
+// a frame.
+void test_backpressure_is_reported_on_the_third_consecutive_drop_and_not_before(void) {
+    backpressureFixtureSetUp();
+    SerialStub::availableForWriteValue = 0;
+
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences(BACKPRESSURE_WARN),
+                                  "two drops must stay silent: a single drop at a port close is "
+                                  "routine");
+
+    TEST_ASSERT_FALSE(emitOneRecord());
+    consoleSerialDrainLogs();  // the next drain point after the third drop
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, ringOccurrences(BACKPRESSURE_WARN),
+                                  "the third consecutive drop must write one WARN naming serial "
+                                  "backpressure at the next drain point");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "the WARN must be a Log Ring line, not a write onto the wire "
+                                  "that just refused a frame");
+
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, ringOccurrences(BACKPRESSURE_WARN),
+                                  "a longer episode is reported once, not once per drop");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences(BACKPRESSURE_OVER),
+                                  "no recovery line while nothing has reached the wire");
+}
+
+// The end of a reported episode: the next frame that reaches the wire after
+// a room-wait owes one INFO carrying the whole episode's count in the
+// ` dropped=<n>` idiom, the next drain point writes it, and a later frame
+// does not repeat it.
+void test_backpressure_recovery_writes_one_info_with_the_whole_episode_count(void) {
+    backpressureFixtureSetUp();
+    SerialStub::availableForWriteValue = 0;
+    for (int i = 0; i < 5; ++i) {
+        TEST_ASSERT_FALSE(emitOneRecord());
+    }
+    TEST_ASSERT_EQUAL_INT(1, ringOccurrences(BACKPRESSURE_WARN));
+
+    SerialStub::availableForWriteValue = 100000;
+    TEST_ASSERT_TRUE_MESSAGE(emitOneRecord(), "with room back the frame is written, not refused");
+    TEST_ASSERT_EQUAL_INT(1, SerialStub::writeCallCount);
+    consoleSerialDrainLogs();  // the next drain point after the frame that ended it
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, ringOccurrences(BACKPRESSURE_OVER),
+                                  "the first frame to reach the wire after a reported episode "
+                                  "must write one INFO saying the backpressure is over");
+    // Six, not five: the WARN line itself was drained into the stalled wire
+    // and dropped like everything else, and the count is honest about it.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        1, ringOccurrences("serial backpressure over: serial output flowing again dropped=6"),
+        "the recovery line must carry the WHOLE episode's count - the two silent drops and "
+        "the dropped WARN included - in the ` dropped=<n>` idiom");
+
+    TEST_ASSERT_TRUE(emitOneRecord());
+    consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, ringOccurrences(BACKPRESSURE_OVER),
+                                  "the recovery line is written once per episode, not once per "
+                                  "write");
+}
+
+// Consecutive means consecutive: a frame that reaches the wire resets the
+// count, so two short runs of drops with a write between them never add up
+// to three, and neither line is written for a run that was never reported.
+void test_a_write_resets_the_count_so_short_drop_runs_stay_silent(void) {
+    backpressureFixtureSetUp();
+
+    SerialStub::availableForWriteValue = 0;
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_FALSE(emitOneRecord());
+    SerialStub::availableForWriteValue = 100000;
+    TEST_ASSERT_TRUE(emitOneRecord());
+    SerialStub::availableForWriteValue = 0;
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_FALSE(emitOneRecord());
+    consoleSerialDrainLogs();
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences("serial backpressure"),
+                                  "two drops, a write, two drops: the count restarted at the "
+                                  "write, so nothing is three consecutive and nothing is written");
+
+    TEST_ASSERT_FALSE(emitOneRecord());
+    consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, ringOccurrences(BACKPRESSURE_WARN),
+                                  "the third drop since the last write is the onset");
+}
+
+// A drop into no host is the detached state, not backpressure: it is not
+// counted, and the count carries over it unchanged.
+void test_drops_into_no_host_are_not_backpressure(void) {
+    backpressureFixtureSetUp();
+
+    SerialStub::connectedValue = false;
+    for (int i = 0; i < 3; ++i) {
+        TEST_ASSERT_FALSE(emitOneRecord());
+    }
+    SerialStub::connectedValue = true;
+    consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences("serial backpressure"),
+                                  "frames dropped with no host present are not serial backpressure");
+
+    SerialStub::availableForWriteValue = 0;
+    TEST_ASSERT_FALSE(emitOneRecord());
+    TEST_ASSERT_FALSE(emitOneRecord());
+    consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences("serial backpressure"),
+                                  "the three detached drops must not have counted toward three");
+    TEST_ASSERT_FALSE(emitOneRecord());
+    consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_INT(1, ringOccurrences(BACKPRESSURE_WARN));
+}
+
+// Both lines are ordinary log lines, and the drain is how they reach the
+// wire. Three drained lines dropped one per call (the drain's own budget
+// stops each call at one room-wait, #229) are the onset; the first drain with
+// room back writes the WARN into the ring and out onto the wire, and that
+// write ends the episode, so the drain after it writes the INFO and carries
+// it out too - a serial operator sees the recovery line one poll after their
+// link drains.
+void test_both_lines_reach_the_wire_through_the_drain(void) {
+    backpressureFixtureSetUp();
+    paLogLine("[I][x] one");
+    paLogLine("[I][x] two");
+    paLogLine("[I][x] three");
+
+    SerialStub::availableForWriteValue = 0;
+    for (int i = 0; i < 3; ++i) {
+        consoleSerialDrainLogs();
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, SerialStub::writeCallCount,
+                                  "nothing may reach the wire while there is no room");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, ringOccurrences(BACKPRESSURE_WARN),
+                                  "the third drop OWES the WARN; the next drain point writes it");
+
+    SerialStub::availableForWriteValue = 100000;
+    const uint32_t firstDrain = consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, firstDrain, "the WARN alone was pending for this drain");
+    const int warnAt = wireIndexOf(BACKPRESSURE_WARN);
+    TEST_ASSERT_TRUE_MESSAGE(warnAt >= 0, "the WARN never reached the wire through the drain");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(-1, wireIndexOf(BACKPRESSURE_OVER),
+                                  "the INFO is owed by the WARN's own write and cannot be in "
+                                  "the same drain");
+
+    const uint32_t secondDrain = consoleSerialDrainLogs();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, secondDrain, "the INFO alone was pending for this drain");
+    const int overAt = wireIndexOfFrom(BACKPRESSURE_OVER, warnAt);
+    TEST_ASSERT_TRUE_MESSAGE(overAt > warnAt, "the INFO must follow the WARN on the wire");
+    TEST_ASSERT_TRUE_MESSAGE(wireIndexOfFrom(" dropped=3", overAt) > overAt,
+                             "the recovery line on the wire must carry the episode's count");
+}
+
+// =============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -833,5 +1050,10 @@ int main(int, char**) {
     RUN_TEST(test_console_echo_cannot_land_inside_a_midentry_redraw);
     RUN_TEST(test_redraw_ends_with_prompt_and_buffered_command);
     RUN_TEST(test_sustained_log_traffic_stays_bounded_per_line);
+    RUN_TEST(test_backpressure_is_reported_on_the_third_consecutive_drop_and_not_before);
+    RUN_TEST(test_backpressure_recovery_writes_one_info_with_the_whole_episode_count);
+    RUN_TEST(test_a_write_resets_the_count_so_short_drop_runs_stay_silent);
+    RUN_TEST(test_drops_into_no_host_are_not_backpressure);
+    RUN_TEST(test_both_lines_reach_the_wire_through_the_drain);
     return UNITY_END();
 }

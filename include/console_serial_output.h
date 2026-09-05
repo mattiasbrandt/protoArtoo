@@ -97,6 +97,57 @@ static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 // empties the whole ring in one call, exactly as before.
 static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROOM_WAIT_BOUND_MS;
 
+// How many CONSECUTIVE frames must be dropped after their room-wait, while
+// `Serial` reads a host present, before the sink reports Serial Backpressure
+// (CONTEXT.md) in the Log Ring (#276). Decided at the 2026-09-05 grilling and
+// counted in writeFrameCounted() (console_serial_output.cpp), the one place a
+// frame can be dropped:
+//
+//  - The first two drops are silent. A single drop is routine: the last frame
+//    of a session meets a host that has just closed its port, and #275
+//    measured exactly one `cdc drop` after every clean replug cycle, at the
+//    moment the client closed. Reporting it would be a WARN per Ctrl-C.
+//  - The third owes ONE line to the Log Ring, at WARN, naming the state:
+//      [ConsoleTask] serial backpressure: host attached but not reading, serial output dropped until it drains
+//    Nothing is refused: a command typed on such a link still runs, and its
+//    records still wait and drop exactly as ADR 0036 has them. The line is a
+//    Log Ring line like any other -- after the bind paLogLine() only appends
+//    (ADR 0037, src/main.cpp) -- so it cannot recurse into the write path it
+//    reports on, and the drain carries it to the wire once the link drains.
+//  - The next frame that reaches the wire after a room-wait ends the episode
+//    and owes ONE line at INFO carrying the whole episode's count, the two
+//    silent drops included, through consoleSerialFormatDroppedSuffix() so the
+//    idiom cannot drift from the closing record's and the eviction marker's:
+//      [ConsoleTask] serial backpressure over: serial output flowing again dropped=<n>
+//  - "Owes", not "writes": both lines are written at the next drain point --
+//    the entry of consoleSerialDrainLogs(), which runs at every record
+//    boundary and every poll -- so each lands within one record or one poll
+//    of the frame that earned it, and always ahead of the next frame that
+//    could succeed. Writing them at the drop itself would put a PA_LOG_*
+//    call under writeFrameCounted(), which every task's paLogLine() reaches
+//    statically through the pre-bind emit path: reportBackpressure() in the
+//    .cpp has the measured cost that ADR 0038's gate row refused.
+//    A room-waited write is the sink's only evidence of draining. A write that
+//    did not wait -- an echoed keystroke, the banner -- is attempted blind and
+//    its bytes may go nowhere, so it neither ends an episode nor starts one;
+//    the operations a non-reading host keeps typing are echoed, and those
+//    echoes must not read as recoveries. The evidence has one blind spot,
+//    stated rather than hidden: a stalled TX ring can keep a few bytes of
+//    residual room (#275's bench read room=16 and room=45 at drops), and a
+//    frame short enough to fit it ends an episode the host never drained --
+//    once per residue, and only for a line shorter than the residue, which a
+//    record line or a prefixed log line rarely is. A stall that reports as
+//    a WARN/INFO pair rather than one WARN is this, not a second episode.
+//  - A drop into no host (`Serial` false) is the detached state, not
+//    backpressure (CONTEXT.md), and leaves the count as it was.
+//
+// artoo-esp32 is unchanged by construction rather than by #if: UART0's write
+// blocks until the FIFO takes every byte and the reservation is capped at that
+// FIFO (CONSOLE_SERIAL_TX_ROOM_MAX below), so a frame cannot be dropped there
+// and the count never reaches this number. The native build compiles the
+// counter for the same reason: it is what the sink's suite proves.
+static constexpr uint32_t CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT = 3;
+
 // The most transmit room `Serial.availableForWrite()` can EVER report on this
 // board, and therefore the largest reservation a room-wait may ask for. A
 // waiter that asks for more than this waits out its whole bound and then drops
@@ -303,7 +354,8 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // Diagnostic probe for the P4 CDC transmit wedge (#275): one DEBUG line with
 // the USB-Serial-JTAG peripheral's state as the Console task sees it, tagged
-// `where` so the three call sites read apart in /api/logs:
+// `where` so the four call sites (edge, intoken, attached, drop) read apart
+// in /api/logs:
 //
 //   [ConsoleTask] cdc <where> conf=<ep1_conf> raw=<int_raw> ena=<int_ena>
 //                 st=<int_st> fram=<sof frame index> room=<availableForWrite>

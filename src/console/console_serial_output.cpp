@@ -36,6 +36,13 @@ extern "C" {
 // Static reference to the bound CLI instance, set during console task init
 static EmbeddedCli* g_boundCli = nullptr;
 
+// One tag for every line this file writes to the Log Ring, and it is the
+// Console task's rather than this file's: the sink reports that task's view
+// of its own transport, and one tag keeps the #275 probe (edge, intoken,
+// attached, drop) and the #276 backpressure lines on one grep in /api/logs
+// beside src/tasks/console_task.cpp's own lines.
+static const char* const TAG = "ConsoleTask";
+
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // Armed by every frame that reaches the wire, fired by the first frame dropped
 // after it (writeFrameCounted below): one register snapshot per drop episode,
@@ -48,6 +55,85 @@ static EmbeddedCli* g_boundCli = nullptr;
 // presuming the diagnosis.
 static bool s_cdcDropProbeArmed = true;
 #endif
+
+// Serial Backpressure (CONTEXT.md, #276): the run of consecutive frames
+// dropped after their room-wait while `Serial` read a host present -- a host
+// that is attached but whose transmit path is not draining. Kept beside the
+// probe above because it is the same drop event told differently: the probe
+// snapshots the peripheral once per episode, at DEBUG, for a diagnosis; this
+// reports the episode itself where the operator looks -- one WARN once it is
+// sustained, one INFO with the whole count when the wire drains again. The
+// threshold, both lines' shapes and every reason are at
+// CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT (console_serial_output.h). Nothing is
+// refused on such a link (grilling 2026-09-05): what changes is only that the
+// operator is told.
+//
+// Not under the CDC gate, unlike the probe: the counter is what the native
+// suite proves, and artoo-esp32 is unchanged by construction -- UART0 cannot
+// drop a frame (the header, at the constant), so the count never gets there.
+//
+// The drop site and the success site only move these three words; the two
+// log lines are written by reportBackpressure() below, at the drain point.
+// That split is a stack-chain constraint, not a style: a PA_LOG_* call
+// carries a 256-byte line buffer and newlib's printf tail (~2.2 KB on the
+// Xtensa walk), and writeFrameCounted() is reached STATICALLY from every
+// task's paLogLine() through the pre-bind emit path -- the walk cannot see
+// that waitForRoom is false there -- so logging from the drop site put that
+// cost on all nine walked chains and failed ADR 0038's gate row (measured at
+// db310551: +816..1040 B per task, DomeTask's floor holds by 80). The drain's
+// entry is reachable from the Console task alone, and it sits beside the
+// eviction marker's own snprintf rather than on top of the redraw frame.
+static uint32_t s_backpressureDrops = 0;       // consecutive drops, host present
+static bool s_backpressureOnsetOwed = false;   // the threshold was reached; WARN owed
+static uint32_t s_backpressureOverOwed = 0;    // an episode ended; INFO owed, with this count
+
+static void noteBackpressureDrop(void) {
+    s_backpressureDrops++;
+    // On the third drop exactly, so a longer episode is reported once.
+    if (s_backpressureDrops == CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT) {
+        s_backpressureOnsetOwed = true;
+    }
+}
+
+static void noteRoomWaitedWrite(void) {
+    // A reported episode owes its end too, with the count of every frame it
+    // cost -- the two silent ones included. Reported or not, a frame reached
+    // the wire after waiting for room: the run of consecutive drops is over.
+    if (s_backpressureDrops >= CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT) {
+        s_backpressureOverOwed = s_backpressureDrops;
+    }
+    s_backpressureDrops = 0;
+}
+
+// Writes the owed line(s) to the Log Ring, WARN before INFO -- both can be
+// owed at once when a record boundary's drain drops the third frame and the
+// record behind it then fits the ring's residual room. Called first thing in
+// consoleSerialDrainLogs(): every room-waited write on this wire is behind a
+// drain point (emitRecordLine drains before each record, the drain's own loop
+// runs after this), so the WARN is in the ring before the next frame can
+// succeed and the INFO within one record boundary or one poll of the frame
+// that ended the episode. Log Ring lines, never wire writes: after the bind
+// paLogLine() only appends (src/main.cpp), so nothing here recurses into the
+// write path it reports on, and the drain loop below carries both out.
+//
+// noinline, deliberately: the 256-byte PA_LOG_* line buffer must be this
+// function's own frame and not consoleSerialDrainLogs()'s, which every
+// drained line's redraw (emitLineCounted, 752 B on artoo-esp32) stacks on.
+static void __attribute__((noinline)) reportBackpressure(void) {
+    if (s_backpressureOnsetOwed) {
+        s_backpressureOnsetOwed = false;
+        PA_LOG_WARN(TAG, "serial backpressure: host attached but not reading, "
+                         "serial output dropped until it drains");
+    }
+    if (s_backpressureOverOwed != 0) {
+        // Formatted by the helper the closing record and the eviction marker
+        // use, so the ` dropped=<n>` idiom cannot drift.
+        char suffix[24];
+        consoleSerialFormatDroppedSuffix(suffix, sizeof(suffix), s_backpressureOverOwed);
+        s_backpressureOverOwed = 0;
+        PA_LOG_INFO(TAG, "serial backpressure over: serial output flowing again%s", suffix);
+    }
+}
 
 // The room-wait, the framed emit and the redraw emit, each with the
 // milliseconds they spent waiting reported back to the caller. Only
@@ -172,6 +258,12 @@ static void emitLineCounted(const char* line, uint32_t* waitedMs) {
 }
 
 uint32_t consoleSerialDrainLogs(void) {
+    // Owed Serial Backpressure lines first (#276), before the host guard
+    // below: they are ring lines that /api/logs wants whether or not a host
+    // is there to drain them, and they must be in the ring before this call
+    // pops anything, so the drain that carries them is this one.
+    reportBackpressure();
+
     // No host on the other end: leave the lines in the ring rather than
     // writing them into a transport that will refuse them.
     //
@@ -330,7 +422,11 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
         if (waitedMs != nullptr) {
             *waitedMs += spentMs;
         }
-        if (!Serial || Serial.availableForWrite() < (int)reserve) {
+        // Read once, so the drop below is classified by the same answer that
+        // decided it: a host present whose room never cleared is Serial
+        // Backpressure; no host at all is the detached state (CONTEXT.md).
+        const bool hostPresent = static_cast<bool>(Serial);
+        if (!hostPresent || Serial.availableForWrite() < (int)reserve) {
             // Room never cleared (or the host was never connected to begin
             // with): drop the frame whole. Nothing is written -- a half-sent
             // line is exactly the #245-era failure mode this function exists
@@ -346,6 +442,15 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
                 consoleCdcProbeLog("drop");
             }
 #endif
+            // Counted only while a host is present (#276): a drop into no host
+            // is not backpressure and leaves the run of consecutive drops as
+            // it was, so a detach in the middle of an episode neither ends it
+            // nor lengthens it -- the first room-waited write after the host
+            // is back and reading is what ends it. Counting only; the report
+            // is written at the drain point (reportBackpressure above).
+            if (hostPresent) {
+                noteBackpressureDrop();
+            }
             return false;
         }
     }
@@ -358,6 +463,16 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     s_cdcDropProbeArmed = true;
 #endif
+    if (waitForRoom) {
+        // Only a frame that waited for room and got it is known to have
+        // reached the wire; a non-waiting write is attempted blind (the
+        // header, at CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT). The probe above
+        // re-arms on every write on purpose -- it wants one snapshot per burst
+        // of drops, and an echoed keystroke between bursts is a fine place to
+        // re-arm -- but the report wants an episode, and an echo is not
+        // evidence that one ended.
+        noteRoomWaitedWrite();
+    }
     return true;
 }
 
@@ -373,10 +488,8 @@ void consoleCdcProbeLog(const char* where) {
     const uint32_t inEp1 = USB_SERIAL_JTAG.in_ep1_st.val;
     const bool plugged = HWCDC::isPlugged();
     const int room = Serial.availableForWrite();
-    // Tagged ConsoleTask rather than this file: the probe reports the Console
-    // task's view of its own transport, and one tag keeps the three call
-    // sites (edge, intoken, attached, drop) on one grep in /api/logs.
-    PA_LOG_DEBUG("ConsoleTask",
+    // TAG is the Console task's, not this file's: see its definition above.
+    PA_LOG_DEBUG(TAG,
                  "cdc %s conf=%lx raw=%lx ena=%lx st=%lx fram=%lu room=%d plg=%d inep1=%lx", where,
                  (unsigned long)ep1Conf, (unsigned long)intRaw, (unsigned long)intEna,
                  (unsigned long)intSt, (unsigned long)fram, room, plugged ? 1 : 0,
