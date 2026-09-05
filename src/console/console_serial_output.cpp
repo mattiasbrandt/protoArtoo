@@ -38,11 +38,15 @@ static EmbeddedCli* g_boundCli = nullptr;
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // Armed by every frame that reaches the wire, fired by the first frame dropped
-// after it (writeFrameCounted below): one register snapshot per wedge
-// episode, not one per dropped frame -- a wedged link drops every record, and
-// a probe line per record would only evict the ring it is trying to fill with
-// evidence (#275).
-static bool s_cdcWedgeProbeArmed = true;
+// after it (writeFrameCounted below): one register snapshot per drop episode,
+// not one per dropped frame -- a run of drops (a wedge, or a host that stopped
+// reading) drops every record, and a probe line per record would only evict
+// the ring it is trying to fill with evidence (#275). Tagged "drop", not
+// "wedge": the snapshot reports that a record was dropped and the registers
+// beside it say whether it is the permanent wedge (data_free 0, room 0,
+// repeating) or ordinary ADR 0036 backpressure (recovers), rather than
+// presuming the diagnosis.
+static bool s_cdcDropProbeArmed = true;
 #endif
 
 // The room-wait, the framed emit and the redraw emit, each with the
@@ -337,9 +341,9 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
             // before the ring evicts what happened. The line goes to the Log
             // Ring only (post-bind paLogLine never touches the wire), so this
             // cannot recurse into the write path it is reporting on.
-            if (s_cdcWedgeProbeArmed) {
-                s_cdcWedgeProbeArmed = false;
-                consoleCdcProbeLog("wedge");
+            if (s_cdcDropProbeArmed) {
+                s_cdcDropProbeArmed = false;
+                consoleCdcProbeLog("drop");
             }
 #endif
             return false;
@@ -352,7 +356,7 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
     // owner (ADR 0037) there is nothing else on this wire to interleave it.
     Serial.write((const uint8_t*)bytes, len);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
-    s_cdcWedgeProbeArmed = true;
+    s_cdcDropProbeArmed = true;
 #endif
     return true;
 }
@@ -371,7 +375,7 @@ void consoleCdcProbeLog(const char* where) {
     const int room = Serial.availableForWrite();
     // Tagged ConsoleTask rather than this file: the probe reports the Console
     // task's view of its own transport, and one tag keeps the three call
-    // sites (edge, attached, wedge) on one grep in /api/logs.
+    // sites (edge, intoken, attached, drop) on one grep in /api/logs.
     PA_LOG_DEBUG("ConsoleTask",
                  "cdc %s conf=%lx raw=%lx ena=%lx st=%lx fram=%lu room=%d plg=%d inep1=%lx", where,
                  (unsigned long)ep1Conf, (unsigned long)intRaw, (unsigned long)intEna,
