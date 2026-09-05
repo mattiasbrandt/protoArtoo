@@ -275,6 +275,27 @@ void test_edge_signal_fires_again_on_a_restart(void) {
     TEST_ASSERT_TRUE_MESSAGE(g_st.edgeThisPoll, "a second reset must re-signal the edge to re-clear the stale bit");
 }
 
+// windowJustClosed is the signal console_task.cpp clears the pre-detach input
+// fragment off (#275 critic pass 1, row 260): true on exactly the poll the
+// window closes, never during the hold, never twice.
+void test_window_just_closed_fires_once_at_the_window_close(void) {
+    detachAfterLiveSession();
+    SerialStub::pluggedValue = true;
+
+    ConsoleHostPoll r = poll();  // the edge poll: window opens, HOLD
+    TEST_ASSERT_EQUAL(CONSOLE_HOST_POLL_HOLD, r);
+    TEST_ASSERT_FALSE_MESSAGE(g_st.windowJustClosed, "opening the window is not closing it");
+    while (r == CONSOLE_HOST_POLL_HOLD) {
+        TEST_ASSERT_FALSE_MESSAGE(g_st.windowJustClosed, "holding is not the close");
+        r = poll();
+    }
+    // The first non-HOLD poll is the close.
+    TEST_ASSERT_TRUE_MESSAGE(g_st.windowJustClosed,
+                             "the poll that ends the window must signal windowJustClosed");
+    poll();
+    TEST_ASSERT_FALSE_MESSAGE(g_st.windowJustClosed, "windowJustClosed is a one-poll pulse");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_genuine_edge_holds_off_every_serial_read_for_the_window);
@@ -288,5 +309,6 @@ int main(int, char**) {
     RUN_TEST(test_edge_signal_fires_only_on_the_genuine_debounced_edge);
     RUN_TEST(test_edge_signal_never_fires_on_a_one_poll_flap);
     RUN_TEST(test_edge_signal_fires_again_on_a_restart);
+    RUN_TEST(test_window_just_closed_fires_once_at_the_window_close);
     return UNITY_END();
 }

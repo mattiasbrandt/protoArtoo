@@ -626,6 +626,21 @@ void consoleTask(void* pvParameters) {
             hwmLogged = true;
         }
 
+        // Genuine replug just settled (#275 critic pass 1, row 260): clear any
+        // line buffered before the detach NOW, before this poll reads the
+        // host's next command. A host that reattaches and sends immediately
+        // sets `connected` via RX and has its bytes read on the very poll the
+        // #260 connected-debounce below only begins confirming, so the reset
+        // there lands one poll too late and the pre-detach fragment would
+        // swallow that first command. The window only opens on a debounced
+        // edge, so this fires on a real replug, never a flap. Clear only, no
+        // reprint: `connected` may still be false here (the host has not opened
+        // yet), and the banner + prompt come from the ATTACHED path below once
+        // the host's real pickup lands -- nothing is written into no host.
+        if (hostPresence.windowJustClosed) {
+            embeddedCliResetInput(embeddedCli);
+        }
+
         // Debounced (re)attach edge, decided by the settle unit above (its
         // ATTACHED result is the two-consecutive-connected-polls edge #260
         // used to compute inline here). Reset the input line and reprint the

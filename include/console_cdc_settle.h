@@ -133,6 +133,17 @@ struct ConsoleHostPresence {
     // so a momentary SOF-watchdog flap during active TX -- where IN-empty may
     // be armed with a real pickup pending -- can never clear a live wakeup.
     bool edgeThisPoll;
+    // Set true on the one poll the settle window closes -- a genuine replug has
+    // finished settling. The caller clears the embedded-cli input buffer there
+    // (#275 critic pass 1, row 260): a line buffered before the detach is a
+    // stale fragment, and the #260 connected-debounce that used to clear it
+    // fires one poll BEHIND the first command a host sends the instant it
+    // reattaches (the host's bytes set `connected` via RX and are read the same
+    // poll the debounce only begins confirming), so the fragment would survive
+    // and swallow that command. Clearing at the window close -- before
+    // `connected` and before any host command -- closes that gap. The window
+    // only opens on a debounced edge, so this is never a flap.
+    bool windowJustClosed;
     // Debounce half (#260), exactly the two booleans console_task.cpp kept:
     // `Serial` read true on two consecutive polls after being unconfirmed.
     bool hostConfirmedConnected;
@@ -147,6 +158,7 @@ inline void consoleHostPresenceInit(ConsoleHostPresence* st) {
     st->holding = false;
     st->holdStartMs = 0;
     st->edgeThisPoll = false;
+    st->windowJustClosed = false;
     const bool connected = Serial;
     st->hostConfirmedConnected = connected;
     st->hostRawPrevConnected = connected;
@@ -160,6 +172,7 @@ inline void consoleHostPresenceInit(ConsoleHostPresence* st) {
 inline ConsoleHostPoll consoleHostPresencePoll(ConsoleHostPresence* st, bool plugged,
                                                uint32_t nowMs) {
     st->edgeThisPoll = false;
+    st->windowJustClosed = false;
     if (!plugged) {
         if (st->unpluggedPolls < CONSOLE_CDC_UNPLUGGED_POLLS_FOR_EDGE) {
             st->unpluggedPolls++;
@@ -183,6 +196,7 @@ inline ConsoleHostPoll consoleHostPresencePoll(ConsoleHostPresence* st, bool plu
             return CONSOLE_HOST_POLL_HOLD;
         }
         st->holding = false;
+        st->windowJustClosed = true;
     }
 
     // The #260 debounce, unchanged from src/tasks/console_task.cpp: two
