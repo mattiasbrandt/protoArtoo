@@ -389,6 +389,18 @@ the ring still holds, preceded by a `[log] dropped=<n>` for what wrapped while
 you were away. The artoo-esp32 has no such state — its port is live from
 startup — so it prints as it goes whether or not anyone is listening.
 
+> [!WARNING]
+> **That is the design, and it is not what the FireBeetle 2 does once the USB
+> cable has been out.** Measured on 2026-09-05 at `017b168d`: after the CDC
+> link is detached and reattached with the board still powered, the serial
+> side stays silent — no backlog, no `[log] dropped=<n>`, no prompt — and
+> replugging again does not recover it. **A FireBeetle 2 gone quiet after a
+> replug is this fault, not a dead board**: the log ring keeps filling
+> normally, so read `/api/logs`, and the dashboard's command box is
+> unaffected. What you type on a silent link still runs, so don't retype a
+> command there — least of all a motion one. Details and reproduction:
+> [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476).
+
 **Heavy log traffic can't slow the droid down.** A log call from one of the
 real-time tasks on Core 1 (drive, RC, dome link) copies its line into the ring
 and returns; it never touches the serial port and never waits for it. Only the
