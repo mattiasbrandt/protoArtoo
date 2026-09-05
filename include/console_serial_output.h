@@ -123,7 +123,13 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //    did not wait -- an echoed keystroke, the banner -- is attempted blind and
 //    its bytes may go nowhere, so it neither ends an episode nor starts one;
 //    the operations a non-reading host keeps typing are echoed, and those
-//    echoes must not read as recoveries.
+//    echoes must not read as recoveries. The evidence has one blind spot,
+//    stated rather than hidden: a stalled TX ring can keep a few bytes of
+//    residual room (#275's bench read room=16 and room=45 at drops), and a
+//    frame short enough to fit it ends an episode the host never drained --
+//    once per residue, and only for a line shorter than the residue, which a
+//    record line or a prefixed log line rarely is. A stall that reports as
+//    a WARN/INFO pair rather than one WARN is this, not a second episode.
 //  - A drop into no host (`Serial` false) is the detached state, not
 //    backpressure (CONTEXT.md), and leaves the count as it was.
 //
