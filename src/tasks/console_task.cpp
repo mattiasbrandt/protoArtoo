@@ -512,14 +512,10 @@ void consoleTask(void* pvParameters) {
     consoleHostPresenceInit(&hostPresence);
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
-    // #275 probe state: the cable-presence edge, read from the SOF watchdog
-    // behind HWCDC::isPlugged() (a pure load, no side effect), and the time
-    // from that edge to the host's first IN token on the CDC data endpoint.
-    // isPlugged() is deliberately NOT `Serial` (bool): that one is
-    // isCDC_Connected(), which commits a packet on every call while plugged
-    // and not yet connected (HWCDC.cpp), and the whole point of the edge
-    // snapshot is to read the peripheral BEFORE any such call this poll.
-    bool probePrevPlugged = HWCDC::isPlugged();
+    // #275 probe state: the time from the plugged edge to the host's first IN
+    // token on the CDC data endpoint, logged at DEBUG. The edge itself is the
+    // settle unit's debounced edge (hostPresence.edgeThisPoll), so the probe
+    // and the functional bit-clear below fire on the same genuine edge.
     uint32_t probeEdgeMs = 0;
     bool probeAwaitingInToken = false;
 #endif
@@ -539,37 +535,57 @@ void consoleTask(void* pvParameters) {
 #endif
         const uint32_t nowMs = millis();
 
+        // #275 settle hold-off + #260 attach debounce, decided together. Runs
+        // first so its debounced edge (hostPresence.edgeThisPoll) is known
+        // before the register clear and the drain below.
+        const ConsoleHostPoll hostPoll = consoleHostPresencePoll(&hostPresence, plugged, nowMs);
+
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
-        // #275 probe, point 1: the plugged false->true edge, snapshotted
-        // before the settle poll below and before the drain, so it is the
-        // pre-flush state right after the host's bus reset: data_free 1 means
-        // the IN endpoint came back clean, 0 means a packet survived the
-        // reset. Then clear the raw bits no driver uses (8 in_token EP1, 12
-        // rts_chg, 13 dtr_chg, 14 get_line_code, 15 set_line_code) so the
-        // later snapshots say what the host did after THIS edge: bit 8 set at
-        // a wedge means the host polled EP1 and got nothing, clear means it
-        // never asked. This is a raw one-poll edge (the diagnostic wants the
-        // very first plugged sample); the settle unit's edge is debounced.
-        if (plugged && !probePrevPlugged) {
+        // At a genuine plugged edge, clear the stale host-activity raw bits
+        // (#275 critic pass 1). This is SETTLE LOGIC, not diagnostics: the one
+        // that matters is bit 3 `serial_in_empty`. A replug after an IDLE
+        // console leaves that raw bit set from the last host pickup before the
+        // detach and never cleared -- the empty console let the ISR's empty
+        // branch disable IN-empty (`int_ena` bit 3 clear), so the ISR never
+        // ran to clear it. When the settle window closes and isCDC_Connected()
+        // re-arms IN-empty (HWCDC.cpp), that stale raw bit fires the interrupt
+        // at once and its handler sets `connected = true` (HWCDC.cpp:148) with
+        // NO host pickup behind it. `Serial` then reads connected up to ~10 s
+        // before the host actually opens the port: the drain writes the banner
+        // and log lines into a host that is not there (dropped, and a plain
+        // drop is unmarked), and that surviving backlog is exactly what a
+        // cooked-mode host tty echoes back into the board's line buffer during
+        // its open -- which corrupted the first command in the coordinator's
+        // row-260 cycle 2. Clearing bit 3 here means the window closes with the
+        // raw bit clear, so `connected` waits for the host's real first EP1
+        // pickup (`cdc intoken`), and `cdc attached` then follows it.
+        //
+        // Safe because this is the DEBOUNCED edge (a real detach, >=2 unplugged
+        // polls): on such an edge the console was idle and IN-empty is not
+        // armed, so no live wakeup can be lost. A momentary SOF-watchdog flap
+        // is not a debounced edge and never reaches here. The other bits
+        // cleared -- 8 in_token EP1, 12 rts_chg, 13 dtr_chg, 14/15 line
+        // coding -- are stale host-activity indicators no driver consumes;
+        // clearing them lets the intoken probe below read post-edge activity.
+        // The probe snapshot is taken BEFORE the clear so it captures the
+        // stale state (this is the instrument that found the bug).
+        if (hostPresence.edgeThisPoll) {
             consoleCdcProbeLog("edge");
-            USB_SERIAL_JTAG.int_clr.val =
-                (1u << 8) | (1u << 12) | (1u << 13) | (1u << 14) | (1u << 15);
+            USB_SERIAL_JTAG.int_clr.val = (1u << 3) | (1u << 8) | (1u << 12) | (1u << 13) |
+                                          (1u << 14) | (1u << 15);
             probeEdgeMs = nowMs;
             probeAwaitingInToken = true;
         }
-        // Edge-to-first-IN-token is the figure the settle window was sized
-        // from: an IN token on EP1 is the host both configured and reading.
+        // Edge-to-first-IN-token, logged at DEBUG: an IN token on EP1 is the
+        // host both configured and reading, and `cdc attached` must follow it.
         if (probeAwaitingInToken && (USB_SERIAL_JTAG.int_raw.val & (1u << 8))) {
             probeAwaitingInToken = false;
             PA_LOG_DEBUG(TAG, "cdc intoken +%lu ms after plugged edge",
                          (unsigned long)(nowMs - probeEdgeMs));
             consoleCdcProbeLog("intoken");
         }
-        probePrevPlugged = plugged;
 #endif
 
-        // #275 settle hold-off + #260 attach debounce, decided together.
-        const ConsoleHostPoll hostPoll = consoleHostPresencePoll(&hostPresence, plugged, nowMs);
         if (hostPoll == CONSOLE_HOST_POLL_HOLD) {
             // Silent this poll: no drain, no `Serial` read, no echo, no HWCDC
             // call of any kind, so the isCDC_Connected() flush that wedges the

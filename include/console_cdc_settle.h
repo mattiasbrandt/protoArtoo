@@ -119,6 +119,20 @@ struct ConsoleHostPresence {
     uint8_t unpluggedPolls;
     bool holding;
     uint32_t holdStartMs;
+    // Set true on the one poll a GENUINE plugged edge is detected -- the poll
+    // the window opens, and again on a restart (a second bus reset inside the
+    // window). The caller reads it to clear the stale `serial_in_empty` raw
+    // bit at that edge (#275 critic pass 1): a bit set by the last host pickup
+    // before the detach, never cleared because the idle console left IN-empty
+    // disabled, would otherwise fire IN-empty the instant the window closes
+    // and isCDC_Connected() re-arms it -- latching `connected` true with no
+    // host behind it, so the drain writes a banner and log lines into nobody
+    // (dropped, unmarked) and the surviving backlog is what a cooked-mode host
+    // tty echoes back into the line buffer when it finally opens, corrupting
+    // the first command. Keyed to the DEBOUNCED edge, not a raw one-poll edge,
+    // so a momentary SOF-watchdog flap during active TX -- where IN-empty may
+    // be armed with a real pickup pending -- can never clear a live wakeup.
+    bool edgeThisPoll;
     // Debounce half (#260), exactly the two booleans console_task.cpp kept:
     // `Serial` read true on two consecutive polls after being unconfirmed.
     bool hostConfirmedConnected;
@@ -132,6 +146,7 @@ inline void consoleHostPresenceInit(ConsoleHostPresence* st) {
     st->unpluggedPolls = 0;
     st->holding = false;
     st->holdStartMs = 0;
+    st->edgeThisPoll = false;
     const bool connected = Serial;
     st->hostConfirmedConnected = connected;
     st->hostRawPrevConnected = connected;
@@ -140,10 +155,11 @@ inline void consoleHostPresenceInit(ConsoleHostPresence* st) {
 // One poll. `plugged` is this poll's cable-presence sample and `nowMs` its
 // millis(); both are read by the caller BEFORE calling, and neither read
 // touches the transport. Returns what the caller does with the rest of the
-// poll -- see ConsoleHostPoll. `Serial` is read at most once per call, and
-// never while the window is open.
+// poll -- see ConsoleHostPoll; `edgeThisPoll` is set as a side output. `Serial`
+// is read at most once per call, and never while the window is open.
 inline ConsoleHostPoll consoleHostPresencePoll(ConsoleHostPresence* st, bool plugged,
                                                uint32_t nowMs) {
+    st->edgeThisPoll = false;
     if (!plugged) {
         if (st->unpluggedPolls < CONSOLE_CDC_UNPLUGGED_POLLS_FOR_EDGE) {
             st->unpluggedPolls++;
@@ -155,6 +171,7 @@ inline ConsoleHostPoll consoleHostPresencePoll(ConsoleHostPresence* st, bool plu
             // to the last reset, which is the one that matters.
             st->holding = true;
             st->holdStartMs = nowMs;
+            st->edgeThisPoll = true;
         }
         st->unpluggedPolls = 0;
     }

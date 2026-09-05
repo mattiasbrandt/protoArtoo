@@ -228,6 +228,53 @@ void test_window_survives_millis_wrap(void) {
     TEST_ASSERT_EQUAL_INT(pollsInWindow(), held);
 }
 
+// edgeThisPoll is the signal console_task.cpp keys the stale-`serial_in_empty`
+// register clear off (#275 critic pass 1): true only on the genuine debounced
+// edge (window open), true again on a restart, and NEVER on a one-poll flap -
+// which is what keeps the clear from touching a live IN-empty during active TX.
+void test_edge_signal_fires_only_on_the_genuine_debounced_edge(void) {
+    detachAfterLiveSession();
+    // No edge during the detach's steady unplugged polls.
+    TEST_ASSERT_FALSE(g_st.edgeThisPoll);
+
+    SerialStub::pluggedValue = true;
+    poll();  // the genuine edge: window opens
+    TEST_ASSERT_TRUE_MESSAGE(g_st.edgeThisPoll, "the genuine plugged edge must signal edgeThisPoll");
+
+    // Not again while the window simply holds.
+    for (int i = 0; i < 3; i++) {
+        poll();
+        TEST_ASSERT_FALSE_MESSAGE(g_st.edgeThisPoll, "holding is not an edge");
+    }
+}
+
+void test_edge_signal_never_fires_on_a_one_poll_flap(void) {
+    SerialStub::pluggedValue = true;
+    SerialStub::connectedValue = true;
+    consoleHostPresenceInit(&g_st);
+    poll();
+    SerialStub::pluggedValue = false;
+    poll();  // one unplugged poll only
+    SerialStub::pluggedValue = true;
+    for (int i = 0; i < 5; i++) {
+        poll();
+        TEST_ASSERT_FALSE_MESSAGE(g_st.edgeThisPoll, "a one-poll flap is not a genuine edge");
+    }
+}
+
+void test_edge_signal_fires_again_on_a_restart(void) {
+    detachAfterLiveSession();
+    SerialStub::pluggedValue = true;
+    poll();
+    TEST_ASSERT_TRUE(g_st.edgeThisPoll);  // first edge
+    // Second bus reset inside the window: unplugged for several polls, then back.
+    SerialStub::pluggedValue = false;
+    for (int i = 0; i < 5; i++) poll();
+    SerialStub::pluggedValue = true;
+    poll();
+    TEST_ASSERT_TRUE_MESSAGE(g_st.edgeThisPoll, "a second reset must re-signal the edge to re-clear the stale bit");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_genuine_edge_holds_off_every_serial_read_for_the_window);
@@ -238,5 +285,8 @@ int main(int, char**) {
     RUN_TEST(test_second_reset_inside_the_window_restarts_it);
     RUN_TEST(test_one_poll_gap_inside_the_window_changes_nothing);
     RUN_TEST(test_window_survives_millis_wrap);
+    RUN_TEST(test_edge_signal_fires_only_on_the_genuine_debounced_edge);
+    RUN_TEST(test_edge_signal_never_fires_on_a_one_poll_flap);
+    RUN_TEST(test_edge_signal_fires_again_on_a_restart);
     return UNITY_END();
 }
