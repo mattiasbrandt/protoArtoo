@@ -107,7 +107,7 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //    of a session meets a host that has just closed its port, and #275
 //    measured exactly one `cdc drop` after every clean replug cycle, at the
 //    moment the client closed. Reporting it would be a WARN per Ctrl-C.
-//  - The third writes ONE line to the Log Ring, at WARN, naming the state:
+//  - The third owes ONE line to the Log Ring, at WARN, naming the state:
 //      [ConsoleTask] serial backpressure: host attached but not reading, serial output dropped until it drains
 //    Nothing is refused: a command typed on such a link still runs, and its
 //    records still wait and drop exactly as ADR 0036 has them. The line is a
@@ -115,10 +115,18 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //    (ADR 0037, src/main.cpp) -- so it cannot recurse into the write path it
 //    reports on, and the drain carries it to the wire once the link drains.
 //  - The next frame that reaches the wire after a room-wait ends the episode
-//    and writes ONE line at INFO carrying the whole episode's count, the two
+//    and owes ONE line at INFO carrying the whole episode's count, the two
 //    silent drops included, through consoleSerialFormatDroppedSuffix() so the
 //    idiom cannot drift from the closing record's and the eviction marker's:
 //      [ConsoleTask] serial backpressure over: serial output flowing again dropped=<n>
+//  - "Owes", not "writes": both lines are written at the next drain point --
+//    the entry of consoleSerialDrainLogs(), which runs at every record
+//    boundary and every poll -- so each lands within one record or one poll
+//    of the frame that earned it, and always ahead of the next frame that
+//    could succeed. Writing them at the drop itself would put a PA_LOG_*
+//    call under writeFrameCounted(), which every task's paLogLine() reaches
+//    statically through the pre-bind emit path: reportBackpressure() in the
+//    .cpp has the measured cost that ADR 0038's gate row refused.
 //    A room-waited write is the sink's only evidence of draining. A write that
 //    did not wait -- an echoed keystroke, the banner -- is attempted blind and
 //    its bytes may go nowhere, so it neither ends an episode nor starts one;
