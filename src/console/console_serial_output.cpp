@@ -22,12 +22,28 @@
 
 #include "logging.h"
 
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// The USB-Serial-JTAG register block, read (never written) by the #275 probe
+// below. Guarded with the same gate as every other CDC-only line in this file:
+// artoo-esp32 has no such peripheral and the native build has no board.
+#include "soc/usb_serial_jtag_struct.h"
+#endif
+
 extern "C" {
 #include "embedded_cli.h"
 }
 
 // Static reference to the bound CLI instance, set during console task init
 static EmbeddedCli* g_boundCli = nullptr;
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// Armed by every frame that reaches the wire, fired by the first frame dropped
+// after it (writeFrameCounted below): one register snapshot per wedge
+// episode, not one per dropped frame -- a wedged link drops every record, and
+// a probe line per record would only evict the ring it is trying to fill with
+// evidence (#275).
+static bool s_cdcWedgeProbeArmed = true;
+#endif
 
 // The room-wait, the framed emit and the redraw emit, each with the
 // milliseconds they spent waiting reported back to the caller. Only
@@ -315,6 +331,17 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
             // with): drop the frame whole. Nothing is written -- a half-sent
             // line is exactly the #245-era failure mode this function exists
             // to remove.
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+            // The first drop after a successful write is where a wedge
+            // announces itself (#275): snapshot the peripheral once, here,
+            // before the ring evicts what happened. The line goes to the Log
+            // Ring only (post-bind paLogLine never touches the wire), so this
+            // cannot recurse into the write path it is reporting on.
+            if (s_cdcWedgeProbeArmed) {
+                s_cdcWedgeProbeArmed = false;
+                consoleCdcProbeLog("wedge");
+            }
+#endif
             return false;
         }
     }
@@ -324,8 +351,34 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
     // half-delivered by a transport that short-writes, and with a single
     // owner (ADR 0037) there is nothing else on this wire to interleave it.
     Serial.write((const uint8_t*)bytes, len);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    s_cdcWedgeProbeArmed = true;
+#endif
     return true;
 }
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+void consoleCdcProbeLog(const char* where) {
+    // Registers first, driver second -- see the header. Every read here is a
+    // plain volatile load; nothing below commits a packet or arms an interrupt.
+    const uint32_t ep1Conf = USB_SERIAL_JTAG.ep1_conf.val;
+    const uint32_t intRaw = USB_SERIAL_JTAG.int_raw.val;
+    const uint32_t intEna = USB_SERIAL_JTAG.int_ena.val;
+    const uint32_t intSt = USB_SERIAL_JTAG.int_st.val;
+    const uint32_t fram = USB_SERIAL_JTAG.fram_num.val;
+    const uint32_t inEp1 = USB_SERIAL_JTAG.in_ep1_st.val;
+    const bool plugged = HWCDC::isPlugged();
+    const int room = Serial.availableForWrite();
+    // Tagged ConsoleTask rather than this file: the probe reports the Console
+    // task's view of its own transport, and one tag keeps the three call
+    // sites (edge, attached, wedge) on one grep in /api/logs.
+    PA_LOG_DEBUG("ConsoleTask",
+                 "cdc %s conf=%lx raw=%lx ena=%lx st=%lx fram=%lu room=%d plg=%d inep1=%lx", where,
+                 (unsigned long)ep1Conf, (unsigned long)intRaw, (unsigned long)intEna,
+                 (unsigned long)intSt, (unsigned long)fram, room, plugged ? 1 : 0,
+                 (unsigned long)inEp1);
+}
+#endif
 
 size_t consoleSerialFormatDroppedSuffix(char* buffer, size_t bufferSize, uint32_t droppedCount) {
     if (buffer == nullptr || bufferSize == 0) {

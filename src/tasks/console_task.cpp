@@ -59,6 +59,14 @@
 #include "console_host_attach.h"
 #include "console_line_overflow.h"
 
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// The USB-Serial-JTAG register block, for the #275 probe in the main loop:
+// one interrupt-clear write at the plugged edge and one raw-status read per
+// poll while the first IN token is awaited. Same gate as src/main.cpp's CDC
+// block; artoo-esp32 has no such peripheral.
+#include "soc/usb_serial_jtag_struct.h"
+#endif
+
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
 #include "embedded_cli.h"
@@ -515,8 +523,52 @@ void consoleTask(void* pvParameters) {
     bool hostConfirmedConnected = Serial;
     bool hostRawPrevConnected = hostConfirmedConnected;
 
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // #275 probe state: the cable-presence edge, read from the SOF watchdog
+    // behind HWCDC::isPlugged() (a pure load, no side effect), and the time
+    // from that edge to the host's first IN token on the CDC data endpoint.
+    // isPlugged() is deliberately NOT `Serial` (bool): that one is
+    // isCDC_Connected(), which commits a packet on every call while plugged
+    // and not yet connected (HWCDC.cpp), and the whole point of the edge
+    // snapshot is to read the peripheral BEFORE any such call this poll.
+    bool probePrevPlugged = HWCDC::isPlugged();
+    uint32_t probeEdgeMs = 0;
+    bool probeAwaitingInToken = false;
+#endif
+
     // Main loop: read from UART and process through embedded-cli
     while (true) {
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+        // #275 probe, point 1: the plugged false->true edge, snapshotted
+        // before the drain below makes this poll's first HWCDC call. This is
+        // the pre-flush state right after the host's bus reset: data_free 1
+        // means the IN endpoint came back clean, 0 means a packet survived
+        // the reset. Then clear the raw bits no driver uses (8 in_token EP1,
+        // 12 rts_chg, 13 dtr_chg, 14 get_line_code, 15 set_line_code) so the
+        // later snapshots say what the host did after THIS edge: bit 8 set at
+        // a wedge means the host polled EP1 and got nothing, clear means it
+        // never asked.
+        {
+            const bool plugged = HWCDC::isPlugged();
+            if (plugged && !probePrevPlugged) {
+                consoleCdcProbeLog("edge");
+                USB_SERIAL_JTAG.int_clr.val =
+                    (1u << 8) | (1u << 12) | (1u << 13) | (1u << 14) | (1u << 15);
+                probeEdgeMs = millis();
+                probeAwaitingInToken = true;
+            }
+            // Edge-to-first-IN-token is the figure the settle window is sized
+            // from: an IN token on EP1 is the host both configured and reading.
+            if (probeAwaitingInToken && (USB_SERIAL_JTAG.int_raw.val & (1u << 8))) {
+                probeAwaitingInToken = false;
+                PA_LOG_DEBUG(TAG, "cdc intoken +%lu ms after plugged edge",
+                             (unsigned long)(millis() - probeEdgeMs));
+                consoleCdcProbeLog("intoken");
+            }
+            probePrevPlugged = plugged;
+        }
+#endif
+
         // Drain the Log Ring first (ADR 0037). Anything any task logged while
         // this one slept belongs on the wire before this poll's keystrokes
         // echo back, and the redraw each drained line carries repaints the
@@ -565,6 +617,11 @@ void consoleTask(void* pvParameters) {
 
                 consoleResetInputForAttach(embeddedCli);
                 PA_LOG_INFO(TAG, "host attached: line reset, prompt reprinted");
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+                // #275 probe, point 2: the peripheral as the banner write
+                // above left it, the moment `Serial` first read true.
+                consoleCdcProbeLog("attached");
+#endif
             }
         } else {
             // Eager on the way down: a false sample just means the next

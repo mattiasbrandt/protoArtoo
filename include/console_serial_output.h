@@ -300,6 +300,40 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 //    drained log line waits like a record (ADR 0037).
 bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom);
 
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// Diagnostic probe for the P4 CDC transmit wedge (#275): one DEBUG line with
+// the USB-Serial-JTAG peripheral's state as the Console task sees it, tagged
+// `where` so the three call sites read apart in /api/logs:
+//
+//   [ConsoleTask] cdc <where> conf=<ep1_conf> raw=<int_raw> ena=<int_ena>
+//                 st=<int_st> fram=<sof frame index> room=<availableForWrite>
+//                 plg=<isPlugged> inep1=<in_ep1_st>
+//
+// Hex without leading zeros, and short field names, because the Log Ring
+// keeps LOG_LINE_MAX (128) bytes per line and the ticket's long form did not
+// fit behind the `[millis][D][ConsoleTask] ` prefix. Bits that matter
+// (soc/usb_serial_jtag_struct.h, hw_ver3):
+//   conf   bit 0 wr_done (WT, reads 0), bit 1 serial_in_ep_data_free -- 0 means
+//          a committed IN packet the host has not read yet, 1 means the IN FIFO
+//          is open for writing; bit 2 serial_out_ep_data_avail.
+//   raw/ena/st  bit 2 serial_out_recv_pkt, bit 3 serial_in_empty, bit 8
+//          in_token_rec_in_ep1 (the host polled EP1), bit 9 usb_bus_reset,
+//          bit 12 rts_chg, bit 13 dtr_chg, bit 14 get_line_code, bit 15
+//          set_line_code. The Console task clears 8 and 12-15 at the plugged
+//          edge (src/tasks/console_task.cpp), which no driver touches, so a
+//          later snapshot says what the host did AFTER that edge.
+//   inep1  bits 1:0 IN endpoint 1 state, bits 8:2 wr_addr, bits 15:9 rd_addr --
+//          wr_addr != rd_addr is data committed and unread, equal with
+//          data_free 0 is a zero-length packet.
+//
+// Reads the registers first and asks the driver for room second:
+// availableForWrite() takes HWCDC's TX lock but touches no register and
+// commits nothing, so the snapshot is of the peripheral before the driver is
+// asked anything. Allocation-free, Console task only, CDC-on-boot builds only;
+// artoo-esp32 has no such peripheral and the native build has no board.
+void consoleCdcProbeLog(const char* where);
+#endif
+
 // Formats the `dropped=<n>` suffix ADR 0036 stamps on a request's closing
 // record (src/tasks/console_task.cpp's onRecordResult/onRecordEnd) when the
 // sink could not send `droppedCount` earlier records within
