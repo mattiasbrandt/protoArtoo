@@ -394,11 +394,11 @@ whole log lines arrived on the artoo-esp32 while a command sat half-typed, and
 the line that finally ran was still exactly the `system.status.health` that
 had been typed; the FireBeetle 2 redrew the prompt four times through the same
 row with every log line intact. Five `system.status.health` queries
-back-to-back completed with no `dropped=` on either board, whole command
-sheets replayed with no dropped records and no timeouts, and Core 1's
-`failsafeCount` and `queueOverflowCount` stayed at 0 throughout. An
-over-length line doesn't disturb the session either: a 70-byte line on both
-boards, and a 260-byte one on the FireBeetle 2, were each refused
+back-to-back on the FireBeetle 2 all completed with no `dropped=`; both
+boards' whole command sheets replayed with no dropped records and no
+timeouts; and Core 1's `failsafeCount` and `queueOverflowCount` stayed at 0
+throughout. An over-length line doesn't disturb the session either: a 70-byte
+line on both boards, and a 260-byte one on the FireBeetle 2, were each refused
 `invalid reason=line-too-long` and the very next command answered normally.
 
 ## Two sessions at once
