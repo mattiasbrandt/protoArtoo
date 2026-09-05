@@ -364,17 +364,23 @@ order things actually happened in, to within one record or one poll.
 - A `[log] dropped=<n>` line on its own means the controller logged faster
   than the port could carry it, for long enough that the ring wrapped: exactly
   that many log lines are missing at that point. They are gone from the ring
-  too, so `/api/logs` doesn't have them either. Log less (`system.config.log-level
-  value=info`) or read `/api/logs` while the load is on.
+  too, so `/api/logs` doesn't have them either. Turn the level down
+  (`system.config.log-level value=info`), or read the log while the load is on
+  rather than after it.
 - `dropped=<n>` on a `result` or `end` line counts records of *that answer*
   that never got onto the port. The Request ID still ties the rest of the
-  group together. This is serial-only; the dashboard builds its reply whole
-  and never drops part of one.
+  group together.
 
 There is one loss neither marker covers: a terminal that is attached but has
 stopped reading can make a single log line miss its turn, and that line is
 then simply absent. `/api/logs` still has that one — so when a log line looks
 missing and no marker says it was dropped, that is where to look.
+
+None of that applies to the dashboard. It assembles a whole reply before
+sending it, so no part of an answer is dropped on the way, and the one case
+where a reply doesn't fit ([`system.status.logs`](#reading-the-log-ring)) is
+announced by its own `[CUT]` line rather than by a count (see [Use the Console
+from the dashboard](#use-the-console-from-the-dashboard)).
 
 **On the FireBeetle 2, attaching late gives you the backlog.** With no
 terminal attached that board's Console holds the ring rather than writing into
