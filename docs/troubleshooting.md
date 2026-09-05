@@ -456,10 +456,14 @@ Whichever client is used, the shared rule from the matrix above still holds:
 ### Serial log integrity caveat
 
 Treat USB serial as a convenience stream, not the only diagnostic record. The
-project-owned `PA_LOG_*` path writes each line through one serialized sink and
-retains the same line in the `/api/logs` ring/SSE console. Prefer `/api/logs`,
-`/api/status`, `/api/profiler`, and `/api/coredump` for evidence that must
-survive USB monitor resets or ambiguous serial captures.
+project-owned `PA_LOG_*` path writes each line **into the log ring** — the one
+`/api/logs`, the SSE console and `system.status.logs` all read — and the
+Console task copies it from there to the serial port (ADR 0037). The ring is
+the record; serial is a view of it. Prefer `/api/logs`, `/api/status`,
+`/api/profiler`, and `/api/coredump` for evidence that must survive USB
+monitor resets or ambiguous serial captures — except when HTTP itself is the
+thing that has stopped answering, which is [its own case
+above](#the-quick-read-returns-nothing-at-all--go-to-serial).
 
 Normal repo builds leave `CORE_DEBUG_LEVEL` unset and call
 `Serial.setDebugOutput(false)` during setup, so Arduino core `log_*` output is
