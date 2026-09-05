@@ -400,6 +400,10 @@ timeouts; and Core 1's `failsafeCount` and `queueOverflowCount` stayed at 0
 throughout. An over-length line doesn't disturb the session either: a 70-byte
 line on both boards, and a 260-byte one on the FireBeetle 2, were each refused
 `invalid reason=line-too-long` and the very next command answered normally.
+Those rows are replayable — `229 concurrency-and-overflow` and
+`274 guards-and-typing` on the artoo-esp32, `229 sustained-traffic-and-overflow`
+and `265 p4-sink-reliability` on the FireBeetle 2, in `tools/bench_rows/`; see
+[console-client.md](console-client.md).
 
 ## Two sessions at once
 
