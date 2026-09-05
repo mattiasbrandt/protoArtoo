@@ -396,7 +396,7 @@ A rare long-lived branch (`epic/<name>`) holding all work of one multi-ticket ep
 _Avoid_: phase branch, dev branch, per-ticket PRs inside an epic
 
 **artoo-esp32**:
-The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target.
+The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). Permanently maintained and carrying the complete feature set - not a legacy build kept alive for compatibility.
 _Avoid_: classic, legacy board, clone build
 
 **ESP32-P4 Target**:
@@ -480,6 +480,10 @@ _Avoid_: NO IMMEDIATE BLOCKER, NO-GO, INVALID / UNKNOWN, overall result, go/no-g
 **Not Assessed**:
 The recorded result for something a run could not measure — a driver that could not run on this Image Mode, or a window too short to judge liveness. Distinct from a pass in both the report and the verdict: what was not observed reads as not measured, never as healthy.
 _Avoid_: skipped, n/a, passing by default, no news is good news
+
+**Bench Runbook**:
+One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
+_Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
 
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.

@@ -300,10 +300,16 @@ build a path to X.
 
 ## Builds and toolchain (serialized - one build machine-wide)
 
-Only one PlatformIO build may run on the machine, so wrap **every** invocation
-in `flock /tmp/protoartoo-pio.lock` - `pio run`, `pio test`, `make build`, and
-the slice gate, which builds internally. Hold every worker to it; the gate
-block you compare against is the one produced under the lock.
+Only one PlatformIO build may run on the machine, and the tooling now enforces
+that rather than asking every agent to remember it: `make` and the slice gate
+take `/tmp/protoartoo-pio.lock` themselves (AGENTS.md "The build lock"). Brief
+workers to run `make build` and the gate **plainly** - do not paste `flock` in
+front, which is now the nested case and is refused rather than waited on. For a
+contiguous multi-command window, brief
+`PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>`.
+
+`cat /tmp/protoartoo-pio.lock` names the current or last holder and the chip
+target it was building. That is where to start when an image size moves.
 
 The framework packages are shared by every worktree and are rebuilt **in
 place**, so one worktree's build changes what another links. The rebuild is

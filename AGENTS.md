@@ -253,15 +253,12 @@ first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
 which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
 line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Six rules the Makefile cannot enforce for you:
+Five rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
   own `PLATFORMIO_CORE_DIR`, selected from `BUILD_ENV`. A bare `pio run -e
   firebeetle2` swaps the artoo-esp32 Arduino core in place.
-- **One PlatformIO build at a time, machine-wide.** Two runs in one worktree
-  corrupt SCons state and return a plausible wrong answer; a single core dir is
-  not safe against concurrent package installs either.
 - **Seated controller: OTA + HTTP only.** USB flash/read fails in-PCB
   (GPIO15/SBUS strapping); unseat the ESP32 for USB. Crash/heap evidence comes
   over HTTP (`/api/coredump`, `/api/profiler`, `/api/logs`); procedures incl.
@@ -287,6 +284,48 @@ Six rules the Makefile cannot enforce for you:
   uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
   that had been built against the placeholder SSID. Copy it in when you create a
   worktree, and never commit it.
+
+### The build lock
+
+**One PlatformIO build at a time, machine-wide.** Two runs in one worktree
+corrupt SCons state and return a plausible wrong answer; a single core dir is
+not safe against concurrent package installs either. Several agents build here
+at once, in separate worktrees, and that is fine — the lock is what makes it
+fine. Do not wait for a window or schedule around anyone.
+
+This rule is enforced, not remembered: every `pio` invocation in the Makefile,
+and every pio phase of `tools/slice_verify.py`, goes through
+`tools/pio_lock.py`, which takes `/tmp/protoartoo-pio.lock` and waits there
+until it is free.
+
+So run `make build`, `make test` and the slice gate **plainly. Do not put
+`flock` in front of them.** Two locks on one file is the nested case: flock(2)
+locks belong to an open file description, so the inner acquire waits on the
+outer one and never returns. The lock recognises that shape — from the
+descriptor `flock(1)` leaves open across exec — and refuses it with the fix
+instead of hanging, but the form to type is now the bare one.
+
+For a contiguous window across several commands, which a both-chip-target
+ticket wants so the alternation is not interleaved:
+
+```
+PROTOARTOO_PIO_LOCK_HELD=1 flock /tmp/protoartoo-pio.lock <commands>
+```
+
+`PROTOARTOO_PIO_LOCK_HELD=1` tells everything underneath that the lock is
+already held, so nothing inside tries to take it again. A bare `pio` you type
+yourself is still outside the lock — one more reason the dual-target rule above
+routes through `make`; run `python3 tools/pio_lock.py pio run -e <env>` when you
+must call pio directly.
+
+The lock file says who holds it. Every field is derived, never passed in — pid,
+worktree, branch, target, command, timestamp, plus optional
+`PROTOARTOO_LOCK_OWNER` free text — written the moment the lock is taken and
+deliberately **left behind on release**: the stale record is what tells the next
+agent which chip target last touched the shared framework packages, which is
+where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
+without taking the lock, and a build that gives up waiting prints it. The pid
+names the last holder, not necessarily a live process — check with `kill -0`.
 
 ## Verification and Reporting
 
@@ -486,10 +525,20 @@ The gate binds on **what receives the push**, not on the act of pushing.
 | Push a `feature/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`, or `exp/` branch you own | Free — no approval |
 | `--force-with-lease` onto that same branch after a rebase | Free — no approval |
 | `gh issue develop` branch creation | Free — no approval |
+| Push a docs, chore, or agent-facing maintenance commit straight to `main` | Free — no approval |
 | Push to any shared integration branch (`phase/*` is retired history) | Explicit operator approval |
 | Open **or** merge a PR | Explicit operator approval |
 | Push a tag | Explicit operator approval |
-| Push to `main`, or self-merge any PR | Never, unconditionally |
+| Push substantive firmware work to `main` outside a PR | Never — it goes through a Mattias-approved PR |
+| Self-merge any PR | Never, unconditionally |
+
+**Docs and chore do not require a PR to `main`.** That is the post-release
+workflow (CONTEXT.md "Post-Release Main Workflow"), live since `v1.0.0` was
+tagged, and the Branch model table above says the same. What still needs a
+Mattias-approved PR is substantive firmware work — including an epic branch,
+which reaches `main` through one PR at closure. The last row is a separate rule
+and is not relaxed by any of this: no agent merges a PR, ever, whoever opened it
+and however small it is.
 
 Pushing worker branches is **encouraged**: commits that exist only in one local
 worktree have no backup, and origin is the backup. The repo is public, so branch
@@ -546,7 +595,9 @@ push to `main`. Mechanism and fallbacks: the docstring in
 
 ### Invariants
 
-- Never commit directly to `main`
+- Never land substantive firmware work directly on `main` — it goes through a
+  Mattias-approved PR. Docs, chore, and agent-facing maintenance commits may land
+  directly (CONTEXT.md "Post-Release Main Workflow")
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
 - Mattias approves every PR merge to `main`, unconditionally — no agent self-merge regardless of change size or risk
 - Merge method for ongoing feature-branch PRs is "Rebase and merge" (the one-time `phase/v1.0.0` exception is history in CONTRIBUTING.md)
