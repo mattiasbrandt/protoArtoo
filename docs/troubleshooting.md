@@ -96,6 +96,93 @@ curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest
 - `tcpAcceptRejectHeap`/`tcpAcceptRejectRate` climbing during normal use =
   the accept guards are shedding; check what is generating connection churn.
 
+### The quick read returns nothing at all — go to serial
+
+Under deep heap pressure the quick read above stops answering: `curl` gets no
+body, no JSON, nothing. That is not the controller being dead. **The serial
+Console keeps answering below the floor where HTTP stops**, and
+`system.status.health` still gives you the heap numbers.
+
+```bash
+python3 tools/console_client.py --port /dev/ttyUSB0 --send system.status.health
+# or sit at the Console interactively, with the port resolved for you:
+make console
+```
+
+```text
+< id=9 type=begin operation=system.status.health
+< id=9 type=field name=heapFree value=...
+< id=9 type=field name=heapLargestBlock value=1076
+< id=9 type=end status=ok outcome=completed
+```
+
+> **`heapLargestBlock` on that record is the number you want** — unlike the
+> `/api/status` field of the same name warned about above. The Console's
+> health snapshot fills it from `MALLOC_CAP_8BIT`
+> (`captureHealthSnapshot()`, `src/web/api_status_serializers.cpp`), which
+> is the pool the admission guards themselves measure and the same value
+> `/api/status` publishes separately as `heapLargest8bit`. One field name, two
+> capability masks, two surfaces.
+
+`system.status.health` answers with thirteen fields — estop, the two SBUS
+flags, web control, the WiFi and filesystem flags, `heapFree`, `heapMin`,
+`heapLargestBlock`, `wifiRssi`, `uptimeMs` and `resetReason`. The admission
+and Core 1 counters below are **not** among them and have no Console operation
+today: read them from `/api/status` once HTTP answers again.
+
+Why HTTP goes dark while serial does not:
+
+- **Connection admission sheds first, at `PA_ACCEPT_MIN_LARGEST_FREE_BLOCK`
+  (8500).** It runs in the socket-accept callback, before any HTTP parsing,
+  so the connection is closed before the request layer ever sees which path
+  was asked for (`src/web/web_admission_psychic.cpp`,
+  `admissionOpenCallback()`).
+- **`/api/status` has a lower floor of its own — and it never gets to use
+  it.** `webPathIsDiagnostic()` exempts `/api/status`, `/api/profiler`,
+  `/api/coredump` and the event stream down to
+  `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG` (7500) instead of the ordinary
+  9000, but that test is a *request*-layer test. When the accept guard is the
+  one refusing, the exemption is never reached.
+- **Serial is behind none of it.** The Console task owns the serial port and
+  needs no network, no socket and no connection admission, so the only
+  resource it depends on is the one the log ring and its own static buffers
+  already hold.
+
+Which layer refused is the fastest way to tell this case apart from a crash or
+a WiFi fault. Read the counters from `/api/status` once the board is back:
+
+- `tcpAcceptRejectHeap` climbing with `refusedHeapFloorDiag` still **0** is
+  this case exactly: connections shed at accept, so nothing was classified as
+  diagnostic.
+- `refusedHeapFloor`/`refusedHeapFloorDiag` climbing instead means requests
+  were reaching the request layer and being refused there — a shallower
+  pressure, and `/api/status` may well still answer.
+
+Measured on an unseated artoo-esp32 on 2026-09-05, running firmware and
+filesystem `v1.0.0-684-g017b168d+epic-serial-console`. Heap was driven down
+with six SSE clients (three admitted, the cap) plus sustained page and asset
+load:
+
+- `heapLargestBlock` on the serial record read **1 076 B** — below all three
+  floors (accept 8500, ordinary request 9000, diagnostic 7500).
+- `/api/status` **returned nothing at all**; `system.status.health` answered in
+  full over serial (`id=9`, complete field set, `end status=ok
+  outcome=completed`).
+- `refusedHeapFloorDiag` stayed **0** while `tcpAcceptRejectHeap` reached 42
+  and `refusedHeapFloor` 5 — the shape described above.
+- `failedAllocs` reached **358**: the guards shed at the accept and request
+  layers while allocations were still failing below them. Recovery needed no
+  reset (`uptimeMs` continuous, `resetReason` `POWERON` throughout) and
+  `heapLargest8bit` came back to 24 564.
+- Core 1 was untouched through the whole storm: `failsafeCount` 0,
+  `queueOverflowCount` 0.
+
+Attach safely first — see [Console interactive
+session](#console-interactive-session) below and
+[console.md](console.md#attach-a-serial-terminal); on the artoo-esp32 that
+means unseating the controller. The replayable bench row for this case is
+`@row 225 survival-path` in `tools/bench_rows/artoo_esp32.txt`.
+
 ### Deep read (profiler build)
 
 Flash `artoo_esp32_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
