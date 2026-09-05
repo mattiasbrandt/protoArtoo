@@ -1265,6 +1265,45 @@ class DetachAndReattach(unittest.TestCase):
             records2, closed2 = transport.send_line("b", timeout=2.0)
         self.assertTrue(closed2, "a later directive must still work against the reattached port")
 
+    def test_a_reattach_leaves_the_caller_a_live_fd_and_retires_the_original(self):
+        # 2026-09-05, #274 row 260: main() closed the NUMBER it opened after a
+        # replug row, which the reattach had already closed, so a passed row
+        # ended in EBADF and a non-zero exit. The transport must hand its
+        # caller the live fd, and the original number must already be gone.
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(fd1, self.slave1_path, 115200,
+                                                     settle_seconds=0)
+        transport.by_id = "usb-Fake-if00"
+        os.close(self.master1)
+        peer2 = FakeConsolePeer(self.master2, {"a": b"< id=1 type=result status=ok outcome=queued\n"})
+        self.addCleanup(peer2.close)
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover",
+                                return_value=[(self.slave2_path, "usb-Fake-if00")]), \
+             mock.patch.object(console_client.time, "sleep", return_value=None):
+            with contextlib.redirect_stdout(io.StringIO()):
+                transport.send_line("a", timeout=2.0)
+
+        self.assertGreaterEqual(transport.fd, 0, "the transport holds the reattached port")
+        self.assertNotEqual(transport.fd, fd1)
+        with self.assertRaises(OSError, msg="the original number was closed by the reattach"):
+            os.close(fd1)
+        os.close(transport.fd)  # what main() closes now; must not raise
+
+    def test_giving_up_leaves_no_fd_for_the_caller_to_close(self):
+        fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
+        transport = console_client.SerialTransport(
+            fd1, self.slave1_path, 115200, settle_seconds=0, reattach_timeout=0.2)
+        transport.by_id = "usb-Fake-if00"
+        os.close(self.master1)
+
+        with mock.patch.object(console_client.resolve_upload_port, "discover", return_value=[]), \
+             mock.patch.object(console_client.time, "sleep", return_value=None):
+            with self.assertRaises(console_client.ConsoleClientToolFailure):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    transport.send_line("a", timeout=2.0)
+        self.assertEqual(transport.fd, -1, "closed and not reopened: nothing left to close")
+
     def test_giving_up_after_the_bounded_wait_is_a_tool_failure(self):
         fd1 = console_client.open_posix_port(self.slave1_path, 115200, writable=True)
         transport = console_client.SerialTransport(
@@ -1762,6 +1801,20 @@ class DirectiveParsingAndHelpers(unittest.TestCase):
              mock.patch("builtins.input", return_value="") as mocked_input:
             console_client.run_pause("unplug the cable")
         mocked_input.assert_called_once()
+
+    def test_pause_renders_each_escaped_newline_as_its_own_step_line(self):
+        # A sheet line is one directive, but the operator reads steps: a
+        # literal two-character \\n in the message starts a new line.
+        out = io.StringIO()
+        with mock.patch.object(console_client.sys.stdin, "isatty", return_value=True), \
+             mock.patch("builtins.input", return_value=""), \
+             contextlib.redirect_stdout(out):
+            console_client.run_pause("Step 1: unplug.\\nStep 2: wait 5 seconds.\\nStep 3: press Enter here.")
+        lines = out.getvalue().splitlines()
+        self.assertEqual(lines[0], "[PAUSE] Step 1: unplug.")
+        self.assertEqual(lines[1].strip(), "Step 2: wait 5 seconds.")
+        self.assertEqual(lines[2].strip(), "Step 3: press Enter here.")
+        self.assertIn("press Enter", lines[3])
 
 
 class ReadLinesFdBurstDrain(unittest.TestCase):

@@ -1069,6 +1069,12 @@ class SerialTransport:
             os.close(self.fd)
         except OSError:
             pass
+        # -1 until the port is back: the number just closed may be reissued by
+        # the kernel to the next open() anywhere in this process, so nothing --
+        # least of all main()'s own close -- may touch it again. main() closes
+        # whatever fd the transport holds when it is done, never the number it
+        # opened, because after a reattach that number is history.
+        self.fd = -1
 
         deadline = time.monotonic() + self.reattach_timeout
         found: str | None = None
@@ -1411,7 +1417,14 @@ def run_pause(text: str) -> None:
         raise ScriptUsageError(
             f"pause: no controlling terminal to wait on (message: {text!r})"
         )
-    print(f"[PAUSE] {text}", flush=True)
+    # A sheet line is one line, but the person at the bench reads steps, so a
+    # literal two-character `\n` in the message starts a new line: the sheet
+    # stays one directive per line and the operator gets a numbered list.
+    lines = text.split("\\n")
+    print(f"[PAUSE] {lines[0]}", flush=True)
+    for line in lines[1:]:
+        print(f"        {line}", flush=True)
+    print("        (press Enter in this pane when done)", flush=True)
     input()
 
 
@@ -1692,7 +1705,14 @@ def main() -> int:
             print(f"ERROR: {e}", file=sys.stderr)
             return EXIT_TOOL_FAILURE
         finally:
-            os.close(fd)
+            # Close the fd the transport holds NOW, not `fd`: a detach/reattach
+            # (SerialTransport._reopen_after_detach) closes the original number
+            # and opens a new one, and a reattach that gave up leaves -1. Closing
+            # `fd` here after a replug row raised EBADF on the way out and turned
+            # a passed row into a traceback and a non-zero exit (2026-09-05,
+            # #274 row 260).
+            if transport.fd >= 0:
+                os.close(transport.fd)
 
     if args.interactive:
         if args.pyserial:
