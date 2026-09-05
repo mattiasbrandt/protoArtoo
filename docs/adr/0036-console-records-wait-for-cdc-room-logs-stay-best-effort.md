@@ -113,3 +113,20 @@ Two of this ADR's own Consequences are settled by the same slice (#270):
   dropped whole after the full 100 ms wait - on a transport whose `write()`
   cannot lose a byte in the first place. The reservation is now capped at what
   the transport can report (`CONSOLE_SERIAL_TX_ROOM_MAX`).
+
+## Amended 2026-09-05 (#275): "connected host" is not "live TX"
+
+The room-wait writes "only while the CDC reports a connected host" - the
+`Serial` (bool) check in `writeFrameCounted()`. That guard is weaker than it
+reads. On the P4 `Serial` is `HWCDC::isCDC_Connected()`, and the driver sets
+its `connected` latch from a RECEIVED packet too, in the RX branch of
+`hw_cdc_isr_handler()` (`HWCDC.cpp`). So the first byte a re-attaching host
+sends makes `connected` true - and therefore this room-wait proceed - while
+the transmit path is dead. `connected` is a host-present signal, not a
+TX-liveness one, and nothing in this ADR's record policy can tell the two
+apart: on a wedged endpoint every record still waits out
+`CONSOLE_RECORD_ROOM_WAIT_BOUND_MS` and is dropped whole, exactly as it would
+for an attached-but-not-reading host. That is why the #275 fix is upstream of
+this policy - a settle hold-off that stops the wedge being created (ADR 0037's
+amendment) - rather than a change to the wait here. Measured and diagnosed on
+the P4 (USJ hw_ver3) at `017b168d`; register evidence on #275.

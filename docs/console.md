@@ -389,17 +389,20 @@ the ring still holds, preceded by a `[log] dropped=<n>` for what wrapped while
 you were away. The artoo-esp32 has no such state — its port is live from
 startup — so it prints as it goes whether or not anyone is listening.
 
-> [!WARNING]
-> **That is the design, and it is not what the FireBeetle 2 does once the USB
-> cable has been out.** Measured on 2026-09-05 at `017b168d`: unplug the cable
-> and plug it back in with the board still powered, and the serial side stays
-> silent — no backlog, no `[log] dropped=<n>`, no prompt — and unplugging it
-> again does not bring it back. **A FireBeetle 2 gone quiet after a replug is
-> this fault, not a dead board**: the log ring keeps filling normally, so read
-> `/api/logs`, and the dashboard's command box is unaffected. What you type on
-> a silent link still runs, so don't retype a command there — least of all a
-> motion one. Details and reproduction:
-> [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476).
+> [!NOTE]
+> **The FireBeetle 2's serial console now survives a USB unplug.** Pull the
+> cable and plug it back in with the board still powered, and the console comes
+> back on its own — banner, prompt, and the backlog it held while you were
+> away, just as above. It settles the fresh connection for about a second
+> before it speaks, so give it a moment after you plug in.
+>
+> Older firmware could not do this: before this fix a FireBeetle 2 went silent
+> after a replug and only a reset brought the serial side back, while what you
+> typed on the silent link still ran. If you meet a FireBeetle 2 that stays
+> quiet after a replug and never recovers, it is running that older firmware —
+> read `/api/logs` and reflash. What that fault looked like and why it happened:
+> [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476)
+> and [#275](https://github.com/mattiasbrandt/protoArtoo/issues/275).
 
 **Heavy log traffic can't slow the droid down.** Driving, RC and the dome
 never wait for your terminal — they drop their line in the ring and carry
