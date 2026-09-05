@@ -374,7 +374,12 @@ a line.
 There is one loss neither marker covers: a terminal that is attached but has
 stopped reading can make a single log line miss its turn, and that line is
 then simply absent. `/api/logs` still has that one — so when a log line looks
-missing and no marker says it was dropped, that is where to look.
+missing and no marker says it was dropped, that is where to look. When that
+keeps happening — a terminal plugged in but not reading, so line after line is
+dropped — the log says so where you are already looking: a `serial
+backpressure` warning appears in **📋 Live Logs** (and in `/api/logs`), and a
+line carrying `dropped=<n>` follows once the terminal is reading again,
+counting how many lines were lost.
 
 None of that applies to the dashboard. It assembles a whole reply before
 sending it, so no part of an answer is dropped on the way, and the one case
