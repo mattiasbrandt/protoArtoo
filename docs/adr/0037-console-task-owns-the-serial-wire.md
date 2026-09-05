@@ -115,3 +115,29 @@ adapter binds, no other task writes it.**
 - The slice is a #206 sub-issue at `controller-upload-verified` on both boards,
   file-disjoint from the decision-1 slice (ADR 0011, 2026-09-04) except where
   the Console module's own mutex is narrowed.
+
+## Amended 2026-09-05 (#275): a settle window before the task speaks to the CDC
+
+The Console task owns the wire, and on the P4 that ownership now includes a
+hold-off after a USB CDC re-attach. Reading `Serial` (bool) is
+`HWCDC::isCDC_Connected()`, which - while `isPlugged() && !connected`, the
+state right after a host's bus reset - arms the IN-empty interrupt and calls
+`usb_serial_jtag_ll_txfifo_flush()`, committing a zero-length IN packet. On USJ
+hw_ver3 that packet, committed mid-enumeration before the host has configured
+the device, survives the reset: `serial_in_ep_data_free` stays 0, IN-empty
+never fires again, and every record is dropped whole thereafter - the permanent
+TX wedge #274 found and #275 diagnosed (register evidence on #275, H1).
+
+So the task no longer calls any HWCDC method blindly each poll. It polls
+`HWCDC::isPlugged()` - the side-effect-free SOF watchdog, not `Serial` - and on
+a genuine plugged edge (debounced against the watchdog's few-ms flap) it makes
+NO HWCDC call at all for `CONSOLE_CDC_SETTLE_MS` (`include/console_cdc_settle.h`):
+no drain, no read, no echo, no `isCDC_Connected()`. No speculative flush is
+committed while enumeration is in flight. After the window the two-poll #260
+attach debounce runs unchanged, and the first `isCDC_Connected()` lands on a
+configured endpoint - the state the proven cold-boot attach has always been in.
+The window and the debounce live in one host-testable inline unit; the #260
+debounce moved there unchanged. artoo-esp32 has no `isPlugged()`, is fed
+`plugged=true`, and never opens a window, so its behaviour is untouched.
+Verified across three replug cycles and a no-host boot on the P4; evidence on
+#275.

@@ -57,7 +57,16 @@
 #include "console_completion.h"
 #include "console_write_exclusion.h"
 #include "console_host_attach.h"
+#include "console_cdc_settle.h"
 #include "console_line_overflow.h"
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// The USB-Serial-JTAG register block, for the #275 probe in the main loop:
+// one interrupt-clear write at the plugged edge and one raw-status read per
+// poll while the first IN token is awaited. Same gate as src/main.cpp's CDC
+// block; artoo-esp32 has no such peripheral.
+#include "soc/usb_serial_jtag_struct.h"
+#endif
 
 // Include embedded-cli (vendored at lib/embedded-cli/)
 extern "C" {
@@ -487,36 +496,106 @@ void consoleTask(void* pvParameters) {
     // This allows us to measure the stack usage for command parsing + execution + record emission
     bool hwmLogged = false;
 
-    // Debounced host-presence tracking for USB CDC (re)attach detection
-    // (#260). `Serial` (bool) is board-portable on purpose, not gated by
-    // #ifdef:
-    //  - FireBeetle 2 (P4): Serial resolves to HWCDCSerial
-    //    (HardwareSerial.h's `#define Serial HWCDCSerial`, active when
-    //    ARDUINO_USB_MODE && ARDUINO_USB_CDC_ON_BOOT - platformio.ini's P4
-    //    envs). HWCDC::operator bool() is HWCDC::isCDC_Connected(), an
-    //    ISR-driven flag (HWCDC.cpp) that is true only once the host is
-    //    actually driving the link - a genuine attach/detach signal, not
-    //    just cable presence.
-    //  - artoo-esp32: Serial resolves to Serial0 (classic UART).
-    //    HardwareSerial::operator bool() reports only that the UART driver
-    //    is installed (HardwareSerial.cpp) - true forever once Serial.begin()
-    //    runs in setup(), long before this task starts. The debounce below
-    //    can therefore never see a second false->true transition on this
-    //    board: a UART bridge has no attach/detach concept, so this logic is
-    //    inert there by construction, matching #260's own framing (the fault
-    //    is P4/native-USB-CDC-specific) without a board #if.
-    // main.cpp's setup() (ARDUINO_USB_CDC_ON_BOOT block) documents the same
-    // HWCDC `connected` flag as capable of a "few-ms" flap even on a healthy
-    // link (the SOF watchdog behind isPlugged()). Requiring two consecutive
-    // 10 ms polls before committing an attach filters that out: one extra
-    // tick (<=10 ms) of reprint latency on a genuine attach, versus
-    // resetting a line an already-connected operator is mid-typing on a
-    // spurious blip.
-    bool hostConfirmedConnected = Serial;
-    bool hostRawPrevConnected = hostConfirmedConnected;
+    // Host presence for USB CDC: the #275 settle hold-off and the #260 attach
+    // debounce, in one host-testable unit (include/console_cdc_settle.h). Its
+    // header carries the full rationale; the short of it:
+    //  - On a genuine plugged edge (P4 only) the task makes NO call into the
+    //    CDC for CONSOLE_CDC_SETTLE_MS, so the mid-enumeration
+    //    isCDC_Connected() flush that wedges the endpoint is never committed.
+    //  - After the window the two-poll `Serial` debounce runs exactly as #260
+    //    had it, and a replug reaches isCDC_Connected() on a configured device.
+    //  - On artoo-esp32 there is no isPlugged(); the poll below is fed
+    //    plugged=true, so no window ever opens and the debounce runs every
+    //    poll as before - the same inert-by-construction the inline #260 logic
+    //    had, now expressed as data rather than a board #if.
+    ConsoleHostPresence hostPresence;
+    consoleHostPresenceInit(&hostPresence);
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // #275 probe state: the time from the plugged edge to the host's first IN
+    // token on the CDC data endpoint, logged at DEBUG. The edge itself is the
+    // settle unit's debounced edge (hostPresence.edgeThisPoll), so the probe
+    // and the functional bit-clear below fire on the same genuine edge.
+    uint32_t probeEdgeMs = 0;
+    bool probeAwaitingInToken = false;
+#endif
 
     // Main loop: read from UART and process through embedded-cli
     while (true) {
+        // Host presence for this poll, read BEFORE any call into the serial
+        // transport. On the P4 `plugged` is HWCDC::isPlugged() - the SOF
+        // watchdog, a side-effect-free load - deliberately NOT `Serial`
+        // (bool), which is isCDC_Connected() and commits a packet
+        // mid-enumeration (#275). On artoo-esp32 there is no isPlugged() and
+        // `plugged` is a constant true, so the settle window never opens.
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+        const bool plugged = HWCDC::isPlugged();
+#else
+        const bool plugged = true;
+#endif
+        const uint32_t nowMs = millis();
+
+        // #275 settle hold-off + #260 attach debounce, decided together. Runs
+        // first so its debounced edge (hostPresence.edgeThisPoll) is known
+        // before the register clear and the drain below.
+        const ConsoleHostPoll hostPoll = consoleHostPresencePoll(&hostPresence, plugged, nowMs);
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+        // At a genuine plugged edge, clear the stale host-activity raw bits
+        // (#275 critic pass 1). This is SETTLE LOGIC, not diagnostics: the one
+        // that matters is bit 3 `serial_in_empty`. A replug after an IDLE
+        // console leaves that raw bit set from the last host pickup before the
+        // detach and never cleared -- the empty console let the ISR's empty
+        // branch disable IN-empty (`int_ena` bit 3 clear), so the ISR never
+        // ran to clear it. When the settle window closes and isCDC_Connected()
+        // re-arms IN-empty (HWCDC.cpp), that stale raw bit fires the interrupt
+        // at once and its handler sets `connected = true` (HWCDC.cpp:148) with
+        // NO host pickup behind it. `Serial` then reads connected up to ~10 s
+        // before the host actually opens the port: the drain writes the banner
+        // and log lines into a host that is not there (dropped, and a plain
+        // drop is unmarked), and that surviving backlog is exactly what a
+        // cooked-mode host tty echoes back into the board's line buffer during
+        // its open -- which corrupted the first command in the coordinator's
+        // row-260 cycle 2. Clearing bit 3 here means the window closes with the
+        // raw bit clear, so `connected` waits for the host's real first EP1
+        // pickup (`cdc intoken`), and `cdc attached` then follows it.
+        //
+        // Safe because this is the DEBOUNCED edge (a real detach, >=2 unplugged
+        // polls): on such an edge the console was idle and IN-empty is not
+        // armed, so no live wakeup can be lost. A momentary SOF-watchdog flap
+        // is not a debounced edge and never reaches here. The other bits
+        // cleared -- 8 in_token EP1, 12 rts_chg, 13 dtr_chg, 14/15 line
+        // coding -- are stale host-activity indicators no driver consumes;
+        // clearing them lets the intoken probe below read post-edge activity.
+        // The probe snapshot is taken BEFORE the clear so it captures the
+        // stale state (this is the instrument that found the bug).
+        if (hostPresence.edgeThisPoll) {
+            consoleCdcProbeLog("edge");
+            USB_SERIAL_JTAG.int_clr.val = (1u << 3) | (1u << 8) | (1u << 12) | (1u << 13) |
+                                          (1u << 14) | (1u << 15);
+            probeEdgeMs = nowMs;
+            probeAwaitingInToken = true;
+        }
+        // Edge-to-first-IN-token, logged at DEBUG: an IN token on EP1 is the
+        // host both configured and reading, and `cdc attached` must follow it.
+        if (probeAwaitingInToken && (USB_SERIAL_JTAG.int_raw.val & (1u << 8))) {
+            probeAwaitingInToken = false;
+            PA_LOG_DEBUG(TAG, "cdc intoken +%lu ms after plugged edge",
+                         (unsigned long)(nowMs - probeEdgeMs));
+            consoleCdcProbeLog("intoken");
+        }
+#endif
+
+        if (hostPoll == CONSOLE_HOST_POLL_HOLD) {
+            // Silent this poll: no drain, no `Serial` read, no echo, no HWCDC
+            // call of any kind, so the isCDC_Connected() flush that wedges the
+            // endpoint is never committed while enumeration is in flight.
+            // Bytes the host sends meanwhile wait in the CDC receive queue
+            // (CONSOLE_SERIAL_RX_QUEUE_BYTES) and are read after the window.
+            vTaskDelay(pdMS_TO_TICKS(CONSOLE_POLL_IDLE_MS));
+            continue;
+        }
+
         // Drain the Log Ring first (ADR 0037). Anything any task logged while
         // this one slept belongs on the wire before this poll's keystrokes
         // echo back, and the redraw each drained line carries repaints the
@@ -547,33 +626,44 @@ void consoleTask(void* pvParameters) {
             hwmLogged = true;
         }
 
-        // Debounced (re)attach edge: two consecutive "connected" polls after
-        // being unconfirmed. Reset the input line and reprint the ready
-        // banner + invitation (#260) so a reattaching operator is never left
-        // staring at a blank screen with a stale, half-typed command behind
-        // it. This check and the reset it triggers run BEFORE the byte-drain
-        // loop below so the synthetic Enter consoleResetInputForAttach()
-        // queues is always ahead, in embedded-cli's FIFO, of any real bytes
-        // this same poll reads from the transport (embeddedCliReceiveChar is
-        // documented single-caller/ordered, see console_host_attach.h).
-        bool hostRawNowConnected = Serial;
-        if (hostRawNowConnected) {
-            if (hostRawPrevConnected && !hostConfirmedConnected) {
-                hostConfirmedConnected = true;
-
-                consoleSerialWriteText(CONSOLE_READY_BANNER);
-
-                consoleResetInputForAttach(embeddedCli);
-                PA_LOG_INFO(TAG, "host attached: line reset, prompt reprinted");
-            }
-        } else {
-            // Eager on the way down: a false sample just means the next
-            // attach needs to re-confirm over two polls again. Getting this
-            // "wrong" on a momentary blip only costs one extra tick of
-            // reprint latency, never a missed or duplicated reset.
-            hostConfirmedConnected = false;
+        // Genuine replug just settled (#275 critic pass 1, row 260): clear any
+        // line buffered before the detach NOW, before this poll reads the
+        // host's next command. A host that reattaches and sends immediately
+        // sets `connected` via RX and has its bytes read on the very poll the
+        // #260 connected-debounce below only begins confirming, so the reset
+        // there lands one poll too late and the pre-detach fragment would
+        // swallow that first command. The window only opens on a debounced
+        // edge, so this fires on a real replug, never a flap. Clear only, no
+        // reprint: `connected` may still be false here (the host has not opened
+        // yet), and the banner + prompt come from the ATTACHED path below once
+        // the host's real pickup lands -- nothing is written into no host.
+        if (hostPresence.windowJustClosed) {
+            embeddedCliResetInput(embeddedCli);
         }
-        hostRawPrevConnected = hostRawNowConnected;
+
+        // Debounced (re)attach edge, decided by the settle unit above (its
+        // ATTACHED result is the two-consecutive-connected-polls edge #260
+        // used to compute inline here). Reset the input line and reprint the
+        // ready banner + invitation so a reattaching operator is never left
+        // staring at a blank screen with a stale, half-typed command behind
+        // it. This runs BEFORE the byte-drain loop below so the synthetic
+        // Enter consoleResetInputForAttach() queues is always ahead, in
+        // embedded-cli's FIFO, of any real bytes this same poll reads from the
+        // transport (embeddedCliReceiveChar is documented single-caller/
+        // ordered, see console_host_attach.h).
+        if (hostPoll == CONSOLE_HOST_POLL_ATTACHED) {
+            consoleSerialWriteText(CONSOLE_READY_BANNER);
+
+            consoleResetInputForAttach(embeddedCli);
+            PA_LOG_INFO(TAG, "host attached: line reset, prompt reprinted");
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+            // #275 probe, point 2: the peripheral as the banner write above
+            // left it, the moment `Serial` first read connected. After the
+            // fix this is on a configured endpoint, so it drains rather than
+            // wedging - a clean `attached` snapshot is the fix working.
+            consoleCdcProbeLog("attached");
+#endif
+        }
 
         // Process any available serial data.
         //

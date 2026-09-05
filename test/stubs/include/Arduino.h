@@ -53,6 +53,12 @@ struct SerialStub {
     // that owns their defaults.
     static inline int availableForWriteValue = 100000;
     static inline bool connectedValue = true;
+    // Cable presence as HWCDC::isPlugged() reports it on the P4 (#275): the
+    // SOF watchdog, independent of connectedValue exactly as the driver's
+    // `connected` latch is independent of isPlugged(). Read through isPlugged()
+    // below so a test's poll reads like src/tasks/console_task.cpp's, and the
+    // settle unit (include/console_cdc_settle.h) can be driven on the host.
+    static inline bool pluggedValue = true;
 
     // Bytes handed to write(), across however many calls were made, plus a
     // count of those calls. Deliberately separate from the writeChar capture
@@ -63,6 +69,11 @@ struct SerialStub {
     static inline size_t capturedLen = 0;
     static inline int writeCallCount = 0;
     static inline int availableForWriteCallCount = 0;
+    // How many times `Serial` was read as a bool. On the P4 every such read is
+    // HWCDC::isCDC_Connected(), which commits a packet while plugged and not
+    // yet connected, so a unit that must NOT touch the transport during the
+    // CDC settle window is held to it by this count (console_cdc_settle.h).
+    static inline int boolCallCount = 0;
 
     template<typename... Args>
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
@@ -89,7 +100,14 @@ struct SerialStub {
         availableForWriteCallCount++;
         return availableForWriteValue;
     }
-    operator bool() const { return connectedValue; }
+    // Cable presence, side-effect free, like HWCDC::isPlugged() (the SOF
+    // watchdog). Not counted in boolCallCount: it is the safe read the settle
+    // unit is allowed to make during the CDC hold-off (console_cdc_settle.h).
+    static bool isPlugged() { return pluggedValue; }
+    operator bool() const {
+        boolCallCount++;
+        return connectedValue;
+    }
 };
 extern SerialStub Serial;
 
@@ -105,6 +123,8 @@ inline void serialStubReset() {
     SerialStub::capturedBuf[0] = '\0';
     SerialStub::writeCallCount = 0;
     SerialStub::availableForWriteCallCount = 0;
+    SerialStub::pluggedValue = true;
+    SerialStub::boolCallCount = 0;
 }
 
 // millis() stub — used by failsafe gate and other timing code
