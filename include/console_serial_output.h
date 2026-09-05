@@ -97,6 +97,43 @@ static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 // empties the whole ring in one call, exactly as before.
 static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROOM_WAIT_BOUND_MS;
 
+// How many CONSECUTIVE frames must be dropped after their room-wait, while
+// `Serial` reads a host present, before the sink reports Serial Backpressure
+// (CONTEXT.md) in the Log Ring (#276). Decided at the 2026-09-05 grilling and
+// counted in writeFrameCounted() (console_serial_output.cpp), the one place a
+// frame can be dropped:
+//
+//  - The first two drops are silent. A single drop is routine: the last frame
+//    of a session meets a host that has just closed its port, and #275
+//    measured exactly one `cdc drop` after every clean replug cycle, at the
+//    moment the client closed. Reporting it would be a WARN per Ctrl-C.
+//  - The third writes ONE line to the Log Ring, at WARN, naming the state:
+//      [ConsoleTask] serial backpressure: host attached but not reading, serial output dropped until it drains
+//    Nothing is refused: a command typed on such a link still runs, and its
+//    records still wait and drop exactly as ADR 0036 has them. The line is a
+//    Log Ring line like any other -- after the bind paLogLine() only appends
+//    (ADR 0037, src/main.cpp) -- so it cannot recurse into the write path it
+//    reports on, and the drain carries it to the wire once the link drains.
+//  - The next frame that reaches the wire after a room-wait ends the episode
+//    and writes ONE line at INFO carrying the whole episode's count, the two
+//    silent drops included, through consoleSerialFormatDroppedSuffix() so the
+//    idiom cannot drift from the closing record's and the eviction marker's:
+//      [ConsoleTask] serial backpressure over: serial output flowing again dropped=<n>
+//    A room-waited write is the sink's only evidence of draining. A write that
+//    did not wait -- an echoed keystroke, the banner -- is attempted blind and
+//    its bytes may go nowhere, so it neither ends an episode nor starts one;
+//    the operations a non-reading host keeps typing are echoed, and those
+//    echoes must not read as recoveries.
+//  - A drop into no host (`Serial` false) is the detached state, not
+//    backpressure (CONTEXT.md), and leaves the count as it was.
+//
+// artoo-esp32 is unchanged by construction rather than by #if: UART0's write
+// blocks until the FIFO takes every byte and the reservation is capped at that
+// FIFO (CONSOLE_SERIAL_TX_ROOM_MAX below), so a frame cannot be dropped there
+// and the count never reaches this number. The native build compiles the
+// counter for the same reason: it is what the sink's suite proves.
+static constexpr uint32_t CONSOLE_SERIAL_BACKPRESSURE_REPORT_AT = 3;
+
 // The most transmit room `Serial.availableForWrite()` can EVER report on this
 // board, and therefore the largest reservation a room-wait may ask for. A
 // waiter that asks for more than this waits out its whole bound and then drops
