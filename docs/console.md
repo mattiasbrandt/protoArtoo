@@ -353,7 +353,7 @@ answer. So a log line produced during a long listing lands *between* two lines
 of that listing rather than after the whole thing, and what you read is the
 order things actually happened in, to within one record or one poll.
 
-**When output is lost, it says so.** Two markers, both carrying the same
+**Two markers tell you when output was lost**, both carrying the same
 `dropped=<n>` count:
 
 ```text
