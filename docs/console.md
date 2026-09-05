@@ -331,6 +331,126 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `not-executable` | This entry is not something you run — an event, or one of the [motion commands not yet wired](#what-doesnt-work-here-yet) |
 | `executor-not-ready` | Recognised, but the firmware doesn't have a way to run it yet |
 
+## While the log is printing
+
+The controller's log never pauses for you, and it doesn't have to — the
+Console is built around printing over the top of whatever you are doing.
+
+**A log line arriving while you type doesn't cost you the line.** The Console
+clears what's on the screen, prints the log line whole, then reprints the
+prompt with your half-finished command on it and the cursor back where you
+left it. Keep typing. Enter runs exactly the command you typed, never the log
+text that landed around it, and no line is ever printed inside another one —
+each log line and each record is written to the port in one piece.
+
+**Nothing is held back for later.** Output isn't collected up somewhere to be
+printed at you in blocks — there is no second queue between the log and your
+terminal. The log ring — the same one
+[`system.status.logs`](#reading-the-log-ring) and `/api/logs` read — is where
+a line waits, and the Console keeps emptying it as it goes, including partway
+through answering you. That is why a log line that happens during a long
+listing lands *between* two lines of that listing rather than after the whole
+thing: what you read back is the order things really happened in, give or take
+a line.
+
+**Two markers tell you when output was lost**, both carrying the same
+`dropped=<n>` count:
+
+```text
+[log] dropped=7
+< id=12 type=end status=ok outcome=completed dropped=2
+```
+
+- A `[log] dropped=<n>` line on its own means the controller logged faster
+  than the port could carry it, for long enough that the ring wrapped: exactly
+  that many log lines are missing at that point. They are gone from the ring
+  too, so `/api/logs` doesn't have them either. Turn the level down
+  (`system.config.log-level value=info`), or read the log while the load is on
+  rather than after it.
+- `dropped=<n>` on a `result` or `end` line counts records of *that answer*
+  that never got onto the port. The Request ID still ties the rest of the
+  group together.
+
+There is one loss neither marker covers: a terminal that is attached but has
+stopped reading can make a single log line miss its turn, and that line is
+then simply absent. `/api/logs` still has that one — so when a log line looks
+missing and no marker says it was dropped, that is where to look.
+
+None of that applies to the dashboard. It assembles a whole reply before
+sending it, so no part of an answer is dropped on the way, and the one case
+where a reply doesn't fit ([`system.status.logs`](#reading-the-log-ring)) is
+announced by its own `[CUT]` line rather than by a count (see [Use the Console
+from the dashboard](#use-the-console-from-the-dashboard)).
+
+**On the FireBeetle 2, attaching late gives you the backlog.** With no
+terminal attached that board's Console holds the ring rather than writing into
+a port nobody is reading, so attaching part-way through a run prints whatever
+the ring still holds, preceded by a `[log] dropped=<n>` for what wrapped while
+you were away. The artoo-esp32 has no such state — its port is live from
+startup — so it prints as it goes whether or not anyone is listening.
+
+> [!WARNING]
+> **That is the design, and it is not what the FireBeetle 2 does once the USB
+> cable has been out.** Measured on 2026-09-05 at `017b168d`: unplug the cable
+> and plug it back in with the board still powered, and the serial side stays
+> silent — no backlog, no `[log] dropped=<n>`, no prompt — and unplugging it
+> again does not bring it back. **A FireBeetle 2 gone quiet after a replug is
+> this fault, not a dead board**: the log ring keeps filling normally, so read
+> `/api/logs`, and the dashboard's command box is unaffected. What you type on
+> a silent link still runs, so don't retype a command there — least of all a
+> motion one. Details and reproduction:
+> [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476).
+
+**Heavy log traffic can't slow the droid down.** Driving, RC and the dome
+never wait for your terminal — they drop their line in the ring and carry
+straight on. A slow terminal, a link that has gone quiet, or no terminal at
+all costs the moving parts of the droid nothing.
+
+Measured on both boards on 2026-09-05, running firmware and filesystem
+`v1.0.0-684-g017b168d+epic-serial-console`: with the log at `debug`, eighteen
+whole log lines arrived on the artoo-esp32 while a command sat half-typed, and
+the line that finally ran was still exactly the `system.status.health` that
+had been typed; the FireBeetle 2 redrew the prompt four times through the same
+row with every log line intact. Five `system.status.health` queries
+back-to-back on the FireBeetle 2 all completed with no `dropped=`; both
+boards' whole command sheets replayed with no dropped records and no
+timeouts; and nothing on the moving side of the droid registered a hiccup
+through any of it — `failsafeCount` and `queueOverflowCount` both stayed at 0.
+An over-length line doesn't disturb the session either: a 70-byte line on both
+boards, and a 260-byte one on the FireBeetle 2, were each refused
+`invalid reason=line-too-long` and the very next command answered normally.
+Those rows are replayable — `229 concurrency-and-overflow` and
+`274 guards-and-typing` on the artoo-esp32, `229 sustained-traffic-and-overflow`
+and `265 p4-sink-reliability` on the FireBeetle 2, in `tools/bench_rows/`; see
+[console-client.md](console-client.md).
+
+## Two sessions at once
+
+Serial and the dashboard are two doors into the same Console. Both are open at
+the same time, neither locks the other out, and the answers are the same.
+
+- **You share one Request ID counter.** The numbers come from the firmware,
+  not from your session, so a serial session sees gaps while someone works in
+  the dashboard, and the other way round (see [Reading the
+  answer](#reading-the-answer)).
+- **Answers go back to whoever asked.** A command run in the dashboard does
+  not print on the serial terminal, and vice versa. What both surfaces *do*
+  share is the log: anything the firmware logs on the way lands in the ring,
+  so it reaches the serial terminal and the dashboard's **📋 Live Logs** panel
+  alike.
+- **The same question gets the same answer on both.** Measured on 2026-09-05
+  on an artoo-esp32: `system.status.health` asked over serial and from the
+  dashboard's command box returned an identical set of fields, in the same
+  order. The one deliberate difference is `help`, whose `detach_key` field
+  only exists on serial — there is no terminal to detach from in a browser.
+- **Two settings writes can't overwrite each other.** Every writer — this
+  Console, the dashboard's Setup forms, and the API behind them — goes through
+  one write window. If another writer is inside it when your command arrives,
+  the command answers `unavailable reason=temporarily-unavailable` and changes
+  nothing at all; try it again. On a `config`-type command that reason means
+  precisely this and nothing else; on an *action* it means something different
+  — see [Reading the answer](#reading-the-answer).
+
 ## Web control: what actions need
 
 Enable **Web control** (the **✓ Enable Web Control** button under Safety
