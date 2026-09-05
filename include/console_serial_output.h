@@ -340,7 +340,8 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // Diagnostic probe for the P4 CDC transmit wedge (#275): one DEBUG line with
 // the USB-Serial-JTAG peripheral's state as the Console task sees it, tagged
-// `where` so the three call sites read apart in /api/logs:
+// `where` so the four call sites (edge, intoken, attached, drop) read apart
+// in /api/logs:
 //
 //   [ConsoleTask] cdc <where> conf=<ep1_conf> raw=<int_raw> ena=<int_ena>
 //                 st=<int_st> fram=<sof frame index> room=<availableForWrite>
