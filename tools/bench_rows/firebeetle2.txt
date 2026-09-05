@@ -31,14 +31,23 @@ pause Flash firebeetle2 (both firmware and filesystem images) and attach the ter
 send help
 send system.status.health
 
-# #260 - attach / detach / reconnect / no-host. The five steps from #215's
-# caution box: a partial command left mid-line survives a detach as an
-# empty, correctly-reprinted prompt, not as an inherited fragment.
+# #260 / #275 - detach / reconnect. A partial command left mid-line survives
+# a detach as an empty, correctly-reprinted prompt, not as an inherited
+# fragment, and the serial side comes back on its own after the replug
+# (#275's settle window). The board MUST be powered from its OTG port for
+# this row: pulling the CDC cable on a USB-powered P4 is a reboot, not a
+# detach. The client reconnects by itself once the port is back, so every
+# step the operator takes happens BEFORE pressing Enter at the pause.
+#
+# Cut on purpose (2026-09-05, #274): the "detach with `help` still printing"
+# variant that stood here. A listing finishes within about a second of the
+# detach on a host that keeps reading, and a hand replug lands seconds later,
+# so a replug cannot reach the firmware mid-emission from this bench; nothing
+# a person can do here evidences that cell, and the paused client cannot type
+# the listing for them.
 @row 260 detach-replug
 raw drive.action.mo
-pause Unplug the USB cable now, then press Enter here once it is reattached
-send system.status.health
-pause Repeat the detach with `help` output still printing (mid-stream), then press Enter once reattached
+pause Step 1: unplug the CDC cable from the board (the board stays powered from the OTG port).\nStep 2: wait 5 seconds.\nStep 3: plug the CDC cable back in.\nStep 4: wait 5 seconds.\nStep 5: press Enter here, in this pane. The client reconnects by itself and sends the next command.
 send system.status.health
 
 # #219 - operations/operations type=<t> list every catalog entry over the
