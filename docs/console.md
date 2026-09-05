@@ -343,15 +343,15 @@ left it. Keep typing. Enter runs exactly the command you typed, never the log
 text that landed around it, and no line is ever printed inside another one —
 each log line and each record is written to the port in one piece.
 
-**Nothing is held back for later.** There is no separate output queue and
-nothing is paged: the log ring — the same one
-[`system.status.logs`](#reading-the-log-ring) and `/api/logs` read — *is* the
-queue, and the Console empties it at three points: every poll of its own
-cadence (10 ms while you are idle, 1 ms while your keystrokes are arriving),
-once more just before it starts a command, and again between the records of an
-answer. So a log line produced during a long listing lands *between* two lines
-of that listing rather than after the whole thing, and what you read is the
-order things actually happened in, to within one record or one poll.
+**Nothing is held back for later.** Output isn't collected up somewhere to be
+printed at you in blocks — there is no second queue between the log and your
+terminal. The log ring — the same one
+[`system.status.logs`](#reading-the-log-ring) and `/api/logs` read — is where
+a line waits, and the Console keeps emptying it as it goes, including partway
+through answering you. That is why a log line that happens during a long
+listing lands *between* two lines of that listing rather than after the whole
+thing: what you read back is the order things really happened in, give or take
+a line.
 
 **Two markers tell you when output was lost**, both carrying the same
 `dropped=<n>` count:
@@ -391,20 +391,20 @@ startup — so it prints as it goes whether or not anyone is listening.
 
 > [!WARNING]
 > **That is the design, and it is not what the FireBeetle 2 does once the USB
-> cable has been out.** Measured on 2026-09-05 at `017b168d`: after the CDC
-> link is detached and reattached with the board still powered, the serial
-> side stays silent — no backlog, no `[log] dropped=<n>`, no prompt — and
-> replugging again does not recover it. **A FireBeetle 2 gone quiet after a
-> replug is this fault, not a dead board**: the log ring keeps filling
-> normally, so read `/api/logs`, and the dashboard's command box is
-> unaffected. What you type on a silent link still runs, so don't retype a
-> command there — least of all a motion one. Details and reproduction:
+> cable has been out.** Measured on 2026-09-05 at `017b168d`: unplug the cable
+> and plug it back in with the board still powered, and the serial side stays
+> silent — no backlog, no `[log] dropped=<n>`, no prompt — and unplugging it
+> again does not bring it back. **A FireBeetle 2 gone quiet after a replug is
+> this fault, not a dead board**: the log ring keeps filling normally, so read
+> `/api/logs`, and the dashboard's command box is unaffected. What you type on
+> a silent link still runs, so don't retype a command there — least of all a
+> motion one. Details and reproduction:
 > [#274, defect comment](https://github.com/mattiasbrandt/protoArtoo/issues/274#issuecomment-5551336476).
 
-**Heavy log traffic can't slow the droid down.** A log call from one of the
-real-time tasks on Core 1 (drive, RC, dome link) copies its line into the ring
-and returns; it never touches the serial port and never waits for it. Only the
-Console writes the port, and it runs on Core 0.
+**Heavy log traffic can't slow the droid down.** Driving, RC and the dome
+never wait for your terminal — they drop their line in the ring and carry
+straight on. A slow terminal, a link that has gone quiet, or no terminal at
+all costs the moving parts of the droid nothing.
 
 Measured on both boards on 2026-09-05, running firmware and filesystem
 `v1.0.0-684-g017b168d+epic-serial-console`: with the log at `debug`, eighteen
@@ -414,9 +414,10 @@ had been typed; the FireBeetle 2 redrew the prompt four times through the same
 row with every log line intact. Five `system.status.health` queries
 back-to-back on the FireBeetle 2 all completed with no `dropped=`; both
 boards' whole command sheets replayed with no dropped records and no
-timeouts; and Core 1's `failsafeCount` and `queueOverflowCount` stayed at 0
-throughout. An over-length line doesn't disturb the session either: a 70-byte
-line on both boards, and a 260-byte one on the FireBeetle 2, were each refused
+timeouts; and nothing on the moving side of the droid registered a hiccup
+through any of it — `failsafeCount` and `queueOverflowCount` both stayed at 0.
+An over-length line doesn't disturb the session either: a 70-byte line on both
+boards, and a 260-byte one on the FireBeetle 2, were each refused
 `invalid reason=line-too-long` and the very next command answered normally.
 Those rows are replayable — `229 concurrency-and-overflow` and
 `274 guards-and-typing` on the artoo-esp32, `229 sustained-traffic-and-overflow`

@@ -121,8 +121,9 @@ make console
 > health snapshot fills it from `MALLOC_CAP_8BIT`
 > (`captureHealthSnapshot()`, `src/web/api_status_serializers.cpp`), which
 > is the pool the admission guards themselves measure and the same value
-> `/api/status` publishes separately as `heapLargest8bit`. One field name, two
-> capability masks, two surfaces.
+> `/api/status` publishes separately as `heapLargest8bit`. The same name, two
+> different measurements, one on each surface — under pressure the serial one
+> is the one to trust.
 
 `system.status.health` answers with thirteen fields — estop, the two SBUS
 flags, web control, the WiFi and filesystem flags, `heapFree`, `heapMin`,
