@@ -501,6 +501,10 @@ _Avoid_: frontend, shell, REPL, second backend, shared serial writer, log mutex
 The in-memory, size-bounded record of every log line the firmware emits, read by the log endpoint and by the serial adapter's drain. It is the authoritative copy of a log line; a line is lost only when newer lines evict it before a reader reaches it, and the serial drain marks such a gap on the wire. A transport never drops a log line on its own.
 _Avoid_: serial log, log buffer (when the ring is meant), best-effort serial copy
 
+**Serial Backpressure**:
+The state in which a host is present on the serial adapter but its transmit path is not draining, so Console Records and drained log lines are dropped whole after their room-wait; sustained backpressure is reported in the Log Ring, a single drop is not, and it is distinct from a detached host (nothing is written) and from an endpoint wedge (permanent, endpoint-level, fixed in #275).
+_Avoid_: blind link (the operator's view, not a firmware state), wedge, slow host, not connected
+
 **Measured Chain**:
 A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0038).
 _Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
@@ -616,6 +620,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).
 
 - The **Controller Console** has exactly two **Console Adapters**; every **Operation** behaves identically through both, on every board.
+- **Serial Backpressure** is a property of the serial **Console Adapter**'s transport, never of the **Controller Console**: it changes what reaches the wire, never what an **Operation** does, and it is reported in the **Log Ring**, not refused at the adapter (grilling 2026-09-05).
 - An **Operation** of type config is an **Apply Core** plus its **Commit Step**; of type status, a **Zone Snapshot** rendered as **Console Records**; of type action, the existing dispatch core returning an outcome instead of nothing.
 - Every **Console Record** carries one **Request ID**; a write that entered through a **Console Adapter** carries its **Console Source** as its Command Source.
 - A **Console Client** drives exactly one **Console Adapter** per session and adds no behaviour to the **Controller Console**; a scripted client may address either adapter, which is what makes a parity transcript a one-program job.
