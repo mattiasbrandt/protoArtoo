@@ -281,11 +281,26 @@ be read:
 
 - If the help reader is not initialized (LittleFS unavailable, or native test
   without a mock reader), the `help_file_status` field is emitted with value
-  `unavailable`. All other help fields except `type` are omitted.
+  `unavailable`, and the file-resident prose fields - `display_name`,
+  `description` and `executor` - are omitted.
 - If the help file exists and the reader is initialized but a seek or read
   operation fails (e.g., file truncated or stale offsets), the `help_file_status`
-  field is emitted with value `unreadable`. All other help fields except `type`
-  are omitted.
+  field is emitted with value `unreadable`, and the same three prose fields are
+  omitted.
+- If a seek and a read both succeed but return a row belonging to a different
+  operation, `help_file_status` is `unreadable` as well, and the three prose
+  fields are omitted. This is the quiet half of "stale offsets": the offsets are
+  compiled into the firmware image, the rows live in the filesystem image, and
+  the two are flashed separately, so a firmware-only update can leave every
+  offset after an inserted row addressing its neighbour. Nothing fails - the
+  answer is simply another operation's prose. The first field of a row is the
+  operation name, so the firmware compares it and reports the file rather than
+  quoting text it cannot vouch for (#281).
+
+What is withheld is only that prose. The fields the in-image catalog owns -
+`type`, `available_on_board`, `available_in_build`, `requires_web_control`,
+`read_only`, `aliases`, `params` - do not come from the file and render
+regardless of its health (#219 D3).
 
 This field is only present when help text could not be retrieved in full; a
 successful help response contains no `help_file_status` field. This allows a
