@@ -195,3 +195,24 @@ raw lth
 key enter
 listen 2
 send system.config.log-level value=info
+
+# #243 - the WiFi module reboot that makes #189's bounded recovery ladder
+# provable on the shipping image instead of only in bringup/p4_hosted_bench.cpp.
+# Serial only, deliberately: over WiFi the answer would travel on the link the
+# command takes down. What the row must show is on #243.
+#
+# The ladder notices the module has gone when an SDIO WRITE fails, so an idle
+# controller may not detect it promptly - keep a dashboard tab or an SSE client
+# connected while this row runs, or you are timing the next write rather than
+# the recovery (#243 worker finding, 2026-09-06).
+#
+# A healthy fitted module recovers on attempt 1, so this row proves the ladder
+# STARTS AND RECOVERS. It is not expected to reach terminal Degraded, which
+# needs five consecutive failures; do not read its absence as a failure.
+@row 243 wifi-module-reboot
+send system.status.health
+send system.action.reboot-wifi-module
+listen 40
+send system.status.health
+pause Watch the link drop and come back. The board must stay up throughout: uptimeMs keeps climbing and resetReason does not change - it is the module that restarted, not the controller. Press Enter when the link is back.
+send system.status.health

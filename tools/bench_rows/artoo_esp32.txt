@@ -123,3 +123,12 @@ raw lth
 key enter
 listen 2
 send system.config.log-level value=info
+
+# #243 - the board-conditional half, and the only executable proof of it.
+# artoo-esp32 fits no WiFi module (PA_CAP_HOSTED_WIFI is 0, include/config.h),
+# so this must answer not-on-this-board from the catalog, never a runtime
+# failure. It is the first row in either sheet that can produce that reason:
+# until #243 no real operation could, because the catalog generator ignored a
+# row's board_capability entirely. Agent-runnable - it needs nobody at the bench.
+@row 243 wifi-module-reboot-not-on-this-board
+send system.action.reboot-wifi-module
