@@ -124,16 +124,23 @@ operations type=action
 
 ### 2.1 Operations listing output volume - no paging (decided, #219 R1)
 
-The `operations` command lists all 190 catalog entries. Measured, not
-estimated, against the shipped catalog table and `artoo_esp32`'s actual build
-flags (four profiler/admission-trace entries answer `not-in-this-build` on
-that board, each with a longer item line):
+The `operations` command lists all 194 catalog entries. Measured, not
+estimated, by summing each entry's rendered item line against the shipped
+catalog table (`src/console/console_catalog.cpp`) and `artoo_esp32`'s actual
+macro values: four profiler/admission-trace entries answer `not-in-this-build`
+on that board and one WiFi-module entry answers `not-on-this-board`, each with
+a longer item line. Line shape is `< id=<n> type=item value=<name> (<type>[,
+<reason>])` plus the CR LF terminator (#267), with a single-digit request id.
 
 ```
-entries: 190
-bytes on the wire: 10985
-seconds @115200 8N1 (10 bits/byte): 0.95
+entries: 194
+bytes on the wire: 11436
+seconds @115200 8N1 (10 bits/byte): 0.99
 ```
+
+Re-measured at #243. The previous figures (190 entries, 10985 B, 0.95 s) were
+taken at #219, before the catalog grew and before #267 replaced the bare LF
+terminator with CR LF - so they understated the wire cost on two counts.
 
 **Decision: no paging.** On both serial and web transports the listing is
 emitted in full, in one request. Justification:
@@ -162,7 +169,7 @@ emitted in full, in one request. Justification:
 
 **What "no paging" does NOT mean:** it does not mean the listing is atomic on
 the wire. Per section 3.1, records of one request may be separated by other
-lines - `operations`' 190 `item` records can have log lines from other tasks
+lines - `operations`' 194 `item` records can have log lines from other tasks
 land between them, and a reader reassembles the group by Request ID, not by
 assuming contiguity. The invariant that does hold, unconditionally, is
 section 6's "no line is ever interleaved inside another": every record and
