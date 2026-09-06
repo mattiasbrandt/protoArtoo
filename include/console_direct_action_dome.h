@@ -397,7 +397,7 @@ static void consoleExecuteDomeTestSequence(uint32_t requestId, const char* opera
 //
 // Not registered by name in the table below, and deliberately so: sixteen rows
 // here would be a second list of operation names to keep in step with the
-// registry, which is the shape ADR 0035 deleted from the catalog. The cascade
+// registry, which is the shape ADR 0037 deleted from the catalog. The cascade
 // in consoleExecuteCommand() asks the catalog whether an operation names a
 // sequence and calls this when it does, so a seventeenth DM: row added to
 // docs/action-registry.yaml executes with no edit to this file.

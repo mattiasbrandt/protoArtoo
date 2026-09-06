@@ -7,7 +7,7 @@ WHY THIS EXISTS
 chip, and a `static_assert` that the task's stack covers it. That assert stops
 the *constant* being trimmed. Nothing noticed the *chain* growing past it --
 which is the half of the problem #226 found the expensive way, with a reboot on
-both boards (ADR 0038).
+both boards (ADR 0040).
 
 A recorded chain is a hand-written number. This re-derives it from the linked
 image, so a slice that deepens a call chain past its recorded constant fails
@@ -37,7 +37,7 @@ emitted as data) are listed as not covered and are not guessed at.
 The Xtensa walk is a floor, not a bound: objdump emits a large share of that
 image's function bodies as data, so a chain crossing one is truncated. This
 check can therefore MISS growth and cannot report FALSE growth, which is what
-makes it safe to fail a build on (ADR 0038).
+makes it safe to fail a build on (ADR 0040).
 
 Two conditions fail beyond an exceedance, because both mean the recorded recipe
 no longer describes the image and a silent pass would be the drift this exists

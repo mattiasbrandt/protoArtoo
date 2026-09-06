@@ -110,7 +110,7 @@ move. It used to carry `ConsoleCatalogEntry::executor_ready`, generated as
 hardcoded it beside its own `# TODO: check if executor function is actually
 defined`. The Console meanwhile refused dozens of those same rows at run time
 with `unavailable reason=executor-not-ready`, so discovery and execution
-disagreed — and the operator only ever sees discovery. **ADR 0035** deleted
+disagreed — and the operator only ever sees discovery. **ADR 0037** deleted
 the field rather than teach the generator to derive readiness by parsing the
 C++ dispatch tables: a second source of truth about readiness is the shape
 that produced the defect, and it breaks silently every time a table moves.

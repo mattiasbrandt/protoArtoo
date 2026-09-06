@@ -182,7 +182,7 @@ size_t logBufferCopy(const LogBuffer* buf, char* out, size_t outSize);
 // That is the whole difference from copyNewLogLinesSince() (src/main.cpp),
 // which drops evicted lines without counting them.
 //
-// The Console task's serial drain is the caller (ADR 0037): it owns the wire,
+// The Console task's serial drain is the caller (ADR 0039): it owns the wire,
 // keeps one cursor, and writes what this hands it. Kept here, pure, so the
 // cursor arithmetic - the part with the wrap and the eviction accounting in it
 // - is provable on the host without a board or a task.

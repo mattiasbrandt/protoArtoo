@@ -2,7 +2,7 @@
 // include/console_cli_line.h
 //
 // Reconstructs a full command line from embedded-cli's split name/args pair
-// (ADR 0034; #219 R2 landed this narrowed to "help"/"operations" only, #221
+// (ADR 0036; #219 R2 landed this narrowed to "help"/"operations" only, #221
 // widens it to every command).
 //
 // embedded-cli's default onCommand callback hands the command name and its

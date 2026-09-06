@@ -488,7 +488,7 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // Task stacks (chip-target specific)
 // -----------------------------------------------------------------------------
 // EVERY project-created task has a Measured Chain and a compile-enforced floor
-// here, on both chip arms (ADR 0038). Thirteen of them: the ten created in
+// here, on both chip arms (ADR 0040). Thirteen of them: the ten created in
 // src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp)
 // and HostedRecovery (src/web/web_network_manager_hosted.cpp, which exists only
 // where PA_CAP_HOSTED_WIFI is 1, so twelve tasks on artoo-esp32 and thirteen on
@@ -803,7 +803,7 @@ constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;
 // This is half the guard. It fixes the constant to the chain; nothing here can
 // notice the CHAIN growing, because the chain is itself a recorded number. That
 // half is tools/check_task_stack_chains.py, which re-walks every recipe in
-// tools/task_stack_recipes.json against a linked image (ADR 0038).
+// tools/task_stack_recipes.json against a linked image (ADR 0040).
 static_assert(DRIVE_TASK_STACK_BYTES >= DRIVE_TASK_MEASURED_CHAIN_BYTES,
               "DRIVE_TASK_STACK_BYTES is below DriveTask's measured worst-case static chain");
 static_assert(RC_INPUT_TASK_STACK_BYTES >= RC_INPUT_TASK_MEASURED_CHAIN_BYTES,

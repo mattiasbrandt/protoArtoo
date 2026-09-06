@@ -2,7 +2,7 @@
 // src/console/console_module.cpp
 //
 // Controller Console module - transport-independent operation processor.
-// ADR 0034: one operation core below HTTP handlers, operation catalog from registry.
+// ADR 0036: one operation core below HTTP handlers, operation catalog from registry.
 //
 // Integrates the generated console_catalog with file-based help text in LittleFS.
 // Help file is opened once in setup() and held for the process lifetime.
@@ -13,7 +13,7 @@
 #include "console_catalog.h"
 #include "console_args.h"  // ConsoleArgs, consoleSplitCommandLine(), consoleParseArgs(),
                            // consoleValidateArgsAgainstSchema() - the shared argument
-                           // contract (#221, ADR 0034, docs/console-protocol.md s.1.2)
+                           // contract (#221, ADR 0036, docs/console-protocol.md s.1.2)
 
 #include <string.h>
 #include <ctype.h>
@@ -52,12 +52,12 @@
                                // - the existing validators the live RC trigger path already
                                // calls (#221 reuses them verbatim for the raw Marcduino console
                                // operations, rather than inventing a second set of format rules)
-#include "api_config.h"        // configCommitApplied() - the ADR 0034 Commit Step beside
+#include "api_config.h"        // configCommitApplied() - the ADR 0036 Commit Step beside
                                // configApply(), shared verbatim with handleConfigPost (#226) -
                                // and ConfigWriteLock, the one lock every config writer takes
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
 #include "api_wifi_apply.h"    // wifiApply(), wifiCommitApplied() - the POST /api/wifi
-                               // Apply Core and its ADR 0034 Commit Step, shared verbatim
+                               // Apply Core and its ADR 0036 Commit Step, shared verbatim
                                // with handleWifiPost (#227; the Commit Step was extracted
                                // for exactly this second caller in that ticket's phase 1)
 #include "api_helpers.h"       // parseBoolValue() - reused verbatim for rc.action.toggle-debug's
@@ -84,12 +84,12 @@
                                // `executor:` field for system.config.mood says configApply,
                                // which is wrong - see the status comment; not fixed here, that
                                // edit reaches the fenced data/console_help.txt)
-#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0034 Commit Step
+#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0036 Commit Step
                                // beside handleServoPost() (#221 remainder), reused verbatim by
                                // servo.action.open/close/set-position below
 #include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds
                                // handleServoPost() enforces for its own position_us range
-#include "api_identity.h"      // identitySetCommitApplied() - the ADR 0034 Commit Step beside
+#include "api_identity.h"      // identitySetCommitApplied() - the ADR 0036 Commit Step beside
                                // handleIdentityPost() (#221 remainder), reused verbatim by
                                // system.action.set-identity below
 #include "aux_led.h"           // AuxLedEffect, parseAuxLedEffect(), auxLedQueueSetColor/SetEffect()
@@ -217,7 +217,7 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
     // These three are the whole availability set help reports, and each is a
     // compile-time fact. There is deliberately no readiness field: whether an
     // executor is wired is answered by running the operation and reading its
-    // outcome/reason, never claimed at discovery (ADR 0035).
+    // outcome/reason, never claimed at discovery (ADR 0037).
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "available_on_board",
                            entry->available_on_board ? "true" : "false");
@@ -332,7 +332,7 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         }
     } else {
         // Help text not available - determine reason and emit explicit degradation status
-        // (ADR 0034: never degrade silently; missing, stale or unreadable help file is always reported)
+        // (ADR 0036: never degrade silently; missing, stale or unreadable help file is always reported)
         if (g_helpReader == nullptr) {
             // Reader not available
             if (sink->onRecordField) {
@@ -432,7 +432,7 @@ static ConsoleOperationType consoleGetOperationType(const char* operationName) {
 }
 
 // =============================================================================
-// Private: status query executors (#223, ADR 0034)
+// Private: status query executors (#223, ADR 0036)
 //
 // Each executor calls the same capture*Snapshot() "Zone Snapshot" function the
 // REST handler for that query calls (src/web/api_status*.cpp, src/web/api_audio.cpp,
@@ -1112,7 +1112,7 @@ static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationNa
 }
 
 // =============================================================================
-// Private: non-motion action dispatch (#220/#221, ADR 0034)
+// Private: non-motion action dispatch (#220/#221, ADR 0036)
 //
 // Every action entry that is RC-bindable (ACTION_REGISTRY[], canonical names
 // verbatim - src/web/action_registry.cpp) and not analog runs from here
@@ -1917,7 +1917,7 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 // has. So it cannot go through consoleWriteScalarConfigField(); it validates
 // the whole set in one call to the POST /api/wifi Apply Core (wifiApply(),
 // ADR 0011) and then persists and stages through that core's Commit Step
-// (wifiCommitApplied(), ADR 0034, extracted ahead of this path by #227's
+// (wifiCommitApplied(), ADR 0036, extracted ahead of this path by #227's
 // first phase). Neither the WiFi rules nor the post-apply side effects are
 // re-implemented here - this section only translates Console arguments into
 // the core's ConfigParamSource and the core's verdict into a Console Record.
@@ -1925,7 +1925,7 @@ static void consoleExecuteMoodConfig(uint32_t requestId, const ConsoleCatalogEnt
 
 // The two vocabularies this operation has to reconcile, and no third one.
 // LEFT is the Console argument key: kebab-case, like every token the protocol
-// defines (ADR 0034), and exactly what docs/action-registry.yaml declares as
+// defines (ADR 0036), and exactly what docs/action-registry.yaml declares as
 // this row's params: - the spelling docs/console-protocol.md s.1 already
 // shows (`wifi.config.settings mode=client sta-ssid="Workshop WiFi"`). RIGHT
 // is the parameter name src/web/api_wifi_apply.cpp's own configParamGet()
@@ -2237,7 +2237,7 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // (#226).
 //
 // Nine config rows reaching the three ADR 0011 audio Apply Cores and their
-// ADR 0034 Commit Steps (include/api_audio.h) exactly as POST /api/audio/
+// ADR 0036 Commit Steps (include/api_audio.h) exactly as POST /api/audio/
 // tracks, /api/audio/category-range and /api/audio/mood-map reach them.
 // Nothing new is built here: both halves already existed - api_audio.h's own
 // Commit Step comment called them ready "for whichever ticket wires them" -
@@ -2741,7 +2741,7 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
 // sound.action.set-volume exposes as an action - the same
 // system.config.mood / system.action.set-mood pattern already in the cascade,
 // where one mechanism is reachable both ways and the config row is the half
-// that can also be read. Both halves call the one ADR 0034 Commit Step,
+// that can also be read. Both halves call the one ADR 0036 Commit Step,
 // audioSetVolumeCommitApplied() (include/api_audio.h), which is also what
 // handleAudioPost()'s action=volume branch calls: apply through the audio
 // queue, then persist as the new default so it survives a reboot.
@@ -2957,7 +2957,7 @@ static ConsoleDirectActionExecutorFn consoleFindDirectActionExecutor(const char*
 void consoleModuleInit(void) {
     // Console module initialization (before LittleFS and web server).
     // The help reader will be set separately via consoleModuleSetHelpReader()
-    // after LittleFS is ready (see ADR 0034).
+    // after LittleFS is ready (see ADR 0036).
 
     size_t catalogCount = consoleCatalogGetCount();
     PA_LOG_DEBUG(TAG, "console module initialized, %u operations in catalog", catalogCount);
@@ -3098,7 +3098,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             //
             // The two annotations are the two availability facts knowable
             // without executing. Discovery never annotates executor-not-ready:
-            // that is an execution-time answer (ADR 0035), and the branch that
+            // that is an execution-time answer (ADR 0037), and the branch that
             // used to emit it here was unreachable for the life of the catalog's
             // readiness flag, which read `true` for every entry.
             if (sink->onRecordItem) {
@@ -3311,7 +3311,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             //      system.api.get-admission-trace   webAdmissionTraceInstance()
             // 3. Not an operation at all:
             //      system.console  is the browser Console Adapter itself
-            //                      (POST /api/console, ADR 0034)
+            //                      (POST /api/console, ADR 0036)
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion

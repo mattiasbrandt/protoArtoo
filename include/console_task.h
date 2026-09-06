@@ -24,7 +24,7 @@
 // again - with no flag, no counter, no callback and nothing a reader can
 // notice afterwards. The Console task empties that queue once per poll of its
 // 10 ms cadence, and one 64-byte USB packet per 1 ms frame - the conservative
-// floor ADR 0036 already reads off this driver for the other direction - puts
+// floor ADR 0038 already reads off this driver for the other direction - puts
 // ~640 bytes into it between two polls, 2.5x what it can hold. So a single
 // host write larger than the queue lost its tail, and tools/console_client.py
 // sends a scripted line in ONE os.write (SerialTransport._write_marked), which
@@ -70,6 +70,6 @@ static constexpr size_t CONSOLE_SERIAL_RX_QUEUE_BYTES = 1024;
 // Create and start the Console task.
 //
 // Call from setup() after paLogInit() has created the Log Ring: this task
-// takes ownership of the serial wire as it starts (ADR 0037), and its first
+// takes ownership of the serial wire as it starts (ADR 0039), and its first
 // act on that wire is to drain the boot lines the ring already holds.
 void consoleTask(void* pvParameters);

@@ -2,7 +2,7 @@
 // include/api_wifi_apply.h
 //
 // Apply Core for POST /api/wifi (ADR 0011 pattern, ADR 0015 Device WiFi
-// Settings), plus its ADR 0034 Commit Step. See src/web/api_wifi_apply.cpp.
+// Settings), plus its ADR 0036 Commit Step. See src/web/api_wifi_apply.cpp.
 //
 // wifiApply(): pure function - no FreeRTOS, no request object, no
 //   logging, no NVS, no WiFi hardware access. Reads parameters through a
@@ -29,7 +29,7 @@ struct WifiApplyResult {
 // is set true and result->ok is true.
 void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyResult* result);
 
-// Commit Step for the POST /api/wifi Apply Core (ADR 0034, amended
+// Commit Step for the POST /api/wifi Apply Core (ADR 0036, amended
 // 2026-08-27): the complete transport-independent tail of a Device WiFi
 // Settings write - persist to NVS (configSaveWifi), stage the config cache
 // with the new settings (Staged Network Switch, ADR 0015 - saved, not

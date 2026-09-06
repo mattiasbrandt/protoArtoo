@@ -3,7 +3,7 @@
 //
 // data/console_help.txt is generated from docs/action-registry.yaml by
 // tools/generate_console_catalog.py and read at runtime by the Console
-// module's help path (both adapters, ADR 0034) - it is the "web production"
+// module's help path (both adapters, ADR 0036) - it is the "web production"
 // data/ artifact this ticket's registry corrections regenerate (#223).
 //
 // Six status entries carried wrong or placeholder executor names before this

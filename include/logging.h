@@ -26,7 +26,7 @@ void paLogInit();
 //
 // It is written ONCE, to the Log Ring, under the ring's own critical section.
 // Whether it also reaches the serial wire depends on who owns that wire
-// (ADR 0037): before the Console task binds the serial adapter this writes the
+// (ADR 0039): before the Console task binds the serial adapter this writes the
 // line straight out, because there is no task to drain it yet; afterwards the
 // Console task owns the wire and its drain is the only thing that puts a log
 // line on it. The decision is read inside the same critical section the append
@@ -34,7 +34,7 @@ void paLogInit();
 // exactly once - never twice, never not at all.
 void paLogLine(const char* line);
 
-// Hand the serial wire to the Console task (ADR 0037). Called once, from
+// Hand the serial wire to the Console task (ADR 0039). Called once, from
 // consoleSerialBindCli(), the moment the Console task has an embedded-cli
 // instance to render redraws with. Places the drain cursor at the ring's
 // current head so nothing already on the wire is drained a second time.

@@ -2,7 +2,7 @@
 // test/test_web/test_console_records_218.js
 //
 // Behavioural tests for the Live Logs console adapter in data/app.js (#218,
-// ADR 0034). Loads the REAL app.js, drives the command box the way an operator
+// ADR 0036). Loads the REAL app.js, drives the command box the way an operator
 // does (Enter on #log-command-input), and asserts on the lines the page put in
 // the log.
 //

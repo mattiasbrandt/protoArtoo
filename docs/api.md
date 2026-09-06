@@ -1352,7 +1352,7 @@ curl -s http://artoo.local/api/actions
 
 Dispatches one test action through the same dispatch core the RC trigger
 path and the Controller Console share (`dispatchRcTriggerActionTest()`,
-`SRC_WEB_API`; #220, ADR 0034), and reports what actually happened.
+`SRC_WEB_API`; #220, ADR 0036), and reports what actually happened.
 
 - Input options:
 - Form field: `token`
@@ -1403,7 +1403,7 @@ curl -s -X POST http://artoo.local/api/actions/test \
 
 ### POST /api/console
 
-The browser adapter for the Controller Console (ADR 0034) — the same command
+The browser adapter for the Controller Console (ADR 0036) — the same command
 processor a serial terminal drives, over HTTP. See
 [console.md](console.md) for the command language and
 [console-protocol.md](console-protocol.md) for the full record format. This is

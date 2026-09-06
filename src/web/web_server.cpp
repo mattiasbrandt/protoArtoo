@@ -299,7 +299,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
 
-    // dome.status.current's two console-queryable fields (ADR 0034) come from
+    // dome.status.current's two console-queryable fields (ADR 0036) come from
     // captureDomeStatusSnapshot() (api_status_serializers.cpp) instead of the
     // inline reads this block used before #223, so the Console module and this
     // JSON builder can never disagree about what "domeTargetSpeed"/"domeEnabled"

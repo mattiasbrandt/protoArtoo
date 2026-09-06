@@ -10,7 +10,7 @@
 // this stub's exposed singleton.
 //
 // It has named two other mutexes in its time, and both are gone. src/main.cpp's
-// serial mutex went with #270 (ADR 0037): the Console task is the only writer of
+// serial mutex went with #270 (ADR 0039): the Console task is the only writer of
 // the serial wire, so there is nothing left for a lock to coordinate there, and
 // the serial output coordinator's own suite now asserts that it takes NO mutex
 // at all. src/console/console_module.cpp's config-write window went with #269

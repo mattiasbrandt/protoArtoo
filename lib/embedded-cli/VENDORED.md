@@ -234,7 +234,7 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
 ```
 
 > [!IMPORTANT]
-> **Corrected 2026-09-04 (#270, ADR 0037).** The shipped version zeroed
+> **Corrected 2026-09-04 (#270, ADR 0039).** The shipped version zeroed
 > `cmdSize` and left the old line's bytes in `cmdBuffer`, so
 > `strlen(cmdBuffer) == cmdSize` - the invariant every other mutator in this
 > library maintains - did not hold after a reset. Every insertion position the
@@ -617,7 +617,7 @@ byte to land inside the line. `docs/console-protocol.md` section 6 promises the
 opposite: "No line is ever interleaved inside another."
 
 The transport can only make that promise for a unit it can hand over in one
-call. ADR 0036 already decided that for Console Records ("every line, record or
+call. ADR 0038 already decided that for Console Records ("every line, record or
 log, is written with one call that includes the newline"); the interactive log
 path was the one place that decision could not be applied, because the redraw
 existed only as a stream of `writeChar` calls.

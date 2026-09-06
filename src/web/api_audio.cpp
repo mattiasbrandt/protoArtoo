@@ -867,7 +867,7 @@ void handleAudioGet(WebRequest& req) {
 }
 
 // The gather step behind handleAudioGet()'s /api/audio response, shared with
-// the Console module's sound.status.current executor (ADR 0034) so both read
+// the Console module's sound.status.current executor (ADR 0036) so both read
 // RobotState through the same function.
 void captureAudioStatusSnapshot(AudioStatusSnapshot* out) {
     if (out == nullptr) {
@@ -944,7 +944,7 @@ void handleAudioPost(WebRequest& req) {
             return;
         }
 
-        // Commit Step (ADR 0034 criterion 1, include/api_audio.h): the same
+        // Commit Step (ADR 0036 criterion 1, include/api_audio.h): the same
         // apply-then-persist sequence the Console's sound.action.set-volume
         // executor now shares.
         AudioSetVolumeCommitOutcome commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);

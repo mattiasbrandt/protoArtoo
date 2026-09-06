@@ -190,4 +190,4 @@ dome.seq.cantina|DM:CANTINA — Cantina dance|15-second 130 BPM alternating pane
 dome.seq.rockmarch|DM:ROCKMARCH — Rock march|45-second Imperial March with one ring panel stepping per 923 ms beat. Body-owned loop sequence.|sequenceStart|
 dome.seq.scream|DM:SCREAM — Scream|7-second scream: burst-open panels, red alert logics/PSI, random one-panel flutter, scream-category audio. Body-owned random sequence (15 s window).|sequenceStart|
 dome.seq.overload|DM:OVERLOAD — Overload|7-second overload: failure logics/PSI, holos short-circuit, six panels drift to random positions, sad-category audio. Body-owned random sequence (12 s window).|sequenceStart|
-system.console|Controller Console|Browser adapter for the Controller Console (ADR 0034). Processes operations and returns Console Records.|consoleExecuteCommand|
+system.console|Controller Console|Browser adapter for the Controller Console (ADR 0036). Processes operations and returns Console Records.|consoleExecuteCommand|

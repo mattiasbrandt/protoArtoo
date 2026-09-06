@@ -36,7 +36,7 @@ private:
 
 // Serial stub — used by code compiled in native host tests.
 //
-// availableForWrite() / operator bool() (ADR 0036, #265): test-controlled so
+// availableForWrite() / operator bool() (ADR 0038, #265): test-controlled so
 // the room-wait seam in src/console/console_serial_output.cpp is provable on
 // the host without a board. Defaults ("unlimited room", "connected") match
 // what every native test written before #265 already assumed implicitly, so
@@ -113,7 +113,7 @@ extern SerialStub Serial;
 
 // Resets every SerialStub knob and capture to its default (unlimited room,
 // connected, empty capture, zeroed counters). Call at the top of any test
-// that touches the ADR 0036 room-wait/single-write seam — this is one global
+// that touches the ADR 0038 room-wait/single-write seam — this is one global
 // shared by every native test in the binary, so state left over from a prior
 // test would otherwise leak forward.
 inline void serialStubReset() {

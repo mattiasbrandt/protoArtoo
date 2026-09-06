@@ -2,7 +2,7 @@
 // test/test_web/test_console_completion_238.js
 //
 // Behavioural tests for the Live Logs command box's Tab completion and
-// persistent session history (#238, ADR 0034). Loads the REAL app.js and
+// persistent session history (#238, ADR 0036). Loads the REAL app.js and
 // drives the command box the way an operator does (Tab/Enter/ArrowUp/ArrowDown
 // on #log-command-input), asserting on the value the box ends up with and the
 // requests the page actually made - never a reimplementation of the matching

@@ -20,11 +20,11 @@
 // be rejected as invalid on an endpoint whose own error message offers it.
 // Exported (not file-local to api_servo.cpp) so the Controller Console's
 // servo.action.open/close/set-position executors (include/
-// console_direct_action_servo.h, ADR 0034) resolve a target the same way
+// console_direct_action_servo.h, ADR 0036) resolve a target the same way
 // handleServoPost() does, rather than a second name<->id mapping.
 int16_t parseArmId(const char* arm);
 
-// Commit Step (ADR 0034 criterion 1): the handler-owned servoCmdQueue
+// Commit Step (ADR 0036 criterion 1): the handler-owned servoCmdQueue
 // enqueue, extracted so the Console reaches the identical submission
 // handleServoPost() makes rather than a second copy - src/rc_dispatcher_helpers.cpp
 // already has its own near-duplicate of this for the RC dispatch path

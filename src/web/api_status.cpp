@@ -21,7 +21,7 @@
 // captureHealthSnapshot/captureDomeSerialLinkSnapshot (api_status_serializers.cpp)
 // rather than here, so the Console module's status executors
 // (src/console/console_module.cpp) read the exact same state through the
-// exact same function instead of a second, driftable copy (ADR 0034).
+// exact same function instead of a second, driftable copy (ADR 0036).
 static void buildWifiJson(char* buffer, size_t bufferSize) {
     WifiStatusSnapshot snap = {};
     captureWifiStatusSnapshot(&snap);

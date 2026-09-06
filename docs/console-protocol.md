@@ -4,7 +4,7 @@ The Controller Console is one command language shared by two operator surfaces:
 the **Live Logs** command box in the browser dashboard and a **serial terminal**
 attached to the controller's USB port. Both surfaces send the same lines and
 receive the same results; this page is the reference for that language and its
-result format. Architecture and rationale: ADR 0034. Vocabulary: `CONTEXT.md`
+result format. Architecture and rationale: ADR 0036. Vocabulary: `CONTEXT.md`
 (Controller Console, Operation, Console Record, Request ID, Availability
 Reason, Non-RC Control).
 
@@ -208,7 +208,7 @@ reassembles them.
 
 On serial only, a `result` or `end` record carries `dropped=<n>` when the sink
 could not secure USB CDC transmit room for `<n>` earlier records of that same
-request (ADR 0036); the field is absent when nothing was dropped. A dropped
+request (ADR 0038); the field is absent when nothing was dropped. A dropped
 closing record itself just leaves the group unterminated, which a reader
 already treats as loss - the two together make every drop visible on the
 wire. The browser adapter builds its JSON response whole and never emits this
@@ -426,13 +426,13 @@ the task and a backtrace on its own path.
   and is dropped whole (never split, never sent short) if that room never
   clears. This is **one write or none** - a line that starts on the wire always
   finishes on it - and it now covers both kinds of line the Console writes.
-  Console Records were the first (ADR 0036); a log line arriving mid-entry is a
+  Console Records were the first (ADR 0038); a log line arriving mid-entry is a
   whole redraw rather than just a line, and it reached the wire one byte per
   `Serial.write()` call until the line editor could render that redraw into a
   buffer, which is what made the same rule reachable for it. Since the Console
   became the only writer of the port, a drained log line also waits for room
-  under the same bound as a record instead of being best-effort (ADR 0037
-  supersedes ADR 0036's "log lines stay best-effort"). What a dropped line
+  under the same bound as a record instead of being best-effort (ADR 0039
+  supersedes ADR 0038's "log lines stay best-effort"). What a dropped line
   costs differs by kind: a record is counted on its request's closing line as
   `dropped=<n>`, while a log line that misses its wait is simply absent from
   the port - `/api/logs` still has it (section 6). The browser adapter is

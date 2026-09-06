@@ -40,7 +40,7 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
 
-    // Console: the browser adapter for the Controller Console (ADR 0034).
+    // Console: the browser adapter for the Controller Console (ADR 0036).
     // Accepts operation lines from the Live Logs command box and returns
     // Console Records as JSON, driving the same operation processor the serial
     // task uses.

@@ -21,7 +21,7 @@
 extern LogBuffer g_test_log_buffer;
 extern char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX];
 
-// The log SINK stand-in (#270, ADR 0037): the ring paLogLine() writes into,
+// The log SINK stand-in (#270, ADR 0039): the ring paLogLine() writes into,
 // the drain cursor over it, and who owns the wire. src/main.cpp keeps all
 // three together under one critical section; the stub keeps them here so
 // test_console_log_drain can put the drain back to a known state between

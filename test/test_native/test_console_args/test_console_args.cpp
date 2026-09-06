@@ -2,7 +2,7 @@
 // test/test_native/test_console_args/test_console_args.cpp
 //
 // Native unit tests for include/console_args.h - the shared, transport-
-// independent argument contract (#221, ADR 0034, docs/console-protocol.md
+// independent argument contract (#221, ADR 0036, docs/console-protocol.md
 // s.1.2/1.3): consoleSplitCommandLine(), consoleParseArgs(),
 // consoleUtf8Valid(), consoleArgsFind()/consoleArgsAsParamSource(), and
 // consoleValidateArgsAgainstSchema(). Header-only (no .cpp translation unit

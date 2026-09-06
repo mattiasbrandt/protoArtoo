@@ -625,7 +625,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     req.send(200, "application/json", body);
 }
 
-// WebRequest-free per ADR 0034's Consequences ("persistSystemConfig(WebRequest&,
+// WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
 // ...), which sends its own HTTP error today, is the first such extraction"):
 // the caller renders its own failure, so this stays reachable from a future
 // non-web caller without a request object in scope. handleRcMapPost is the
@@ -896,7 +896,7 @@ void handleWifiPost(WebRequest& req) {
             configCacheReadWifi(&working);
             wifiApply(params, &working, &result);
             if (result.ok) {
-                // Commit Step (ADR 0034, api_wifi_apply.h): persist to NVS,
+                // Commit Step (ADR 0036, api_wifi_apply.h): persist to NVS,
                 // stage the config cache (Staged Network Switch, ADR 0015),
                 // and broadcast status - shared with the Console WiFi write
                 // path instead of each adapter carrying its own copy of the

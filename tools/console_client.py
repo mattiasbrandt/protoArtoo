@@ -456,7 +456,7 @@ def stream_forever_pyserial(s) -> None:
 # Grammar and verdicts: docs/console-protocol.md; the send/reassembly
 # algorithm below is read from tasks/console_bench.py's send_command() (the
 # gitignored stopgap driver named in the #264 coordinator pin) -- its read
-# loop was sound per ADR 0036, so it is the reference this reimplements
+# loop was sound per ADR 0038, so it is the reference this reimplements
 # against the shared ConsoleRecord model both transports render through.
 # =============================================================================
 
@@ -695,7 +695,7 @@ class InteractiveRecordColorizer:
 
     # How long the caller waits for the rest of a held candidate before
     # giving up and releasing it uncoloured. A record is one Serial.write()
-    # (ADR 0036), so a split mid-record is host-side fragmentation and
+    # (ADR 0038), so a split mid-record is host-side fragmentation and
     # resolves within a USB frame / a UART character time; 50 ms is far above
     # both and still imperceptible.
     HOLD_TIMEOUT_S = 0.05
@@ -970,7 +970,7 @@ def render_record_line(rec: ConsoleRecord) -> str:
         if "reason" in rec.fields:
             line += f" reason={rec.fields['reason']}"
         if "dropped" in rec.fields:
-            # Never actually emitted by the browser adapter (ADR 0036: it
+            # Never actually emitted by the browser adapter (ADR 0038: it
             # builds its response whole and cannot drop) -- included so
             # this renderer stays a faithful, transport-neutral mirror of
             # the wire grammar rather than one that silently assumes the
@@ -1113,7 +1113,7 @@ class SerialTransport:
         tasks/console_bench.py's send_command()): the first record whose id
         follows the send owns this request; a differently-id'd record is a
         concurrent browser session's and never ends this read. A blank line
-        seen while a group is open is a wire anomaly (ADR 0036), reported
+        seen while a group is open is a wire anomaly (ADR 0038), reported
         in-stream and marked, never treated as the loss signature itself.
         """
         self._settle_once()

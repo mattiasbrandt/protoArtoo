@@ -2,7 +2,7 @@
 // include/console_completion.h
 //
 // Catalog-driven Tab completion candidate source for the serial adapter's
-// embedded-cli instance (ADR 0034, #238).
+// embedded-cli instance (ADR 0036, #238).
 //
 // Bound as EmbeddedCli::getCompletionCandidate (lib/embedded-cli's Patch 5,
 // see lib/embedded-cli/VENDORED.md) from src/tasks/console_task.cpp. Reads
@@ -86,7 +86,7 @@ inline char g_argCandidatePool[kArgPoolSize][kArgCandidateMax];
 // acceptance criterion, and availability is re-checked at execution
 // (console_module.cpp), never at discovery or completion time. Executor
 // readiness is not a catalog fact at all - it is only ever answered by
-// running the operation (ADR 0035) - so there is nothing to filter on.
+// running the operation (ADR 0037) - so there is nothing to filter on.
 //
 // Quote-aware tokenization of argument values (docs/console-protocol.md
 // s.1.2, include/console_args.h's consoleParseArgs()) is deliberately NOT

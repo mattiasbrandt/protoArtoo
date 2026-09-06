@@ -1,7 +1,7 @@
 // =============================================================================
 // src/console/console_serial_output.cpp
 //
-// Serial output coordinator for Console task (ADR 0034, ADR 0036, ADR 0037)
+// Serial output coordinator for Console task (ADR 0036, ADR 0038, ADR 0039)
 // This file is the ONLY writer of the serial wire in the firmware: every
 // record, log line, echoed character and banner reaches it through
 // consoleSerialWriteFrame below, one Serial.write() per unit, and after the
@@ -51,7 +51,7 @@ static const char* const TAG = "ConsoleTask";
 // the ring it is trying to fill with evidence (#275). Tagged "drop", not
 // "wedge": the snapshot reports that a record was dropped and the registers
 // beside it say whether it is the permanent wedge (data_free 0, room 0,
-// repeating) or ordinary ADR 0036 backpressure (recovers), rather than
+// repeating) or ordinary ADR 0038 backpressure (recovers), rather than
 // presuming the diagnosis.
 static bool s_cdcDropProbeArmed = true;
 #endif
@@ -79,7 +79,7 @@ static bool s_cdcDropProbeArmed = true;
 // Xtensa walk), and writeFrameCounted() is reached STATICALLY from every
 // task's paLogLine() through the pre-bind emit path -- the walk cannot see
 // that waitForRoom is false there -- so logging from the drop site put that
-// cost on all nine walked chains and failed ADR 0038's gate row (measured at
+// cost on all nine walked chains and failed ADR 0040's gate row (measured at
 // db310551: +816..1040 B per task, DomeTask's floor holds by 80). The drain's
 // entry is reachable from the Console task alone, and it sits beside the
 // eviction marker's own snprintf rather than on top of the redraw frame.
@@ -161,7 +161,7 @@ static void emitLineCounted(const char* line, uint32_t* waitedMs);
 // The ECHO path: embeddedCliProcess() calls this for every character the line
 // editor puts on screen while the operator types, from the Console task
 // (src/tasks/console_task.cpp's main loop). No lock: the Console task is the
-// only writer of this wire (ADR 0037), so an echoed byte has nothing to be
+// only writer of this wire (ADR 0039), so an echoed byte has nothing to be
 // interleaved with. Best-effort like every other keystroke echo -- a
 // character the transport refuses is one the operator retypes, and waiting
 // per byte would put the room-wait bound on every keystroke.
@@ -176,7 +176,7 @@ void consoleSerialWriteChar(EmbeddedCli* cli, char c) {
 
 void consoleSerialBindCli(EmbeddedCli* cli) {
     g_boundCli = cli;
-    // The bind IS the switch to ring-only logging (ADR 0037): from here on
+    // The bind IS the switch to ring-only logging (ADR 0039): from here on
     // paLogLine() only appends, and consoleSerialDrainLogs() below is what
     // puts a log line on the wire. Placing the drain cursor and raising the
     // ownership flag happen together, inside the ring's own critical section,
@@ -230,7 +230,7 @@ static void emitLineCounted(const char* line, uint32_t* waitedMs) {
     // and put it on the wire in ONE write. Character-at-a-time is what let
     // another writer on this wire land a byte inside the line (#268).
     //
-    // The buffer is a LOCAL, and that is the point of ADR 0037's ownership
+    // The buffer is a LOCAL, and that is the point of ADR 0039's ownership
     // change. It used to be static, because any task could be inside this
     // function and 448 bytes on every logging task's stack is a cost none of
     // them budgeted for. Only the Console task reaches it now, so the frame
@@ -240,7 +240,7 @@ static void emitLineCounted(const char* line, uint32_t* waitedMs) {
         embeddedCliPrintToBuffer(g_boundCli, lineToEmit, frame, sizeof(frame));
 
     if (frameLen > 0) {
-        // Waits for transmit room under the record bound (ADR 0037). If the
+        // Waits for transmit room under the record bound (ADR 0039). If the
         // room never comes the frame is dropped whole and the render has
         // already advanced the editor's screen bookkeeping -- the operator
         // sees a prompt redrawn one line later than the editor believes,
@@ -267,7 +267,7 @@ uint32_t consoleSerialDrainLogs(void) {
     // No host on the other end: leave the lines in the ring rather than
     // writing them into a transport that will refuse them.
     //
-    // This is what keeps ADR 0037's "the only loss is ring eviction" true on
+    // This is what keeps ADR 0039's "the only loss is ring eviction" true on
     // the FireBeetle 2. A drained line waits for room like a record, and the
     // room-wait refuses outright while `Serial` reports no connected host -
     // so draining into a detached CDC would advance the cursor over lines
@@ -280,7 +280,7 @@ uint32_t consoleSerialDrainLogs(void) {
     // The residual, stated rather than hidden: a host that is attached but has
     // stopped reading can still make a single frame miss its room wait, and
     // that one line is then lost from the wire without a marker. That is ADR
-    // 0036's record policy applied to logs, which is what ADR 0037 asked for;
+    // 0038's record policy applied to logs, which is what ADR 0039 asked for;
     // /api/logs still has the line either way.
     if (!Serial) {
         return 0;
@@ -315,7 +315,7 @@ uint32_t consoleSerialDrainLogs(void) {
         uint32_t waitedMs = 0;
         if (evicted > 0) {
             // Ring eviction is the only remaining way a log line is lost from
-            // the wire, and it is marked rather than silent (ADR 0037). The
+            // the wire, and it is marked rather than silent (ADR 0039). The
             // count is formatted through the same helper a record's closing
             // line uses, so the `dropped=<n>` idiom cannot drift between the
             // two things that can be dropped.
@@ -339,7 +339,7 @@ uint32_t consoleSerialDrainLogs(void) {
 }
 
 // =============================================================================
-// Single-write framed emitter (ADR 0036)
+// Single-write framed emitter (ADR 0038)
 // =============================================================================
 
 bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom) {
@@ -376,7 +376,7 @@ static bool emitFramedLineCounted(const char* line, size_t len, bool waitForRoom
     memcpy(buf, line, lineLen);
     buf[lineLen] = '\r';
     buf[lineLen + 1] = '\n';
-    // ADR 0036 reserves room for the WHOLE line including its terminator, so
+    // ADR 0038 reserves room for the WHOLE line including its terminator, so
     // the reservation follows the extra byte: a record must never be written
     // short for want of the CR.
     size_t total = lineLen + 2;
@@ -406,8 +406,8 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
 
         // Only the Console task ever spends this wait, and it is not
         // TWDT-subscribed (src/tasks/console_task.cpp's file header). That is
-        // what ADR 0037 changed: the wait used to be reachable from any
-        // logging task's context, which is why ADR 0036 had to keep it
+        // what ADR 0039 changed: the wait used to be reachable from any
+        // logging task's context, which is why ADR 0038 had to keep it
         // strictly outside the lock.
         uint32_t spentMs = 0;
         while (Serial && Serial.availableForWrite() < (int)reserve &&
@@ -456,9 +456,9 @@ static bool writeFrameCounted(const char* bytes, size_t len, bool waitForRoom,
     }
 
     // The one Serial.write() in the firmware. One call per unit is the whole
-    // point (ADR 0036, #268): a unit delivered in one call cannot be
+    // point (ADR 0038, #268): a unit delivered in one call cannot be
     // half-delivered by a transport that short-writes, and with a single
-    // owner (ADR 0037) there is nothing else on this wire to interleave it.
+    // owner (ADR 0039) there is nothing else on this wire to interleave it.
     Serial.write((const uint8_t*)bytes, len);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     s_cdcDropProbeArmed = true;

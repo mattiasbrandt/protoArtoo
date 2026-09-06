@@ -14,7 +14,7 @@
  * REWRITTEN 2026-09-04 (#270, reported on the issue, not edited silently).
  * Case 1 used to assert that the primitive CORRUPTS the next typed command,
  * because embeddedCliResetInput() zeroed cmdSize while leaving the old line's
- * bytes in cmdBuffer and the cursor where it was. ADR 0037 gives the line
+ * bytes in cmdBuffer and the cursor where it was. ADR 0039 gives the line
  * editor a single owner, and #270 fixed the primitive itself
  * (lib/embedded-cli/VENDORED.md, Patch 2's correction note): the buffer and
  * the cursor are now cleared with the count. Asserting the defect still

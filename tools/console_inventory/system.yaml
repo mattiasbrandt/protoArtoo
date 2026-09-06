@@ -987,7 +987,7 @@ rows:
   - src/web/api_status_serializers.cpp - captureHealthSnapshot() definition; formatHealthJson()'s JSON keys
   executor_or_core: captureHealthSnapshot
   missing_metadata: []
-  notes: '#223: reclassified from aggregate-field to api. GET /api/health is its own standalone endpoint with its own JSON shape (buildHealthJson/formatHealthJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/health''s). Promoted to a real console query; captureHealthSnapshot() is the Zone Snapshot capture both handleHealthGet() and the Console module call (ADR 0034).'
+  notes: '#223: reclassified from aggregate-field to api. GET /api/health is its own standalone endpoint with its own JSON shape (buildHealthJson/formatHealthJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/health''s). Promoted to a real console query; captureHealthSnapshot() is the Zone Snapshot capture both handleHealthGet() and the Console module call (ADR 0036).'
 - name: system.status.logs
   type: status
   registry_api_path: /api/logs
@@ -1089,7 +1089,7 @@ rows:
   - src/web/api_status_serializers.cpp - captureWifiStatusSnapshot() definition; formatWifiJson()'s JSON keys
   executor_or_core: captureWifiStatusSnapshot
   missing_metadata: []
-  notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0034).'
+  notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0036).'
 - name: wifi.config.settings
   type: config
   registry_api_path: /api/wifi
@@ -1106,7 +1106,7 @@ rows:
   - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost)
   - include/config_cache.h:35 - configCacheReadWifi(WifiConfig*) read path, the same one handleWifiPost() seeds its working copy from
   - include/api_wifi_apply.h:30 - wifiApply(const ConfigParamSource&, WifiConfig*, WifiApplyResult*) apply core (ADR 0011)
-  - src/web/api_wifi_apply.cpp:152 - wifiCommitApplied() Commit Step (ADR 0034): configSaveWifi() to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast
+  - src/web/api_wifi_apply.cpp:152 - wifiCommitApplied() Commit Step (ADR 0036): configSaveWifi() to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast
   - src/config_serializer.cpp:628 - configSerializeWifi() writes wifi_prov/wifi_mode/wifi_sta_ssid/wifi_sta_pw/wifi_ap_ssid/wifi_ap_pw
   executor_or_core: wifiApply
   missing_metadata: []

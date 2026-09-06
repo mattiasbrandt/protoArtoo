@@ -1,7 +1,7 @@
 // =============================================================================
 // include/console_serial_output.h
 //
-// Serial output coordination for Console task (ADR 0034, ADR 0036, ADR 0037)
+// Serial output coordination for Console task (ADR 0036, ADR 0038, ADR 0039)
 //
 // ONE OWNER, one seam. After consoleSerialBindCli() the Console task is the
 // only task that writes this wire, and every byte it writes goes through
@@ -17,7 +17,7 @@
 //    as one frame, waiting for room under the same bound as a record
 //    (consoleSerialEmitLine, reached through consoleSerialDrainLogs).
 //
-// WHAT ADR 0037 CHANGED, and what it removed. The wire used to be writable by
+// WHAT ADR 0039 CHANGED, and what it removed. The wire used to be writable by
 // any task that took a mutex: paLogLine() wrote from the calling task's
 // context, on either core, so a Core 1 real-time task could block inside a
 // PA_LOG_* for the transmit time of a frame plus the wait for the lock, and
@@ -33,7 +33,7 @@
 // survives single ownership: it used to go out character by character through
 // embeddedCliPrint(), ~70 transport calls, and on artoo-esp32, where
 // Serial.write() blocks until the UART accepts the byte, those calls held the
-// wire for ~6 ms at 115200 baud (#268). ADR 0036 had already decided "every
+// wire for ~6 ms at 115200 baud (#268). ADR 0038 had already decided "every
 // line, record or log, is written with one call that includes the newline";
 // the interactive log path is the place that decision could not reach until
 // embedded-cli could render into a buffer (lib/embedded-cli/VENDORED.md
@@ -49,7 +49,7 @@ typedef struct EmbeddedCli EmbeddedCli;
 
 // How long a Console Record waits, before writing, for
 // Serial.availableForWrite() to clear room for the whole line (including its
-// CR LF terminator) before the record is dropped whole (ADR 0036). Reasoning for
+// CR LF terminator) before the record is dropped whole (ADR 0038). Reasoning for
 // 100 ms, read from ~/.platformio-p4/.../cores/esp32/HWCDC.cpp, not guessed:
 //  - HWCDC's TX ring is 256 bytes (HWCDC::begin()'s setTxBufferSize(256)) and
 //    the host drains at most 64 B per 1 ms USB frame, so a fully-occupied
@@ -86,7 +86,7 @@ static constexpr uint32_t CONSOLE_RECORD_ROOM_WAIT_BOUND_MS = 100;
 // in there it is not reading the transport -- which is how an input line long
 // enough to fill the CDC's own receive queue loses the bytes at its end,
 // including the CR that is the only thing that triggers its `line-too-long`
-// refusal (#229, docs/console-protocol.md 1.3). ADR 0037's stated consequence,
+// refusal (#229, docs/console-protocol.md 1.3). ADR 0039's stated consequence,
 // "serial log latency is bounded by the poll cadence and by record
 // boundaries", was not true of the shipped drain; this is what makes it true.
 //
@@ -110,9 +110,9 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //  - The third owes ONE line to the Log Ring, at WARN, naming the state:
 //      [ConsoleTask] serial backpressure: host attached but not reading, serial output dropped until it drains
 //    Nothing is refused: a command typed on such a link still runs, and its
-//    records still wait and drop exactly as ADR 0036 has them. The line is a
+//    records still wait and drop exactly as ADR 0038 has them. The line is a
 //    Log Ring line like any other -- after the bind paLogLine() only appends
-//    (ADR 0037, src/main.cpp) -- so it cannot recurse into the write path it
+//    (ADR 0039, src/main.cpp) -- so it cannot recurse into the write path it
 //    reports on, and the drain carries it to the wire once the link drains.
 //  - The next frame that reaches the wire after a room-wait ends the episode
 //    and owes ONE line at INFO carrying the whole episode's count, the two
@@ -126,7 +126,7 @@ static constexpr uint32_t CONSOLE_DRAIN_ROOM_WAIT_BUDGET_MS = CONSOLE_RECORD_ROO
 //    could succeed. Writing them at the drop itself would put a PA_LOG_*
 //    call under writeFrameCounted(), which every task's paLogLine() reaches
 //    statically through the pre-bind emit path: reportBackpressure() in the
-//    .cpp has the measured cost that ADR 0038's gate row refused.
+//    .cpp has the measured cost that ADR 0040's gate row refused.
 //    A room-waited write is the sink's only evidence of draining. A write that
 //    did not wait -- an echoed keystroke, the banner -- is attempted blind and
 //    its bytes may go nowhere, so it neither ends an episode nor starts one;
@@ -203,13 +203,13 @@ static constexpr size_t CONSOLE_SERIAL_FRAME_MAX = 448;
 //
 // This is the ECHO path and nothing else: embeddedCliProcess() calls it while
 // the operator types, from the Console task. It needs no lock and takes none:
-// the Console task is the only writer of this wire (ADR 0037), so an echoed
+// the Console task is the only writer of this wire (ADR 0039), so an echoed
 // character cannot land inside anything -- there is nothing else writing for
 // it to land inside.
 void consoleSerialWriteChar(EmbeddedCli* cli, char c);
 
 // Bind the serial output coordinator to an embedded-cli instance, and with it
-// hand the serial wire to the Console task (ADR 0037): from this call on,
+// hand the serial wire to the Console task (ADR 0039): from this call on,
 // paLogLine() writes only to the Log Ring and consoleSerialDrainLogs() below
 // is the only thing that puts a log line on the wire.
 //
@@ -237,7 +237,7 @@ void consoleSerialWriteText(const char* text);
 // Renders the whole redraw -- input line cleared, the line, the break, the
 // prompt, the buffered command -- into a buffer with embeddedCliPrintToBuffer()
 // and writes that buffer as one frame, waiting for transmit room under the
-// same bound as a Console Record (ADR 0037 supersedes ADR 0036's "logs stay
+// same bound as a Console Record (ADR 0039 supersedes ADR 0038's "logs stay
 // best-effort": the reason logs could not wait was a TWDT-subscribed logger
 // blocking on the CDC, and the Console task is not TWDT-subscribed).
 //
@@ -250,13 +250,13 @@ void consoleSerialWriteText(const char* text);
 // CONSTRAINT: the Console task only. It renders through the line editor, whose
 // state that task also mutates in embeddedCliProcess(); single ownership is
 // what makes both safe without a lock, so a second caller re-opens exactly the
-// cross-core editor race ADR 0037 removed. It is also not re-entrant --
+// cross-core editor race ADR 0039 removed. It is also not re-entrant --
 // embeddedCliPrintToBuffer() refuses a render started from inside a render.
 void consoleSerialEmitLine(const char* line);
 
 // Drain the Log Ring to the wire, and return how many lines were written.
 //
-// The Console task's own job (ADR 0037), called at three points: each poll of
+// The Console task's own job (ADR 0039), called at three points: each poll of
 // its 10 ms cadence, before it dispatches a command, and at every record
 // boundary while a command runs -- so wire order is preserved to within one
 // record or one poll.
@@ -293,7 +293,7 @@ uint32_t consoleSerialDrainLogs(void);
 // (consoleSerialEmitFramedLine) or a whole rendered redraw
 // (consoleSerialEmitLine). Callers must keep `len` within what they own.
 //
-// waitForRoom selects ADR 0036's two policies; see
+// waitForRoom selects ADR 0038's two policies; see
 // consoleSerialEmitFramedLine below for what each one means.
 //
 // Returns false only when a waiting caller gave up: nothing was written. A
@@ -301,7 +301,7 @@ uint32_t consoleSerialDrainLogs(void);
 bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 
 // Emit exactly one line, plus its trailing CR LF, in a SINGLE Serial.write()
-// call (ADR 0036). This is the one emit helper the Console Record sink
+// call (ADR 0038). This is the one emit helper the Console Record sink
 // (src/tasks/console_task.cpp's emitRecordLine), the pre-bind log path
 // (src/main.cpp's paLogLine, before the Console task owns the wire) and
 // consoleSerialEmitLine's render-did-not-fit fallback all call, so the framing
@@ -323,9 +323,9 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 // This replaces the #245-era shape where a line and its newline were two
 // independent Serial.write() calls that could succeed and fail independently
 // -- a dropped line with its newline still delivered is what produced the
-// blank-line drop signature ADR 0036 documents. One call means one outcome.
+// blank-line drop signature ADR 0038 documents. One call means one outcome.
 //
-// waitForRoom selects which of ADR 0036's two policies applies:
+// waitForRoom selects which of ADR 0038's two policies applies:
 //  - true  (Console Records and drained log lines): waits up to
 //    CONSOLE_RECORD_ROOM_WAIT_BOUND_MS for Serial.availableForWrite() to
 //    clear room for the whole line INCLUDING both terminator bytes (the
@@ -348,7 +348,7 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 //    exactly as before -- only the two-call framing bug is fixed here, not
 //    the driver's best-effort contract. This is the PRE-BIND path only
 //    (src/main.cpp's paLogLine): once the Console task owns the wire, a
-//    drained log line waits like a record (ADR 0037).
+//    drained log line waits like a record (ADR 0039).
 bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom);
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
@@ -386,7 +386,7 @@ bool consoleSerialEmitFramedLine(const char* line, size_t len, bool waitForRoom)
 void consoleCdcProbeLog(const char* where);
 #endif
 
-// Formats the `dropped=<n>` suffix ADR 0036 stamps on a request's closing
+// Formats the `dropped=<n>` suffix ADR 0038 stamps on a request's closing
 // record (src/tasks/console_task.cpp's onRecordResult/onRecordEnd) when the
 // sink could not send `droppedCount` earlier records within
 // CONSOLE_RECORD_ROOM_WAIT_BOUND_MS. Writes " dropped=<n>" (with the leading

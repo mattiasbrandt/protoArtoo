@@ -47,7 +47,7 @@ adapter binds, no other task writes it.**
   at each poll of its 10 ms cadence, before dispatching a command, and at every
   record boundary while a command runs. Wire order is therefore preserved to
   within one record or one poll.
-- Log lines wait for transmit room under the same bound as records (ADR 0036's
+- Log lines wait for transmit room under the same bound as records (ADR 0038's
   reason for not waiting - a TWDT-subscribed logger blocked on the CDC - no
   longer applies; the Console task is not TWDT-subscribed). The only loss is
   ring eviction: when the writer has overtaken the cursor, the drain emits one
@@ -96,7 +96,7 @@ adapter binds, no other task writes it.**
   echo and the ring content up to the command's start are already on the wire,
   and the panic handler prints the fault, task and backtrace. This is the one
   thing serial no longer shows, accepted 2026-09-04.
-- ADR 0036's record rule is unchanged; its "logs stay best-effort" clause is
+- ADR 0038's record rule is unchanged; its "logs stay best-effort" clause is
   superseded (amendment note there). #219 R1's per-line locking is superseded
   for the log path.
 - The 448-byte static redraw frame from #268 moves to the Console task's stack,

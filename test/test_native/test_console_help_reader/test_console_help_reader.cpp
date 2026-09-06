@@ -2,7 +2,7 @@
 // test/test_native/test_console_help_reader/test_console_help_reader.cpp
 //
 // Native tests for the Console help path through the injected reader
-// (ADR 0034). The module reads help text on demand via a caller-supplied
+// (ADR 0036). The module reads help text on demand via a caller-supplied
 // seek/read pair, which is what makes these states reachable off-device at
 // all -- a LittleFS File opened in setup() is not.
 //

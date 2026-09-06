@@ -113,7 +113,7 @@ single `rcTriggerSlotsCopy` helper next to the slot fields in `config_store.h`.
 ## Amended 2026-08-27
 
 Recorded after the grilling session that charted the Controller Console (epic
-#206, ADR 0034). The core stays pure and the Param Source stays the boundary;
+#206, ADR 0036). The core stays pure and the Param Source stays the boundary;
 what changes is who owns the side effects. "The HTTP handler is its adapter and
 owns every side effect (state sync, queues, persistence, response)" held while
 there was one adapter. With a browser console and a serial terminal sharing

@@ -2,7 +2,7 @@
 // test/test_native/test_api_console/test_api_console.cpp
 //
 // Native unit tests for POST /api/console -- the browser adapter over the
-// Console module (ADR 0034), driven through the WebRequest seam's host-test
+// Console module (ADR 0036), driven through the WebRequest seam's host-test
 // backend (ADR 0021).
 //
 // These cover the one class of defect an adapter over a callback sink can get
@@ -510,7 +510,7 @@ void test_help_emits_catalog_availability_fields() {
     // Those three are the whole availability set. Readiness is not among them
     // and never was true information: the catalog claimed it for every entry
     // while dispatch refused ~44 of them, so the field is gone from the
-    // browser adapter's help reply too (ADR 0035, #263).
+    // browser adapter's help reply too (ADR 0037, #263).
     TEST_ASSERT_FALSE_MESSAGE(fieldValue(backend.sentBody, "executor_ready", value, sizeof(value)),
         "help must not advertise executor readiness at discovery time");
 }

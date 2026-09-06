@@ -21,7 +21,7 @@
 #include "failed_alloc_tracker.h"
 
 // =============================================================================
-// Profiler reading - the shared core beneath every profiler adapter (ADR 0034)
+// Profiler reading - the shared core beneath every profiler adapter (ADR 0036)
 //
 // GET /api/profiler and the Controller Console's system.api.get-profiler
 // answer from ONE read of the profiler's counters. The HTTP handler renders it
@@ -170,7 +170,7 @@ void handleProfilerGet(WebRequest& req);
 
 #if PA_HEAP_TRACING
 // Tier 3 leak-trace cores, shared by the two POST routes below and by the
-// Console's system.action.profiler-trace-start|stop (#224, ADR 0034). The
+// Console's system.action.profiler-trace-start|stop (#224, ADR 0036). The
 // running/not-running distinction lives here rather than in each adapter,
 // because it is one piece of device state and two opinions of it is how a
 // trace gets started twice.

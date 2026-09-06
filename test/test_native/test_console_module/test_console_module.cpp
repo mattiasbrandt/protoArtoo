@@ -2,7 +2,7 @@
 // test/test_native/test_console_module/test_console_module.cpp
 //
 // Native tests for the Console module's status-query executors (#223, ADR
-// 0034). Every type: status entry that carries a registry fields: list is
+// 0036). Every type: status entry that carries a registry fields: list is
 // driven through consoleExecuteCommand() directly - the same entry point both
 // adapters call - never through a REST handler, and never through JSON
 // produced then reparsed.
@@ -1027,7 +1027,7 @@ void test_no_status_entry_is_executor_not_ready() {
 }
 
 // =============================================================================
-// Non-motion, non-parameterized action dispatch (#220, ADR 0034)
+// Non-motion, non-parameterized action dispatch (#220, ADR 0036)
 // =============================================================================
 
 // RC token aliases resolve through the same operation and reach the exact
@@ -1063,7 +1063,7 @@ void test_action_estop_is_blocked_not_dispatched() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
 }
 
-// Non-RC Control gate (ADR 0027/0034): webControlEnabled=false blocks the
+// Non-RC Control gate (ADR 0027/0036): webControlEnabled=false blocks the
 // same as the REST route, and the dispatch core is never reached.
 void test_action_web_control_disabled_is_blocked_not_dispatched() {
     robotState.webControlEnabled = false;
@@ -1617,7 +1617,7 @@ void test_every_named_sequence_row_dispatches() {
 
 // =============================================================================
 // Argument tokenizer + schema validation wired into real dispatch (#221,
-// ADR 0034, docs/console-protocol.md s.1.2). These run through
+// ADR 0036, docs/console-protocol.md s.1.2). These run through
 // consoleExecuteCommand() with a real combined "operation args" line, the
 // same shape both adapters hand it, and dispatchRcTriggerActionTest()'s
 // native stub (rc_input_test_hooks.h) so the actual payload plumbed through
@@ -4156,7 +4156,7 @@ void test_action_get_layout_stays_executor_not_ready_document_transfer_out_of_sc
 }
 
 // =============================================================================
-// Known-but-unavailable operations (#224, ADR 0029/0034)
+// Known-but-unavailable operations (#224, ADR 0029/0036)
 //
 // [env:native] builds with PA_HEAP_PROFILE=0 PA_HEAP_TRACING=0
 // PA_ADMISSION_TRACE=1 (platformio.ini), so the four catalog rows carrying a
@@ -4328,7 +4328,7 @@ void test_operations_lists_out_of_build_rows_with_the_reason_execution_gives() {
 }
 
 // =============================================================================
-// Readiness is reported at execution, not at discovery (ADR 0035, #263)
+// Readiness is reported at execution, not at discovery (ADR 0037, #263)
 //
 // The catalog used to carry an executor_ready flag the generator hardcoded to
 // true for every entry. So `help` claimed every operation was wired, and the
@@ -4340,7 +4340,7 @@ void test_operations_lists_out_of_build_rows_with_the_reason_execution_gives() {
 // Discovery annotates only the two availability facts that are knowable
 // without executing. No listing line may carry executor-not-ready: that is an
 // execution-time answer, and deriving it from a catalog flag is the shape
-// ADR 0035 removed.
+// ADR 0037 removed.
 void test_operations_never_annotates_executor_not_ready() {
     runOperationsListing();
 

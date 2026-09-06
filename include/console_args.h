@@ -2,7 +2,7 @@
 // include/console_args.h
 //
 // Transport-independent argument contract for the Controller Console (#221,
-// ADR 0034, docs/console-protocol.md s.1.2/1.3). This is the seam both
+// ADR 0036, docs/console-protocol.md s.1.2/1.3). This is the seam both
 // adapters' commands cross through: a raw "operationName [args...]" line
 // splits into a bare operation name plus a fixed-capacity ConsoleArgs table
 // of key/value pairs, with quote/escape/UTF-8 handling applied exactly once,

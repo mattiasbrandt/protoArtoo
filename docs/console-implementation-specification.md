@@ -3,7 +3,7 @@
 This document maps every operation in the action registry to its implementation path. It serves as the reference for implementing the Console module and its two adapters (serial terminal and browser live-logs console).
 
 **Scope:** 189 operations across four domains: drive, dome, sound, system (plus aux, rc, servo sub-domains).  
-**ADR Reference:** ADR 0034 (one operation core below HTTP handlers, two adapters).  
+**ADR Reference:** ADR 0036 (one operation core below HTTP handlers, two adapters).  
 **Inventory Base:** All 189 rows verified and cross-matched (dome/sound/system/drive-servo-aux-rc inventories).
 
 ---
@@ -150,8 +150,8 @@ Every command entering the Console module carries a `CommandSource`:
 enum CommandSource {
     SRC_SBUS = 0,
     SRC_WEB_API = 1,
-    SRC_SERIAL_CONSOLE = 2,  // New (ADR 0034)
-    SRC_WEB_CONSOLE = 3,      // New (ADR 0034)
+    SRC_SERIAL_CONSOLE = 2,  // New (ADR 0036)
+    SRC_WEB_CONSOLE = 3,      // New (ADR 0036)
 };
 ```
 
@@ -175,7 +175,7 @@ The "web control" Commanded Mode (ADR 0027) gates non-RC sources from commanding
 
 ## Outcome Enumeration
 
-Actions return an outcome instead of `void` (ADR 0034 change):
+Actions return an outcome instead of `void` (ADR 0036 change):
 
 | Outcome | Meaning |
 |---------|---------|
@@ -214,7 +214,7 @@ Each ticket implements one domain's operations in the Console module:
 ### Integration Points
 - **ADR 0011 (Commit Step):** Apply Core + Commit Step pair for every config operation
 - **ADR 0021 (Web request seam):** Console adapter = ordinary admitted route handler
-- **ADR 0034 (Console seam):** Operation core sits below HTTP handlers; both adapters call the same one
+- **ADR 0036 (Console seam):** Operation core sits below HTTP handlers; both adapters call the same one
 - **RobotState zones (ADR 0012):** Snapshot reads via `taskENTER_CRITICAL(&robotStateMux)`
 - **Commanded Modes (ADR 0027):** Runtime toggles + NVS persistence for component enables
 

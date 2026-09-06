@@ -8,7 +8,7 @@ about it:
   Toggle is off - that is how SeqDisp went missing for an unknown length of
   time, #250);
 - test_task_stack_recipes.py, which requires every task to have a Measured Chain
-  and a compile-enforced floor (#271, ADR 0038).
+  and a compile-enforced floor (#271, ADR 0040).
 
 Both scan the whole tree rather than `src/main.cpp`. The criterion is the task,
 not the file it happens to be created in: WebEvents and the ArduinoOTA task live

@@ -4072,7 +4072,7 @@ entries:
   executor: sequenceStart
 - name: system.console
   display_name: Controller Console
-  description: 'Browser adapter for the Controller Console (ADR 0034). Processes operations and returns Console Records.'
+  description: 'Browser adapter for the Controller Console (ADR 0036). Processes operations and returns Console Records.'
   domain: system
   type: action
   marcduino_cmd: null
@@ -4087,7 +4087,7 @@ entries:
   nvs_key: null
   # Not an operation the Console executes (#221): this row IS the browser
   # Console Adapter - POST /api/console, the transport that carries every other
-  # operation (ADR 0034, src/web/api_console.cpp:108). Running it from the
+  # operation (ADR 0036, src/web/api_console.cpp:108). Running it from the
   # Console would be the adapter invoking itself. It stays in the registry
   # because the route exists and the inventory tracks routes; it is not a
   # wiring gap and never will be one.

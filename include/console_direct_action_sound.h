@@ -108,7 +108,7 @@ static void consoleExecuteSoundPlayTrack(uint32_t requestId, const char* operati
 // sound.action.set-volume: volume=<0..30> - the same audioQueueSetVolume() +
 // persist-as-default sequence handleAudioPost()'s action=volume branch makes
 // (src/web/api_audio.cpp); audioSetVolumeCommitApplied() (include/
-// api_audio.h) is the extracted ADR 0034 Commit Step both now share.
+// api_audio.h) is the extracted ADR 0036 Commit Step both now share.
 static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operationName,
                                          const ConsoleArgs& args, ConsoleCommandSource source,
                                          const ConsoleRecordSink* sink) {

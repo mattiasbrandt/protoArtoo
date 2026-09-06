@@ -12,7 +12,7 @@ the ticket asked for SeqDisp's runtime high-water mark, and no bench session
 could ever have produced it.
 
 This test is the enforcement the comment always implied. It scans the whole
-tree, not `src/main.cpp` (#271, ADR 0038): the criterion is the task, not the
+tree, not `src/main.cpp` (#271, ADR 0040): the criterion is the task, not the
 file it happens to be created in, and the main.cpp-only scan was blind to all
 three tasks created elsewhere -- WebEvents and the ArduinoOTA task in
 src/web/web_server.cpp, HostedRecovery in
