@@ -221,17 +221,26 @@ def generate_help_text(entries, output_path):
         # Construct line: name|display_name|description|executor|params
         line = f"{name}|{display_name}|{description}|{executor}|{params_str}\n"
 
-        # Record offset before adding to lines
-        offsets[name] = (current_offset, len(line) - 1)  # -1 for newline
-        current_offset += len(line)
+        # Record offset before adding to lines. BYTES, not characters: the
+        # firmware seeks with these numbers on a LittleFS file
+        # (consoleGetHelpText(), src/console/console_module.cpp), and Python's
+        # len() on a str counts characters. The registry's descriptions carry
+        # en and em dashes, each three bytes of UTF-8 for one character, so a
+        # character count leaves every row after the first dash addressed two
+        # bytes early - and the error accumulates row by row (#281).
+        encoded = line.encode('utf-8')
+        offsets[name] = (current_offset, len(encoded) - 1)  # -1 for newline
+        current_offset += len(encoded)
         lines.append(line)
 
-    with open(output_path, 'w') as f:
+    # Explicit encoding: the offsets above are UTF-8 byte counts, so the file
+    # must be written as UTF-8 whatever the caller's locale says.
+    with open(output_path, 'w', encoding='utf-8') as f:
         for line in lines:
             f.write(line)
 
     # Print stats
-    total_bytes = sum(len(l) for l in lines)
+    total_bytes = sum(len(l.encode('utf-8')) for l in lines)
     print(f"Generated help text: {len(lines)} entries, {total_bytes} bytes")
     return offsets
 
