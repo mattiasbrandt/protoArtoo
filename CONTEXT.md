@@ -538,8 +538,12 @@ The state in which a host is present on the serial adapter but its transmit path
 _Avoid_: blind link (the operator's view, not a firmware state), wedge, slow host, not connected
 
 **Measured Chain**:
-A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0040).
+A task's worst-case static call depth from its entry function, as obtained by walking the linked image with the recipe that names its roots and stitches its indirect calls. It is a value you measure, always of one image at one commit, and on Xtensa it is a lower bound rather than an exact figure. A high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0040).
 _Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
+
+**Recorded Chain**:
+The `*_MEASURED_CHAIN_BYTES` constant in `include/config.h` for one task on one chip: a **Measured Chain** as last written down by hand. A task stack is sized and floored against this number, not against a fresh walk, so the two drift apart silently whenever nobody re-walks - which is what the gate row and the bench walk exist to catch (ADR 0040).
+_Avoid_: recorded constant, "the constant" unqualified, using **Measured Chain** for the written-down number
 
 **Console Client**:
 A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
@@ -661,7 +665,8 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
 - A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike
 - Every log line is written once, to the **Log Ring**; the serial **Console Adapter** is its only serial reader and the only writer of the serial wire after it binds
-- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its chain; the sizing margin above the chain is a per-chip judgement recorded beside the constant
+- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its **Recorded Chain**; the sizing margin above the chain is a per-chip judgement recorded beside the constant
+- Stack safety is two links, not one: a compile-time assert gives `stack >= `**Recorded Chain**, and re-walking gives **Measured Chain**` <= `**Recorded Chain**. Only both together give `stack >= `**Measured Chain**. Where the walk is not run, the second link is absent and the property is unverified rather than false
 
 ## Example Dialogue
 
@@ -710,6 +715,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 ## Flagged Ambiguities
 - "bench" was read as *"USB plus whatever test gear you can attach"* — a spare receiver, a signal generator, a loopback, a breakout, a bench servo/ESC, a scope or logic analyser were all listed as in scope. That is not feasible or practical on this project's bench, where a board is powered by the computer's USB cable and nothing else is connected. Resolved by defining **Bench-Mode** as USB-only with nothing attached. Connecting a jumper or probe is possible but is an exceptional measure the operator calls in a dire situation — never a routine capability, and never something a ticket may plan around — so a pin-level electrical check is scoped as droid-gate work by definition rather than by argument. The wrong reading had propagated from this glossary into six tickets and repeatedly produced bench tickets that quietly required hardware nobody could attach.
 - "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
+- "measured chain" named two numbers that had drifted 720 B apart (2026-09-06, #271): the depth a fresh walk reports and the `*_MEASURED_CHAIN_BYTES` constant it is compared against. Resolved as **Measured Chain** (walked, of one image at one commit) and **Recorded Chain** (written down, what the stack is floored against). The tool already drew the line - `tools/check_task_stack_chains.py` says "the freshly walked chain must be <= the constant" - but called the second one three things, and this file called both the first. The drift itself was ADR 0040 line 25 coming true: "nothing notices the chain growing past it."
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.
