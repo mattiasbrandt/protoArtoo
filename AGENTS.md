@@ -253,7 +253,7 @@ first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
 which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
 line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Five rules the Makefile cannot enforce for you:
+Six rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
@@ -284,6 +284,17 @@ Five rules the Makefile cannot enforce for you:
   uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
   that had been built against the placeholder SSID. Copy it in when you create a
   worktree, and never commit it.
+- **Device and build work runs where the operator can watch it**, wherever a pane
+  multiplexer is available (this bench uses Herdr; you are inside it when
+  `HERDR_ENV=1`). Flashing, bench-sheet replays, long builds and anything that
+  touches a board go in a visible pane, not a backgrounded call whose output you
+  summarise afterwards. Two reasons, and the second is not a preference: the
+  operator is the second pair of eyes on a board that can be mis-flashed - a
+  mis-aimed `make flash` has already left the artoo-esp32 in the ROM download stub
+  and off the network - and a bench sheet's `pause` rows block on stdin and fail
+  outside a tty ("no controlling terminal to wait on"), as does the sudo YubiKey
+  cue. Where no multiplexer is available, **say so before starting a device
+  session** rather than running it headless.
 
 ### The Console Client
 
