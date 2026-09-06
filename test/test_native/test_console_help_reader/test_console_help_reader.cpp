@@ -391,6 +391,46 @@ void test_over_long_row_with_no_params_tail_is_whole() {
                                    "hostedLinkResetCoprocessor");
 }
 
+void test_clamped_description_is_marked_truncated() {
+    // Ten of the 194 catalog descriptions are longer than the module's
+    // 256-byte field buffer, and this is the longest at 506 bytes. The value
+    // is clamped - the board has no static RAM to spend on carrying it whole -
+    // so the operator gets a sentence that stops mid-word, and before this the
+    // record said nothing about that at all.
+    useRealHelpFile();
+    runHelp("help dome.action.dome-sequence");
+
+    const char* description = fieldNamed("description");
+    TEST_ASSERT_NOT_NULL(description);
+    TEST_ASSERT_EQUAL_UINT32(255, (uint32_t)strlen(description));
+
+    const char* marker = fieldNamed("description_truncated");
+    TEST_ASSERT_NOT_NULL_MESSAGE(marker,
+        "a clamped description was emitted with nothing to say it had been cut");
+    TEST_ASSERT_EQUAL_STRING("true", marker);
+
+    // The marker is not the degradation status: the prose IS here, so
+    // help_file_status must stay absent (docs/console-protocol.md s.3.4).
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
+        "a clamped field is not an unreadable help file");
+}
+
+void test_whole_description_carries_no_truncation_marker() {
+    // The other half of the same guarantee: the marker is present exactly when
+    // something was cut, so its absence is meaningful.
+    useReader("drive.action.move|Move|Set drive speed and steering|driveArbiterSubmit|", true,
+              false);
+    runHelp("help drive.action.move");
+
+    TEST_ASSERT_EQUAL_STRING("Set drive speed and steering", fieldNamed("description"));
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("description_truncated"),
+        "a whole description must not be marked truncated");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("display_name_truncated"),
+        "a whole display_name must not be marked truncated");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("executor_truncated"),
+        "a whole executor must not be marked truncated");
+}
+
 void test_row_cut_before_its_executor_degrades_explicitly() {
     // What a read that does not reach the executor's closing delimiter leaves
     // behind - a row longer than the read buffer, or a help file that ends
@@ -452,6 +492,8 @@ int main(int, char**) {
     RUN_TEST(test_over_long_row_keeps_description_and_executor);
     RUN_TEST(test_over_long_row_keeps_executor_when_only_it_overflowed);
     RUN_TEST(test_over_long_row_with_no_params_tail_is_whole);
+    RUN_TEST(test_clamped_description_is_marked_truncated);
+    RUN_TEST(test_whole_description_carries_no_truncation_marker);
     RUN_TEST(test_row_cut_before_its_executor_degrades_explicitly);
     RUN_TEST(test_help_request_allocates_nothing);
     RUN_TEST(test_status_query_allocates_nothing);
