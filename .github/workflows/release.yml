@@ -24,16 +24,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Flashable, user-relevant sound-backend envs only. Adding a future
-        # backend is a one-line addition here — do not hand-roll more jobs.
-        # Excluded on purpose: artoo_esp32_prod (self-build-only), *_check
-        # (compile-only), *_profiler* (dev tooling), *_ota (identical
-        # firmware.bin to its non-OTA counterpart, just a different
-        # upload_protocol).
-        env:
-          - artoo_esp32_chirp
-          - artoo_esp32_mp3trigger
-          - artoo_esp32_dysv5w
+        # Flashable, user-relevant envs only: one artoo-esp32 image per sound
+        # backend, and the FireBeetle 2 image (its default DY-SV5W backend).
+        # Adding a future backend or board is one entry here — do not
+        # hand-roll more jobs. Excluded on purpose: artoo_esp32_prod
+        # (self-build-only), *_check (compile-only), *_profiler* (dev
+        # tooling), *_bringup and *_bench (not the firmware), *_ota
+        # (identical firmware.bin to its non-OTA counterpart, just a
+        # different upload_protocol).
+        #
+        # Each chip target has its own PlatformIO core dir, as in the
+        # Makefile and verification.yml: the classic ESP32 toolchain lives in
+        # ~/.platformio, the ESP32-P4 one (a different pioarduino platform
+        # version) in ~/.platformio-p4. `pool` names the cache, `core_dir`
+        # the directory under $HOME.
+        include:
+          - env: artoo_esp32_chirp
+            pool: classic
+            core_dir: .platformio
+          - env: artoo_esp32_mp3trigger
+            pool: classic
+            core_dir: .platformio
+          - env: artoo_esp32_dysv5w
+            pool: classic
+            core_dir: .platformio
+          - env: firebeetle2
+            pool: p4
+            core_dir: .platformio-p4
     steps:
       # Default depth-1 checkout is enough for the version stamp: on a tag
       # push the tag ref itself is fetched, so git describe resolves it at
@@ -54,21 +71,28 @@ jobs:
       - name: 💾 Cache PlatformIO packages and toolchains
         uses: actions/cache@v6
         with:
-          # Cache the whole ~/.platformio tree, matching verification.yml — skips
-          # re-downloading/re-unpacking the ESP-IDF toolchain on a warm cache.
-          path: ~/.platformio
-          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-
+          # Cache the whole core-dir tree for this chip target. The key
+          # matches verification.yml's, so a tag build restores the cache
+          # the PR gate already filled instead of re-downloading and
+          # re-unpacking the ESP-IDF toolchain.
+          path: ~/${{ matrix.core_dir }}
+          key: ${{ runner.os }}-pio-${{ matrix.pool }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-${{ matrix.pool }}-
 
       # No secrets.h is provisioned here on purpose: release binaries must be
       # built without one so the Developer WiFi Shortcut (ADR 0015) stays
       # unavailable and a fresh controller boots into WiFi Provisioning.
       # Even the placeholder secrets.h.example defines the shortcut macros.
       - name: 🏗️ Build firmware
-        run: pio run -e ${{ matrix.env }}
+        run: |
+          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
+          mkdir -p "$PLATFORMIO_CORE_DIR"
+          pio run -e ${{ matrix.env }}
 
       - name: 🗂️ Build filesystem image
-        run: pio run -e ${{ matrix.env }} -t buildfs
+        run: |
+          export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
+          pio run -e ${{ matrix.env }} -t buildfs
 
       - name: 📦 Stage release artifacts
         run: |
