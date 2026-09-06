@@ -115,6 +115,92 @@ size_t consoleFormatPair(char* buffer, size_t bufferSize, const char* key, const
     return (size_t)written;
 }
 
+// -----------------------------------------------------------------------------
+// Record lines
+//
+// One helper decides "did it fit" for all five, because that is the rule the
+// serial adapter got wrong for every one of them: snprintf() reports the
+// length it WOULD have written, so a `>= bufferSize` result means NOTHING
+// usable is in the buffer, and a caller that only tests `< bufferSize` before
+// emitting throws the record away without a trace (#282).
+// -----------------------------------------------------------------------------
+static size_t fitted(int written, size_t bufferSize) {
+    if (written < 0 || (size_t)written >= bufferSize) {
+        return 0;  // did not fit: the caller must count a dropped record
+    }
+    return (size_t)written;
+}
+
+size_t consoleFormatBeginRecord(char* buffer, size_t bufferSize, uint32_t requestId,
+                                const char* operationType) {
+    if (buffer == nullptr || bufferSize == 0 || operationType == nullptr) {
+        return 0;
+    }
+    return fitted(snprintf(buffer, bufferSize, "< id=%lu type=begin operation=%s",
+                           (unsigned long)requestId, operationType),
+                  bufferSize);
+}
+
+size_t consoleFormatFieldRecord(char* buffer, size_t bufferSize, uint32_t requestId,
+                                const char* name, const char* value) {
+    if (buffer == nullptr || bufferSize == 0 || name == nullptr || value == nullptr) {
+        return 0;
+    }
+    return fitted(snprintf(buffer, bufferSize, "< id=%lu type=field name=%s value=%s",
+                           (unsigned long)requestId, name, value),
+                  bufferSize);
+}
+
+size_t consoleFormatItemRecord(char* buffer, size_t bufferSize, uint32_t requestId,
+                               const char* value) {
+    if (buffer == nullptr || bufferSize == 0 || value == nullptr) {
+        return 0;
+    }
+    return fitted(snprintf(buffer, bufferSize, "< id=%lu type=item value=%s",
+                           (unsigned long)requestId, value),
+                  bufferSize);
+}
+
+// The two closing records differ only in their type token, so they share a
+// body: `result` answers a single-record request, `end` closes a group.
+static size_t formatClosingRecord(char* buffer, size_t bufferSize, const char* recordType,
+                                  uint32_t requestId, ConsoleStatus status,
+                                  ConsoleOutcome outcome, ConsoleReason reason,
+                                  const char* droppedSuffix) {
+    if (buffer == nullptr || bufferSize == 0) {
+        return 0;
+    }
+
+    // Present exactly when there is a reason, on both closing records and both
+    // adapters - consoleReasonIsPresent() is the one place that rule lives, so
+    // it cannot drift back into a per-record special case (see its header
+    // comment for the availability answer that lost its reason to one).
+    char reasonStr[64] = {};
+    if (consoleReasonIsPresent(reason)) {
+        snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
+    }
+
+    return fitted(snprintf(buffer, bufferSize, "< id=%lu type=%s status=%s outcome=%s%s%s",
+                           (unsigned long)requestId, recordType, consoleStatusString(status),
+                           consoleOutcomeString(outcome), reasonStr,
+                           (droppedSuffix != nullptr) ? droppedSuffix : ""),
+                  bufferSize);
+}
+
+size_t consoleFormatResultRecord(char* buffer, size_t bufferSize, uint32_t requestId,
+                                 ConsoleStatus status, ConsoleOutcome outcome,
+                                 ConsoleReason reason, const char* droppedSuffix) {
+    return formatClosingRecord(buffer, bufferSize, "result", requestId, status, outcome, reason,
+                               droppedSuffix);
+}
+
+size_t consoleFormatEndRecord(char* buffer, size_t bufferSize, uint32_t requestId,
+                              ConsoleStatus status, ConsoleOutcome outcome, ConsoleReason reason,
+                              const char* droppedSuffix) {
+    return formatClosingRecord(buffer, bufferSize, "end", requestId, status, outcome, reason,
+                               droppedSuffix);
+}
+
 const char* consoleQuoteValue(const char* value, char* tempBuffer, size_t tempBufferSize) {
     if (value == nullptr || tempBuffer == nullptr || tempBufferSize == 0) {
         return value;

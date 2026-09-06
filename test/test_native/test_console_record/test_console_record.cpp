@@ -220,6 +220,66 @@ void test_completed_outcome_has_its_own_token(void) {
     TEST_ASSERT_EQUAL_STRING("queued", consoleOutcomeString(CONSOLE_OUTCOME_QUEUED));
 }
 
+// -----------------------------------------------------------------------------
+// Record lines (#282)
+//
+// The serial adapter's record buffer is CONSOLE_RECORD_LINE_MAX bytes and the
+// longest value it carries is a help `description`, clamped to 255 by the
+// Console module. At 256 that record could not be formatted at all, and the
+// emitter's `if (len < sizeof(buf))` test then emitted nothing: no line, no
+// marker, no count. These pin both halves of the rule -- a full-length
+// description fits, and a record that does not fit reports 0 rather than a
+// half-line.
+// -----------------------------------------------------------------------------
+void test_field_record_carries_a_full_length_description(void) {
+    char description[256];
+    memset(description, 'D', sizeof(description) - 1);
+    description[sizeof(description) - 1] = '\0';  // 255 bytes, the module's clamp
+
+    char line[CONSOLE_RECORD_LINE_MAX];
+    size_t len = consoleFormatFieldRecord(line, sizeof(line), 28, "description", description);
+
+    TEST_ASSERT_TRUE_MESSAGE(len > 0,
+        "a 255-byte description did not fit the record line: the serial adapter drops it whole");
+    TEST_ASSERT_EQUAL_UINT32(len, (uint32_t)strlen(line));
+    // The value survives to its last byte -- truncation would be a different
+    // defect from the one this pins, and just as invisible.
+    static const char kPrefix[] = "< id=28 type=field name=description value=";
+    TEST_ASSERT_EQUAL_INT(0, strncmp(line, kPrefix, sizeof(kPrefix) - 1));
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)(sizeof(kPrefix) - 1 + 255), (uint32_t)len);
+    TEST_ASSERT_EQUAL_CHAR('D', line[len - 1]);
+}
+
+void test_record_that_does_not_fit_reports_zero(void) {
+    char value[64];
+    memset(value, 'V', sizeof(value) - 1);
+    value[sizeof(value) - 1] = '\0';
+
+    char small[32];
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0,
+        (uint32_t)consoleFormatFieldRecord(small, sizeof(small), 7, "description", value),
+        "an over-long field record must report 0, not the length snprintf WOULD have written");
+    TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)consoleFormatItemRecord(small, sizeof(small), 7, value));
+    TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)consoleFormatBeginRecord(small, sizeof(small), 7, value));
+}
+
+void test_closing_records_carry_reason_only_when_there_is_one(void) {
+    char line[CONSOLE_RECORD_LINE_MAX];
+
+    size_t len = consoleFormatEndRecord(line, sizeof(line), 9, CONSOLE_STATUS_OK,
+                                        CONSOLE_OUTCOME_COMPLETED, CONSOLE_REASON_NONE, "");
+    TEST_ASSERT_TRUE(len > 0);
+    TEST_ASSERT_EQUAL_STRING("< id=9 type=end status=ok outcome=completed", line);
+
+    len = consoleFormatResultRecord(line, sizeof(line), 10, CONSOLE_STATUS_ERR,
+                                    CONSOLE_OUTCOME_UNAVAILABLE,
+                                    CONSOLE_REASON_NOT_IN_THIS_BUILD, " dropped=2");
+    TEST_ASSERT_TRUE(len > 0);
+    TEST_ASSERT_EQUAL_STRING(
+        "< id=10 type=result status=err outcome=unavailable reason=not-in-this-build dropped=2",
+        line);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -265,6 +325,11 @@ int main(void) {
     RUN_TEST(test_quote_value_with_backslash_escapes_properly);
     RUN_TEST(test_reason_is_present_for_every_real_reason_and_absent_for_none);
     RUN_TEST(test_completed_outcome_has_its_own_token);
+
+    // Record line tests
+    RUN_TEST(test_field_record_carries_a_full_length_description);
+    RUN_TEST(test_record_that_does_not_fit_reports_zero);
+    RUN_TEST(test_closing_records_carry_reason_only_when_there_is_one);
 
     return UNITY_END();
 }

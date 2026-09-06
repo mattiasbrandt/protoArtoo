@@ -213,9 +213,14 @@ Every record carries `id=<n>`. Because logs and events keep streaming, records
 of one request may be separated by other lines; the Request ID is how a reader
 reassembles them.
 
-On serial only, a `result` or `end` record carries `dropped=<n>` when the sink
-could not secure USB CDC transmit room for `<n>` earlier records of that same
-request (ADR 0038); the field is absent when nothing was dropped. A dropped
+On serial only, a `result` or `end` record carries `dropped=<n>` when `<n>`
+earlier records of that same request did not reach the wire - because the sink
+could not secure USB CDC transmit room for them (ADR 0038), or because the
+record did not fit the adapter's record-line buffer; the field is absent when
+nothing was dropped. The second case is the reason the field counts records
+rather than waits: a record that cannot be formatted is lost exactly as
+completely as one that cannot be sent, and it used to leave nothing at all
+behind (#282). A dropped
 closing record itself just leaves the group unterminated, which a reader
 already treats as loss - the two together make every drop visible on the
 wire. The browser adapter builds its JSON response whole and never emits this

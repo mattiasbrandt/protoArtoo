@@ -283,24 +283,34 @@ static void emitRecordLine(const char* line, size_t len) {
     }
 }
 
+// Send what a consoleFormat*Record() call produced, or count what it could not.
+//
+// A zero length means the record did not fit recordBuffer, and a record that
+// cannot be FORMATTED is lost exactly like one that cannot be SENT - so it is
+// counted the same way and surfaces on the request's closing line as
+// `dropped=<n>` (ADR 0038, docs/console-protocol.md 3.1). This is the whole of
+// #282's serial half: the emitters used to test `len < sizeof(recordBuffer)`
+// and do nothing at all when it failed, so a `help` description past ~213
+// bytes left no line, no marker and no count on the wire while the browser
+// adapter returned the same text in full.
+static void emitFormattedRecord(size_t len) {
+    if (len == 0) {
+        g_recordsDroppedThisRequest++;
+        return;
+    }
+    emitRecordLine(recordBuffer, len);
+}
+
 static void onRecordBegin(uint32_t requestId, const char* operationType) {
     // Emit: < id=<n> type=begin operation=system.status.health
-    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
-                         "< id=%lu type=begin operation=%s",
-                         (unsigned long)requestId, operationType);
-    if (len < sizeof(recordBuffer)) {
-        emitRecordLine(recordBuffer, len);
-    }
+    emitFormattedRecord(
+        consoleFormatBeginRecord(recordBuffer, sizeof(recordBuffer), requestId, operationType));
 }
 
 static void onRecordField(uint32_t requestId, const char* name, const char* value) {
     // Emit: < id=<n> type=field name=<key> value=<value>
-    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
-                         "< id=%lu type=field name=%s value=%s",
-                         (unsigned long)requestId, name, value);
-    if (len < sizeof(recordBuffer)) {
-        emitRecordLine(recordBuffer, len);
-    }
+    emitFormattedRecord(
+        consoleFormatFieldRecord(recordBuffer, sizeof(recordBuffer), requestId, name, value));
 }
 
 static void onRecordItem(uint32_t requestId, const char* value) {
@@ -309,26 +319,21 @@ static void onRecordItem(uint32_t requestId, const char* value) {
     // lets a 194-entry `operations` listing (#219 R1, re-measured at #243:
     // 11436 B, ~0.99 s @115200 8N1) share the wire with other tasks' log
     // lines instead of blocking them for the whole listing.
-    size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
-                         "< id=%lu type=item value=%s",
-                         (unsigned long)requestId, value);
-    if (len < sizeof(recordBuffer)) {
-        emitRecordLine(recordBuffer, len);
-    }
+    emitFormattedRecord(
+        consoleFormatItemRecord(recordBuffer, sizeof(recordBuffer), requestId, value));
 }
 
 static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutcome outcome,
                           ConsoleReason reason) {
     // Guard path: emit single result record for error/unknown/unsupported operations
     // Emit: < id=<n> type=result status=ok outcome=queued [reason=...] [dropped=<n>]
-
-    // Present exactly when there is a reason. This is the record an unavailable
-    // operation answers with, so the reason must survive: the previous guard
-    // excluded CONSOLE_REASON_NOT_IN_THIS_BUILD and would have dropped it.
-    char reasonStr[64] = {};
-    if (consoleReasonIsPresent(reason)) {
-        snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
-    }
+    //
+    // The reason field is present exactly when there is a reason. This is the
+    // record an unavailable operation answers with, so the reason must
+    // survive: the previous guard excluded CONSOLE_REASON_NOT_IN_THIS_BUILD
+    // and would have dropped it. That rule now lives with the format itself
+    // (consoleFormatResultRecord, src/console/console_record.cpp), which is
+    // what lets it be proven on the host.
 
     // dropped= (ADR 0038, docs/console-protocol.md 3.1/3.6): stamped on this
     // request's closing record exactly when nonzero, counting only the
@@ -342,14 +347,8 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
     char droppedStr[24] = {};
     consoleSerialFormatDroppedSuffix(droppedStr, sizeof(droppedStr), g_recordsDroppedThisRequest);
 
-    size_t len =
-        snprintf(recordBuffer, sizeof(recordBuffer),
-                 "< id=%lu type=result status=%s outcome=%s%s%s", (unsigned long)requestId,
-                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr,
-                 droppedStr);
-    if (len < sizeof(recordBuffer)) {
-        emitRecordLine(recordBuffer, len);
-    }
+    emitFormattedRecord(consoleFormatResultRecord(recordBuffer, sizeof(recordBuffer), requestId,
+                                                  status, outcome, reason, droppedStr));
     g_recordsDroppedThisRequest = 0;  // this request is answered either way
 }
 
@@ -362,25 +361,16 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
     // intact: the previous guard also excluded CONSOLE_REASON_NOT_IN_THIS_BUILD
     // (then the enum's zero value, used as filler on success paths), which
     // would have silently dropped `reason=not-in-this-build` from a real
-    // `unavailable` answer.
-    char reasonStr[64] = {};
-    if (consoleReasonIsPresent(reason)) {
-        snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
-    }
+    // `unavailable` answer. The rule is consoleReasonIsPresent(), applied by
+    // the formatter both closing records share.
 
     // dropped= (ADR 0038): see onRecordResult's comment above -- same
     // capture-before-emit, same drain-after-emit discipline.
     char droppedStr[24] = {};
     consoleSerialFormatDroppedSuffix(droppedStr, sizeof(droppedStr), g_recordsDroppedThisRequest);
 
-    size_t len =
-        snprintf(recordBuffer, sizeof(recordBuffer),
-                 "< id=%lu type=end status=%s outcome=%s%s%s", (unsigned long)requestId,
-                 consoleStatusString(status), consoleOutcomeString(outcome), reasonStr,
-                 droppedStr);
-    if (len < sizeof(recordBuffer)) {
-        emitRecordLine(recordBuffer, len);
-    }
+    emitFormattedRecord(consoleFormatEndRecord(recordBuffer, sizeof(recordBuffer), requestId,
+                                               status, outcome, reason, droppedStr));
     g_recordsDroppedThisRequest = 0;  // this request is answered either way
 }
 
