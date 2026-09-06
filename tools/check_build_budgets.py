@@ -8,6 +8,7 @@ Fails if any environment exceeds its budget.
 
 import json
 import os
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -91,11 +92,43 @@ def build_environment(env_name, budgets):
 
 
 def main():
+    # --exclude keeps an environment's budget on the books while taking its
+    # build off a caller's path. AGENTS.md "Verification Scale": a check earns
+    # its place on every pull request by catching something a pull request can
+    # break. firebeetle2_bringup is a bench sketch that excludes all of src/,
+    # so no ordinary change can move its size, and building it cost 5m19s of
+    # every run. It is still measured where it matters - on main, and before a
+    # release - just not on each iteration of a branch.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--exclude",
+        default="",
+        metavar="ENV[,ENV...]",
+        help="comma-separated environments to skip; their budgets stay in the file",
+    )
+    args = parser.parse_args()
+    excluded = {e.strip() for e in args.exclude.split(",") if e.strip()}
+
     budgets = load_budgets()
     envs = budgets.get("envs", {})
 
     if not envs:
         print("ERROR: No environments in budgets file", file=sys.stderr)
+        sys.exit(1)
+
+    unknown = excluded - set(envs)
+    if unknown:
+        # A typo in --exclude must not silently check everything: that is how a
+        # budget quietly stops being enforced.
+        print(f"ERROR: --exclude names unknown environments: {sorted(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
+    envs = {k: v for k, v in envs.items() if k not in excluded}
+    if excluded:
+        print(f"Skipping {len(excluded)} environment(s): {', '.join(sorted(excluded))}", file=sys.stderr)
+
+    if not envs:
+        print("ERROR: every environment was excluded", file=sys.stderr)
         sys.exit(1)
 
     print(f"Checking {len(envs)} environments...\n", file=sys.stderr)

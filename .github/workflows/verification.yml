@@ -149,29 +149,35 @@ jobs:
       # if any check did not succeed. steps.<id>.outcome reflects the actual
       # pass/fail even when continue-on-error is set.
 
-      - name: 🏗️ Firmware build
-        id: firmware-build
-        continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
-        run: pio run -e artoo_esp32
-
       - name: 🏗️ Profiler build
         id: profiler-build
         continue-on-error: true
         if: steps.changes.outputs.code == 'true'
         run: pio run -e artoo_esp32_profiler
 
-      - name: 🏗️ FireBeetle 2 build (full firmware)
-        id: firebeetle2-full-build
-        continue-on-error: true
-        if: steps.changes.outputs.code == 'true'
-        run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2
-
-      - name: 📏 Build size budgets
+      - name: 🏗️ Builds and size budgets
         id: build-budgets
         continue-on-error: true
         if: steps.changes.outputs.code == 'true'
-        run: python3 tools/check_build_budgets.py
+        # This step IS the firmware build. It ran as a duplicate for a long
+        # time: artoo_esp32 and firebeetle2 were each built by a dedicated step
+        # and then rebuilt here minutes later in the same job (3m08s then
+        # 3m30s; 5m57s then 5m52s - full rebuilds, not incremental), which was
+        # 9m22s of a 30m31s run buying nothing. The dedicated steps are gone and
+        # this one reports both outcomes: a build that fails and a build that
+        # overruns its budget both fail this row.
+        #
+        # firebeetle2_bringup is skipped on pull requests only. It is a bench
+        # sketch that excludes all of src/, so no ordinary change can move its
+        # size, and it cost 5m19s of every run. It is still built on main and
+        # before a release, which is where its budget actually protects
+        # something (AGENTS.md "Verification Scale").
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 tools/check_build_budgets.py --exclude firebeetle2_bringup
+          else
+            python3 tools/check_build_budgets.py
+          fi
 
       - name: 🧪 Native tests
         id: native-tests
@@ -210,9 +216,7 @@ jobs:
       - name: 📊 Write run summary
         if: always()
         env:
-          BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
           PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
-          FIREBEETLE2_OUTCOME: ${{ steps.firebeetle2-full-build.outcome }}
           BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
@@ -244,10 +248,8 @@ jobs:
             fi
             echo "| | Check | Command | Status |"
             echo "|---|---|---|---|"
-            row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e artoo_esp32"
             row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e artoo_esp32_profiler"
-            row "$FIREBEETLE2_OUTCOME" "FireBeetle 2 build"  "pio run -e firebeetle2"
-            row "$BUDGETS_OUTCOME"   "Build size budgets"   "python3 tools/check_build_budgets.py"
+            row "$BUDGETS_OUTCOME"   "Builds and size budgets" "python3 tools/check_build_budgets.py"
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
@@ -271,9 +273,7 @@ jobs:
       - name: 🚦 Gate — fail if any check failed
         if: always()
         env:
-          BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
           PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
-          FIREBEETLE2_OUTCOME: ${{ steps.firebeetle2-full-build.outcome }}
           BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
@@ -295,10 +295,8 @@ jobs:
             failed+=("$name")
           }
 
-          check "$BUILD_OUTCOME"        "firmware-build"
           check "$PROFILER_OUTCOME"     "profiler-build"
-          check "$FIREBEETLE2_OUTCOME"  "firebeetle2-full-build"
-          check "$BUDGETS_OUTCOME"      "build-budgets"
+          check "$BUDGETS_OUTCOME"      "builds-and-budgets"
           check "$TESTS_OUTCOME"        "native-tests"
           check "$ANALYSIS_OUTCOME"     "static-analysis"
           check "$DRIFT_OUTCOME"        "action-drift"
