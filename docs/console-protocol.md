@@ -287,6 +287,15 @@ be read:
   operation fails (e.g., file truncated or stale offsets), the `help_file_status`
   field is emitted with value `unreadable`, and the same three prose fields are
   omitted.
+- If a seek and a read both succeed but return a row belonging to a different
+  operation, `help_file_status` is `unreadable` as well, and the three prose
+  fields are omitted. This is the quiet half of "stale offsets": the offsets are
+  compiled into the firmware image, the rows live in the filesystem image, and
+  the two are flashed separately, so a firmware-only update can leave every
+  offset after an inserted row addressing its neighbour. Nothing fails - the
+  answer is simply another operation's prose. The first field of a row is the
+  operation name, so the firmware compares it and reports the file rather than
+  quoting text it cannot vouch for (#281).
 
 What is withheld is only that prose. The fields the in-image catalog owns -
 `type`, `available_on_board`, `available_in_build`, `requires_web_control`,
