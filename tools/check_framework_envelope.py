@@ -176,7 +176,7 @@ def check(env: str, quiet: bool = False, sdkconfig: Path | None = None) -> int:
     print("[envelope] pristine while the project stamp still claims they were rebuilt.")
     print("[envelope] Repair (nothing else building on this machine):")
     print("[envelope]   rm -f sdkconfig.defaults")
-    print("[envelope]   flock /tmp/protoartoo-pio.lock pio run -e %s" % env)
+    print("[envelope]   make build BUILD_ENV=%s" % env)
     print("[envelope] The log must show all three of: 'Reinstall', 'Compile Arduino IDF")
     print("[envelope] libs', 'Copied compiled'. Then re-run this check.")
     print("[envelope] If a key still will not hold, a Kconfig `select` in another")

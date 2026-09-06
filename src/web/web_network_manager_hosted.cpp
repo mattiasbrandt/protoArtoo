@@ -75,9 +75,9 @@ static volatile bool g_staConnected = false;
 // ESP-Hosted's SDIO driver posts ESP_HOSTED_EVENT_TRANSPORT_FAILURE
 // unconditionally when MAX_SDIO_WRITE_RETRY writes fail, then restarts the
 // host under #if H_TRANSPORT_RESTART_ON_FAILURE. [env:firebeetle2]'s
-// custom_sdkconfig (platformio.ini) leaves that symbol undefined (#189 slice
-// 1), so the event fires and the host survives -- but nothing reconnects on
-// its own. This is that missing subscriber, ported from the device-proven
+// custom_sdkconfig (platformio.ini) leaves that symbol undefined (#189), so
+// the event fires and the host survives -- but nothing reconnects on its
+// own. This is that missing subscriber, ported from the device-proven
 // bringup/p4_hosted_bench.cpp rather than re-derived (#189's own instruction:
 // "port its shape, do not re-derive it").
 //

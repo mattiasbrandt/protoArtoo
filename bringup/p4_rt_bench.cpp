@@ -1,5 +1,5 @@
 /**
- * P4 RT safety/continuity bench harness — #195 Slice 2
+ * P4 RT safety/continuity bench harness (#195)
  * Lives in bringup/ (fenced outside src/) and runs alongside the full firmware.
  *
  * Exercises the three device-criteria for #195 (watchdog reset, SBUS failsafe,

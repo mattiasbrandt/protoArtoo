@@ -129,7 +129,7 @@ check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metad
 	python3 tools/check_action_registry_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
-	python3 tools/check_build_budgets.py
+	$(FLOCK) python3 tools/check_build_budgets.py
 
 # Runs automatically after `make build`. Separate target for checking a build
 # someone else produced, or for re-checking after a repair. The build budget

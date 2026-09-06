@@ -132,14 +132,14 @@ Boot default is now true; clears on first valid SBUS frame only.
 ```
 
 ```
-feat(hw)!: confirm UART1 hoverboard pins from PCB trace — update config.h
+feat(hw)!: confirm UART1 drive pins from PCB trace — update config.h
 
-BREAKING CHANGE: PIN_HOVERBOARD_TX and PIN_HOVERBOARD_RX now have confirmed
+BREAKING CHANGE: PIN_DRIVE_TX and PIN_DRIVE_RX now have confirmed
 values from Phase 0 PCB trace. TBD placeholder values are removed.
 Any build relying on the old TBD compile-error guards will fail differently.
 
-PIN_HOVERBOARD_TX = 17
-PIN_HOVERBOARD_RX = 16
+PIN_DRIVE_TX = 16
+PIN_DRIVE_RX = 17
 ```
 
 ```
