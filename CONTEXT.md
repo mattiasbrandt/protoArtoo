@@ -455,6 +455,18 @@ _Avoid_: capability envelope, pruning, stripped features, capability (unqualifie
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
 _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
 
+**WiFi Module**:
+The operator-facing name for a wireless co-processor fitted to a Board Variant - on firebeetle2, the ESP32-C6 that serves Hosted WiFi over SDIO. "Co-processor" stays the internal term; operators see **WiFi module**, the same translation Feature Availability makes when it renders "not in this build" as *Not included*. Boards without one report it as not on this board, so artoo-esp32 owners meet the name too.
+_Avoid_: co-processor (in operator copy), C6, slave, radio module (see Flagged Ambiguities), network module
+
+**WiFi Module Update**:
+Replacing the firmware running on the **WiFi Module**, host-to-module over the existing SDIO link. A third update object beside Firmware Update and Filesystem Update, and never a second kind of firmware update: it is a different chip, a different transport, and it cannot be performed by the same flow.
+_Avoid_: C6 slave OTA, slave-image update, firmware update (for this object), FireBeetle OTA
+
+**WiFi Module Update Support**:
+Whether the firmware currently on a **WiFi Module** answers the update RPCs, in three states: **unknown** (the module is not on the bus, so it was never asked), **not supported** (it answered the link but refused the RPCs - permanent for that image, and the wired path is the only route), and **supported**. Unlike **Feature Availability** it is a fact about an image protoArtoo does not build and cannot declare, so it is discovered by attempt rather than declared - the one sanctioned exception to the no-probing rule, which exists to stop us probing our own features. Unknown is never rendered as not supported: one is a module to go and check, the other is a trip to the wires.
+_Avoid_: WiFi module capability (the glossary already carries two meanings for "capability"), slave OTA support, feature detection, treating an unreadable version as version 0.0.0
+
 **Network-Optional Operation**:
 The droid's defined functions — RC drive, dome, sound, servos, and every safety path — never depend on a network backend being fitted, configured, or reachable. A Board Variant may declare no network backend at all. A network that is absent or down removes only the web UI and web-only operations; it never restarts the controller and never degrades a droid function. Persistent network failure is announced by the droid itself (sound, dome text, serial log), not only through the web UI (ADR 0032).
 _Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
@@ -468,6 +480,26 @@ _Avoid_: bench verified, bench tested, bench-attachable peripherals, scoping pin
 **Bench Runbook**:
 The replayable sheet for one Board Variant, `tools/bench_rows/<board>.txt`: named `@row` blocks of Console Client directives, `pause` lines where a human must act, commands only. It is a file, not a ticket. The epic's Closing Ticket points at the sheet, states what each row must show, and receives the dated evidence comment a replay leaves. (Redefined 2026-09-04, operator; until then a Bench Runbook was one ticket per board, which is how epic #206 grew two runbook tickets beside its audit ticket.)
 _Avoid_: a runbook ticket per board, copying rows from the sheet into a ticket, runbook as the acceptance record, per-ticket bench sessions
+
+**Closing Ticket**:
+The one sub-issue that carries an epic's whole verification tail: the bench rows to replay, the handful of measurements not on a sheet, the audit lines that decide closure, and the closure PR. Sized by AGENTS.md "Verification Scale": rows that earn their place, no criterion the bench cannot measure today, no bookkeeping checkboxes, a visible "Cut on purpose" table. Every box ticked closes it.
+_Avoid_: runbook ticket, audit ticket, integration-readiness ticket, gathering ticket, a verification tail spread across several sub-issues
+
+**Soak Driver**:
+One named scenario the soak harness runs against a controller — SSE soak, reconnect storm, C6-reset recovery. Each yields its own verdict, and each may be **Unavailable** on a given Image Mode.
+_Avoid_: test, scenario, mode, check
+
+**Image Mode**:
+Which firmware image's `/api/status` schema the soak harness reads, **declared** on the command line and then checked against the payload — never sniffed from it, because sniffing turns a truncated or half-built response into a confident misreading.
+_Avoid_: auto-detect, schema sniffing, board type
+
+**Run Verdict**:
+The single verdict for a whole soak run, composed from its Soak Driver verdicts and spoken in the same words they use — `PASS`, `FAIL`, `INVALID`. A driver that could not run collapses to `INVALID`: a coverage gap is never a pass.
+_Avoid_: NO IMMEDIATE BLOCKER, NO-GO, INVALID / UNKNOWN, overall result, go/no-go verdict
+
+**Not Assessed**:
+The recorded result for something a run could not measure — a driver that could not run on this Image Mode, or a window too short to judge liveness. Distinct from a pass in both the report and the verdict: what was not observed reads as not measured, never as healthy.
+_Avoid_: skipped, n/a, passing by default, no news is good news
 
 **Closing Ticket**:
 The one sub-issue that carries an epic's whole verification tail: the bench rows to replay, the handful of measurements not on a sheet, the audit lines that decide closure, and the closure PR. Sized by AGENTS.md "Verification Scale": rows that earn their place, no criterion the bench cannot measure today, no bookkeeping checkboxes, a visible "Cut on purpose" table. Every box ticked closes it.
@@ -694,3 +726,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - The Console plan drafted `not_included` / `unsupported_on_board` beside the browser's `not-in-this-build` / `not-on-this-board`; resolved by reusing the browser tokens and one kebab-case convention for every token the protocol defines - field names are carried from the API's JSON keys and are not tokens.
 - "the Apply Core contract" was used (2026-09-04, #226) to mean the calling convention of the seam - resolved: the contract is the response bytes and the plain outcome; how a **Working Snapshot** crosses the seam is not part of it
 - "one seam" (2026-09-04, #268) was used to mean one function every serial byte passes through - resolved: ownership of the serial wire is by task; the function seam is a consequence, not the invariant
+- "OTA" and "firmware update" each named two unrelated things: replacing the controller's own image (host, over WiFi, ArduinoOTA :3232) and replacing the fitted co-processor's image (host-to-module, over SDIO); resolved by keeping **Firmware Update** for the controller and naming the second a **WiFi Module Update**. Issue #241 was retitled for exactly this confusion.
+- "verdict" named two different levels at once: a **Soak Driver**'s own result and the whole run's. Resolved by making the **Run Verdict** speak the drivers' words (`PASS`/`FAIL`/`INVALID`) rather than a second vocabulary. The #184 go/no-go wording ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN") is retired for the same reason its pass-tier wording was: it names a gate that closes with one epic, on an instrument meant to outlive it. The collapse of an unavailable driver to `INVALID` is kept — that is the rule, not the wording (ADR 0035).
+- "the soak script needs re-running because the vocabulary changed" was wrong and is recorded so it is not repeated: **a rename cannot invalidate a measurement.** Driver verdicts are where judgement lives and they were already neutral. What forces a re-run is a change to what the harness *judges* — the reconnect storm's stall classification — never what it *calls* the answer.
+- "radio module" was proposed as the operator noun for the **WiFi Module** and rejected: "radio" already means the RC gear to a droid builder, and in this codebase it already means a radio-button input (`data/wifi.html:77,84`, `data/rc.js:797,934`) - on the two pages the control would sit nearest. The residual risk of **WiFi module** is accepted knowingly: the same chip can serve Bluetooth (`hostedInitBLE()`), so if protoArtoo ever uses it for BLE the name needs revisiting, and a rename is a real change rather than a copy tweak.

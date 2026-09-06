@@ -37,6 +37,16 @@ that modify the same file concurrently), behaviour-fixing tickets ranked
 ahead of behaviour-neutral refactors and docs. Paste the orchestration model
 and critic protocol into the epic body so they survive this session.
 
+**Sub-issues are minted at slicing time, not mid-flight.** A small defect a
+worker or the critic turns up - a lying comment, a stale name, a missing guard,
+an off-by-one - is folded into the ticket in flight, or into the open ticket
+that already owns those files. Mint a new sub-issue only for a find that needs a
+decision, its own verification run, or files no open ticket owns. Workers never
+create issues; that call is yours alone, and it is a decision rather than a
+reflex - a pool that grows one-line tickets faster than it closes them is the
+failure this clause exists to prevent. AGENTS.md "Small Finds Ride Along" is
+canonical.
+
 The verification tail is **one** sub-issue, the Closing Ticket (AGENTS.md
 "Verification Scale"; CONTEXT.md "Closing Ticket"): bench rows, soak, audit and
 closure PR together. Do not create runbook, audit, integration-readiness or

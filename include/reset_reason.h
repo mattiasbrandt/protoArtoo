@@ -29,7 +29,7 @@
 // passes esp_reset_reason()'s return value directly, exactly as
 // src/main.cpp already does at its other call site,
 // `(int)esp_reset_reason()`), so the switch below cases on the enum's own
-// literal values instead of its symbolic names - tools/p4_hosted_soak.py's
+// literal values instead of its symbolic names - tools/soak.py's
 // own RESET_REASON_NAMES dict already treats these same values as a stable,
 // hardcodable contract for the identical reason. Values are
 // esp_reset_reason_t's declaration order in the vendored ESP-IDF

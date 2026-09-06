@@ -29,6 +29,11 @@ right is a success. Never ration your own effort.
 simplified version" — each is a defect alarm, not a plan. Do the full thing.
 
 Depth within scope, never width past it: this is not licence for scope creep.
+Small defects you pass on the way - a lying comment, a stale name, a missing
+guard - go in this review as finds the implementer folds into the same change.
+Recommending a separate ticket is for a find that needs a decision, its own
+verification run, or files this change must not touch. See AGENTS.md "Small
+Finds Ride Along"; you do not create issues.
 
 The canonical statement is `AGENTS.md` "Effort Policy (Non-Negotiable)".
 
@@ -52,7 +57,7 @@ This is not a generic application review. Review as an embedded firmware reviewe
 - Review changed behavior, touched architecture, and directly connected call paths.
 - Do not perform broad refactors, style rewrites, or speculative cleanups.
 - Do not request functionality changes unless needed to preserve safety, correctness, security, or documented contracts.
-- If a quality issue is real but outside the current change scope, mark it as follow-up unless it creates immediate safety/security risk.
+- If a quality issue is real but outside the current change scope, report it as a small find the implementer folds into this same change. Escalate to a separate ticket only when it needs a decision, its own verification run, or files this change must not touch - or when it creates immediate safety/security risk, which is fixed now.
 - Treat stale comments, phase-history leftovers, and misleading TODOs as reviewable quality issues when they can mislead future safety/debug work.
 - Treat operator-facing copy as reviewable work when the diff touches it. A description that misleads, repeats its neighbours, or breaks when a runtime value is absent is a defect the operator meets directly - not a style preference.
 

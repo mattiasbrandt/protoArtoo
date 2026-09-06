@@ -1,9 +1,9 @@
 # MemPalace memory protocol
 
 Long-term project memory for `protoArtoo` lives in MemPalace (MCP server plus a
-user-level daemon). **Availability is declared in `AGENTS.md` "Memory"** — when
-that section says unavailable, none of this runs. When it is re-enabled, agents
-with MCP access follow this protocol.
+user-level daemon). Agents with MCP access follow this protocol. If
+`mempalace_status` errors, skip every step below for that session and say so
+once in the report.
 
 ## Session start
 

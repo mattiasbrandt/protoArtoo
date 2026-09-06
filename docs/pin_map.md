@@ -449,4 +449,4 @@ If you have a different PCB revision and find different assignments, please open
 - **Spec sheet:** [`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) — hardware truth, chip revision details, allocation tables, P3 strapping notes, and board errata for both FireBeetle 2 boards
 - **Build configuration:** `include/config.h` — compile-time pin assignments (`PA_BOARD_ARTOO_ESP32` and `PA_BOARD_FIREBEETLE2` blocks)
 - **Inventory verification:** `include/firebeetle_required_pins.inc` — production pin roster and compile-time guards (FireBeetle 2 only)
-- **Developer setup:** `tasks/firebeetle2-developer-setup.md` (WIP, untracked) — flashing, build environment, serial monitor, and troubleshooting for FireBeetle 2
+- **Building and flashing:** the project `README`, "Building and flashing" — `BUILD_ENV=firebeetle2` selects the ESP32-P4 toolchain for every make target

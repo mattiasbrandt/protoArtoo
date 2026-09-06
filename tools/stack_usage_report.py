@@ -84,7 +84,7 @@ PlatformIO exposes build_src_flags as an environment variable)::
 
     export PATH="$HOME/.platformio/penv/bin:$PATH"
     PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage" \
-      flock /tmp/protoartoo-pio.lock make build BUILD_ENV=firebeetle2_profiler
+      make build BUILD_ENV=firebeetle2_profiler
 
 Then report::
 

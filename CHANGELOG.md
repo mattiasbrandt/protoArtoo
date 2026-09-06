@@ -15,9 +15,128 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-06
+
+A second controller board. The full protoArtoo feature set now builds for and
+runs on the DFRobot FireBeetle 2 ESP32-P4 beside the artoo-esp32, reaching WiFi
+through the board's fitted ESP32-C6 WiFi module. The FireBeetle 2 is supported
+for developers and ships as a ready-to-flash download; it is not yet a
+recommendation to buy — one of the two units bought for this work arrived with
+a misprovisioned radio, and the spec sheet says what that means before you
+order one (`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`, "Before you
+buy one"). The artoo-esp32 image behaves as it did in `v1.0.0` and stays inside
+its flash and RAM budgets, which every pull request now enforces.
+
+### Added
+- **FireBeetle 2 ESP32-P4 support.** Web control, live status, RC input, the
+  dome link, audio, servos, the safety layers, backups and firmware updates
+  all build for and run on the FireBeetle 2 (`firebeetle2` build
+  environment). A board is a pin map plus a build environment on top of one
+  shared chip layer, so the next ESP32-P4 board costs a pin map, not a port.
+- Tagged releases now also publish `firebeetle2-firmware.bin` and
+  `firebeetle2-filesystem.bin`, built for the DY-SV5W audio module, next to
+  the artoo-esp32 images per audio module.
+- A FireBeetle 2 answers at `firebeetle2.local` and an artoo-esp32 keeps
+  `artoo.local`, so two boards can share one network without a wrong-board
+  update. `make ota` now refuses to push an image at a controller that
+  answers as the other board.
+- Firmware updates over WiFi work on the FireBeetle 2 (`firebeetle2_ota`).
+- On the FireBeetle 2 the audio module has its own hardware serial port in
+  both directions, so audio and the dome link no longer take turns on one
+  port.
+- WiFi module supervision on the FireBeetle 2: when the WiFi module stops
+  answering, the controller runs a bounded recovery of the link and, if that
+  fails, settles into a degraded state in which the droid keeps working
+  without a web UI and announces the outage itself — a sound cue, a dome
+  logic-text message and the serial log. A network fault never restarts the
+  controller and never touches a droid function.
+- The Setup page shows which board it is talking to, with each board's own
+  connector label (the artoo PCB's "S1", for example) as a hint beside the
+  generic component name.
+- A feature that is not part of the running image shows a status lamp
+  reading "Not included" or "Not on this board" instead of a switch that does
+  nothing.
+- `GET /api/identity` reports the board (`artoo_esp32` or `firebeetle2`) and
+  its compile-time capabilities, so tooling and the dashboard can tell the
+  boards apart.
+- A soak harness, `tools/soak.py`, holds a controller under continuous
+  dashboard load for as long as you ask and answers with one verdict and one
+  exit code (`docs/soak.md`). The FireBeetle 2 passed a three-hour live-update
+  soak and a reconnect storm on it; the artoo-esp32 ran four and a half hours
+  under web load without a reboot or a refused page.
+- Memory profiler builds for the FireBeetle 2 (`firebeetle2_profiler`), and a
+  crash-dump partition on it.
+- Build-size budgets per build environment (`tools/build_budgets.json`,
+  `make check-build-budgets`) fail a pull request whose image passes its flash
+  or RAM budget, so a FireBeetle 2 feature cannot spill into the artoo-esp32's
+  4 MB flash unnoticed.
+- `make` selects the right toolchain for each board and takes the
+  machine-wide build lock itself, so two builds on one machine no longer
+  corrupt each other's output.
+- Developer documentation for the board: a hardware spec sheet with the chip
+  revision, pin allocation and known issues
+  (`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`), FireBeetle 2
+  sections in `docs/pin_map.md`, and architecture decisions 0028 to 0035
+  under `docs/adr/`.
+
+### Changed
+- Component switches are named for what they control — Drive, Audio,
+  protoR2link, Dome ESC, Utility Arm 1 and 2, AUX 1 to 3 — instead of the
+  artoo PCB's S1/S2/S3 silkscreen. Saved settings migrate on the first boot
+  of this version. RC-trigger bindings and the component keys in
+  `/api/status` follow the new names, so a script that reads the old keys
+  needs updating.
+- Task stacks, the log ring depth, the learned-sequence capacity and the
+  sequence evidence ring are sized per chip from measured call chains. The
+  FireBeetle 2 uses its larger memory; the artoo-esp32 keeps exactly the
+  values it shipped with.
+- The emergency stop now arms at boot after any watchdog reset, not only a
+  task-watchdog one. An interrupt that stopped returning is not a gentler
+  failure than a task that stopped feeding its watchdog.
+- `make ota` pins the host-side port the controller connects back to
+  (`OTA_HOST_PORT`, default 32320), so an update works behind a default-deny
+  firewall with one documented rule instead of failing with "No response
+  from device".
+
 ### Fixed
-- ESP32-P4 bring-up now uses the board variant's built-in LED definition instead
+- The second SBUS receiver could not start on the ESP32-P4, whose receive
+  memory is laid out differently; the block budget is now derived per chip.
+  The artoo-esp32 keeps its previous allocation.
+- A serial monitor that stops reading the FireBeetle 2's USB port could hold
+  the dome task long enough to trip the task watchdog. Log writes to USB are
+  now best-effort and never block a task; the in-memory log behind
+  `/api/logs` still records every line.
+- The heap-fragmentation warning could never fire on the FireBeetle 2, and
+  the stack high-water mark in the log was labelled in words when it is
+  bytes.
+- ESP32-P4 bring-up uses the board variant's built-in LED definition instead
   of duplicating the FireBeetle 2 GPIO number.
+- The Setup page's board panel recovers when the identity request succeeds on
+  a retry instead of staying blank.
+- The web test suite stays parseable on Node 26.
+
+### Still to verify
+- **The FireBeetle 2 has not driven a droid.** Everything reachable over the
+  web — pages, live status, updates, safety-layer arming, drive-frame timing,
+  the watchdog and the RC-loss boot posture — was confirmed on the board over
+  USB. Nothing that needs a signal on a pin has been: RC receiver input, the
+  drive and dome serial lanes, servo pulses, I2C and the LED strip.
+- The WiFi module's "degraded" announcement has never been seen firing. It
+  needs five consecutive module failures, which the shipping image cannot
+  provoke on purpose; a deliberate module reset did recover without a
+  reboot.
+- GPIO 48 to 52 on the FireBeetle 2 sit on regulator rails that are
+  unmeasured under load; a problem there would show as servo jitter or dome
+  ESC throttle, never as a log line (`docs/pin_map.md`, Known Issue).
+- Updating the WiFi module's own firmware: a factory module refuses the
+  wire-free route, and the wired procedure is marginal. Both are recorded in
+  the spec sheet's known issues.
+- Moving a droid's saved settings from an artoo-esp32 to a FireBeetle 2 has
+  not been specified or tested.
+- The artoo-esp32 soak runs used an image built with Bluetooth compiled out
+  of the framework, a configuration this project does not ship; the release
+  configuration passes the same build, budget and test checks but has not
+  had a soak of its own.
 
 ## [1.0.0] - 2026-08-21
 

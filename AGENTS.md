@@ -31,6 +31,8 @@ epic issue. Material an agent needs only on some paths lives under
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
 - Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
+- Soak harness operation, its Soak Drivers and its verdict/exit-code contract:
+  `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
@@ -77,6 +79,36 @@ the full thing instead.
 
 This does not license scope creep. Do the whole of what the ticket asks, and
 nothing beyond it — depth within scope, never width past it.
+
+## Small Finds Ride Along
+
+Work turns up small defects next to the thing you were sent for: a comment that
+lies, a stale name, a missing guard, an off-by-one in a log line, misleading
+operator copy. **Fix those in the ticket you already have open** — own commit,
+`fix(scope): ...`, named in your status comment. You are holding the context; a
+new ticket throws it away and buys it back as a cold start in some later
+session, if anyone ever picks it up.
+
+A find earns its own ticket only when it genuinely cannot ride along — at least
+one of:
+
+- **It needs a decision that is not yours** — behaviour or API change,
+  architecture, a safety invariant, a new dependency, an action-registry rename.
+- **It needs its own verification story** — a droid or controller run, a new
+  harness, a measurement the bench cannot take here.
+- **It touches files this ticket must not touch** — fenced files, another
+  worker's concurrent slice, an unrelated subsystem.
+
+None of those hold, fix it now. One holds, write it on the ticket you are
+already working (or in the file that owns that truth — see "Where a risk is real
+but unmeasurable" below) and carry on. Filing is a decision, not a reflex: a
+backlog of one-line tickets costs more to read than the fixes cost to make.
+
+**Who may file:** the operator and the coordinator create tickets. Workers and
+sub-agents fix or report — never `gh issue create` on their own initiative.
+Filing on the operator's explicit request is always fine. When you think a find
+deserves a number, say so in your report and let the operator or coordinator
+make the call.
 
 ## Verification Scale (Non-Negotiable)
 
@@ -132,11 +164,15 @@ truthfully each one is run.
 
 ## Memory (MemPalace)
 
-MemPalace is **unavailable** (operator, 2026-08-07). Skip every MemPalace step —
-no status call, no search, no diary, no CLI probing — and say so once in the
-report. Durable memory until it returns is the issue tracker, commits,
-`CONTEXT.md` and `docs/adr/`. The full protocol, for when the operator
-re-enables it, is `docs/agents/mempalace.md`.
+Long-term project memory lives in MemPalace (MCP server plus a user-level
+daemon). The protocol — session-start status call, when to search, what to
+persist — is `docs/agents/mempalace.md`; follow it. The issue tracker, commits,
+`CONTEXT.md` and `docs/adr/` remain the durable record for anything a reader
+must be able to find without the MCP server.
+
+If `mempalace_status` errors, skip every MemPalace step for that session and say
+so once in the report. Probing the CLI, retrying, or working around it is out of
+scope.
 
 ## Action Registry
 
@@ -604,6 +640,6 @@ push to `main`. Mechanism and fallbacks: the docstring in
 - Issue tracker (GitHub, `gh` conventions): `docs/agents/issue-tracker.md`
 - Triage labels: `docs/agents/triage-labels.md`
 - Domain docs (`CONTEXT.md`, `docs/adr/`): `docs/agents/domain.md`
-- MemPalace protocol, for when it is re-enabled: `docs/agents/mempalace.md`
+- MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`

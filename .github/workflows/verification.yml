@@ -41,7 +41,12 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends cppcheck
 
       - name: 📦 Install PlatformIO and Python tools
-        run: pip install platformio && pip install -r tools/requirements.txt
+        # Pinned to the core the tree is verified with. An unpinned install
+        # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
+        # fails every env at the link step with "No module named
+        # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
+        # of them. Bump deliberately, with a green run, not by drift.
+        run: pip install platformio==6.1.19 && pip install -r tools/requirements.txt
 
       - name: 💾 Cache PlatformIO packages and toolchains (classic)
         uses: actions/cache@v6
@@ -122,6 +127,16 @@ jobs:
         continue-on-error: true
         run: node --test test/test_web/*.js
 
+      # Host-side checks on the repo's own tooling and build description:
+      # the budgets registry, the slice gate's self-tests, and the guard
+      # that every env in platformio.ini resolves a PA_BOARD flag. The
+      # v1.1.0 release run found three envs without one; nothing here built
+      # them, and this suite is where that is caught in seconds.
+      - name: 🧰 Tooling tests
+        id: tooling-tests
+        continue-on-error: true
+        run: python3 -m unittest discover -s test/test_tools -q
+
       # ── Summary ──────────────────────────────────────────────────────────────
 
       - name: 📊 Write run summary
@@ -135,6 +150,7 @@ jobs:
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
+          TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           row() {
@@ -159,6 +175,7 @@ jobs:
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
+            row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
             echo ""
             echo "Run: [$(date -u '+%Y-%m-%d %H:%M UTC')]($RUN_URL)"
           } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -185,6 +202,7 @@ jobs:
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
+          TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
         run: |
           failed=()
           [ "$BUILD_OUTCOME"    != "success" ] && failed+=("firmware-build")
@@ -195,6 +213,7 @@ jobs:
           [ "$ANALYSIS_OUTCOME" != "success" ] && failed+=("static-analysis")
           [ "$DRIFT_OUTCOME"    != "success" ] && failed+=("action-drift")
           [ "$WEB_OUTCOME"      != "success" ] && failed+=("web-tests")
+          [ "$TOOLING_OUTCOME"  != "success" ] && failed+=("tooling-tests")
           if [ ${#failed[@]} -gt 0 ]; then
             echo "Failed checks: ${failed[*]}"
             exit 1

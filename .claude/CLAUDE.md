@@ -118,8 +118,7 @@ Routing cues (auto-routing hints for the project subagents):
 
 ### MemPalace MCP (Claude-Specific Operational Notes)
 
-`AGENTS.md` "Memory" declares whether MemPalace is available; today it is not —
-skip every MemPalace call and say so once. When re-enabled, the protocol is
+The protocol is `AGENTS.md` "Memory (MemPalace)" and
 `docs/agents/mempalace.md`; the Claude-specific detail is that auto-save is the
 user-level daemon's job (`mempalace-daemon.service`, `hooks.auto_save: true` in
 `~/.mempalace/config.json`), not a Stop/PreCompact hook — this project defines

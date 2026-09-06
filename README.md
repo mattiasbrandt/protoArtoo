@@ -52,11 +52,21 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 
 ## Core Hardware
 
-**Required:**
-- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk))
+**Required — one controller board:**
+- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk)).
+  This is the board to build a droid on today, and the one this project develops
+  against day to day.
   Requires the **dual-header ESP32 D1 Mini clone** (`wemos_d1_mini32`) — the elongated
   ~68 mm board with dual-row headers (~40 pins). This is a Chinese third-party clone,
   not an official Wemos/LOLIN board. No other ESP32 board fits the PCB socket.
+- **DFRobot FireBeetle 2 ESP32-P4** (DFR1172) with the DFR1237 IO shield — a second
+  supported controller board, for developers. The full feature set builds for it and
+  is confirmed on the board over USB, and each release ships an image for it. It is
+  not yet a recommendation to buy: read
+  [the spec sheet's "Before you buy one"](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one)
+  first.
+
+**Required:**
 - **Hoverboard** with custom firmware — drive motors via UART serial
   Compatible: [EFeru FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) (STM32) or [RoboDurden Gen2.x](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) (GD32)
 
@@ -133,7 +143,7 @@ Open the repo in VS Code and accept the recommended extensions when prompted
 ## Building and flashing
 
 **Already running protoArtoo?** You don't need any of this to update: download
-the firmware and filesystem images for your audio module from the
+the firmware and filesystem images for your board and audio module from the
 [latest release](https://github.com/mattiasbrandt/protoArtoo/releases/latest)
 and upload both from the controller's **Firmware** page. Building from source
 is only needed for the very first USB flash of a blank board, or for
@@ -185,6 +195,15 @@ make check            # Static analysis (cppcheck)
 make monitor          # Serial monitor (no reset on connect)
 make help             # List all named targets
 ```
+
+**Building for the FireBeetle 2:** the same targets take `BUILD_ENV=firebeetle2`
+(`make build BUILD_ENV=firebeetle2`, `make flash BUILD_ENV=firebeetle2 UPLOAD_PORT=/dev/ttyACM0`),
+and `make` selects the ESP32-P4 toolchain for it. Its release images are
+`firebeetle2-firmware.bin` and `firebeetle2-filesystem.bin`, built for the DY-SV5W
+audio module. Wiring and both boards' pin maps are in
+[`docs/pin_map.md`](./docs/pin_map.md); the chip revision, allocation tables and
+known issues are in the
+[spec sheet](./docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md).
 
 
 ---

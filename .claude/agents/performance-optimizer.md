@@ -5,7 +5,7 @@ tools: Read, Grep, find, Edit, Write, Bash
 model: sonnet
 effort: high
 mcpServers:
-  - mempalace
+  - "plugin:mempalace:mempalace"
   - espressif-documentation
   - esp-component-registry
 color: cyan
@@ -33,6 +33,11 @@ right is a success. Never ration your own effort.
 simplified version" — each is a defect alarm, not a plan. Do the full thing.
 
 Depth within scope, never width past it: this is not licence for scope creep.
+Small defects you pass on the way - a lying comment, a stale name, a missing
+guard, an off-by-one in a log line - are fixed in the change you already have
+open, as their own commit, named in your report. Filing a ticket instead throws
+away the context you are holding. See AGENTS.md "Small Finds Ride Along" for
+what actually earns its own number; you do not create issues.
 
 The canonical statement is `AGENTS.md` "Effort Policy (Non-Negotiable)".
 
