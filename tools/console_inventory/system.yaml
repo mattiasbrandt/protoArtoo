@@ -4,15 +4,21 @@
 # firmware and replaced with evidence; a file containing FILL is unfinished by definition.
 #
 # Row schema (decide these):
-#   anchor_kind:        api | rc_internal | event | config | aggregate-field | none
+#   anchor_kind:        api | rc_internal | event | config | aggregate-field | console_direct_action | none
 #                       aggregate-field = describes one field/section inside a larger query's
 #                       response; stays metadata, cites the owning aggregate + builder line
+#                       console_direct_action = added after the inventory pass (#243), for an
+#                       operation the Controller Console is the only caller of: no REST route, no RC
+#                       dispatcher, no SSE emitter, no config path
 #   evidence:           list of "file:line - what it shows" citations. Required per anchor_kind:
 #                         api          -> route registration + handler declaration header + definition + domain core
 #                         rc_internal  -> dispatcher site + enum/token + owning queue or core
 #                         event        -> emitter + SSE registration
 #                         config       -> read path + apply path + persistence path
 #                         aggregate-field -> owning aggregate query name + the builder line that emits it
+#                         console_direct_action -> dispatch-table registration + executor definition
+#                                                  + the core it calls; a compile-time gate cites its
+#                                                  generated catalog row too
 #                         none         -> explicit file:line evidence that NO executor exists
 #   executor_or_core:   the function/core the Console must call (or "none")
 #   missing_metadata:   registry fields the Console needs that are absent (argument schema, alias,
@@ -22,7 +28,7 @@
 base_commit: f0b0dbc
 ticket: 210
 domains: [system, wifi]
-row_count: 50
+row_count: 52
 rows:
 - name: system.action.disable-web-control
   type: action
@@ -144,7 +150,7 @@ rows:
   - include/api_profiler.h:185 - ProfilerTraceOutcome profilerTraceStart(void)
   - src/web/api_profiler.cpp:678 - profilerTraceStart definition, owns s_traceRunning
   - src/web/api_profiler.cpp:703 - handleProfilerTraceStartPost adapts it to 200/409/500
-  - include/console_direct_action_system.h:339 - consoleExecuteDirectProfilerTraceStart calls the same core
+  - include/console_direct_action_system.h:358 - consoleExecuteDirectProfilerTraceStart calls the same core
   executor_or_core: profilerTraceStart
   missing_metadata: []
   notes: >-
@@ -169,7 +175,7 @@ rows:
   - include/api_profiler.h:186 - ProfilerTraceOutcome profilerTraceStop(void)
   - src/web/api_profiler.cpp:692 - profilerTraceStop definition, stops and dumps to serial
   - src/web/api_profiler.cpp:717 - handleProfilerTraceStopPost adapts it to 200/409/500
-  - include/console_direct_action_system.h:350 - consoleExecuteDirectProfilerTraceStop calls the same core
+  - include/console_direct_action_system.h:369 - consoleExecuteDirectProfilerTraceStop calls the same core
   executor_or_core: profilerTraceStop
   missing_metadata: []
   notes: >-
@@ -196,6 +202,36 @@ rows:
   executor_or_core: requestSystemRestart
   missing_metadata: []
   notes: ''
+- name: system.action.reboot-wifi-module
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_board_capability: PA_CAP_HOSTED_WIFI
+  registry_requires_web_control: false
+  registry_sources: []
+  registry_marcduino_cmd: null
+  anchor_kind: console_direct_action
+  evidence:
+  - include/console_direct_action_system.h:504 - g_systemDirectActionExecutors[] registration, inside
+    the #if PA_CAP_HOSTED_WIFI gate at :503
+  - include/console_direct_action_system.h:466 - consoleExecuteDirectRebootWifiModule definition
+  - src/console/console_module.cpp:3243 - consoleFindDirectActionExecutor() lookup, the one call site
+  - src/console/console_catalog.cpp:2189 - available_on_board = PA_CAP_HOSTED_WIFI, the generated
+    board gate consoleExecuteCommand() reads at src/console/console_module.cpp:3137 before any
+    executor lookup
+  - include/hosted_link_c6_reset.h:66 - hostedLinkResetCoprocessor() declaration header
+  - src/web/web_network_manager_hosted.cpp:457 - hostedLinkResetCoprocessor() definition, the
+    enable-line pulse itself
+  executor_or_core: hostedLinkResetCoprocessor
+  missing_metadata: []
+  notes: 'Added by #243, after the inventory pass. anchor_kind console_direct_action is a kind the
+    #210 taxonomy has no row for: this operation reaches no REST route, no RC dispatcher, no SSE
+    emitter and no config path, because the Controller Console is its only caller. The two cites the
+    convention asks for are the registration site and the handler declaration header; the board gate
+    lives at the third.'
 - name: system.action.set-identity
   type: action
   registry_api_path: /api/identity

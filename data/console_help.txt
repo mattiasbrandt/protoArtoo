@@ -122,6 +122,7 @@ system.action.estop-clear|Clear E-Stop|Release the latched emergency stop to all
 system.action.enable-web-control|Enable Web Control|Allow the browser to send drive commands|commandedSetWebControl|
 system.action.disable-web-control|Disable Web Control|Revoke browser drive control and zero motors|commandedSetWebControl|
 system.action.reboot|Reboot|Restart the controller firmware|requestSystemRestart|
+system.action.reboot-wifi-module|Reboot WiFi Module|Reboot the WiFi module - the controller holds its enable line low for a tenth of a second, the module restarts, and the link comes back on its own a few seconds later. Nothing else on the droid pauses; driving, dome, servos and sound do not go through the WiFi module. Run it from the serial console and watch the link come back there, because over WiFi the answer would travel on the link this command takes down. A board with no WiFi module fitted reports it as not on this board.|hostedLinkResetCoprocessor|
 system.action.set-mood|Set Mood|Set the droid's active mood, controlling body chatter rate and dome lighting behaviour|applyMood|mood:uint8:1
 system.action.sleep|Sleep|Put the droid into sleep mode: suppresses sound chatter, dome idle animations, and servo idle animations. Drive and RC remain fully active. Also notifies the dome controller via the dome serial link.\n|commandedSetSleep|
 system.action.wake|Wake|Wake the droid from sleep mode: resumes sound chatter, dome idle animations, and servo idle animations. Also notifies the dome controller via the dome serial link.\n|commandedSetSleep|

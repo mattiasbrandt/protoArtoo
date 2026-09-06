@@ -2711,6 +2711,42 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: requestSystemRestart
+- name: system.action.reboot-wifi-module
+  display_name: Reboot WiFi Module
+  description: Reboot the WiFi module - the controller holds its enable line low for a tenth of a second, the module restarts, and the link comes back on its own a few seconds later. Nothing else
+    on the droid pauses; driving, dome, servos and sound do not go through the WiFi module. Run it from the serial console and watch the link come back there, because over WiFi the answer would
+    travel on the link this command takes down. A board with no WiFi module fitted reports it as not on this board.
+  domain: system
+  type: action
+  # The first registry row to carry board_capability (#243). It is what
+  # tools/generate_console_catalog.py emits as the catalog's
+  # available_on_board expression, so artoo-esp32 - PA_CAP_HOSTED_WIFI 0,
+  # include/config.h:69 - answers not-on-this-board from the catalog rather
+  # than from a special case at the dispatch site.
+  board_capability: PA_CAP_HOSTED_WIFI
+  marcduino_cmd: null
+  # No REST route, deliberately (operator decision 2026-08-30, #243): a web
+  # request for this reset is answered over the very link it takes down, which
+  # is what forced bringup/p4_hosted_bench.cpp's 202-Accepted plus
+  # RESET_RESPONSE_GRACE_MS machinery. The Controller Console reaches it
+  # without a route of its own.
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: null
+  # Empty on purpose: `sources` names the non-Console input surfaces that can
+  # command an operation (web_api, sbus, dome_rx, pwm, internal), and none of
+  # them reaches this one. It is a Controller Console operation only.
+  sources: []
+  # ADR 0032: a network fault never degrades a droid function, and by the same
+  # reasoning dropping the WiFi module degrades none either - the drive, dome,
+  # servo and sound paths do not run through it. Not safety-critical, and
+  # deliberately not motion-guarded; the reasoning is at the executor
+  # (include/console_direct_action_system.h).
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+  executor: hostedLinkResetCoprocessor
 - name: system.action.set-mood
   display_name: Set Mood
   description: Set the droid's active mood, controlling body chatter rate and dome lighting behaviour

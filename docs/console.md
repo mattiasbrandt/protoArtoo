@@ -606,6 +606,37 @@ you get the newest lines, and the log prints a `[CUT]` line under the reply
 to say so; see
 [Use the Console from the dashboard](#use-the-console-from-the-dashboard).
 
+## Rebooting the WiFi module
+
+Boards that serve WiFi through a separate **WiFi module** — the FireBeetle 2
+ESP32-P4 and its fitted companion chip — can reboot that module on purpose:
+
+```text
+> system.action.reboot-wifi-module
+< id=13 type=result status=ok outcome=applied
+```
+
+The controller holds the module's enable line low for a tenth of a second,
+the module restarts, and the controller walks its own recovery steps until
+the link is back — usually a few seconds, printed to the log as it goes.
+Nothing else on the droid pauses. Driving, dome, servos and sound don't go
+through the WiFi module, so they carry on exactly as they were, which is
+also why there is no parking or E-Stop requirement before you run it.
+
+Two things worth knowing:
+
+- **Run it from a serial terminal, not the dashboard.** The command takes
+  the network down, so on the dashboard the reply travels over the link it
+  just cut and you lose the page until the module is back. Over serial you
+  watch the whole thing happen on the same wire you typed it on.
+- **`outcome=applied` means the controller drove the line, not that the
+  module rebooted.** If the module were unplugged or dead, this command
+  would still report success. What tells you it really happened is the log
+  that follows it, and `hostedLink` in `/api/status`.
+
+On the artoo-esp32, which has no separate WiFi module, the command is still
+listed and answers `unavailable reason=not-on-this-board`.
+
 ## What doesn't work here yet
 
 - **Drive and dome-speed motion** (`drive.action.move`, `drive.action.speed`,

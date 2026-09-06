@@ -57,6 +57,19 @@
                                           // ProfilerTraceOutcome - the Tier 3 leak-trace cores
                                           // POST /api/profiler/trace/start|stop also call (#224)
 
+// #if, not #ifdef, and placed after config.h above so the capability is
+// already defined (ADR 0029: gates are always 0 or 1 and tested with #if).
+// hosted_link_c6_reset.h is only DEFINED on a board with the Hosted backend
+// -- src/web/web_network_manager_hosted.cpp is whole-file guarded on the same
+// capability -- so on artoo-esp32 and in the native test build this include,
+// the executor below and its dispatch-table row all vanish together. The
+// operation stays visible in the catalog and answers not-on-this-board from
+// the board guard in consoleExecuteCommand(), which is reached before any
+// executor lookup.
+#if PA_CAP_HOSTED_WIFI
+#include "hosted_link_c6_reset.h"  // hostedLinkResetCoprocessor(), HostedLinkResetOutcome
+#endif
+
 // system.action.set-mode: mode=stationary|driving, the same two values
 // POST /api/mode accepts (src/web/api_drive.cpp's handleModePost) - commit
 // step reproduced here: setter, persist, broadcast, in that order.
@@ -417,6 +430,66 @@ static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* opera
     }
 }
 
+#if PA_CAP_HOSTED_WIFI
+// system.action.reboot-wifi-module: no arguments. Holds the WiFi module's
+// active-LOW enable line down for kHostedLinkResetAssertMs and releases it, so
+// the co-processor reboots underneath a running ESP-Hosted and the bounded
+// transport-failure recovery ladder (#189) can be watched doing its job on the
+// shipping image. The pulse itself lives in
+// src/web/web_network_manager_hosted.cpp with the rest of the Hosted device
+// I/O; this executor is the Console's half and nothing more.
+//
+// NO MOTION GUARD, decided rather than inherited (#243's own instruction, and
+// the bench sketch this is ported from has no guard to inherit):
+//
+//  - ADR 0032 is the reason there is nothing to guard. The network is never
+//    load-bearing: a network fault never restarts the controller and never
+//    degrades a droid function. The WiFi module carries the network and only
+//    the network -- drive goes out over the hoverboard UART, the dome over its
+//    own serial link, servos over LEDC, sound over the audio UART -- so
+//    dropping it takes no droid function with it, and a stationary/estop gate
+//    would guard nothing.
+//  - The concrete risk raised on the ticket was not a lost control line but a
+//    multi-second stall: hostedDeinitWiFi()/hostedInitWiFi() can block for
+//    seconds. That work runs on the HostedRecovery task and this pulse blocks
+//    the Console task, both Core 0 at priority 2, while drive zero-frame
+//    continuity is produced by DriveTask on Core 1 at priority 5
+//    (src/main.cpp). Neither can preempt it, on either core.
+//  - A guard would also cost the operator the diagnostic exactly where it is
+//    used: on the bench, parked, often with ESTOP latched.
+//
+// The result record is emitted AFTER the pulse, not before it like
+// system.action.reboot above. Reboot emits first because requestSystemRestart()
+// arms a restart the record would otherwise race; here there is a real outcome
+// to report and no race to lose -- the pulse takes down the network, not the
+// USB serial console this operation is meant to be driven from.
+static void consoleExecuteDirectRebootWifiModule(uint32_t requestId, const char* operationName,
+                                                 const ConsoleArgs& args,
+                                                 ConsoleCommandSource source,
+                                                 const ConsoleRecordSink* sink) {
+    (void)source;  // No source gate: the operation adds no REST route, and the
+                   // Console web adapter losing its own answer is the operator
+                   // asking for exactly that (#243).
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+
+    const HostedLinkResetOutcome outcome = hostedLinkResetCoprocessor();
+
+    if (sink->onRecordResult) {
+        // driven() is "both edges were written", never "the module rebooted" --
+        // only the C6_RST pad or the module's own boot log proves that. A
+        // failed write is reported as internal-error rather than swallowed:
+        // the log line at the call site carries which edge failed and why.
+        sink->onRecordResult(requestId,
+                            outcome.driven() ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
+                            outcome.driven() ? CONSOLE_OUTCOME_APPLIED
+                                             : CONSOLE_OUTCOME_INTERNAL_ERROR,
+                            CONSOLE_REASON_NONE);
+    }
+}
+#endif  // PA_CAP_HOSTED_WIFI
+
 static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = {
     {"system.action.set-mode", consoleExecuteDirectSetMode},
     {"system.action.sleep", consoleExecuteDirectSleep},
@@ -427,6 +500,9 @@ static const ConsoleDirectActionExecutorEntry g_systemDirectActionExecutors[] = 
     {"system.action.set-identity", consoleExecuteDirectSetIdentity},
     {"system.action.reboot", consoleExecuteDirectReboot},
     {"system.action.estop-clear", consoleExecuteDirectEstopClear},
+#if PA_CAP_HOSTED_WIFI
+    {"system.action.reboot-wifi-module", consoleExecuteDirectRebootWifiModule},
+#endif
 #if PA_HEAP_TRACING
     {"system.action.profiler-trace-start", consoleExecuteDirectProfilerTraceStart},
     {"system.action.profiler-trace-stop", consoleExecuteDirectProfilerTraceStop},

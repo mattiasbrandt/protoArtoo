@@ -258,8 +258,11 @@ def generate_catalog_source(entries, offsets, output_path):
 //
 // Availability (available_on_board and available_in_build) is evaluated at
 // compile-time via macros from include/config.h and include/board_capabilities.inc
-// (ADR 0029). This allows a board that sets PA_CAP_DRIVE_BACKEND_HOVERBOARD=0
-// to flip the availability of drive operations with no generator change.
+// (ADR 0029): available_on_board is the entry's `board_capability:` macro and
+// available_in_build its `build_flag:`, emitted by name rather than resolved
+// here. A board that sets PA_CAP_DRIVE_BACKEND_HOVERBOARD=0 or
+// PA_CAP_HOSTED_WIFI=0 flips those rows with no generator change and no
+// regeneration.
 // =============================================================================
 
 #include "console_catalog.h"
@@ -413,12 +416,29 @@ def generate_catalog_source(entries, offsets, output_path):
         requires_web = entry.get('requires_web_control', False)
         safety_critical = entry.get('safety_critical', False)
         build_flag = entry.get('build_flag')
+        board_capability = entry.get('board_capability')
         read_only = entry.get('read_only', False)
         domain = name.split('.')[0]
 
         # Availability flags are now compile-time expressions (macros)
-        # available_on_board: drive domain uses PA_CAP_DRIVE_BACKEND_HOVERBOARD, others use 1
-        if domain == 'drive':
+        #
+        # available_on_board: the entry's own `board_capability:` macro, the
+        # same way available_in_build below reads `build_flag:`. Until #243
+        # this branch read only the domain string, so a registry row could
+        # declare board_capability, pass make check-action-drift (which
+        # validates the name against include/board_capabilities.inc) and still
+        # generate a literal 1 - a second source of truth about availability
+        # that disagreed silently. docs/console-catalog-contributing.md always
+        # documented the field as the thing that drives this flag.
+        #
+        # The drive domain keeps its hard-coded fallback because no drive row
+        # carries board_capability yet: the ten of them are RC-bindable, so
+        # adding the field means editing their ACTION_REGISTRY[] rows too
+        # (tools/check_action_registry_drift.py compares the two), which is a
+        # registry change of its own rather than a generator fix.
+        if board_capability:
+            available_on_board_expr = board_capability
+        elif domain == 'drive':
             available_on_board_expr = 'PA_CAP_DRIVE_BACKEND_HOVERBOARD'
         else:
             available_on_board_expr = '1'
@@ -561,6 +581,9 @@ def main():
     # Count build flags for diagnostic output
     build_flag_count = sum(1 for e in entries if e.get('build_flag'))
     print(f"Found {build_flag_count} entries with build_flag")
+
+    board_capability_count = sum(1 for e in entries if e.get('board_capability'))
+    print(f"Found {board_capability_count} entries with board_capability")
 
     print(f"Found {len(named_sequence_rows(entries))} action entries with a literal DM: sequence")
 

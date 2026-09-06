@@ -44,7 +44,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(193, count);  // Registry has 193 entries (#225 added system.config.log-level)
+    TEST_ASSERT_EQUAL_INT(194, count);  // Registry has 194 entries (#243 added system.action.reboot-wifi-module)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;
@@ -76,22 +76,42 @@ void test_catalog_parameter_descriptors() {
     TEST_ASSERT_NULL(entry->params);
 }
 
+// available_on_board is the entry's own `board_capability:` macro, emitted by
+// name into the generated catalog (tools/generate_console_catalog.py) and
+// resolved by the compiler, so it varies by board with no regeneration.
+//
+// This used to assert TRUE for every row, because no registry entry carried
+// board_capability and the generator did not read the field even if one had -
+// the state #274 recorded from #224's critic pass, where not-on-this-board was
+// unreachable from a real operation. system.action.reboot-wifi-module (#243) is
+// the first genuinely board-gated row, so the flag is now a real variable and
+// this test pins both of its values in one build.
 void test_catalog_availability_flags() {
-    // All entries should have availability information
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
 
-    for (size_t i = 0; i < count; ++i) {
-        const ConsoleCatalogEntry* entry = &entries[i];
-        // available_on_board should be true for all entries (no board_capability in registry)
-        TEST_ASSERT_TRUE(entry->available_on_board);
-        // available_in_build may be false for entries with build_flag requirements
-        // (PA_HEAP_PROFILE, PA_HEAP_TRACING, PA_ADMISSION_TRACE)
-    }
+    // [env:native] builds as PA_BOARD_ARTOO_ESP32, where PA_CAP_HOSTED_WIFI is
+    // 0 (include/config.h) - so this row is off-board here, and on firebeetle2
+    // the same catalog row reads available.
+    const ConsoleCatalogEntry* hostedReset =
+        consoleCatalogFindByName("system.action.reboot-wifi-module");
+    TEST_ASSERT_NOT_NULL(hostedReset);
+    TEST_ASSERT_FALSE(hostedReset->available_on_board);
 
-    // Specific check: entries without build_flag should be available
+    // ...and it is the ONLY off-board row in this build. A second one appearing
+    // means a registry row gained a board_capability without anyone noticing,
+    // which silently removes an operation from a board.
+    int offBoard = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (!entries[i].available_on_board) offBoard++;
+    }
+    TEST_ASSERT_EQUAL_INT(1, offBoard);
+
+    // The unrelated capability still resolves the other way in the same build:
+    // PA_CAP_DRIVE_BACKEND_HOVERBOARD is 1 on artoo-esp32, so drive rows are on.
     const ConsoleCatalogEntry* move = consoleCatalogFindByName("drive.action.move");
     TEST_ASSERT_NOT_NULL(move);
+    TEST_ASSERT_TRUE(move->available_on_board);
     TEST_ASSERT_TRUE(move->available_in_build);  // No build_flag requirement
 }
 
