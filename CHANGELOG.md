@@ -15,6 +15,8 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-06
+
 A command console for the droid, in the dashboard and on a serial cable. Every
 operation the controller can perform is available in both places, in the same
 words, and answers come back the same way. The console is not a second way in
