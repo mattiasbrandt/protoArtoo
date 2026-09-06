@@ -53,7 +53,14 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
 // same numbers instead of re-deriving them.
 struct WifiCommitOutcome {
     bool persisted = false;       // false -> caller reports "failed to persist wifi settings"
-    WifiConfig config;            // the settings just staged (mirrors *working)
+    // Value-initialised, unlike the three bools above, which carry their own
+    // NSDMIs: WifiConfig is a plain aggregate (include/config_store.h) with no
+    // member initialisers, so a default-initialised WifiCommitOutcome returns it
+    // indeterminate on the two early-return paths in wifiCommitApplied() where
+    // only `persisted` is set. Both callers check `persisted` before reading
+    // this, so nothing reads it today - but the struct carries sta_password[],
+    // and one caller that forgets the check would render stack contents.
+    WifiConfig config{};          // the settings just staged (mirrors *working)
     bool pendingApply = false;    // wifiConfigsDiffer(config, active-at-boot settings)
     bool networkRecovery = false; // configCacheReadActiveWifiRecovery() at commit time
 };
