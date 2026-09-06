@@ -687,10 +687,11 @@ class InteractiveRecordColorizer:
     own `\r\n` echo of the Enter key, so it is at a line start.
     """
 
-    # A record line on the wire is at most PA_LOG_SERIAL_LINE_MAX - 1 bytes
-    # plus CR LF = 257 (include/console_serial_output.h). 512 is that with
-    # room to spare: the limit exists to bound the hold if something that is
-    # not a record ever starts with the record prefix, not to clip records.
+    # A record line on the wire is at most CONSOLE_SERIAL_FRAME_LINE_MAX - 1
+    # bytes plus CR LF = 385 (include/console_serial_output.h; the record
+    # buffer itself is CONSOLE_RECORD_LINE_MAX, 384). 512 is that with room to
+    # spare: the limit exists to bound the hold if something that is not a
+    # record ever starts with the record prefix, not to clip records.
     HOLD_LIMIT = 512
 
     # How long the caller waits for the rest of a held candidate before
