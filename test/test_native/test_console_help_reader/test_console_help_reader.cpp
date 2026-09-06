@@ -13,6 +13,9 @@
 //   2. Every failure state degrades EXPLICITLY. A missing, stale, truncated or
 //      unreadable help file must still produce a stable, readable answer --
 //      "the description is simply missing" is the defect, not the fallback.
+//      The stale case is the quiet one: a firmware-only update leaves the
+//      compiled offsets addressing an older file, so the read SUCCEEDS and
+//      returns another operation's row (#281).
 //   3. The request path performs NO dynamic allocation. The Console task runs
 //      on Core 0 and AGENTS.md forbids allocation in task loops after setup();
 //      a comment promising it is not evidence, so this counts real operator new
@@ -219,6 +222,61 @@ void test_unreadable_file_degrades_explicitly() {
         "an unreadable help file degraded SILENTLY: no help_file_status field was emitted");
 }
 
+void test_row_for_another_operation_is_reported_unreadable() {
+    // The stale help file after a firmware-only update: `make ota` ships the
+    // image and `make uploadfs` is a separate step, so the catalog's compiled
+    // offsets address a file whose rows have shifted (#243 inserted one row and
+    // moved roughly a hundred). Seek and read both succeed and return a
+    // perfectly well-formed row -- for the wrong operation. Field 0 is the only
+    // thing that tells the two apart. The row below is a real one, copied
+    // verbatim from data/console_help.txt, so the reader returns exactly the
+    // shape a shifted offset would land on.
+    useReader("dome.action.droid-sequence-scream|Scream|SE01 - scream audio and body "
+              "sequence, then forward :SE01 to dome|sequenceStart|", true, false);
+    runHelp("help drive.action.move");
+
+    TEST_ASSERT_TRUE(g_ended);
+    const char* status = fieldNamed("help_file_status");
+    TEST_ASSERT_NOT_NULL_MESSAGE(status,
+        "a row belonging to another operation degraded SILENTLY: no help_file_status");
+    TEST_ASSERT_EQUAL_STRING("unreadable", status);
+
+    // No partial prose: a record carrying both a degradation status and another
+    // operation's description would look authoritative and be wrong
+    // (docs/console-protocol.md s.3.4).
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("description"),
+                             "another operation's description must not be emitted");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("display_name"),
+                             "another operation's display_name must not be emitted");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("executor"),
+                             "another operation's executor must not be emitted");
+}
+
+void test_matching_row_emits_no_help_file_status() {
+    // The happy path is the other half of the same guarantee: help_file_status is
+    // present exactly when the prose could not be retrieved in full.
+    useReader("drive.action.move|Move|Set drive speed and steering|driveArbiterSubmit|", true, false);
+    runHelp("help drive.action.move");
+
+    TEST_ASSERT_EQUAL_STRING("Set drive speed and steering", fieldNamed("description"));
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
+        "a matching row is not a degradation and must carry no help_file_status");
+}
+
+void test_alias_help_matches_on_the_canonical_name() {
+    // `help drive_speed` resolves through the RC token alias, but the file's
+    // field 0 is always the canonical name. The row check compares against the
+    // catalog entry, so an alias lookup is a match, not a stale-file report.
+    useReader("drive.action.speed|Speed|Forward/reverse drive speed (analog axis binding)|"
+              "driveArbiterSubmit|", true, false);
+    runHelp("help drive_speed");
+
+    TEST_ASSERT_EQUAL_STRING("Forward/reverse drive speed (analog axis binding)",
+                             fieldNamed("description"));
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
+        "an alias resolves to the same row: help via an alias must not report a stale file");
+}
+
 // -----------------------------------------------------------------------------
 // 3. No dynamic allocation on the request path
 // -----------------------------------------------------------------------------
@@ -251,6 +309,9 @@ int main(int, char**) {
     RUN_TEST(test_absent_reader_degrades_explicitly);
     RUN_TEST(test_failing_seek_degrades_explicitly);
     RUN_TEST(test_unreadable_file_degrades_explicitly);
+    RUN_TEST(test_row_for_another_operation_is_reported_unreadable);
+    RUN_TEST(test_matching_row_emits_no_help_file_status);
+    RUN_TEST(test_alias_help_matches_on_the_canonical_name);
     RUN_TEST(test_help_request_allocates_nothing);
     RUN_TEST(test_status_query_allocates_nothing);
     return UNITY_END();

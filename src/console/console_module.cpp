@@ -143,14 +143,21 @@ void consoleModuleSetHelpReader(const ConsoleHelpReader* reader) {
 
 // Extract help text for an operation using the injected reader.
 // The catalog entry contains offset and length, so this is a single seek + read.
-// Returns true if help text was found and written to out_buffer (null-terminated).
+// Returns true if help text was found, verified to belong to this operation, and
+// written to out_buffer (null-terminated).
 // If false, out_buffer is left empty. No allocation occurs in this path.
-static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
+//
+// canonicalName is the catalog entry's own name, never the operator-typed token:
+// an RC token alias resolves to the same entry (consoleFindByNameOrAlias below),
+// while data/console_help.txt's field 0 carries the canonical name only, so
+// checking the row against what was typed would report every `help <rc-token>`
+// as unreadable.
+static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
                                 uint16_t help_length, char* out_buffer, size_t buffer_size) {
     out_buffer[0] = '\0';
 
     // Graceful degradation: if reader is NULL or no help text for this entry
-    if (g_helpReader == nullptr || operationName == nullptr || help_length == 0) {
+    if (g_helpReader == nullptr || canonicalName == nullptr || help_length == 0) {
         return false;
     }
 
@@ -167,12 +174,32 @@ static bool consoleGetHelpText(const char* operationName, uint16_t help_offset,
     }
 
     size_t bytesRead = g_helpReader->read(g_helpReader->ctx, out_buffer, lineLen);
-    if (bytesRead > 0) {
-        out_buffer[bytesRead] = '\0';
-        return true;
+    if (bytesRead == 0) {
+        return false;
+    }
+    out_buffer[bytesRead] = '\0';
+
+    // The offsets are compiled into the image; the rows they address live in
+    // data/console_help.txt on LittleFS, and the two ship separately (`make ota`
+    // then a separate `make uploadfs`; a release publishes two images). After a
+    // firmware-only update the offsets address a file that no longer agrees with
+    // them - every row after an inserted one shifts, and #243 inserted one and
+    // moved roughly a hundred. In that state the seek and the read both SUCCEED
+    // and hand back a well-formed row belonging to some other operation, which is
+    // why nothing above can catch it. Field 0 of a row is that operation's name,
+    // so one comparison separates "this is our row" from "this is a stale offset".
+    //
+    // A mismatch is reported, not papered over: the caller's degradation branch
+    // emits help_file_status=unreadable and no prose, which is the case
+    // docs/console-protocol.md s.3.4 already documents as "file truncated or stale
+    // offsets" (#281). Confident wrong prose is worse than a missing description.
+    size_t nameLen = strlen(canonicalName);
+    if (strncmp(out_buffer, canonicalName, nameLen) != 0 || out_buffer[nameLen] != '|') {
+        out_buffer[0] = '\0';
+        return false;
     }
 
-    return false;
+    return true;
 }
 
 // Forward declaration: alias-aware catalog lookup (defined in the "Operation
@@ -284,7 +311,10 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
 
     // Help text from file - addressed by offset+length
     char helpBuf[HELP_TEXT_MAX] = {};
-    if (consoleGetHelpText(operationName, entry->help_offset, entry->help_length,
+    // entry->name, not operationName: an alias resolves to this entry, and the
+    // row's field 0 - which consoleGetHelpText() checks the bytes against - is
+    // always the canonical name.
+    if (consoleGetHelpText(entry->name, entry->help_offset, entry->help_length,
                            helpBuf, sizeof(helpBuf))) {
         // Parse help text format: name|display_name|description|executor|params
         // Extract fields by splitting on pipe delimiter
@@ -331,8 +361,16 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
             pos++;
         }
     } else {
-        // Help text not available - determine reason and emit explicit degradation status
-        // (ADR 0036: never degrade silently; missing, stale or unreadable help file is always reported)
+        // Help text not available - determine reason and emit explicit degradation
+        // status (ADR 0036: never degrade silently). Three states reach here, and
+        // all three are reported: no reader at all (LittleFS down) as
+        // `unavailable`; a failed seek or an empty read as `unreadable`; and a
+        // read that succeeded but returned another operation's row - the stale
+        // help file after a firmware-only update, rejected on field 0 by
+        // consoleGetHelpText() above - as `unreadable` too, which is the value
+        // docs/console-protocol.md s.3.4 already assigns to stale offsets (#281).
+        // No prose field has been emitted at this point, so the record carries the
+        // status instead of a half-answer, never both.
         if (g_helpReader == nullptr) {
             // Reader not available
             if (sink->onRecordField) {
