@@ -61,6 +61,7 @@ Confirm, in this order:
 | The controller answers at all | A soak against an unreachable board is `INVALID`, not a finding |
 | `firmwareVersion` is the commit you meant to soak | Evidence from the wrong image answers a question nobody asked |
 | No `-dirty` suffix on `firmwareVersion` | A dirty build cannot be reproduced, so its evidence cannot be re-derived |
+| For an artoo-esp32 image, `xtensa-esp-elf-nm --defined-only .pio/build/artoo_esp32/firmware.elf \| grep -c btdm_` is above zero (the tool lives in `~/.platformio/packages/toolchain-xtensa-esp-elf/bin`) | Two framework configurations share one toolchain pool on a shared build machine, and an image linked against the other one is about 83 KB smaller with Bluetooth compiled out. The release configuration keeps it in, and the envelope check cannot tell the two apart. Zero means the wrong libs: rebuild before you soak |
 | `fsVersion` matches the firmware's expectation | A stale filesystem changes what the dashboard does under the same firmware |
 | It is the image you are about to declare with `--image` | See [Image Modes](#image-modes) — a mismatch is refused at preflight |
 
