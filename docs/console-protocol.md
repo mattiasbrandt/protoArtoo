@@ -337,6 +337,25 @@ the answer; `<name>_truncated` says the prose is **present** and shorter than
 the row's. A response never carries both for the same field, because a field
 that was not emitted cannot be clamped.
 
+**Nor is it the browser adapter's envelope `"truncated"`, which is a different
+scope with a different consequence.** The word now appears on this surface in
+two senses, and a transcript shows both as `truncated=true`:
+
+| | `<name>_truncated` (this section) | `"truncated": true` on the envelope |
+|---|---|---|
+| Scope | one prose **field**, clamped to its buffer | the **number of items** in the answer - the bounded sink skipped or refused some (`system.status.logs` on a near-full ring, #239/#240) |
+| Where | a Console Record: `type=field name=description_truncated value=true` | a key on the JSON response body, beside `records` (`src/web/api_console.cpp:584`) |
+| Adapter | both | browser only - serial has no envelope at all |
+| Consequence | routine, expected on ten catalog rows; the answer is complete | `tools/console_client.py` reports `[ADAPTER-CAPPED]` and exits **4**: a bench sheet stops there |
+
+Reading one as the other inverts what the run means, so it is worth being
+explicit that **a machine reader cannot confuse them**: they live in different
+structural places, and the client tests the envelope key by lookup
+(`payload.get("truncated")`), never by matching text in a rendered line. A
+`description_truncated` record has no path to that check. The overlap is in the
+English, not in the parse - which is why neither name changes: both are shipped,
+and a rename is a protocol break for a readability problem.
+
 ### 3.5 Token and field naming
 
 - Every token the protocol *defines* - operation names, argument keys, record
