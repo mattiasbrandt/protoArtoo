@@ -281,11 +281,17 @@ be read:
 
 - If the help reader is not initialized (LittleFS unavailable, or native test
   without a mock reader), the `help_file_status` field is emitted with value
-  `unavailable`. All other help fields except `type` are omitted.
+  `unavailable`, and the file-resident prose fields - `display_name`,
+  `description` and `executor` - are omitted.
 - If the help file exists and the reader is initialized but a seek or read
   operation fails (e.g., file truncated or stale offsets), the `help_file_status`
-  field is emitted with value `unreadable`. All other help fields except `type`
-  are omitted.
+  field is emitted with value `unreadable`, and the same three prose fields are
+  omitted.
+
+What is withheld is only that prose. The fields the in-image catalog owns -
+`type`, `available_on_board`, `available_in_build`, `requires_web_control`,
+`read_only`, `aliases`, `params` - do not come from the file and render
+regardless of its health (#219 D3).
 
 This field is only present when help text could not be retrieved in full; a
 successful help response contains no `help_file_status` field. This allows a
