@@ -121,10 +121,18 @@ board is doing.
   the line; a tool reading the serial cable directly sees it.
 - On the FireBeetle 2, a single console line longer than 256 characters is cut
   short by the USB port rather than being sent in pieces.
-- **The WiFi module reboot has not been watched working on a board.** The command
-  is wired and the enable line is the one the board's schematic names, but the
-  two writes reporting success is not the same as seeing the module go and come
-  back. Watching the controller notice and recover is still to do.
+- The WiFi module reboot was watched working on a FireBeetle 2: the module went,
+  the controller noticed, and the link came back on its own at the first attempt,
+  with the board up throughout. What has still not been seen is the *degraded*
+  announcement at the end of the recovery ladder - it needs five failures in a
+  row, and a healthy module comes back on the first, so a deliberate reboot
+  cannot provoke it.
+- **`help` leaves the description out for some operations.** A description past a
+  certain length is dropped rather than shortened: over the serial cable that hits
+  14 of the 194 operations, in the browser 2 of them, so the same command can
+  answer differently in the two places. Nothing it does show is wrong - no
+  operation reports another one's description - it is a missing line, not a wrong
+  one.
 
 ## [1.1.0] - 2026-09-06
 
