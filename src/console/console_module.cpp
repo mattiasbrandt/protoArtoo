@@ -190,9 +190,9 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
     // so one comparison separates "this is our row" from "this is a stale offset".
     //
     // A mismatch is reported, not papered over: the caller's degradation branch
-    // emits help_file_status=unreadable and no prose, which is the case
-    // docs/console-protocol.md s.3.4 already documents as "file truncated or stale
-    // offsets" (#281). Confident wrong prose is worse than a missing description.
+    // emits help_file_status=unreadable and no prose, the value
+    // docs/console-protocol.md s.3.4 assigns to a stale help file (#281).
+    // Confident wrong prose is worse than a missing description.
     size_t nameLen = strlen(canonicalName);
     if (strncmp(out_buffer, canonicalName, nameLen) != 0 || out_buffer[nameLen] != '|') {
         out_buffer[0] = '\0';
@@ -367,8 +367,8 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         // `unavailable`; a failed seek or an empty read as `unreadable`; and a
         // read that succeeded but returned another operation's row - the stale
         // help file after a firmware-only update, rejected on field 0 by
-        // consoleGetHelpText() above - as `unreadable` too, which is the value
-        // docs/console-protocol.md s.3.4 already assigns to stale offsets (#281).
+        // consoleGetHelpText() above - as `unreadable` too, the value
+        // docs/console-protocol.md s.3.4 assigns to stale offsets (#281).
         // No prose field has been emitted at this point, so the record carries the
         // status instead of a half-answer, never both.
         if (g_helpReader == nullptr) {
