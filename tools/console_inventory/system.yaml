@@ -220,9 +220,9 @@ rows:
   - include/console_direct_action_system.h:466 - consoleExecuteDirectRebootWifiModule definition
   - src/console/console_module.cpp:3243 - consoleFindDirectActionExecutor() lookup, the one call site
   - src/console/console_catalog.cpp:2189 - available_on_board = PA_CAP_HOSTED_WIFI, the generated
-    board gate consoleExecuteCommand() reads at src/console/console_module.cpp:3137 before any
+    board gate consoleExecuteCommand() reads at src/console/console_module.cpp:3138 before any
     executor lookup
-  - include/hosted_link_c6_reset.h:66 - hostedLinkResetCoprocessor() declaration header
+  - include/hosted_link_c6_reset.h:61 - hostedLinkResetCoprocessor() declaration header
   - src/web/web_network_manager_hosted.cpp:457 - hostedLinkResetCoprocessor() definition, the
     enable-line pulse itself
   executor_or_core: hostedLinkResetCoprocessor
