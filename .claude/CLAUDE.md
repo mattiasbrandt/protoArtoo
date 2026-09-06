@@ -126,7 +126,24 @@ none.
 
 ### Hardware and Tooling Reminders
 
-- Use [tools/serial_monitor.py](../tools/serial_monitor.py) for serial capture; avoid ad-hoc pyserial snippets.
+- **Run device and build work in a Herdr pane, not headless** — the mechanics for
+  AGENTS.md "Flashing and Monitoring", which carries the rule and the *why*. You are
+  inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. Split a sibling
+  with `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (down
+  from a tall pane), read the new id from `.result.pane.pane_id`, then
+  `herdr pane run <id> "<cmd> 2>&1 | tee /tmp/<name>.log; echo DONE_<NAME>"`.
+  Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
+  is demonstrably running, so **always `tee` and parse the log** — the pane is for the
+  operator to watch, the log is what you verify against; and append a sentinel and poll
+  the log for it rather than guessing when a long build finished. Close panes you
+  created; never close one you did not, another session may be in a neighbouring
+  workspace. Where Herdr is unavailable, say so before starting a device session.
+
+- [tools/console_client.py](../tools/console_client.py) is the Console Client, not only a
+  capture tool: boot-log capture (`make monitor`), an interactive Controller Console session
+  (`make console`), and a scripted mode that drives either Console Adapter and replays the
+  `tools/bench_rows/` sheets (`make bench-rows`). Use it instead of ad-hoc pyserial snippets;
+  the reference is [docs/console-client.md](../docs/console-client.md).
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - The HTTP server (`initPsychicWebServer()`, via `startHttpServerOnce()`) must be started from the WiFi event callback path, not directly in `setup()`.

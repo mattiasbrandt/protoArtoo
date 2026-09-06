@@ -86,6 +86,14 @@ Recent #8 heap/crash lessons (June 2026):
 - `/api/coredump/status`, `GET /api/coredump`, and `POST /api/coredump/erase` are the seated-controller crash evidence path. Decode against the exact deployed `firmware.elf`.
 - Seated controller is OTA + HTTP evidence only for flashing/debug collection; USB flashing needs the ESP32 unseated because GPIO15/SBUS affects bootloader sync.
 
+Serial evidence: why the HTTP paths above are not the whole story:
+- **The Survival Path is the serial Console** (CONTEXT.md): the one operator surface that still answers when HTTP admission refuses everything, because it depends on no network, no heap admission decision and no browser. Your declared domain -- heap exhaustion, OOM, PANIC -- is exactly the condition in which the HTTP evidence paths start shedding requests, so an investigation restricted to HTTP loses its evidence precisely when it matters. #225 shipped that path for this reason.
+- **Two panics on the 2026-09-03 bench session were diagnosed only from serial register dumps** -- task name, PC, stack pointer and stack bounds (#266, an `httpd` task stack overflow, since fixed; and #226, a `Console` task stack overflow, still open). HTTP could report `resetReason=PANIC` and nothing further. Panic output reaches the UART before anything HTTP-facing is alive to serve it.
+- `tools/console_client.py` is how you reach it; `docs/console-client.md` is its reference. `make monitor` captures (`--until <string> --timeout <s>` for a bounded wait), `make console` opens a session you can type at.
+- The same numbers step 1 of the crash workflow reads over HTTP are answerable over serial: `system.status.health` returns `heapFree`, `heapMin`, `heapLargestBlock`, `resetReason` and `uptimeMs` as Console Records, and `system.status.logs` streams the log ring as `item` records (#239) when `/api/logs` is unreachable.
+- `tools/bench_rows/` holds a replayable command sheet per board, so gathering evidence is a tracked transcript rather than an improvised session: `make bench-rows BENCH_ROWS=tools/bench_rows/<board>.txt SKIP_MANUAL=1` runs every row that needs nobody standing at the bench.
+- Caution: a serial `system.config.log-level value=<x>` panics the controller today (#226). Read the level; do not write it over serial until that closes.
+
 T20/T24-informed red flags (act immediately):
 - Any task stack HWM below 256 B.
 - Downward-trending HWM in long runs (possible path-dependent overflow risk).
@@ -116,6 +124,7 @@ Repository source-of-truth order for performance work:
 5. CHANGELOG.md and committed code history for accepted remediation evidence
 6. docs/spec-sheets/rmt-esp32-idf5.md and docs/spec-sheets/sbus-protocol.md when touching RC/SBUS paths
 7. include/config.h and docs/pin_map.md for hardware truth
+8. docs/console-client.md and docs/console.md for the serial Console evidence path -- the Survival Path -- when HTTP is the thing under pressure
 
 Internal planning note:
 - tasks/*.md files are internal working context, not source-of-truth.
@@ -135,6 +144,7 @@ Crash/OOM evidence workflow:
 3. If heap exhaustion is suspected, use a profiler build and `GET /api/profiler` over minutes, not one snapshot.
 4. Pull `/api/logs` for `alloc_failed` backtraces and decode addresses with the matching profiler `firmware.elf`.
 5. Attribute the pressure source before changing constants or stack sizes.
+6. If HTTP refuses, times out, or goes silent under the pressure you are investigating, that is a finding, not the end of the investigation: attach over serial and take the same evidence through the Console (`system.status.health`, `system.status.logs`) -- see the serial-evidence notes above.
 
 Performance investigation checklist:
 - Identify the bottleneck category: CPU/task timing, heap floor, fragmentation, stack HWM, allocation churn, SSE/network fan-out, JSON serialization, file serving, or browser/UI update churn.

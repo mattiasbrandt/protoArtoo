@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index ba526b09..c9eb63fc 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -1053,7 +1053,7 @@
+         // controller raises this flag exclusively when it drops an `item`
+         // (webOnRecordItem_impl, src/web/api_console.cpp). A guard on either
+         // would be a branch no firmware can reach.
+-        if (result.data.truncated === true) {
++        if (result.data.truncated !== true) {
+           appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
+         }
+       } else {

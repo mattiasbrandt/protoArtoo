@@ -232,7 +232,8 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
-static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
+static RcDispatchOutcome processTriggerAction(RobotActionId target, const char* payload,
+                                              bool pressed, CommandSource src) {
     RcActionPayload ap = {};
     ap.target = target;
     ap.bindingPayload = payload;
@@ -273,28 +274,43 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
 
     RcActionResult res = rcDispatchAction(ap);
 
-    // Dispatch audio, servo, dome, marcduino commands
-    rcDispatchSingleAction(res);
+    // The target's own action legitimately produced nothing right now (e.g.
+    // an unconfigured sound-category range, rcActionResultHasEffect()) -
+    // report that honestly rather than dispatching nothing and calling it
+    // "queued" (#220; docs/console-protocol.md s.3.3).
+    if (!rcActionResultHasEffect(res)) {
+        return RcDispatchOutcome::kBlockedByState;
+    }
 
-    // Handle system modes (estop, sleep, stationary, speed preset)
+    // Dispatch audio, servo, dome, marcduino commands, attributed to src.
+    RcDispatchOutcome outcome = rcDispatchSingleAction(res, src);
+
+    // Handle system modes (estop, sleep, stationary, speed preset). estop
+    // is unreachable here in practice: both existing callers (REST
+    // /api/actions/test and the Console action executor, #220) refuse
+    // SYSTEM_ACTION_ESTOP through evaluateActionTestGuard() before ever
+    // reaching this function.
     if (res.triggerEstop) {
         failsafeTrigger(FailsafeLayer::ESTOP);
     }
     if (res.setSleep) {
-        commandedSetSleep(res.newSleepMode, SRC_SBUS);
+        commandedSetSleep(res.newSleepMode, src);
         requestStatusBroadcastNow();
     }
     if (res.setStationary) {
-        commandedSetStationary(res.newStationaryMode, SRC_SBUS);
+        commandedSetStationary(res.newStationaryMode, src);
         s_rcProcessor.stationaryLocked = res.newStationaryMode;
     }
     if (res.setSpeedPreset) {
         applySpeedPresetRuntime(res.newSpeedPreset);
     }
+
+    return outcome;
 }
 
-void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool pressed) {
-    processTriggerAction(target, payload, pressed);
+RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
+                                              bool pressed, CommandSource src) {
+    return processTriggerAction(target, payload, pressed, src);
 }
 
 static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {

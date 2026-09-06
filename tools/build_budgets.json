@@ -6,7 +6,7 @@
     "notes": [
       "Flash: binary image size (.bin file) to fit in the OTA partition (from partitions/*.csv app0/app1 size field)",
       "RAM: static allocation (.data + .bss sections from linker via size -A), not heap or PSRAM",
-      "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
+      "dram_limit_bytes: length of the linker's static-DRAM segment (dram0_0_seg in the generated memory.ld) under the platform's current configuration - informational only, no tool reads it. artoo-esp32=180736B now that Bluetooth is compiled out (it read 124580B while the BT controller reserved its window); esp32-p4=327680B",
       "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
       "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
       "platforms.esp32p4.envs must list EVERY platformio.ini env whose resolved platform is the P4 one (test_build_budgets.py checks this against platformio.ini): a P4 env missing here builds in the artoo-esp32 core dir and swaps that Arduino core in place. Only envs with an entry under 'envs' below are size-checked",
@@ -40,13 +40,13 @@
       "platform": "esp32",
       "partition_flash_bytes": 1703936,
       "flash_ceiling_bytes": 1671936,
-      "dram_limit_bytes": 124580,
+      "dram_limit_bytes": 180736,
       "flash_budget_bytes": 1600000,
       "ram_budget_bytes": 110000,
-      "baseline_measured_at": "8fea3c73ebce",
-      "baseline_flash_bytes": 1569152,
-      "baseline_ram_bytes": 96312,
-      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
+      "baseline_measured_at": "f422280098dd8747cc9fd1d8bf89af387a332df7",
+      "baseline_flash_bytes": 1391856,
+      "baseline_ram_bytes": 100900,
+      "budget_rationale": "Measured 1,391,856 B flash (87.0% of the budget, 81.7% of the partition) and 100,900 B static RAM at baseline_measured_at, where the Framework Envelope in platformio.ini compiles out the framework facilities this controller does not offer. Against the 1,596,112 B / 102,600 B image built from the same packages at the parent commit that is -204,256 B flash and -1,700 B RAM. Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget stays at 1,600,000 B: the recovered bytes are headroom for in-flight work, not a new floor. RAM budget stays at 110,000 B and is a heap-headroom figure, not a percentage of dram_limit_bytes - static .data+.bss shares the DRAM segment with the heap, and the request-admission floors in include/web_admission.h are calibrated against the largest free block, so a static byte saved is a heap byte gained. Compiling out Bluetooth widened the linker's static-DRAM segment from 124,580 to 180,736 B, but the firmware already released the Bluetooth region to the heap at boot via esp_bt_controller_mem_release(), so the real ceiling this budget guards has not moved."
     },
     "firebeetle2_bringup": {
       "board": "FireBeetle 2 ESP32-P4",

@@ -19,6 +19,7 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - [Learned Sequences](#learned-sequences)
 - [Configuration and RC](#configuration-and-rc)
 - [Action Registry](#action-registry)
+- [Controller Console](#controller-console)
 - [Status and Validation](#status-and-validation)
 - [System and OTA](#system-and-ota)
 - [SSE Events](#sse-events)
@@ -54,7 +55,7 @@ The HTTP status code (4xx, 5xx) indicates the error class:
 - `400` — invalid input (missing field, bad format, out of range)
 - `409` — conflict with current state (e.g., drive blocked by estop)
 - `423` — transient resource unavailable (e.g., sleeping, resource in use)
-- `503` — service unavailable (queue full, hardware link down)
+- `503` — service unavailable (queue full, hardware link down, config write window busy)
 - `500` — server error
 
 Example with hint and field:
@@ -363,6 +364,11 @@ curl -s -X POST http://artoo.local/api/dome/cmd \
 ### GET /api/dome/layout
 
 Fetches cached dome layout JSON from WiFi transport.
+
+The controller makes no HTTPS connections. The dome link's WiFi (fallback)
+transport and OTA both use plain `http://` on the local network, and the
+firmware is built without an HTTPS client, so an `https://` peer address
+will not connect.
 
 The layout is cached by the dome link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
 
@@ -1158,6 +1164,9 @@ Updates supported config fields and persists to NVS.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields
 - `500` failed persistence or response build/alloc failure
+- `503` `{"ok":false,"error":"config write busy"}` — another config writer (the
+  Controller Console, or another form POST) held the config write window for
+  longer than one second. Nothing was applied; retry.
 
 #### Example request (form)
 
@@ -1245,6 +1254,8 @@ Replaces entire RC map.
 - Errors:
 - `400` with `{"ok":false,"error":"..."}` and optional `entry` object
 - `500` `{"ok":false,"error":"failed to persist config"}`
+- `503` `{"ok":false,"error":"config write busy"}` — another config writer held
+  the config write window; nothing was applied
 
 #### Example request
 
@@ -1339,13 +1350,22 @@ curl -s http://artoo.local/api/actions
 
 ### POST /api/actions/test
 
-Dispatches one test action through RC trigger path.
+Dispatches one test action through the same dispatch core the RC trigger
+path and the Controller Console share (`dispatchRcTriggerActionTest()`,
+`SRC_WEB_API`; #220, ADR 0036), and reports what actually happened.
 
 - Input options:
 - Form field: `token`
 - JSON body: `{ "token": "..." }`
-- Success: `200` `{"ok":true,"token":"...","domain":"..."}`
-- Errors:
+- Success: `200` `{"ok":<bool>,"outcome":"...","token":"...","domain":"..."}`
+- `ok`/`outcome` report the real dispatch result, not merely that the request
+  reached the guard: `ok:true` only when `outcome` is `queued` (the owning
+  queue accepted it). `outcome` is one of:
+  - `queued` - accepted; `ok:true`
+  - `queue-full` - an owning queue could not accept it; `ok:false`
+  - `unavailable` - the action produced no dispatchable effect right now
+    (e.g. an unconfigured sound-category range); `ok:false`
+- Errors (guard refused the request before any dispatch was attempted):
 - `400` invalid json/token
 - `403` `safety_critical_blocked`
 - `423` `web_control_disabled`
@@ -1362,7 +1382,7 @@ curl -s -X POST http://artoo.local/api/actions/test \
 #### Example response
 
 ```json
-{"ok":true,"token":"sound_rand_humming","domain":"sound"}
+{"ok":true,"outcome":"queued","token":"sound_rand_humming","domain":"sound"}
 ```
 
 #### Example request (json)
@@ -1376,8 +1396,82 @@ curl -s -X POST http://artoo.local/api/actions/test \
 #### Example response
 
 ```json
-{"ok":true,"token":"sound_rand_humming","domain":"sound"}
+{"ok":true,"outcome":"queued","token":"sound_rand_humming","domain":"sound"}
 ```
+
+## Controller Console
+
+### POST /api/console
+
+The browser adapter for the Controller Console (ADR 0036) — the same command
+processor a serial terminal drives, over HTTP. See
+[console.md](console.md) for the command language and
+[console-protocol.md](console-protocol.md) for the full record format. This is
+the endpoint the dashboard's Live Logs command box calls.
+
+- Input: form field `command`, or JSON body `{ "command": "..." }`.
+- Success: `200` `{"records":[...]}` — one object per Console Record, each
+  carrying `id` and `type` (`begin` | `field` | `item` | `result` | `end`)
+  plus the fields that record type carries (`operation` on `begin`;
+  `name`/`value` on `field`; `value` on `item`; `status`/`outcome`/`reason`
+  on `result`/`end` — `reason` is present only when there is one).
+- `system.status.logs` is the one command whose record set can run past what
+  this endpoint holds in memory: when the log ring has more lines than fit,
+  the response keeps the newest lines and adds `"truncated":true` to the
+  envelope (a JSON field beside `"records"`, not a Console Record field —
+  the wire format itself is unchanged). Every other command's answer is
+  small enough that this never applies.
+- `operations` (with or without `type=`) answers the same shape but is sent
+  as a chunked response rather than assembled in memory first, because the
+  full catalog is larger than this endpoint's normal response buffer. This
+  is invisible to a normal HTTP client — the body is the same
+  `{"records":[...]}` shape either way.
+- Errors:
+  - `400` `{"ok":false,"error":"missing command"}` — JSON body had no
+    string `command` field
+  - `400` `{"ok":false,"error":"command too long"}` — JSON body's `command`
+    was 256 bytes or more (form-encoded submissions past this length are
+    answered on the `200` path instead, as a normal `result` record with
+    `reason=line-too-long` — this is what the dashboard's command box
+    actually sends)
+  - `400` `{"ok":false,"error":"invalid json body"}` — body did not parse
+    as JSON
+  - `400` `{"ok":false,"error":"empty command"}` — no command supplied at
+    all
+  - `500` `{"ok":false,"error":"response too large for this adapter"}` —
+    a non-`operations` command produced more records or record data than
+    this endpoint's bounded response can hold
+  - `500` `{"ok":false,"error":"response alloc failed"}` / `{"ok":false,"error":"response too large"}` —
+    response-stream allocation failure
+
+#### Example request (form)
+
+```bash
+curl -s -X POST http://artoo.local/api/console -d 'command=system.status.health'
+```
+
+#### Example response (abridged)
+
+```json
+{"records":[{"id":9,"type":"begin","operation":"system.status.health"},{"id":9,"type":"field","name":"estop","value":"false"},{"id":9,"type":"field","name":"heapFree","value":"42120"},{"id":9,"type":"end","status":"ok","outcome":"completed"}]}
+```
+
+#### Example request (json)
+
+```bash
+curl -s -X POST http://artoo.local/api/console \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"sound.action.random-humming"}'
+```
+
+#### Example response
+
+```json
+{"records":[{"id":10,"type":"result","status":"ok","outcome":"queued"}]}
+```
+
+(Requires Web control enabled — see [console.md](console.md#web-control-what-actions-need)
+— otherwise this answers `{"records":[{"id":10,"type":"result","status":"err","outcome":"blocked","reason":"blocked-by-state"}]}`.)
 
 ## Status and Validation
 
@@ -1389,9 +1483,14 @@ Returns controller status snapshot.
 - Top-level fixed fields include:
 - `estop`, `webControlEnabled`, `sbusSignalLost`, `sbusHwFailsafe`, `webDriveExpired`
 - `failsafeSource`, `failsafeCount`, `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, `failsafeTriggerSource`
+- `queueOverflowCount` — non-blocking enqueues that found their queue full,
+  summed across every task that enqueues (`logQueueDrop()`). Read it beside
+  `failsafeCount` when judging whether the real-time core was degraded across a
+  run: both are cumulative since boot, so the evidence is the delta between two
+  readings, not the absolute value.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
-- `uptimeMs`, `firmwareVersion`, `webVersion`
+- `uptimeMs`, `firmwareVersion`, `fsVersion`, `resetReason`
 - `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
   - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
     the pool `malloc` and the admission guards actually use. `heapLargestBlock`
@@ -1400,6 +1499,11 @@ Returns controller status snapshot.
     36 KB regardless of real heap pressure. Use `heapLargest8bit` for any
     heap-health judgement. (Note: `/api/health` has always reported the 8-bit
     value under the `heapLargestBlock` name.)
+- `failedAllocs` — allocations the heap refused since boot, counted by the IDF
+  failed-allocation hook. Reported on every build, production included;
+  `/api/profiler` reports the same counter plus the failing request's size,
+  capability mask and backtrace, but only exists when `PA_HEAP_PROFILE=1`. ADR
+  0017's memory-recovery rule wants this flat across a load wave.
 - `sseClients` — registered `/api/events` clients (admission cap is 3)
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
@@ -1420,14 +1524,23 @@ curl -s http://artoo.local/api/status
 #### Example response (abridged)
 
 ```json
-{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","webVersion":"fs-v1.0.0","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"auxLed":{"pin":1,"r":0,"g":0,"b":0,"effect":"off","available":true}}
+{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"auxLed":{"pin":1,"r":0,"g":0,"b":0,"effect":"off","available":true}}
 ```
 
 ### GET /api/health
 
-Returns compact health JSON.
+Returns a small, fixed health snapshot, held to the same ordinary
+admission floor as any other endpoint — it gets no special treatment during
+heap pressure. For heap-pressure diagnosis, poll `GET /api/status` instead:
+it is on the admission layer's short list of read-only diagnostic paths
+(`webPathIsDiagnostic()`), which are let through at a lower floor.
 
 - Success: `200` JSON
+- Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
+  `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
+  `heapMin`, `heapLargestBlock` (the 8-bit-capable value, despite the
+  `/api/status` name it shares — see that endpoint's own note above),
+  `wifiRssi`, `uptimeMs`, `resetReason`
 
 #### Example request
 
@@ -1438,7 +1551,7 @@ curl -s http://artoo.local/api/health
 #### Example response
 
 ```json
-{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70}
+{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"uptimeMs":27790,"resetReason":"POWERON"}
 ```
 
 ### GET /api/wifi
@@ -1492,7 +1605,7 @@ the end-to-end operator flow this endpoint backs.
 - `apSsid` is required (non-empty) once the resulting mode is `standalone_ap`
 - `apPassword` must be empty or 8..63 characters (ESP32 SoftAP/WPA2 requirement)
 - Success: `200` with `{"ok":true,"wifi":{...}}` (same password-safe `wifi` shape as `GET /api/config`'s `wifi` block) and marks the settings provisioned
-- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure
+- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure; `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window (nothing was applied)
 
 #### Example request
 

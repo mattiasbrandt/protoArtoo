@@ -5,9 +5,8 @@ description: Run a multi-worker remediation epic as planner-orchestrator + criti
 
 You are the coordinator: assignment, integration, and ruthless review. You do
 not implement tickets yourself - workers do. Arguments name the epic(s) or the
-findings to slice. Read AGENTS.md first - it outranks every orchestration
-section you pasted into an epic - then the named epics in full (their
-orchestration and critic sections bind you within that).
+findings to slice; read the named epics in full first (their orchestration and
+critic sections bind you), then AGENTS.md.
 
 ## Pipeline position
 
@@ -69,11 +68,6 @@ from the epic's coordination section (it changes at Phase 5 closure).
   worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
   `<base>` tip; if not, `reset --hard` it there before the worker
   starts. Every worktree, every time.
-- **Live hold check.** Before dispatching on a surface in the epic's
-  concurrency table, verify the holder's live state - `gh issue develop
-  --list <holder>`, its latest comments - and record what you found in the
-  pin. A revision trigger that happens to have fired is luck; the record of
-  the check is what makes it a check.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
@@ -87,15 +81,6 @@ from the epic's coordination section (it changes at Phase 5 closure).
   (`--expect-no-new-tests`, `--expect-no-mutations`). The gate then rejects a
   fenced-file edit, a flat test total, or missing mutation coverage in the
   worker's own run, before review.
-
-## Analysis slices
-
-When a sub-issue's deliverable is a classification table - one row per
-entry, an evidence column - rather than code, read
-[analysis-slices.md](analysis-slices.md) before dispatching: the skeleton the
-worker is held to, independent anchors across parallel workers, and the
-anchor your own critic pass must add. Both mechanisms it guards against have
-failed on this repo behind a green gate.
 
 ## Critic protocol (before accepting any slice - no exceptions)
 
@@ -126,14 +111,6 @@ reporting passes that never ran. In the worker's worktree, personally:
    worker's block that you did not sanction - `--expect-gate-edit`,
    `--expect-no-new-tests`, `--expect-no-mutations` - is an automatic
    reject. Then every remaining acceptance check.
-
-   Match the proof to the claim; a proof of the wrong class is a claim:
-
-   | Claim | Proof |
-   |---|---|
-   | declaration-only / behaviour-identical | `nm --defined-only --size-sort` identical (SHA-256) and byte-equal RAM/Flash; per-object `objdump -dr` identical for a zero-cost claim |
-   | a unit is absent from an image | archive/object membership in `.pio/build/<env>/firmware.map`. A budget staying green is a drift alarm, never absence - 134 KB of headroom hides a whole backend |
-   | an invariant holds | compile-enforced (`static_assert`, `#error`), never a comment promising it |
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
    against the pre-fix commit for bug fixes. Mutation coverage is proven by
    the gate re-run in step 1 - the mutation row passes only when every patch
@@ -151,78 +128,15 @@ reporting passes that never ran. In the worker's worktree, personally:
    than the code, it had better be because the tests prove nothing, not
    because they could be prettier. Iteration spent on test design is
    iteration not spent on the change itself.
-
-   **Stage gate on all of the above.** At the PoC/MVP stage of an epic - the
-   platform is unproven, the go/no-go has not returned a verdict, the hardware
-   has not run the real firmware - you may grant `--expect-no-new-tests` as the
-   epic-wide default in the worker brief, revoking it per-ticket for robustness
-   and epic-closing work. Be clear about what that buys: the gate's
-   flat-test-total rule only requires ONE native test per `src/`/`include/`
-   change, and does not count `test/test_tools/` at all. It is a cheap floor,
-   not the source of oversized harnesses. **The acceptance criteria you write
-   are.** Two rejection cycles spent on a probe harness for a failure mode that
-   cannot occur until a later ticket is the exact waste this clause exists to
-   prevent, and that harness was specified by the ticket, not demanded by the
-   gate.
-
-   When you author sub-issue bodies, keep acceptance criteria outcome-shaped
-   at this stage: "the guards exist and the build is red for every unassigned
-   pin", not "fourteen isolated compiler probes each asserting its own
-   diagnostic". A test-shaped acceptance criterion is a rejection cycle you
-   have pre-committed to. Distinguish the guard (product, ships now) from the
-   harness that proves the guard (scaffolding, waits for closing).
-
-   A criterion is posted only when it is satisfiable and speaks the shipped
-   surface's language: every clause can hold at once (#186 asked for "an
-   inert toggle" while forbidding "generic disabled widgets" - an inert toggle
-   *is* one); it presumes no control that some rows lack (compile-only rows
-   have no toggle); and every operator-facing noun is one `data/` already
-   uses - grep before naming the object. The UI says *firmware* and
-   *filesystem*; a second name teaches operators there are two objects.
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
    RobotState via portMUX/zone discipline).
-
-   For `data/` slices, open the shipped page yourself - the fixture server
-   (`tools/serve_editor_fixture.py`), headed, at every width the page
-   supports - and read the accessibility tree as a builder would: a control
-   the operator can never move, or a label that reads as a different state
-   than the model means, is a reject that no diff, gate or written review
-   catches (#186 shipped a disabled `role="switch"` for a compile-time fact
-   past two approving reviews). Playwright is yours to re-run headed; agents
-   here have reported browser passes that never ran.
-
-   **Open it in every state the model allows, not just the loaded one.** Stub
-   the page's inputs so each branch actually renders: the resource absent, the
-   request failing, the request failing *and then recovering on retry*, the
-   value missing, the component disabled. Three consecutive slices on #202 had
-   their real defect pass a green gate, and every one lived in a state the
-   default happy path never renders - a restore path bound to a deleted key, a
-   placeholder that collapsed the page by 244px, and a panel left permanently
-   stuck after an identity retry. A worker's own probe will exercise the state
-   the worker was thinking about; your job is the other ones.
-
-   Prefer measuring to looking where you can: assert geometry (does the box
-   keep its size between states, does the next element stay put) and computed
-   style (is that background actually painted), because "it rendered" and "it
-   rendered correctly" are different claims and a screenshot flatters both. An
-   assertion whose operands are never compared - `(a || b) !== null` - is not a
-   check; grep the worker's probe for one before trusting its output.
-
-   When a slice depends on an ordering, test the failure path, not a slow one.
-   Delaying a request and having it succeed proves nothing about a request that
-   fails, retries, and then succeeds - a distinction that cost this repo a
-   merged defect, because a section that is *visibly waiting to retry* already
-   counts as settled for everything downstream of it.
 4. Verify the tree, not the narrative: `git log`, clean `git status`, new
    symbols present on disk.
 5. Reject by naming concrete defects (file:line, what is wrong, what the bar
    is) on the sub-issue. Do not fix it yourself. Do not lower the bar for
-   velocity. Cite from the file open in this turn: re-open the exact lines
-   before rejecting on a rule or quoting a body or title. Your own earlier
-   restatement of a policy is not a source, and a title read an hour ago has
-   moved (#186 drew two objections on exactly that; both were withdrawn).
+   velocity.
 6. Issue-body ownership: only you edit a sub-issue's body. Tick acceptance
    checkboxes when, and only when, you have re-verified the criterion
    yourself; tick the remainder in the same pass as the evidence-bearing
@@ -235,10 +149,6 @@ reporting passes that never ran. In the worker's worktree, personally:
   with WHY at category level so the whole category is fenced off, and any
   verification harness you used with its measured output. This comment is
   what makes the next pickup cheap - maintain it as carefully as the code.
-- When a body is re-scoped, edit each superseded comment in place - visible
-  strike-through plus a pointer to the controlling text. A stale comment
-  outlives a re-scope by default; this epic carried a false "compiles for
-  P4" claim a day past its own correction that way.
 - First rejection: back to the SAME worker with the defect list.
 - Second rejection with the same failure signature: stop resending prose.
   The bottleneck is usually the worker's ability to judge its own
@@ -248,15 +158,6 @@ reporting passes that never ran. In the worker's worktree, personally:
   and re-slice. A third variation of a rejected category is never assigned.
 
 ## Integration (serialized - you alone)
-
-Every slice passes the critic protocol **before** it touches `<base>`,
-including slices from an agent the operator assigned outside this skill. A
-review after the branch has moved is a different governance property even
-when the outcome is fine - a good outcome is not a waiver. Agree the order
-in the hand-off, on the ticket: a hand-off cites the ticket and the pin,
-states the critic order and the live concurrency table, and references
-artefacts in `tasks/` or on the ticket - a scratchpad path is session-scoped
-and invisible to the other agent.
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
@@ -269,17 +170,7 @@ Nothing is pushed to origin until the operator explicitly says so.
 The device is a single shared resource and may be bench-mode (controller
 HTTP/SSE/serial/OTA only - no droid-component verification; see
 AGENTS.md verification labels). Ask the operator before every device
-session.
-
-**Bench-mode is not a blocked epic.** AGENTS.md's verification labels describe
-evidence, they do not gate closure, and `full-hardware-verified` - "verified on
-integrated droid hardware" - is not a bar an epic must clear. Do not plan a
-droid-hardware verification ticket as the epic's final gate: it reads correct on
-paper and is impractical in fact, and the faults it would catch surface in the
-first minutes of real operation anyway. Close the epic on the strongest evidence
-the available hardware produced, name what is unproven, and put any real-but-
-unmeasurable risk in the file that owns that hardware truth rather than in a ticket
-nobody can action. One image at a time; before any acceptance run, confirm
+session. One image at a time; before any acceptance run, confirm
 `firmwareVersion` matches the intended commit - a `-dirty` or stale image
 invalidates the run. If the fix changed `data/`, the FS image must be
 uploaded too, and `fs-version.json` must match.

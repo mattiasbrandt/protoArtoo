@@ -69,7 +69,10 @@ Do not duplicate large policy sections from those files in this adapter.
 ## Domain-Specific Notes
 
 - Marcduino RX routing and action naming conventions are canonicalized in `docs/action-registry.yaml` and `AGENTS.md`.
-- Use `tools/serial_monitor.py` for serial capture during verification workflows.
+- Use `tools/console_client.py` during verification workflows. It is the Console Client, not
+  only a capture tool: capture (`make monitor`), an interactive Controller Console session
+  (`make console`), and a scripted mode that drives either Console Adapter and replays the
+  `tools/bench_rows/` sheets (`make bench-rows`). Reference: `docs/console-client.md`.
 - Keep operator-facing web copy free of internal phase/process language.
 
 ## Espressif MCP Usage

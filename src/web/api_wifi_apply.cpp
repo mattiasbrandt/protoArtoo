@@ -1,12 +1,18 @@
 // =============================================================================
 // src/web/api_wifi_apply.cpp
 //
-// Apply Core for POST /api/wifi (ADR 0011, ADR 0015). See api_wifi_apply.h.
+// Apply Core for POST /api/wifi (ADR 0011, ADR 0015), plus its ADR 0036
+// Commit Step. See api_wifi_apply.h.
 // =============================================================================
 
 #include "api_wifi_apply.h"
 
 #include <string.h>
+
+#include <Preferences.h>
+
+#include "config.h"       // NVS_NAMESPACE
+#include "web_server.h"   // requestStatusBroadcastNow()
 
 namespace {
 
@@ -140,4 +146,43 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
 
     working->provisioned = true;
     result->ok = true;
+}
+
+// See include/api_wifi_apply.h for the full contract.
+WifiCommitOutcome wifiCommitApplied(WifiConfig* working) {
+    WifiCommitOutcome outcome;
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.persisted = false;
+        return outcome;
+    }
+    if (!configSaveWifi(prefs, *working)) {
+        prefs.end();
+        outcome.persisted = false;
+        return outcome;
+    }
+    prefs.end();
+
+    // Stage only: update the persisted cache so reads see the new settings,
+    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch -
+    // apply happens through an explicit reboot/restart handoff, not as a side
+    // effect of saving this form). This is what lets an operator reprovision
+    // while connected to the controller's own AP without dropping underneath
+    // themselves mid-request.
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    snap.wifi = *working;
+    configCacheApply(snap);
+
+    requestStatusBroadcastNow();
+
+    outcome.persisted = true;
+    outcome.config = *working;
+
+    WifiConfig activeWifi = {};
+    configCacheReadActiveWifi(&activeWifi);
+    outcome.pendingApply = wifiConfigsDiffer(*working, activeWifi);
+    outcome.networkRecovery = configCacheReadActiveWifiRecovery();
+    return outcome;
 }

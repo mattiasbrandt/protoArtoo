@@ -36,6 +36,11 @@ If upload is requested and hardware is available:
 
 - USB: `make flash BUILD_ENV=<affected-env> UPLOAD_PORT=<port>`
 - OTA: `make ota BUILD_ENV=<affected-env> OTA_IP=<host>`
+- Read the board back afterwards, do not assume the upload is the evidence:
+  `make flash-monitor` flashes and then captures until `init complete`, and
+  `python3 tools/console_client.py --port <port> --until "<string>" --timeout 30`
+  does the capture alone. `make console` opens a Controller Console session to
+  ask the board questions; reference: `docs/console-client.md`.
 
 ## Frontend fallback checks (hardware unavailable)
 

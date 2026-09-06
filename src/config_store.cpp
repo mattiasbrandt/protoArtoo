@@ -11,6 +11,7 @@
 #include "config.h"
 #include "config_serializer.h"
 #include "config_nvsio.h"
+#include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
 #include "rc_mapping.h"
 
@@ -350,6 +351,9 @@ bool activeWifiRecovery = false;
 WifiBootPosture activeWifiBootPosture = WifiBootPosture::PROVISIONING;
 bool activeDomeEnabled = false;
 bool activeAudioEnabled = false;
+// Packed bitmask, 2 B: bit i is kComponentToggleFields[i]'s value as booted.
+// See include/config_cache.h and include/console_config_fields.h.
+uint16_t activeComponentToggleMask = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -485,6 +489,28 @@ bool configCacheReadActiveAudioEnabled() {
     return result;
 }
 
+// See declaration comment in config_cache.h.
+void configCacheSetActiveComponentToggles(const SystemConfig& system) {
+    uint16_t mask = 0;
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        if (system.*(kComponentToggleFields[i].field)) {
+            mask |= (uint16_t)(1u << i);
+        }
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    activeComponentToggleMask = mask;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+bool configCacheReadActiveComponentToggle(size_t bitIndex) {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = (activeComponentToggleMask & (uint16_t)(1u << bitIndex)) != 0;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
 // Live log level, published on every cache apply. Read lock-free by the log
 // macros: a single aligned byte is atomic on this core, and the log path runs
 // on Core 1 real-time loops where a critical section per suppressed log call
@@ -500,6 +526,15 @@ void configCacheApply(const ConfigSnapshot& snap) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.rcConfigDirty = true;
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// See declaration comment in config_cache.h. Deliberately NOT a call to
+// configCacheApply(): the point of this setter is to touch one field and to
+// leave the RC mapping dirty flag alone.
+void configCacheSetStationary(bool stationary) {
+    taskENTER_CRITICAL(&configCacheMux);
+    configCache.system.stationary = stationary;
+    taskEXIT_CRITICAL(&configCacheMux);
 }
 
 // Project SystemConfig into the RC values that take effect only at boot. main

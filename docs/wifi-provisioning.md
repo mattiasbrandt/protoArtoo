@@ -52,6 +52,10 @@ Once applied, reach the controller at `http://artoo.local` (or your droid's
 custom mDNS name, if you've set one on the Setup page) or its IP address from
 your router.
 
+**WPA3-only WiFi networks are not supported; use WPA2 or WPA2/WPA3 mixed
+mode.** Mixed mode is the common home-router default and accepts the
+controller. On a WPA3-only network the join simply never completes.
+
 ### Standalone AP Mode
 
 The controller hosts its own network instead of joining yours — useful in

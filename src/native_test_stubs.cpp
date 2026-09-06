@@ -10,8 +10,9 @@
 // =============================================================================
 #ifdef PA_NATIVE_TEST_STUBS
 
-#include "Arduino.h"      // SerialStub (from test/stubs/include)
-#include "logging.h"      // logging sink declarations
+#include "Arduino.h"                  // SerialStub (from test/stubs/include)
+#include "console_serial_output.h"     // consoleSerialEmitFramedLine (pre-bind log path)
+#include "logging.h"                   // logging sink declarations
 #include "robot_state.h"  // RobotState, portMUX_TYPE, QueueHandle_t
 
 // Zero-initialised global state. Test cases populate cfg_* fields as needed
@@ -22,14 +23,15 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Logging sinks  --  no-op in native test builds
+// Arduino ESP instance (heap methods used by console_module.cpp)
+// Minimal stub with zero values — avoids affecting other 1756 tests
+ESPClass ESP;
+
+// Logging sinks. Defined further down, beside the log ring stand-in they are
+// built on -- see "Log ring stand-in" below. paLogInit() stays a no-op here:
+// the ring is lazily initialised on first use so a test that fills
+// g_test_log_buffer itself is never re-initialised out from under.
 void paLogInit() {
-}
-
-void paLogLine(const char* /*line*/) {
-}
-
-void paLogLineRaw(const char* /*line*/) {
 }
 
 // millis() stub  --  used by the failsafe gate for diagnostics, and by anything
@@ -39,6 +41,14 @@ void paLogLineRaw(const char* /*line*/) {
 // was written against. A test that needs a non-zero timestamp sets this: the
 // drive arbiter treats timestamp 0 as "never submitted", so a handler's
 // submission is indistinguishable from no submission while the clock reads 0.
+//
+// include/drive_motion_test_hooks.h declares this global (and the
+// speed-preset pair defined further below, applySpeedPresetPersisted()'s own
+// stub) - one include here, type-checked against both definition sites in
+// this translation unit, rather than each consumer writing its own raw
+// declaration (matches the commanded_modes_test_hooks.h / log_buffer_test_hooks.h
+// precedent above and below).
+#include "drive_motion_test_hooks.h"
 unsigned long g_test_millis = 0;
 
 unsigned long millis() {
@@ -77,23 +87,44 @@ void domeUartRelease(DomeUartOwner requester) {
 }
 bool domeConnected() { return true; }
 
-// sequence_dispatcher.cpp needs domeQueueTx and audioQueueDollar.
-// No-op stubs: routing tests use sequenceLookup() directly and do not need
-// side-effect capture from these functions.
+// sequence_dispatcher.cpp needs domeQueueTx.
+// No-op stub: routing tests use sequenceLookup() directly and do not need
+// side-effect capture from this function. audioQueueDollar()'s real stub
+// (records calls, respects g_test_audio_queue_ok) lives below with its
+// sibling audio command queue stubs, #258 - it used to be this unconditional
+// no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
+// declared but never written by anything.
 bool domeQueueTx(const char* /*cmd*/) { return true; }
 
 #include "audio_task.h"
-bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true; }
 
 // Side effects of the config write path, recorded rather than performed so a
 // test can assert that a POST reached them. Zeroed by the test's own setUp().
 #include "commanded_modes.h"
+#include "commanded_modes_test_hooks.h"  // declares the globals this section defines,
+                                         // type-checked against every consumer
 bool g_test_commanded_stationary = false;
 unsigned g_test_dome_on_cue_count = 0;
 unsigned g_test_status_broadcast_count = 0;
 
 void commandedSetStationary(bool stationary, CommandSource /*source*/) {
     g_test_commanded_stationary = stationary;
+}
+
+// POST /api/sleep and /api/wake's only side effect (src/web/api_system.cpp,
+// not in the native build) and the Console's system.action.sleep/wake
+// dispatch (#226). Records rather than reports "changed" the way the real
+// setter does - a test that needs the changed-detection edge sets/clears
+// g_test_commanded_sleep itself before calling, matching the real function's
+// "already this value -> false" contract.
+bool g_test_commanded_sleep = false;
+unsigned g_test_commanded_sleep_calls = 0;
+
+bool commandedSetSleep(bool sleep, CommandSource /*source*/) {
+    g_test_commanded_sleep_calls++;
+    bool changed = (g_test_commanded_sleep != sleep);
+    g_test_commanded_sleep = sleep;
+    return changed;
 }
 
 // POST /api/rc/debug's only side effect. Recorded rather than performed: RC
@@ -273,6 +304,8 @@ bool domeLayoutCacheRefreshRequested() {
 // test, and every enqueue is recorded rather than performed.
 // -----------------------------------------------------------------------------
 
+#include <string.h>  // strncpy() - audioQueueDollar() stub below
+
 uint8_t g_test_audio_capabilities = 0;
 const char* g_test_audio_driver_name = "TEST";
 bool g_test_audio_queue_ok = true;
@@ -338,6 +371,25 @@ bool audioQueueTrackStop(CommandSource /*src*/) {
         return false;
     }
     g_test_audio_stop_calls++;
+    return true;
+}
+
+// Records the literal command rather than performing the real dollar-parse/
+// AudioTask side effect, same shape as every other stub in this group -
+// added #258 so a test can assert which $ shortcut a Console executor
+// actually sent (previously an unconditional `return true;` with no capture,
+// see this file's domeQueueTx comment above).
+bool audioQueueDollar(const char* cmd, CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_dollar_calls++;
+    if (cmd != nullptr) {
+        strncpy(g_test_audio_last_dollar, cmd, sizeof(g_test_audio_last_dollar) - 1);
+        g_test_audio_last_dollar[sizeof(g_test_audio_last_dollar) - 1] = '\0';
+    } else {
+        g_test_audio_last_dollar[0] = '\0';
+    }
     return true;
 }
 
@@ -419,17 +471,87 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
 // Log ring stand-in for the one main.cpp owns, which the native build does not
 // compile. Backed by the real log_buffer.cpp ring, so /api/logs tests exercise
 // the actual copy behavior rather than a canned string. Tests fill it through
-// g_test_log_buffer directly (declared extern in the test file).
+// g_test_log_buffer directly (declared once in include/log_buffer_test_hooks.h,
+// so this definition and every test's use stay compiler-checked against the
+// same types instead of each consumer writing its own top-level declaration).
 #include "log_buffer.h"
+#include "log_buffer_test_hooks.h"
+#include <string.h>  // strncpy() - copyLogLineAt() below
 LogBuffer g_test_log_buffer = {};
 char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
 static char s_testLogsBody[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
+
+// The log SINK stand-in (#270, ADR 0039). main.cpp keeps the ring, the drain
+// cursor and the ownership flag together under logMux; native tests are
+// single-threaded, so no lock is needed here, but the SHAPE is deliberately
+// the production one: paLogLine() writes the ring once and consults ownership
+// to decide whether it also writes the wire, and after the bind only
+// consoleSerialDrainLogs() (src/console/console_serial_output.cpp, the real
+// one) does. Declared in include/log_buffer_test_hooks.h, which also carries
+// why this is a second ring rather than g_test_log_buffer above.
+LogBuffer g_test_log_sink_buffer = {};
+char g_test_log_sink_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
+bool g_test_log_wire_owned = false;
+uint32_t g_test_log_drain_cursor = 0;
+
+static void testLogSinkEnsureInit() {
+    if (g_test_log_sink_buffer.lines == nullptr) {
+        logBufferInit(&g_test_log_sink_buffer, g_test_log_sink_storage, LOG_RING_MAX_LINES);
+    }
+}
+
+void paLogLine(const char* line) {
+    if (line == nullptr) {
+        return;
+    }
+    testLogSinkEnsureInit();
+    logBufferAppend(&g_test_log_sink_buffer, line);
+    if (!g_test_log_wire_owned) {
+        consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
+    }
+}
+
+void paLogWireBindToConsole() {
+    testLogSinkEnsureInit();
+    g_test_log_drain_cursor = g_test_log_sink_buffer.totalWritten;
+    g_test_log_wire_owned = true;
+}
+
+bool paLogDrainNextLine(char* out, size_t outSize, uint32_t* evicted) {
+    testLogSinkEnsureInit();
+    return logBufferDrainNext(&g_test_log_sink_buffer, &g_test_log_drain_cursor, out, outSize,
+                              evicted);
+}
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
     return logBufferCopy(&g_test_log_buffer, buffer, bufferSize);
 }
 char* recentLogsBodyBuffer(size_t* size) {
     *size = sizeof(s_testLogsBody);
     return s_testLogsBody;
+}
+
+// getLogBufferCount()/copyLogLineAt(): the per-line reads the Console's
+// system.status.logs query is built on (src/console/console_module.cpp,
+// #239), instead of copyRecentLogs()/recentLogsBodyBuffer() above. main.cpp's
+// real implementations take logMux per call; this stand-in needs no lock
+// (native tests are single-threaded). The index arithmetic mirrors
+// logBufferCopy()'s own ring walk (log_buffer.cpp), applied to one index
+// instead of the whole ring, so a test filling g_test_log_buffer sees the
+// same oldest-first ordering both call sites report.
+size_t getLogBufferCount() {
+    return g_test_log_buffer.count;
+}
+
+bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
+    if (idx >= g_test_log_buffer.count || outSize == 0) {
+        return false;
+    }
+    size_t startIdx = (g_test_log_buffer.head + g_test_log_buffer.capacity - g_test_log_buffer.count) %
+                       g_test_log_buffer.capacity;
+    size_t ringIdx = (startIdx + idx) % g_test_log_buffer.capacity;
+    strncpy(out, g_test_log_buffer.lines[ringIdx], outSize - 1);
+    out[outSize - 1] = '\0';
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -446,6 +568,17 @@ char* recentLogsBodyBuffer(size_t* size) {
 #include "web_request_test_backend.h"
 
 static const char* testParamLookup(const WebRequestTestBackend* b, const char* name) {
+    // The staged preemption, if the test staged one. Cleared before the call
+    // so one request is interrupted once and a callback that drives another
+    // handler cannot recurse into itself. See onFirstParamRead's declaration
+    // in web_request_test_backend.h for why a parameter read is the point.
+    WebRequestTestBackend* mutableBackend = const_cast<WebRequestTestBackend*>(b);
+    if (mutableBackend->onFirstParamRead != nullptr) {
+        void (*hook)() = mutableBackend->onFirstParamRead;
+        mutableBackend->onFirstParamRead = nullptr;
+        hook();
+    }
+
     for (size_t i = 0; i < b->paramCount; i++) {
         if (strcmp(b->params[i].name, name) == 0) {
             return b->params[i].value;
@@ -667,21 +800,7 @@ class LittleFSClass {
     }
 };
 
-class ESPClass {
-   public:
-    unsigned long getFreeHeap() const {
-        return 0;
-    }
-    unsigned long getMinFreeHeap() const {
-        return 0;
-    }
-    unsigned long getMaxAllocHeap() const {
-        return 0;
-    }
-};
-
 static LittleFSClass LittleFS;
-static ESPClass ESP;
 
 // Note: pdMS_TO_TICKS is already defined in test/stubs/include/freertos/FreeRTOS.h
 // So we only define the task-related stubs here.
@@ -718,7 +837,7 @@ bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlo
 }
 
 // Note: audioQueueDollar and audioQueueTrackStop stubs already exist elsewhere
-// in this file (see lines ~80-86, ~336). No need to redefine them here.
+// in this file, in the Audio route group above. No need to redefine them here.
 
 // Network manager seam (web_network_manager.h) implementation for host tests.
 // Records calls so tests can verify the seam is integrated.
@@ -772,6 +891,7 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
     };
 }
 
+// Web server stubs — native tests need these for console_module.cpp
 // ESP-IDF reset reason enum and stub — native tests need this for
 // evaluateNetworkRecoveryGesture() to compile
 enum esp_reset_reason_t {
@@ -791,6 +911,37 @@ enum esp_reset_reason_t {
 esp_reset_reason_t esp_reset_reason() {
     // Always return software reset in native tests
     return ESP_RST_SW;
+}
+
+// Web filesystem ready status — used by console_module.cpp
+// Default false in native tests (minimal impact on other 1756 tests)
+bool webLittleFsMounted() {
+    return false;
+}
+
+// -----------------------------------------------------------------------------
+// Controller Console action dispatch (#220). rc_input.cpp (RcInputTask, pulseIn,
+// esp_task_wdt) is not in the native build, so dispatchRcTriggerActionTest()'s
+// real implementation is not reachable here. Recorded rather than performed,
+// same pattern as commandedSetStationary()/auxLedQueueSetColor() above: the
+// Console module's own guard + outcome-mapping logic (console_module.cpp) is
+// what test_console_module.cpp exercises for real; this stub only lets that
+// logic reach a controllable result instead of linking to nothing.
+#include "rc_input_test_hooks.h"
+unsigned g_test_dispatch_action_calls = 0;
+RobotActionId g_test_last_dispatch_target = ROBOT_ACTION_NONE;
+CommandSource g_test_last_dispatch_source = SRC_NONE;
+RcDispatchOutcome g_test_dispatch_outcome = RcDispatchOutcome::kQueued;
+char g_test_last_dispatch_payload[32] = {};
+
+RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
+                                              bool /*pressed*/, CommandSource src) {
+    g_test_dispatch_action_calls++;
+    g_test_last_dispatch_target = target;
+    g_test_last_dispatch_source = src;
+    snprintf(g_test_last_dispatch_payload, sizeof(g_test_last_dispatch_payload), "%s",
+             payload != nullptr ? payload : "");
+    return g_test_dispatch_outcome;
 }
 
 #endif

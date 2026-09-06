@@ -10,6 +10,9 @@ typedef int portMUX_TYPE;
 #define taskENTER_CRITICAL(mux) (void)(mux)
 #define taskEXIT_CRITICAL(mux)  (void)(mux)
 
+// Semaphore handle type stub (opaque pointer for native tests)
+typedef void* SemaphoreHandle_t;
+
 // Core ID stub for native test builds (always returns 0).
 inline int xPortGetCoreID() { return 0; }
 

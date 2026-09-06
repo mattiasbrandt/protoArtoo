@@ -14,6 +14,8 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
+
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
 #include "rc_input_active_config.h"
 #include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
@@ -35,6 +37,23 @@ void configCacheReadWifi(WifiConfig* out);
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);
+
+// configCacheSetStationary: write the one field the Commanded Mode setters
+// mirror into the cache, by field.
+//
+// commandedSetStationary() (src/commanded_modes.cpp) keeps this in step with
+// RobotState.stationary so the next config save persists the commanded mode
+// instead of reverting it from a stale cache. It used to do that with a
+// whole-snapshot round trip - read all 944 B of ConfigSnapshot out, set one
+// bool, write all 944 B back through configCacheApply() - on the SBUS path
+// (Core 1, once per frame while driving, src/tasks/rc_input.cpp), on the httpd
+// task and on the Console alike. That also marked RobotState.rcConfigDirty on
+// every toggle, making RcInputTask rebuild its cached mapping config for a
+// field the RC processor config does not contain at all
+// (include/rc_input_processor.h reads stationary only as stationaryLocked
+// state). By field: no snapshot copy on the caller's stack, and no dirty
+// flag (ADR 0011, 2026-09-04 amendment).
+void configCacheSetStationary(bool stationary);
 
 // Project the boot SystemConfig into the immutable RC settings that actually
 // govern decoder startup, dispatch gates, and RC reporting. main calls this
@@ -100,6 +119,21 @@ bool configCacheReadActiveDomeEnabled();
 // effect next boot. Tasks read their toggles once at startup, never per iteration.
 void configCacheSetActiveAudioEnabled(bool enabled);
 bool configCacheReadActiveAudioEnabled();
+
+// configCacheSetActiveComponentToggles / configCacheReadActiveComponentToggle:
+// the packed bitmask of every system.config.enable_* value actually running
+// since the last boot, as opposed to configCacheRead()'s SystemConfig fields
+// which reflect the latest persisted (possibly not-yet-applied) toggle write.
+// This is the general form of configCacheSetActiveDomeEnabled/AudioEnabled
+// above for all 15 Component Toggles at once - added for the Controller
+// Console's "read shows saved vs active" answer (#226) rather than 13 more
+// single-bool accessor pairs. Bit index matches
+// include/console_config_fields.h's kComponentToggleFields[] order; that
+// header owns the name<->index mapping, so this stays index-based and
+// name-agnostic. Set once by setup() from the boot config snapshot,
+// mirroring the two calls above.
+void configCacheSetActiveComponentToggles(const SystemConfig& system);
+bool configCacheReadActiveComponentToggle(size_t bitIndex);
 
 // =============================================================================
 // Log level accessor (lightweight, used by logging.h)

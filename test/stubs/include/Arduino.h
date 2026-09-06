@@ -35,13 +35,97 @@ private:
 };
 
 // Serial stub — used by code compiled in native host tests.
+//
+// availableForWrite() / operator bool() (ADR 0038, #265): test-controlled so
+// the room-wait seam in src/console/console_serial_output.cpp is provable on
+// the host without a board. Defaults ("unlimited room", "connected") match
+// what every native test written before #265 already assumed implicitly, so
+// this extension is additive — nothing that does not touch these knobs can
+// observe a behavior change.
+//
+// The write() capture exists for the same reason: consoleSerialEmitFramedLine()
+// writes the record/log line straight to Serial (not through embedded-cli's
+// per-character cli->writeChar, which test_console_serial_output.cpp already
+// captures separately) and its own tests need to see exactly what reached
+// the wire and in how many calls.
 struct SerialStub {
+    // Test-controlled knobs — see serialStubReset() below for the one place
+    // that owns their defaults.
+    static inline int availableForWriteValue = 100000;
+    static inline bool connectedValue = true;
+    // Cable presence as HWCDC::isPlugged() reports it on the P4 (#275): the
+    // SOF watchdog, independent of connectedValue exactly as the driver's
+    // `connected` latch is independent of isPlugged(). Read through isPlugged()
+    // below so a test's poll reads like src/tasks/console_task.cpp's, and the
+    // settle unit (include/console_cdc_settle.h) can be driven on the host.
+    static inline bool pluggedValue = true;
+
+    // Bytes handed to write(), across however many calls were made, plus a
+    // count of those calls. Deliberately separate from the writeChar capture
+    // used elsewhere in this header's neighboring test file: merging them
+    // would make "one write call" assertions ambiguous about which sink
+    // produced a given byte.
+    static inline char capturedBuf[2048] = {};
+    static inline size_t capturedLen = 0;
+    static inline int writeCallCount = 0;
+    static inline int availableForWriteCallCount = 0;
+    // How many times `Serial` was read as a bool. On the P4 every such read is
+    // HWCDC::isCDC_Connected(), which commits a packet while plugged and not
+    // yet connected, so a unit that must NOT touch the transport during the
+    // CDC settle window is held to it by this count (console_cdc_settle.h).
+    static inline int boolCallCount = 0;
+
     template<typename... Args>
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
     static void println(const char* /*s*/) {}
     static void print(const char* /*s*/) {}
+    static size_t write(uint8_t c) {
+        writeCallCount++;
+        if (capturedLen + 1 < sizeof(capturedBuf)) {
+            capturedBuf[capturedLen++] = (char)c;
+        }
+        return 1;
+    }
+    static size_t write(const uint8_t* data, size_t len) {
+        writeCallCount++;
+        for (size_t i = 0; i < len && capturedLen + 1 < sizeof(capturedBuf); ++i) {
+            capturedBuf[capturedLen++] = (char)data[i];
+        }
+        return len;
+    }
+    static void flush() {}
+    static int available() { return 0; }
+    static int read() { return -1; }
+    static int availableForWrite() {
+        availableForWriteCallCount++;
+        return availableForWriteValue;
+    }
+    // Cable presence, side-effect free, like HWCDC::isPlugged() (the SOF
+    // watchdog). Not counted in boolCallCount: it is the safe read the settle
+    // unit is allowed to make during the CDC hold-off (console_cdc_settle.h).
+    static bool isPlugged() { return pluggedValue; }
+    operator bool() const {
+        boolCallCount++;
+        return connectedValue;
+    }
 };
 extern SerialStub Serial;
+
+// Resets every SerialStub knob and capture to its default (unlimited room,
+// connected, empty capture, zeroed counters). Call at the top of any test
+// that touches the ADR 0038 room-wait/single-write seam — this is one global
+// shared by every native test in the binary, so state left over from a prior
+// test would otherwise leak forward.
+inline void serialStubReset() {
+    SerialStub::availableForWriteValue = 100000;
+    SerialStub::connectedValue = true;
+    SerialStub::capturedLen = 0;
+    SerialStub::capturedBuf[0] = '\0';
+    SerialStub::writeCallCount = 0;
+    SerialStub::availableForWriteCallCount = 0;
+    SerialStub::pluggedValue = true;
+    SerialStub::boolCallCount = 0;
+}
 
 // millis() stub — used by failsafe gate and other timing code
 unsigned long millis();
@@ -80,3 +164,12 @@ inline T constrain(T value, T min_val, T max_val) {
     if (value > max_val) return max_val;
     return value;
 }
+
+// ESP stub — provides heap info methods used by console_module.cpp
+// Minimal stub with default zero values to avoid affecting other tests.
+struct ESPClass {
+    unsigned long getFreeHeap() const { return 0; }
+    unsigned long getMinFreeHeap() const { return 0; }
+    unsigned long getMaxAllocHeap() const { return 0; }
+};
+extern ESPClass ESP;

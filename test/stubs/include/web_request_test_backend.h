@@ -62,4 +62,19 @@ struct WebRequestTestBackend {
     // Makes beginEventStream() report failure, standing in for a transport that
     // could not write the stream response head.
     bool eventStreamFails = false;
+
+    // A deterministic preemption point inside a handler, for concurrency
+    // tests. The host harness is single-threaded, so a test that has to
+    // interleave a second writer with a handler's read-modify-write window
+    // needs a callback INSIDE that window; a parameter read is the only thing
+    // a write handler does between reading the config cache and committing
+    // it, which makes it the one place a real scheduler could put the other
+    // task and a test can too.
+    //
+    // Fires on the first parameter lookup of a request and is cleared by the
+    // stub before it calls, so a handler that reads twenty parameters still
+    // gets exactly one interruption and a callback that itself drives a
+    // handler cannot recurse. Null (the default) means no hook, which is
+    // every other test.
+    void (*onFirstParamRead)() = nullptr;
 };

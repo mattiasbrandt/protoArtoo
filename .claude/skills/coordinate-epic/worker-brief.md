@@ -45,6 +45,15 @@ tests, not exhaustive suites, and do not polish them; you will not be
 rejected for test naming, structure or volume, and you will be rejected for
 production code that does not do the job.
 
+Weight your evidence toward BEHAVIOUR, not coverage. The gate's floor is ONE
+native test per production change - a floor, not a target, and nobody counts
+past it. What earns its keep is evidence the change does its job where it
+actually runs: a record the firmware really emits, a transcript from a board,
+an integration path exercised end to end. This epic's most valuable findings
+came from replaying a bench sheet against real hardware, not from unit tests -
+two live defects sat behind a fully green suite. If you are adding the
+fifteenth assertion to a parser table, stop and go prove the thing works.
+
 Verification is sized to the project (AGENTS.md "Verification Scale"): a small
 hobby project with one user. Prove the change where it runs, once. Do not build
 a harness, a matrix or a soak the ticket did not ask for, and do not propose one.
@@ -97,7 +106,7 @@ BOUNDARIES
   an automatic reject.
 
 SLICE WORKFLOW (AGENTS.md, binding)
-- implement -> verify -> commit immediately (explicit per-file git add,
+- implement -> verify FAST -> commit immediately (explicit per-file git add,
   type(scope): summary, no co-author trailers) -> record
   "Slice N - <short SHA> <subject> - verified <how>" in ONE evolving status
   comment, updated in place as follows.
@@ -106,8 +115,16 @@ SLICE WORKFLOW (AGENTS.md, binding)
   1. Before your first slice, create your status comment with a marker first
      line, writing the body to a file and passing it with --body-file:
      gh issue comment {ISSUE} --body-file <file>
-  2. Find its id once: gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
-     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE} -->")) | .id'
+     The marker MUST be unique to THIS dispatch, not just to the issue:
+     <!-- worker-status-{ISSUE}-<short-slug-of-your-branch> -->. A ticket
+     re-dispatched in a later wave otherwise gets two comments sharing one
+     marker, step 2 returns BOTH ids, and the step-3 `gh api .../<id>` then
+     fails on the embedded newline. That happened on #221.
+  2. Find its id once - and CHECK IT RETURNED EXACTLY ONE:
+     gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
+     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE}-<slug> -->")) | .id'
+     Two ids means your marker is not unique; pick a narrower one and re-post
+     rather than patching whichever came back first.
   3. Update that id thereafter, from a file:
      python3 -c "import json,pathlib,sys; print(json.dumps({'body': pathlib.Path(sys.argv[1]).read_text()}))" <file> > /tmp/patch.json
      gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input /tmp/patch.json
@@ -137,7 +154,14 @@ VERIFICATION (software-verified cap)
   until a number looks right; the coordinator owns the repair. Chase a number
   that disagrees with your brief instead of taking whichever reads better -
   three of this epic's most valuable findings came from exactly that.
-- Slice gate: after committing each slice, run
+- Per-commit verification is a FAST, TARGETED step, not the full gate: the
+  existing tests covering what you touched, plus a build when you changed
+  something that compiles. Seconds to a minute, so a break is caught at the
+  commit that caused it.
+- Slice gate: run it ONCE, after your final commit, before you report - NOT
+  after every commit. It diffs merge-base..HEAD, so one run at the end covers
+  every commit in the slice; running it four times to land four commits buys
+  nothing and costs four full suites and four builds. Run
   `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
   below, if any, and --mutations with your mutation patches when your diff
   touches web production JS) and paste its FULL block verbatim into your

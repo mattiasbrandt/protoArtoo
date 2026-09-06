@@ -8,14 +8,13 @@
 #
 # Variables (CLI or user.mk):
 #   make ota OTA_IP=192.168.4.1
-#   make flash UPLOAD_PORT=/dev/ttyUSB1
+#   make flash UPLOAD_PORT=/dev/ttyACM0   (required when two boards are attached)
 #   make ota BUILD_ENV=artoo_esp32_chirp
 #   make ota OTA_HOST_PORT=32000   (only if 32320 is taken; firewall it instead if you can)
 # =============================================================================
 
 OTA_IP      ?= artoo.local
 BUILD_ENV   ?= artoo_esp32
-UPLOAD_PORT ?= /dev/ttyUSB0
 OTA_TIMEOUT ?= 60
 OTA_TRANSFER_TIMEOUT ?= 60
 
@@ -29,6 +28,28 @@ OTA_TRANSFER_TIMEOUT ?= 60
 # ("OTA fails with 'No response from device'") for the rule to add.
 # Shared by every target that calls tools/ota_upload.py — both boards need it.
 OTA_HOST_PORT ?= 32320
+
+# ── USB upload port: resolved or refused, never assumed ───────────────────
+# `UPLOAD_PORT ?= /dev/ttyUSB0` used to live above. On a one-board bench it was
+# a harmless default; on a two-board bench it is a guess about *which board*.
+# On 2026-09-03 it aimed an ESP32-P4 image at the artoo-esp32: PlatformIO logged
+# "Looking for upload port... Auto-detected: /dev/ttyUSB0" and esptool refused
+# with "This chip is ESP32, not ESP32-P4". The chip check was the only thing
+# between a named port and the wrong board, and the artoo was left in the ROM
+# download stub, off the network.
+#
+# Two faults, so two fixes, and both are needed:
+#
+#   1. tools/resolve_upload_port.py resolves the port or REFUSES with the list
+#      of attached devices. It never picks one when more than one could be meant.
+#
+#   2. The result is exported as PLATFORMIO_UPLOAD_PORT, not just passed as
+#      `--upload-port`. Measured the same day: make passed
+#      `--upload-port /dev/ttyACM0` and PlatformIO auto-detected anyway, because
+#      the upload runs as a nested re-invocation that a CLI flag does not survive.
+#      The environment variable does. `--upload-port` is still passed, for the
+#      paths where it is honoured and because it keeps the command self-describing.
+RESOLVE_PORT = python3 tools/resolve_upload_port.py --origin '$(origin UPLOAD_PORT)'
 
 # ── Toolchain isolation: artoo-esp32 vs ESP32-P4 ─────────────────────────────
 # The two chip targets pin different pioarduino platform versions, and those
@@ -87,7 +108,7 @@ FLOCK := python3 tools/pio_lock.py
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
         check-chirp check-mp3trigger \
-        setup setup-wifi clean monitor check-deps
+        setup setup-wifi clean monitor console bench-rows check-deps
 
 # Default target — launches the interactive wizard
 all:
@@ -141,8 +162,10 @@ check-envelope: ## Verify an env's custom_sdkconfig actually held in the built f
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 
-flash: test ## Flash via USB  (UPLOAD_PORT=/dev/ttyUSB0)
-	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
+flash: test ## Flash via USB  (UPLOAD_PORT=/dev/... ; required if two boards are attached)
+	@port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) && \
+	  echo "==> flashing $(BUILD_ENV) to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(BUILD_ENV) -t upload --upload-port $$port
 
 ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 	$(PIO) run -e $(BUILD_ENV)_ota
@@ -153,23 +176,44 @@ ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 # without a network backend - so they upload over USB with the same env and
 # port `make flash` uses. Membership in P4_ENVS decides, as for PIO_CORE_DIR.
 UPLOADFS_ENV  = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(BUILD_ENV),$(BUILD_ENV)_ota)
-UPLOADFS_PORT = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(UPLOAD_PORT),$(OTA_IP))
 
-uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB via UPLOAD_PORT; no test gate)
-	$(PIO) run -e $(UPLOADFS_ENV) -t uploadfs --upload-port $(UPLOADFS_PORT)
+# The OTA branch goes through tools/ota_upload.py, not pio's `-t uploadfs`.
+# PlatformIO invokes espota directly and lets it pick a RANDOM local callback
+# port (measured: host_port=21870), which a default-deny inbound firewall drops
+# — surfacing as the misleading "No response from device" that OTA_HOST_PORT
+# above exists to prevent. `make ota` never hit this because it already routes
+# through the wrapper; `make uploadfs` did, and could not upload an FS image to
+# the artoo at all. The wrapper also brings the board-identity guard (#252) and
+# the project transfer timeout, so the two OTA paths now agree on all three.
+uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB, port resolved; no test gate)
+	@if [ -n "$(filter $(P4_ENVS),$(BUILD_ENV))" ]; then \
+	  port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) || exit 1; \
+	  echo "==> uploading filesystem for $(UPLOADFS_ENV) to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(UPLOADFS_ENV) -t uploadfs --upload-port $$port; \
+	else \
+	  echo "==> uploading filesystem for $(UPLOADFS_ENV) to $(OTA_IP)" && \
+	  $(PIO) run -e $(UPLOADFS_ENV) -t buildfs && \
+	  python3 tools/ota_upload.py --env $(UPLOADFS_ENV) --spiffs --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT); \
+	fi
 
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
 flash-chirp: test ## Flash CHIRP build via USB
-	$(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
+	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
+	  echo "==> flashing artoo_esp32_chirp to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port
 
 flash-monitor: test ## Flash default build via USB then capture boot log
-	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
-	python3 tools/serial_monitor.py --until "init complete" --timeout 30
+	@port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) && \
+	  echo "==> flashing $(BUILD_ENV) to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(BUILD_ENV) -t upload --upload-port $$port && \
+	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
 
 flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
-	$(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
-	python3 tools/serial_monitor.py --until "init complete" --timeout 30
+	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
+	  echo "==> flashing artoo_esp32_chirp to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port && \
+	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
 	$(FLOCK) pio run -e artoo_esp32_chirp_ota
@@ -186,7 +230,9 @@ ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
 # has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
 
 flash-dysv5w: test ## Flash DY-SV5W build via USB
-	$(FLOCK) pio run -e artoo_esp32_dysv5w -t upload --upload-port $(UPLOAD_PORT)
+	@port=$$($(RESOLVE_PORT) --env artoo_esp32_dysv5w) && \
+	  echo "==> flashing artoo_esp32_dysv5w to $$port" && \
+	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_dysv5w -t upload --upload-port $$port
 
 ota-dysv5w: test ## Flash DY-SV5W build via OTA
 	$(FLOCK) pio run -e artoo_esp32_dysv5w_ota
@@ -211,8 +257,36 @@ setup-wifi: ## Configure WiFi credentials  (writes src/secrets.h)
 clean: ## Remove PlatformIO build artifacts
 	$(PIO) run -t clean
 
-monitor: ## Open serial monitor
-	python3 tools/serial_monitor.py
+monitor: ## Open serial monitor  (UPLOAD_PORT=/dev/... to pick a board)
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port
+
+# ── Controller Console: interactive session and bench-row replay ─────────────
+# tools/console_client.py has three modes; `monitor` above only ever reached the
+# read-only capture one. These two expose the other two. Both resolve the port
+# through RESOLVE_PORT exactly as `monitor` does — a literal or defaulted port
+# is the fault c0eca355 removed, after `make flash` aimed an ESP32-P4 image at
+# the artoo and only esptool's chip check stopped it.
+#
+# Reference for the client itself, including the directive grammar these sheets
+# are written in: docs/console-client.md.
+
+BENCH_ROWS  ?=
+ROWS        ?=
+SKIP_MANUAL ?=
+
+console: ## Interactive Console session  (UPLOAD_PORT=/dev/... to pick a board)
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port --interactive
+
+bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1])
+	@if [ -z "$(BENCH_ROWS)" ]; then \
+	  echo "BENCH_ROWS is required: a bench sheet is board-specific and is never guessed."; \
+	  echo "  make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt"; \
+	  echo "Sheets in this tree:"; \
+	  ls tools/bench_rows/*.txt; \
+	  exit 1; \
+	fi
+	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port \
+	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual)
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \

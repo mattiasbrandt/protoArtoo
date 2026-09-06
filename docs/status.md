@@ -11,9 +11,10 @@ see `CHANGELOG.md`.
 
 | Status item | Current state |
 |---|---|
-| Latest release | [`v1.1.0`](https://github.com/mattiasbrandt/protoArtoo/releases/latest) (2026-09-06) — ready-to-flash firmware and filesystem images per audio module, plus a FireBeetle 2 image |
+| Latest release | [`v1.2.0`](https://github.com/mattiasbrandt/protoArtoo/releases/latest) (2026-09-06) — ready-to-flash firmware and filesystem images per audio module, plus a FireBeetle 2 image |
 | Controller boards | artoo-esp32 (build a droid on this one); DFRobot FireBeetle 2 ESP32-P4, supported for developers, not yet a buy recommendation |
 | Web control | Working — pages load reliably, and a controller too busy to serve a page says so and offers a retry instead of hanging |
+| Typing commands | Working — a command console in the dashboard and over a serial cable, same words either way; it still answers when the web pages have gone quiet |
 | Next up | Drive-motor validation on an assembled droid |
 
 `v1.0.0` is the first stable release. Its capabilities are confirmed on real
@@ -29,6 +30,14 @@ release ships an image for it. It is supported for developers; it is not yet a
 board to buy for a droid, for the reasons in the
 [spec sheet](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md#before-you-buy-one).
 The artoo-esp32 image behaves as it did in `v1.0.0`.
+
+`v1.2.0` adds a command console. Anything the controller can do, you can type —
+in the dashboard's Live Logs panel or over a serial cable, in the same words
+either way. It is not a way in past the safety layers: a typed command runs
+through exactly the code a tapped button runs through, so an estop or a
+stationary lock refuses it the same way and says which one stopped it. It also
+keeps answering when the web pages have stopped, which is when you most want to
+know how the board is doing.
 
 Full drive-motor (hoverboard) validation on a completely assembled droid is not
 part of this release. Drive control and safety logic are implemented and tested,
@@ -59,6 +68,10 @@ for it.
   confirmed end-to-end.
 - **Safety systems** — emergency stop and RC-signal-loss failsafe confirmed,
   outside of live drive-motor behavior (see below).
+- **The command console** — confirmed on both controller boards, in the browser
+  and over a serial cable: commands run, refusals name the layer that stopped
+  them, Tab completion and history work, and the console still answers over the
+  cable when the controller is low on memory and the web pages have gone quiet.
 - **Long web sessions** — a three-hour live-update soak and a reconnect storm
   on the FireBeetle 2, and four and a half hours under web load on the
   artoo-esp32, without a reboot or a refused page. The artoo-esp32 runs used a
@@ -78,8 +91,10 @@ A second controller board, supported for developers.
 - The safety posture: 50 Hz drive frames keep coming, the RC-loss failsafe is
   armed from boot, a watchdog reset arms the emergency stop, and the task
   watchdog is fed.
-- A deliberate reset of the WiFi module recovers without restarting the
-  controller.
+- A deliberate reset of the WiFi module, typed at the console on the image that
+  ships it, recovers without restarting the controller: the link drops, the
+  controller notices and brings it back on its own at the first attempt, and the
+  board stays up the whole time.
 - `firebeetle2.local` next to an artoo controller's `artoo.local` on one
   network.
 
@@ -89,8 +104,9 @@ A second controller board, supported for developers.
   serial lanes, servo pulses, I2C and the LED strip. The board has not driven a
   droid.
 - The WiFi module's "degraded" announcement (sound cue, dome text, serial log)
-  has never been seen firing; it needs a failure the shipping image cannot
-  provoke on purpose.
+  has never been seen firing. The controller only gives up after five failures in
+  a row, and a healthy module comes back on the first, so rebooting it on purpose
+  cannot produce the announcement.
 - GPIO 48 to 52 sit on regulator rails that are unmeasured under load; a
   problem there would look like servo jitter or dome ESC throttle, not a log
   line (`docs/pin_map.md`, Known Issue).
@@ -108,6 +124,12 @@ A second controller board, supported for developers.
   as follow-up work after `v1.0.0` and will be documented when complete.
 - **MP3 Trigger audio module** — an alternative to the CHIRP module some
   builders use. Not re-confirmed on hardware for this release.
+- **`help` leaves the description out for some commands.** A description past a
+  certain length is dropped rather than shortened: over the serial cable that
+  hits 14 of the 194 commands, in the browser 2 of them, so the same `help` can
+  answer differently in the two places. Nothing it does show is wrong — no
+  command reports another one's description — it is a missing line, not a wrong
+  one. A fix follows this release.
 - **First boot of a downloaded release on a fresh controller.** The
   boot-into-setup-hotspot flow is covered by automated tests and the release
   builds ship without any developer WiFi shortcut, but the literal "flash,
@@ -130,5 +152,6 @@ A second controller board, supported for developers.
 | `v0.4.0` | Audio system, bidirectional dome link, web UI improvements |
 | `v1.0.0` | First stable release: reliable page loads on a rebuilt web server, WiFi setup from the browser with a recovery mode, ready-to-flash release downloads per audio module, four log levels, and per-component enable toggles. Full drive-motor validation follows as a separate, documented pass. |
 | `v1.1.0` | Second controller board: the DFRobot FireBeetle 2 ESP32-P4 for developers, with WiFi through its ESP32-C6 module and a release image of its own; component switches named for what they control; memory sized per chip; build-size budgets on every pull request; a soak harness. artoo-esp32 behaviour unchanged. |
+| `v1.2.0` | A command console: type anything the controller can do, in the dashboard or over a serial cable, in the same words either way and through the same safety layers. Answers come back one field per line with a plain word for what happened. Tab completion and history built from the droid's own command list. The console keeps answering over the cable when the web pages have gone quiet. A console tool for your computer replays written sheets of commands and keeps the transcript. |
 
 For detailed per-change history, see `CHANGELOG.md`.

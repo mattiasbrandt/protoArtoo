@@ -112,10 +112,39 @@ void handleActionsTestPost(WebRequest& req) {
             break;
     }
 
-    dispatchRcTriggerActionTest(target, "", true);
+    // SRC_WEB_API: this route is the REST test button (data/rc.js), distinct
+    // from the Controller Console's own action executor (SRC_WEB_CONSOLE /
+    // SRC_SERIAL_CONSOLE, console_module.cpp) even though both ultimately
+    // call this same dispatch core (#220).
+    RcDispatchOutcome outcome = dispatchRcTriggerActionTest(target, "", true, SRC_WEB_API);
+
+    // Reports what actually happened instead of always "ok":true - the whole
+    // point of #220: the guard above already refused anything it can refuse
+    // before dispatch, so everything reaching here is a real outcome, not a
+    // guard failure. HTTP 200 in every case: the request itself was valid
+    // and processed; "outcome"/"ok" carry the truthful result, matching the
+    // Console's own separation of transport status from outcome
+    // (docs/console-protocol.md s.3.3).
+    const char* outcomeStr = "queued";
+    bool ok = true;
+    switch (outcome) {
+        case RcDispatchOutcome::kQueued:
+            outcomeStr = "queued";
+            ok = true;
+            break;
+        case RcDispatchOutcome::kQueueFull:
+            outcomeStr = "queue-full";
+            ok = false;
+            break;
+        case RcDispatchOutcome::kBlockedByState:
+            outcomeStr = "unavailable";
+            ok = false;
+            break;
+    }
 
     JsonDocument doc;
-    doc["ok"] = true;
+    doc["ok"] = ok;
+    doc["outcome"] = outcomeStr;
     doc["token"] = token;
     doc["domain"] = actionDomainForId(target);
     webSendJsonDocument(req, doc, kResponseMaxBytes, TAG);

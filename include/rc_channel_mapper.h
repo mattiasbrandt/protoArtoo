@@ -66,7 +66,14 @@ struct RcControlIntent {
     // Used by dispatch path to update lastSoundPressed for next iteration
     bool soundPressed;
 
-    // Whether this intent is valid (based on signal health and binding validity)
+    // Whether any mapping stage produced an intent from this snapshot: true if
+    // at least one configured binding was active and matched the input mode,
+    // across drive, dome, servo AND sound. False means the snapshot was
+    // invalid, or no binding applied to it.
+    //
+    // Not a motion predicate: an intent carrying only a servo toggle or only an
+    // audio trigger is valid. Anything that gates dispatch on this field must
+    // keep working for those.
     bool valid;
 };
 
@@ -121,6 +128,8 @@ struct RcMappingConfig {
 //   - Output values are clamped to [-maxOut..+maxOut]
 //   - Dead-zone and reverse polarity applied per binding config
 //   - Audio trigger is a static const string pointer or nullptr
-//   - Validity depends on input snapshot validity and binding validity
+//   - Validity depends on input snapshot validity and binding validity, and is
+//     set from all four stage results (drive, dome, servo, sound) - not from
+//     drive and dome alone
 //
 RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConfig& cfg);

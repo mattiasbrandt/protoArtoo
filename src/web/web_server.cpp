@@ -30,6 +30,7 @@
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
+#include "../../include/failed_alloc_tracker.h"
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
@@ -273,6 +274,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t lastSbus2Ms;
     uint32_t sbus1LostFrameCount;
     uint32_t sbus2LostFrameCount;
+    uint32_t queueOverflowCount;
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
@@ -296,6 +298,23 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     configCacheRead(&cfg);
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
+
+    // dome.status.current's two console-queryable fields (ADR 0036) come from
+    // captureDomeStatusSnapshot() (api_status_serializers.cpp) instead of the
+    // inline reads this block used before #223, so the Console module and this
+    // JSON builder can never disagree about what "domeTargetSpeed"/"domeEnabled"
+    // mean. It opens its own short critical section rather than being folded
+    // into the block below: RobotState's spinlock is reentrant on this target,
+    // but nesting would tie this function's one big lock to that helper's
+    // internals, and the two extra fields are read microseconds apart from the
+    // other ~60 either way - no consumer of this payload depends on a single
+    // atomic instant across all fields (see the independent buildHealthJson/
+    // buildWifiJson/buildSerialJson reads elsewhere in the same file/pair).
+    DomeStatusSnapshot domeSnap = {};
+    captureDomeStatusSnapshot(&domeSnap);
+    domeTargetSpeed = domeSnap.domeTargetSpeed;
+    enableDome = domeSnap.domeEnabled;
+
     taskENTER_CRITICAL(&robotStateMux);
     copyFailsafeDiagnosticsLocked(&diag);
     sbusSignalLost = diag.sbusSignalLost;
@@ -303,7 +322,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     sbus2SignalLost = robotState.sbus2SignalLost;
     driveSpeed = robotState.driveOutputSpeed;
     driveSteer = robotState.driveOutputSteer;
-    domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitMax = cfg.drive.speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     stationary = robotState.stationary;
@@ -313,6 +331,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     lastSbus2Ms = robotState.lastSbus2Ms;
     sbus1LostFrameCount = robotState.sbus1LostFrameCount;
     sbus2LostFrameCount = robotState.sbus2LostFrameCount;
+    queueOverflowCount = robotState.queueOverflowCount;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
@@ -332,7 +351,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableAux1 = cfg.system.enable_aux1;
     enableAux2 = cfg.system.enable_aux2;
     enableAux3 = cfg.system.enable_aux3;
-    enableDome = cfg.system.enable_dome_esc;
     enableRcCh1 = activeRc.enableRc[0];
     enableRcCh2 = activeRc.enableRc[1];
     enableRcCh3 = activeRc.enableRc[2];
@@ -390,14 +408,21 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"queueOverflowCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"failedAllocs\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
         (double)domeTargetSpeed, enableDome ? "true" : "false",
         speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
         (unsigned long)diag.failsafeTriggerCount, (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs, (unsigned long)diag.failsafeLastTriggerToZeroMs,
-        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
+        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource,
+        // Every non-blocking enqueue that found its queue full, from any task
+        // (logQueueDrop(), src/queue_drop_tracker.cpp). Published beside the
+        // failsafe counters because it is the other half of "was Core 1
+        // degraded across this run" - read here rather than only from a
+        // profiler build, which is the build that measurement forbids.
+        (unsigned long)queueOverflowCount,
+        uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock,
         // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
@@ -405,6 +430,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // wildly from what the guards actually see; both are emitted so the
         // divergence itself is observable.
         (unsigned long)largestFreeBlock8Bit(),
+        // Failed allocations since boot, from the always-compiled tracker
+        // (include/failed_alloc_tracker.h). ADR 0017's heap rule wants this
+        // flat across a load wave, and wants it on a production image - the
+        // one build /api/profiler, which reports the same counter, is absent
+        // from.
+        (unsigned long)failedAllocTrackerCount(),
         // Open event streams; the client cap keys on this, so stuck or leaked
         // entries become visible instead of silently denying new streams.
         (unsigned)webEventStreamClientCount(), (unsigned long)g_webSseClientsPeak,
@@ -901,6 +932,86 @@ void eventStreamTask(void*) {
     }
 }
 
+// ArduinoOTA task entry. Named rather than the lambda it used to be, because
+// two things in this project read task entry points by name and neither can
+// see an anonymous one (#271):
+//
+//  - tools/task_stack_recipes.json walks this chain from a root symbol, and a
+//    lambda's is `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)` --
+//    which renumbers if another lambda is added above it in this function.
+//  - test/test_tools/test_profiler_task_list.py extracts the registered task
+//    name from the xTaskCreatePinnedToCore() call site. Its second argument is
+//    the name; with a multi-line lambda as the first, no name-extracting scan
+//    can reach past the lambda body's commas, so this task was invisible to
+//    the guard that exists to stop /api/profiler silently omitting a task.
+static void otaServiceTask(void*) {
+    // Delay OTA init to let WiFi event handler complete first
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    char hostname[DROID_NAME_MAX_LEN + 1] = {};
+    configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
+    ArduinoOTA.setHostname(hostname);
+    ArduinoOTA.setMdnsEnabled(false);
+    ArduinoOTA.setTimeout(OTA_RECEIVE_TIMEOUT_MS);
+    ArduinoOTA.onStart([]() {
+        const char* type = (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
+        s_otaActive = true;
+        s_otaProgressPct = 0;
+        s_lastOtaLoggedPct = 255;
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
+        PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
+        logOtaHeapCheckpoint("start");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        if (total == 0) {
+            return;
+        }
+        uint8_t pct = (uint8_t)((progress * 100U) / total);
+        if (pct > 100U) {
+            pct = 100U;
+        }
+        s_otaProgressPct = pct;
+        if (s_lastOtaLoggedPct == 255 || pct == 100U ||
+            pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
+            s_lastOtaLoggedPct = pct;
+            PA_LOG_INFO("ArduinoOTA", "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
+                        (unsigned)pct, (unsigned long)ESP.getFreeHeap(),
+                        (unsigned long)ESP.getMinFreeHeap(),
+                        (unsigned long)largestFreeBlock8Bit());
+        }
+    });
+    ArduinoOTA.onEnd([]() {
+        logOtaHeapCheckpoint("complete");
+        s_otaProgressPct = 100;
+        s_otaActive = false;
+        s_lastOtaLoggedPct = 255;
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
+        PA_LOG_INFO(TAG, "ArduinoOTA complete");
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        unsigned int updateError = 0;
+        const char* updateErrorText = "unavailable";
+#ifdef ARDUINO
+        updateError = Update.getError();
+        updateErrorText = Update.errorString();
+#endif
+        logOtaHeapCheckpoint("error");
+        snprintf(s_otaLastError, sizeof(s_otaLastError), "arduino:%d update:%u", (int)error,
+                 updateError);
+        s_otaActive = false;
+        s_lastOtaLoggedPct = 255;
+        PA_LOG_ERROR(TAG, "ArduinoOTA error: %d update=%u %s", (int)error, updateError,
+                     updateErrorText);
+    });
+    ArduinoOTA.begin();
+    PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);
+
+    for (;;) {
+        ArduinoOTA.handle();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void startHttpServerOnce() {
     if (serverStarted) {
         return;
@@ -929,79 +1040,15 @@ void startHttpServerOnce() {
     }
 
     // Start OTA task in background - MUST NOT block WiFi event handler (causes TWDT)
+    //
+    // Size is chip-target specific; OTA_TASK_STACK_BYTES in include/config.h carries the
+    // measured chain and the sizing rule. This task had no static measurement at all
+    // until #271 walked it, and the 4096 it used to hard-code covers its artoo-esp32
+    // chain by 400 B -- on a walk that is a lower bound. On the ESP32-P4 that same
+    // 4096 had 96 B to spare, thinner than one interrupt entry, and was raised.
     if (!otaTaskStarted) {
-        xTaskCreatePinnedToCore(
-            [](void*) {
-                // Delay OTA init to let WiFi event handler complete first
-                vTaskDelay(pdMS_TO_TICKS(500));
-
-                char hostname[DROID_NAME_MAX_LEN + 1] = {};
-                configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
-                ArduinoOTA.setHostname(hostname);
-                ArduinoOTA.setMdnsEnabled(false);
-                ArduinoOTA.setTimeout(OTA_RECEIVE_TIMEOUT_MS);
-                ArduinoOTA.onStart([]() {
-                    const char* type =
-                        (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
-                    s_otaActive = true;
-                    s_otaProgressPct = 0;
-                    s_lastOtaLoggedPct = 255;
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
-                    PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
-                    logOtaHeapCheckpoint("start");
-                });
-                ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-                    if (total == 0) {
-                        return;
-                    }
-                    uint8_t pct = (uint8_t)((progress * 100U) / total);
-                    if (pct > 100U) {
-                        pct = 100U;
-                    }
-                    s_otaProgressPct = pct;
-                    if (s_lastOtaLoggedPct == 255 || pct == 100U ||
-                        pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
-                        s_lastOtaLoggedPct = pct;
-                        PA_LOG_INFO("ArduinoOTA",
-                                    "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
-                                    (unsigned)pct,
-                                    (unsigned long)ESP.getFreeHeap(),
-                                    (unsigned long)ESP.getMinFreeHeap(),
-                                    (unsigned long)largestFreeBlock8Bit());
-                    }
-                });
-                ArduinoOTA.onEnd([]() {
-                    logOtaHeapCheckpoint("complete");
-                    s_otaProgressPct = 100;
-                    s_otaActive = false;
-                    s_lastOtaLoggedPct = 255;
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
-                    PA_LOG_INFO(TAG, "ArduinoOTA complete");
-                });
-                ArduinoOTA.onError([](ota_error_t error) {
-                    unsigned int updateError = 0;
-                    const char* updateErrorText = "unavailable";
-#ifdef ARDUINO
-                    updateError = Update.getError();
-                    updateErrorText = Update.errorString();
-#endif
-                    logOtaHeapCheckpoint("error");
-                    snprintf(s_otaLastError, sizeof(s_otaLastError), "arduino:%d update:%u",
-                             (int)error, updateError);
-                    s_otaActive = false;
-                    s_lastOtaLoggedPct = 255;
-                    PA_LOG_ERROR(TAG, "ArduinoOTA error: %d update=%u %s", (int)error,
-                                 updateError, updateErrorText);
-                });
-                ArduinoOTA.begin();
-                PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);
-
-                for (;;) {
-                    ArduinoOTA.handle();
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                }
-            },
-            "ArduinoOTA", 4096, nullptr, 1, nullptr, 0);
+        xTaskCreatePinnedToCore(otaServiceTask, "ArduinoOTA", OTA_TASK_STACK_BYTES, nullptr, 1,
+                                nullptr, 0);
         otaTaskStarted = true;
     }
 }

@@ -201,6 +201,14 @@ _Avoid_: recovered page, healthy control surface, HTTP blackout
 The operator UI and diagnostic HTTP endpoint are both unreachable while the controller still responds at the network layer. It is a stop condition, not successful pressure shedding or Page Load Memory Recovery.
 _Avoid_: page failure, network outage, self-recovery
 
+**Survival Path**:
+The serial Console: the one operator surface that still answers when HTTP admission refuses everything. It depends on no network, no heap admission decision and no browser, which is what makes it a guarantee rather than a concession. Distinct from the diagnostic HTTP endpoint, which is an HTTP concession under pressure and still subject to a floor.
+_Avoid_: survival set, /api/health as a survival surface, "the health endpoint always answers", diagnostic HTTP endpoint
+
+**Diagnostic Floor**:
+The lower largest-free-block threshold applied to the small set of read-only diagnostic paths, so they keep answering under pressure that already refuses ordinary requests. The set is an exact-match list, not a pattern; membership is a deliberate decision per path, and an endpoint's payload being small does not put it in the set.
+_Avoid_: admission floor, health endpoint exemption, "small responses are exempt"
+
 **Power-Cycle Recovery**:
 Restoring controller HTTP service by physically removing and restoring controller power. It is the only recovery demonstrated so far after an HTTP Blackout and is evidence of failed self-recovery, not an acceptable recovery mechanism.
 _Avoid_: browser retry, page refresh, self-recovery
@@ -360,16 +368,24 @@ The browser's ordered choice of which Dome Layout to render, separating geometry
 _Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
 
 **Apply Core**:
-A pure module behind an API write handler: it reads POST parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. The HTTP handler is its adapter and owns every side effect (state sync, queues, persistence, response). The write-path counterpart of the pure GET JSON builders (ADR 0011); cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
-_Avoid_: handler helper, inline lambda validation, validation util
+A pure module behind a write path: it reads parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. Its side effects live in one Commit Step shared by every adapter; the HTTP handler and the Controller Console are transport adapters over the pair and own only their own response rendering (ADR 0011, amended by ADR 0036). The write-path counterpart of the pure GET JSON builders; cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
+_Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
+
+**Commit Step**:
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0036; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
+_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function, adapter-held lock, snapshot-returning outcome
+
+**Working Snapshot**:
+The one per-request copy of the configuration that a write acts on: the Apply Core validates and applies onto it, the Commit Step commits it and refreshes it with the committed state, and the adapter renders from it. A write makes exactly one; nothing below the seam makes another. Distinct from a Zone Snapshot, which is a read of live state (ADR 0011).
+_Avoid_: by-value snapshot, post-commit copy, "the snapshot" without saying which
 
 **State Zone**:
 A commented block of `RobotState` fields with exactly one owning writer (a task or the failsafe gate). The owner writes its fields directly; every multi-field read crosses the seam through the zone's snapshot (ADR 0012). Zones make the shared struct navigable: to change a field, find its zone; to read related fields consistently, capture its snapshot.
 _Avoid_: global blackboard access, ad hoc multi-field reads
 
 **Commanded Mode**:
-A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, dome cue, boot init): stationary, sleep, active mood, web control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
-_Avoid_: inline mode writes, per-surface transition rules
+A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache by field, never NVS and never a whole-snapshot round trip.
+_Avoid_: inline mode writes, per-surface transition rules, snapshot round trip for one field
 
 **Zone Snapshot**:
 The atomic multi-field read for a State Zone: a plain struct plus `copy<Zone>Locked()` (caller holds the mux) and `capture<Zone>()` (takes the mux). Consumer captures compose several zone copies inside one critical section, so a page response reads one generation of state. First instance: `FailsafeDiagnostics` (ADR 0012).
@@ -396,7 +412,7 @@ A rare long-lived branch (`epic/<name>`) holding all work of one multi-ticket ep
 _Avoid_: phase branch, dev branch, per-ticket PRs inside an epic
 
 **artoo-esp32**:
-The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). Permanently maintained and carrying the complete feature set - not a legacy build kept alive for compatibility.
+The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target.
 _Avoid_: classic, legacy board, clone build
 
 **ESP32-P4 Target**:
@@ -430,6 +446,10 @@ _Avoid_: build-stripping flag, developer toggle, compile-time component toggle, 
 **Feature Availability**:
 The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on; a present feature without one is simply included — it has no on or off, and not every feature visibly inhabits all four states. Operators see "not in this build" as *Not included*, because a builder reads "build" as the droid. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
 _Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature, on/off for a feature without a Component Toggle, "build" in operator-facing copy
+
+**Framework Envelope**:
+The set of framework (ESP-IDF / Arduino core) facilities a build environment compiles out at the `platformio.ini` boundary — declared per environment, every switch revert-ready in place. It is invisible to Feature Availability and reported nowhere: not a Board Capability Gate (the silicon may well have the facility), not a Build Feature Flag (no `PA_*` flag, nothing the project built in or out), and not a Component Toggle (the operator cannot change it). What an operator can notice from it belongs in the operator docs in plain language.
+_Avoid_: capability envelope, pruning, stripped features, capability (unqualified), feature flag (unqualified)
 
 **Hosted WiFi**:
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
@@ -481,9 +501,9 @@ _Avoid_: NO IMMEDIATE BLOCKER, NO-GO, INVALID / UNKNOWN, overall result, go/no-g
 The recorded result for something a run could not measure — a driver that could not run on this Image Mode, or a window too short to judge liveness. Distinct from a pass in both the report and the verdict: what was not observed reads as not measured, never as healthy.
 _Avoid_: skipped, n/a, passing by default, no news is good news
 
-**Bench Runbook**:
-One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
-_Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
+**Closing Ticket**:
+The one sub-issue that carries an epic's whole verification tail: the bench rows to replay, the handful of measurements not on a sheet, the audit lines that decide closure, and the closure PR. Sized by AGENTS.md "Verification Scale": rows that earn their place, no criterion the bench cannot measure today, no bookkeeping checkboxes, a visible "Cut on purpose" table. Every box ticked closes it.
+_Avoid_: runbook ticket, audit ticket, integration-readiness ticket, gathering ticket, a verification tail spread across several sub-issues
 
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.
@@ -500,6 +520,66 @@ _Avoid_: failsafe mode, failsafe state, safety flag
 **Watchdog Reset**:
 Any reboot caused by a watchdog expiring - task watchdog, interrupt watchdog, or the RTC and super watchdogs that act as backstops. Treated as one class deliberately: the distinctions are a property of the chip rather than of how dangerous the crash was, and one chip protoArtoo targets cannot report them apart at all (ADR 0031).
 _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
+
+**Controller Console**:
+The one command language, Operation Catalog, validation, availability and safety rules, result meanings and help shared by the browser Live Logs console and a physical serial terminal; both are Console Adapters over it and neither owns behaviour of its own (ADR 0036).
+_Avoid_: serial console (when the shared thing is meant), CLI, debug shell, recovery console, command subset
+
+**Console Adapter**:
+A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own. The serial adapter is also the sole writer of the serial wire once it has bound: every other task's log line reaches serial through the Log Ring, never directly (ADR 0039).
+_Avoid_: frontend, shell, REPL, second backend, shared serial writer, log mutex
+
+**Log Ring**:
+The in-memory, size-bounded record of every log line the firmware emits, read by the log endpoint and by the serial adapter's drain. It is the authoritative copy of a log line; a line is lost only when newer lines evict it before a reader reaches it, and the serial drain marks such a gap on the wire. A transport never drops a log line on its own.
+_Avoid_: serial log, log buffer (when the ring is meant), best-effort serial copy
+
+**Serial Backpressure**:
+The state in which a host is present on the serial adapter but its transmit path is not draining, so Console Records and drained log lines are dropped whole after their room-wait; sustained backpressure is reported in the Log Ring, a single drop is not, and it is distinct from a detached host (nothing is written) and from an endpoint wedge (permanent, endpoint-level, fixed in #275).
+_Avoid_: blind link (the operator's view, not a firmware state), wedge, slow host, not connected
+
+**Measured Chain**:
+A task's worst-case static call depth from its entry function, as obtained by walking the linked image with the recipe that names its roots and stitches its indirect calls. It is a value you measure, always of one image at one commit, and on Xtensa it is a lower bound rather than an exact figure. A high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0040).
+_Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
+
+**Recorded Chain**:
+The `*_MEASURED_CHAIN_BYTES` constant in `include/config.h` for one task on one chip: a **Measured Chain** as last written down by hand. A task stack is sized and floored against this number, not against a fresh walk, so the two drift apart silently whenever nobody re-walks - which is what the gate row and the bench walk exist to catch (ADR 0040).
+_Avoid_: recorded constant, "the constant" unqualified, using **Measured Chain** for the written-down number
+
+**Console Client**:
+A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
+_Avoid_: serial monitor (for the program), bench driver, test harness, the console (for the host side), terminal (when the program rather than the operator's shell is meant)
+
+**Operation**:
+A canonical registry entry of type action, status or config that the Controller Console can execute or query, resolved from its name or an accepted alias to exactly one transport-free callable; events are output, not Operations, and meta-commands such as `help` are Console vocabulary, not entries.
+_Avoid_: command (for the catalog entry), token, route
+
+**Operation Catalog**:
+The flash-resident runtime table of every Operation - name, type, aliases, help, argument schema, availability metadata, executor reference - generated from the action registry and drift-checked against it, from which help and completion derive identically on every board.
+_Avoid_: command table, `ACTION_REGISTRY` (the RC-bindable subset), a second copy of the registry, curated per-board list
+
+**Console Record**:
+One line of a Console result - a single `result`, or a `begin` / `field` / `item` / `end` group - carrying a Request ID, kebab-case outcome and Availability Reason tokens, and field names that are the API's JSON keys verbatim; rendered as key=value text on serial and parsed as the same model in the browser, never JSON.
+_Avoid_: response body, console message, JSON result, log line (for a result)
+
+**Request ID**:
+The firmware-assigned monotonic number, shared across both Console Adapters, that ties every Console Record of one request together so results stay attributable when logs and events interleave; operators never type it.
+_Avoid_: operator-supplied correlation id, per-adapter sequence number
+
+**Console Source**:
+The provenance of a command that entered through a Console Adapter - serial console or web console - carried as a Command Source so logs and state can distinguish it from RC, REST forms, sequences and internal writes.
+_Avoid_: session, user, client
+
+**Availability Reason**:
+The stable token a Known-but-unavailable Operation reports - `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable` - re-evaluated at execution, never only at discovery.
+_Avoid_: error code, `not_included`, hidden operation
+
+**Known-but-unavailable**:
+An Operation that stays listed, completable and describable while its Availability Reason says it cannot run now, so operators discover what exists instead of guessing what is missing.
+_Avoid_: unknown command, hidden feature, silently dropped
+
+**Non-RC Control**:
+The Commanded Mode by which an operator consents to a non-RC source - browser, Controller Console, sequence - commanding motion while the RC link is unhealthy and the failsafe would otherwise hold the droid; it gates exactly that motion scenario and nothing else.
+_Avoid_: web control, network authentication, console unlock, blanket gate
 
 ## Relationships
 
@@ -567,12 +647,26 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; a **Build Feature Flag** is a separate tier, not a mirror of the toggles.
 - A **Board Capability Gate** answers what the board's silicon can do; a **Build Feature Flag** answers what this image was built with; a **Component Toggle** answers what fitted hardware the operator uses. Where a required gate or flag is absent the toggle question never arises — the feature's **Feature Availability** is not-on-this-board or not-in-this-build; where both are present, ADR 0027 toggle semantics apply unchanged.
 - **Feature Availability** is declared once per image and read by every page: each registered action, status, event, or config entry names at most one **Board Capability Gate** and one **Build Feature Flag** it requires, and an entry naming neither is universal (ADR 0029).
+- A **Framework Envelope** is a fourth tier below the three above and outside Feature Availability: a **Board Capability Gate** says what the silicon can do, a **Build Feature Flag** what the project built in, a **Component Toggle** what the operator uses, and the Framework Envelope what the framework was allowed to bring along. Nothing in the image, the registry, or the browser reads it; the build budget and the operator docs are its only surfaces.
 - **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts. ESP32-P4 supplies the external network-backend seam, while firebeetle2 owns its fitted C6/SDIO/reset topology (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
 - A **Component Toggle**'s struct field, NVS key, registry name, and JSON API key are generic project vocabulary and never encode one Board Variant's own labeling; a **Board Component Label** is the only per-Board-Variant naming surface (ADR 0033, amended 2026-08-26 to include the API surface).
 - **protoR2link** is the Component Toggle covering the entire dome-body link task, both transports together; **Dome ESC** is a separate Component Toggle for the body's own dome-rotation actuator. The two are independent and never share a group or a label (ADR 0033).
 - On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
 - An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).
+
+- The **Controller Console** has exactly two **Console Adapters**; every **Operation** behaves identically through both, on every board.
+- **Serial Backpressure** is a property of the serial **Console Adapter**'s transport, never of the **Controller Console**: it changes what reaches the wire, never what an **Operation** does, and it is reported in the **Log Ring**, not refused at the adapter (grilling 2026-09-05).
+- An **Operation** of type config is an **Apply Core** plus its **Commit Step**; of type status, a **Zone Snapshot** rendered as **Console Records**; of type action, the existing dispatch core returning an outcome instead of nothing.
+- Every **Console Record** carries one **Request ID**; a write that entered through a **Console Adapter** carries its **Console Source** as its Command Source.
+- A **Console Client** drives exactly one **Console Adapter** per session and adds no behaviour to the **Controller Console**; a scripted client may address either adapter, which is what makes a parity transcript a one-program job.
+- A **Bench Runbook** row is replayed by a **Console Client** script that carries commands only; what the row expects stays on the epic's **Closing Ticket**, and each replay still leaves one dated evidence comment there.
+- A **Known-but-unavailable** Operation reports exactly one **Availability Reason**; `not-in-this-build` and `not-on-this-board` are the two **Feature Availability** states, and `component-disabled` is a **Component Toggle** that is off.
+- **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
+- A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike
+- Every log line is written once, to the **Log Ring**; the serial **Console Adapter** is its only serial reader and the only writer of the serial wire after it binds
+- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its **Recorded Chain**; the sizing margin above the chain is a per-chip judgement recorded beside the constant
+- Stack safety is two links, not one: a compile-time assert gives `stack >= `**Recorded Chain**, and re-walking gives **Measured Chain**` <= `**Recorded Chain**. Only both together give `stack >= `**Measured Chain**. Where the walk is not run, the second link is absent and the property is unverified rather than false
 
 ## Example Dialogue
 
@@ -621,6 +715,7 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 ## Flagged Ambiguities
 - "bench" was read as *"USB plus whatever test gear you can attach"* — a spare receiver, a signal generator, a loopback, a breakout, a bench servo/ESC, a scope or logic analyser were all listed as in scope. That is not feasible or practical on this project's bench, where a board is powered by the computer's USB cable and nothing else is connected. Resolved by defining **Bench-Mode** as USB-only with nothing attached. Connecting a jumper or probe is possible but is an exceptional measure the operator calls in a dire situation — never a routine capability, and never something a ticket may plan around — so a pin-level electrical check is scoped as droid-gate work by definition rather than by argument. The wrong reading had propagated from this glossary into six tickets and repeatedly produced bench tickets that quietly required hardware nobody could attach.
 - "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
+- "measured chain" named two numbers that had drifted 720 B apart (2026-09-06, #271): the depth a fresh walk reports and the `*_MEASURED_CHAIN_BYTES` constant it is compared against. Resolved as **Measured Chain** (walked, of one image at one commit) and **Recorded Chain** (written down, what the stack is floored against). The tool already drew the line - `tools/check_task_stack_chains.py` says "the freshly walked chain must be <= the constant" - but called the second one three things, and this file called both the first. The drift itself was ADR 0040 line 25 coming true: "nothing notices the chain growing past it."
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.
@@ -628,9 +723,15 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - "Fresh public release" blurred download source with controller state; resolved by using **Unprovisioned Controller** for the no-settings state.
 - "Switch WiFi from the setup page" is resolved as a **Staged Network Switch**, not a fragile live toggle.
 - "capability" names two things: a panel verb in the **Dome Layout View Model** (`P1 + open`) and a board topology fact in a **Board Capability Gate**; resolved by qualifying every use — "panel capability" in dome-layout text, **Board Capability Gate** for the compile-time tier.
+- "capability envelope" was drafted for the framework facilities compiled out of the artoo image; that would have been a third meaning of "capability", so it is a **Framework Envelope** — the silicon keeps the capability, the image simply does not carry the framework code for it.
 - "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified.
 - "dome" was used at once for the body's dome-rotation actuator, the **protoR2link** communications link, and the dome's panel/sequence system; resolved by keeping **Dome ESC** (the actuator), **protoR2link** (the link), and **Dome Layout View Model** (the panel read-model) as separate terms, never grouped under a bare "Dome" label (ADR 0033).
 - Component Toggle identifiers (`arm1`/`s1_hoverboard`/etc.) were named after the artoo.uk PCB's own silkscreen legend; resolved by making the identifier generic project vocabulary and moving the board-specific text into a **Board Component Label** (ADR 0033).
+- "web control" read as a network-authentication gate; resolved as **Non-RC Control**, a motion-consent **Commanded Mode** - the `webControlEnabled` identifier and page copy follow in the Controller Console epic.
+- "action registry" holds status, config and event rows too; resolved by making **Operation** the umbrella for what the **Controller Console** can run or query while "action" stays a registry type, and by keeping rows that only describe a field inside an aggregate response as metadata rather than standalone Operations.
+- The Console plan drafted `not_included` / `unsupported_on_board` beside the browser's `not-in-this-build` / `not-on-this-board`; resolved by reusing the browser tokens and one kebab-case convention for every token the protocol defines - field names are carried from the API's JSON keys and are not tokens.
+- "the Apply Core contract" was used (2026-09-04, #226) to mean the calling convention of the seam - resolved: the contract is the response bytes and the plain outcome; how a **Working Snapshot** crosses the seam is not part of it
+- "one seam" (2026-09-04, #268) was used to mean one function every serial byte passes through - resolved: ownership of the serial wire is by task; the function seam is a consequence, not the invariant
 - "OTA" and "firmware update" each named two unrelated things: replacing the controller's own image (host, over WiFi, ArduinoOTA :3232) and replacing the fitted co-processor's image (host-to-module, over SDIO); resolved by keeping **Firmware Update** for the controller and naming the second a **WiFi Module Update**. Issue #241 was retitled for exactly this confusion.
 - "verdict" named two different levels at once: a **Soak Driver**'s own result and the whole run's. Resolved by making the **Run Verdict** speak the drivers' words (`PASS`/`FAIL`/`INVALID`) rather than a second vocabulary. The #184 go/no-go wording ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN") is retired for the same reason its pass-tier wording was: it names a gate that closes with one epic, on an instrument meant to outlive it. The collapse of an unavailable driver to `INVALID` is kept — that is the rule, not the wording (ADR 0035).
 - "the soak script needs re-running because the vocabulary changed" was wrong and is recorded so it is not repeated: **a rename cannot invalidate a measurement.** Driver verdicts are where judgement lives and they were already neutral. What forces a re-run is a change to what the harness *judges* — the reconnect storm's stall classification — never what it *calls* the answer.

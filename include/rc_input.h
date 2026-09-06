@@ -7,6 +7,7 @@
 // =============================================================================
 #pragma once
 
+#include "rc_dispatcher_helpers.h"  // RcDispatchOutcome, CommandSource (fwd-declared)
 #include "rc_mapping.h"
 
 // -----------------------------------------------------------------------------
@@ -17,6 +18,12 @@
 // -----------------------------------------------------------------------------
 void rcInputTask(void* pvParameters);
 
-// Test-dispatch helper used by web action testing endpoint.
-// Routes through the same trigger-action dispatch path as RC input runtime.
-void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool pressed);
+// Test-dispatch helper used by the REST /api/actions/test route and the
+// Controller Console's non-motion action executor (#220, ADR 0036) - the
+// single dispatch core shared with the RC trigger path. src attributes the
+// resulting CommandSource (SRC_WEB_API, SRC_SERIAL_CONSOLE, SRC_WEB_CONSOLE,
+// ...) so downstream logs/state can tell a test-dispatched command from a
+// real RC trigger. Returns the real outcome instead of the pre-#220 void, so
+// callers stop reporting success on a dropped command.
+RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
+                                              bool pressed, CommandSource src);

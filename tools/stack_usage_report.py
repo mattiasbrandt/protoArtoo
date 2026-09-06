@@ -31,6 +31,32 @@ only one that reaches libc. Source 1 is printed beside it as the compiler's
 declaration for the same functions; a disagreement is reported, never netted
 out.
 
+WHERE A FUNCTION BODY ENDS
+--------------------------
+At ``symbol address + symbol size``, read from the ELF symbol table -- NOT at
+the next symbol ``objdump`` happens to print.
+
+This matters more than it sounds. ``objdump -d`` disassembles whatever lies
+between one symbol header and the next, and on Xtensa what lies immediately
+after a function's ``retw`` is usually its literal pool: raw address words. Some
+of those words decode as ``call8``/``call12`` instructions, and a few of those
+"calls" land exactly on some unrelated function's entry. The walk then followed
+an edge that does not exist.
+
+Reading a body to the next header made ``rcDiagnosticsSourceName`` -- an
+enum-to-string mapper, 29 bytes, one ``retw.n`` -- into a 3002-instruction
+function with call edges into mdns, mbedtls, lwIP and the WiFi driver. Two of
+those edges landed on real function entries and were followed, and *which* two
+depends on where the literal words happen to point, which a relinked image
+changes. Two builds of identical source whose only difference was a
+compiled-in branch name returned WebEvents chains 688 bytes apart (#271).
+
+So: instructions outside ``[addr, addr + size)`` are not decoded, do not
+contribute frames, and yield no call edges, and ``owner_of()`` resolves an
+address in the gap after a function to nothing rather than to that function.
+The 1% of function symbols carrying no size are still bounded by the next
+symbol, and are counted in the coverage report.
+
 WHAT IT CANNOT SEE, AND SAYS SO
 -------------------------------
 - Indirect calls (``callx*`` on Xtensa through a register that was not loaded
@@ -38,6 +64,9 @@ WHAT IT CANNOT SEE, AND SAYS SO
   encountered is listed by address and source line. A chain through an
   indirect call is not followed, so a reported total is a lower bound unless
   the indirect-call list is empty.
+- Code in a region carrying no function symbol at all. It is attributed to
+  nothing rather than to whichever symbol precedes it, so a chain through one
+  stops there: a lower bound rather than an invented path.
 - Interrupt and exception frames. ESP-IDF gives interrupts their own stack
   (``CONFIG_FREERTOS_ISR_STACKSIZE``), but the entry sequence on both ports
   spills some state to the interrupted task's stack before switching. That
@@ -187,6 +216,11 @@ class Image:
         self.funcs: dict[int, Function] = {}
         self._starts: list[int] = []
         self.interior_jumps: list[tuple[str, int]] = []
+        # Real extents first: _disassemble() needs them to know where each body
+        # stops, and reading them from the symbol table is the only way to tell
+        # a function's last instruction from the literal pool behind it.
+        self.sizes: dict[int, int] = self._read_symbol_sizes(objdump)
+        self.unsized: set[int] = set()
         self._disassemble(objdump)
         self._starts = sorted(self.funcs)
         self._drop_internal_branches()
@@ -239,8 +273,34 @@ class Image:
             err = proc.stderr.read() if proc.stderr else ""
             raise Fatal(f"{argv[0]} exited {rc} on {self.elf}: {err.strip()[:400]}")
 
+    def _read_symbol_sizes(self, objdump: Path) -> dict[int, int]:
+        """{entry address: st_size} for every function symbol in the image.
+
+        `objdump -t` prints one symbol per line as
+
+            4015175c l     F .flash.text\t00000017 post_enable_pcb
+
+        - address, flag field, section, TAB, size, name. The ' F ' flag is what
+        marks a function; splitting on the tab is the only stable read, because
+        both the flag field and a demangled C++ name contain spaces.
+        """
+        sizes: dict[int, int] = {}
+        for line in self._run([str(objdump), "-t", "-C", str(self.elf)]):
+            head, sep, tail = line.partition("\t")
+            if not sep or " F " not in head:
+                continue
+            try:
+                addr = int(head.split()[0], 16)
+                size = int(tail.split()[0], 16)
+            except (ValueError, IndexError):
+                continue
+            # An alias at the same address must not shrink the extent.
+            sizes[addr] = max(sizes.get(addr, 0), size)
+        return sizes
+
     def _disassemble(self, objdump: Path) -> None:
         cur: Function | None = None
+        cur_end: int | None = None
         srcline: str | None = None
         pending_lit: dict[str, int] = {}   # xtensa: reg -> literal address
         pending_auipc: dict[str, tuple[int, int]] = {}  # riscv: reg -> (pc, imm)
@@ -256,6 +316,16 @@ class Image:
                 # the one before it belongs to the previous function.
                 srcline = None
                 self.funcs[cur.addr] = cur
+                size = self.sizes.get(cur.addr, 0)
+                if size:
+                    cur_end = cur.addr + size
+                else:
+                    # No size in the symbol table (assembly stubs, mostly). Fall
+                    # back to "until the next header", which is what every body
+                    # used to get -- reported in the coverage section, because
+                    # these are the bodies that can still absorb a literal pool.
+                    cur_end = None
+                    self.unsized.add(cur.addr)
                 pending_lit.clear()
                 pending_auipc.clear()
                 # A stack adjustment always sits in the prologue. Bounding the
@@ -273,6 +343,27 @@ class Image:
             if im is None or cur is None:
                 continue
             pc, mnem, ops = im
+            if cur_end is not None and pc >= cur_end:
+                # Past this symbol's real extent: its literal pool, alignment
+                # padding, or an unsymbolised region. Whatever objdump made of
+                # those bytes is not this function's code, and a word that
+                # happens to decode as a call to a real entry is the edge that
+                # made this walk irreproducible across relinks (#271).
+                pending_lit.clear()
+                pending_auipc.clear()
+                continue
+            if mnem.startswith("."):
+                # `.byte`, `.short`, `.word`: objdump saying "these bytes are
+                # data", inside the body. Counting them as decoded instructions
+                # would let a body that is ENTIRELY data report decoded > 0 and
+                # so escape the `undecoded` label -- and a frame of 0 then reads
+                # as "leaf" rather than "not read", which silently drops the
+                # whole subtree under it. Clearing the tracked registers is the
+                # same safe direction as everywhere else here: it can turn a
+                # resolvable call into a reported gap, never the reverse.
+                pending_lit.clear()
+                pending_auipc.clear()
+                continue
             cur.decoded += 1
             if prologue_left > 0:
                 if self._ends_prologue(mnem, ops):
@@ -447,10 +538,11 @@ class Image:
     def owner_of(self, addr: int) -> Function | None:
         """The function containing addr, or None if it is not inside one.
 
-        Bounded by the next symbol start rather than by a fixed span: an
-        address in .rodata or in a gap must resolve to nothing, or a stale
-        register value gets attributed to whichever function happens to
-        precede it and the walk follows an edge that does not exist.
+        Bounded by the symbol's own size, falling back to the next symbol start
+        where the table carries no size: an address in .rodata, in a literal
+        pool, or in a gap must resolve to nothing, or it gets attributed to
+        whichever function happens to precede it and the walk follows an edge
+        that does not exist.
         """
         if not self._starts:
             return None
@@ -458,6 +550,9 @@ class Image:
         if i < 0:
             return None
         start = self._starts[i]
+        size = self.sizes.get(start, 0)
+        if size:
+            return self.funcs[start] if addr < start + size else None
         if i + 1 < len(self._starts) and addr >= self._starts[i + 1]:
             return None
         return self.funcs[start]
@@ -763,6 +858,9 @@ def main(argv=None) -> int:
     undec = [f for f in img.funcs.values() if f.frame_kind == "undecoded"]
     print(f"  function bodies objdump emitted as data, frame unknown: {len(undec)}"
           f" of {len(img.funcs)}")
+    print(f"  bodies bounded by their symbol size: {len(img.funcs) - len(img.unsized)}"
+          f" of {len(img.funcs)}; {len(img.unsized)} carry no size and are bounded"
+          f" by the next symbol")
     if walker.unresolved:
         uniq = sorted(set(walker.unresolved))
         print(f"  call targets with no symbol entry, not followed: "

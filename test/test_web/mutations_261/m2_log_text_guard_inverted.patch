@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 15ecef97..60d1295d 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -642,7 +642,7 @@
+       if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
+       throw error;
+     }
+-    if (!isLogTextResponse(result)) {
++    if (isLogTextResponse(result)) {
+       // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
+       // history, and we do not know that - we know we never reached its log
+       // endpoint. Show the page's existing unreachable line and reject, so the

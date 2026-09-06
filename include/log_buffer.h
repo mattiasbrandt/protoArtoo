@@ -171,3 +171,33 @@ void logBufferAppend(LogBuffer* buf, const char* line);
 // thread-safe: NO  --  caller must hold any required lock
 // -----------------------------------------------------------------------------
 size_t logBufferCopy(const LogBuffer* buf, char* out, size_t outSize);
+
+// -----------------------------------------------------------------------------
+// logBufferDrainNext()
+// Read the next line at or after *cursor into `out` and advance *cursor by one.
+//
+// The cursor is an index into the ring's `totalWritten` sequence, not a slot,
+// so it survives wrap: a reader that falls behind is told how many lines the
+// writer overwrote before it caught up rather than silently skipping them.
+// That is the whole difference from copyNewLogLinesSince() (src/main.cpp),
+// which drops evicted lines without counting them.
+//
+// The Console task's serial drain is the caller (ADR 0039): it owns the wire,
+// keeps one cursor, and writes what this hands it. Kept here, pure, so the
+// cursor arithmetic - the part with the wrap and the eviction accounting in it
+// - is provable on the host without a board or a task.
+//
+// params: buf      --  ring buffer to read from (must not be null)
+//         cursor   --  in/out: next totalWritten index to read (must not be null)
+//         out      --  destination for the line (must not be null)
+//         outSize  --  size of out in bytes (must be > 0); the line is
+//                      truncated to outSize - 1 and always null-terminated
+//         evicted  --  out: how many lines the writer overwrote before the one
+//                      returned, 0 when the reader had kept up. May be null.
+//                      Set on every call, including the ones returning false.
+// returns: true when a line was copied; false when the cursor has caught up
+//          with the writer (nothing new to read)
+// thread-safe: NO  --  caller must hold any required lock
+// -----------------------------------------------------------------------------
+bool logBufferDrainNext(const LogBuffer* buf, uint32_t* cursor, char* out, size_t outSize,
+                        uint32_t* evicted);

@@ -135,12 +135,12 @@ def main() -> None:
     # -------------------------------------------------------------------------
     print(f"\n{BOLD}Python packages:{RESET}")
 
-    # pyserial — required for tools/serial_monitor.py (make monitor)
+    # pyserial — required for tools/console_client.py (make monitor)
     if not check_python_pkg(
         "serial",
         "pyserial",
         [
-            "Required for: tools/serial_monitor.py  (make monitor)",
+            "Required for: tools/console_client.py  (make monitor)",
             "  Fedora/RHEL:    sudo dnf install python3-pyserial",
             "  Debian/Ubuntu:  sudo apt install python3-serial",
             "  pip install pyserial",

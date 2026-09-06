@@ -96,6 +96,94 @@ curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest
 - `tcpAcceptRejectHeap`/`tcpAcceptRejectRate` climbing during normal use =
   the accept guards are shedding; check what is generating connection churn.
 
+### The quick read returns nothing at all — go to serial
+
+Under deep heap pressure the quick read above stops answering: `curl` gets no
+body, no JSON, nothing. That is not the controller being dead. **The serial
+Console keeps answering below the floor where HTTP stops**, and
+`system.status.health` still gives you the heap numbers.
+
+```bash
+python3 tools/console_client.py --port /dev/ttyUSB0 --send system.status.health
+# or sit at the Console interactively, with the port resolved for you:
+make console
+```
+
+```text
+< id=9 type=begin operation=system.status.health
+< id=9 type=field name=heapFree value=...
+< id=9 type=field name=heapLargestBlock value=1076
+< id=9 type=end status=ok outcome=completed
+```
+
+> **`heapLargestBlock` on that record is the number you want** — unlike the
+> `/api/status` field of the same name warned about above. The Console's
+> health snapshot fills it from `MALLOC_CAP_8BIT`
+> (`captureHealthSnapshot()`, `src/web/api_status_serializers.cpp`), which
+> is the pool the admission guards themselves measure and the same value
+> `/api/status` publishes separately as `heapLargest8bit`. The same name, two
+> different measurements, one on each surface — under pressure the serial one
+> is the one to trust.
+
+`system.status.health` answers with thirteen fields — estop, the two SBUS
+flags, web control, the WiFi and filesystem flags, `heapFree`, `heapMin`,
+`heapLargestBlock`, `wifiRssi`, `uptimeMs` and `resetReason`. The admission
+and Core 1 counters below are **not** among them and have no Console operation
+today: read them from `/api/status` once HTTP answers again.
+
+Why HTTP goes dark while serial does not:
+
+- **Connection admission sheds first, at `PA_ACCEPT_MIN_LARGEST_FREE_BLOCK`
+  (8500).** It runs in the socket-accept callback, before any HTTP parsing,
+  so the connection is closed before the request layer ever sees which path
+  was asked for (`src/web/web_admission_psychic.cpp`,
+  `admissionOpenCallback()`).
+- **`/api/status` has a lower floor of its own — and it never gets to use
+  it.** `webPathIsDiagnostic()` exempts `/api/status`, `/api/profiler`,
+  `/api/coredump` and the event stream down to
+  `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG` (7500) instead of the ordinary
+  9000, but that test is a *request*-layer test. When the accept guard is the
+  one refusing, the exemption is never reached.
+- **Serial is behind none of it.** The Console task owns the serial port and
+  needs no network, no socket and no connection admission, so the only
+  resource it depends on is the one the log ring and its own static buffers
+  already hold.
+
+Which layer refused is the fastest way to tell this case apart from a crash or
+a WiFi fault. Read the counters from `/api/status` once the board is back:
+
+- `tcpAcceptRejectHeap` climbing with `refusedHeapFloorDiag` still **0** is
+  this case exactly: connections shed at accept, so nothing was classified as
+  diagnostic.
+- `refusedHeapFloor`/`refusedHeapFloorDiag` climbing instead means requests
+  were reaching the request layer and being refused there — a shallower
+  pressure, and `/api/status` may well still answer.
+
+Measured on an unseated artoo-esp32 on 2026-09-05, running firmware and
+filesystem `v1.0.0-684-g017b168d+epic-serial-console`. Heap was driven down
+with six SSE clients (three admitted, the cap) plus sustained page and asset
+load:
+
+- `heapLargestBlock` on the serial record read **1 076 B** — below all three
+  floors (accept 8500, ordinary request 9000, diagnostic 7500).
+- `/api/status` **returned nothing at all**; `system.status.health` answered in
+  full over serial (`id=9`, complete field set, `end status=ok
+  outcome=completed`).
+- `refusedHeapFloorDiag` stayed **0** while `tcpAcceptRejectHeap` reached 42
+  and `refusedHeapFloor` 5 — the shape described above.
+- `failedAllocs` reached **358**: the guards shed at the accept and request
+  layers while allocations were still failing below them. Recovery needed no
+  reset (`uptimeMs` continuous, `resetReason` `POWERON` throughout) and
+  `heapLargest8bit` came back to 24 564.
+- Core 1 was untouched through the whole storm: `failsafeCount` 0,
+  `queueOverflowCount` 0.
+
+Attach safely first — see [Console interactive
+session](#console-interactive-session) below and
+[console.md](console.md#attach-a-serial-terminal); on the artoo-esp32 that
+means unseating the controller. The replayable bench row for this case is
+`@row 225 survival-path` in `tools/bench_rows/artoo_esp32.txt`.
+
 ### Deep read (profiler build)
 
 Flash `artoo_esp32_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
@@ -234,30 +322,195 @@ verification run.
 
 ### Serial monitor caveat
 
-Opening the USB serial port toggles DTR/RTS, which **resets the ESP32** (so a
-"reboot" right when you connect the monitor is self-inflicted, not a crash). USB
-serial *read* works seated (RX only); only flashing needs the blocked TX/bootloader
-path. Use `tools/serial_monitor.py` (holds DTR/RTS low — though on this board the
-connect can still reset). `resetReason` distinguishes: `PANIC` = real crash;
-`POWERON`/`EXT` = external/serial reset.
+> [!IMPORTANT]
+> **Measured 2026-08-28 (32 unseated open/close trials, artoo-esp32 on a CP2102
+> bridge).** Attaching a host terminal does **not** reset this board -- with one
+> exception, which resets every single time. The blanket "opening the port resets
+> the ESP32" advice that stood here before that session was wrong for five of the
+> six methods tested, and it is replaced by the matrix below.
 
-2026-06-22 regression note: this reset is no longer limited to the seated Artoo
-PCB. With the ESP32 unseated and only USB connected, a second
-`tools/serial_monitor.py --port /dev/ttyUSB0 --duration 10` attach still printed
-the ROM boot banner (`rst:0x1 (POWERON_RESET)`). A month-plus earlier, USB serial
-monitor attach worked without rebooting. Treat current USB-open resets as a
-regression in the host/USB-UART/reset-line path until the change is explained.
-The project monitor now defaults to a POSIX `O_NOCTTY`/`termios` backend that
-does not touch DTR/RTS; use `--pyserial` only when intentionally comparing the
-older pyserial path, which can toggle modem-control lines on open.
+**The transport.** The artoo-esp32 brings the controller's UART0 out through an
+on-board CP2102 USB-UART bridge, so the host sees `/dev/ttyUSB*` at 115200 8N1.
+Every trial below ran over that link with the controller **unseated** -- the
+ESP32 out of the PCB; the seated arm is addressed at the end of this section.
+
+**Safe: use any of these.** Five trials each, zero resets.
+
+| Attach method | resets |
+|---|---|
+| `tools/console_client.py` (default POSIX `O_NOCTTY`/termios backend) | 0/5 |
+| `pio device monitor` | 0/5 |
+| `picocom` | 0/5 |
+| `cat` after `stty -F <port> -hupcl` | 0/5 |
+| `cat` after `stty -F <port> hupcl` | 0/5 |
+
+**Unsafe: `tools/console_client.py --pyserial`.** 7/7 resets, and 2 of those 7 also
+left the board **stranded off the network** -- silent on serial and absent from
+WiFi, because it came up in the ROM download stub instead of the application.
+
+Why, from the source rather than from inference: `open_pyserial_port()` sets
+`dtr = False` and `rts = False` *before* `Serial.open()`, and pyserial's
+`serialposix.Serial.open()` then calls `_update_dtr_state()` and
+`_update_rts_state()` as two **separate** ioctls after the open. DTR and RTS are
+therefore driven low one after the other rather than together, and DTR is left
+low across the transition. Every other method above raises and lowers both lines
+together, and `TIOCMGET` shows both asserted after open and still asserted after
+close.
+
+> [!NOTE]
+> That paragraph describes what the **host driver** does to DTR/RTS. The EN and
+> GPIO0 transitions at the chip were **not** captured: there is no logic analyser
+> or scope on this bench, so the board-side auto-reset behaviour remains
+> `UNKNOWN`. Nothing here should be read as a waveform measurement. Verification
+> step if an instrument is acquired: a 4-channel capture at >= 1 MS/s on DTR, RTS,
+> EN and GPIO0 across a port open with each client above.
+
+**Recovering a stranded board.** Deassert DTR (so GPIO0 is high and the chip boots
+the application, not the download stub), then pulse RTS to cycle EN:
+
+```python
+import serial, time
+s = serial.Serial('/dev/ttyUSB0', 115200)
+s.dtr = False        # GPIO0 high -> boot the app image
+s.rts = True         # EN low  -> hold in reset
+time.sleep(0.2)
+s.rts = False        # EN high -> boot
+s.close()
+```
+
+A successful recovery prints `rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)`.
+If it prints a `DOWNLOAD_BOOT` mode instead, DTR was still asserted.
+
+**The rule:** pick any safe method above, and **never change DTR or RTS after the
+port is open**. A deliberate post-open toggle resets the board every time -- that
+is how the matrix above was proven able to detect a reset at all, rather than
+merely never firing.
+
+**Anchoring a reset.** Two independent anchors, because a missed serial capture
+looks identical to "no reset": the ROM boot banner (`rst:0x...`) in the serial
+stream, **and** `resetReason` + `uptimeMs` from `/api/status` over HTTP either
+side of the attach. The HTTP anchor does not travel over the serial path.
+`resetReason` distinguishes causes: `PANIC` = real crash; `POWERON`/`EXT` =
+external/serial reset.
+
+**A third anchor, and the only one that lives entirely on the serial path: the
+Console's Request ID.** The counter is a firmware global initialised to 1 at
+boot (`g_nextRequestId`, `src/console/console_module.cpp`) and shared by both
+adapters, so it can skip numbers while someone is using the dashboard but it
+restarts only when the firmware restarts. Detach, attach again, send one
+command: an id that carries on from where the last session stopped is proof
+the board stayed up, with no HTTP call and no boot-banner capture needed.
+
+**Re-confirmed on a current image, 2026-09-04.** Unseated artoo-esp32 over the
+UART0 bridge, default POSIX no-control-line backend, firmware and filesystem
+`v1.0.0-656-g48a26523+epic-serial-console`: one command sheet replayed twice
+with a detach in between ran request ids **1 -> 19** and then **20 -> 38**,
+`uptimeMs` climbed 54 817 -> 102 537, and `resetReason` stayed `SOFTWARE`
+across both attaches (#216 issuecomment-5544441040). That is #214's attach
+rule holding behaviourally on a tip several waves later than the matrix above;
+it is still not a waveform measurement, and the `UNKNOWN` note above stands
+unchanged.
+
+USB serial *read* works seated (RX only); only flashing needs the blocked
+TX/bootloader path (GPIO15/SBUS strapping). **The seated arm of this matrix was
+not run** -- seated measurement is not available on this bench -- so every row
+above is an unseated result.
+
+The 2026-06-22 regression note that stood here (a second POSIX-backend attach
+printing the ROM banner while the board was unseated) is **not reproducible**: the
+POSIX backend measured 0/5 across this session. What that earlier observation
+actually captured is not established, and is not re-asserted here.
+
+### Console interactive session
+
+The Controller Console ([console-protocol.md](console-protocol.md)) is
+bidirectional and needs a raw-mode terminal (section 8): Tab and cursor bytes
+must reach the firmware unedited, and local echo must be off (the firmware
+echoes). Three clients are supported below, all built on attach methods
+measured 0/5 resets in the matrix above; use whichever is already on your
+machine.
+
+> [!IMPORTANT]
+> This section proves only what the host side of each client does --
+> `open()` ordering, DTR/RTS flags, default local-echo state -- read from each
+> tool's own source (pyserial's `miniterm.py`, PlatformIO's
+> `device/monitor/command.py`, picocom 3.1's `picocom.c`). Whether the
+> underlying open resets the artoo-esp32 is the attach matrix's measured
+> result above, not re-measured per client here; nothing below is a new
+> board-reset trial.
+
+**`python3 tools/console_client.py --interactive`** -- this repo's own tool,
+nothing extra to install. Extends the exact open the read-only default uses
+(still no DTR/RTS touch, still `O_NOCTTY`) with a write path and a raw local
+terminal. Its other two modes, the scripted directives and the exit codes are
+in [console-client.md](console-client.md); `make console` is the same thing
+with the port resolved for you.
+
+```
+python3 tools/console_client.py --interactive
+```
+
+- **Ctrl-C exits the session locally**, matching the convention already
+  documented for every supported Console terminal below and in
+  [console.md](console.md#attach-a-serial-terminal): "that is your terminal
+  program's own default key, not something the firmware does". The firmware
+  never acts on an inbound Ctrl-C byte (console-protocol.md section 8 says it
+  "never attempts to close a terminal it does not own"), so this tool
+  consumes Ctrl-C itself rather than sending it -- it is never forwarded to
+  the port.
+- `--interactive --pyserial` together is refused with an error: `--pyserial`
+  is the unsafe backend measured 7/7 above, and is never valid for a client an
+  operator is told is safe.
+
+**`pio device monitor -e artoo_esp32`** -- already configured for this
+project: the `artoo_esp32` env in `platformio.ini` ships `monitor_raw = yes`
+(its comment names the same reason -- the Console's VT100 backspace sequences
+need raw passthrough), so no `--raw` flag is needed here. Always pass
+`-e artoo_esp32` explicitly rather than relying on environment autodetection.
+Ctrl-C exits by default (`device/monitor/command.py`'s `--exit-char` default
+is `3`, i.e. Ctrl-C) -- this is the tool [console.md](console.md) already
+describes.
+**Never pass `--dtr` or `--rts`.** Read from `device_monitor.py`/
+`miniterm.py`: those flags are forwarded straight to pyserial's
+`serial_instance.dtr`/`.rts` *before* `.open()` -- the identical ordering that
+makes `console_client.py --pyserial` unsafe above. Left unset (the default),
+neither line is touched at open, matching the matrix's measured `pio device
+monitor` row.
+- **Do not press Ctrl-T Ctrl-R or Ctrl-T Ctrl-D while attached.** Those are
+  miniterm's own live RTS-toggle and DTR-toggle keys (Ctrl-T is its menu key,
+  read from `miniterm.py`'s `handle_menu_key()`).
+
+**`picocom -b 115200 -q --imap "" --omap "" <port>`** -- the exact invocation
+measured 0/5 in the attach matrix. Read from picocom 3.1 source (the version
+in Arch's `extra` repo at time of writing; the exact version on the #214
+bench is not recorded, so re-check this against `picocom --help`/`man
+picocom` if the installed version differs): local echo defaults off (matches
+the Console's requirement -- do not add `--echo`), and DTR/RTS are only
+actively driven at open when `--lower-rts`/`--raise-rts`/`--lower-dtr`/
+`--raise-dtr` are given, none of which appear above, so the port opens with
+both lines untouched exactly as measured.
+- **Ctrl-C does *not* exit picocom** -- unlike the two clients above, picocom
+  only binds its escape-prefixed key combinations (below); a bare Ctrl-C is
+  forwarded to the port as ordinary data. **Ctrl-A Ctrl-X exits cleanly.**
+- **Do not press Ctrl-A Ctrl-T, Ctrl-A Ctrl-G, or Ctrl-A Ctrl-P while
+  attached.** Picocom's own live DTR-toggle, RTS-toggle and DTR-pulse keys
+  (Ctrl-A is its escape key, read from `picocom.c`'s `KEY_TOG_DTR`/
+  `KEY_TOG_RTS`/`KEY_PULSE`).
+
+Whichever client is used, the shared rule from the matrix above still holds:
+**never change DTR or RTS after the port is open.**
 
 ### Serial log integrity caveat
 
 Treat USB serial as a convenience stream, not the only diagnostic record. The
-project-owned `PA_LOG_*` path writes each line through one serialized sink and
-retains the same line in the `/api/logs` ring/SSE console. Prefer `/api/logs`,
-`/api/status`, `/api/profiler`, and `/api/coredump` for evidence that must
-survive USB monitor resets or ambiguous serial captures.
+project-owned `PA_LOG_*` path writes each line **into the log ring** — the one
+`/api/logs`, the SSE console and `system.status.logs` all read — and the
+Console task copies it from there to the serial port (ADR 0039). The ring is
+the record; serial is a view of it. Prefer `/api/logs`, `/api/status`,
+`/api/profiler`, and `/api/coredump` for evidence that must survive USB
+monitor resets or ambiguous serial captures — except when HTTP itself is the
+thing that has stopped answering, which is [its own case
+above](#the-quick-read-returns-nothing-at-all--go-to-serial).
 
 Normal repo builds leave `CORE_DEBUG_LEVEL` unset and call
 `Serial.setDebugOutput(false)` during setup, so Arduino core `log_*` output is
@@ -312,11 +565,55 @@ problem. Use the documented **Network Recovery Mode** local gesture (3 rapid
 power cycles) to temporarily re-open WiFi Provisioning and fix the saved
 settings without erasing them.
 
+Check the network itself as well:
+
+- **WPA3-only WiFi networks are not supported; use WPA2 or WPA2/WPA3 mixed
+  mode.** A WPA3-only access point refuses the controller, and the symptom
+  looks the same as a wrong password: the join never completes. Mixed mode
+  (the common home-router default) works.
+
 ---
+
+## 6. Controller Console: command typed but nothing (useful) happened
+
+Full guide: [console.md](console.md). Two specific symptoms:
+
+### A long command on serial comes back as `line-too-long`
+
+The serial Console's input line holds **62 bytes** — far shorter than the
+dashboard's 255-byte limit. Past that point extra keystrokes stop appearing,
+and pressing Enter throws the whole line away with
+`invalid reason=line-too-long` rather than running the part that fit. That is
+deliberate: a command shortened halfway through a value is not the command you
+typed, so it never runs. Backspacing back under the limit does not help — the
+characters that were dropped were never stored, so the line is still refused.
+
+Retype the command in the dashboard's Live Logs command box, where the limit is
+255 bytes, or keep serial commands short.
+
+### An action answers `blocked reason=blocked-by-state` or `unavailable reason=temporarily-unavailable`
+
+- `blocked reason=blocked-by-state` on an action almost always means **Web
+  control** is off — turn it on with the **✓ Enable Web Control** button
+  under Safety Controls on the Drive page, `POST /api/web-control/enable`,
+  or the Console command `system.action.enable-web-control` (works from
+  serial, needs no network, and needs no Web control of its own), then
+  retry. `system.action.estop` always answers this way, on purpose; use the
+  dashboard's E-Stop control or `POST /api/estop` instead.
+- `outcome=queue-full` means the part of the firmware that would run the
+  command is busy right now (its queue is momentarily full) — the command
+  was not accepted; wait a moment and try again.
+- `unavailable reason=temporarily-unavailable` on an action, despite the
+  name, is not the same as busy: today it means the action has nothing to
+  do (a sound action drawing from a category with no tracks configured is
+  the current example) — retrying won't help until the underlying
+  configuration is fixed.
 
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.
+- Controller Console: [console.md](console.md), [console-protocol.md](console-protocol.md),
+  [console-client.md](console-client.md) (`tools/console_client.py`).
 - WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
 - Heap root-cause + fixes: GitHub issue #8 and `tasks/heap-exhaustion-and-flash-findings-2026-06-19.md`.
 - In-PCB USB flash limitation: `tasks/lessons.md` (2026-03-15 entry).

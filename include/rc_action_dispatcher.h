@@ -61,3 +61,16 @@ struct RcActionResult {
 };
 
 RcActionResult rcDispatchAction(const RcActionPayload& input);
+
+// True when the result carries at least one side effect a dispatcher would
+// act on (audio track, dollar sequence, servo action, dome tx, marcduino
+// command, or a system-mode change). False means the target's action
+// legitimately produced nothing right now - e.g. a SOUND_ACTION_RANDOM_*
+// target whose configured category range is empty (lo==0 or lo>hi, see
+// selectRandomTrackInRange() above) - which is distinct from a dispatch
+// failure (queue-full): nothing was even attempted. Used by the RC-trigger
+// test/Console dispatch path (#220) to answer "the action exists but did
+// nothing" honestly instead of a false "queued" (docs/console-protocol.md
+// s.3.3); the live RC path does not consume this (a silently-empty result
+// there is unobservable either way, same as before).
+bool rcActionResultHasEffect(const RcActionResult& result);

@@ -455,12 +455,64 @@
   const LOG_MAX_LINES = 250;
   const LOG_TRIM_LINES = 200;
   const LOG_EMPTY_TEXT = "No log history available yet.";
+  // One phrase for "the page is not getting log data from the controller",
+  // shared by the live stream's error path and by a log fetch whose response
+  // did not come back as log text (#261). Two phrases for one fact is the copy
+  // defect docs/ui-copy-voice.md exists to prevent.
+  const LOG_UNREACHABLE_TEXT = "[connection lost — retrying…]";
+  // Shown under a console reply the controller could not carry whole (#240).
+  // "[CUT]" is its own tag rather than "[ERROR]": the command ran, the group
+  // closed, and every line printed above this one is real - what is wrong is
+  // that there were more of them. Says "some lines are missing" and not which
+  // ones, because the controller does not say: the answer it sends back is
+  // the newest lines for the log ring (docs/api.md), and nothing more
+  // specific is true for whatever query bounds out next.
+  const CONSOLE_TRUNCATED_TEXT =
+    "[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.";
   const COMMAND_HISTORY_MAX = 20;
+  const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
-  let commandTokens = [];
-  let commandHistory = [];
-  let commandHistoryIndex = -1;
+  // Whether a /api/logs body has actually been applied as history. The load
+  // guard has to ask THIS, not "is the panel non-empty": a stream-error notice
+  // or a streamed line fills logLines without any history behind it, and
+  // keying the guard on logLines.length made a successful retry after a
+  // refusal return immediately, resolve, and leave the bootstrap reporting the
+  // section done with the ring never loaded (#261). Only applyLogHistory()
+  // sets it, so it cannot drift from the fact it names.
+  let logHistoryLoaded = false;
   let logSelectionActive = false;
+
+  // Persistent Console command history (Up/Down), surviving a page reload.
+  // Reads and writes are wrapped defensively: a browser with site data
+  // blocked (private mode, storage quota, disabled cookies/storage) must
+  // still render and operate the command box - it just keeps history for
+  // the current page load only instead of across a reload.
+  const readStoredCommandHistory = () => {
+    try {
+      const raw = window.localStorage.getItem(CONSOLE_HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((entry) => typeof entry === "string" && entry.length > 0)
+        .slice(-COMMAND_HISTORY_MAX);
+    } catch (error) {
+      return [];
+    }
+  };
+
+  const writeStoredCommandHistory = (history) => {
+    try {
+      window.localStorage.setItem(CONSOLE_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (error) {
+      // Site data blocked, storage full, or a private-mode restriction:
+      // history stays in-memory for this page load rather than failing the
+      // command box.
+    }
+  };
+
+  let commandHistory = readStoredCommandHistory();
+  let commandHistoryIndex = commandHistory.length;
 
   const normalizeLogMessage = (line) => String(line ?? "").trim();
 
@@ -516,13 +568,34 @@
     }
   };
 
-  const setLogLines = (lines, { forceBottom = true } = {}) => {
-    logLines = lines
+  // Paints a single line in the log panel without entering it into logLines.
+  // A notice is not log output, and the model holds log output: keeping it out
+  // means a later load replaces it instead of stranding it inside the history,
+  // and it never takes a slot in the trim window.
+  //
+  // It writes only while the model is empty, for the same reason. With lines
+  // already in logLines the panel is not blank and needs no notice, and
+  // overwriting innerHTML there would drop rendered lines the model still
+  // holds - the next appendLogLine() appends to a panel that no longer matches
+  // its own model.
+  const renderLogNotice = (message) => {
+    if (!logConsole || logLines.length > 0) return;
+    logConsole.innerHTML = logEntryHtml(makeLogEntry(message, { timestamp: "--:--:--" }));
+  };
+
+  // Applies the log ring as history. It goes in FRONT of whatever is already
+  // in the panel rather than replacing it: on the first load nothing can have
+  // streamed yet - status_stream.js opens /api/events only once the bootstrap
+  // has settled every section (page_bootstrap.js announceAssetsOnce()) - but a
+  // retry runs with the stream live, and those lines are newer than the ring.
+  // Replacing them would drop log output the operator has already seen.
+  const applyLogHistory = (lines) => {
+    const history = lines
       .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
-      .filter((line) => line.message.length > 0)
-      .slice(-LOG_MAX_LINES);
-    const stickToBottom = (forceBottom || isLogAtBottom()) && !hasActiveLogSelection();
-    renderLogConsole(stickToBottom);
+      .filter((line) => line.message.length > 0);
+    logLines = [...history, ...logLines].slice(-LOG_MAX_LINES);
+    logHistoryLoaded = true;
+    renderLogConsole(!hasActiveLogSelection());
   };
 
   const appendLogLine = (text, options = {}) => {
@@ -561,16 +634,60 @@
     }
   };
 
+  // GET /api/logs answers text/plain on both of its exits - the ring body at
+  // 200 and "log buffer unavailable" at 503 (src/web/api_logs.cpp) - so the
+  // content type IS the contract, and no shape check over free-form log text
+  // could be as reliable: a log line may contain "<div>", and a proxy's plain
+  // error page could not be told apart from log output.
+  //
+  // Anything else arriving at 200 did not come from the log endpoint: a
+  // captive portal, an intercepting proxy, or a dev fixture server falling
+  // back to index.html. The panel used to split that body on newlines and
+  // render it, which is how it filled with 156 lines of the dashboard's own
+  // markup (#261; escaped, so wrong content rather than injection).
+  const isLogTextResponse = (result) =>
+    String(result?.contentType ?? "").split(";")[0].trim().toLowerCase() === "text/plain";
+
   const loadRecentLogs = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
-    if (logLines.length > 0) return;
+    if (logHistoryLoaded) return;
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/logs", { cache: "no-store" });
+    let result;
+    try {
+      result = await api.get("/api/logs", { cache: "no-store" });
+    } catch (error) {
+      // Every way the fetch itself can fail - transport, timeout, and the
+      // device's own 503 "log buffer unavailable" exit (src/web/api_logs.cpp) -
+      // leaves the panel with nothing to show, and used to leave it literally
+      // blank once the bootstrap's recovery overlay stopped covering the page.
+      // Say so with the same line, then rethrow: the bootstrap still classifies
+      // these separately and still honours a 503's Retry-After. Only the panel
+      // copy is shared, because "the logs did not load" is one fact here.
+      //
+      // A cancellation is not a failure - the page cancelled its own run - and
+      // an unreachable line for it would be a lie.
+      if (error?.kind !== "cancelled") renderLogNotice(LOG_UNREACHABLE_TEXT);
+      throw error;
+    }
+    if (!isLogTextResponse(result)) {
+      // Not the empty state: LOG_EMPTY_TEXT would claim the controller has no
+      // history, and we do not know that - we know we never reached its log
+      // endpoint. Show the page's existing unreachable line and reject, so the
+      // bootstrap keeps retrying with backoff instead of leaving a blank panel
+      // or a silent no-op. Kind "network" is the honest classification: nothing
+      // usable came back from the controller, which is also the reason
+      // page_bootstrap.js renders as "Connection to the controller was lost."
+      renderLogNotice(LOG_UNREACHABLE_TEXT);
+      throw new window.PAApi.ApiError("Log response was not log text", {
+        kind: "network",
+        status: result?.status ?? 0,
+      });
+    }
     const historyLines = String(result.data ?? "")
       .split(/\r?\n/)
       .map((line) => normalizeLogMessage(line.trimEnd()))
       .filter((line) => line.length > 0);
-    setLogLines(historyLines);
+    applyLogHistory(historyLines);
   };
 
   const LOG_LEVELS = {
@@ -654,38 +771,237 @@
     }
   });
 
-  const loadCommandTokens = async ({ handle = null } = {}) => {
+  // Console Tab completion catalog (ADR 0036, #238). Operation names are
+  // fetched once per session and cached; a given operation's argument keys
+  // are fetched (and cached) only when the operator actually Tabs one -
+  // never all 175+ operations' help up front (the coordinator brief is
+  // explicit about this: "fetch help <op> for the single operation being
+  // completed").
+  let consoleCatalogNames = [];
+  const consoleOperationParamCache = new Map();
+  const CONSOLE_OPERATION_PARAM_CACHE_MAX = 50;
+
+  // Parses `operations`' item records (docs/console-protocol.md s.2:
+  // "name (type[, reason])") down to the bare canonical name. Tab completes
+  // canonical operations only, never aliases (the epic acceptance matrix's
+  // own wording), so no alias resolution happens here.
+  const parseOperationsResponse = (records) => {
+    const names = [];
+    for (const record of records) {
+      if (!record || record.type !== "item" || typeof record.value !== "string") continue;
+      const parenIndex = record.value.indexOf(" (");
+      names.push(parenIndex === -1 ? record.value : record.value.slice(0, parenIndex));
+    }
+    return names;
+  };
+
+  // Parses `help <op>`'s "params" field (console_module.cpp:
+  // "name:type:required|optional|write-excluded" comma-joined) into one
+  // descriptor per parameter.
+  //
+  // The third token is the disposition, and "write-excluded" is this
+  // adapter's view of the catalog's write_excluded flag - the same authority
+  // the serial adapter reads straight out of the in-image catalog
+  // (include/console_write_exclusion.h). Reading the flag through the
+  // operation descriptor, rather than matching key names against a "password"
+  // pattern, is what keeps the two adapters refusing the SAME lines instead
+  // of growing a second vocabulary for "secret" (#227, #206's one-language
+  // decision).
+  const parseHelpParamsResponse = (records) => {
+    for (const record of records) {
+      if (record && record.type === "field" && record.name === "params" && typeof record.value === "string") {
+        return record.value
+          .split(",")
+          .map((entry) => entry.split(":"))
+          .filter((parts) => parts[0] && parts[0].length > 0)
+          .map((parts) => ({ key: parts[0], writeExcluded: parts[2] === "write-excluded" }));
+      }
+    }
+    return [];
+  };
+
+  // Section loader (Page Recovery, ADR 0019): registered below like the
+  // other startup sections. Replaces the old app-action-tokens section
+  // (/api/actions?testable, the curated completion subset the epic's
+  // background explicitly supersedes) with the real catalog.
+  const loadConsoleCatalog = async ({ handle = null } = {}) => {
     if (!window.PAApi) throw new Error("API unavailable");
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/actions", { cache: "no-store" });
-    if (!Array.isArray(result.data)) {
-      throw new Error("Action registry response is not an array");
+    const result = await api.postForm("/api/console", { command: "operations" });
+    // A section loader that cannot do its job must reject (#107) so the
+    // bootstrap shows recovery instead of the page silently carrying on
+    // with a permanently-empty completion catalog. This is deliberately
+    // stricter than fetchConsoleArgKeyCandidates() below, which is an
+    // on-demand per-Tab-press fetch, not a page-load section - it degrades
+    // to "no candidates this press" instead of blocking the whole page.
+    if (!Array.isArray(result?.data?.records)) {
+      throw new Error("Console operations response is not a records array");
     }
-    commandTokens = result.data
-      .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
-      .map((entry) => entry.token)
-      .sort((a, b) => a.localeCompare(b));
+    consoleCatalogNames = parseOperationsResponse(result.data.records).sort((a, b) => a.localeCompare(b));
+  };
+
+  // Fetches and caches one operation's parameter descriptors on demand.
+  // A network/transport failure is deliberately NOT cached, so the next Tab
+  // press retries instead of staying broken for the rest of the session; an
+  // operation with no params (or a genuine "no params field in the
+  // response") IS cached as an empty list - that is a stable fact about the
+  // operation, not a transient failure.
+  //
+  // Returns null when the operation's parameters could not be established at
+  // all. That is a different answer from [] ("this operation has none"), and
+  // the two mean opposite things to the history rule below - which is why
+  // this no longer collapses a failure into an empty candidate list.
+  const fetchConsoleOperationParams = async (opName) => {
+    if (consoleOperationParamCache.has(opName)) return consoleOperationParamCache.get(opName);
+    if (!window.PAApi) return null;
+    try {
+      const result = await window.PAApi.postForm(
+        "/api/console",
+        { command: `help ${opName}` },
+        { timeoutMs: 5000 }
+      );
+      const records = Array.isArray(result?.data?.records) ? result.data.records : [];
+      const params = parseHelpParamsResponse(records);
+      if (consoleOperationParamCache.size >= CONSOLE_OPERATION_PARAM_CACHE_MAX) {
+        consoleOperationParamCache.delete(consoleOperationParamCache.keys().next().value);
+      }
+      consoleOperationParamCache.set(opName, params);
+      return params;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Tab candidates for an operation: "<key>=" for every parameter the Console
+  // will accept a value for. A write-excluded key is never offered - the
+  // Console can only ever refuse it with secret-not-settable, and completing
+  // it would invite the operator to type the secret that refusal exists to
+  // keep out. Mirrors consoleOfferedParamAt() on the serial adapter, filter
+  // and all, so neither board gets a different completion catalog (#206).
+  const fetchConsoleArgKeyCandidates = async (opName) => {
+    const params = await fetchConsoleOperationParams(opName);
+    if (params === null) return [];
+    return params.filter((param) => !param.writeExcluded).map((param) => `${param.key}=`);
   };
 
   const appendCommandLine = (text, extraClass = " log-line-command") => {
     appendLogLine(text, { extraClass });
   };
 
-  const printCommandHelp = () => {
-    if (commandTokens.length === 0) {
-      appendCommandLine("[ERROR] action list unavailable", " log-line-command-error");
-      return;
+  // The argument keys a submitted line assigns to, in order. Walks the line
+  // the way consoleParseArgs() does (include/console_args.h): the first token
+  // is the operation name, then a key up to "=", then a value that is either
+  // a quoted run - with \" and \\ escapes - or a bare run to the next space.
+  // Honouring the quoting is what keeps a legitimate line storable: an SSID
+  // may itself contain a space and an "=", and mistaking a value's own text
+  // for a later key would refuse a line carrying no secret at all.
+  const consoleLineArgumentKeys = (line) => {
+    const keys = [];
+    const isSpace = (index) => /\s/.test(line[index]);
+    let i = 0;
+    while (i < line.length && isSpace(i)) i += 1;
+    while (i < line.length && !isSpace(i)) i += 1;
+
+    while (i < line.length) {
+      while (i < line.length && isSpace(i)) i += 1;
+      if (i >= line.length) break;
+
+      const keyStart = i;
+      while (i < line.length && line[i] !== "=" && !isSpace(i)) i += 1;
+      if (line[i] !== "=" || i === keyStart) {
+        // A bare word or an empty key ("=value"): not a key=value pair at
+        // all. Skip to the next token - a later one can still be the
+        // assignment.
+        while (i < line.length && !isSpace(i)) i += 1;
+        continue;
+      }
+      keys.push(line.slice(keyStart, i));
+      i += 1;
+
+      if (line[i] === '"') {
+        const quotedStart = i;
+        let closed = false;
+        i += 1;
+        while (i < line.length) {
+          if (line[i] === "\\" && i + 1 < line.length) {
+            i += 2;
+            continue;
+          }
+          if (line[i] === '"') {
+            i += 1;
+            closed = true;
+            break;
+          }
+          i += 1;
+        }
+        if (!closed) {
+          // UNTERMINATED quote. Running to the end of the line here would
+          // swallow every later key with it - including a write-excluded one,
+          // which is then never examined and the line is stored. That is the
+          // fail-OPEN this rule cannot afford, so the unterminated run is
+          // rescanned as an ordinary unquoted value: back to the opening
+          // quote, forward to the next space, and carry on reading keys.
+          // Costs nothing - the firmware's parser rejects an unterminated
+          // quote outright, so such a line can never execute. A CLOSED quoted
+          // value keeps its meaning and stays storable. Same rule, same
+          // wording, as the serial half in
+          // include/console_write_exclusion.h.
+          i = quotedStart;
+          while (i < line.length && !isSpace(i)) i += 1;
+        }
+      } else {
+        while (i < line.length && !isSpace(i)) i += 1;
+      }
     }
-    appendCommandLine(`available commands: ${commandTokens.join(" ")}`);
+    return keys;
   };
 
-  const rememberCommand = (token) => {
+  // Whether a submitted line assigns a value to a parameter the Console will
+  // not accept one for - the browser half of #227's write-exclusion rule,
+  // deciding from the same catalog flag the serial adapter reads
+  // (include/console_write_exclusion.h).
+  //
+  // Two deliberate asymmetries with that C++ half, both forced by this
+  // adapter seeing the catalog over HTTP rather than in image:
+  //  - A line with no key=value pair at all can assign nothing, so it answers
+  //    false without a lookup. That keeps the common case (a read, an action)
+  //    free of an extra `help <op>` request.
+  //  - When the operation's parameters cannot be established (the fetch
+  //    failed), this answers TRUE and the line is not kept. Guessing wrong
+  //    the other way writes a password into localStorage, where it survives
+  //    the reload that a serial session's RAM ring does not.
+  // Keys are compared case-insensitively for the reason the C++ half gives:
+  // the executor's own secret refusal is case-insensitive, so an exact match
+  // here would make history narrower than the refusal it backs.
+  const lineAssignsWriteExcludedValue = async (line) => {
+    const keys = consoleLineArgumentKeys(line);
+    if (keys.length === 0) return false;
+
+    const opName = line.trim().split(/\s+/)[0];
+    const params = await fetchConsoleOperationParams(opName);
+    if (params === null) return true;
+
+    const excluded = params
+      .filter((param) => param.writeExcluded)
+      .map((param) => param.key.toLowerCase());
+    if (excluded.length === 0) return false;
+    return keys.some((key) => excluded.includes(key.toLowerCase()));
+  };
+
+  // Asynchronous because the write-exclusion rule may need this operation's
+  // parameter dispositions, which cost one `help <op>` fetch the first time
+  // an operation with arguments is used. A refused line is never stored at
+  // all - not stored and then removed - so nothing has to be scrubbed out of
+  // localStorage afterwards.
+  const rememberCommand = async (token) => {
     if (!token) return;
-    if (commandHistory[commandHistory.length - 1] !== token) {
+    const storable = !(await lineAssignsWriteExcludedValue(token));
+    if (storable && commandHistory[commandHistory.length - 1] !== token) {
       commandHistory.push(token);
       if (commandHistory.length > COMMAND_HISTORY_MAX) {
         commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
       }
+      writeStoredCommandHistory(commandHistory);
     }
     commandHistoryIndex = commandHistory.length;
   };
@@ -693,18 +1009,12 @@
   const dispatchConsoleCommand = async (rawToken) => {
     const token = normalizeLogMessage(rawToken);
     if (!token) return;
+    // Deliberately not awaited: the storage decision may need a `help <op>`
+    // round trip, and neither the echo below nor the dispatch itself may wait
+    // for it. Nothing here can reject - both the fetch and the localStorage
+    // write handle their own failures.
     rememberCommand(token);
     appendCommandLine(`> ${token}`);
-
-    if (token === "help" || token === "?") {
-      printCommandHelp();
-      return;
-    }
-
-    if (!commandTokens.includes(token)) {
-      appendCommandLine(`[ERROR] unknown command: ${token}`, " log-line-command-error");
-      return;
-    }
 
     if (!window.PAApi) {
       appendCommandLine("[ERROR] API unavailable", " log-line-command-error");
@@ -712,11 +1022,86 @@
     }
 
     try {
-      await window.PAApi.postForm("/api/actions/test", { token }, { timeoutMs: 5000 });
-      appendCommandLine(`[OK] ${token}`);
+      // Send command to the Console endpoint (ADR 0036)
+      const result = await window.PAApi.postForm("/api/console", { command: token }, { timeoutMs: 5000 });
+
+      // Parse and display Console Records from the response.
+      // postForm returns {ok, status, data}, so access result.data (not result.records).
+      if (result?.data?.records && Array.isArray(result.data.records)) {
+        for (const record of result.data.records) {
+          formatAndAppendConsoleRecord(record);
+        }
+        // The controller reports a bounded answer on the response ENVELOPE -
+        // "truncated":true beside "records", never as a Console Record
+        // (docs/api.md, POST /api/console) - so a truncated group still
+        // arrives complete-looking: every record well-formed, the `end`
+        // present, nothing in the printed transcript to say lines were left
+        // out. Reading the flag here is what keeps a bounded reply from
+        // reading as a full one (#240).
+        //
+        // Printed AFTER the records, as a line in the same log, for the same
+        // reason tools/console_client.py prints its own capped line there:
+        // the notice belongs to the reply it follows, and the panel keeps
+        // scrolling. A banner elsewhere on the page would come loose from the
+        // answer it describes the moment the next line arrives.
+        //
+        // Only this dispatch path reads the flag, and that is not an
+        // oversight: the page's other two /api/console callers cannot receive
+        // it. `operations` (loadConsoleCatalog) is answered by the streaming
+        // path, which has no envelope field at all, and `help <op>`
+        // (fetchConsoleOperationParams) emits `field` records only - the
+        // controller raises this flag exclusively when it drops an `item`
+        // (webOnRecordItem_impl, src/web/api_console.cpp). A guard on either
+        // would be a branch no firmware can reach.
+        if (result.data.truncated === true) {
+          appendCommandLine(CONSOLE_TRUNCATED_TEXT, " log-line-command-cut");
+        }
+      } else {
+        appendCommandLine("[ERROR] invalid response format", " log-line-command-error");
+      }
     } catch (error) {
       appendCommandLine(`[ERROR] ${window.PAApi.messageFor(error)}`, " log-line-command-error");
     }
+  };
+
+  // Format a single Console Record and append it to the log (ADR 0036)
+  const formatAndAppendConsoleRecord = (record) => {
+    if (!record || !record.type) return;
+
+    // Build the record line as shown in docs/console-protocol.md
+    // Each record is formatted as key=value pairs prefixed with "< "
+    let line = `< id=${record.id} type=${record.type}`;
+
+    if (record.type === "begin") {
+      line += ` operation=${record.operation}`;
+    } else if (record.type === "field") {
+      line += ` name=${record.name} value=${formatConsoleValue(record.value)}`;
+    } else if (record.type === "item") {
+      line += ` value=${formatConsoleValue(record.value)}`;
+    } else if (record.type === "result" || record.type === "end") {
+      line += ` status=${record.status} outcome=${record.outcome}`;
+      if (record.reason) {
+        line += ` reason=${record.reason}`;
+      }
+    }
+
+    // Determine CSS class based on status
+    let extraClass = " log-line-command";
+    if (record.status === "err") {
+      extraClass = " log-line-command-error";
+    }
+
+    appendCommandLine(line, extraClass);
+  };
+
+  // Format a console value for display (handle quoting if needed)
+  const formatConsoleValue = (value) => {
+    if (!value) return '""';
+    // If value contains spaces, =, or quotes, wrap in quotes
+    if (value.includes(" ") || value.includes("=") || value.includes('"')) {
+      return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+    return value;
   };
 
   const commonPrefix = (values) => {
@@ -730,28 +1115,81 @@
     return prefix;
   };
 
-  const completeConsoleCommand = () => {
+  // Splits the command box's raw value into (beforeToken, token): the
+  // current token is the substring after the last space, or the whole
+  // value if there is none. Deliberately does NOT trim the value first (a
+  // trailing space is exactly what signals "the operator finished the
+  // operation name, they are now completing an argument key" - trimming it
+  // away would erase that signal). Mirrors the same split the serial
+  // adapter's embedded-cli patch uses (lib/embedded-cli's
+  // getExternalAutocompletedCommand) - "Ambiguous Tab behaviour matches the
+  // browser" is one equivalence claim across both adapters, so both split
+  // the line the same way.
+  const splitCurrentToken = (value) => {
+    const spaceIndex = value.lastIndexOf(" ");
+    return spaceIndex === -1
+      ? { beforeToken: "", token: value }
+      : { beforeToken: value.slice(0, spaceIndex + 1), token: value.slice(spaceIndex + 1) };
+  };
+
+  // Resolves the candidate set for the CURRENT token: operation names when
+  // nothing is typed before it, or the resolved operation's argument keys
+  // when there is - the operation is always the line's first token,
+  // regardless of how many argument tokens already follow it (matching
+  // include/console_completion.h's rule for the serial adapter).
+  const candidatesForCurrentToken = async (value) => {
+    const { beforeToken, token } = splitCurrentToken(value);
+    if (beforeToken === "") {
+      return { beforeToken, token, candidates: consoleCatalogNames };
+    }
+    const opName = beforeToken.trim().split(" ")[0];
+    const candidates = await fetchConsoleArgKeyCandidates(opName);
+    return { beforeToken, token, candidates };
+  };
+
+  const completeConsoleCommand = async () => {
     if (!logCommandInput) return;
-    const partial = normalizeLogMessage(logCommandInput.value);
-    if (!partial) {
-      printCommandHelp();
+    const value = logCommandInput.value;
+    const { beforeToken, token, candidates } = await candidatesForCurrentToken(value);
+    // A stale response for a value the operator has since changed (e.g. kept
+    // typing while the "help <op>" fetch for a previous token was in
+    // flight) must not overwrite what they typed since - drop it silently
+    // rather than completing against an outdated token.
+    if (logCommandInput.value !== value) return;
+
+    const matches = candidates.filter((candidate) => candidate.startsWith(token));
+
+    if (matches.length === 0) {
+      // Matches the serial adapter exactly: zero candidates is a silent
+      // no-op (lib/embedded-cli's onAutocompleteRequest returns early with
+      // no output when candidateCount is 0), not an error line - the old
+      // "[ERROR] unknown command" here was specific to the superseded
+      // curated action-token subset, which always had a fixed known list to
+      // report the miss against; the catalog has no such notion of "not a
+      // command at all" versus "no match at this cursor position".
       return;
     }
-    const matches = commandTokens.filter((token) => token.startsWith(partial));
+
     if (matches.length === 1) {
-      logCommandInput.value = matches[0];
+      const candidate = matches[0];
+      // An argument-key candidate ends in "=" and IS the separator between
+      // key and value (docs/console-protocol.md s.1.2: key=value, no space
+      // around "="), so completion does not also add a trailing space there -
+      // the same rule the embedded-cli patch applies for the serial adapter.
+      const separator = candidate.endsWith("=") ? "" : " ";
+      logCommandInput.value = `${beforeToken}${candidate}${separator}`;
       return;
     }
-    if (matches.length > 1) {
-      const shared = commonPrefix(matches);
-      if (shared.length > partial.length) {
-        logCommandInput.value = shared;
-        return;
-      }
-      appendCommandLine(matches.join(" "));
+
+    const shared = commonPrefix(matches);
+    if (shared.length > token.length) {
+      logCommandInput.value = `${beforeToken}${shared}`;
       return;
     }
-    appendCommandLine(`[ERROR] unknown command: ${partial}`, " log-line-command-error");
+
+    // Several candidates already share the longest common prefix: list them
+    // and restore the typed line unchanged (docs/console-protocol.md s.8).
+    appendCommandLine(matches.join(" "));
   };
 
   logCommandInput?.addEventListener("keydown", (event) => {
@@ -829,14 +1267,14 @@
     ["app-initial-status", loadInitialStatus, "initial status"],
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
-    ["app-action-tokens", loadCommandTokens, "action registry"],
+    ["app-console-catalog", loadConsoleCatalog, "console commands"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadRecentLogs().catch(() => {});
       loadLogLevel().catch(() => {});
-      loadCommandTokens().catch(() => {});
+      loadConsoleCatalog().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({
@@ -867,7 +1305,7 @@
       }
       if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
-        appendLogLine("[connection lost — retrying…]");
+        appendLogLine(LOG_UNREACHABLE_TEXT);
         setStale(true);
       }
     });

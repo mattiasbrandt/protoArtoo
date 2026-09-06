@@ -1,0 +1,13 @@
+diff --git a/data/app.js b/data/app.js
+index f780527f..7cb0283a 100644
+--- a/data/app.js
++++ b/data/app.js
+@@ -727,7 +727,7 @@
+           .split(",")
+           .map((entry) => entry.split(":"))
+           .filter((parts) => parts[0] && parts[0].length > 0)
+-          .map((parts) => ({ key: parts[0], writeExcluded: parts[2] === "write-excluded" }));
++          .map((parts) => ({ key: parts[0], writeExcluded: false }));
+       }
+     }
+     return [];

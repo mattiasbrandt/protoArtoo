@@ -421,6 +421,29 @@ struct ConfigSnapshot {
     WifiConfig wifi;
 };
 
+// 944 bytes, measured - and pinned here because two comments elsewhere had
+// drifted from it and one of them was load-bearing. Every by-value crossing of
+// this struct contributes a 944-byte stack frame: three nested frames on the
+// serial config-write path each carried one, which is how the Console task's
+// chain grew past its stack and panicked both boards (#226). The serializer
+// called it 744 B and ConfigCommitOutcome called itself small.
+//
+// The same number on both chip targets and on the host compiler: every member
+// is an integral, float, enum or char array type, so this struct's alignment
+// is 4 everywhere. A member needing 8-byte alignment would change that, and
+// this assertion is where it would say so.
+//
+// A field addition that moves the number is a decision, not an accident: it
+// changes what every seam that crosses this struct costs, so re-measure the
+// Console task's chain before updating the value here. The recipe moved out of
+// include/config.h's comment block at #271: it is now a row in
+// tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
+// it against a linked image, so the re-measure is a re-run rather than a
+// procedure to follow by hand.
+static_assert(sizeof(ConfigSnapshot) == 944,
+              "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
+              "chain measurement before moving this number");
+
 // =============================================================================
 // Public API
 // =============================================================================

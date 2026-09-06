@@ -26,10 +26,17 @@ const dataDir = join(__dirname, "../../data");
 
 const OK_LOGS = "boot: ready\nwifi: connected";
 const OK_CONFIG = { system: { logLevel: 2 } };
-const OK_ACTIONS = [
-  { token: "DM:ROCKMARCH", testable: true },
-  { token: "AU:CHIRP", testable: true },
-];
+// Shaped like POST /api/console { command: "operations" }'s real response
+// (docs/console-protocol.md s.2 / src/web/api_console.cpp): one "item"
+// record per catalog entry, value "<name> (<type>)".
+const OK_OPERATIONS = {
+  records: [
+    { id: 1, type: "begin", operation: "operations" },
+    { id: 1, type: "item", value: "drive.action.move (action)" },
+    { id: 1, type: "item", value: "sound.action.random-humming (action)" },
+    { id: 1, type: "end", status: "ok", outcome: "completed" },
+  ],
+};
 
 // Brings the home dashboard up with a controllable transport and status stream.
 const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
@@ -54,10 +61,13 @@ const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
 };
 
 // The default transport: every endpoint answers successfully.
-const healthyResponder = (path) => {
-  if (path === "/api/logs") return { data: OK_LOGS };
+const healthyResponder = (path, opts = {}) => {
+  // The device answers /api/logs as text/plain (src/web/api_logs.cpp), and
+  // since #261 the loader refuses anything else - so the mock has to carry
+  // the media type the real transport now reports.
+  if (path === "/api/logs") return { data: OK_LOGS, contentType: "text/plain" };
   if (path === "/api/config") return { data: OK_CONFIG };
-  if (path === "/api/actions") return { data: OK_ACTIONS };
+  if (path === "/api/console" && opts.body?.command === "operations") return { data: OK_OPERATIONS };
   if (path === "/api/status") return { data: {} };
   return { data: {} };
 };
@@ -69,7 +79,7 @@ const healthyResponder = (path) => {
 test("app.js registers its startup work as bootstrap sections", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
-  for (const name of ["app-initial-status", "app-recent-logs", "app-log-level", "app-action-tokens"]) {
+  for (const name of ["app-initial-status", "app-recent-logs", "app-log-level", "app-console-catalog"]) {
     assert.ok(env.sectionNames().includes(name), `${name} must be a bootstrap section`);
   }
 });
@@ -85,7 +95,7 @@ test("A section loader with no API available rejects instead of resolving empty"
 
   await assert.rejects(() => env.runSection("app-recent-logs"), /unavailable/);
   await assert.rejects(() => env.runSection("app-log-level"), /unavailable/);
-  await assert.rejects(() => env.runSection("app-action-tokens"), /unavailable/);
+  await assert.rejects(() => env.runSection("app-console-catalog"), /unavailable/);
 });
 
 test("A failed logs fetch reaches the bootstrap", async (t) => {
@@ -137,23 +147,28 @@ test("A valid log level resolves", async (t) => {
   );
 });
 
-test("An action registry that is not a list is rejected", async (t) => {
+test("A console operations response without a records array is rejected", async (t) => {
   const env = await loadDashboard({
-    respond: (path) => (path === "/api/actions" ? { data: "not an array" } : healthyResponder(path)),
+    respond: (path, opts = {}) =>
+      path === "/api/console" && opts.body?.command === "operations"
+        ? { data: "not a records object" }
+        : healthyResponder(path, opts),
   });
 
   await assert.rejects(
-    () => env.runSection("app-action-tokens"),
-    /not an array/,
-    "a malformed registry must surface, not leave the command line silently empty"
+    () => env.runSection("app-console-catalog"),
+    /not a records array/,
+    "a malformed catalog response must surface, not leave Tab completion silently empty"
   );
 });
 
-test("A well-formed action registry resolves", async (t) => {
+test("A well-formed console operations response resolves", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
-  await assert.doesNotReject(() => env.runSection("app-action-tokens"));
-  assert.ok(env.requests.some((r) => r.path === "/api/actions"));
+  await assert.doesNotReject(() => env.runSection("app-console-catalog"));
+  assert.ok(
+    env.requests.some((r) => r.path === "/api/console" && r.opts?.body?.command === "operations")
+  );
 });
 
 // -----------------------------------------------------------------------------

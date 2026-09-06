@@ -23,6 +23,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ctype.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <string.h>
 
 #include "api_config_apply.h"
@@ -623,15 +625,18 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     req.send(200, "application/json", body);
 }
 
-bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
+// WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
+// ...), which sends its own HTTP error today, is the first such extraction"):
+// the caller renders its own failure, so this stays reachable from a future
+// non-web caller without a request object in scope. handleRcMapPost is the
+// only caller today.
+bool persistSystemConfig(const SystemConfig& system) {
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     if (!configSaveSystem(prefs, system)) {
         prefs.end();
-        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     prefs.end();
@@ -639,6 +644,91 @@ bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
 }
 
 }  // namespace
+
+// =============================================================================
+// The config write lock - see include/api_config.h for the contract.
+// =============================================================================
+
+// Static storage and no init call: xSemaphoreCreateMutexStatic() takes no
+// heap, and a static FreeRTOS mutex may be created before the scheduler
+// starts, which is where a namespace-scope initializer runs. Nothing in
+// setup() has to remember to create it - which matters because the adapters
+// that take it (these routes and the Console module) share no init point,
+// and the one that used to own the mutex is not the seam that owns the
+// serialization.
+static StaticSemaphore_t s_configWriteMutexStorage;
+static SemaphoreHandle_t s_configWriteMutex = xSemaphoreCreateMutexStatic(&s_configWriteMutexStorage);
+
+// The bound a contended take waits before answering busy. One second is long
+// enough to cover the other adapter's whole window including its NVS write,
+// and short enough that a browser POST answers rather than hangs.
+static const TickType_t kConfigWriteLockTimeoutTicks = pdMS_TO_TICKS(1000);
+
+ConfigWriteLock::ConfigWriteLock() : held_(false) {
+    if (s_configWriteMutex == nullptr) {
+        // Cannot happen with static creation above; kept as the same
+        // defensive single-threaded-boot fallback src/seq_store.cpp's lock()
+        // takes, so a future move of the creation point cannot turn config
+        // writes into a hard failure.
+        held_ = true;
+        return;
+    }
+    held_ = (xSemaphoreTake(s_configWriteMutex, kConfigWriteLockTimeoutTicks) == pdTRUE);
+}
+
+ConfigWriteLock::~ConfigWriteLock() {
+    if (held_ && s_configWriteMutex != nullptr) {
+        xSemaphoreGive(s_configWriteMutex);
+    }
+}
+
+// See include/api_config.h for the full contract.
+ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
+                                         CommandSource source) {
+    ConfigCommitOutcome outcome;
+
+    for (size_t i = 0; i < result.applied.count; ++i) {
+        PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
+    }
+
+    configCacheApply(*working);
+
+    // Sync stationary mode with edge detection and drive-on cue. Safe to call
+    // unconditionally: when the request omits "stationary", configApply() left
+    // working->system.stationary at the cache value read before the call, which
+    // always matches robotState.stationary (commandedSetStationary is the only
+    // runtime writer of both, keeping them in lockstep) - so the edge-detect
+    // inside it is a no-op and no cue fires.
+    commandedSetStationary(working->system.stationary, source);
+
+    if (result.actions.playDomeOnCue) {
+        audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
+    }
+
+    // Write the post-commit state back through `working` rather than out
+    // through the outcome. This is the same read the outcome's own snapshot
+    // used to take, at the same point in the sequence - after the cache apply
+    // and after the stationary resync - so the bytes the caller renders are
+    // unchanged; what goes away is the 944-B snapshot that used to ride home
+    // inside ConfigCommitOutcome and be copied again into the caller's local.
+    configCacheRead(working);
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.persisted = false;
+        return outcome;
+    }
+    if (!configSave(prefs, *working)) {
+        prefs.end();
+        outcome.persisted = false;
+        return outcome;
+    }
+    prefs.end();
+
+    requestStatusBroadcastNow();
+    outcome.persisted = true;
+    return outcome;
+}
 
 // GET /api/config - the config snapshot data/app.js fetches on every page load.
 void handleConfigGet(WebRequest& req) {
@@ -674,12 +764,38 @@ void handleRcMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     ConfigSnapshot working;
-    configCacheRead(&working);
 
     // RcMapApplyResult is small (~150 bytes); static kept for consistency
     // with the ADR 0011 apply-core out-parameter convention.
     static RcMapApplyResult result;
-    rcMapApply(params, &working, &result);
+
+    // This route read-modify-writes the same config cache and the same NVS
+    // namespace the config write path does, so it takes the same lock across
+    // the same window. Answers are rendered after the release: nothing below
+    // touches config state.
+    bool busy = false;
+    bool persisted = false;
+    {
+        ConfigWriteLock lock;
+        if (!lock.acquired()) {
+            busy = true;
+        } else {
+            configCacheRead(&working);
+            rcMapApply(params, &working, &result);
+            if (result.ok) {
+                configCacheApply(working);
+                // Re-read what the cache actually holds, then persist from
+                // that - one snapshot local on this task's stack, not two.
+                configCacheRead(&working);
+                persisted = persistSystemConfig(working.system);
+            }
+        }
+    }
+
+    if (busy) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
     if (!result.ok) {
         JsonDocument err;
         err["ok"] = false;
@@ -696,12 +812,8 @@ void handleRcMapPost(WebRequest& req) {
         webSendJsonDocument(req, err, 320, TAG, 400);
         return;
     }
-
-    configCacheApply(working);
-
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-    if (!persistSystemConfig(req, snap.system)) {
+    if (!persisted) {
+        webSendJsonError(req, 500, "failed to persist config");
         return;
     }
 
@@ -710,57 +822,52 @@ void handleRcMapPost(WebRequest& req) {
 
 // POST /api/config - the sole web entrypoint for config writes.
 void handleConfigPost(WebRequest& req) {
-    ConfigSnapshot working;
-    configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome_esc;
-
     ConfigParamSource params = webParamSource(req);
+
+    ConfigSnapshot working;
 
     // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
     // record) - static avoids a large stack frame on the server task,
-    // matching api_seq.cpp's SeqRunEvidence precedent.
+    // matching api_seq.cpp's SeqRunEvidence precedent. Only this task calls
+    // this handler, so the instance needs no protection of its own; the lock
+    // below is about the shared config cache and NVS, not about this buffer.
     static ConfigApplyResult result;
-    configApply(params, &working, domeEnabledBefore, &result);
+
+    // The lock spans the cache read through the commit: a writer that read
+    // the cache before another writer's commit and applies afterwards is
+    // exactly how the loser's fields used to be reverted before NVS.
+    bool busy = false;
+    ConfigCommitOutcome commit = {};
+    {
+        ConfigWriteLock lock;
+        if (!lock.acquired()) {
+            busy = true;
+        } else {
+            configCacheRead(&working);
+            const bool domeEnabledBefore = working.system.enable_dome_esc;
+            configApply(params, &working, domeEnabledBefore, &result);
+            if (!result.error.hasError) {
+                // configCommitApplied() leaves the post-commit snapshot in
+                // `working`.
+                commit = configCommitApplied(&working, result, SRC_WEB_API);
+            }
+        }
+    }
+
+    if (busy) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
     if (result.error.hasError) {
         webSendJsonError(req, 400, result.error.message);
         return;
     }
-
-    for (size_t i = 0; i < result.applied.count; ++i) {
-        PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
-    }
-
-    configCacheApply(working);
-
-    // Sync stationary mode with edge detection and drive-on cue. Safe to call
-    // unconditionally: when the request omits "stationary", configApply() leaves
-    // working.system.stationary at the cache value read above, which always
-    // matches robotState.stationary (commandedSetStationary is the only runtime
-    // writer of both, keeping them in lockstep) - so the edge-detect inside it
-    // is a no-op and no cue fires.
-    commandedSetStationary(working.system.stationary, SRC_WEB_API);
-
-    if (result.actions.playDomeOnCue) {
-        audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
-    }
-
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist config");
         return;
     }
-    if (!configSave(prefs, snap)) {
-        prefs.end();
-        webSendJsonError(req, 500, "failed to persist config");
-        return;
-    }
-    prefs.end();
 
-    requestStatusBroadcastNow();
-    sendConfigSnapshot(req, snap);
+    sendConfigSnapshot(req, working);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).
@@ -768,44 +875,52 @@ void handleWifiPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     WifiConfig working = {};
-    configCacheReadWifi(&working);
 
     // WifiApplyResult is small; static kept for consistency with the
     // ADR 0011 apply-core out-parameter convention.
     static WifiApplyResult result;
-    wifiApply(params, &working, &result);
+
+    // wifiCommitApplied() read-modify-writes the shared config-cache snapshot
+    // and then writes NVS, so an interleaved config write on any adapter
+    // would lose one of the two updates. The read of the current settings is
+    // inside the window too - reading them outside it would reopen exactly
+    // that gap one statement earlier. The Console's own WiFi write
+    // (src/console/console_module.cpp) takes the same lock.
+    bool busy = false;
+    WifiCommitOutcome commit = {};
+    {
+        ConfigWriteLock lock;
+        if (!lock.acquired()) {
+            busy = true;
+        } else {
+            configCacheReadWifi(&working);
+            wifiApply(params, &working, &result);
+            if (result.ok) {
+                // Commit Step (ADR 0036, api_wifi_apply.h): persist to NVS,
+                // stage the config cache (Staged Network Switch, ADR 0015),
+                // and broadcast status - shared with the Console WiFi write
+                // path instead of each adapter carrying its own copy of the
+                // sequence.
+                commit = wifiCommitApplied(&working);
+            }
+        }
+    }
+
+    if (busy) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
+    }
     if (!result.ok) {
         webSendJsonError(req, 400, result.errorMessage);
         return;
     }
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist wifi settings");
         return;
     }
-    if (!configSaveWifi(prefs, working)) {
-        prefs.end();
-        webSendJsonError(req, 500, "failed to persist wifi settings");
-        return;
-    }
-    prefs.end();
-
-    // Stage only: update the persisted cache so reads see the new settings,
-    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch -
-    // apply happens through an explicit reboot/restart handoff, not as a side
-    // effect of saving this form). This is what lets an operator reprovision
-    // while connected to the controller's own AP without dropping underneath
-    // themselves mid-request.
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-    snap.wifi = working;
-    configCacheApply(snap);
-
-    requestStatusBroadcastNow();
 
     JsonDocument doc;
-    WifiConfigView view = wifiConfigToView(working);
+    WifiConfigView view = wifiConfigToView(commit.config);
     doc["ok"] = true;
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["provisioned"] = view.provisioned;
@@ -814,11 +929,8 @@ void handleWifiPost(WebRequest& req) {
     wifi["staPasswordSet"] = view.sta_password_set;
     wifi["apSsid"] = view.ap_ssid;
     wifi["apPasswordSet"] = view.ap_password_set;
-
-    WifiConfig activeWifi = {};
-    configCacheReadActiveWifi(&activeWifi);
-    wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
-    wifi["networkRecovery"] = configCacheReadActiveWifiRecovery();
+    wifi["pendingApply"] = commit.pendingApply;
+    wifi["networkRecovery"] = commit.networkRecovery;
 
     char payload[512];
     serializeJson(doc, payload, sizeof(payload));

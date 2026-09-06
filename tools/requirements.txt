@@ -1,7 +1,7 @@
 # tools/requirements.txt — developer tools for protoArtoo.
 # Install with: pip install -r tools/requirements.txt
 #
-# pyserial: required for tools/serial_monitor.py (make monitor).
+# pyserial: required for tools/console_client.py (make monitor).
 pyserial>=3.5
 
 # questionary: interactive prompts for tools/configure.py (make setup).

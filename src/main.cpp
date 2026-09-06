@@ -6,16 +6,22 @@
 // =============================================================================
 
 #include <Arduino.h>
+#include <FS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <cstddef>
+#include <cstring>
+#include <esp_log.h>
 #include <esp_task_wdt.h>
-#include <freertos/semphr.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
 #include "aux_led.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "console_module.h"
+#include "console_serial_output.h"
+#include "console_task.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
@@ -47,16 +53,32 @@ static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
-static StaticSemaphore_t logSerialMutexStorage = {};
-static SemaphoreHandle_t logSerialMutex = nullptr;
+// Who owns the serial wire, and how far the owner has drained the ring
+// (ADR 0039). Both live under logMux with the ring itself, which is what makes
+// the hand-over exact: paLogLine() reads the flag in the same critical section
+// it appends in, so a line arriving as ownership changes is either written
+// directly (flag still clear, and the cursor is placed past it) or drained
+// (flag set, and the cursor was placed before it) - never both, never neither.
+//
+// There is no serial mutex any more. It existed because any task could write
+// the wire if it took the lock; after this ADR the Console task is the only
+// writer, so the lock had nothing left to coordinate (#270).
+static bool logWireOwnedByConsole = false;
+static uint32_t logDrainCursor = 0;
 // Static bootstrap ring: captures the few lines logged before NVS config loads
 // (schema migration, mount problems). paLogRingApplyBootDepth() replaces it
 // with a heap ring sized to the saved log level and carries these lines over.
 static char logBootstrapStorage[LOG_RING_BOOTSTRAP_LINES][LOG_LINE_MAX];
 static LogBuffer recentLogBuf = {};
 // /api/logs response body, allocated alongside the sized ring (capacity *
-// LOG_LINE_MAX + 1). One shared buffer is race-free because web handlers
-// serialize on one task; see handleLogsGet().
+// LOG_LINE_MAX + 1). One shared buffer, sized and synchronised for exactly
+// one caller (handleLogsGet(), src/web/api_logs.cpp) - race-free there
+// because its callers serialize on one task. The Console task's
+// system.status.logs query answers the same question WITHOUT this buffer:
+// it reads the ring directly, one line at a time, through
+// getLogBufferCount()/copyLogLineAt() below (#239, src/console/console_module.cpp)
+// rather than becoming a second concurrent caller of this allocation. Do not
+// add a caller here from a second task.
 static char* logsBodyBuf = nullptr;
 static size_t logsBodyBufSize = 0;
 
@@ -77,13 +99,58 @@ void logBootHealth() {
 
 }  // namespace
 
-void paLogInit() {
-    if (logSerialMutex == nullptr) {
-        logSerialMutex = xSemaphoreCreateMutexStatic(&logSerialMutexStorage);
+// The ESP-IDF logger's output hook (ADR 0039).
+//
+// ESP_LOGx does not go through paLogLine(): it formats and hands the result to
+// the IDF's own vprintf, which writes stdout - UART0 - with no project lock
+// and no knowledge of who owns the wire. src/drivers/sbus_decoder.cpp (8
+// sites) and src/drivers/ledc_pwm.cpp (7 sites) log that way, from RCInputTask
+// and ServoTask, which is a second writer on a wire that now has an owner.
+// Pointing the hook at the Log Ring makes those lines ordinary log lines: they
+// land in /api/logs like everything else and the Console task drains them.
+//
+// The panic handler is deliberately NOT affected and needs no exception here.
+// Read, not assumed: panic.c's panic_print_str()/panic_print_char() drive the
+// UART and USB-serial-JTAG registers directly, and the core dump's own
+// ESP_COREDUMP_LOG* macros expand to esp_rom_printf()
+// (espcoredump/include_core_dump/esp_core_dump_types.h). Neither goes through
+// esp_log_vprintf, so neither can reach this hook - the panic path keeps its
+// own direct route exactly as ADR 0039 requires, and ADR 0031's rule that
+// nothing be added to that path is not touched. That matters here beyond
+// tidiness: this hook takes the ring's critical section, which a panicking
+// core must never be made to wait on.
+//
+// The formatted line is bounded by PA_LOG_SERIAL_LINE_MAX like every other
+// serial-bound line, and its trailing newline is stripped because the ring
+// stores lines, not terminators - the drain and /api/logs both add their own.
+// This runs in the calling task's context, so it costs that task one
+// PA_LOG_SERIAL_LINE_MAX buffer on its stack, the same as any PA_LOG_* call
+// already does (include/logging.h's _PA_LOG_FORMAT).
+//
+// Nothing here may call ESP_LOGx: it is what the logger calls.
+static int paLogIdfVprintf(const char* format, va_list args) {
+    char buf[PA_LOG_SERIAL_LINE_MAX];
+    const int written = vsnprintf(buf, sizeof(buf), format, args);
+    if (written <= 0) {
+        return written;
     }
+    size_t len = ((size_t)written < sizeof(buf)) ? (size_t)written : sizeof(buf) - 1;
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+        buf[--len] = '\0';
+    }
+    if (len > 0) {
+        paLogLine(buf);
+    }
+    return written;
+}
+
+void paLogInit() {
     if (recentLogBuf.lines == nullptr) {
         logBufferInit(&recentLogBuf, logBootstrapStorage, LOG_RING_BOOTSTRAP_LINES);
     }
+    // Install before anything can ESP_LOGx, so the two driver files never get
+    // a boot window in which they still write UART0 directly.
+    esp_log_set_vprintf(paLogIdfVprintf);
 }
 
 // Size the log ring and the /api/logs body from the operator's saved log
@@ -127,10 +194,18 @@ char* recentLogsBodyBuffer(size_t* size) {
     return logsBodyBuf;
 }
 
-void paLogLineRaw(const char* line) {
+void paLogWireBindToConsole() {
     taskENTER_CRITICAL(&logMux);
-    logBufferAppend(&recentLogBuf, line);
+    logDrainCursor = recentLogBuf.totalWritten;
+    logWireOwnedByConsole = true;
     taskEXIT_CRITICAL(&logMux);
+}
+
+bool paLogDrainNextLine(char* out, size_t outSize, uint32_t* evicted) {
+    taskENTER_CRITICAL(&logMux);
+    bool got = logBufferDrainNext(&recentLogBuf, &logDrainCursor, out, outSize, evicted);
+    taskEXIT_CRITICAL(&logMux);
+    return got;
 }
 
 void paLogLine(const char* line) {
@@ -138,22 +213,31 @@ void paLogLine(const char* line) {
         return;
     }
 
-    size_t lineLen = 0;
-    while (line[lineLen] != '\0' && lineLen < PA_LOG_SERIAL_LINE_MAX) {
-        ++lineLen;
-    }
+    // ONE write, to the Log Ring, under the ring's own critical section. The
+    // ring was already this line's authoritative record (#245); ADR 0039 makes
+    // the serial copy something produced FROM it rather than beside it, so a
+    // logging task on either core now pays one bounded critical section and a
+    // copy, and nothing that depends on the wire.
+    //
+    // The ownership flag is read here, inside the same section, and not from
+    // the sink: reading it outside would leave a window in which a line is
+    // appended before the hand-over and its wire decision taken after it (or
+    // the reverse), which duplicates or loses exactly one line at boot.
+    bool wireOwned;
+    taskENTER_CRITICAL(&logMux);
+    logBufferAppend(&recentLogBuf, line);
+    wireOwned = logWireOwnedByConsole;
+    taskEXIT_CRITICAL(&logMux);
 
-    SemaphoreHandle_t serialMutex = logSerialMutex;
-    if (serialMutex != nullptr) {
-        xSemaphoreTake(serialMutex, portMAX_DELAY);
+    if (!wireOwned) {
+        // Before the bind there is no Console task to drain the ring, so the
+        // line goes straight out - the boot log, unchanged. One framed write,
+        // best-effort, exactly as the pre-bind path has always been (#245's
+        // contract, ADR 0038's framing). After the bind this branch is dead by
+        // construction and the drain is the only writer
+        // (consoleSerialDrainLogs, src/console/console_serial_output.cpp).
+        consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
     }
-    Serial.write((const uint8_t*)line, lineLen);
-    Serial.write('\n');
-    if (serialMutex != nullptr) {
-        xSemaphoreGive(serialMutex);
-    }
-
-    paLogLineRaw(line);
 }
 
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
@@ -261,6 +345,20 @@ void requestSystemRestart(uint32_t delayMs) {
 }
 
 void setup() {
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // BEFORE begin(), deliberately: HWCDC::begin() only creates its receive
+    // queue `if (rx_queue == NULL)`, so this is the one call that can size it
+    // without vQueueDelete()ing a queue the RX interrupt may already be
+    // pushing into. Why the default is too small for a line this Console has
+    // to refuse: include/console_task.h's CONSOLE_SERIAL_RX_QUEUE_BYTES (#229).
+    //
+    // The result is deliberately not checked, and the failure is still safe:
+    // on a failed allocation HWCDC::setRxBufferSize() leaves rx_queue NULL and
+    // begin() below then creates the driver's own 256-byte default, which is
+    // the pre-#229 behaviour rather than a broken one. There is also no logger
+    // to report it to here - paLogInit() runs after begin().
+    Serial.setRxBufferSize(CONSOLE_SERIAL_RX_QUEUE_BYTES);
+#endif
     Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     // Serial is the USB-Serial-JTAG CDC (HWCDC). When the host stops draining
@@ -290,6 +388,7 @@ void setup() {
     // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     paLogRingApplyBootDepth();
+    consoleModuleInit();
     logBootHealth();
     ConfigSnapshot bootCfg = {};
     configCacheRead(&bootCfg);
@@ -297,6 +396,7 @@ void setup() {
     configCacheSetActiveRcInput(activeRc);
     configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
     configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
+    configCacheSetActiveComponentToggles(bootCfg.system);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Task Watchdog Timer.
@@ -386,9 +486,14 @@ void setup() {
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
                                 nullptr, 5, nullptr, 1);
     }
-    xTaskCreatePinnedToCore(
-        servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
-        1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
+    // Size is chip-target specific; SERVO_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. What this line used to say
+    // -- "HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096"
+    // -- was a high-water mark, the same evidence class that let the Console
+    // stand 4 KB under its chain (#226). This is a Core 1 real-time task and it
+    // had no static measurement at all until #271 walked it.
+    xTaskCreatePinnedToCore(servoTask, "ServoTask", SERVO_TASK_STACK_BYTES, nullptr, 4, nullptr,
+                            1);
     if (bootCfg.system.enable_dome_esc) {
         // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
         // carries the measured chain and the sizing rule. The note this line used
@@ -453,12 +558,26 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    // 5632: the static worst-case chain is 4336 B on this image (#250), 240 B past the
-    // old 4096  --  Learned Sequence load on this task's own stack (seqStorePrepare ->
-    // protocolCheck -> pcFailAt -> snprintf float formatting -> first-use heap/log-mutex
-    // tail). Sized by the #248 rule, chain + 25% rounded up to the next 512 B
-    // (4336 * 1.25 = 5420 -> 5632); the ESP32-P4 chain (4448 B) lands on the same 5632.
-    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 5632, nullptr, 3, nullptr, 0);
+    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. The depth is the Learned Sequence
+    // load on this task's own stack (seqStorePrepare -> protocolCheck -> pcFailAt ->
+    // snprintf float formatting -> first-use heap/log-mutex tail), 240 B past the 4096
+    // this used to be (#250). Both chips land on the same 512-byte step.
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", SEQ_DISPATCHER_TASK_STACK_BYTES,
+                            nullptr, 3, nullptr, 0);
+
+    // ConsoleTask: Core 0 (non-RT)  --  serial console adapter using embedded-cli.
+    // ADR 0036: persistent Controller Console, no network dependency, no dynamic
+    // allocation in its loop. Created on both boards (P4 USB CDC, artoo UART0 bridge).
+    //
+    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule. What this line used to say --
+    // "stack sized from measured high-water mark with margin" -- is why 5120 stood:
+    // a high-water mark reports only the paths that have actually run, and no
+    // config write could reach this task when it was taken. The first one that did
+    // overflowed the stack on the board (#226).
+    xTaskCreatePinnedToCore(consoleTask, "Console", CONSOLE_TASK_STACK_BYTES, nullptr, 2, nullptr,
+                            0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
@@ -479,6 +598,39 @@ void setup() {
     // startHttpServerOnce() inside handleWiFiEvent().
     webServerInit();
 
+    // Inject the help reader for the Console module after LittleFS is mounted.
+    // The reader provides seek+read access to console_help.txt with no per-request
+    // allocation (ADR 0036, address-based read pattern).
+    // If the help file is unavailable, pass NULL to degrade gracefully.
+#ifdef ARDUINO
+    {
+        static File g_helpFile;  // Held for process lifetime
+        static ConsoleHelpReader g_helpReader = {};
+
+        if (LittleFS.exists("/console_help.txt")) {
+            g_helpFile = LittleFS.open("/console_help.txt", "r");
+            if (g_helpFile) {
+                g_helpReader.seek = [](void* ctx, uint32_t offset) -> bool {
+                    File* f = (File*)ctx;
+                    return f && f->seek(offset);
+                };
+                g_helpReader.read = [](void* ctx, char* out_buffer, size_t len) -> size_t {
+                    File* f = (File*)ctx;
+                    if (!f || !out_buffer || len == 0) return 0;
+                    return f->read((uint8_t*)out_buffer, len);
+                };
+                g_helpReader.ctx = &g_helpFile;
+                consoleModuleSetHelpReader(&g_helpReader);
+                PA_LOG_DEBUG("main", "console help reader injected");
+            } else {
+                PA_LOG_WARN("main", "failed to open console help file");
+            }
+        } else {
+            PA_LOG_WARN("main", "console help file not found");
+        }
+    }
+#endif  // ARDUINO
+
     uint16_t bootTrack = 0;
     bootTrack = bootCfg.audio.snd_sys_boot;
     if (bootTrack != 0) {
@@ -490,7 +642,16 @@ void setup() {
     }
 
     PA_LOG_INFO("main", "init complete");
-    Serial.flush();
+    // No Serial.flush() here. The Console task exists by this point (created
+    // above), so this line is already the Console task's to put on the wire,
+    // and flushing a wire this task does not own is what ADR 0039 removes.
+    // It was never doing the job it looked like it was doing either: on a
+    // CDC-on-boot build main.cpp's own setTxTimeoutMs(0) makes HWCDC::flush()
+    // take its `tries == 0` path, which DISCARDS the TX ring and forces the
+    // `connected` latch false - so it dropped whatever of the boot log the
+    // host had not yet picked up (ADR 0038's Consequences named these two
+    // sites; src/tasks/console_task.cpp:#265 reported them as out of scope
+    // then, and this ticket owns src/main.cpp).
 }
 
 void loop() {
@@ -504,7 +665,13 @@ void loop() {
 
     if (shouldRestart) {
         PA_LOG_INFO("main", "restarting controller");
-        Serial.flush();
+        // No Serial.flush() here either, for the reason setup()'s tail gives:
+        // the Arduino loop task does not own this wire. The line above is in
+        // the ring, the Console task drains it within its 10 ms poll, and the
+        // delay(100) below is well past the ~4 ms a line of this length takes
+        // at 115200 8N1 - so the restart notice still reaches the operator,
+        // and on the CDC it now reaches them at all (flush() there discarded
+        // the ring rather than draining it).
         // Deinit TWDT before restart  --  prevents esp_restart() from being
         // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
         esp_task_wdt_deinit();

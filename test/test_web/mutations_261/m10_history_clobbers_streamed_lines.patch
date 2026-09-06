@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index c677e9d6..ae101831 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -584,7 +584,7 @@
+     const history = lines
+       .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
+       .filter((line) => line.message.length > 0);
+-    logLines = [...history, ...logLines].slice(-LOG_MAX_LINES);
++    logLines = history.slice(-LOG_MAX_LINES);
+     logHistoryLoaded = true;
+     renderLogConsole(!hasActiveLogSelection());
+   };

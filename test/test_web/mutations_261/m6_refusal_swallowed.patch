@@ -1,0 +1,16 @@
+diff --git i/data/app.js w/data/app.js
+index c5e329a1..15c410c8 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -635,10 +635,7 @@
+       // usable came back from the controller, which is also the reason
+       // page_bootstrap.js renders as "Connection to the controller was lost."
+       renderLogNotice(LOG_UNREACHABLE_TEXT);
+-      throw new window.PAApi.ApiError("Log response was not log text", {
+-        kind: "network",
+-        status: result?.status ?? 0,
+-      });
++      return;
+     }
+     const historyLines = String(result.data ?? "")
+       .split(/\r?\n/)

@@ -17,6 +17,7 @@
 #include <esp_heap_caps.h>
 
 #include "api_profiler.h"
+#include "failed_alloc_tracker.h"
 #include "heap_health.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -48,6 +49,12 @@ void safetyMonitorTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "active");
 
     bool hwmLogged = false;
+    // Unconditional, and before profilerInit(): the failed-allocation counter
+    // is reported by /api/status on every build (ADR 0017's heap rule reads it
+    // on a production image), and IDF keeps one hook slot, so this is the only
+    // registration in the firmware. Registered here rather than earlier so the
+    // count means the same thing it has always meant on a profiler build.
+    failedAllocTrackerInit();
     profilerInit();
 
     while (true) {

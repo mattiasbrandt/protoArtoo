@@ -1,0 +1,1155 @@
+# Controller Console operation inventory - system domain(s): system, wifi
+# Analysis-slice artifact for #210 (epic #206). Generated skeleton: 48 rows from
+# docs/action-registry.yaml at base f0b0dbc. Every `FILL` cell is decided by READING the
+# firmware and replaced with evidence; a file containing FILL is unfinished by definition.
+#
+# Row schema (decide these):
+#   anchor_kind:        api | rc_internal | event | config | aggregate-field | console_direct_action | none
+#                       aggregate-field = describes one field/section inside a larger query's
+#                       response; stays metadata, cites the owning aggregate + builder line
+#                       console_direct_action = added after the inventory pass (#243), for an
+#                       operation the Controller Console is the only caller of: no REST route, no RC
+#                       dispatcher, no SSE emitter, no config path
+#   evidence:           list of "file:line - what it shows" citations. Required per anchor_kind:
+#                         api          -> route registration + handler declaration header + definition + domain core
+#                         rc_internal  -> dispatcher site + enum/token + owning queue or core
+#                         event        -> emitter + SSE registration
+#                         config       -> read path + apply path + persistence path
+#                         aggregate-field -> owning aggregate query name + the builder line that emits it
+#                         console_direct_action -> dispatch-table registration + executor definition
+#                                                  + the core it calls; a compile-time gate cites its
+#                                                  generated catalog row too
+#                         none         -> explicit file:line evidence that NO executor exists
+#   executor_or_core:   the function/core the Console must call (or "none")
+#   missing_metadata:   registry fields the Console needs that are absent (argument schema, alias,
+#                       availability metadata, executor reference) - [] if none
+#   notes:              grouped HTTP surfaces reached from here with no registry entry, oddities
+# Gathered fields (read-only context copied from the registry) are prefixed `registry_`.
+base_commit: f0b0dbc
+ticket: 210
+domains: [system, wifi]
+row_count: 52
+rows:
+- name: system.action.disable-web-control
+  type: action
+  registry_api_path: /api/web-control/disable
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:84 - webRegisterRoute route
+  - include/api_drive.h:31 - handleWebControlDisablePost declaration
+  - src/web/api_drive.cpp:300 - handleWebControlDisablePost definition
+  - src/web/api_drive.cpp:301 - commandedSetWebControl(false, SRC_WEB_API)
+  executor_or_core: commandedSetWebControl
+  missing_metadata: []
+  notes: ''
+- name: system.action.enable-web-control
+  type: action
+  registry_api_path: /api/web-control/enable
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:83 - webRegisterRoute route
+  - include/api_drive.h:30 - handleWebControlEnablePost declaration
+  - src/web/api_drive.cpp:294 - handleWebControlEnablePost definition
+  - src/web/api_drive.cpp:295 - commandedSetWebControl(true, SRC_WEB_API)
+  executor_or_core: commandedSetWebControl
+  missing_metadata: []
+  notes: 'All actions/configs missing: executor field, console_alias'
+- name: system.action.erase-coredump
+  type: action
+  registry_api_path: /api/coredump/erase
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_system.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:72 - webRegisterRoute route
+  - include/api_system.h:26 - handleCoredumpErasePost declaration
+  - src/web/api_system.cpp:186 - handleCoredumpErasePost definition
+  - src/web/api_system.cpp:188 - esp_core_dump_image_erase()
+  executor_or_core: esp_core_dump_image_erase
+  missing_metadata: []
+  notes: ''
+- name: system.action.estop
+  type: action
+  registry_api_path: /api/estop
+  registry_cpp_enum: SYSTEM_ACTION_ESTOP
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: estop
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:77 - webRegisterRoute route
+  - include/api_estop.h:16 - handleEstopPost declaration
+  - src/web/api_estop.cpp:29 - handleEstopPost definition
+  - src/web/api_estop.cpp:30 - failsafeTrigger(FailsafeLayer::ESTOP)
+  executor_or_core: failsafeTrigger
+  missing_metadata: []
+  notes: ''
+- name: system.action.estop-clear
+  type: action
+  registry_api_path: /api/estop/clear
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:78 - webRegisterRoute route
+  - include/api_estop.h:17 - handleEstopClearPost declaration
+  - src/web/api_estop.cpp:22 - handleEstopClearPost definition
+  - src/web/api_estop.cpp:23 - failsafeClearEstop()
+  executor_or_core: failsafeClearEstop
+  missing_metadata: []
+  notes: ''
+- name: system.action.profiler-trace-start
+  type: action
+  registry_api_path: /api/profiler/trace/start
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_profiler.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_build_flag: PA_HEAP_TRACING
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:158 - webRegisterRoute route
+  - include/api_profiler.h:185 - ProfilerTraceOutcome profilerTraceStart(void)
+  - src/web/api_profiler.cpp:678 - profilerTraceStart definition, owns s_traceRunning
+  - src/web/api_profiler.cpp:703 - handleProfilerTraceStartPost adapts it to 200/409/500
+  - include/console_direct_action_system.h:358 - consoleExecuteDirectProfilerTraceStart calls the same core
+  executor_or_core: profilerTraceStart
+  missing_metadata: []
+  notes: >-
+    Gated by PA_HEAP_TRACING, which no environment in platformio.ini sets, so
+    this row is compiled into no image the repo builds and answers
+    not-in-this-build on every one of them.
+- name: system.action.profiler-trace-stop
+  type: action
+  registry_api_path: /api/profiler/trace/stop
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_profiler.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_build_flag: PA_HEAP_TRACING
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:160 - webRegisterRoute route
+  - include/api_profiler.h:186 - ProfilerTraceOutcome profilerTraceStop(void)
+  - src/web/api_profiler.cpp:692 - profilerTraceStop definition, stops and dumps to serial
+  - src/web/api_profiler.cpp:717 - handleProfilerTraceStopPost adapts it to 200/409/500
+  - include/console_direct_action_system.h:369 - consoleExecuteDirectProfilerTraceStop calls the same core
+  executor_or_core: profilerTraceStop
+  missing_metadata: []
+  notes: >-
+    Gated by PA_HEAP_TRACING, which no environment in platformio.ini sets, so
+    this row is compiled into no image the repo builds and answers
+    not-in-this-build on every one of them.
+- name: system.action.reboot
+  type: action
+  registry_api_path: /api/reboot
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:69 - webRegisterRoute route
+  - include/api_system.h:23 - handleRebootPost declaration
+  - src/web/api_system.cpp:142 - handleRebootPost definition
+  - src/web/api_system.cpp:145 - requestSystemRestart()
+  executor_or_core: requestSystemRestart
+  missing_metadata: []
+  notes: ''
+- name: system.action.reboot-wifi-module
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_board_capability: PA_CAP_HOSTED_WIFI
+  registry_requires_web_control: false
+  registry_sources: []
+  registry_marcduino_cmd: null
+  anchor_kind: console_direct_action
+  evidence:
+  - include/console_direct_action_system.h:504 - g_systemDirectActionExecutors[] registration, inside
+    the #if PA_CAP_HOSTED_WIFI gate at :503
+  - include/console_direct_action_system.h:466 - consoleExecuteDirectRebootWifiModule definition
+  - src/console/console_module.cpp:3243 - consoleFindDirectActionExecutor() lookup, the one call site
+  - src/console/console_catalog.cpp:2189 - available_on_board = PA_CAP_HOSTED_WIFI, the generated
+    board gate consoleExecuteCommand() reads at src/console/console_module.cpp:3138 before any
+    executor lookup
+  - include/hosted_link_c6_reset.h:61 - hostedLinkResetCoprocessor() declaration header
+  - src/web/web_network_manager_hosted.cpp:457 - hostedLinkResetCoprocessor() definition, the
+    enable-line pulse itself
+  executor_or_core: hostedLinkResetCoprocessor
+  missing_metadata: []
+  notes: 'Added by #243, after the inventory pass. anchor_kind console_direct_action is a kind the
+    #210 taxonomy has no row for: this operation reaches no REST route, no RC dispatcher, no SSE
+    emitter and no config path, because the Controller Console is its only caller. The two cites the
+    convention asks for are the registration site and the handler declaration header; the board gate
+    lives at the third.'
+- name: system.action.set-identity
+  type: action
+  registry_api_path: /api/identity
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_identity.cpp
+  registry_sse_event: null
+  registry_nvs_keys:
+  - droid_name
+  - mdns_use_name
+  registry_params:
+  - name: droidName
+    type: string
+    required: true
+  - name: mdnsUseName
+    type: bool
+    required: false
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:34 - webRegisterRoute route
+  - include/api_identity.h:27 - handleIdentityPost declaration
+  - src/web/api_identity.cpp:55 - handleIdentityPost definition
+  - include/config_cache.h:36 - configCacheApply core
+  executor_or_core: configCacheApply
+  missing_metadata: []
+  notes: ''
+- name: system.action.set-mode
+  type: action
+  registry_api_path: /api/mode
+  registry_cpp_enum: SYSTEM_ACTION_OP_MODE
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: op_mode
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:80 - webRegisterRoute route
+  - include/api_drive.h:27 - handleModePost declaration
+  - src/web/api_drive.cpp:239 - handleModePost definition
+  - src/web/api_drive.cpp:246 - commandedSetStationary()
+  executor_or_core: commandedSetStationary
+  missing_metadata:
+  - parameter schema (mode values/type not in registry)
+  notes: ''
+- name: system.action.set-mood
+  type: action
+  registry_api_path: /api/mood
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_params:
+  - name: mood
+    type: uint8
+    values: '[10, 11, 13, 14]'
+    required: true
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:122 - webRegisterRoute route
+  - include/api_audio.h:70 - handleMoodPost declaration
+  - src/web/api_audio.cpp:640 - handleMoodPost definition
+  - src/web/api_audio.cpp:667 - applyMood(mood)
+  executor_or_core: applyMood
+  missing_metadata: []
+  notes: ''
+- name: system.action.sleep
+  type: action
+  registry_api_path: /api/sleep
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: true
+  registry_sources:
+  - web_api
+  - dome_rx
+  registry_marcduino_cmd: '#PASL (tx), #APSL (rx sync)'
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:66 - webRegisterRoute route
+  - include/api_system.h:20 - handleSleepPost declaration
+  - src/web/api_system.cpp:90 - handleSleepPost definition
+  - src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)
+  executor_or_core: commandedSetSleep
+  missing_metadata: []
+  notes: ''
+- name: system.action.sleep-toggle
+  type: action
+  registry_api_path: null
+  registry_cpp_enum: SYSTEM_ACTION_SLEEP_TOGGLE
+  registry_cpp_file: include/rc_mapping.h
+  registry_rc_token: sleep_toggle
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - sbus
+  registry_marcduino_cmd: null
+  anchor_kind: rc_internal
+  evidence:
+  - include/rc_action_types.h:48 - SYSTEM_ACTION_SLEEP_TOGGLE enum
+  - src/rc_action_dispatcher.cpp:157 - case SYSTEM_ACTION_SLEEP_TOGGLE
+  - src/rc_dispatcher_helpers.cpp:187 - if (res.setSleep) rc result handler
+  - src/rc_dispatcher_helpers.cpp:188 - commandedSetSleep(res.newSleepMode, SRC_SBUS)
+  executor_or_core: commandedSetSleep
+  missing_metadata: []
+  notes: ''
+- name: system.action.upload-filesystem
+  type: action
+  registry_api_path: /upload/filesystem
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_upload.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: none
+  evidence:
+  - src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk)
+  - src/web/api_upload.cpp:226 - void handleFilesystemUploadChunk streams chunks to partition
+  - src/web/api_upload.cpp:228 - handleUploadChunk() called to write directly via Update library
+  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
+  executor_or_core: none
+  missing_metadata: []
+  notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
+- name: system.action.upload-firmware
+  type: action
+  registry_api_path: /upload/firmware
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_upload.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: none
+  evidence:
+  - src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk)
+  - src/web/api_upload.cpp:214 - void handleFirmwareUploadChunk streams chunks to flash
+  - src/web/api_upload.cpp:216 - handleUploadChunk() called to write directly via Update library
+  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
+  executor_or_core: none
+  missing_metadata: []
+  notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
+- name: system.action.wake
+  type: action
+  registry_api_path: /api/wake
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: true
+  registry_sources:
+  - web_api
+  - dome_rx
+  registry_marcduino_cmd: '#PAWU (tx), #APWU (rx sync)'
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:67 - webRegisterRoute /api/wake
+  - include/api_system.h:21 - handleWakePost declaration
+  - src/web/api_system.cpp:96 - handleWakePost definition
+  - src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)
+  executor_or_core: commandedSetSleep
+  missing_metadata: []
+  notes: ''
+- name: system.api.event-stream
+  type: status
+  registry_api_path: /api/events
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_events.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: event
+  evidence:
+  - src/web/web_seam_routes.cpp:46 - webRegisterRoute("/api/events", WebMethod::kGet, handleEventsGet)
+  - src/web/api_events.cpp:24 - void handleEventsGet(WebRequest& req)
+  - src/web/api_events.cpp:38 - req.beginEventStream() establishes SSE stream without emitting events
+  - src/web/web_server.cpp:816 - events emitted from other sources; stream handler is pure adapter
+  executor_or_core: none
+  missing_metadata: []
+  notes: 'SSE stream adapter: no executor; events emitted from other sources and pushed to stream'
+- name: system.api.get-admission-trace
+  type: action
+  registry_api_path: /api/admission/trace
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_admission_trace.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_build_flag: PA_ADMISSION_TRACE
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:141 - webRegisterRoute /api/admission-trace
+  - include/api_admission_trace.h:30 - handleAdmissionTraceGet
+  - src/web/api_admission_trace.cpp:36 - handleAdmissionTraceGet definition
+  - src/web/api_admission_trace.cpp:45 - req.sendChunked fillAdmissionTraceResponse
+  executor_or_core: fillAdmissionTraceResponse
+  missing_metadata: []
+  notes: Gated by PA_ADMISSION_TRACE
+- name: system.api.get-coredump
+  type: action
+  registry_api_path: /api/coredump
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_system.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:71 - webRegisterRoute("/api/coredump", WebMethod::kGet, handleCoredumpGet)
+  - src/web/api_system.cpp:163 - void handleCoredumpGet(WebRequest& req)
+  - src/web/api_system.cpp:165 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
+  - src/web/api_system.cpp:181 - sendChunked streams coredump directly from partition; no project executor
+  executor_or_core: none
+  missing_metadata: []
+  notes: Delegates to ESP-IDF esp_core_dump_image_get(); coredump is external persistent state, not a project executor
+- name: system.api.get-coredump-status
+  type: action
+  registry_api_path: /api/coredump/status
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_system.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/coredump/status", WebMethod::kGet, handleCoredumpStatusGet)
+  - src/web/api_system.cpp:154 - void handleCoredumpStatusGet(WebRequest& req)
+  - src/web/api_system.cpp:156 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
+  - src/web/api_system.cpp:160 - handler builds JSON response inline without calling project executor
+  executor_or_core: none
+  missing_metadata: []
+  notes: Delegates to ESP-IDF esp_core_dump_image_get(); no project executor
+- name: system.api.get-identity
+  type: status
+  registry_api_path: /api/identity
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_identity.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:33 - webRegisterRoute /api/identity
+  - include/api_identity.h:26 - handleIdentityGet
+  - src/web/api_identity.cpp:49 - handleIdentityGet definition
+  - src/web/api_identity.cpp:51 - sendIdentityResponse(req, snap.system)
+  executor_or_core: sendIdentityResponse
+  missing_metadata: []
+  notes: ''
+- name: system.api.get-profiler
+  type: status
+  registry_api_path: /api/profiler
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_profiler.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_build_flag: PA_HEAP_PROFILE
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:147 - webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet)
+  - include/api_profiler.h:148 - void profilerRead(ProfilerReading* out)
+  - src/web/api_profiler.cpp:464 - profilerRead definition, one consistent read of the muxed state
+  - src/web/api_profiler.cpp:529 - buildProfilerJson renders that reading as JSON
+  - src/console/console_module.cpp:796 - consoleExecuteSystemApiGetProfiler renders the same reading as records
+  executor_or_core: profilerRead
+  notes: >-
+    Gated by PA_HEAP_PROFILE. Issue 224 extracted profilerRead() from the
+    handler so the Console and GET /api/profiler share one read; the handler is
+    now an adapter over it rather than the only reader of the profiler muxes.
+  missing_metadata: []
+- name: system.api.get-validation
+  type: status
+  registry_api_path: /api/validation
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_validation.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:100 - webRegisterRoute /api/validation
+  - include/api_validation.h:12 - handleValidationGet
+  - src/web/api_validation.cpp:26 - handleValidationGet definition
+  - src/web/api_validation.cpp:31 - populateValidationJson(doc, snap)
+  executor_or_core: populateValidationJson
+  missing_metadata: []
+  notes: ''
+- name: system.config.enable_arm1
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_arm1
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_arm2
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_arm2
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_audio
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_audio
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_aux1
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_aux1
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_aux2
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_aux2
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_aux3
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_aux3
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_dome_esc
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_dome_esc
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_drive
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_drive
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_protor2link
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_r2link
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch1
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch1
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch2
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch2
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch3
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch3
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch4
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch4
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch5
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch5
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.enable_rc_ch6
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: en_rc_ch6
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/default/range not in registry)
+  notes: ''
+- name: system.config.mood
+  type: config
+  registry_api_path: /api/mood
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: last_mood
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
+  - include/api_config_apply.h:68 - configApply Apply Core
+  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
+  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/values/default not in registry)
+  notes: ''
+- name: system.config.log-level
+  type: config
+  registry_api_path: /api/config
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: log_level
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - include/logging.h:25 - configCurrentLogLevel() declaration, the read path
+  - src/config_store.cpp:570 - configCurrentLogLevel() definition (reads s_liveLogLevel lock-free)
+  - include/api_config_apply.h:68 - configApply() Apply Core
+  - src/web/api_config_apply.cpp:303 - the logLevel branch (range 1..4)
+  - src/config_serializer.cpp:530 - writeU8("log_level", cfg.logLevel) persistence
+  executor_or_core: configApply
+  missing_metadata:
+  - parameter schema (type/values/default not in registry)
+  notes: '#225: new row, added to satisfy the ticket''s "log level is the ordinary
+    configuration entry it is" criterion (docs/console-protocol.md s.1/s.6). No
+    REST endpoint of its own - POST /api/config''s existing logLevel field is the
+    only prior surface. Wired as a Console scalar config row
+    (g_scalarConfigExecutors[], consoleExecuteSystemLogLevel() in
+    src/console/console_module.cpp), which also accepts the word form
+    (error/warning/info/debug) the protocol doc''s own grammar example uses,
+    translated to the stored 1..4 digit before reaching the Apply Core above.'
+- name: system.event.boot-complete
+  type: event
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: none
+  evidence:
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; boot-complete not among them
+  - 'docs/action-registry.yaml:2624 - entry marked sources: [internal] and sse_event: null; not exposed'
+  executor_or_core: none
+  missing_metadata: []
+  notes: Internal event not exposed via SSE; no web emitter exists
+- name: system.event.dome-enabled
+  type: event
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: none
+  evidence:
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; dome-enabled not among them
+  - 'docs/action-registry.yaml:2608 - entry marked sources: [internal] and sse_event: null; not exposed'
+  executor_or_core: none
+  missing_metadata: []
+  notes: Internal event not exposed via SSE; no web emitter exists
+- name: system.event.drives-engaged
+  type: event
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: none
+  evidence:
+  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
+  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
+  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; drives-engaged not among them
+  - 'docs/action-registry.yaml:2592 - entry marked sources: [internal] and sse_event: null; not exposed'
+  executor_or_core: none
+  missing_metadata: []
+  notes: Internal event not exposed via SSE; no web emitter exists
+- name: system.status.dashboard-health
+  type: status
+  registry_api_path: /api/status
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: status
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: aggregate-field
+  evidence:
+  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
+  - include/api_status.h:93 - handleStatusGet declaration
+  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
+  - src/web/web_server.cpp:300 - dashboardHealth field in buildStatusJson
+  executor_or_core: buildStatusJson
+  missing_metadata: []
+  notes: Aggregate-field in /api/status; built by buildStatusJson
+- name: system.status.health
+  type: status
+  registry_api_path: /api/health
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp - webRegisterRoute("/api/health", kGet, handleHealthGet)
+  - include/api_status.h - void handleHealthGet(WebRequest& req) declaration
+  - src/web/api_status.cpp - void handleHealthGet(WebRequest& req) definition; calls buildHealthJson()
+  - include/api_status.h - captureHealthSnapshot(HealthSnapshot* out) declaration
+  - src/web/api_status_serializers.cpp - captureHealthSnapshot() definition; formatHealthJson()'s JSON keys
+  executor_or_core: captureHealthSnapshot
+  missing_metadata: []
+  notes: '#223: reclassified from aggregate-field to api. GET /api/health is its own standalone endpoint with its own JSON shape (buildHealthJson/formatHealthJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/health''s). Promoted to a real console query; captureHealthSnapshot() is the Zone Snapshot capture both handleHealthGet() and the Console module call (ADR 0036).'
+- name: system.status.logs
+  type: status
+  registry_api_path: /api/logs
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:41 - webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet)
+  - include/api_logs.h:14 - void handleLogsGet(WebRequest& req) declaration
+  - src/web/api_logs.cpp - handleLogsGet() definition; calls recentLogsBodyBuffer()/copyRecentLogs()
+  - include/web_server.h - getLogBufferCount()/copyLogLineAt() declarations
+  - src/console/console_module.cpp - consoleExecuteSystemStatusLogs() calls getLogBufferCount()/copyLogLineAt() directly, not recentLogsBodyBuffer()/copyRecentLogs() (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
+  executor_or_core: copyLogLineAt
+  missing_metadata: []
+  notes: '#239: reclassified from aggregate-field to api. The prior evidence (web_server.cpp:295, "logs array in buildStatusJson") does not exist in the source - buildStatusJson() never emits a logs field. GET /api/logs is its own standalone text/plain endpoint (src/web/api_logs.cpp), not a field inside /api/status. Promoted to a real console query answering item records (docs/console-protocol.md s.3.1) rather than the fields:/JSON-key model #223 established for scalar aggregate rows; the REST handler and the Console executor deliberately read the log ring through two different functions (see evidence) instead of sharing recentLogsBodyBuffer(), which stays scoped to its one existing caller.'
+- name: system.status.mood
+  type: status
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: status
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: aggregate-field
+  evidence:
+  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
+  - include/api_status.h:93 - handleStatusGet declaration
+  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
+  - src/web/web_server.cpp:285 - mood field in buildStatusJson
+  executor_or_core: buildStatusJson
+  missing_metadata: []
+  notes: Aggregate-field in /api/status; built by buildStatusJson
+- name: system.status.sleep-mode
+  type: status
+  registry_api_path: null
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: status
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: aggregate-field
+  evidence:
+  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
+  - include/api_status.h:93 - handleStatusGet declaration
+  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
+  - src/web/web_server.cpp:288 - sleepMode field in buildStatusJson
+  executor_or_core: buildStatusJson
+  missing_metadata: []
+  notes: Aggregate-field in /api/status; built by buildStatusJson
+- name: system.console
+  type: action
+  registry_api_path: /api/console
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:47 - webRegisterRoute("/api/console", WebMethod::kPost, handleConsolePost)
+  - include/api_console.h:12 - void handleConsolePost(WebRequest& req) declaration
+  - src/web/api_console.cpp:108 - void handleConsolePost(WebRequest& req) definition
+  - src/web/api_console.cpp:158 - consoleExecuteCommand(&consoleReq, &sink) command processor invocation
+  executor_or_core: consoleExecuteCommand
+  missing_metadata: []
+  notes: Console browser adapter; PostForm request handler, same processor as serial task
+- name: system.status.wifi
+  type: status
+  registry_api_path: /api/wifi
+  registry_cpp_enum: null
+  registry_cpp_file: null
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp - webRegisterRoute("/api/wifi", kGet, handleWifiGet)
+  - include/api_status.h - void handleWifiGet(WebRequest& req) declaration
+  - src/web/api_status.cpp - void handleWifiGet(WebRequest& req) definition; calls buildWifiJson()
+  - include/api_status.h - captureWifiStatusSnapshot(WifiStatusSnapshot* out) declaration
+  - src/web/api_status_serializers.cpp - captureWifiStatusSnapshot() definition; formatWifiJson()'s JSON keys
+  executor_or_core: captureWifiStatusSnapshot
+  missing_metadata: []
+  notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0036).'
+- name: wifi.config.settings
+  type: config
+  registry_api_path: /api/wifi
+  registry_cpp_enum: null
+  registry_cpp_file: include/config_store.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - internal
+  registry_marcduino_cmd: null
+  anchor_kind: config
+  evidence:
+  - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost)
+  - include/config_cache.h:35 - configCacheReadWifi(WifiConfig*) read path, the same one handleWifiPost() seeds its working copy from
+  - include/api_wifi_apply.h:30 - wifiApply(const ConfigParamSource&, WifiConfig*, WifiApplyResult*) apply core (ADR 0011)
+  - src/web/api_wifi_apply.cpp:152 - wifiCommitApplied() Commit Step (ADR 0036): configSaveWifi() to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast
+  - src/config_serializer.cpp:628 - configSerializeWifi() writes wifi_prov/wifi_mode/wifi_sta_ssid/wifi_sta_pw/wifi_ap_ssid/wifi_ap_pw
+  executor_or_core: wifiApply
+  missing_metadata: []
+  notes: 'Grouped config write (#227). The registry names wifiApply as the executor because that
+    is the validating core; the Console and handleWifiPost() both then call its Commit Step sibling
+    wifiCommitApplied() in the same file. Domain is wifi, not system - the canonical name is fixed
+    by docs/console-protocol.md s.1 - but the row lives here because there is no wifi.yaml and the
+    surface is the system/network one. The two password params are registry write_excluded: the
+    Console refuses any password-valued key with secret-not-settable before wifiApply() sees it,
+    while POST /api/wifi keeps setting them for the provisioning page.'

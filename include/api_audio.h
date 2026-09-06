@@ -28,7 +28,47 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "api_audio_category_range_apply.h"
+#include "api_audio_mood_map_apply.h"
+#include "api_audio_tracks_apply.h"
+#include "audio_rx_status.h"
+#include "robot_state.h"  // CommandSource
 #include "web_request.h"
+
+// playState -> label, verbatim what formatAudioStatusJson() puts in its
+// "play_state" JSON key. Factored out so the Console executor for
+// sound.status.current (src/console/console_module.cpp) renders the same
+// string instead of a second hand-typed switch (ADR 0036).
+// Pure function - no globals, no Arduino, no FreeRTOS.
+const char* audioPlayStateLabel(uint8_t playState);
+
+// device -> label, verbatim what formatAudioStatusJson() puts in its
+// "device" JSON key. Same sharing rationale as audioPlayStateLabel() above.
+// Pure function - no globals, no Arduino, no FreeRTOS.
+const char* audioDeviceLabel(uint8_t device);
+
+// GET /api/audio's fields, verbatim (formatAudioStatusJson's JSON keys are
+// driver/capabilities/link_ok/active/play_state/device/total_tracks/
+// current_track/rx_status/rx_detail; driverName/capabilities/rx_status/
+// rx_detail are derived from this snapshot's fields via audioGetDriverName(),
+// audioGetCapabilities(), audioRxStatusToken()/audioRxStatusDetail(), all
+// already shared between handleAudioGet() and the Console executor).
+struct AudioStatusSnapshot {
+    bool linkOk;
+    bool active;
+    uint8_t playState;
+    uint8_t device;
+    uint16_t totalTracks;
+    uint16_t currentTrack;
+    AudioRxStatus rxStatus;
+};
+
+// Capture the audio status snapshot the same way handleAudioGet() used to
+// gather it inline: RobotState fields under robotStateMux (ADR 0036 "Zone
+// Snapshot capture"). Shared with the Console module's sound.status.current
+// executor so REST and Console read state through the same function.
+// thread-safe: yes (owns its own short critical section)
+void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 
 // Format JSON response for audio status endpoint.
 // Pure function - no globals, no Arduino, no FreeRTOS.
@@ -50,6 +90,47 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
                            uint8_t playState, uint8_t device, uint16_t totalTracks,
                            uint16_t currentTrack, const char* rxStatus,
                            const char* rxDetail);
+
+// Commit Steps (ADR 0036 criterion 1): the handler-owned post-apply side
+// effects for each of the three audio write Apply Cores, extracted so a
+// non-REST caller (the Controller Console) reaches the identical
+// NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
+// Both callers exist now: the REST handlers below, and the Console - its
+// sound.action.set-mood-map / set-category-range executors
+// (include/console_direct_action_sound.h) and its sound.config.* rows
+// (src/console/console_module.cpp), which reach these through the same
+// per-key or grouped shapes REST uses ("key=<name>&track=N", paired lo/hi, a
+// four-value mood map).
+struct AudioMoodMapCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResult& result);
+
+struct AudioTracksCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
+                                                   const AudioTracksApplyResult& result);
+
+struct AudioCategoryRangeCommitOutcome {
+    bool ok = false;  // false -> caller reports "NVS write failed"
+};
+AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
+    ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result);
+
+// Commit Step (ADR 0036 criterion 1) for sound.action.set-volume: the same
+// audioQueueSetVolume() + persist-as-default-on-reboot sequence
+// handleAudioPost()'s action=volume branch used to run inline, extracted so
+// the Console reaches the identical sequence instead of a second copy.
+// `queued` false means the live apply never reached AudioTask (the caller
+// reports "audio command queue full"); `saved` is only meaningful when
+// `queued` is true (the caller reports "volume applied but NVS save
+// failed").
+struct AudioSetVolumeCommitOutcome {
+    bool queued = false;
+    bool saved = false;
+};
+AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);

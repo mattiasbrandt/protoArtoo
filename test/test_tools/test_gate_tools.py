@@ -206,5 +206,61 @@ class MutationVerdicts(unittest.TestCase):
         )
 
 
+class GeneratedDataExclusion(unittest.TestCase):
+    """data/ holds two unrelated things and the web suite can only answer for one.
+
+    The suite's model is vm.runInNewContext(readFileSync("data/<module>.js"))
+    plus tests that read .html; data/console_help.txt is generated text the
+    FIRMWARE reads from LittleFS, which no JS-behaviour test can turn red on.
+    Before this exclusion, regenerating the help file produced a FAIL that no
+    honest test could clear, and #221 had to be waived for it.
+    """
+
+    def test_generated_help_text_is_not_web_production(self):
+        out = slice_verify.production_changes(["data/console_help.txt"])
+        self.assertEqual(out["web"], [])
+
+    def test_browser_js_is_still_web_production(self):
+        out = slice_verify.production_changes(["data/app.js"])
+        self.assertEqual(out["web"], ["data/app.js"])
+
+    def test_html_is_still_web_production(self):
+        # The web suite does read .html - narrowing this rule to *.js would
+        # have dropped a real coverage requirement to fix a nuisance.
+        out = slice_verify.production_changes(["data/index.html"])
+        self.assertEqual(out["web"], ["data/index.html"])
+
+    def test_version_stamps_stay_excluded(self):
+        out = slice_verify.production_changes(["data/fw-version.json"])
+        self.assertEqual(out["web"], [])
+
+
+class WaiverIsVisibleInTheBlock(unittest.TestCase):
+    """A consumed waiver must leave a note the renderer prints.
+
+    AGENTS.md: an unsanctioned waiver ACK in a worker's block is an automatic
+    reject. That rule needs something to detect. zero_delta_ok() has always
+    produced the ACK note, but the renderer printed notes only for FAILING
+    checks, so a waived run rendered identically to one that never needed a
+    waiver.
+    """
+
+    def test_waived_zero_delta_passes_with_an_ack_note(self):
+        ok, notes = slice_verify.zero_delta_ok(0, ["data/app.js"], True, "web")
+        self.assertTrue(ok)
+        self.assertTrue(notes, "a consumed waiver must carry an ACK note")
+        self.assertIn("ACK", notes[0])
+
+    def test_unwaived_zero_delta_fails(self):
+        ok, notes = slice_verify.zero_delta_ok(0, ["data/app.js"], False, "web")
+        self.assertFalse(ok)
+        self.assertTrue(notes)
+
+    def test_no_production_change_needs_no_waiver_and_no_note(self):
+        ok, notes = slice_verify.zero_delta_ok(0, [], False, "web")
+        self.assertTrue(ok)
+        self.assertEqual(notes, [])
+
+
 if __name__ == "__main__":
     unittest.main()

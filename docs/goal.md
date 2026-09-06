@@ -167,6 +167,8 @@ Core references:
 - [docs/topology.md](topology.md)
 - [docs/pin_map.md](pin_map.md)
 - [docs/api.md](api.md)
+- [docs/console.md](console.md)
+- [docs/console-protocol.md](console-protocol.md)
 - [docs/failsafe.md](failsafe.md)
 - [docs/commands.md](commands.md)
 

@@ -52,6 +52,28 @@ void handleIdentityGet(WebRequest& req) {
     sendIdentityResponse(req, snap.system);
 }
 
+// See include/api_identity.h for the full contract.
+IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
+    IdentitySetCommitOutcome outcome;
+    configCacheApply(*working);
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        return outcome;
+    }
+
+    if (!configSaveSystem(prefs, working->system)) {
+        prefs.end();
+        return outcome;
+    }
+    prefs.end();
+
+    PA_LOG_INFO(TAG, "[IDENTITY] name=%s mdnsUseName=%s", working->system.droid_name,
+                working->system.mdns_use_name ? "true" : "false");
+    outcome.persisted = true;
+    return outcome;
+}
+
 void handleIdentityPost(WebRequest& req) {
     // Oversized relative to DROID_NAME_MAX_LEN so an over-long submission
     // still reaches normalizeDroidName() as an over-long string and is
@@ -81,22 +103,12 @@ void handleIdentityPost(WebRequest& req) {
     configCacheRead(&working);
     snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
     working.system.mdns_use_name = mdnsUseName;
-    configCacheApply(working);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist identity");
         return;
     }
 
-    if (!configSaveSystem(prefs, working.system)) {
-        prefs.end();
-        webSendJsonError(req, 500, "failed to persist identity");
-        return;
-    }
-    prefs.end();
-
-    PA_LOG_INFO(TAG, "[WEB] POST /api/identity name=%s mdnsUseName=%s",
-                working.system.droid_name, working.system.mdns_use_name ? "true" : "false");
     sendIdentityResponse(req, working.system);
 }

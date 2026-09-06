@@ -711,6 +711,41 @@ void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
     TEST_ASSERT_TRUE(active.enableSound);
 }
 
+// Component Toggles are staged at reboot (ADR 0027): the Active snapshot
+// must keep answering the boot-time value even after a later Console/REST
+// write changes the saved config_cache value underneath it - this is the
+// exact "saved vs active" divergence the Console's read path (#226) reports.
+void test_active_component_toggles_survive_a_later_saved_write() {
+    ConfigSnapshot boot = {};
+    boot.system.enable_arm1 = true;
+    boot.system.enable_arm2 = false;
+    boot.system.enable_audio = true;
+    boot.system.enable_protor2link = false;
+    configCacheSetActiveComponentToggles(boot.system);
+
+    // A later write changes the saved cache without a reboot in between.
+    ConfigSnapshot saved = boot;
+    saved.system.enable_arm1 = false;
+    saved.system.enable_arm2 = true;
+    saved.system.enable_audio = false;
+    saved.system.enable_protor2link = true;
+    configCacheApply(saved);
+
+    // Active still reflects what actually booted...
+    TEST_ASSERT_TRUE(configCacheReadActiveComponentToggle(0));   // enable_arm1
+    TEST_ASSERT_FALSE(configCacheReadActiveComponentToggle(1));  // enable_arm2
+    TEST_ASSERT_TRUE(configCacheReadActiveComponentToggle(13));  // enable_audio
+    TEST_ASSERT_FALSE(configCacheReadActiveComponentToggle(14)); // enable_protor2link
+
+    // ...while the saved cache carries the new, not-yet-rebooted values.
+    ConfigSnapshot readBack = {};
+    configCacheRead(&readBack);
+    TEST_ASSERT_FALSE(readBack.system.enable_arm1);
+    TEST_ASSERT_TRUE(readBack.system.enable_arm2);
+    TEST_ASSERT_FALSE(readBack.system.enable_audio);
+    TEST_ASSERT_TRUE(readBack.system.enable_protor2link);
+}
+
 // Test: full save path — config cache -> configSave -> configLoad
 // Verifies that the complete chain used by saveConfigToNvs() preserves values correctly.
 void test_configCacheRead_save_round_trip() {
@@ -917,6 +952,57 @@ void test_configCacheApply_does_not_touch_runtime_fields() {
     // But the non-cfg fields should NOT have changed
     TEST_ASSERT_EQUAL_INT(123, robotState.driveOutputSpeed);
     TEST_ASSERT_EQUAL_INT(456, robotState.driveOutputSteer);
+}
+
+// The Commanded Mode setters sync the config cache BY FIELD (ADR 0011's
+// 2026-09-04 amendment). commandedSetStationary() is the Core 1 caller - the
+// SBUS drive path calls it once per frame while driving - and it used to read
+// all 944 B of ConfigSnapshot out of the cache, set one bool, and write all
+// 944 B back through configCacheApply().
+//
+// Put the round trip back (configCacheRead / set / configCacheApply) and both
+// assertions below go red: the RC mapping is marked dirty for a field the RC
+// processor config does not contain, and any cache write that happened between
+// this caller's read and its write-back is reverted.
+void test_configCacheSetStationary_writes_only_that_field() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    seeded.drive.speedLimitMax = 321;
+    seeded.audio.audioVolume = 17;
+    seeded.system.logLevel = 2;
+    seeded.system.stationary = false;
+    seeded.system.enable_arm1 = true;
+    configCacheApply(seeded);
+
+    configCacheSetStationary(true);
+
+    ConfigSnapshot expected = seeded;
+    expected.system.stationary = true;
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_TRUE_MESSAGE(after.system.stationary, "the field the setter owns did not change");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(&expected, &after, sizeof(ConfigSnapshot)),
+                                  "the by-field setter touched something other than stationary");
+}
+
+void test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    configCacheApply(seeded);
+
+    // configCacheApply() above legitimately raised the flag; RcInputTask
+    // clears it after a rebuild, and this is that cleared state.
+    robotState.rcConfigDirty = false;
+
+    configCacheSetStationary(true);
+    TEST_ASSERT_FALSE_MESSAGE(robotState.rcConfigDirty,
+                              "a stationary toggle marked the RC mapping dirty - stationary is not "
+                              "in the RC processor config");
+
+    configCacheSetStationary(false);
+    TEST_ASSERT_FALSE_MESSAGE(robotState.rcConfigDirty,
+                              "a stationary toggle marked the RC mapping dirty");
 }
 
 void test_config_domain_load_functions_are_independently_callable() {
@@ -1303,9 +1389,12 @@ int main() {
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);
     RUN_TEST(test_configCacheRead_captures_all_categories);
     RUN_TEST(test_active_rc_config_survives_saved_toggle_and_mode_changes);
+    RUN_TEST(test_active_component_toggles_survive_a_later_saved_write);
     RUN_TEST(test_configCacheRead_save_round_trip);
     RUN_TEST(test_configCacheApply_applies_all_categories);
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
+    RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
+    RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);

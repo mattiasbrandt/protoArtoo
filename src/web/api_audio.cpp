@@ -395,6 +395,25 @@ void handleAudioMoodMapGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
+// See include/api_audio.h for the full contract.
+AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResult& result) {
+    AudioMoodMapCommitOutcome outcome;
+
+    Preferences prefs;
+    if (prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.ok = configUpdateAudioMoodMasks(prefs, result.quiet, result.mid, result.full,
+                                                 result.awakeplus);
+        prefs.end();
+    }
+
+    if (outcome.ok) {
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/mood-map q=%u m=%u f=%u a=%u",
+                    (unsigned)result.quiet, (unsigned)result.mid, (unsigned)result.full,
+                    (unsigned)result.awakeplus);
+    }
+    return outcome;
+}
+
 void handleAudioMoodMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
@@ -406,22 +425,12 @@ void handleAudioMoodMapPost(WebRequest& req) {
         return;
     }
 
-    Preferences prefs;
-    bool ok = false;
-    if (prefs.begin(NVS_NAMESPACE, false)) {
-        ok = configUpdateAudioMoodMasks(prefs, result.quiet, result.mid, result.full,
-                                        result.awakeplus);
-        prefs.end();
-    }
-
-    if (!ok) {
+    AudioMoodMapCommitOutcome commit = audioMoodMapCommitApplied(result);
+    if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
         return;
     }
 
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/mood-map q=%u m=%u f=%u a=%u",
-                (unsigned)result.quiet, (unsigned)result.mid, (unsigned)result.full,
-                (unsigned)result.awakeplus);
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -466,18 +475,15 @@ void handleAudioTracksGet(WebRequest& req) {
                  s_tracksIncludeBindings ? "true" : "false");
 }
 
-void handleAudioTracksPost(WebRequest& req) {
-    ConfigParamSource params = webParamSource(req);
-
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    static AudioTracksApplyResult result;
-    audioTracksApply(params, audioCatalogSupported(), &snap, &result);
-    if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
-        return;
-    }
+// See include/api_audio.h for the full contract. `snap` must already carry
+// audioTracksApply()'s in-place mutation (the shell reads the cache, calls
+// the core, then this). audioQueueRefreshBindings() keeps SRC_WEB_API
+// hardcoded, matching today's sole REST caller - the day a second caller
+// (e.g. the Console) reaches this, that becomes a `source` parameter, not
+// invented speculatively here.
+AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
+                                                   const AudioTracksApplyResult& result) {
+    AudioTracksCommitOutcome outcome;
 
     const char* key = result.key;
     const uint16_t t = result.track;
@@ -488,12 +494,12 @@ void handleAudioTracksPost(WebRequest& req) {
     const char* chirpBindingKey =
         result.chirpBindingKey[0] != '\0' ? result.chirpBindingKey : nullptr;
 
-    configCacheApply(snap);
+    configCacheApply(*snap);
 
     Preferences prefs;
     bool ok = false;
     if (prefs.begin(NVS_NAMESPACE, false)) {
-        bool wroteTrack = configSaveAudio(prefs, snap.audio);
+        bool wroteTrack = configSaveAudio(prefs, snap->audio);
         bool wroteChirp = true;
 
         if (wroteTrack && chirpBindingKey != nullptr) {
@@ -533,29 +539,41 @@ void handleAudioTracksPost(WebRequest& req) {
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u", key, (unsigned)t);
     }
 
-    if (ok) {
-        if (chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
-            PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
-        }
-        req.send(200, "application/json", "{\"ok\":true}");
-    } else {
-        webSendJsonError(req, 500, "NVS write failed");
+    if (ok && chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
+        PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
     }
+
+    outcome.ok = ok;
+    return outcome;
 }
 
-// Atomic update for one category lo/hi pair to avoid partial two-request saves.
-void handleAudioCategoryRangePost(WebRequest& req) {
+void handleAudioTracksPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     ConfigSnapshot snap;
     configCacheRead(&snap);
 
-    static AudioCategoryRangeApplyResult result;
-    audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
+    static AudioTracksApplyResult result;
+    audioTracksApply(params, audioCatalogSupported(), &snap, &result);
     if (result.error.hasError) {
         sendApplyError(req, result.error.message, result.error.notFound);
         return;
     }
+
+    AudioTracksCommitOutcome commit = audioTracksCommitApplied(&snap, result);
+    if (!commit.ok) {
+        webSendJsonError(req, 500, "NVS write failed");
+        return;
+    }
+
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// See include/api_audio.h for the full contract. Same SRC_WEB_API note as
+// audioTracksCommitApplied() above applies to the binding-refresh enqueue.
+AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
+    ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result) {
+    AudioCategoryRangeCommitOutcome outcome;
 
     const char* loKey = result.loKey;
     const char* hiKey = result.hiKey;
@@ -569,12 +587,12 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     const char categoryPage = result.categoryPage;
     const char* categoryNvsKey = result.categoryNvsKey;
 
-    configCacheApply(snap);
+    configCacheApply(*snap);
 
     Preferences prefs;
     bool ok = false;
     if (prefs.begin(NVS_NAMESPACE, false)) {
-        bool wroteConfig = configSaveAudio(prefs, snap.audio);
+        bool wroteConfig = configSaveAudio(prefs, snap->audio);
         bool wroteBinding = true;
         if (wroteConfig && hasBankedParams) {
             uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
@@ -612,8 +630,8 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     }
 
     if (!ok) {
-        webSendJsonError(req, 500, "NVS write failed");
-        return;
+        outcome.ok = false;
+        return outcome;
     }
 
     if (hasBankedParams) {
@@ -631,6 +649,31 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     if ((hasBankedParams || clearBinding) && !audioQueueRefreshBindings(SRC_WEB_API)) {
         PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
     }
+
+    outcome.ok = true;
+    return outcome;
+}
+
+// Atomic update for one category lo/hi pair to avoid partial two-request saves.
+void handleAudioCategoryRangePost(WebRequest& req) {
+    ConfigParamSource params = webParamSource(req);
+
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+
+    static AudioCategoryRangeApplyResult result;
+    audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
+    if (result.error.hasError) {
+        sendApplyError(req, result.error.message, result.error.notFound);
+        return;
+    }
+
+    AudioCategoryRangeCommitOutcome commit = audioCategoryRangeCommitApplied(&snap, result);
+    if (!commit.ok) {
+        webSendJsonError(req, 500, "NVS write failed");
+        return;
+    }
+
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -667,6 +710,26 @@ void handleMoodPost(WebRequest& req) {
     requestStatusBroadcastNow();
     PA_LOG_INFO(TAG, "[MOOD] POST /api/mood mood=%d", (int)mood);
     req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// See include/api_audio.h for the full contract.
+AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source) {
+    AudioSetVolumeCommitOutcome outcome;
+    if (!audioQueueSetVolume(level, source)) {
+        return outcome;  // queued=false
+    }
+    outcome.queued = true;
+
+    // Persist as the new default volume so it survives reboot.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.audio.audioVolume = level;
+    configCacheApply(snap);
+    outcome.saved = saveConfigToNvs();
+
+    PA_LOG_INFO(TAG, "[AUDIO] volume level=%d saved=%s", (int)level,
+                outcome.saved ? "true" : "false");
+    return outcome;
 }
 
 // -----------------------------------------------------------------------------
@@ -792,27 +855,35 @@ void handleAudioPlayBankedPost(WebRequest& req) {
 // Polling during playback may interfere with some module RX paths; see
 // driver capabilities for safe-polling flag.
 void handleAudioGet(WebRequest& req) {
-    bool linkOk;
-    uint8_t playState, device;
-    uint16_t totalTracks, currentTrack;
-    bool active;
-    AudioRxStatus rxStatus;
-    taskENTER_CRITICAL(&robotStateMux);
-    linkOk = robotState.audio_module_link_ok;
-    playState = robotState.audio_module_play_state;
-    device = robotState.audio_module_device;
-    totalTracks = robotState.audio_module_total_tracks;
-    currentTrack = robotState.audio_module_current_track;
-    active = robotState.audioActive;
-    rxStatus = robotState.audio_module_rx_status;
-    taskEXIT_CRITICAL(&robotStateMux);
+    AudioStatusSnapshot snap = {};
+    captureAudioStatusSnapshot(&snap);
 
     uint8_t caps = audioGetCapabilities();
     char body[256];
-    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
-                          playState, device, totalTracks, currentTrack,
-                          audioRxStatusToken(rxStatus), audioRxStatusDetail(rxStatus));
+    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active,
+                          snap.playState, snap.device, snap.totalTracks, snap.currentTrack,
+                          audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
     req.send(200, "application/json", body);
+}
+
+// The gather step behind handleAudioGet()'s /api/audio response, shared with
+// the Console module's sound.status.current executor (ADR 0036) so both read
+// RobotState through the same function.
+void captureAudioStatusSnapshot(AudioStatusSnapshot* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = AudioStatusSnapshot{};
+
+    taskENTER_CRITICAL(&robotStateMux);
+    out->linkOk = robotState.audio_module_link_ok;
+    out->playState = robotState.audio_module_play_state;
+    out->device = robotState.audio_module_device;
+    out->totalTracks = robotState.audio_module_total_tracks;
+    out->currentTrack = robotState.audio_module_current_track;
+    out->active = robotState.audioActive;
+    out->rxStatus = robotState.audio_module_rx_status;
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 void handleAudioPost(WebRequest& req) {
@@ -873,21 +944,15 @@ void handleAudioPost(WebRequest& req) {
             return;
         }
 
-        // Apply immediately in AudioTask runtime
-        if (!audioQueueSetVolume((uint8_t)level, SRC_WEB_API)) {
+        // Commit Step (ADR 0036 criterion 1, include/api_audio.h): the same
+        // apply-then-persist sequence the Console's sound.action.set-volume
+        // executor now shares.
+        AudioSetVolumeCommitOutcome commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);
+        if (!commit.queued) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
         }
-        // Persist as the new default volume so it survives reboot
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        snap.audio.audioVolume = (uint8_t)level;
-        configCacheApply(snap);
-        bool saved = saveConfigToNvs();
-
-        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d saved=%s", (int)level,
-                    saved ? "true" : "false");
-        if (!saved) {
+        if (!commit.saved) {
             webSendJsonError(req, 500, "volume applied but NVS save failed");
             return;
         }

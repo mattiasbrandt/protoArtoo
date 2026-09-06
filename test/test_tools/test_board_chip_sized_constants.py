@@ -19,6 +19,7 @@ Three things are asserted, and the third is the one that matters:
    too, which is the failure this ticket is most exposed to.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -60,11 +61,17 @@ EXPECTED_BY_BOARD = {
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
         # Pre-#256 literals, unchanged. WebEvents is 6144 here even though the
-        # #248 rule on the profiler chain (5888) would raise it -- see the
-        # DomeLinkTask call in include/config.h.
+        # #248 rule on its 5904 B chain would raise it -- the tight-heap decline
+        # recorded beside the constant in include/config.h.
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 6144,
+        # Raised from 5120 by #226 - the only stack here whose under-size was a
+        # reproduced device fault rather than a walk - then re-derived by #269
+        # once the config-write path stopped carrying three ConfigSnapshot
+        # copies, and again at #271 from a walk on the merged tree:
+        # 7360 * 1.25 = 9200 -> 9216.
+        "console_stack": 9216,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -88,25 +95,52 @@ EXPECTED_BY_BOARD = {
         "rc_input_stack": 7168,
         "audio_stack": 6144,
         "web_events_stack": 7680,
+        # ConsoleTask by the same rule (#226, re-derived by #269 and again at
+        # #271, after #226 wave 10 put a deeper branch on the chain):
+        # 7984 * 1.25 = 9980 -> 10240. The panic the original raise fixed was
+        # captured on this board.
+        "console_stack": 10240,
     },
 }
 
-# Worst-case static chains from tools/stack_usage_report.py, restated here so a
-# stack constant that no longer covers its own measurement fails independently
-# of the EXPECTED pin. ESP32-P4 figures are the linked firebeetle2 image
-# (product and profiler match). ESP32 WebEvents/AudioTask are the profiler
-# image: the product WebEvents body is emitted as data (.xt.prop) and the
-# profiler's AudioTask chain is the deeper of the two.
-P4_STACK_CHAINS = {
-    "rc_input_stack": 5376,
-    "audio_stack": 4848,
-    "web_events_stack": 5808,
+# Worst-case static chains, read from the recipe table rather than restated.
+#
+# The EXPECTED_BY_BOARD values above are deliberately written out by hand, so
+# that a copy-paste converging the two boards cannot also update the
+# expectation. The chains are the opposite case: since #271 they have a single
+# source (tools/task_stack_recipes.json, checked against include/config.h by
+# test_task_stack_recipes.py and re-walked from a linked image by
+# tools/check_task_stack_chains.py), and a second hand-written copy here would
+# be exactly the drift that ticket exists to remove -- one of these four was
+# already 176 B stale against the merged tree when it was written out.
+#
+# The ConsoleTask chain is the stitched figure on both chips: onCliCommand's
+# total plus consoleTask's and embeddedCliProcess's own frames, because
+# embedded-cli reaches the command callback through cli->onCommand and the
+# walker does not follow indirect calls. AudioTask's artoo-esp32 chain is the
+# profiler image, the deeper of the two. Both are recorded per arm in the
+# recipe table.
+_RECIPES = json.loads(
+    (REPO_ROOT / "tools" / "task_stack_recipes.json").read_text(encoding="utf-8")
+)
+_CHAIN_BY_KEY = {
+    "rc_input_stack": "RCInputTask",
+    "audio_stack": "AudioTask",
+    "web_events_stack": "WebEvents",
+    "console_stack": "Console",
 }
-ESP32_STACK_CHAINS = {
-    "rc_input_stack": 5248,
-    "audio_stack": 4672,
-    "web_events_stack": 5888,
-}
+
+
+def _chains_for(chip):
+    by_task = {entry["task"]: entry for entry in _RECIPES["tasks"]}
+    return {
+        key: by_task[task]["chips"][chip]["chain_bytes"]
+        for key, task in _CHAIN_BY_KEY.items()
+    }
+
+
+P4_STACK_CHAINS = _chains_for("esp32p4")
+ESP32_STACK_CHAINS = _chains_for("esp32")
 
 
 def stack_size_for_chain(chain_bytes):
@@ -161,7 +195,7 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "#include <cstdio>",
                 "int main() {",
                 '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu '
-                '%u %u %u\\n",',
+                '%u %u %u %u\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
                 "        (int)SEQ_EVID_CMD_LEN, (int)SEQ_EVID_TX_CAP,",
                 "        (int)SEQ_EVID_CLEANUP_CAP, sizeof(SeqRunEvidence),",
@@ -170,7 +204,8 @@ class BoardChipSizedConstants(unittest.TestCase):
                 "        LOG_RING_MAX_LINES,",
                 "        (unsigned)RC_INPUT_TASK_STACK_BYTES,",
                 "        (unsigned)AUDIO_TASK_STACK_BYTES,",
-                "        (unsigned)WEB_EVENTS_TASK_STACK_BYTES);",
+                "        (unsigned)WEB_EVENTS_TASK_STACK_BYTES,",
+                "        (unsigned)CONSOLE_TASK_STACK_BYTES);",
                 "    return 0;",
                 "}",
                 "",
@@ -201,7 +236,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 15, run_result.stdout)
+        self.assertEqual(len(fields), 16, run_result.stdout)
         values = {
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
@@ -218,6 +253,7 @@ class BoardChipSizedConstants(unittest.TestCase):
             "rc_input_stack": fields[12],
             "audio_stack": fields[13],
             "web_events_stack": fields[14],
+            "console_stack": fields[15],
         }
         self._cache[board_macro] = values
         return values
@@ -401,6 +437,8 @@ class BoardChipSizedConstants(unittest.TestCase):
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         firebeetle = self._values("PA_BOARD_FIREBEETLE2")
         self.assertNotEqual(artoo, firebeetle)
+        # console_stack is deliberately absent: see
+        # test_console_stack_is_derived_per_chip_even_where_they_coincide.
         for key in ("seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
                     "evid_record_bytes", "log_ring_max_lines",
@@ -410,6 +448,37 @@ class BoardChipSizedConstants(unittest.TestCase):
                     firebeetle[key], artoo[key],
                     f"{key}: the ESP32-P4 must not inherit artoo-esp32's sizing",
                 )
+
+    def test_console_stack_is_derived_per_chip_even_where_they_coincide(self):
+        """The rule is what each arm must follow, not "P4 is the bigger one".
+
+        The Console chains differ per chip (ESP32_STACK_CHAINS vs
+        P4_STACK_CHAINS). Between #269 and #226 wave 10 they briefly rounded to
+        the same 512-byte step, and a strictly-greater assertion would have read
+        that coincidence as the P4 arm inheriting artoo's number - the opposite
+        of what happened. So this asserts the thing that actually matters in
+        either case: each arm is EXACTLY what the #248 rule gives for its OWN
+        measured chain. An arm copied from the other chip fails here the moment
+        the chains diverge, and a hand-edited value that clears its chain but
+        not the rule fails immediately.
+        """
+        artoo = self._values("PA_BOARD_ARTOO_ESP32")
+        firebeetle = self._values("PA_BOARD_FIREBEETLE2")
+        self.assertEqual(
+            stack_size_for_chain(ESP32_STACK_CHAINS["console_stack"]),
+            artoo["console_stack"],
+            "the artoo-esp32 Console stack does not follow the #248 rule for its chain",
+        )
+        self.assertEqual(
+            stack_size_for_chain(P4_STACK_CHAINS["console_stack"]),
+            firebeetle["console_stack"],
+            "the ESP32-P4 Console stack does not follow the #248 rule for its chain",
+        )
+        self.assertNotEqual(
+            ESP32_STACK_CHAINS["console_stack"],
+            P4_STACK_CHAINS["console_stack"],
+            "the two chains became identical - one of them was copied, not measured",
+        )
 
     def test_every_chip_arm_declares_every_constant(self):
         """A third chip target cannot inherit one of these by omission.

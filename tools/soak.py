@@ -194,7 +194,8 @@ ESP_RESET_REASON_NAMES = {
 # themselves, evidence of a panic or watchdog reset.
 BAD_RESET_REASONS = {4, 5, 6, 7, 15}
 
-# src/reset_reason.cpp -- resetReasonName()'s switch, read in full. The
+# include/reset_reason.h -- resetReasonName()'s switch, read in full (#225:
+# moved here from src/reset_reason.cpp, header-only). The
 # shipping image publishes this NAME, not the enum value
 # (src/web/web_server.cpp:401), and the mapping is deliberately not a
 # bijection: every reason the switch does not case on (ESP_RST_CPU_LOCKUP,
@@ -2209,7 +2210,7 @@ class ProductImageStatusSchema(StatusSchema):
             return ResetReasonAssessment(
                 display=name, crash_shaped=None,
                 caveat=(
-                    f"resetReasonName() (src/reset_reason.cpp) reports {name!r}, which does not "
+                    f"resetReasonName() (include/reset_reason.h) reports {name!r}, which does not "
                     "identify one reset: 'OTHER' is its default arm and collapses "
                     "ESP_RST_CPU_LOCKUP, ESP_RST_PWR_GLITCH, ESP_RST_USB, ESP_RST_JTAG and "
                     "ESP_RST_EFUSE into one name, and 'UNKNOWN' is esp_reset_reason() itself "
@@ -2219,7 +2220,7 @@ class ProductImageStatusSchema(StatusSchema):
         return ResetReasonAssessment(
             display=name, crash_shaped=None,
             caveat=(
-                f"resetReasonName() (src/reset_reason.cpp) does not produce {name!r} -- this "
+                f"resetReasonName() (include/reset_reason.h) does not produce {name!r} -- this "
                 f"payload is not the {self.name} mapping this schema was read from"
             ),
         )

@@ -11,6 +11,7 @@
 #include "../../include/api_audio.h"
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
+#include "../../include/api_console.h"
 #include "../../include/api_dome.h"
 #include "../../include/api_drive.h"
 #include "../../include/api_estop.h"
@@ -38,6 +39,12 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
     webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
+
+    // Console: the browser adapter for the Controller Console (ADR 0036).
+    // Accepts operation lines from the Live Logs command box and returns
+    // Console Records as JSON, driving the same operation processor the serial
+    // task uses.
+    webRegisterRoute("/api/console", WebMethod::kPost, handleConsolePost);
 
     // The live update stream. Registered here as a seam route handler like any
     // other endpoint, using the per-request upgrade point the seam provides.
