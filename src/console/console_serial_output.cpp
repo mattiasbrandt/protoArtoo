@@ -21,6 +21,19 @@
 #include <freertos/task.h>
 
 #include "logging.h"
+#include "console_record.h"  // CONSOLE_RECORD_LINE_MAX - one of the two line
+                              // lengths the framed emitter below must cover;
+                              // asserted, not assumed (see the static_asserts)
+
+// The framed emitter truncates at CONSOLE_SERIAL_FRAME_LINE_MAX, so that cap
+// must cover BOTH kinds of line that reach it. Raising either source cap
+// without raising it fails here rather than silently clipping a line on the
+// wire, which is how a record line acquired a second, invisible ceiling
+// (#282).
+static_assert(CONSOLE_SERIAL_FRAME_LINE_MAX >= CONSOLE_RECORD_LINE_MAX,
+              "a Console Record line would be truncated by the framed emitter");
+static_assert(CONSOLE_SERIAL_FRAME_LINE_MAX >= PA_LOG_SERIAL_LINE_MAX,
+              "a serial log line would be truncated by the framed emitter");
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // The USB-Serial-JTAG register block, read (never written) by the #275 probe
@@ -366,13 +379,20 @@ static bool emitFramedLineCounted(const char* line, size_t len, bool waitForRoom
     // with "\r\n" (lib/embedded-cli/src/embedded_cli.c:235's lineBreak), so
     // this is what makes records and logs agree on the one wire they share.
     // The buffer is one byte longer than the content cap for the same reason:
-    // the "truncate to PA_LOG_SERIAL_LINE_MAX - 1" content rule is unchanged,
-    // only the terminator grew.
+    // the truncate-to-the-cap content rule is unchanged, only the terminator
+    // grew.
+    //
+    // The cap is CONSOLE_SERIAL_FRAME_LINE_MAX, not the log cap: a record line
+    // is the longer of the two kinds of line that arrive here, and capping
+    // both at the log line's length put an invisible second ceiling under the
+    // record buffer (#282). A log line is still capped at
+    // PA_LOG_SERIAL_LINE_MAX - 1 where it is formatted, so nothing about the
+    // log path changes.
     size_t lineLen = len;
-    if (lineLen > PA_LOG_SERIAL_LINE_MAX - 1) {
-        lineLen = PA_LOG_SERIAL_LINE_MAX - 1;
+    if (lineLen > CONSOLE_SERIAL_FRAME_LINE_MAX - 1) {
+        lineLen = CONSOLE_SERIAL_FRAME_LINE_MAX - 1;
     }
-    char buf[PA_LOG_SERIAL_LINE_MAX + 1];
+    char buf[CONSOLE_SERIAL_FRAME_LINE_MAX + 1];
     memcpy(buf, line, lineLen);
     buf[lineLen] = '\r';
     buf[lineLen + 1] = '\n';

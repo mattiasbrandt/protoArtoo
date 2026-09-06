@@ -53,8 +53,9 @@ typedef struct EmbeddedCli EmbeddedCli;
 // 100 ms, read from ~/.platformio-p4/.../cores/esp32/HWCDC.cpp, not guessed:
 //  - HWCDC's TX ring is 256 bytes (HWCDC::begin()'s setTxBufferSize(256)) and
 //    the host drains at most 64 B per 1 ms USB frame, so a fully-occupied
-//    ring recovers room for the longest record (CONSOLE_RECORD_LINE_MAX + 2)
-//    in ~4-5 ms once the host is actually reading. 100 ms leaves ~20x
+//    ring recovers its whole 256 bytes -- the most any reservation can ask
+//    for, CONSOLE_SERIAL_TX_ROOM_MAX below -- in ~4-5 ms once the host is
+//    actually reading. 100 ms leaves ~20x
 //    headroom for scheduling jitter and Core 0 contention with the web
 //    server/OTA.
 //  - It sits ~30x below WATCHDOG_TIMEOUT_S's 3 s TWDT window
@@ -198,6 +199,23 @@ static constexpr size_t CONSOLE_SERIAL_TX_ROOM_MAX = 128;
 // consoleSerialEmitLine falls back to sending the line on its own).
 static constexpr size_t CONSOLE_SERIAL_FRAME_MAX = 448;
 
+// The longest single LINE the framed emitter carries, its CR LF excluded, and
+// therefore where consoleSerialEmitFramedLine() truncates.
+//
+// Two kinds of line reach that emitter and they are not the same length: a
+// drained log line, already capped at PA_LOG_SERIAL_LINE_MAX - 1 by every
+// PA_LOG_* call site (include/logging.h), and a Console Record, up to
+// CONSOLE_RECORD_LINE_MAX - 1 (include/console_record.h). This is the larger
+// of the two, so the emitter that carries both clips neither. It used to be
+// the log cap for both, which put a second, invisible 255-byte ceiling under
+// the record line and would have truncated a record the moment the record
+// buffer grew past it (#282).
+//
+// console_serial_output.cpp static_asserts this against both constants:
+// raising either one alone then fails the build instead of quietly shortening
+// a record on the wire.
+static constexpr size_t CONSOLE_SERIAL_FRAME_LINE_MAX = 384;
+
 // Per-character writer for embedded-cli output.
 // Exported for embedded-cli binding as cli->writeChar.
 //
@@ -306,8 +324,9 @@ bool consoleSerialWriteFrame(const char* bytes, size_t len, bool waitForRoom);
 // (src/main.cpp's paLogLine, before the Console task owns the wire) and
 // consoleSerialEmitLine's render-did-not-fit fallback all call, so the framing
 // and the wait policy live in exactly one place. `line` is truncated to
-// PA_LOG_SERIAL_LINE_MAX - 1 bytes first, matching every other serial-bound
-// line in this file. The write itself is consoleSerialWriteFrame's, so a
+// CONSOLE_SERIAL_FRAME_LINE_MAX - 1 bytes first, which is the longer of the
+// two line lengths it carries, so neither kind is clipped here. The write
+// itself is consoleSerialWriteFrame's, so a
 // record and a redraw reach the wire through the same seam.
 //
 // The terminator is CR LF, not a bare LF (#267). A Console session is
