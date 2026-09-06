@@ -168,7 +168,7 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-193 count): action 119, config 36,
+// test_console_catalog.cpp's exact-194 count): action 120, config 36,
 // event 15, status 23. Config was 35 before #225 added
 // system.config.log-level, and 34 before #227 added wifi.config.settings.
 // Action was 128 and status 14 before #221's remainder reclassified
@@ -179,7 +179,8 @@ void tearDown() {}
 // 124 and status from 17 to 18; #221 moved sound.api.get-catalog/
 // -get-mood-map, system.api.get-identity/-get-validation and
 // rc.api.get-bindable-actions across for the same reason, taking action to
-// 119 and status to 23.
+// 119 and status to 23; #243 added system.action.reboot-wifi-module,
+// taking action to 120.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -188,8 +189,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(119, g_itemCount,
-        "operations type=action must list exactly the 119 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(120, g_itemCount,
+        "operations type=action must list exactly the 120 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -226,7 +227,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(193, g_itemCount);
+    TEST_ASSERT_EQUAL_INT(194, g_itemCount);
 }
 
 // help <op> must still work through the same real path (the reconstruction

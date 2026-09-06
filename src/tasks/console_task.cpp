@@ -306,9 +306,9 @@ static void onRecordField(uint32_t requestId, const char* name, const char* valu
 static void onRecordItem(uint32_t requestId, const char* value) {
     // Emit: < id=<n> type=item value=<value>
     // Each item is its own locked line (emitRecordLine above); this is what
-    // lets a 190-entry `operations` listing (#219 R1: 10985 B, ~0.95 s
-    // @115200 8N1) share the wire with other tasks' log lines instead of
-    // blocking them for the whole listing.
+    // lets a 194-entry `operations` listing (#219 R1, re-measured at #243:
+    // 11436 B, ~0.99 s @115200 8N1) share the wire with other tasks' log
+    // lines instead of blocking them for the whole listing.
     size_t len = snprintf(recordBuffer, sizeof(recordBuffer),
                          "< id=%lu type=item value=%s",
                          (unsigned long)requestId, value);

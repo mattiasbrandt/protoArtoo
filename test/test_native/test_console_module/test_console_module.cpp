@@ -4279,14 +4279,18 @@ void test_every_out_of_build_row_answers_not_in_this_build() {
                                      "no out-of-build catalog row in this binary - the sweep proved nothing");
 }
 
-// The board half of the same guard. It is VACUOUS in every build that ships
-// today and says so out loud: tools/generate_console_catalog.py gives the
-// drive domain PA_CAP_DRIVE_BACKEND_HOVERBOARD and every other row a literal
-// 1, and include/config.h defines that capability as 1 for BOTH PA_BOARD
-// values - so no catalog row is off-board on any current board, and
-// not-on-this-board is unreachable from a real operation. Reported on #224
-// rather than faked with a stand-in row. The sweep is written anyway so the
-// first genuinely board-gated row is covered on arrival.
+// The board half of the same guard. It was VACUOUS until #243 and said so:
+// tools/generate_console_catalog.py did not read the registry's
+// `board_capability:` field at all, giving the drive domain
+// PA_CAP_DRIVE_BACKEND_HOVERBOARD and every other row a literal 1 - so no
+// catalog row was off-board on any board and not-on-this-board was
+// unreachable from a real operation (reported on #224, recorded on #274,
+// rather than faked with a stand-in row).
+//
+// system.action.reboot-wifi-module closes that: it declares
+// board_capability: PA_CAP_HOSTED_WIFI, the generator emits the macro, and
+// [env:native] builds as artoo-esp32 where that capability is 0. The sweep
+// now asserts it found something, so it can never quietly go vacuous again.
 void test_every_off_board_row_answers_not_on_this_board() {
     size_t count = 0;
     const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
@@ -4300,7 +4304,23 @@ void test_every_off_board_row_answers_not_on_this_board() {
         TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_NOT_ON_THIS_BOARD, g_cap.reason, entries[i].name);
     }
 
-    printf("[#224 report] off-board catalog rows in this build: %d\n", checked);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(
+        0, checked,
+        "no off-board catalog row in this binary - the sweep proved nothing");
+}
+
+// Discovery says the same thing execution does, for the board half. The pair
+// that used to disagree (#219) is asserted here for the row that made
+// not-on-this-board reachable, so a listing that silently drops the annotation
+// fails even though execution still refuses correctly.
+void test_operations_lists_the_off_board_row_with_the_reason_execution_gives() {
+    runOperationsListing();
+    TEST_ASSERT_TRUE(g_opsCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_opsCap.outcome);
+
+    const char* item = listedOperationItem("system.action.reboot-wifi-module");
+    TEST_ASSERT_NOT_NULL(item);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(item, "not-on-this-board"), item);
 }
 
 // Discovery keeps unavailable operations visible, and names the same reason
@@ -4432,11 +4452,12 @@ void test_help_describes_an_operation_that_is_not_in_this_build() {
 // it off five scattered tests is what lets one of them quietly stop covering
 // its category.
 //
-// not-on-this-board is the one exception, and it is a report rather than a
-// test: no catalog row is off-board in any image that exists, so no real
-// operation can produce it. See
-// test_every_off_board_row_answers_not_on_this_board above for the sweep and
-// the reason.
+// All five are now produced by a real operation. not-on-this-board was the
+// exception until #243 - no catalog row was off-board in any image that
+// existed, so nothing real could produce it, and this block carried a report
+// instead of a test. system.action.reboot-wifi-module (board_capability:
+// PA_CAP_HOSTED_WIFI, 0 on the artoo-esp32 build [env:native] uses) is that
+// missing operation; the matrix row below drives it like any other.
 // =============================================================================
 
 // 1/5 not-in-this-build: the profiler snapshot on an image built without
@@ -4515,6 +4536,28 @@ void test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, g_cap.reason);
+}
+
+// 5/5 not-on-this-board: the WiFi module reboot on a board with no fitted
+// module. The row declares board_capability: PA_CAP_HOSTED_WIFI, which is 0 on
+// the artoo-esp32 build [env:native] uses, so the executor and its
+// dispatch-table row are compiled out entirely
+// (include/console_direct_action_system.h) and the answer comes from the
+// catalog's own available_on_board bit through the ordinary board gate in
+// consoleExecuteCommand() - never from a special case at the dispatch site.
+//
+// This category had no real producer at all before #243 (#224's critic pass,
+// recorded on #274). It is also the guard against the opposite mistake:
+// un-gating the row would ship a C6 reset path into an image with no C6, and
+// that fails here rather than at a bench.
+void test_reason_matrix_not_on_this_board() {
+    runQuery("system.action.reboot-wifi-module");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NOT_ON_THIS_BOARD, g_cap.reason);
+    // Not executor-not-ready: that would mean the row reached the dispatch
+    // table and found nothing there, a different and wrong answer.
+    TEST_ASSERT_NOT_EQUAL(CONSOLE_REASON_EXECUTOR_NOT_READY, g_cap.reason);
 }
 
 // =============================================================================
@@ -5347,6 +5390,7 @@ int main(int, char**) {
     RUN_TEST(test_every_out_of_build_row_answers_not_in_this_build);
     RUN_TEST(test_every_off_board_row_answers_not_on_this_board);
     RUN_TEST(test_operations_lists_out_of_build_rows_with_the_reason_execution_gives);
+    RUN_TEST(test_operations_lists_the_off_board_row_with_the_reason_execution_gives);
     RUN_TEST(test_operations_never_annotates_executor_not_ready);
     RUN_TEST(test_help_reports_no_readiness_for_a_row_execution_refuses);
     RUN_TEST(test_profiler_snapshot_is_registered_as_an_item_based_query);
@@ -5358,6 +5402,7 @@ int main(int, char**) {
     RUN_TEST(test_reason_matrix_blocked_by_state_from_sleep);
     RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_config_write);
     RUN_TEST(test_reason_matrix_temporarily_unavailable_from_a_busy_dispatch_core);
+    RUN_TEST(test_reason_matrix_not_on_this_board);
     RUN_TEST(test_a_component_toggle_flipped_after_discovery_changes_the_execution_answer);
     RUN_TEST(test_estop_latched_after_a_successful_run_changes_the_execution_answer);
 

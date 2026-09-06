@@ -51,10 +51,16 @@
 // driver on a freshly-rebooted co-processor -- see hostedRejoinAfterRecovery().
 #include "esp_hosted.h"
 #include "esp_wifi.h"
+// driver/gpio.h: gpio_set_level() for the operator-initiated enable-line
+// pulse (hostedLinkResetCoprocessor(), #243). The pin is owned and already
+// configured as an output by ESP-Hosted itself, so this file drives a level
+// and never a direction -- see that function for why.
+#include "driver/gpio.h"
 
 #include "../../include/audio_task.h"
 #include "../../include/config_cache.h"
 #include "../../include/dome_link.h"
+#include "../../include/hosted_link_c6_reset.h"
 #include "../../include/hosted_link_degraded_announcement.h"
 #include "../../include/hosted_link_status.h"
 #include "../../include/hosted_link_supervisor.h"
@@ -399,6 +405,90 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
     snap.degradedAtMs = g_hostedLinkState.degradedAtMs;
     portEXIT_CRITICAL(&g_hostedLinkMux);
     return snap;
+}
+
+// ============================================================================
+// Operator-initiated WiFi module reboot (#243)
+//
+// The ladder above is shipped and reachable but had never been observed
+// firing: reaching terminal Degraded needs five consecutive co-processor
+// failures over ~25-35s, the fitted C6 is healthy, and no shipping image could
+// provoke a transport failure at all. This is the missing provocation --
+// the same 100 ms enable-line pulse bringup/p4_hosted_bench.cpp:742-780 proved
+// on hardware, ported into the image that ships the ladder rather than
+// re-derived.
+//
+// Three deliberate choices, each of which has a wrong-looking alternative:
+//
+// 1. RAW LEVEL WRITES, NOT hostedDeinitWiFi()/hostedInitWiFi(). The vendor's
+//    own reinit path resets the slave over this same GPIO on its way
+//    (esp_hosted_connect_to_slave() with
+//    CONFIG_ESP_HOSTED_SLAVE_RESET_ON_EVERY_HOST_BOOTUP) and would be the
+//    polite way to bounce the module -- but it is also exactly what the
+//    recovery ladder runs, so calling it here would BYPASS the fault instead
+//    of injecting one. The point of this operation is that ESP-Hosted is
+//    still running and still believes it owns the transport when the module
+//    disappears underneath it: its SDIO writes then fail, it posts
+//    ESP_HOSTED_EVENT_TRANSPORT_FAILURE, and the ladder arms. That is the
+//    behaviour under test.
+//
+// 2. NO DIRECTION CONFIG. ESP-Hosted claims this pin at init
+//    (hostedAssignPinBuses()/esp_hosted_sdio_set_config(),
+//    cores/esp32/esp32-hal-hosted.c) and configures it as an output; a
+//    gpio_config()/gpio_set_direction() here would be a second owner racing
+//    the vendor's reset FSM. The bench sketch drives the level and nothing
+//    else, and that is what ran on hardware.
+//
+// 3. ACTIVE-LOW. The DFR1172 wiki calls the pin EN and the bundled esp_hosted
+//    builds with CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=1, which contradict
+//    each other on paper. The schematic settles it: the net lands on the
+//    ESP32-C6-MINI-1's EN pin, where LOW holds the module in reset and the
+//    R16 pull-up is the release. Inverting the polarity was tested on this
+//    board (2026-08-22) and changed nothing, so do not "fix" this to match
+//    the Kconfig name -- docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md,
+//    "GPIO54 polarity" and "The C6 reset net".
+//
+// Timing after the release edge is the ladder's business, and it is already
+// generous: hostedRecoveryTaskFn() waits kHostedLinkRecoveryAttemptIntervalMs
+// (5000 ms) before its first attempt, well above the ~1.1-1.6 s ESP-Hosted's
+// own logs need to reach card-init success. So the first ladder attempt can
+// never mistake "module still booting" for "module failed".
+// ============================================================================
+HostedLinkResetOutcome hostedLinkResetCoprocessor() {
+    HostedLinkResetOutcome outcome;
+
+    // The live pin, from the Hosted HAL, rather than the compile-time
+    // BOARD_SDIO_ESP_HOSTED_RESET the variant defines: hostedGetPins() returns
+    // what ESP-Hosted actually configured, so this can never drive a pin the
+    // transport is not on -- including if a caller ever overrides the set
+    // through WiFi.setPins() before WiFi.begin(). protoArtoo does not, so the
+    // two agree at 54 today.
+    int8_t clk = -1, cmd = -1, d0 = -1, d1 = -1, d2 = -1, d3 = -1, rst = -1;
+    hostedGetPins(&clk, &cmd, &d0, &d1, &d2, &d3, &rst);
+    const gpio_num_t resetGpio = (gpio_num_t)rst;
+
+    PA_LOG_WARN(TAG,
+                "Operator-initiated WiFi module reboot: holding GPIO%d (C6_EN) low for %ums. The "
+                "Hosted transport will fail and the recovery ladder should arm; watch this console "
+                "for the attempts.",
+                (int)rst, (unsigned)kHostedLinkResetAssertMs);
+
+    outcome.assertResult = gpio_set_level(resetGpio, 0);
+    vTaskDelay(pdMS_TO_TICKS(kHostedLinkResetAssertMs));
+    // Released unconditionally, including when the assert write failed: HIGH
+    // is the line's resting state (R16 pulls it there anyway), and skipping
+    // the release after a partial failure is the one outcome that leaves the
+    // module held in reset for the rest of this boot.
+    outcome.releaseResult = gpio_set_level(resetGpio, 1);
+
+    PA_LOG_WARN(TAG,
+                "WiFi module reboot pulse done: assert=%d(%s) release=%d(%s) on GPIO%d. Both writes "
+                "returning OK is API acceptance, not electrical proof -- the C6_RST pad or the "
+                "module's own boot log is what shows it rebooted.",
+                (int)outcome.assertResult, esp_err_to_name(outcome.assertResult),
+                (int)outcome.releaseResult, esp_err_to_name(outcome.releaseResult), (int)rst);
+
+    return outcome;
 }
 
 // ============================================================================
