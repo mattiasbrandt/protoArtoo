@@ -15,6 +15,94 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+A command console for the droid, in the dashboard and on a serial cable. Every
+operation the controller can perform is available in both places, in the same
+words, and answers come back the same way. The console is not a second way in
+past the safety layers — it runs a command through exactly the code the web
+buttons run it through, so an estop or a stationary lock refuses a typed
+command the way it refuses a tapped one, and says which one stopped it.
+On the FireBeetle 2 it runs over the board's own USB port and comes back after
+you unplug and replug the cable. When the controller is low on memory and the
+web pages have stopped answering, the serial console still tells you how the
+board is doing.
+
+### Added
+- **The Controller Console.** Type a command into the dashboard's Live Logs
+  panel or over a serial cable and the droid does the same thing either way.
+  Commands are the operation's own name and its values —
+  `drive.action.move speed=200 steer=0` — so what you read in the action list
+  is what you type.
+- Answers come back as one line per field with a number on each, not as a
+  paragraph of text: you can tell which reply belongs to which command even
+  while log lines keep scrolling past. Every command ends in a plain word for
+  what happened — `queued`, `applied`, `blocked`, `unavailable`, `invalid` —
+  and a refusal always names its reason.
+- **A serial console on both boards.** The artoo-esp32 over its usual serial
+  cable, the FireBeetle 2 over the board's own USB port. Arrow keys, history
+  and Tab completion work as they do in a terminal; Tab finishes operation
+  names *and* their setting names.
+- Help and Tab completion are built from the droid's own list of what it can
+  do, so they cannot drift from reality — a command the firmware does not have
+  cannot appear, and one it does have cannot be missing.
+- **The console keeps answering when the web stops.** Drive the controller
+  short of memory and the pages go quiet; `system.status.health` still comes
+  back in full over the serial cable, which is when you most need it.
+- An operation the board cannot run says so and why — a profiling command on a
+  build without it answers `not-in-this-build` rather than failing silently.
+- **A console tool for your computer** (`tools/console_client.py`, and
+  `make console`). Capture a boot log, type at the droid, or replay a written
+  sheet of commands and keep the transcript. The sheets in `tools/bench_rows/`
+  are the ones used to check each board.
+- When something on your computer stops reading the cable and the droid has to
+  drop console output, it says so in the log — once when it starts and once
+  when it clears, with how many lines were lost. It never refuses a command
+  because of it.
+
+### Changed
+- Setting a password from the console is refused with a clear reason rather
+  than half-accepted; passwords are set on the WiFi page or in AP mode.
+- Log lines and command replies can no longer land inside each other on the
+  serial cable. One part of the firmware owns the cable and everything else
+  hands its lines over, so a log line arriving mid-command no longer chops the
+  reply in half.
+- `system.status.health` now also reports how long the board has been up and
+  why it last restarted, so a board that rebooted while you were not looking
+  says so.
+- The status page now publishes its failed-allocation and dropped-command
+  counters, so a memory problem shows as a number instead of a guess.
+- The dashboard remembers what you typed between visits, and its command box
+  completes with Tab like the serial one.
+
+### Fixed
+- **The FireBeetle 2's console went permanently silent after you unplugged and
+  replugged its USB cable.** The board stayed up and still ran what you typed —
+  you just never saw a prompt, an echo or an answer, which is worth knowing
+  because a droid whose console looks dead is a droid you are tempted to type
+  the same drive command into twice. The console now comes back on replug, with
+  the half-typed line cleared.
+- An over-long line is refused with `line-too-long` instead of running a
+  chopped-off version of what you typed.
+- Listing every operation streams to the end instead of stopping silently part
+  way through.
+- A long log history no longer errors the browser when you ask for it, and a
+  log fetch that fails now says so in the panel instead of leaving it blank.
+- Settings whose values are words like `on` and `off` are no longer turned into
+  `true` and `false` on their way out of the action list.
+- Console output on the FireBeetle 2 waits for room on the USB port rather than
+  arriving in pieces, and a long line keeps its ending.
+
+### Still to verify
+- **Nothing here has been exercised on an assembled droid.** Both boards were
+  checked on the bench, unseated, with no droid components attached: no RC
+  receiver, no drive or dome lanes, no servos, no LEDs. Everything reachable
+  over the web and over the cable was confirmed on both boards.
+- Values that contain spaces or quotation marks are sent unquoted by the
+  firmware, though the console's own written protocol says they should be
+  quoted. The dashboard hides this because it re-applies the rule when it draws
+  the line; a tool reading the serial cable directly sees it.
+- On the FireBeetle 2, a single console line longer than 256 characters is cut
+  short by the USB port rather than being sent in pieces.
+
 ## [1.1.0] - 2026-09-06
 
 A second controller board. The full protoArtoo feature set now builds for and
