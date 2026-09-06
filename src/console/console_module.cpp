@@ -259,6 +259,47 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
     return true;
 }
 
+// Emit one prose field of a help row, clamped to the buffer it is given, and
+// say so on the wire when the clamp actually cut bytes.
+//
+// The three prose fields are copied into fixed buffers - 256 for the
+// description, 64 for display_name and executor - and ten of the catalog's 194
+// descriptions are longer than that (506 bytes at the longest), so an operator
+// asking `help dome.action.dome-sequence` was handed a sentence that stops
+// mid-word with nothing to say it had been cut. Clamping is the right
+// behaviour on a controller with 2 KB of static-RAM headroom; doing it in
+// silence is the same defect as dropping the field (#282, ADR 0036).
+//
+// So the value is still clamped, and a clamped field is followed by
+// `<name>_truncated=true`. The marker is absent when nothing was cut, like
+// every other "only when there is something to say" field in this protocol
+// (`help_file_status`, `dropped=`), so a reader can tell a whole description
+// from a shortened one without knowing any buffer size. It costs no storage:
+// the value is a literal.
+//
+// This is NOT help_file_status and must never be confused with it. That field
+// means the prose could not be retrieved and IS NOT PRESENT; this one means
+// the prose is present and shorter than the row's
+// (docs/console-protocol.md s.3.4). The "status instead of a half-answer,
+// never both" rule below is about the first case and is untouched by this.
+static void consoleEmitProseField(uint32_t requestId, const ConsoleRecordSink* sink,
+                                  const char* name, const char* truncatedName,
+                                  const char* fieldStart, size_t fieldLen, char* buffer,
+                                  size_t bufferSize) {
+    if (sink->onRecordField == nullptr) {
+        return;
+    }
+
+    size_t cpyLen = (fieldLen < bufferSize - 1) ? fieldLen : bufferSize - 1;
+    memcpy(buffer, fieldStart, cpyLen);
+    buffer[cpyLen] = '\0';
+    sink->onRecordField(requestId, name, buffer);
+
+    if (cpyLen < fieldLen) {
+        sink->onRecordField(requestId, truncatedName, "true");
+    }
+}
+
 // Forward declaration: alias-aware catalog lookup (defined in the "Operation
 // Lookup and Execution" section below, alongside its other callers) - needed
 // here so "help <alias>" resolves the same way "help <canonical-name>" does.
@@ -383,33 +424,25 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
             if (*pos == '|') {
                 size_t fieldLen = pos - fieldStart;
 
+                // Each prose field goes out through the one emitter above, so
+                // the clamp and its `_truncated` marker cannot drift apart
+                // between the three. The buffers stay where they were: they
+                // are locals in three mutually exclusive branches, so only one
+                // is ever live, and growing them is what the board's static
+                // RAM headroom does not have room for.
                 if (field == 1 && fieldLen > 0) {
-                    // display_name field
                     char displayName[64] = {};
-                    size_t cpyLen = (fieldLen < sizeof(displayName) - 1) ? fieldLen : sizeof(displayName) - 1;
-                    memcpy(displayName, fieldStart, cpyLen);
-                    displayName[cpyLen] = '\0';
-                    if (sink->onRecordField) {
-                        sink->onRecordField(requestId, "display_name", displayName);
-                    }
+                    consoleEmitProseField(requestId, sink, "display_name",
+                                          "display_name_truncated", fieldStart, fieldLen,
+                                          displayName, sizeof(displayName));
                 } else if (field == 2 && fieldLen > 0) {
-                    // description field
                     char description[256] = {};
-                    size_t cpyLen = (fieldLen < sizeof(description) - 1) ? fieldLen : sizeof(description) - 1;
-                    memcpy(description, fieldStart, cpyLen);
-                    description[cpyLen] = '\0';
-                    if (sink->onRecordField) {
-                        sink->onRecordField(requestId, "description", description);
-                    }
+                    consoleEmitProseField(requestId, sink, "description", "description_truncated",
+                                          fieldStart, fieldLen, description, sizeof(description));
                 } else if (field == 3 && fieldLen > 0) {
-                    // executor field
                     char executor[64] = {};
-                    size_t cpyLen = (fieldLen < sizeof(executor) - 1) ? fieldLen : sizeof(executor) - 1;
-                    memcpy(executor, fieldStart, cpyLen);
-                    executor[cpyLen] = '\0';
-                    if (sink->onRecordField) {
-                        sink->onRecordField(requestId, "executor", executor);
-                    }
+                    consoleEmitProseField(requestId, sink, "executor", "executor_truncated",
+                                          fieldStart, fieldLen, executor, sizeof(executor));
                 }
 
                 field++;

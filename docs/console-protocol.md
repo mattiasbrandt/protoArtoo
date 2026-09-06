@@ -321,6 +321,22 @@ successful help response contains no `help_file_status` field. This allows a
 reader to distinguish "help not available" from "no help given" (which does not
 occur on a normal path).
 
+**A prose field that is present but shortened says so, separately.** The three
+file-resident fields are copied into fixed buffers - 255 bytes for
+`description`, 63 for `display_name` and `executor` - and ten of the catalog's
+194 descriptions are longer than that, up to 506 bytes. The value is emitted
+clamped, and a clamped field is followed by a `<name>_truncated` field with
+value `true`: `description_truncated`, `display_name_truncated`,
+`executor_truncated`. The marker is absent when nothing was cut, so a reader
+tells a whole description from a shortened one without knowing any buffer size,
+and an operator sees why a sentence stops mid-word.
+
+This is not `help_file_status` and the two never mean the same thing.
+`help_file_status` says the prose could not be retrieved and is **absent** from
+the answer; `<name>_truncated` says the prose is **present** and shorter than
+the row's. A response never carries both for the same field, because a field
+that was not emitted cannot be clamped.
+
 ### 3.5 Token and field naming
 
 - Every token the protocol *defines* - operation names, argument keys, record
