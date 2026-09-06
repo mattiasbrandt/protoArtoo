@@ -7,12 +7,30 @@ on:
   push:
     branches:
       - main
+    # A commit that only touches Markdown cannot change what the firmware
+    # does: no .md file is shipped in the filesystem image (data/ has none)
+    # and none is compiled in. Only push is filtered here -- a pull request
+    # is filtered per-PR in the "Decide whether code changed" step, because
+    # GitHub evaluates pull_request path filters against the whole PR diff,
+    # not the commit just pushed, so they would never skip anything on a
+    # branch that also carries code.
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
   workflow_dispatch:
 
 # Workflow-level default: read-only. Pull-requests: write is scoped to the job
 # that posts the sticky comment, not applied globally.
 permissions:
   contents: read
+
+# One run per pull request. Pushing again supersedes the run already in
+# flight, which otherwise keeps a 40-minute build alive for a commit nobody
+# is waiting on any more. Runs on main are never cancelled: main's history
+# keeps a result for every commit.
+concurrency:
+  group: verification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verification:
@@ -27,6 +45,41 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: 🧭 Decide whether code changed
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Markdown and LICENSE cannot change what the firmware does. Anything
+          # else -- .py, .yaml, .json, data/, src/, include/, test/, tools/,
+          # platformio.ini, Makefile, .github/workflows/ -- counts as code and
+          # runs the full set. The list is deliberately an allow-list of two
+          # harmless extensions rather than a deny-list of source directories:
+          # a new source directory then fails closed, running everything.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request - running every check."
+            exit 0
+          fi
+          files=$(gh api \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' || true)
+          if [ -z "$files" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Could not list the pull request's files - running every check."
+            exit 0
+          fi
+          code=$(printf '%s\n' "$files" | grep -vE '(\.md|^LICENSE)$' || true)
+          if [ -n "$code" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Code changed - running every check. First 20:"
+            printf '%s\n' "$code" | head -20
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Documentation only - skipping the builds, budgets, native tests"
+            echo "and static analysis. Drift, web and tooling checks still run."
+          fi
+
       - name: ⬇️ Checkout
         uses: actions/checkout@v7
 
@@ -38,17 +91,25 @@ jobs:
           cache-dependency-path: tools/requirements.txt
 
       - name: 🔧 Install cppcheck
+        if: steps.changes.outputs.code == 'true'
         run: sudo apt-get install -y --no-install-recommends cppcheck
 
-      - name: 📦 Install PlatformIO and Python tools
+      - name: 📦 Install PlatformIO
         # Pinned to the core the tree is verified with. An unpinned install
         # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
         # fails every env at the link step with "No module named
         # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
         # of them. Bump deliberately, with a green run, not by drift.
-        run: pip install platformio==6.1.19 && pip install -r tools/requirements.txt
+        if: steps.changes.outputs.code == 'true'
+        run: pip install platformio==6.1.19
+
+      - name: 📦 Install Python tools
+        # Always installed: the drift, web and tooling checks run on every
+        # change, including a documentation-only one.
+        run: pip install -r tools/requirements.txt
 
       - name: 💾 Cache PlatformIO packages and toolchains (classic)
+        if: steps.changes.outputs.code == 'true'
         uses: actions/cache@v6
         with:
           # Cache the whole ~/.platformio tree (platforms, packages, toolchains,
@@ -61,6 +122,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pio-classic-
 
       - name: 💾 Cache PlatformIO packages and toolchains (ESP32-P4)
+        if: steps.changes.outputs.code == 'true'
         uses: actions/cache@v6
         with:
           # Separate cache for P4 toolchain (different pioarduino platform version)
@@ -90,31 +152,37 @@ jobs:
       - name: 🏗️ Firmware build
         id: firmware-build
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: pio run -e artoo_esp32
 
       - name: 🏗️ Profiler build
         id: profiler-build
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: pio run -e artoo_esp32_profiler
 
       - name: 🏗️ FireBeetle 2 build (full firmware)
         id: firebeetle2-full-build
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2
 
       - name: 📏 Build size budgets
         id: build-budgets
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: python3 tools/check_build_budgets.py
 
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: pio test -e native
 
       - name: 🔍 Static analysis
         id: static-analysis
         continue-on-error: true
+        if: steps.changes.outputs.code == 'true'
         run: pio check -e artoo_esp32
 
       - name: 📋 Action registry drift
@@ -152,11 +220,14 @@ jobs:
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CODE_CHANGED: ${{ steps.changes.outputs.code }}
         run: |
           row() {
             local outcome="$1" label="$2" cmd="$3"
             if [ "$outcome" = "success" ]; then
               echo "| ✅ | $label | \`$cmd\` | Passed |"
+            elif [ "$outcome" = "skipped" ]; then
+              echo "| ⏭️ | $label | \`$cmd\` | Skipped — documentation-only change |"
             else
               echo "| ❌ | $label | \`$cmd\` | **Failed** |"
             fi
@@ -165,6 +236,12 @@ jobs:
           {
             echo "## 🤖 Verification"
             echo ""
+            if [ "$CODE_CHANGED" != "true" ]; then
+              echo "This change touches documentation only, so the builds, budgets,"
+              echo "native tests and static analysis were skipped. They run again on"
+              echo "the first commit that touches anything else."
+              echo ""
+            fi
             echo "| | Check | Command | Status |"
             echo "|---|---|---|---|"
             row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e artoo_esp32"
@@ -203,19 +280,38 @@ jobs:
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
+          CODE_CHANGED: ${{ steps.changes.outputs.code }}
         run: |
           failed=()
-          [ "$BUILD_OUTCOME"    != "success" ] && failed+=("firmware-build")
-          [ "$PROFILER_OUTCOME" != "success" ] && failed+=("profiler-build")
-          [ "$FIREBEETLE2_OUTCOME" != "success" ] && failed+=("firebeetle2-full-build")
-          [ "$BUDGETS_OUTCOME"  != "success" ] && failed+=("build-budgets")
-          [ "$TESTS_OUTCOME"    != "success" ] && failed+=("native-tests")
-          [ "$ANALYSIS_OUTCOME" != "success" ] && failed+=("static-analysis")
-          [ "$DRIFT_OUTCOME"    != "success" ] && failed+=("action-drift")
-          [ "$WEB_OUTCOME"      != "success" ] && failed+=("web-tests")
-          [ "$TOOLING_OUTCOME"  != "success" ] && failed+=("tooling-tests")
+
+          # A skipped check passes ONLY when this change touched nothing but
+          # documentation -- the one condition under which it was deliberately
+          # not run. Skipped for any other reason is a failure, so a step that
+          # never executes can never quietly satisfy the gate.
+          check() {
+            local outcome="$1" name="$2"
+            [ "$outcome" = "success" ] && return 0
+            [ "$outcome" = "skipped" ] && [ "$CODE_CHANGED" != "true" ] && return 0
+            failed+=("$name")
+          }
+
+          check "$BUILD_OUTCOME"        "firmware-build"
+          check "$PROFILER_OUTCOME"     "profiler-build"
+          check "$FIREBEETLE2_OUTCOME"  "firebeetle2-full-build"
+          check "$BUDGETS_OUTCOME"      "build-budgets"
+          check "$TESTS_OUTCOME"        "native-tests"
+          check "$ANALYSIS_OUTCOME"     "static-analysis"
+          check "$DRIFT_OUTCOME"        "action-drift"
+          check "$WEB_OUTCOME"          "web-tests"
+          check "$TOOLING_OUTCOME"      "tooling-tests"
+
           if [ ${#failed[@]} -gt 0 ]; then
             echo "Failed checks: ${failed[*]}"
             exit 1
           fi
-          echo "All checks passed."
+          if [ "$CODE_CHANGED" != "true" ]; then
+            echo "Documentation-only change: drift, web and tooling checks passed;"
+            echo "builds, budgets, native tests and static analysis were skipped."
+          else
+            echo "All checks passed."
+          fi
