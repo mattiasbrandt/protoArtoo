@@ -296,6 +296,15 @@ be read:
   answer is simply another operation's prose. The first field of a row is the
   operation name, so the firmware compares it and reports the file rather than
   quoting text it cannot vouch for (#281).
+- If the row does not arrive whole - it stops before the delimiter that closes
+  the `executor` field, because it is longer than the firmware's read buffer or
+  because the file ends mid-row - `help_file_status` is `unreadable` and the
+  three prose fields are omitted. A field is parsed out of the row only once its
+  closing delimiter is seen, so a row cut short does not truncate a field, it
+  loses it: three real catalog rows returned `status=ok outcome=completed` with
+  the `description` and `executor` simply missing (#282). The row length is a
+  firmware bound, so this state says the answer is incomplete, never that the
+  file is at fault.
 
 What is withheld is only that prose. The fields the in-image catalog owns -
 `type`, `available_on_board`, `available_in_build`, `requires_web_control`,

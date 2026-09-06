@@ -6,7 +6,7 @@
 // seek/read pair, which is what makes these states reachable off-device at
 // all -- a LittleFS File opened in setup() is not.
 //
-// Three things are covered here that a catalog-only test cannot reach:
+// Four things are covered here that a catalog-only test cannot reach:
 //
 //   1. The read is ADDRESSED, not scanned: exactly one seek, to the catalog
 //      entry's own help_offset, and one read of its help_length.
@@ -16,7 +16,13 @@
 //      The stale case is the quiet one: a firmware-only update leaves the
 //      compiled offsets addressing an older file, so the read SUCCEEDS and
 //      returns another operation's row (#281).
-//   3. The request path performs NO dynamic allocation. The Console task runs
+//   3. The rows the real catalog actually holds fit the read. Three rows in
+//      data/console_help.txt are longer than the 512-byte buffer this module
+//      used to read into, and their description and executor delimiters fell
+//      past the cut, so those fields were absent from an otherwise successful
+//      answer (#282). Those tests read data/console_help.txt itself: the row
+//      lengths are the defect, so a fixture cannot stand in for them.
+//   4. The request path performs NO dynamic allocation. The Console task runs
 //      on Core 0 and AGENTS.md forbids allocation in task loops after setup();
 //      a comment promising it is not evidence, so this counts real operator new
 //      calls across the call.
@@ -87,6 +93,61 @@ static size_t fakeRead(void* ctx, char* out, size_t len) {
 static FakeHelpFile g_file;
 static ConsoleHelpReader g_reader;
 
+// -----------------------------------------------------------------------------
+// File-backed help reader over the REAL data/console_help.txt.
+//
+// The three rows that #282 lost fields on are real rows -- 561, 562 and 585
+// bytes, with the delimiter closing their executor at 560, 561 and 524 -- and a
+// hand-written fixture is exactly what would not have caught that: the row
+// lengths ARE the defect. This reader is the same shape as the LittleFS one in
+// setup() (seek to the catalog's compiled offset, read help_length bytes), so
+// what it exercises is the read the firmware actually performs.
+// -----------------------------------------------------------------------------
+static FILE* g_realFile = nullptr;
+static ConsoleHelpReader g_realReader;
+
+static bool realSeek(void* ctx, uint32_t offset) {
+    FILE* f = (FILE*)ctx;
+    return f != nullptr && fseek(f, (long)offset, SEEK_SET) == 0;
+}
+
+static size_t realRead(void* ctx, char* out, size_t len) {
+    FILE* f = (FILE*)ctx;
+    if (f == nullptr || out == nullptr || len == 0) return 0;
+    return fread(out, 1, len, f);
+}
+
+// The test binary's working directory is the project root under `pio test`,
+// but it is not worth depending on: try the plausible roots and FAIL loudly if
+// the catalog is not among them. A test that quietly skips itself when it
+// cannot find its input is the failure this whole suite is about.
+static void useRealHelpFile() {
+    static const char* candidates[] = {
+        "data/console_help.txt",
+        "../data/console_help.txt",
+        "../../data/console_help.txt",
+        "../../../data/console_help.txt",
+        "../../../../data/console_help.txt",
+    };
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+        g_realFile = fopen(candidates[i], "rb");
+        if (g_realFile != nullptr) break;
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(g_realFile,
+        "data/console_help.txt not found from the test working directory");
+    g_realReader.seek = realSeek;
+    g_realReader.read = realRead;
+    g_realReader.ctx = g_realFile;
+    consoleModuleSetHelpReader(&g_realReader);
+}
+
+static void closeRealHelpFile() {
+    if (g_realFile != nullptr) {
+        fclose(g_realFile);
+        g_realFile = nullptr;
+    }
+}
+
 static void useReader(const char* line, bool seekOk, bool readZero) {
     g_file = {};
     g_file.line = line;
@@ -155,6 +216,7 @@ void setUp() {
 }
 void tearDown() {
     consoleModuleSetHelpReader(nullptr);
+    closeRealHelpFile();
 }
 
 // -----------------------------------------------------------------------------
@@ -278,6 +340,81 @@ void test_alias_help_matches_on_the_canonical_name() {
 }
 
 // -----------------------------------------------------------------------------
+// 2b. The rows that do not fit a naive read buffer (#282)
+// -----------------------------------------------------------------------------
+// Driven from the real data/console_help.txt, not a fixture: the defect was the
+// length of three real rows against a 512-byte read buffer, so a fixture with
+// convenient lengths is precisely the test that would have passed while the
+// board lost fields. `help sound.config.mood-category-map` is the row that
+// pins the boundary rather than merely crossing it - its description delimiter
+// sits at 506 and its executor delimiter at 524, so a 512-byte buffer returned
+// the description and dropped the executor, with `status=ok outcome=completed`
+// and nothing to say a field was missing.
+static void assertRealRowIsWholeAndClamped(const char* opName, const char* executor) {
+    useRealHelpFile();
+    runHelp(opName);
+
+    TEST_ASSERT_TRUE(g_ended);
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
+        "an over-long catalog row reported a degradation: its prose did not fit the read buffer");
+
+    const char* description = fieldNamed("description");
+    TEST_ASSERT_NOT_NULL_MESSAGE(description,
+        "an over-long catalog row lost its description SILENTLY");
+    // All three rows carry a description longer than the module's 256-byte
+    // field buffer, so the emitted value is the clamped 255 - the same value
+    // the browser adapter returns. Clamping is the documented behaviour;
+    // vanishing is not.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(255, (uint32_t)strlen(description),
+        "the description was not the clamped 255 bytes the browser adapter returns");
+
+    const char* got = fieldNamed("executor");
+    TEST_ASSERT_NOT_NULL_MESSAGE(got, "an over-long catalog row lost its executor SILENTLY");
+    TEST_ASSERT_EQUAL_STRING(executor, got);
+}
+
+void test_over_long_row_keeps_description_and_executor() {
+    // 561 bytes; both prose delimiters (546, 560) fell past a 512-byte read.
+    assertRealRowIsWholeAndClamped("help dome.action.dome-sequence", "sequenceStart");
+}
+
+void test_over_long_row_keeps_executor_when_only_it_overflowed() {
+    // 585 bytes; description delimiter at 506 (inside a 512-byte read),
+    // executor delimiter at 524 (outside it). The asymmetric case.
+    assertRealRowIsWholeAndClamped("help sound.config.mood-category-map", "audioMoodMapApply");
+}
+
+void test_over_long_row_with_no_params_tail_is_whole() {
+    // 562 bytes; prose delimiters at 534 and 561, so the row is almost all
+    // prose and needs nearly the whole buffer.
+    assertRealRowIsWholeAndClamped("help system.action.reboot-wifi-module",
+                                   "hostedLinkResetCoprocessor");
+}
+
+void test_row_cut_before_its_executor_degrades_explicitly() {
+    // What a read that does not reach the executor's closing delimiter leaves
+    // behind - a row longer than the read buffer, or a help file that ends
+    // mid-row. The parser emits a field only when it reaches the `|` that
+    // closes it, so before #282 this answered `status=ok outcome=completed`
+    // with display_name, description and executor simply absent.
+    useReader("drive.action.move|Move|Set drive speed and steer", true, false);
+    runHelp("help drive.action.move");
+
+    TEST_ASSERT_TRUE(g_ended);
+    const char* status = fieldNamed("help_file_status");
+    TEST_ASSERT_NOT_NULL_MESSAGE(status,
+        "a row cut before its executor delimiter degraded SILENTLY: no help_file_status");
+    TEST_ASSERT_EQUAL_STRING("unreadable", status);
+
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("display_name"),
+                             "a partial row must not yield a display_name");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("description"),
+                             "a partial row must not yield a description");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("executor"),
+                             "a partial row must not yield an executor");
+}
+
+// -----------------------------------------------------------------------------
 // 3. No dynamic allocation on the request path
 // -----------------------------------------------------------------------------
 void test_help_request_allocates_nothing() {
@@ -312,6 +449,10 @@ int main(int, char**) {
     RUN_TEST(test_row_for_another_operation_is_reported_unreadable);
     RUN_TEST(test_matching_row_emits_no_help_file_status);
     RUN_TEST(test_alias_help_matches_on_the_canonical_name);
+    RUN_TEST(test_over_long_row_keeps_description_and_executor);
+    RUN_TEST(test_over_long_row_keeps_executor_when_only_it_overflowed);
+    RUN_TEST(test_over_long_row_with_no_params_tail_is_whole);
+    RUN_TEST(test_row_cut_before_its_executor_degrades_explicitly);
     RUN_TEST(test_help_request_allocates_nothing);
     RUN_TEST(test_status_query_allocates_nothing);
     return UNITY_END();
