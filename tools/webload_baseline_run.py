@@ -99,7 +99,7 @@ DEFAULT_SERIAL_PORT = (
     "/dev/serial/by-id/"
     "usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
 )
-BUILD_ENV = "protoArtoo_chirp"
+BUILD_ENV = "artoo_esp32_chirp"
 
 
 class BaselineRunError(RuntimeError):
@@ -132,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             f"PlatformIO base env to build/OTA-flash in the build stage (default: {BUILD_ENV}). "
             "The '_ota' suffix is appended automatically, matching this repo's *_ota env "
-            "naming convention (e.g. protoArtoo_chirp -> protoArtoo_chirp_ota). Added for "
+            "naming convention (e.g. artoo_esp32_chirp -> artoo_esp32_chirp_ota). Added for "
             "issue #53/#73 so an experimental env can be targeted without silently "
             "rebuilding and reflashing production CHIRP firmware over it -- "
             "the identity stage compares only by git short-SHA, not by which env is flashed, "
@@ -431,9 +431,9 @@ def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
     """Build+OTA-flash args.build_env against the current checkout, capturing
     build/upload logs and firmware/filesystem identity into the evidence
     bundle, mirroring the identity-capture shape #65 used
-    (capture_artifact_identity). Defaults to BUILD_ENV (protoArtoo_chirp,
+    (capture_artifact_identity). Defaults to BUILD_ENV (artoo_esp32_chirp,
     issue #66's original target); pass --build-env to target a different env,
-    e.g. protoArtoo_psychic_closeconn for an ADR 0023 control-arm run."""
+    e.g. artoo_esp32_psychic_closeconn for an ADR 0023 control-arm run."""
     timeline = r65.Timeline.start()
     events: list[dict[str, object]] = []
     ota_env = f"{args.build_env}_ota"

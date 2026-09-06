@@ -24,7 +24,9 @@
 // NVS schema version
 // 0 (legacy) -> 1: key renames. 1 -> 2: log_level renumbered for the WARN tier
 // (old 2=Info/3=Debug become 3/4; see configLoad()).
-constexpr uint8_t CONFIG_SCHEMA_VERSION = 2;
+// 2 -> 3: component toggle identity rename (en_s1->en_drive, en_dome->en_dome_esc,
+// en_s3->en_r2link, en_s2->en_audio, rcp_snd->rcp_aud, rcs_snd->rcs_aud, rc_sound->rc_aud)
+constexpr uint8_t CONFIG_SCHEMA_VERSION = 3;
 constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
 
 // Validation result
@@ -213,6 +215,11 @@ struct AudioConfig {
     uint16_t snd_sys_mode_t;
     uint16_t snd_sys_drv_on;
     uint16_t snd_sys_dome_on;
+    uint16_t snd_sys_net_down;  // C6 link degraded announcement (#189). NVS
+                                // key is "snd_sys_netdown" (see
+                                // config_serializer.cpp), 15 chars -- the
+                                // ESP-IDF Preferences key length limit -- while
+                                // this struct member keeps the descriptive name.
     uint16_t snd_rand_min;
     uint16_t snd_rand_max;
     uint16_t snd_int_quiet;
@@ -345,7 +352,7 @@ struct SystemConfig {
     bool enable_aux1;
     bool enable_aux2;
     bool enable_aux3;
-    bool enable_dome;
+    bool enable_dome_esc;
     bool enable_rc_ch1;
     bool enable_rc_ch2;
     bool enable_rc_ch3;
@@ -353,9 +360,9 @@ struct SystemConfig {
     bool enable_rc_ch5;
     bool enable_rc_ch6;
     bool single_sbus_use_ch2;
-    bool enable_s1_hoverboard;
-    bool enable_s2_sound;
-    bool enable_s3_dome_ctrl;
+    bool enable_drive;
+    bool enable_audio;
+    bool enable_protor2link;
     bool stationary;
     RcInputMode rc_input_mode;
     RcBindingConfig rc_pwm_drive_speed;
@@ -363,20 +370,20 @@ struct SystemConfig {
     RcBindingConfig rc_pwm_dome_speed;
     RcBindingConfig rc_pwm_arm1;
     RcBindingConfig rc_pwm_arm2;
-    RcBindingConfig rc_pwm_sound;
+    RcBindingConfig rc_pwm_audio;
 
     RcBindingConfig rc_sbus_drive_speed;
     RcBindingConfig rc_sbus_drive_steer;
     RcBindingConfig rc_sbus_dome_speed;
     RcBindingConfig rc_sbus_arm1;
     RcBindingConfig rc_sbus_arm2;
-    RcBindingConfig rc_sbus_sound;
+    RcBindingConfig rc_sbus_audio;
     RcTriggerBinding rc_arm1;
     RcTriggerBinding rc_arm2;
     RcTriggerBinding rc_aux1;
     RcTriggerBinding rc_aux2;
     RcTriggerBinding rc_aux3;
-    RcTriggerBinding rc_sound;
+    RcTriggerBinding rc_audio;
     RcTriggerBinding rc_opmode;
     RcTriggerBinding rc_free0;
     RcTriggerBinding rc_free1;
@@ -393,7 +400,7 @@ static constexpr size_t RC_TRIGGER_SLOT_COUNT = 11;
 inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {
     const RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT] = {
         &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
-        &sys.rc_aux3,  &sys.rc_sound, &sys.rc_opmode, &sys.rc_free0,
+        &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
         &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
     };
     const size_t n = (cap < RC_TRIGGER_SLOT_COUNT) ? cap : RC_TRIGGER_SLOT_COUNT;

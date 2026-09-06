@@ -13,7 +13,7 @@
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
 
-struct RcSoundCategorySnapshot {
+struct RcAudioCategorySnapshot {
     uint16_t gen_lo, gen_hi;
     uint16_t chat_lo, chat_hi;
     uint16_t hap_lo, hap_hi;
@@ -33,7 +33,7 @@ struct RcActionPayload {
     const char* bindingPayload;  // may be nullptr; not owned, must outlive call
     bool pressed;
     uint32_t randomSeed;
-    RcSoundCategorySnapshot categories;
+    RcAudioCategorySnapshot categories;
     bool estopActive;
     bool currentSleepMode;
     SpeedPresetId currentSpeedPreset;

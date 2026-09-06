@@ -100,6 +100,11 @@ Use AGENTS verification flow and classify status as one of:
 Do not use "bench verified" or "bench-tested" as a status. Public docs should use
 plain evidence phrases instead of these internal labels.
 
+These labels report evidence; they never gate completion. Report the strongest label
+the available hardware supports, name what is still unproven, and finish. Never
+propose droid-hardware verification as a precondition for closing work - see
+AGENTS.md "Verification and Reporting".
+
 When hardware validation is deferred, explicitly state blockers and remaining checks.
 
 Regression troubleshooting test policy:
@@ -159,3 +164,8 @@ Use AGENTS verification flow and classify status as one of:
 
 Do not use "bench verified" or "bench-tested" as a status. Public docs should use
 plain evidence phrases instead of these internal labels.
+
+These labels report evidence; they never gate completion. Report the strongest label
+the available hardware supports, name what is still unproven, and finish. Never
+propose droid-hardware verification as a precondition for closing work - see
+AGENTS.md "Verification and Reporting".

@@ -29,8 +29,10 @@ make setup
 This writes `user.mk` (gitignored) with your OTA IP, USB upload port, and audio
 backend choice. Run `make help` to see all available targets.
 
-If you do not have `make` installed, you can run PlatformIO commands directly —
-the Makefile is a convenience wrapper only and is never required.
+Use the Makefile for firmware build and upload commands. It selects the isolated
+PlatformIO core directory required by each chip target; bare `pio run` can swap
+incompatible Arduino toolchains in place. Install `make` rather than bypassing
+that selection for `artoo_esp32` or `firebeetle2`.
 
 ---
 
@@ -130,14 +132,14 @@ Boot default is now true; clears on first valid SBUS frame only.
 ```
 
 ```
-feat(hw)!: confirm UART1 hoverboard pins from PCB trace — update config.h
+feat(hw)!: confirm UART1 drive pins from PCB trace — update config.h
 
-BREAKING CHANGE: PIN_HOVERBOARD_TX and PIN_HOVERBOARD_RX now have confirmed
+BREAKING CHANGE: PIN_DRIVE_TX and PIN_DRIVE_RX now have confirmed
 values from Phase 0 PCB trace. TBD placeholder values are removed.
 Any build relying on the old TBD compile-error guards will fail differently.
 
-PIN_HOVERBOARD_TX = 17
-PIN_HOVERBOARD_RX = 16
+PIN_DRIVE_TX = 16
+PIN_DRIVE_RX = 17
 ```
 
 ```
@@ -252,22 +254,21 @@ the "Scopes" table.
 
 ## Pull request checklist
 
-Before opening a PR from your branch to the currently-active development
-branch (see "Branch strategy" above), confirm the items that apply. These are risk-scaled per `AGENTS.md`'s
+Before opening a PR from your branch to `main`, confirm the items that apply. These are risk-scaled per `AGENTS.md`'s
 verification policy, not a flat checklist every PR must clear in full: a
 docs-only or copy change needs inspection, not a full `pio test` run; a
 change touching a failsafe layer, protocol parsing, or shared state needs
 the full build/test/check pass below. When in doubt, scale up.
 
 **Builds** — required for any firmware source change
-- [ ] `pio run -e protoArtoo` completes with no errors and no warnings
-  (build flags include `-Werror` — warnings are errors)
+- [ ] `make build BUILD_ENV=<affected-env>` completes successfully (for example,
+  `artoo_esp32` or `firebeetle2`; project-source build flags include `-Werror`)
 
 **Tests** — required when safety, protocol parsing, shared state, config
 persistence, or JSON/API contracts are touched (see `AGENTS.md`
 "Verification and Reporting" for the full rule)
 - [ ] `pio test -e native` — all native tests pass
-- [ ] `pio test -e protoArtoo` — all on-device tests pass (if hardware available)
+- [ ] `pio test -e artoo_esp32` — all on-device tests pass (if hardware available)
 
 **Verification status**
 - [ ] PR notes classify verification using the project labels:
@@ -276,6 +277,12 @@ persistence, or JSON/API contracts are touched (see `AGENTS.md`
 - [ ] If hardware validation is deferred, blockers and remaining checks are stated
 - [ ] Public-facing docs use evidence phrases such as "Automated checks are passing"
   or "Tested on an ESP32 controller" rather than internal verification labels
+
+These labels describe evidence, not readiness to merge. A PR is not held open for
+droid-hardware confirmation: state what is unproven with `partial` or
+`full-hardware-required` and land it. Anything real droid operation turns up is
+ordinary follow-up work. Safety invariants are still proven to the maximum the
+available hardware allows, and any gap is named.
 
 Do not use "bench verified" or "bench-tested" as a status. It is ambiguous: a
 green build is `software-verified`; an ESP32 upload plus runtime smoke check is

@@ -27,7 +27,16 @@ static const char* TAG = "WebServer";
 namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
-    char body[96] = {};
+    // Fixed buffer for identity JSON serialization including the manifest.
+    // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
+    // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
+    // and every manifest value false (false is 5 chars, true is 4). With today's
+    // manifest -- 4 capabilities, 3 flags -- that worst case is 334 B of JSON,
+    // leaving 383 - 334 = 49 B of headroom.
+    // Each row emits ,"<name>":false, so it costs name_len + 9 bytes at worst
+    // (name_len + 8 for the first row in an object, which has no leading comma).
+    // Every capability or flag added grows this payload toward the ceiling.
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");
         return;

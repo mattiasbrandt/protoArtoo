@@ -7,6 +7,9 @@
 
 #include "wifi_recovery_gesture.h"
 
+// NVS key for persisting the power-cycle count across boots.
+const char* kWifiRecoveryCycleKey = "wifiRecovN";
+
 WifiRecoveryGestureResult wifiEvaluateRecoveryGesture(const WifiRecoveryGestureInput& input) {
     WifiRecoveryGestureResult result;
 

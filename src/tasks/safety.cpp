@@ -17,9 +17,9 @@
 #include <esp_heap_caps.h>
 
 #include "api_profiler.h"
+#include "heap_health.h"
 #include "logging.h"
 #include "robot_state.h"
-#include "web_server.h"
 
 static const char* TAG = "SafetyMonitor";
 
@@ -30,10 +30,6 @@ static bool lastSbusLost = true;
 static bool lastLowHeap = false;
 static bool lastFragmented = false;
 static uint8_t fragmentedSampleCount = 0;
-#if PA_HEAP_PROFILE
-static bool lastAudioActive = false;
-static bool lastSseConnected = false;
-#endif
 
 constexpr size_t HEAP_FRAGMENT_LARGEST_BLOCK_WARN_BYTES = 10240;
 constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
@@ -41,7 +37,10 @@ constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
 // Observer-only audit task. Logs state transitions and health warnings.
-// Core 0, priority 2, 2048-byte stack, 10 Hz.
+// Core 0, priority 2, 10 Hz. Stack size is chip-target specific and lives with
+// its evidence at SAFETY_MONITOR_STACK_BYTES in include/config.h; it is not
+// repeated here, because the figure this line used to name (2048) had been
+// stale since the task was created with a larger one.
 // Does NOT feed TWDT  --  this is not a real-time task.
 // Does NOT set failsafe flags  --  read-only access to RobotState.
 // -----------------------------------------------------------------------------
@@ -49,14 +48,11 @@ void safetyMonitorTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "active");
 
     bool hwmLogged = false;
-#if PA_HEAP_PROFILE
     profilerInit();
-    int profilerHwmTick = 0;
-#endif
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+            PA_LOG_DEBUG(TAG, "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
@@ -65,16 +61,10 @@ void safetyMonitorTask(void* pvParameters) {
         FailsafeDiagnostics diag = {};
         uint32_t domeLastMs;
         bool sbusLost;
-#if PA_HEAP_PROFILE
-        bool audioActive;
-#endif
         taskENTER_CRITICAL(&robotStateMux);
         copyFailsafeDiagnosticsLocked(&diag);
         domeLastMs = robotState.domeLastSeenMs;
         sbusLost = diag.sbusSignalLost;
-#if PA_HEAP_PROFILE
-        audioActive = robotState.audioActive;
-#endif
         taskEXIT_CRITICAL(&robotStateMux);
         // Log new failsafe triggers
         if (diag.failsafeTriggerCount > lastFailsafeCount) {
@@ -90,36 +80,32 @@ void safetyMonitorTask(void* pvParameters) {
         bool domeNowConnected = (millis() - domeLastMs) < 5000 && domeLastMs > 0;
         if (domeNowConnected != lastDomeConnected) {
             PA_LOG_INFO(TAG, "dome link %s", domeNowConnected ? "CONNECTED" : "LOST");
-#if PA_HEAP_PROFILE
             profilerModeTransition(domeNowConnected ? "dome_connected" : "dome_lost");
-#endif
             lastDomeConnected = domeNowConnected;
         }
 
         // Track RC signal transitions
         if (sbusLost != lastSbusLost) {
-#if PA_HEAP_PROFILE
             profilerModeTransition(sbusLost ? "rc_lost" : "rc_linked");
-#endif
             lastSbusLost = sbusLost;
         }
 
-#if PA_HEAP_PROFILE
-        if (audioActive != lastAudioActive) {
-            profilerModeTransition(audioActive ? "audio_play" : "audio_stop");
-            lastAudioActive = audioActive;
-        }
-        bool sseConnected = webServerHasSSEClients();
-        if (sseConnected != lastSseConnected) {
-            profilerModeTransition(sseConnected ? "sse_connect" : "sse_disconnect");
-            lastSseConnected = sseConnected;
-        }
-#endif
+        profilerObserveOptionalSubsystems();
 
-        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics
+        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics.
+        // Low-heap keeps watching the Arduino internal figure (unchanged behavior).
         uint32_t freeHeap = ESP.getFreeHeap();
-        size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        float fragRatio = (freeHeap > 0) ? (1.0f - (float)largestBlock / (float)freeHeap) : 0.0f;
+        // Fragmentation pair: both terms come from ONE capability mask, and the mask
+        // that matters for safety is the internal 8-bit data heap. INTERNAL alone
+        // would count IRAM-only regions malloc cannot return for byte-addressable
+        // data (artoo-esp32); 8BIT alone includes PSRAM, which on the ESP32-P4 made
+        // largest (~33 MB) dwarf internal free (~114 KB), so frag read -287.92 and
+        // the <10 KB WARN below was structurally dead (#245 defect 2).
+        uint32_t dataHeapFree =
+            (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        uint32_t largestBlock =
+            (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        float fragRatio = heapFragRatio(dataHeapFree, largestBlock);
 
         bool nowLowHeap = (freeHeap < 20480);
         if (nowLowHeap && !lastLowHeap) {
@@ -152,20 +138,13 @@ void safetyMonitorTask(void* pvParameters) {
         static int periodicCount = 0;
         if (++periodicCount >= 60) {  // ~6 s at 10 Hz
             periodicCount = 0;
-            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
+            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu data_free=%lu largest=%u frag=%.2f",
                          (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
-                         (unsigned)largestBlock, (double)fragRatio);
+                         (unsigned long)dataHeapFree, (unsigned)largestBlock,
+                         (double)fragRatio);
         }
 
-#if PA_HEAP_PROFILE
-        if (++profilerHwmTick >= 10) {  // 1 Hz at 10 Hz task rate
-            profilerHwmTick = 0;
-            profilerCollectHwm();
-#ifdef CONFIG_HEAP_TASK_TRACKING
-            profilerCollectTaskHeap();
-#endif
-        }
-#endif
+        profilerPeriodicCollect();
 
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
     }

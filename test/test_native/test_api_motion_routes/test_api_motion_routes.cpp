@@ -73,7 +73,7 @@ void setDriveConfig(int16_t speedLimitMax) {
 void setDomeEnabled(bool enabled) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
-    snap.system.enable_dome = enabled;
+    snap.system.enable_dome_esc = enabled;
     configCacheApply(snap);
 }
 

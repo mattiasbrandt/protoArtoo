@@ -20,8 +20,8 @@ def _classify_command(cmd: str) -> str:
     if "pio check" in text:
         return "static_check"
     # Accept compile-only firmware build; ignore upload/uploadfs commands.
-    # Use word-boundary check to avoid matching protoArtoo_test or other suffixed envs.
-    if re.search(r"pio run -e protoArtoo(?!\w)", text) and "upload" not in text:
+    # Use word-boundary check to avoid matching artoo_esp32_test or other suffixed envs.
+    if re.search(r"pio run -e artoo_esp32(?!\w)", text) and "upload" not in text:
         return "firmware_build"
     return ""
 

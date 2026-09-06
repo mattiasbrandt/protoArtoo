@@ -31,8 +31,11 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - Endpoints that support JSON body read `plain` request payload and parse JSON.
 - Success payload is usually `{"ok":true}` unless the endpoint returns a full JSON object.
 - Errors are returned as JSON with `ok:false` + `error` in most routes.
-- Base URL examples below use `http://artoo.local`.
-- The controller hostname is lowercase `artoo`; use `artoo.local` on STA networks.
+- Base URL examples below use `http://artoo.local`, the artoo-esp32 controller's
+  default hostname. A FireBeetle 2 controller's default mDNS hostname is
+  `firebeetle2` (`http://firebeetle2.local`) instead, so the two boards never
+  contest the same name on one LAN (#242). Both defaults are overridden by the
+  operator-set Droid Name when `mdnsUseName` is enabled — see Identity below.
 - If mDNS is unavailable on your host network, use the current device IP from `GET /api/wifi` (`staIp`) or your network lease table.
 
 ## Error Contract
@@ -78,9 +81,16 @@ served normally; only requests that had no answer either way reach this reply.
 
 ### GET /api/identity
 
-Returns the droid's cosmetic name and mDNS hostname preference.
+Returns the droid's cosmetic name, mDNS hostname preference, canonical Board
+Variant id, and the complete compile-time Feature Availability manifest.
 
-- Success: `200` JSON with `droidName` and `mdnsUseName`
+- Success: `200` JSON with:
+  - `droidName` and `mdnsUseName`
+  - `board`: `artoo_esp32` or `firebeetle2`
+  - `board_capabilities`: an object containing every `PA_CAP_*` declaration
+    from `include/board_capabilities.inc`, with boolean values
+  - `build_flags`: an object containing every Build Feature Flag from
+    `include/build_flags.inc`, with boolean values
 - Errors: `500` on response build overflow
 
 #### Example request
@@ -92,7 +102,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -102,7 +112,8 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
 - Body fields:
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
   - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
-- Success: `200` JSON with updated `droidName` and `mdnsUseName`
+- Success: `200` JSON with the updated identity and the same `board`,
+  `board_capabilities`, and `build_flags` fields as GET
 - Errors:
   - `400` `{"ok":false,"error":"droidName is required"}`
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
@@ -119,7 +130,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ## Safety and Drive
@@ -1117,7 +1128,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"type":"mg996r"},"dome":{"enabled":true}},"dome":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100,"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000,"aux_led_pin":1,"aux_led_count":16}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"type":"mg996r"},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000,"aux_led_pin":1,"aux_led_count":16}
 ```
 
 ### POST /api/config
@@ -1128,9 +1139,10 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus)`, `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
-- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome`, `enableRcCh1..6`, `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl`
-- dome calibration: `domeNeutralUs(1000..2000)`, `domeMinPulseUs(1000..2000)`, `domeMaxPulseUs(1000..2000)`, `domeSpeedLimitPct(0..100)`, `domeWifiPeerIp(valid IPv4 or empty)`
-- dome random: `domeRndEnable(bool)`, `domeRndSpeedPct(5..100)`, `domeRndPauseMin(1..120)`, `domeRndPauseMax(1..120)`, `domeRndMoveMs(500..10000)`
+- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`
+- domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
+- domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
+- protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
@@ -1138,7 +1150,7 @@ Updates supported config fields and persists to NVS.
 - Supported JSON body fields:
 - `rc.sbusTimeoutMs` (50..5000)
 - `rc.sbus.recvCh2` (boolean)
-- `dome.wifiPeerIp` (string, empty or IPv4)
+- `protoR2link.wifiPeerIp` (string, empty or IPv4)
 - `aux_led_pin` (0..3)
 - `aux_led_count` (1..255)
 
@@ -1151,13 +1163,13 @@ Updates supported config fields and persists to NVS.
 
 ```bash
 curl -s -X POST http://artoo.local/api/config \
-  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDome=true&domeNeutralUs=1500'
+  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDomeEsc=true&domeEscNeutralUs=1500'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"dome":{"enabled":true}},"dome":{"neutralUs":1500}}
+{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500},"protoR2link":{"wifiPeerIp":""}}
 ```
 
 #### Example request (json)
@@ -1165,13 +1177,13 @@ curl -s -X POST http://artoo.local/api/config \
 ```bash
 curl -s -X POST http://artoo.local/api/config \
   -H 'Content-Type: application/json' \
-  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"dome":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}'
+  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"dome":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}
+{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}
 ```
 
 ### GET /api/rc/map
@@ -1309,6 +1321,8 @@ Returns all bindable actions.
 - Success: `200` array of objects with:
 - `id`, `name`, `display_name`, `domain`, `description`
 - `safety_critical`, `testable`, `one_shot`, `token`
+- `board_capability`, `build_flag`: nullable compile-time requirements; `null`
+  means the action is universal for that tier
 - Error: `500` response stream allocation failure
 
 #### Example request
@@ -1320,7 +1334,7 @@ curl -s http://artoo.local/api/actions
 #### Example response (abridged)
 
 ```json
-[{"id":1,"name":"drive.action.speed","display_name":"Drive Speed","domain":"drive","description":"Primary drive speed control","safety_critical":true,"testable":false,"one_shot":false,"token":"drive_speed"}]
+[{"id":1,"name":"drive.action.speed","display_name":"Speed","domain":"drive","description":"Forward/reverse drive speed (analog axis)","safety_critical":false,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"token":"drive_speed"}]
 ```
 
 ### POST /api/actions/test
@@ -1393,7 +1407,7 @@ Returns controller status snapshot.
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)
-- Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `dome`, `rcCh1..rcCh6`, `s1Hoverboard`, `s2Sound`, `s3DomeCtrl`)
+- Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`)
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
 
@@ -1663,7 +1677,7 @@ Streams OTA firmware update.
 
 ```bash
 curl -s -X POST http://artoo.local/upload/firmware \
-  -F 'firmware=@.pio/build/protoArtoo/firmware.bin'
+  -F 'firmware=@.pio/build/artoo_esp32/firmware.bin'
 ```
 
 #### Example response
@@ -1687,7 +1701,7 @@ Streams OTA filesystem update.
 
 ```bash
 curl -s -X POST http://artoo.local/upload/filesystem \
-  -F 'filesystem=@.pio/build/protoArtoo/littlefs.bin'
+  -F 'filesystem=@.pio/build/artoo_esp32/littlefs.bin'
 ```
 
 #### Example response
@@ -1733,7 +1747,7 @@ USB read is blocked when the ESP32 is in the PCB (GPIO15/SBUS strapping).
 ```bash
 curl -s http://artoo.local/api/coredump -o coredump.elf
 # decode against the firmware.elf for the deployed version (keyed by fw-version.json):
-esp-coredump info_corefile -c coredump.elf .pio/build/protoArtoo_chirp/firmware.elf
+esp-coredump info_corefile -c coredump.elf .pio/build/artoo_esp32_chirp/firmware.elf
 ```
 
 ### POST /api/coredump/erase
@@ -1816,9 +1830,14 @@ curl -s http://artoo.local/api/profiler
 
 ### POST /api/profiler/trace/start
 
-Present only when `CONFIG_HEAP_TRACING` is enabled.
+Present only when the troubleshooting-only Build Feature Flag
+`PA_HEAP_TRACING` is enabled. That flag requires `PA_HEAP_PROFILE=1` and the
+SDK's `CONFIG_HEAP_TRACING` support.
 
-- Success/failure both return `200` with `ok:true|false`
+- Success: `200` `{"ok":true,"mode":"LEAKS"}`
+- Errors:
+  - `409` `{"ok":false,"error":"trace already running"}`
+  - `500` `{"ok":false,"error":"start failed"}`
 
 #### Example request
 
@@ -1834,9 +1853,10 @@ curl -s -X POST http://artoo.local/api/profiler/trace/start
 
 ### POST /api/profiler/trace/stop
 
-Present only when `CONFIG_HEAP_TRACING` is enabled.
+Present only when `PA_HEAP_TRACING` is enabled.
 
-- Success/failure both return `200` with `ok:true|false`
+- Success: `200` `{"ok":true,"note":"dump written to serial log"}`
+- Error: `409` `{"ok":false,"error":"trace not running"}`
 
 #### Example request
 

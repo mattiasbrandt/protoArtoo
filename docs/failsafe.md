@@ -119,3 +119,56 @@ The system boots with conservative defaults:
 - Hoverboard: UART1 on GPIO 16/17
 - `SafetyMonitorTask` is observer-only; it logs failsafe transitions but does
   not command the motors directly
+
+## Real-Time / Core Pinning Contract
+
+protoArtoo runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
+drive control and SBUS input processing are pinned to Core 1 to avoid
+contention with WiFi, web API, and housekeeping tasks.
+
+**Core 1 (Real-Time Control Loop - 50 Hz drive frame rate):**
+- All tasks in this section must not allocate memory after startup.
+- Priorities are relative within Core 1; lower priority tasks yield to higher.
+
+| Task | Priority | Stack | Chip-Specific? | Rationale |
+|------|----------|-------|---|---|
+| **DriveTask** | 5 | 4096 B | No | 50 Hz hoverboard frame transmission + TWDT reset. Core-critical. Runs every 20 ms. Must complete within period or hoverboard coasts. |
+| **RCInputTask** | 5 | 7168 B | No | ~200 Hz RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. |
+| **ServoTask** | 4 | 4096 B | No | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes queue without blocking. |
+| **DomeTask** | 4 | 3072 B | No | 50 Hz dome ESC command application. Processes queue, applies speed presets, respects estop. |
+| **DomeLinkTask** | 3 | 6144 B | No | Bidirectional UART2 to dome controller (AstroPixelsPlus). Coordinates transport arbiter (UART vs WiFi fallback). Non-blocking I/O. |
+
+**Core 0 (Housekeeping, Web, OTA):**
+- Non-real-time tasks that handle WiFi, HTTP, SSE, OTA, audio, and logging.
+- May allocate and free memory per-request.
+- Do not block Core 1 RT loops.
+
+| Task | Priority | Stack | Chip-Specific? | Rationale |
+|------|----------|-------|---|---|
+| **AudioTask** | 3 | 6144 B | No | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_audio. |
+| **SequenceDispatcherTask** | 3 | 4096 B | No | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
+| **AuxLedTask** | 2 | 4096 B | No | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
+| **SafetyMonitorTask** | 2 | 3072 B | No | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
+| **WebEvents** | 1 | 6144 B | No | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
+| **ArduinoOTA** | 1 | 4096 B | No | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
+
+**Pinning Mechanism Validity on ESP32-P4:**
+- Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h:179)
+- `xTaskCreatePinnedToCore()` signature and semantics identical on P4 RISC-V
+  (components/freertos/esp_additions/include/freertos/idf_additions.h)
+- `CONFIG_FREERTOS_UNICORE` not set (dual-core SMP enabled by default)
+- Core IDs (0, 1) are valid on both classic ESP32 and ESP32-P4 RISC-V
+- TWDT configuration (`esp_task_wdt_config_t`) unchanged on P4 (components/esp_system/include/esp_task_wdt.h:22-25)
+
+**What Breaks If A Task Moves:**
+- Move **DriveTask** off Core 1: WiFi ISRs on Core 0 may preempt the 50 Hz loop, causing frame continuity loss. Safety invariant violated.
+- Move **RCInputTask** off Core 1: RC input processing and failsafe response add unpredictable latency; SBUS watchdog may fire spuriously. RC control becomes unreliable.
+- Move **DomeLinkTask** off Core 1 and into Core 0: UART2 bidirectional traffic competes with SSE broadcasts and web handlers; transport arbiter decisions may stall. Dome synchronization degrades.
+- Move **AudioTask** to Core 1: 6 ms blocking bit-bang TX stalls drive frames and RC input at 50 Hz. A single audio command can miss an entire drive frame cycle. Safety invariant violated.
+- Move **WebEvents** to Core 1: SSE broadcasts and JSON serialization consume Core 1 CPU, competing with real-time loops.
+
+**Chip-Independence:**
+All task placement is **chip-independent**. The Core 0/1 split and priority ordering
+transfer unchanged from classic ESP32 to ESP32-P4 and other dual-core variants. The
+mechanism (`xTaskCreatePinnedToCore`) is part of the FreeRTOS SMP API, not
+board-specific hardware.

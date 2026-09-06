@@ -2,7 +2,7 @@
 // src/tasks/drive.cpp
 //
 // DriveTask  --  sends 8-byte Gen2.x frames to the hoverboard at 50 Hz.
-// Owns UART1 / Serial1 on GPIO PIN_HOVERBOARD_TX / PIN_HOVERBOARD_RX.
+// Owns UART1 / Serial1 on GPIO PIN_DRIVE_TX / PIN_DRIVE_RX.
 // Runs on Core 1 (real-time).
 //
 // Safety layers implemented here:
@@ -42,15 +42,18 @@ static HardwareSerial hoverSerial(1);
 void driveTask(void* pvParameters) {
     // Register with TWDT unconditionally  --  this task must feed the watchdog
     // regardless of enable state or the chip will reset after WATCHDOG_TIMEOUT_S.
+    // Feed immediately after add: the add-to-first-feed window must stay empty
+    // of anything that can stall (#245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
-    // Feature toggle: when cfg_enable_s1_hoverboard is false, do not open
+    // Feature toggle: when cfg_enable_drive is false, do not open
     // UART1 or send any frames. Task idles here feeding TWDT only.
     // Mirrors the DomeLinkTask disabled path.
     {
         ConfigSnapshot cfg = {};
         configCacheRead(&cfg);
-        bool enabled = cfg.system.enable_s1_hoverboard;
+        bool enabled = cfg.system.enable_drive;
         if (!enabled) {
             for (;;) {
                 esp_task_wdt_reset();
@@ -60,10 +63,10 @@ void driveTask(void* pvParameters) {
     }
 
     HoverboardFeedbackParser hbParser;
-    hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
+    hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_DRIVE_RX, PIN_DRIVE_TX);
     initHoverboardFeedbackParser(&hbParser);  // clear parser state after UART reinit
     PA_LOG_INFO(TAG, "started \u2014 UART1 %lu baud, GPIO TX=%d RX=%d",
-                (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
+                (unsigned long)HOVERBOARD_BAUD, PIN_DRIVE_TX, PIN_DRIVE_RX);
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz
@@ -78,7 +81,7 @@ void driveTask(void* pvParameters) {
 
         // Log stack high-water mark once, after the first loop (captures init overhead).
         if (!hwmLogged) {
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+            PA_LOG_DEBUG(TAG, "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }

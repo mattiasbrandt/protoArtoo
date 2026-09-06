@@ -13,6 +13,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "action-registry.yaml"
+BOARD_CAPABILITIES_PATH = ROOT / "include" / "board_capabilities.inc"
+BUILD_FLAGS_PATH = ROOT / "include" / "build_flags.inc"
+SYSTEM_CONFIG_PATH = ROOT / "include" / "config_store.h"
 RC_MAPPING_PATH = ROOT / "include" / "rc_mapping.h"
 RC_ACTION_TYPES_PATH = ROOT / "include" / "rc_action_types.h"
 RC_ACTION_TYPES_CPP_PATH = ROOT / "src" / "rc_action_types.cpp"
@@ -43,6 +46,81 @@ NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "estop"}
 PAYLOAD_REQUIRED_TOKENS = {"seq", "cmd", "dome_seq"}
 
 
+def load_x_macro_manifest(path: Path, macro: str, prefix: str) -> set[str]:
+    """Read one unguarded one-argument X-macro inventory.
+
+    Comments and preprocessor guard lines are allowed. Every other non-empty
+    line must be exactly one manifest row so a malformed declaration cannot
+    silently disappear from the drift check.
+    """
+    row_pattern = re.compile(rf"{re.escape(macro)}\(({prefix}[A-Z0-9_]*)\)")
+    names: list[str] = []
+
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        match = row_pattern.fullmatch(line)
+        if not match:
+            raise ValueError(f"{path.relative_to(ROOT)}:{line_number}: invalid {macro} row: {line}")
+        names.append(match.group(1))
+
+    if not names:
+        raise ValueError(f"{path.relative_to(ROOT)} contains no {macro} rows")
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"{path.relative_to(ROOT)} contains duplicate rows: {duplicates}")
+    return set(names)
+
+
+def system_config_enable_fields() -> set[str]:
+    text = SYSTEM_CONFIG_PATH.read_text(encoding="utf-8")
+    match = re.search(r"struct\s+SystemConfig\s*{(?P<body>.*?)\n};", text, re.S)
+    if not match:
+        raise ValueError("could not find SystemConfig struct")
+    return set(re.findall(r"\bbool\s+(enable_[a-z0-9_]+)\s*;", match.group("body")))
+
+
+def check_feature_availability_metadata(doc: dict, errors: list[str]) -> None:
+    manifests = {
+        "board_capability": load_x_macro_manifest(
+            BOARD_CAPABILITIES_PATH, "PA_BOARD_CAPABILITY", "PA_CAP_"
+        ),
+        "build_flag": load_x_macro_manifest(BUILD_FLAGS_PATH, "PA_BUILD_FLAG", "PA_"),
+    }
+
+    for entry in doc.get("entries", []):
+        entry_name = entry.get("name", "<unnamed>")
+        for field, known_names in manifests.items():
+            if field not in entry:
+                continue
+            value = entry[field]
+            if not isinstance(value, str) or value not in known_names:
+                errors.append(
+                    f"{entry_name} has invalid {field} {value!r}; "
+                    f"expected one of {sorted(known_names)!r}"
+                )
+
+
+def check_component_toggle_entries(doc: dict, errors: list[str]) -> None:
+    expected_fields = system_config_enable_fields()
+    expected_names = {f"system.config.{field}" for field in expected_fields}
+    entries_by_name = {entry.get("name"): entry for entry in doc.get("entries", [])}
+    registered_names = {
+        name
+        for name in entries_by_name
+        if isinstance(name, str) and name.startswith("system.config.enable_")
+    }
+
+    for name in sorted(expected_names - registered_names):
+        errors.append(f"SystemConfig component toggle {name} is missing from the registry")
+    for name in sorted(registered_names - expected_names):
+        errors.append(f"{name} is registered but has no matching SystemConfig bool field")
+    for name in sorted(expected_names & registered_names):
+        if entries_by_name[name].get("type") != "config":
+            errors.append(f"{name} must be registered with type: config")
+
+
 @dataclass(frozen=True)
 class ExpectedAction:
     enum: str
@@ -52,6 +130,8 @@ class ExpectedAction:
     domain: str
     description: str
     safety_critical: bool
+    board_capability: str | None
+    build_flag: str | None
     group: str
     testable: bool
 
@@ -136,6 +216,8 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
                 domain=normalize(entry["domain"]),
                 description=runtime_field(entry, "description"),
                 safety_critical=bool(entry.get("safety_critical")),
+                board_capability=entry.get("board_capability"),
+                build_flag=entry.get("build_flag"),
                 group=action_group(entry),
                 testable=action_testable(token),
             )
@@ -198,15 +280,29 @@ def parse_from_string_tokens() -> dict[str, str]:
     }
 
 
-def parse_action_registry() -> dict[str, tuple[str, str, str, str, bool]]:
-    text = ACTION_REGISTRY_PATH.read_text(encoding="utf-8")
+def parse_action_registry(
+    path: Path = ACTION_REGISTRY_PATH,
+) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
+    text = path.read_text(encoding="utf-8")
     rows = re.findall(
-        r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*(true|false)\s*}",
+        r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\","
+        r"\s*\"([^\"]+)\",\s*(true|false)"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
         text,
     )
+
+    def nullable(value: str) -> str | None:
+        if not value or value == "nullptr":
+            return None
+        return value[1:-1]
+
     return {
-        enum: (normalize(name), normalize(display), normalize(domain), normalize(desc), safety == "true")
-        for enum, name, display, domain, desc, safety in rows
+        enum: (
+            normalize(name), normalize(display), normalize(domain), normalize(desc),
+            safety == "true", nullable(board_capability), nullable(build_flag),
+        )
+        for enum, name, display, domain, desc, safety, board_capability, build_flag in rows
     }
 
 
@@ -340,6 +436,51 @@ def check_dollar_commands(doc: dict, errors: list[str]) -> None:
         errors.append(f"${token} documented in the registry but no longer handled in audio_dollar_parser.cpp")
 
 
+def check_html_data_attributes(errors: list[str]) -> None:
+    """Validate data-build-flag, data-board-capability, and data-feature-entry attributes in HTML."""
+    manifests = {
+        "build_flag": load_x_macro_manifest(BUILD_FLAGS_PATH, "PA_BUILD_FLAG", "PA_"),
+        "board_capability": load_x_macro_manifest(
+            BOARD_CAPABILITIES_PATH, "PA_BOARD_CAPABILITY", "PA_CAP_"
+        ),
+    }
+
+    doc = load_registry_doc()
+    registry_entries = {entry.get("name"): entry for entry in doc.get("entries", [])}
+
+    # Scan all HTML files in data/ directory
+    data_dir = ROOT / "data"
+    if not data_dir.exists():
+        return
+
+    for html_file in data_dir.glob("*.html"):
+        content = html_file.read_text(encoding="utf-8")
+
+        # Check data-build-flag attributes
+        for match in re.finditer(r'data-build-flag="([^"]+)"', content):
+            flag_value = match.group(1)
+            if flag_value not in manifests["build_flag"]:
+                errors.append(
+                    f"{html_file.name}: data-build-flag={flag_value!r} not found in build_flags.inc"
+                )
+
+        # Check data-board-capability attributes
+        for match in re.finditer(r'data-board-capability="([^"]+)"', content):
+            cap_value = match.group(1)
+            if cap_value not in manifests["board_capability"]:
+                errors.append(
+                    f"{html_file.name}: data-board-capability={cap_value!r} not found in board_capabilities.inc"
+                )
+
+        # Check data-feature-entry attributes
+        for match in re.finditer(r'data-feature-entry="([^"]+)"', content):
+            entry_name = match.group(1)
+            if entry_name not in registry_entries:
+                errors.append(
+                    f"{html_file.name}: data-feature-entry={entry_name!r} not found in action registry"
+                )
+
+
 def add_mismatch(errors: list[str], label: str, expected: object, actual: object) -> None:
     if expected != actual:
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
@@ -370,6 +511,8 @@ def main() -> int:
             add_mismatch(errors, f"{action.enum} registry domain", action.domain, row[2])
             add_mismatch(errors, f"{action.enum} registry description", action.description, row[3])
             add_mismatch(errors, f"{action.enum} registry safety_critical", action.safety_critical, row[4])
+            add_mismatch(errors, f"{action.enum} registry board_capability", action.board_capability, row[5])
+            add_mismatch(errors, f"{action.enum} registry build_flag", action.build_flag, row[6])
 
         js = js_fallback.get(action.token)
         if js is None:
@@ -394,6 +537,9 @@ def main() -> int:
     check_api_endpoints(doc, errors)
     check_dome_cues(doc, errors)
     check_dollar_commands(doc, errors)
+    check_feature_availability_metadata(doc, errors)
+    check_component_toggle_entries(doc, errors)
+    check_html_data_attributes(errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

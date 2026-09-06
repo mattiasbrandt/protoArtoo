@@ -419,7 +419,7 @@ void servoTaskInit() {
     s_aux1_enabled = cfg.system.enable_aux1;
     s_aux2_enabled = cfg.system.enable_aux2;
     s_aux3_enabled = cfg.system.enable_aux3;
-    s_dome_enabled = cfg.system.enable_dome;
+    s_dome_enabled = cfg.system.enable_dome_esc;
     s_aux_led_pin = cfg.servo.aux_led_pin;
 
     bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
@@ -471,8 +471,11 @@ void servoTaskInit() {
 void servoTask(void* pvParameters) {
     (void)pvParameters;
 
-    // Register with task watchdog unconditionally.
+    // Register with task watchdog unconditionally. Feed immediately after add:
+    // the add-to-first-feed window must stay empty of anything that can stall
+    // (the disabled-path log below runs inside it, #245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
     // Feature toggle: if no arm/aux outputs are enabled, ServoTask has no
     // channels to drive. Idle here feeding TWDT only  --  no queue processing,
@@ -490,7 +493,7 @@ void servoTask(void* pvParameters) {
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("ServoTask", "stack HWM: %u words free",
+            PA_LOG_DEBUG("ServoTask", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }

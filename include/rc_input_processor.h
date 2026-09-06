@@ -23,7 +23,7 @@ struct RcProcessorConfig {
     RcMappingConfig mapping;
     RcTriggerBinding triggers[RC_TRIGGER_MAX];
     size_t triggerCount;
-    RcSoundCategorySnapshot categories;
+    RcAudioCategorySnapshot categories;
     bool estopActive;
     bool currentSleepMode;
     SpeedPresetId currentSpeedPreset;

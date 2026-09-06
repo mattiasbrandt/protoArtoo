@@ -21,7 +21,20 @@ import { loadPageModule } from "./helpers/page_module_env.js";
 
 // Answers every endpoint successfully; these tests are about what a module
 // registers at load, not what the controller replies.
-const quiet = () => ({ data: {} });
+const quiet = (path) => {
+  if (path === "/api/identity") {
+    return {
+      data: {
+        droidName: "test",
+        mdnsUseName: true,
+        board: "artoo_esp32",
+        board_capabilities: {},
+        build_flags: {},
+      },
+    };
+  }
+  return { data: {} };
+};
 
 test("shell.js registers its identity load as a bootstrap section", (t) => {
   const env = loadPageModule("shell.js", { respond: quiet });

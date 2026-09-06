@@ -5,22 +5,155 @@
 // servo/AUX component type selectors. Auto-saves on every change.
 // =============================================================================
 (() => {
+  const listeners = new Set();
+  let phase = "loading";
+  // Identity manifest is fetched once by shell.js at page load and cached in window.PAIdentity.
+  // Do not restore per-card endpoint probing; the resolve() function reads this cache only.
+  let identity = null;
+  let identityErrorReason = null;  // "incompatible" or "no-response" when phase === "error"
+  const STATE_LABELS = Object.freeze({
+    on: "On",
+    off: "Off",
+    "not-in-this-build": "Not included",
+    "not-on-this-board": "Not on this board",
+    checking: "Checking controller",
+    "identity-unavailable": "Availability unknown",
+    "included": "Included",
+  });
+
+  // Resolve the compile-time manifest tiers first (board capability, build flag),
+  // then the optional runtime toggle (Component Toggle). Compile tiers resolve
+  // before runtime state to preserve the reason: "not in this build" or "not on
+  // this board" takes precedence over "off". Component rows and build-conditional
+  // panels call this same seam.
+  //
+  // Layer 2 validation: per-key completeness uses Object.hasOwn — not optional
+  // chaining, not the `in` operator — so a MISSING key is distinguished from a
+  // false value. The resolver already knows the key it was asked for, so there is
+  // no JavaScript mirror of the .inc manifests to drift out of date.
+  //
+  // A key missing from an already-validated manifest is TERMINALLY unknown: the
+  // fetch has completed and no later request will supply it. That is phase="failed"
+  // with state="identity-unavailable", which renders as "Availability unknown" —
+  // never phase="checking", which would tell the operator the page is still working
+  // on an answer that will never arrive.
+  const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasToggle = true } = {}) => {
+    const needsManifest = Boolean(boardCapability || buildFlag);
+    if (needsManifest && phase !== "ready") {
+      return phase === "error"
+        ? { phase: "failed", state: "identity-unavailable" }
+        : { phase: "checking", state: "checking" };
+    }
+    if (boardCapability) {
+      if (!identity?.board_capabilities || !Object.hasOwn(identity.board_capabilities, boardCapability)) {
+        // Missing key in board_capabilities is terminally unknown (will not arrive in future fetch)
+        return { phase: "failed", state: "identity-unavailable" };
+      }
+      if (identity.board_capabilities[boardCapability] !== true) {
+        return { phase: "ready", state: "not-on-this-board" };
+      }
+    }
+    if (buildFlag) {
+      if (!identity?.build_flags || !Object.hasOwn(identity.build_flags, buildFlag)) {
+        // Missing key in build_flags is terminally unknown (will not arrive in future fetch)
+        return { phase: "failed", state: "identity-unavailable" };
+      }
+      if (identity.build_flags[buildFlag] !== true) {
+        return { phase: "ready", state: "not-in-this-build" };
+      }
+    }
+    if (!hasToggle && enabled) {
+      return { phase: "ready", state: "included" };
+    }
+    return enabled
+      ? { phase: "ready", state: "on" }
+      : { phase: "ready", state: "off" };
+  };
+
+  // Helper to derive control availability from resolved state.
+  // Control is interactable when the manifest is ready and the feature is not gated.
+  const isFeatureAvailable = (result) => {
+    return result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
+  };
+
+
+  const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
+
+  // Turn a resolved state into the maker-facing explanation shown below a
+  // feature. Component and profiler renderers share this copy policy.
+  const reasonFor = (state, featureName, { on = "", notInThisBuild = "" } = {}) => {
+    if (state === "on" || state === "included") return on;
+    if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
+    if (state === "not-in-this-build") return notInThisBuild || `This controller was loaded without ${featureName}.`;
+    if (state === "checking") return `Checking whether this controller can run ${featureName}…`;
+    if (state === "identity-unavailable") {
+      // Two different failures read as identity-unavailable; differ by reason:
+      // - "no-response": transport failure, retryable, genuinely reconnecting
+      // - "incompatible": validation failure, terminal, no reconnection coming
+      if (identityErrorReason === "incompatible") {
+        return `Could not check ${featureName}. The controller did not report its features.`;
+      }
+      return `Could not check ${featureName}. Reconnecting to the controller…`;
+    }
+    return "";
+  };
+
+  const notify = () => listeners.forEach((listener) => listener());
+
+  const setIdentity = (nextIdentity) => {
+    identity = nextIdentity || null;
+    phase = "ready";
+    notify();
+  };
+
+  const setIdentityError = (reason = "no-response") => {
+    identity = null;
+    phase = "error";
+    identityErrorReason = reason;
+    notify();
+  };
+
+  const subscribe = (listener) => {
+    listeners.add(listener);
+    listener();
+    return () => listeners.delete(listener);
+  };
+
+  window.PAFeatureAvailability = {
+    resolve,
+    isFeatureAvailable,
+    labelFor,
+    reasonFor,
+    setIdentity,
+    setIdentityError,
+    subscribe,
+  };
+})();
+
+(() => {
+  const featureToggle = (id, name) => ({
+    name,
+    input: document.getElementById(`enable-${id}`),
+    status: document.getElementById(`status-${id}`),
+    available: true,
+    state: "off",
+  });
   const featureToggles = {
-    arm1:         { input: document.getElementById("enable-arm1"),         status: document.getElementById("status-arm1") },
-    arm2:         { input: document.getElementById("enable-arm2"),         status: document.getElementById("status-arm2") },
-    aux1:         { input: document.getElementById("enable-aux1"),         status: document.getElementById("status-aux1") },
-    aux2:         { input: document.getElementById("enable-aux2"),         status: document.getElementById("status-aux2") },
-    aux3:         { input: document.getElementById("enable-aux3"),         status: document.getElementById("status-aux3") },
-    dome:         { input: document.getElementById("enable-dome"),         status: document.getElementById("status-dome") },
-    rcCh1:        { input: document.getElementById("enable-rc-ch1"),       status: document.getElementById("status-rc-ch1") },
-    rcCh2:        { input: document.getElementById("enable-rc-ch2"),       status: document.getElementById("status-rc-ch2") },
-    rcCh3:        { input: document.getElementById("enable-rc-ch3"),       status: document.getElementById("status-rc-ch3") },
-    rcCh4:        { input: document.getElementById("enable-rc-ch4"),       status: document.getElementById("status-rc-ch4") },
-    rcCh5:        { input: document.getElementById("enable-rc-ch5"),       status: document.getElementById("status-rc-ch5") },
-    rcCh6:        { input: document.getElementById("enable-rc-ch6"),       status: document.getElementById("status-rc-ch6") },
-    s1Hoverboard: { input: document.getElementById("enable-s1-hoverboard"), status: document.getElementById("status-s1-hoverboard") },
-    s2Sound:      { input: document.getElementById("enable-s2-sound"),     status: document.getElementById("status-s2-sound") },
-    s3DomeCtrl:   { input: document.getElementById("enable-s3-dome-ctrl"), status: document.getElementById("status-s3-dome-ctrl") },
+    arm1:        featureToggle("arm1", "Utility Arm 1"),
+    arm2:        featureToggle("arm2", "Utility Arm 2"),
+    aux1:        featureToggle("aux1", "AUX 1"),
+    aux2:        featureToggle("aux2", "AUX 2"),
+    aux3:        featureToggle("aux3", "AUX 3"),
+    domeEsc:     featureToggle("dome-esc", "Dome ESC"),
+    rcCh1:       featureToggle("rc-ch1", "RC Channel 1"),
+    rcCh2:       featureToggle("rc-ch2", "RC Channel 2"),
+    rcCh3:       featureToggle("rc-ch3", "RC Channel 3"),
+    rcCh4:       featureToggle("rc-ch4", "RC Channel 4"),
+    rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
+    rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
+    drive:       featureToggle("drive", "Drive"),
+    audio:       featureToggle("audio", "Audio"),
+    protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
   // Component type selects — maps API key to select element
@@ -53,6 +186,8 @@
   const identityMdnsCheckbox = document.getElementById("mdns-use-name");
   const identitySaveButton = document.getElementById("identity-save-button");
   const identityFeedback = document.getElementById("identity-feedback");
+  const identityActions = document.getElementById("identity-actions");
+  const identityDiagnosis = document.getElementById("identity-diagnosis");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -61,16 +196,16 @@
     enableAux1:        "aux1",
     enableAux2:        "aux2",
     enableAux3:        "aux3",
-    enableDome:        "dome",
+    enableDomeEsc:     "domeEsc",
     enableRcCh1:       "rcCh1",
     enableRcCh2:       "rcCh2",
     enableRcCh3:       "rcCh3",
     enableRcCh4:       "rcCh4",
     enableRcCh5:       "rcCh5",
     enableRcCh6:       "rcCh6",
-    enableS1Hoverboard: "s1Hoverboard",
-    enableS2Sound:     "s2Sound",
-    enableS3DomeCtrl:  "s3DomeCtrl",
+    enableDrive:       "drive",
+    enableAudio:       "audio",
+    enableProtoR2link: "protoR2link",
   };
 
   let saveInFlight = false;
@@ -117,6 +252,13 @@
     setFeedbackState(identityFeedback, message, variant);
   };
 
+  // Diagnosis explains WHY identity failed and outlives the feedback line, which
+  // every identity action rewrites. Keep it on its own element: setIdentityFeedback
+  // assigns textContent, so a save or a reload of identity would erase it.
+  const setIdentityDiagnosis = (message) => {
+    if (identityDiagnosis) identityDiagnosis.textContent = message || "";
+  };
+
   const renderIdentity = (identity) => {
     if (identityNameInput) {
       identityNameInput.value = normalizeIdentityInput(identity?.droidName || "protoartoo");
@@ -126,18 +268,195 @@
     }
   };
 
-  const loadIdentity = async () => {
-    if (!window.PAApi || !identityNameInput) return;
-    setIdentityFeedback("Loading identity...");
+  const receiveIdentity = (identity) => {
+    renderIdentity(identity);
+    window.PAFeatureAvailability.setIdentity(identity);
+    setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
+  };
+
+  // Perform lazy diagnosis of identity failure after assets are ready.
+  // Fetches version info to determine why identity is invalid and displays
+  // appropriate diagnosis sentence. Never blocks bootstrap state transitions.
+  const performIdentityDiagnosis = async () => {
     try {
-      const result = await window.PAApi.get("/api/identity", { timeoutMs: 5000 });
-      renderIdentity(result.data);
-      setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
+      // Fetch expected versions (built into this deployment)
+      let expectedFwVersion = "unknown";
+      if (window.PAApi) {
+        try {
+          const fwResult = await window.PAApi.get("/fw-version.json", { timeoutMs: 2500, cache: "no-store" });
+          if (fwResult.data?.fwVersion) {
+            expectedFwVersion = String(fwResult.data.fwVersion);
+          }
+        } catch (_error) {
+          // Continue with unknown if fetch fails
+        }
+      }
+
+      // Get running version from status stream (live or cached)
+      let runningFwVersion = "unknown";
+      let runningFsVersion = "unknown";
+      const lastStatus = window.PAStatusStream?.getLastStatus?.();
+      if (lastStatus?.firmwareVersion) {
+        runningFwVersion = String(lastStatus.firmwareVersion);
+      }
+      if (lastStatus?.fsVersion) {
+        runningFsVersion = String(lastStatus.fsVersion);
+      }
+
+      // If no cached status, wait briefly for a status event with bounded timeout
+      if (runningFwVersion === "unknown" && window.PAStatusStream?.isSupported?.()) {
+        try {
+          const statusPromise = new Promise((resolve) => {
+            const unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
+              if (eventType === "status" && payload?.firmwareVersion) {
+                unsubscribe();
+                resolve(payload);
+              }
+            });
+            // Timeout after 3 seconds to avoid indefinite wait
+            setTimeout(() => {
+              unsubscribe();
+              resolve(null);
+            }, 3000);
+          });
+          const status = await statusPromise;
+          if (status?.firmwareVersion) {
+            runningFwVersion = String(status.firmwareVersion);
+          }
+          if (status?.fsVersion) {
+            runningFsVersion = String(status.fsVersion);
+          }
+        } catch (_error) {
+          // Continue with last known values
+        }
+      }
+
+      // Determine diagnosis based on version comparison
+      let diagMessage = "The controller could not report which features are available.";
+      if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
+        if (expectedFwVersion !== runningFwVersion) {
+          diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
+        } else {
+          // Versions match but identity is invalid (invalid feature list)
+          diagMessage = "This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
+        }
+      }
+
+      setIdentityDiagnosis(diagMessage);
     } catch (error) {
-      console.error("[setup] loadIdentity failed:", error);
-      setIdentityFeedback(`Failed to load identity: ${window.PAApi.messageFor(error)}`, "error");
+      console.warn("[setup] diagnosis failed:", error);
+      // Show the no-version-evidence sentence when diagnosis cannot fetch versions
+      setIdentityDiagnosis("The controller could not report which features are available.");
     }
   };
+
+  window.addEventListener("pa:identity-available", (event) => {
+    receiveIdentity(event.detail);
+    // Clear the Retry button when identity loads successfully
+    if (identityActions) {
+      identityActions.innerHTML = "";
+    }
+    // Clear diagnosis when identity succeeds (it outlives failed state)
+    setIdentityDiagnosis("");
+  });
+
+  window.addEventListener("pa:identity-unavailable", (event) => {
+    const reason = event.detail?.reason || "no-response";
+    window.PAFeatureAvailability.setIdentityError(reason);
+    // Different message based on reason: transport failure promises reconnection;
+    // validation failure is terminal and Retry button says what to do
+    const message = reason === "incompatible"
+      ? "Could not load controller identity."
+      : "Could not load controller identity. Reconnecting…";
+    setIdentityFeedback(message, "error");
+    // Add persistent Retry button outside the live region
+    if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "btn accent";
+      retryButton.textContent = "Retry now";
+      retryButton.addEventListener("click", () => {
+        window.PABootstrap.retryNow("shell-identity");
+        if (identityActions) identityActions.innerHTML = "";
+      });
+      identityActions.innerHTML = "";
+      identityActions.appendChild(retryButton);
+    }
+    // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
+    if (reason === "incompatible") {
+      window.addEventListener("pa:assets-ready", () => {
+        performIdentityDiagnosis();
+      }, { once: true });
+    }
+    // Show placeholder when identity is unavailable
+    showBoardPlaceholder("Could not tell which board this is.");
+  });
+
+  // ---- Board image conditional loading ----
+  const BOARD_LABELS = {
+    artoo_esp32: "Artoo Controller",
+    firebeetle2: "FireBeetle 2",
+  };
+
+  const boardImage = document.getElementById("board-image");
+  const boardPlaceholder = document.getElementById("board-image-placeholder");
+  const boardPlaceholderText = document.getElementById("board-placeholder-text");
+
+  const showBoardPlaceholder = (text) => {
+    if (boardImage) boardImage.classList.add("hidden");
+    if (boardPlaceholder) {
+      boardPlaceholder.classList.remove("hidden");
+      if (boardPlaceholderText) boardPlaceholderText.textContent = text;
+    }
+  };
+
+  const showBoardImage = () => {
+    if (boardImage) boardImage.classList.remove("hidden");
+    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
+  };
+
+  const updateBoardImage = (identity) => {
+    if (!boardImage || !identity || !identity.board) {
+      showBoardPlaceholder("Checking which board this is…");
+      return;
+    }
+
+    const boardId = identity.board;
+    const boardLabel = BOARD_LABELS[boardId] || boardId;
+    const imageSrc = `/board_${boardId}.jpg`;
+
+    // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
+    boardImage.onload = () => {
+      showBoardImage();
+    };
+
+    boardImage.onerror = () => {
+      // Board has no photo yet; show placeholder with board name
+      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
+    };
+
+    // Set alt and title before setting src
+    boardImage.alt = `${boardLabel} PCB`;
+    boardImage.title = `${boardLabel} PCB`;
+
+    // Use data-deferred-src so image load is gated by announceAssetsOnce(), which ensures
+    // /api/events SSE opens before image fetches compete for the connection.
+    // Identity can resolve after the one-shot deferred-asset sweep has already run
+    // (a section that is visibly waiting to retry already counts as settled), so a
+    // late data-deferred-src would never be swept.
+    if (window.PAAssetsReady) boardImage.src = imageSrc;
+    else boardImage.dataset.deferredSrc = imageSrc;
+  };
+
+  // Listen for identity available event and update board image
+  window.addEventListener("pa:identity-available", (event) => {
+    updateBoardImage(event.detail);
+  });
+
+  // Also check cache at initialization time (if identity came before this script ran)
+  if (window.PAIdentity) {
+    updateBoardImage(window.PAIdentity);
+  }
 
   const saveIdentity = async () => {
     if (!window.PAApi || !identityNameInput) return;
@@ -236,7 +555,8 @@
 
   const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => {
     const toggleKey = AUX_RGB_TOGGLE_KEY_BY_TYPE[key];
-    const enabled = Boolean(featureToggles[toggleKey]?.input?.checked);
+    const toggle = featureToggles[toggleKey];
+    const enabled = Boolean(toggle?.available && toggle.input?.checked);
     return enabled && typeSelects[key]?.value === "rgb";
   });
 
@@ -285,22 +605,91 @@
       }
     }
   };
+
+  const featureRow = (toggle) =>
+    toggle.input?.closest(".component-row") || toggle.input?.closest(".toggle-switch");
+
+  // Give each component row one stable explanation node. The availability
+  // renderer calls this before updating its text and aria relationship.
+  const ensureFeatureReason = (toggle, row) => {
+    if (toggle.reason || !row) return toggle.reason;
+    const reason = document.createElement("div");
+    reason.id = `${toggle.input.id}-availability-reason`;
+    reason.className = "feature-availability-reason";
+    reason.hidden = true;
+    row.appendChild(reason);
+    toggle.input.setAttribute("aria-describedby", reason.id);
+    toggle.reason = reason;
+    return reason;
+  };
+
+  // Make every interactive control in a component row follow the resolved
+  // availability. The component renderer calls this after resolving a state.
+  const setRowControlsAvailable = (row, available, primaryInput) => {
+    if (!row) return;
+    row.querySelectorAll("button, select, input").forEach((control) => {
+      if (control === primaryInput || control.type !== "hidden") {
+        control.disabled = !available;
+        control.setAttribute("aria-disabled", available ? "false" : "true");
+      }
+    });
+  };
+
+  // Apply one resolved state to a component row, including its status copy,
+  // panel rail, reason, and all controls that must become inert together.
   const updateToggleStatus = (key) => {
     const toggle = featureToggles[key];
     if (!toggle || !toggle.input || !toggle.status) return;
-    toggle.status.textContent = toggle.input.checked ? "Enabled" : "Disabled";
-    toggle.status.style.color = toggle.input.checked ? "var(--success)" : "var(--text-dim)";
+    const row = featureRow(toggle);
+    const result = window.PAFeatureAvailability.resolve({
+      boardCapability: row?.dataset?.boardCapability || toggle.input.dataset.boardCapability || "",
+      buildFlag: row?.dataset?.buildFlag || toggle.input.dataset.buildFlag || "",
+      enabled: toggle.input.checked,
+    });
+
+    toggle.state = result.state;
+    // Derive available from phase and state: control is interactable when
+    // the manifest is ready and the feature is not gated
+    toggle.available = window.PAFeatureAvailability.isFeatureAvailable(result);
+    toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
+    toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
+    toggle.input.disabled = !toggle.available;
+    toggle.input.setAttribute("aria-disabled", toggle.available ? "false" : "true");
+
+    if (row) {
+      row.classList.add("feature-availability-row");
+      row.classList.remove(
+        "feature-state-on",
+        "feature-state-off",
+        "feature-state-not-in-this-build",
+        "feature-state-not-on-this-board",
+        "feature-state-checking",
+        "feature-state-identity-unavailable",
+      );
+      row.classList.add(`feature-state-${result.state}`);
+      row.dataset.featureState = result.state;
+      setRowControlsAvailable(row, toggle.available, toggle.input);
+      const reason = ensureFeatureReason(toggle, row);
+      if (reason) {
+        reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
+        reason.hidden = toggle.available;
+      }
+    }
+  };
+
+  const updateAllToggleStatuses = () => {
+    Object.keys(featureToggles).forEach(updateToggleStatus);
   };
 
   const updateEnabledSummary = () => {
     if (!setupEnabledSummary) return;
-    const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input));
+    const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);
     const enabledCount = toggles.filter((toggle) => toggle.input.checked).length;
     const total = toggles.length;
     const state = enabledCount > 0 ? "ok" : "info";
     const prefix = enabledCount > 0 ? "✅" : "⚪";
     setupEnabledSummary.className = `status-pill ${state === "ok" ? "pill-ok" : "pill-info"}`;
-    setupEnabledSummary.textContent = `${prefix} ${enabledCount}/${total} enabled`;
+    setupEnabledSummary.textContent = `${prefix} ${enabledCount}/${total} on`;
   };
 
 
@@ -320,16 +709,16 @@
       enableAux1: components.aux1?.enabled,
       enableAux2: components.aux2?.enabled,
       enableAux3: components.aux3?.enabled,
-      enableDome: components.dome?.enabled,
+      enableDomeEsc: components.domeEsc?.enabled,
       enableRcCh1: components.rcCh1?.enabled,
       enableRcCh2: components.rcCh2?.enabled,
       enableRcCh3: components.rcCh3?.enabled,
       enableRcCh4: components.rcCh4?.enabled,
       enableRcCh5: components.rcCh5?.enabled,
       enableRcCh6: components.rcCh6?.enabled,
-      enableS1Hoverboard: components.s1Hoverboard?.enabled,
-      enableS2Sound: components.s2Sound?.enabled,
-      enableS3DomeCtrl: components.s3DomeCtrl?.enabled,
+      enableDrive: components.drive?.enabled,
+      enableAudio: components.audio?.enabled,
+      enableProtoR2link: components.protoR2link?.enabled,
     };
 
     Object.entries(TOGGLE_KEY_MAP).forEach(([payloadKey, toggleKey]) => {
@@ -352,6 +741,73 @@
     Object.entries(typeSelects).forEach(([apiKey, select]) => {
       if (select && typePayload[apiKey] !== undefined) {
         select.value = String(typePayload[apiKey] || "none");
+      }
+    });
+
+    // Populate component labels (badges and descriptions) from the config response.
+    // Maps API keys to internal component names used for ID lookups.
+    const apiKeyToComponentName = {
+      drive: "enable_drive",
+      audio: "enable_audio",
+      protoR2link: "enable_protor2link",
+      domeEsc: "enable_dome_esc",
+      arm1: "enable_arm1",
+      arm2: "enable_arm2",
+      aux1: "enable_aux1",
+      aux2: "enable_aux2",
+      aux3: "enable_aux3",
+      rcCh1: "enable_rc_ch1",
+      rcCh2: "enable_rc_ch2",
+      rcCh3: "enable_rc_ch3",
+      rcCh4: "enable_rc_ch4",
+      rcCh5: "enable_rc_ch5",
+      rcCh6: "enable_rc_ch6",
+    };
+
+    const componentLabels = {
+      drive: components.drive?.label,
+      audio: components.audio?.label,
+      protoR2link: components.protoR2link?.label,
+      domeEsc: components.domeEsc?.label,
+      arm1: components.arm1?.label,
+      arm2: components.arm2?.label,
+      aux1: components.aux1?.label,
+      aux2: components.aux2?.label,
+      aux3: components.aux3?.label,
+      rcCh1: components.rcCh1?.label,
+      rcCh2: components.rcCh2?.label,
+      rcCh3: components.rcCh3?.label,
+      rcCh4: components.rcCh4?.label,
+      rcCh5: components.rcCh5?.label,
+      rcCh6: components.rcCh6?.label,
+    };
+
+    Object.entries(componentLabels).forEach(([apiKey, label]) => {
+      const componentName = apiKeyToComponentName[apiKey];
+      if (!componentName) return;
+
+      // Update badge: show the label if it exists, hide if it doesn't
+      const badge = document.getElementById(`badge-${componentName}`);
+      if (badge) {
+        badge.textContent = label || "";
+      }
+
+      // Update description label element: populate the <strong> tag with the label.
+      // If no label exists, remove the entire label-desc span so the description reads correctly.
+      const labelElem = document.getElementById(`label-${componentName}`);
+      if (labelElem) {
+        if (label) {
+          labelElem.textContent = label;
+        } else {
+          // No label: remove the entire trailing sentence span
+          const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
+          if (labelDescSpan) {
+            // Use parentNode.removeChild for compatibility with test mocks
+            if (labelDescSpan.parentNode) {
+              labelDescSpan.parentNode.removeChild(labelDescSpan);
+            }
+          }
+        }
       }
     });
 
@@ -430,13 +886,16 @@
     try {
       const body = new URLSearchParams();
       Object.entries(featureToggles).forEach(([key, toggle]) => {
-        if (toggle.input) {
+        if (toggle.input && toggle.available) {
           const paramKey = "enable" + key.charAt(0).toUpperCase() + key.slice(1);
           body.set(paramKey, toggle.input.checked ? "true" : "false");
         }
       });
       Object.entries(typeSelects).forEach(([apiKey, select]) => {
-        if (select) body.set(apiKey, select.value);
+        const toggleKey = apiKey.replace(/Type$/, "");
+        if (select && featureToggles[toggleKey]?.available !== false) {
+          body.set(apiKey, select.value);
+        }
       });
       body.set("aux_led_pin", String(deriveAuxLedPinFromTypes()));
       if (auxLedCountInput) {
@@ -498,11 +957,12 @@
     const toggle = featureToggles[key];
     if (toggle.input) {
       toggle.input.addEventListener("change", () => {
+        updateToggleStatus(key);
+        if (!toggle.available) return;
         featureEditGeneration += 1;
         if (RC_TOGGLE_KEYS.has(key)) {
           rcChangeGeneration += 1;
         }
-        updateToggleStatus(key);
         updateEnabledSummary();
         if (["aux1", "aux2", "aux3"].includes(key)) {
           updateAuxLedConfigVisibility();
@@ -605,11 +1065,16 @@
   }
 
   initSegmentedTypeControls();
+  window.PAFeatureAvailability.subscribe(() => {
+    updateAllToggleStatuses();
+    updateEnabledSummary();
+  });
   updateEnabledSummary();
   updateAuxLedConfigVisibility();
   setSaveSummary("💾 Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
-  loadIdentity();
+  setIdentityFeedback("Loading controller identity…");
+  if (window.PAIdentity) receiveIdentity(window.PAIdentity);
   loadFeatures();
   // --- Serial connection status ---
   const serialS1 = document.getElementById("serial-s1-state");
@@ -664,18 +1129,18 @@
 
   const renderSerialStatus = (d) => {
     if (serialS1) {
-      serialS1.textContent = !d.s1Hoverboard ? "Disabled"
-        : d.s1Hoverboard.state === "commanding" ? "Active" : "Enabled / Idle";
-      serialS1.style.color = d.s1Hoverboard ? "var(--success)" : "var(--text-dim)";
+      serialS1.textContent = !d.drive ? "Disabled"
+        : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
+      serialS1.style.color = d.drive ? "var(--success)" : "var(--text-dim)";
     }
     if (serialS2) {
-      serialS2.textContent = !d.s2Sound ? "Disabled"
-        : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
-      serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
+      serialS2.textContent = !d.audio ? "Disabled"
+        : d.audio.state === "playing" ? "Playing" : "Enabled / Idle";
+      serialS2.style.color = d.audio ? "var(--success)" : "var(--text-dim)";
     }
     const s2DriverEl = document.getElementById("s2-driver-label");
     if (s2DriverEl) {
-      s2DriverEl.textContent = d.s2Sound?.driver || "";
+      s2DriverEl.textContent = d.audio?.driver || "";
     }
     if (serialS3) {
       const dl = d.dome_link;
@@ -872,7 +1337,8 @@
     const d = cfg?.drive || {};
     const rc = cfg?.rc || {};
     const components = cfg?.components || {};
-    const dome = cfg?.dome || {};
+    const domeEsc = cfg?.domeEsc || {};
+    const protoR2link = cfg?.protoR2link || {};
     const sys = cfg?.system || {};
 
     if (d.speedLimitMax !== undefined) p.set('speedLimitMax', d.speedLimitMax);
@@ -889,12 +1355,12 @@
     [
       ['arm1', 'enableArm1'], ['arm2', 'enableArm2'],
       ['aux1', 'enableAux1'], ['aux2', 'enableAux2'], ['aux3', 'enableAux3'],
-      ['dome', 'enableDome'],
+      ['domeEsc', 'enableDomeEsc'],
       ['rcCh1', 'enableRcCh1'], ['rcCh2', 'enableRcCh2'], ['rcCh3', 'enableRcCh3'],
       ['rcCh4', 'enableRcCh4'], ['rcCh5', 'enableRcCh5'], ['rcCh6', 'enableRcCh6'],
-      ['s1Hoverboard', 'enableS1Hoverboard'],
-      ['s2Sound', 'enableS2Sound'],
-      ['s3DomeCtrl', 'enableS3DomeCtrl'],
+      ['drive', 'enableDrive'],
+      ['audio', 'enableAudio'],
+      ['protoR2link', 'enableProtoR2link'],
     ].forEach(([key, param]) => {
       if (components[key]?.enabled !== undefined) {
         p.set(param, components[key].enabled ? 'true' : 'false');
@@ -914,16 +1380,16 @@
     if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
     if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
 
-    if (dome.neutralUs !== undefined) p.set('domeNeutralUs', dome.neutralUs);
-    if (dome.minPulseUs !== undefined) p.set('domeMinPulseUs', dome.minPulseUs);
-    if (dome.maxPulseUs !== undefined) p.set('domeMaxPulseUs', dome.maxPulseUs);
-    if (dome.speedLimitPct !== undefined) p.set('domeSpeedLimitPct', dome.speedLimitPct);
-    if (dome.rndEnable !== undefined) p.set('domeRndEnable', dome.rndEnable ? 'true' : 'false');
-    if (dome.rndSpeedPct !== undefined) p.set('domeRndSpeedPct', dome.rndSpeedPct);
-    if (dome.rndPauseMin !== undefined) p.set('domeRndPauseMin', dome.rndPauseMin);
-    if (dome.rndPauseMax !== undefined) p.set('domeRndPauseMax', dome.rndPauseMax);
-    if (dome.rndMoveMs !== undefined) p.set('domeRndMoveMs', dome.rndMoveMs);
-    if (dome.wifiPeerIp !== undefined) p.set('domeWifiPeerIp', dome.wifiPeerIp);
+    if (domeEsc.neutralUs !== undefined) p.set('domeEscNeutralUs', domeEsc.neutralUs);
+    if (domeEsc.minPulseUs !== undefined) p.set('domeEscMinPulseUs', domeEsc.minPulseUs);
+    if (domeEsc.maxPulseUs !== undefined) p.set('domeEscMaxPulseUs', domeEsc.maxPulseUs);
+    if (domeEsc.speedLimitPct !== undefined) p.set('domeEscSpeedLimitPct', domeEsc.speedLimitPct);
+    if (domeEsc.rndEnable !== undefined) p.set('domeEscRndEnable', domeEsc.rndEnable ? 'true' : 'false');
+    if (domeEsc.rndSpeedPct !== undefined) p.set('domeEscRndSpeedPct', domeEsc.rndSpeedPct);
+    if (domeEsc.rndPauseMin !== undefined) p.set('domeEscRndPauseMin', domeEsc.rndPauseMin);
+    if (domeEsc.rndPauseMax !== undefined) p.set('domeEscRndPauseMax', domeEsc.rndPauseMax);
+    if (domeEsc.rndMoveMs !== undefined) p.set('domeEscRndMoveMs', domeEsc.rndMoveMs);
+    if (protoR2link.wifiPeerIp !== undefined) p.set('protoR2linkWifiPeerIp', protoR2link.wifiPeerIp);
 
     if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
 
@@ -1095,14 +1561,18 @@
 })();
 
 // =============================================================================
-// Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
-// Polls /api/profiler through PAApi on load and refresh. If endpoint returns
-// 404/501, stops polling for the page session. Retries on transient errors
-// (503, network) per ADR 0016. Uses Background Poll for cadence and visibility.
+// Memory Profiler UI
+// Feature Availability comes from the identity manifest. The profiler endpoint
+// is polled only after that manifest says this image contains the profiler.
 // =============================================================================
 (() => {
   const card = document.getElementById("profiler-card");
   if (!card) return;
+  const content = document.getElementById("profiler-content");
+  const availabilityStatus = document.getElementById("profiler-availability-status");
+  const availabilityReason = document.getElementById("profiler-availability-reason");
+  const availabilityLamp = document.getElementById("profiler-availability-lamp");
+  const feedback = document.getElementById("profiler-feedback");
 
   function kb(bytes) {
     return (bytes / 1024).toFixed(1) + " KB";
@@ -1198,39 +1668,84 @@
     }
   }
 
-  // Latch for 404/501: the endpoint is permanently absent on this build.
-  // Once detected, the attempt function will not fetch again, and poll.stop()
-  // ensures the interval and visibility listener are removed in normal operation.
-  let latched = false;
-
-  let poll;
-
   async function refreshProfiler() {
-    // Once latched on 404/501, do not make any more requests.
-    if (latched) return;
-
     try {
       const result = await window.PAApi.get("/api/profiler");
-      // Success: render the profiler data
-      card.hidden = false;
       renderProfiler(result.data);
-    } catch (error) {
-      // Only latch on 404 (Not Found) or 501 (Not Implemented) — these indicate
-      // the feature is permanently absent on this build (PA_HEAP_PROFILE=0).
-      // Do NOT latch on 503 (Service Unavailable / admission control) — that is
-      // a transient condition and the profiler may succeed on retry per ADR 0016.
-      if (error instanceof window.PAApi.ApiError && (error.status === 404 || error.status === 501)) {
-        latched = true;
-        poll.stop();
+      if (feedback) {
+        feedback.textContent = `Memory readings updated at ${new Date().toLocaleTimeString()}`;
+        feedback.className = "feedback mt-12 success";
       }
-      // Transient errors (503, network, timeout, etc.): keep polling on cadence.
+    } catch (error) {
+      if (feedback) {
+        feedback.textContent = `Memory readings unavailable: ${window.PAApi.messageFor(error)}`;
+        feedback.className = "feedback mt-12 warning";
+      }
     }
   }
 
-  poll = window.PageBootstrap.createBackgroundPoll(refreshProfiler, {
+  const poll = window.PageBootstrap.createBackgroundPoll(refreshProfiler, {
     cadenceMs: 5000,
     runOnStart: true,
     refreshOnReturn: true,
   });
-  poll.start();
+  let polling = false;
+
+  // Render the profiler's declared requirements and own its poll lifecycle;
+  // the identity subscriber calls this after every availability transition.
+  const renderAvailability = () => {
+    const featureName = "Memory Profiler";
+    const hasRequirementMetadata = Boolean(card.dataset.boardCapability || card.dataset.buildFlag);
+    const result = hasRequirementMetadata
+      ? window.PAFeatureAvailability.resolve({
+          boardCapability: card.dataset.boardCapability || "",
+          buildFlag: card.dataset.buildFlag || "",
+          hasToggle: false,  // Profiler is compile-time only, no runtime toggle
+        })
+      : { phase: "checking", state: "checking" };
+    // Derive available from phase and state: control is interactable when
+    // the manifest is ready and the feature is not gated
+    const available = window.PAFeatureAvailability.isFeatureAvailable(result);
+    const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
+    const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
+      on: "Live memory readings refresh while this page is open.",
+      notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.", // PROVISIONAL: when a second Build Feature Flag needs a bespoke reason, promote this to a registry field + drift-checker coverage
+    });
+    card.hidden = false;
+    card.classList.remove(
+      "feature-state-on",
+      "feature-state-not-in-this-build",
+      "feature-state-not-on-this-board",
+      "feature-state-checking",
+      "feature-state-identity-unavailable",
+    );
+    card.classList.add("feature-availability-panel", `feature-state-${result.state}`);
+    card.dataset.featureState = result.state;
+
+    if (availabilityStatus) {
+      availabilityStatus.textContent = stateLabel;
+      availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
+    }
+    if (availabilityReason) availabilityReason.textContent = stateReason;
+    if (availabilityLamp) {
+      availabilityLamp.className = `feature-availability-lamp-indicator feature-state-${result.state}`;
+    }
+    if (content) {
+      content.inert = !available;
+      content.setAttribute("aria-hidden", available ? "false" : "true");
+    }
+
+    if (available && !polling) {
+      polling = true;
+      poll.start();
+    } else if (!available && polling) {
+      // Stopping the poll on availability loss is part of inertness: when the
+      // profiler is not available (compile-time gate or missing from this image),
+      // cease endpoint polling to avoid false "update failed" messages.
+      polling = false;
+      poll.stop();
+    }
+  };
+
+  window.PAFeatureAvailability.subscribe(renderAvailability);
 })();

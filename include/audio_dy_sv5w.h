@@ -3,14 +3,19 @@
 //
 // Concrete AudioDriver for the DY-SV5W audio module.
 //
-// TX uses interrupt-protected software UART on GPIO26 (PIN_AUDIO_TX) via
-// audio_soft_uart_tx.h.
-// RX queries use HardwareSerial(2) on GPIO35 (PIN_AUDIO_RX) when UART2 is not
-// contended by dome link or SBUS2; last-cached AudioModuleState is returned
-// otherwise.
+// Transport is per Board Variant; the full contract is the Transport section of
+// src/drivers/audio_dy_sv5w.cpp. In short:
+//   - PA_CAP_DEDICATED_AUDIO_UART == 1: one hardware UART (UART_PORT_AUDIO) on
+//     PIN_AUDIO_TX / PIN_AUDIO_RX, contended by nothing.
+//   - PA_CAP_DEDICATED_AUDIO_UART == 0: interrupt-protected software UART TX on
+//     PIN_AUDIO_TX (audio_soft_uart_tx.h) plus RX-only use of the dome link's
+//     controller on PIN_AUDIO_RX. AudioTask claims it through audioUartClaim()
+//     and reports a refusal as AUDIO_RX_BLOCKED_BY_DOME_UART; the last cached
+//     AudioModuleState is what the operator sees meanwhile.
 //
-// AudioModuleState interface, queryModuleState(), and getCachedState() remain
-// fully intact. UART2 is shared with the dome link; see audio_mp3trigger.h for the contention pattern.
+// The class itself is transport-agnostic: AudioModuleState, queryModuleState()
+// and getCachedState() behave identically on both boards, and all hardware
+// access goes through the injectable AudioSerialIO seam.
 //
 // For compatibility with DY-SV5W firmware variants, this driver sends the
 // checksum-frame dialect used by DYPlayer/BetterDuino.

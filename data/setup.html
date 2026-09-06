@@ -11,8 +11,12 @@
   <body data-page="setup">
     <div id="shell-top"></div>
 
-    <div class="board-image-wrap">
-      <img data-deferred-src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
+    <div class="board-image-wrap" id="board-image-panel">
+      <img id="board-image" alt="" title="">
+      <div id="board-image-placeholder" class="board-placeholder">
+        <div class="board-placeholder-icon">🎛️</div>
+        <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
+      </div>
     </div>
 
     <div class="card">
@@ -23,185 +27,216 @@
       </div>
       <form id="feature-form" class="mt-16">
 
-        <div class="section-label">🤖 ARM &amp; AUX</div>
-        <div class="component-row">
-          <label class="toggle-switch" title="AUX1 / ARM3 (GPIO 19) — Auxiliary PWM output 1">
-            <input type="checkbox" id="enable-aux1" name="enableAux1">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX1</span>
-            <span class="toggle-status" id="status-aux1">Disabled</span>
-          </label>
-          <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX1 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
+        <div class="section-label">Drive</div>
+        <div class="info-note" role="note">
+          <span>Leave this off and the droid is a statue — the sticks move, the wheels don't.</span>
+          <span id="label-desc-enable_drive" class="component-label-desc"> Wire it to <strong id="label-enable_drive"></strong>.</span>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="AUX2 / ARM4 (GPIO 18) — Auxiliary PWM output 2">
-            <input type="checkbox" id="enable-aux2" name="enableAux2">
+        <div class="component-row" data-feature-entry="system.config.enable_drive">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-drive" name="enableDrive">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX2</span>
-            <span class="toggle-status" id="status-aux2">Disabled</span>
+            <span class="toggle-label">Drive <span class="component-badge" id="badge-enable_drive"></span></span>
+            <span class="toggle-status" id="status-drive">Off</span>
           </label>
-          <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX2 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="AUX3 / ARM5 (GPIO 32) — Auxiliary PWM output 3">
-            <input type="checkbox" id="enable-aux3" name="enableAux3">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX3</span>
-            <span class="toggle-status" id="status-aux3">Disabled</span>
-          </label>
-          <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX3 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
         </div>
 
-
-        <div class="component-row">
-          <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
-            <input type="checkbox" id="enable-arm2" name="enableArm2">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM2</span>
-            <span class="toggle-status" id="status-arm2">Disabled</span>
-          </label>
-          <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="ARM2 component type">
-            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-          </div>
-          <select class="type-select type-select-native" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type" tabindex="-1" aria-hidden="true">
-            <option value="mg996r">MG996R (standard)</option>
-            <option value="mg90s">MG90S (micro)</option>
-          </select>
+        <div class="section-label">Dome Rotation</div>
+        <div class="info-note" role="note">
+          <span>Off, the dome sits still through every sequence, however the show is written.</span>
+          <span id="label-desc-enable_dome_esc" class="component-label-desc"> Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="ARM1 (GPIO 23) — Left utility arm servo">
+        <div class="component-row" data-feature-entry="system.config.enable_dome_esc">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-dome-esc" name="enableDomeEsc">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Dome ESC <span class="component-badge" id="badge-enable_dome_esc"></span></span>
+            <span class="toggle-status" id="status-dome-esc">Off</span>
+          </label>
+        </div>
+
+        <div class="section-label">protoR2link</div>
+        <div class="info-note" role="note">
+          <span>Carries light, panel and sound cues up to the dome's own board. Off, the body still drives — the dome just stops listening.</span>
+          <span id="label-desc-enable_protor2link" class="component-label-desc"> Wire it to <strong id="label-enable_protor2link"></strong>.</span>
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_protor2link">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-protor2link" name="enableProtoR2link">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">protoR2link <span class="component-badge" id="badge-enable_protor2link"></span></span>
+            <span class="toggle-status" id="status-protor2link">Off</span>
+          </label>
+        </div>
+
+        <div class="section-label">Audio</div>
+        <div class="info-note" role="note">
+          <span>Your droid's voice. Off, sequences still run start to finish, in silence.</span>
+          <span id="label-desc-enable_audio" class="component-label-desc"> Wire it to <strong id="label-enable_audio"></strong>.</span>
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_audio">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-audio" name="enableAudio">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Audio <span class="component-badge" id="badge-enable_audio"></span></span>
+            <span id="s2-driver-label" class="s2-driver-label"></span>
+            <span class="toggle-status" id="status-audio">Off</span>
+          </label>
+        </div>
+
+        <div class="section-label">Utility Arms</div>
+        <div class="info-note" role="note">
+          One servo per arm. Tick the arms you have fitted.
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_arm1">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM1</span>
-            <span class="toggle-status" id="status-arm1">Disabled</span>
+            <span class="toggle-label">Utility Arm 1 <span class="component-badge" id="badge-enable_arm1"></span></span>
+            <span class="toggle-status" id="status-arm1">Off</span>
           </label>
-          <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="ARM1 component type">
+          <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="Utility Arm 1 component type">
             <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
             <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
           </div>
-          <select class="type-select type-select-native" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type" tabindex="-1" aria-hidden="true">
+          <select class="type-select type-select-native" id="type-arm1" title="Component type connected to Utility Arm 1" aria-label="Utility Arm 1 component type" tabindex="-1" aria-hidden="true">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
-        <label class="toggle-switch" title="DOME (GPIO 25) — Dome rotation motor ESC">
-          <input type="checkbox" id="enable-dome" name="enableDome">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">DOME</span>
-          <span class="toggle-status" id="status-dome">Disabled</span>
-        </label>
-
-        <div class="section-label">🎮 RX IN/OUT</div>
-        <div class="info-note" role="note">
-          RC input changes save immediately and apply after controller restart.
+        <div class="component-row" data-feature-entry="system.config.enable_arm2">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-arm2" name="enableArm2">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Utility Arm 2 <span class="component-badge" id="badge-enable_arm2"></span></span>
+            <span class="toggle-status" id="status-arm2">Off</span>
+          </label>
+          <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="Utility Arm 2 component type">
+            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+          </div>
+          <select class="type-select type-select-native" id="type-arm2" title="Component type connected to Utility Arm 2" aria-label="Utility Arm 2 component type" tabindex="-1" aria-hidden="true">
+            <option value="mg996r">MG996R (standard)</option>
+            <option value="mg90s">MG90S (micro)</option>
+          </select>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
+
+        <div class="section-label">AUX Outputs</div>
+        <div class="info-note" role="note">
+          Spare outputs for whatever you have on them — a servo, a light, a smoke unit.
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_aux1">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-aux1" name="enableAux1">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">AUX 1 <span class="component-badge" id="badge-enable_aux1"></span></span>
+            <span class="toggle-status" id="status-aux1">Off</span>
+          </label>
+          <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX 1 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX 1" aria-label="AUX 1 component type" tabindex="-1" aria-hidden="true">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">LED strip</option>
+          </select>
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_aux2">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-aux2" name="enableAux2">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">AUX 2 <span class="component-badge" id="badge-enable_aux2"></span></span>
+            <span class="toggle-status" id="status-aux2">Off</span>
+          </label>
+          <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX 2 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX 2" aria-label="AUX 2 component type" tabindex="-1" aria-hidden="true">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">LED strip</option>
+          </select>
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_aux3">
+          <label class="toggle-switch">
+            <input type="checkbox" id="enable-aux3" name="enableAux3">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">AUX 3 <span class="component-badge" id="badge-enable_aux3"></span></span>
+            <span class="toggle-status" id="status-aux3">Off</span>
+          </label>
+          <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX 3 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX 3" aria-label="AUX 3 component type" tabindex="-1" aria-hidden="true">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">LED strip</option>
+          </select>
+        </div>
+
+        <div class="section-label">RC Receiver Channels</div>
+        <div class="info-note" role="note">
+          <div>Tick the channels you actually have wired to the receiver.</div>
+          <div>RC input changes save immediately and apply after controller restart.</div>
+        </div>
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch1">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH1 — Drive / SBUS 1</span>
-            <span class="toggle-status" id="status-rc-ch1">Disabled</span>
+            <span class="toggle-label">RC Channel 1 <span class="component-badge" id="badge-enable_rc_ch1"></span></span>
+            <span class="toggle-status" id="status-rc-ch1">Off</span>
           </label>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH2 (GPIO 13) — SBUS dome receiver or PWM input 2">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch2">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH2 — Dome / SBUS 2</span>
-            <span class="toggle-status" id="status-rc-ch2">Disabled</span>
+            <span class="toggle-label">RC Channel 2 <span class="component-badge" id="badge-enable_rc_ch2"></span></span>
+            <span class="toggle-status" id="status-rc-ch2">Off</span>
           </label>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH3 (GPIO 2) — Standard PWM input 3 (strapping pin)">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch3">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH3 — PWM 3</span>
-            <span class="toggle-status" id="status-rc-ch3">Disabled</span>
+            <span class="toggle-label">RC Channel 3 <span class="component-badge" id="badge-enable_rc_ch3"></span></span>
+            <span class="toggle-status" id="status-rc-ch3">Off</span>
           </label>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH4 (GPIO 4) — Standard PWM input 4">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch4">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH4 — PWM 4</span>
-            <span class="toggle-status" id="status-rc-ch4">Disabled</span>
+            <span class="toggle-label">RC Channel 4 <span class="component-badge" id="badge-enable_rc_ch4"></span></span>
+            <span class="toggle-status" id="status-rc-ch4">Off</span>
           </label>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH5 (GPIO 12) — Standard PWM input 5 (strapping pin)">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch5">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH5 — PWM 5</span>
-            <span class="toggle-status" id="status-rc-ch5">Disabled</span>
+            <span class="toggle-label">RC Channel 5 <span class="component-badge" id="badge-enable_rc_ch5"></span></span>
+            <span class="toggle-status" id="status-rc-ch5">Off</span>
           </label>
         </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="CH6 (GPIO 27) — Standard PWM input 6">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch6">
+          <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">CH6 — PWM 6</span>
-            <span class="toggle-status" id="status-rc-ch6">Disabled</span>
-          </label>
-        </div>
-
-        <div class="section-label">🔌 SERIAL COMMS</div>
-        <div class="component-row">
-          <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
-            <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">S1 — Hoverboard</span>
-            <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
-          </label>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
-            <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">S2 — Sound</span>
-            <span id="s2-driver-label" class="s2-driver-label"></span>
-            <span class="toggle-status" id="status-s2-sound">Disabled</span>
-          </label>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="S3 (GPIO 33/34) — protoR2link serial transport (slip ring)">
-            <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">S3 — Dome Control</span>
-            <span class="toggle-status" id="status-s3-dome-ctrl">Disabled</span>
+            <span class="toggle-label">RC Channel 6 <span class="component-badge" id="badge-enable_rc_ch6"></span></span>
+            <span class="toggle-status" id="status-rc-ch6">Off</span>
           </label>
         </div>
 
@@ -240,17 +275,17 @@
       <div class="status-grid mt-16">
         <dl>
           <div class="status-item">
-            <dt>S1 — Hoverboard</dt>
+            <dt>S1 — Drive</dt>
             <dd id="serial-s1-state">...</dd>
             <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
           </div>
           <div class="status-item">
-            <dt>S2 — Sound</dt>
+            <dt>S2 — Audio</dt>
             <dd id="serial-s2-state">...</dd>
             <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
           </div>
           <div class="status-item">
-            <dt>S3 — Dome Link</dt>
+            <dt>S3 — protoR2link</dt>
             <dd id="serial-s3-state">...</dd>
             <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
           </div>
@@ -302,10 +337,24 @@
       <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Memory Profiler (visible only in PA_HEAP_PROFILE=1 builds) -->
-    <div class="card" id="profiler-card" hidden>
-      <h3>🔬 Memory Profiler</h3>
-      <div class="desc">Live heap attribution data from the profiler build (<code>PA_HEAP_PROFILE=1</code>). Absent in normal builds.</div>
+    <!-- Memory Profiler availability is declared by /api/identity. -->
+    <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
+         data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
+      <div class="feature-availability-header">
+        <div>
+          <h3>🔬 Memory Profiler</h3>
+          <div class="desc">Shows where controller memory is being used and how much room remains.</div>
+        </div>
+        <div class="feature-availability-rail">
+          <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
+          <div id="profiler-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
+            <span class="feature-availability-lamp" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div id="profiler-availability-reason" class="feature-availability-reason" role="status" aria-live="polite">Checking whether this controller can run Memory Profiler…</div>
+
+      <div id="profiler-content" class="feature-availability-content" inert aria-hidden="true">
 
       <div class="mt-16">
         <div class="desc"><strong>Fragmentation</strong></div>
@@ -392,6 +441,8 @@
           <tbody id="prof-snap-tbody"></tbody>
         </table>
       </div>
+      <div id="profiler-feedback" class="feedback mt-12" role="status" aria-live="polite"></div>
+      </div>
     </div>
 
     <!-- Backup & Restore -->
@@ -441,6 +492,8 @@
       <div class="identity-header">
         <h3>🤖 Droid Identity</h3>
         <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="identity-actions" class="mt-8"></div>
+        <div id="identity-diagnosis" class="desc mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
       <div class="identity-grid">
         <label class="field" for="droid-name-input">

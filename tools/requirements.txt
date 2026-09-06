@@ -10,3 +10,10 @@ questionary>=2.1.1
 
 # PyYAML: required for action catalog generation from docs/action-registry.yaml.
 PyYAML>=6.0.3
+
+# rich: required by tools/soak.py. A hard dependency, not optional -- the
+# harness imports it at module scope so there is one presentation path rather
+# than two that can disagree about what a run looked like. It owns terminal
+# detection, NO_COLOR and TERM=dumb; the harness does not reimplement any of
+# that. Provided by pacman as python-rich on this project's machine.
+rich>=13.0

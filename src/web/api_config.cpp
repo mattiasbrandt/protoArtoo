@@ -112,9 +112,9 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
 
     const RcBindingConfig backboneBindings[] = {
         existing.system.rc_pwm_drive_speed, existing.system.rc_pwm_drive_steer, existing.system.rc_pwm_dome_speed,
-        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_sound,
+        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_audio,
         existing.system.rc_sbus_drive_speed, existing.system.rc_sbus_drive_steer, existing.system.rc_sbus_dome_speed,
-        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_sound,
+        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_audio,
     };
     for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
         const RcBindingConfig& binding = backboneBindings[i];
@@ -131,7 +131,7 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
 
     const RcTriggerBinding triggerBindings[] = {
         existing.system.rc_arm1, existing.system.rc_arm2, existing.system.rc_aux1, existing.system.rc_aux2, existing.system.rc_aux3,
-        existing.system.rc_sound, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
+        existing.system.rc_audio, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
         existing.system.rc_free3,
     };
     for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
@@ -248,7 +248,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     }
 
     const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
-                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_sound, snap.system.rc_free0,
+                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_audio, snap.system.rc_free0,
                                            snap.system.rc_free1, snap.system.rc_free2, snap.system.rc_free3};
 
     for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
@@ -283,7 +283,7 @@ void clearRcMapSlots(ConfigSnapshot* working) {
     working->system.rc_aux2 = disabledRcTriggerBinding();
     working->system.rc_aux3 = disabledRcTriggerBinding();
     working->system.rc_opmode = disabledRcTriggerBinding();
-    working->system.rc_sound = disabledRcTriggerBinding();
+    working->system.rc_audio = disabledRcTriggerBinding();
     working->system.rc_free0 = disabledRcTriggerBinding();
     working->system.rc_free1 = disabledRcTriggerBinding();
     working->system.rc_free2 = disabledRcTriggerBinding();
@@ -395,7 +395,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return true;
     }
 
-    RcTriggerBinding* spillSlots[] = {&working->system.rc_sound, &working->system.rc_free0, &working->system.rc_free1,
+    RcTriggerBinding* spillSlots[] = {&working->system.rc_audio, &working->system.rc_free0, &working->system.rc_free1,
                                       &working->system.rc_free2, &working->system.rc_free3};
     for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
         if (triggerSlotIsFree(*spillSlots[i])) {
@@ -408,6 +408,49 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     return false;
 }
 
+// Component label lookup table, built via X-macro expansion from component_labels.inc.
+// Maps component names (e.g., "enable_drive") to board-specific physical labels (e.g., "S1").
+
+struct ComponentLabelEntry {
+    const char* component;
+    const char* label;
+};
+
+// Helper macro to stringify board identifiers so they can be compared as strings.
+#define BOARD_NAME_STR(board) #board
+
+// Expand component_labels.inc to build the lookup table for the current board.
+// The macro expands entries and filters them by comparing stringified board names.
+
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
+#define CURRENT_BOARD_NAME BOARD_NAME_STR(artoo_esp32)
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+#define CURRENT_BOARD_NAME BOARD_NAME_STR(firebeetle2)
+#else
+#define CURRENT_BOARD_NAME ""
+#endif
+
+namespace {
+    const ComponentLabelEntry COMPONENT_LABELS[] = {
+#define PA_COMPONENT_LABEL(board, component, label)                           \
+        (strcmp(BOARD_NAME_STR(board), CURRENT_BOARD_NAME) == 0)              \
+            ? ComponentLabelEntry{#component, label}                          \
+            : ComponentLabelEntry{"", nullptr},
+#include "component_labels.inc"
+#undef PA_COMPONENT_LABEL
+    };
+}
+
+// Helper function to get board component label for a given component name.
+// Returns the label string if found and applicable to the current board, nullptr otherwise.
+const char* getComponentLabel(const char* componentName) {
+    for (size_t i = 0; i < sizeof(COMPONENT_LABELS) / sizeof(COMPONENT_LABELS[0]); ++i) {
+        if (COMPONENT_LABELS[i].component[0] != '\0' && strcmp(COMPONENT_LABELS[i].component, componentName) == 0) {
+            return COMPONENT_LABELS[i].label;
+        }
+    }
+    return nullptr;
+}
 
 // -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -440,24 +483,53 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject components = doc["components"].to<JsonObject>();
     components["arm1"]["enabled"] = snap.system.enable_arm1;
     components["arm1"]["type"] = servoCompTypeToString(snap.servo.arm1_type);
+    if (const char* label = getComponentLabel("enable_arm1")) components["arm1"]["label"] = label;
+
     components["arm2"]["enabled"] = snap.system.enable_arm2;
     components["arm2"]["type"] = servoCompTypeToString(snap.servo.arm2_type);
+    if (const char* label = getComponentLabel("enable_arm2")) components["arm2"]["label"] = label;
+
     components["aux1"]["enabled"] = snap.system.enable_aux1;
     components["aux1"]["type"] = servoCompTypeToString(snap.servo.aux1_type);
+    if (const char* label = getComponentLabel("enable_aux1")) components["aux1"]["label"] = label;
+
     components["aux2"]["enabled"] = snap.system.enable_aux2;
     components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
+    if (const char* label = getComponentLabel("enable_aux2")) components["aux2"]["label"] = label;
+
     components["aux3"]["enabled"] = snap.system.enable_aux3;
     components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
-    components["dome"]["enabled"] = snap.system.enable_dome;
+    if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
+
+    components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
+    if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;
+
     components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
+    if (const char* label = getComponentLabel("enable_rc_ch1")) components["rcCh1"]["label"] = label;
+
     components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
+    if (const char* label = getComponentLabel("enable_rc_ch2")) components["rcCh2"]["label"] = label;
+
     components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
+    if (const char* label = getComponentLabel("enable_rc_ch3")) components["rcCh3"]["label"] = label;
+
     components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
+    if (const char* label = getComponentLabel("enable_rc_ch4")) components["rcCh4"]["label"] = label;
+
     components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
+    if (const char* label = getComponentLabel("enable_rc_ch5")) components["rcCh5"]["label"] = label;
+
     components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
-    components["s1Hoverboard"]["enabled"] = snap.system.enable_s1_hoverboard;
-    components["s2Sound"]["enabled"] = snap.system.enable_s2_sound;
-    components["s3DomeCtrl"]["enabled"] = snap.system.enable_s3_dome_ctrl;
+    if (const char* label = getComponentLabel("enable_rc_ch6")) components["rcCh6"]["label"] = label;
+
+    components["drive"]["enabled"] = snap.system.enable_drive;
+    if (const char* label = getComponentLabel("enable_drive")) components["drive"]["label"] = label;
+
+    components["audio"]["enabled"] = snap.system.enable_audio;
+    if (const char* label = getComponentLabel("enable_audio")) components["audio"]["label"] = label;
+
+    components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
+    if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
     // Legacy top-level calibration fields consumed by data/servo.js
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
@@ -473,17 +545,19 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc["aux_led_pin"] = snap.servo.aux_led_pin;
     doc["aux_led_count"] = snap.servo.aux_led_count;
 
-    JsonObject dome = doc["dome"].to<JsonObject>();
-    dome["neutralUs"] = snap.dome.dome_neutral_us;
-    dome["minPulseUs"] = snap.dome.dome_min_pulse_us;
-    dome["maxPulseUs"] = snap.dome.dome_max_pulse_us;
-    dome["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
-    dome["rndEnable"] = snap.dome.dome_rnd_enable;
-    dome["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
-    dome["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
-    dome["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
-    dome["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
-    dome["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
+    JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
+    domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
+    domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
+    domeEsc["maxPulseUs"] = snap.dome.dome_max_pulse_us;
+    domeEsc["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
+    domeEsc["rndEnable"] = snap.dome.dome_rnd_enable;
+    domeEsc["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
+    domeEsc["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
+    domeEsc["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
+    domeEsc["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
+
+    JsonObject protoR2link = doc["protoR2link"].to<JsonObject>();
+    protoR2link["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
 
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.system.logLevel;
@@ -638,7 +712,7 @@ void handleRcMapPost(WebRequest& req) {
 void handleConfigPost(WebRequest& req) {
     ConfigSnapshot working;
     configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome;
+    const bool domeEnabledBefore = working.system.enable_dome_esc;
 
     ConfigParamSource params = webParamSource(req);
 

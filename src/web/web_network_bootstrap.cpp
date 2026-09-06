@@ -1,10 +1,12 @@
 // =============================================================================
 // src/web/web_network_bootstrap.cpp
 //
-// WiFi, mDNS, OTA, and network recovery bootstrap for protoArtoo.
-// Handles WiFi event dispatch, boot posture decisions, network recovery
-// gesture evaluation, and OTA registration. The HTTP server is started
-// from the WiFi event callback path (handleWiFiEvent -> startHttpServerOnce).
+// WiFi boot posture decision and application for protoArtoo.
+// Handles boot posture decisions and WiFi configuration application,
+// network recovery gesture evaluation, and OTA registration. WiFi event
+// handling and registration are delegated to the network manager seam
+// (web_network_manager.h), which ensures the HTTP server is started from
+// the WiFi event callback path via the backend implementation.
 // =============================================================================
 
 #include "../../include/web_network_bootstrap.h"
@@ -17,26 +19,50 @@
 #include "../../include/config_store.h"
 #include "../../include/logging.h"
 #include "../../include/web_server.h"
+#include "../../include/web_network_manager.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
 
+// PA_HAS_SECRETS_HEADER and PA_ENABLE_STA_WIFI are needed by buildDeveloperShortcut()
+// even in native test builds, so they are defined at the top level, not inside #ifdef ARDUINO.
+// src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
+// compile-time WiFi defaults. It is never required to compile or boot - public
+// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #ifdef ARDUINO
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
 #include <Preferences.h>
-#include <WiFi.h>
 
-// src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
-// compile-time WiFi defaults. It is never required to compile or boot - public
-// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
-// boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
 #include "secrets.h"
 #define PA_HAS_SECRETS_HEADER 1
 #else
 #define PA_HAS_SECRETS_HEADER 0
 #endif
+#else
+// Native test build: no secrets.h available
+#define PA_HAS_SECRETS_HEADER 0
+
+// ESP-IDF reset reason enum for native test builds — evaluateNetworkRecoveryGesture()
+// needs esp_reset_reason(). Device builds include this from esp_system.h via Arduino.h.
+enum esp_reset_reason_t {
+    ESP_RST_UNKNOWN   = 0,
+    ESP_RST_POWERON   = 1,
+    ESP_RST_EXT       = 2,
+    ESP_RST_SW        = 3,
+    ESP_RST_PANIC     = 4,
+    ESP_RST_INT_WDT   = 5,
+    ESP_RST_TASK_WDT  = 6,
+    ESP_RST_WDT       = 7,
+    ESP_RST_DEEPSLEEP = 8,
+    ESP_RST_BROWNOUT  = 9,
+    ESP_RST_SDIO      = 10,
+};
+
+esp_reset_reason_t esp_reset_reason();
+#endif  // ARDUINO
 
 // PA_ENABLE_STA_WIFI selects which posture the Developer WiFi Shortcut resolves to
 // when secrets.h is present: 1 (default) = WiFi Client Mode, 0 = Standalone AP Mode.
@@ -44,37 +70,8 @@
 #ifndef PA_ENABLE_STA_WIFI
 #define PA_ENABLE_STA_WIFI 1
 #endif
-#endif  // ARDUINO
 
 static const char* TAG = "WebServer";
-
-#ifdef ARDUINO
-
-void handleWiFiEvent(WiFiEvent_t event) {
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_AP_START:
-            PA_LOG_INFO(TAG, "Hotspot started - SSID: %s  IP: %s", WiFi.softAPSSID().c_str(),
-                        WiFi.softAPIP().toString().c_str());
-            startHttpServerOnce();
-            break;
-        case ARDUINO_EVENT_WIFI_STA_START:
-            PA_LOG_INFO(TAG, "Connecting to WiFi network...");
-            break;
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            PA_LOG_INFO(TAG, "WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
-            startHttpServerOnce();
-            break;
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            // Ordinary WiFi Client Mode connection trouble stays visible as a
-            // client-mode problem (ADR 0015). It must never trigger automatic
-            // AP fallback here - wifiDecideBootPosture() has no connectivity
-            // input, so there is nothing to re-decide on disconnect.
-            PA_LOG_INFO(TAG, "WiFi connection lost");
-            break;
-        default:
-            break;
-    }
-}
 
 // buildDeveloperShortcut: the Developer WiFi Shortcut (ADR 0015) resolved from
 // src/secrets.h, source-build-only. Never populated in public release binaries -
@@ -102,47 +99,6 @@ static WifiDeveloperShortcut buildDeveloperShortcut() {
 #endif  // PA_ENABLE_STA_WIFI
 #endif  // PA_HAS_SECRETS_HEADER
     return shortcut;
-}
-
-// executeWifiBootPosture: enters the posture wifiDecideBootPosture() returned.
-// This function decides HOW to enter a posture; it never re-derives WHICH
-// posture to enter (that decision already happened, and stays pure/testable).
-static void executeWifiBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
-    switch (posture) {
-        case WifiBootPosture::PROVISIONING:
-        case WifiBootPosture::NETWORK_RECOVERY:
-            // Both postures expose WiFi Provisioning with the documented Default AP
-            // Credential - recovery must stay reachable even if the operator no
-            // longer remembers a custom Standalone AP Mode password.
-            WiFi.mode(WIFI_AP);
-            WiFi.softAP(WIFI_AP_SSID, WIFI_DEFAULT_AP_PASSWORD);
-            PA_LOG_INFO(TAG, "WiFi bootstrap: %s (AP %s)",
-                        posture == WifiBootPosture::NETWORK_RECOVERY ? "network recovery"
-                                                                      : "provisioning",
-                        WIFI_AP_SSID);
-            break;
-        case WifiBootPosture::CLIENT_MODE: {
-            const char* ssid = settings.sta_ssid;
-            const char* password = settings.sta_password;
-#if PA_HAS_SECRETS_HEADER && defined(PA_STA_SSID) && defined(PA_STA_PASSWORD)
-            // Developer WiFi Shortcut: an unprovisioned controller has no saved
-            // STA credentials, so a self-build falls back to secrets.h defaults.
-            if (ssid[0] == '\0') {
-                ssid = PA_STA_SSID;
-                password = PA_STA_PASSWORD;
-            }
-#endif
-            WiFi.mode(WIFI_STA);
-            WiFi.begin(ssid, password);
-            PA_LOG_INFO(TAG, "WiFi bootstrap: client mode (SSID %s)", ssid);
-            break;
-        }
-        case WifiBootPosture::STANDALONE_AP_MODE:
-            WiFi.mode(WIFI_AP);
-            WiFi.softAP(settings.ap_ssid, settings.ap_password);
-            PA_LOG_INFO(TAG, "WiFi bootstrap: standalone AP mode (SSID %s)", settings.ap_ssid);
-            break;
-    }
 }
 
 // evaluateNetworkRecoveryGesture: reads the persisted power-cycle count,
@@ -200,13 +156,15 @@ void webNetworkBootstrap() {
     decisionInput.developerShortcut = buildDeveloperShortcut();
 
     WifiBootPosture posture = wifiDecideBootPosture(decisionInput);
-    executeWifiBootPosture(posture, wifiSettings);
+    networkManagerApplyBootPosture(posture, wifiSettings);
 
     // Record what was actually applied so the read surface can distinguish
     // active settings from any pending (saved-but-not-yet-applied) settings
     // for a Staged Network Switch (ADR 0015).
     configCacheSetActiveWifi(wifiSettings);
     configCacheSetActiveWifiRecovery(posture == WifiBootPosture::NETWORK_RECOVERY);
+    // The Hosted backend's post-recovery rejoin needs the full four-way
+    // posture, not just "was it recovery", to guard its STA-only rejoin
+    // against non-CLIENT_MODE postures (#189).
+    configCacheSetActiveWifiBootPosture(posture);
 }
-
-#endif  // ARDUINO

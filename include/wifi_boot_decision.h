@@ -8,10 +8,11 @@
 //     FreeRTOS/Arduino calls, no globals. It consumes Device WiFi Settings
 //     plus explicit recovery/Developer WiFi Shortcut inputs and returns the
 //     requested boot posture.
-//   - The boot shell (src/web/web_server.cpp today, ADR 0015 follow-up work)
-//     gathers these inputs, calls this function once at boot, and executes
-//     the returned posture through the concrete WiFi APIs. This module
-//     decides WHICH posture; the shell decides HOW to enter it.
+//   - The boot shell (src/web/web_network_bootstrap.cpp) gathers these inputs,
+//     calls this function once at boot, and executes the returned posture
+//     through the concrete WiFi APIs (via the network manager seam,
+//     web_network_manager.h). This module decides WHICH posture; the shell
+//     decides HOW to enter it.
 //   - Public release binaries never populate WifiDeveloperShortcut  --  it exists
 //     only so self-built firmware can keep using compile-time secrets.h
 //     defaults (the Developer WiFi Shortcut) during local development.

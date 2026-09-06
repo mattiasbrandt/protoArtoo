@@ -301,6 +301,40 @@ void test_wifi_corrupt_values_fall_back_to_defaults(void) {
     TEST_ASSERT_TRUE(loaded.wifi.provisioned);
 }
 
+// Test 12: Clearing the protoR2link peer IP must overwrite the value a previous save
+// stored. NVS keeps every key a later save does not touch, so the backing store is
+// seeded with the first save and the clearing save is layered on top -- which is what
+// the deserializer sees after a power cycle, not what the in-RAM snapshot shows.
+void test_dome_wifi_peer_ip_clear_overwrites_stored_value(void) {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "%s", "10.0.0.99");
+
+    MapWriter firstSave;
+    TEST_ASSERT_TRUE(configSerialize(snap, firstSave));
+
+    MapReader store;
+    store.setSchemaVersion(firstSave.schemaVersion());
+    for (const auto& pair : firstSave.data()) {
+        store.set(pair.first.c_str(), pair.second);
+    }
+
+    ConfigSnapshot afterSet = {};
+    TEST_ASSERT_TRUE(configDeserialize(store, &afterSet));
+    TEST_ASSERT_EQUAL_STRING("10.0.0.99", afterSet.dome.dome_wifi_peer_ip);
+
+    snap.dome.dome_wifi_peer_ip[0] = '\0';
+    MapWriter clearingSave;
+    TEST_ASSERT_TRUE(configSerialize(snap, clearingSave));
+    for (const auto& pair : clearingSave.data()) {
+        store.set(pair.first.c_str(), pair.second);
+    }
+
+    ConfigSnapshot afterClear = {};
+    TEST_ASSERT_TRUE(configDeserialize(store, &afterClear));
+    TEST_ASSERT_EQUAL_STRING("", afterClear.dome.dome_wifi_peer_ip);
+}
+
 // Test initialization function for Unity
 int main(void) {
     UNITY_BEGIN();
@@ -315,5 +349,6 @@ int main(void) {
     RUN_TEST(test_wifi_client_mode_round_trip);
     RUN_TEST(test_wifi_standalone_ap_mode_round_trip);
     RUN_TEST(test_wifi_corrupt_values_fall_back_to_defaults);
+    RUN_TEST(test_dome_wifi_peer_ip_clear_overwrites_stored_value);
     return UNITY_END();
 }

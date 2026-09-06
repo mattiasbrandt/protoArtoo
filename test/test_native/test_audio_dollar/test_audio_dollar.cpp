@@ -322,6 +322,11 @@ void test_nvs_key_sys_drv_on() {
 void test_nvs_key_sys_dome_on() {
     TEST_ASSERT_EQUAL_STRING("snd_sys_dome_on", audioTrackNvsKey("sys_dome_on"));
 }
+void test_nvs_key_sys_net_down() {
+    // "snd_sys_netdown" (no underscore before "down") is exactly 15 chars --
+    // the ESP-IDF Preferences key length ceiling (#189).
+    TEST_ASSERT_EQUAL_STRING("snd_sys_netdown", audioTrackNvsKey("sys_net_down"));
+}
 
 
 void test_nvs_key_sound_categories() {
@@ -367,7 +372,7 @@ void test_nvs_keys_are_15_chars_or_less() {
         "imp_march","cantina_l","startup","doodoo","failure",
         "disco","mahna","inlove","macho","gangnam","uptown",
         "celebr","stayin","harlem","pbjtime",
-        "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on",
+        "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on","sys_net_down",
         "snd_cat_gen_lo","snd_cat_gen_hi","snd_cat_chat_lo","snd_cat_chat_hi",
         "snd_cat_hap_lo","snd_cat_hap_hi","snd_cat_proc_lo","snd_cat_proc_hi",
         "snd_cat_sad_lo","snd_cat_sad_hi","snd_cat_sent_lo","snd_cat_sent_hi",
@@ -457,6 +462,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_sys_mode_t);
     RUN_TEST(test_nvs_key_sys_drv_on);
     RUN_TEST(test_nvs_key_sys_dome_on);
+    RUN_TEST(test_nvs_key_sys_net_down);
     RUN_TEST(test_nvs_key_sound_categories);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);

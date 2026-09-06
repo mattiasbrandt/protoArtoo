@@ -36,7 +36,7 @@ SECRETS_H_PATH = os.path.join(REPO_ROOT, "src", "secrets.h")
 
 DEFAULTS = {
     "OTA_IP": "10.0.0.22",
-    "BUILD_ENV": "protoArtoo",
+    "BUILD_ENV": "artoo_esp32",
     "UPLOAD_PORT": "/dev/ttyUSB0",
 }
 
@@ -48,9 +48,9 @@ SECRETS_DEFAULTS = {
 
 # (display label, BUILD_ENV value)
 AUDIO_BACKENDS = [
-    ("DY-SV5W (default — confirmed hardware)", "protoArtoo"),
-    ("CHIRP", "protoArtoo_chirp"),
-    ("MP3 Trigger", "protoArtoo_mp3trigger"),
+    ("DY-SV5W (default — confirmed hardware)", "artoo_esp32"),
+    ("CHIRP", "artoo_esp32_chirp"),
+    ("MP3 Trigger", "artoo_esp32_mp3trigger"),
 ]
 
 # ---------------------------------------------------------------------------

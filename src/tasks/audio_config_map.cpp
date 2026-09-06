@@ -34,6 +34,7 @@ void audioConfigMapBuild(const ConfigSnapshot& cfg, AudioPlaybackConfig* out) {
     out->slotTracks[AUDIO_SLOT_SYS_MODE_TURBO] = cfg.audio.snd_sys_mode_t;
     out->slotTracks[AUDIO_SLOT_SYS_DRIVE_ON] = cfg.audio.snd_sys_drv_on;
     out->slotTracks[AUDIO_SLOT_SYS_DOME_ON] = cfg.audio.snd_sys_dome_on;
+    out->slotTracks[AUDIO_SLOT_SYS_NET_DOWN] = cfg.audio.snd_sys_net_down;
     out->randMin = cfg.audio.snd_rand_min;
     out->randMax = cfg.audio.snd_rand_max;
     out->intervalQuietS = cfg.audio.snd_int_quiet;
@@ -90,6 +91,7 @@ const char* audioChirpKeyForSlot(AudioPlaybackSlot slot) {
         case AUDIO_SLOT_SYS_MODE_TURBO: return "chr_sys_mode_t";
         case AUDIO_SLOT_SYS_DRIVE_ON: return "chr_sys_drv_on";
         case AUDIO_SLOT_SYS_DOME_ON: return "chr_sys_dome_on";
+        case AUDIO_SLOT_SYS_NET_DOWN: return "chr_sys_netdown";
         case AUDIO_SLOT_NONE:
         default:
             return nullptr;

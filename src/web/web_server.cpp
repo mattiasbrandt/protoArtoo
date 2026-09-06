@@ -15,7 +15,6 @@
 #ifdef ARDUINO
 #include <Update.h>
 #endif
-#include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -40,6 +39,16 @@
 #include "../../include/web_request.h"
 #include "../../include/web_server_psychic.h"
 #include "../../include/web_network_bootstrap.h"
+#include "../../include/web_network_manager.h"
+#include "../../include/wifi_recovery_gesture.h"
+
+// hosted_link_status.h is only meaningful (and only defined, by
+// web_network_manager_hosted.cpp) on boards with the ESP-Hosted backend; the
+// call site in buildStatusJson() below is guarded by the same capability
+// gate, so a board without it never references the undefined symbol.
+#if PA_CAP_HOSTED_WIFI
+#include "../../include/hosted_link_status.h"
+#endif
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
@@ -68,10 +77,9 @@ bool littleFsReady = false;
 // accept-guard rejections -- are the project-owned globals declared there and
 // in include/web_event_stream.h; this file only reads them for /api/status.
 
-// The bounded request-lifecycle trace this file used to own moved with the
-// admission middleware that wrote it (src/web/web_request_psychic.cpp). Its
-// declarations stay in web_server.h so api_profiler.cpp can size its copy
-// buffer identically.
+// Profiler-only request lifecycle storage is owned by api_profiler.cpp. The
+// admission middleware reaches it through the opaque api_profiler.h interface,
+// which compiles away in ordinary images.
 
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {
@@ -100,12 +108,11 @@ static volatile uint8_t s_otaProgressPct = 255;
 static uint8_t s_lastOtaLoggedPct = 255;
 static char s_otaLastError[64] = "none";
 
-// Network Recovery Mode local entry gesture (ADR 0015). See
-// include/wifi_recovery_gesture.h for the pure decision rule. The count is
-// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture
-// itself requires; it is cleared once uptime confirms the boot was not part
-// of a rapid power-cycle sequence.
-const char* kWifiRecoveryCycleKey = "wifiRecovN";
+// Network Recovery Mode local entry gesture (ADR 0015). The count is
+// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture itself
+// requires, and is cleared once uptime confirms the boot was not part of a
+// rapid power-cycle sequence. See wifi_recovery_gesture.cpp for
+// kWifiRecoveryCycleKey and the decision rule in include/wifi_recovery_gesture.h.
 const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
@@ -325,7 +332,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableAux1 = cfg.system.enable_aux1;
     enableAux2 = cfg.system.enable_aux2;
     enableAux3 = cfg.system.enable_aux3;
-    enableDome = cfg.system.enable_dome;
+    enableDome = cfg.system.enable_dome_esc;
     enableRcCh1 = activeRc.enableRc[0];
     enableRcCh2 = activeRc.enableRc[1];
     enableRcCh3 = activeRc.enableRc[2];
@@ -334,9 +341,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableRcCh6 = activeRc.enableRc[5];
     rcInputMode = static_cast<RcInputMode>(activeRc.mode);
     singleSbusUseCh2 = activeRc.useCh2;
-    enableS1Hoverboard = cfg.system.enable_s1_hoverboard;
-    enableS2Sound = cfg.system.enable_s2_sound;
-    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
+    enableS1Hoverboard = cfg.system.enable_drive;
+    enableS2Sound = cfg.system.enable_audio;
+    enableS3DomeCtrl = cfg.system.enable_protor2link;
     audioActive = robotState.audioActive;
     audioLinkOk = robotState.audio_module_link_ok;
     audioRxStatus = robotState.audio_module_rx_status;
@@ -357,15 +364,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     otaActive = s_otaActive;
     otaProgressPct = s_otaProgressPct;
     snprintf(otaLastError, sizeof(otaLastError), "%s", s_otaLastError);
-    int wifiMode = WiFi.getMode();
-    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
-    bool staConnected = WiFi.status() == WL_CONNECTED;
-    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
-    WiFiConnectivityFields wifi =
-        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
-    wifiConnected = wifi.wifiConnected;
-    wifiClientConnected = wifi.wifiClientConnected;
-    wifiRssi = wifi.wifiRssi;
+    // Query WiFi connectivity status through the seam
+    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
+    wifiConnected = connectivity.wifiConnected;
+    wifiClientConnected = connectivity.wifiClientConnected;
+    wifiRssi = connectivity.wifiRssi;
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
 
@@ -522,9 +525,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
                 snprintf(detail, sizeof(detail), "Target %.0f%%",
                          (double)(domeTargetSpeed * 100.0f));
-                ok = appendPeripheralStatus(pos, remaining, "dome", "spinning", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "spinning", detail) && ok;
             } else {
-                ok = appendPeripheralStatus(pos, remaining, "dome", "idle", "Target 0%") && ok;
+                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "idle", "Target 0%") && ok;
             }
         }
         if (enableRcCh1 && !(rcInputMode == RC_INPUT_SINGLE_SBUS && singleSbusUseCh2)) {
@@ -613,10 +616,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         if (enableS1Hoverboard) {
             if (driveSpeed != 0 || driveSteer != 0) {
                 snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
-                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail) &&
+                ok = appendPeripheralStatus(pos, remaining, "drive", "commanding", detail) &&
                      ok;
             } else {
-                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
+                ok = appendPeripheralStatus(pos, remaining, "drive", "idle",
                                             "No drive command requested") &&
                      ok;
             }
@@ -625,7 +628,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             const char* rxStatusText = audioRxStatusToken(audioRxStatus);
             const char* rxDetail = audioRxStatusDetail(audioRxStatus);
             int _n = snprintf(pos, remaining,
-                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
+                              ",\"audio\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
                               audioActive ? "playing" : "idle",
                               audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART ? rxDetail :
                                   (audioActive ? "Playback active" : "Ready, no active playback"),
@@ -644,25 +647,25 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat tx %lu, no protoR2link heartbeat seen yet (transport %s)",
                          (unsigned long)bodyHbTx, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "not_seen", detail) && ok;
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs, transportLabel);
                 ok =
-                    appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
+                    appendPeripheralStatus(pos, remaining, "protoR2link", "connected", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "lost", detail) && ok;
             }
         }
 
         // Top-level dome_link block - always present for external tooling,
-        // regardless of whether the s3DomeCtrl component is enabled.
+        // regardless of whether the protoR2link component is enabled.
         // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
         {
             const char* dlState;
@@ -718,6 +721,27 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
         }
 
+#if PA_CAP_HOSTED_WIFI
+        // ESP-Hosted C6 link supervisor state (#189). Board Capability
+        // Gate, not runtime config -- absent entirely on boards with no
+        // Hosted backend rather than emitted with placeholder values.
+        {
+            HostedLinkStatusSnapshot hl = hostedLinkQueryStatus();
+            char hlBuf[256];
+            snprintf(hlBuf, sizeof(hlBuf),
+                     ",\"hostedLink\":{\"phase\":\"%s\",\"terminal\":%s,"
+                     "\"transportFailureCount\":%u,\"transportUpEventCount\":%u,"
+                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u,"
+                     "\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu}",
+                     hostedLinkPhaseName(hl.phase),
+                     hl.phase == HostedLinkPhase::Degraded ? "true" : "false",
+                     hl.transportFailureEventCount, hl.transportUpEventCount, hl.attemptCount,
+                     hl.totalAttemptCount, hl.recoveredCount, (unsigned long)hl.lastFailureAtMs,
+                     (unsigned long)hl.lastAttemptAtMs, (unsigned long)hl.degradedAtMs);
+            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
+        }
+#endif
+
         ok = appendJsonChunk(pos, remaining, "}") && ok;
     }
 
@@ -772,7 +796,7 @@ void eventStreamTask(void*) {
     bool recoveryGestureCleared = false;
     for (;;) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
+            PA_LOG_DEBUG("WebEvents", "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
@@ -846,7 +870,7 @@ void eventStreamTask(void*) {
                 }
             }
             if (!hwmUnderLoadLogged) {
-                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u words free",
+                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u bytes free",
                              (unsigned)uxTaskGetStackHighWaterMark(NULL));
                 hwmUnderLoadLogged = true;
             }
@@ -890,7 +914,9 @@ void startHttpServerOnce() {
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
-    if (!mdnsStarted && WiFi.status() == WL_CONNECTED) {
+    // Query WiFi connectivity to check if STA is connected to upstream AP
+    WifiConnectivityStatus connectivityForMdns = networkManagerQueryConnectivity();
+    if (!mdnsStarted && connectivityForMdns.staConnected) {
         char hostname[DROID_NAME_MAX_LEN + 1] = {};
         configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
         mdnsStarted = MDNS.begin(hostname);
@@ -995,16 +1021,21 @@ void webServerInit() {
 
     loadFsVersion();
 
-    // Set up the WiFi event handler (defined in web_network_bootstrap.cpp)
-    WiFi.onEvent(handleWiFiEvent);
+    // Initialize network manager: register WiFi event handler.
+    // The backend (web_network_manager_native.cpp or native_test_stubs.cpp)
+    // handles the actual registration and event translation.
+    networkManagerInitialize();
 
     if (!eventTaskStarted) {
-        // Keep 6144 bytes for status/rc/log SSE work and JSON serialization headroom.
-        // A previous 2048-byte reduction overflowed on client connect; 4096 also
-        // overflowed (DoubleException in _dtoa_r float formatting) once
+        // Size is chip-target specific; WEB_EVENTS_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The 6144 this used to hard-code was sized from
+        // an ESP32 DoubleException in _dtoa_r after a 4096 overflow, once
         // requestStatusBroadcastNow() call sites grew from rare hardware edges to
-        // every web write handler, raising buildStatusJson() call frequency here.
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 6144, nullptr, 1, nullptr, 0);
+        // every web write handler. On ESP32-P4 _dtoa_r is 416 B not 160 B and the
+        // static chain through buildStatusJson is 5808 B -- 336 B past 6144 -- so
+        // 5808 * 1.25 = 7260 -> 7680 (#256).
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", WEB_EVENTS_TASK_STACK_BYTES,
+                                nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

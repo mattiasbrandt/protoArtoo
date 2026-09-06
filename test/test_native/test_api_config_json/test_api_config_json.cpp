@@ -26,13 +26,13 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_pwm_dome_speed = disabledRcBinding();
     snap.system.rc_pwm_arm1 = disabledRcBinding();
     snap.system.rc_pwm_arm2 = disabledRcBinding();
-    snap.system.rc_pwm_sound = disabledRcBinding();
+    snap.system.rc_pwm_audio = disabledRcBinding();
     snap.system.rc_sbus_drive_speed = disabledRcBinding();
     snap.system.rc_sbus_drive_steer = disabledRcBinding();
     snap.system.rc_sbus_dome_speed = disabledRcBinding();
     snap.system.rc_sbus_arm1 = disabledRcBinding();
     snap.system.rc_sbus_arm2 = disabledRcBinding();
-    snap.system.rc_sbus_sound = disabledRcBinding();
+    snap.system.rc_sbus_audio = disabledRcBinding();
 
     // 11 RcTriggerBinding fields — zero-init is a valid disabled state
     snap.system.rc_arm1 = {};
@@ -40,7 +40,7 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_aux1 = {};
     snap.system.rc_aux2 = {};
     snap.system.rc_aux3 = {};
-    snap.system.rc_sound = {};
+    snap.system.rc_audio = {};
     snap.system.rc_opmode = {};
     snap.system.rc_free0 = {};
     snap.system.rc_free1 = {};
@@ -80,13 +80,13 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_pwm_dome_speed = extreme;
     snap.system.rc_pwm_arm1 = extreme;
     snap.system.rc_pwm_arm2 = extreme;
-    snap.system.rc_pwm_sound = extreme;
+    snap.system.rc_pwm_audio = extreme;
     snap.system.rc_sbus_drive_speed = extreme;
     snap.system.rc_sbus_drive_steer = extreme;
     snap.system.rc_sbus_dome_speed = extreme;
     snap.system.rc_sbus_arm1 = extreme;
     snap.system.rc_sbus_arm2 = extreme;
-    snap.system.rc_sbus_sound = extreme;
+    snap.system.rc_sbus_audio = extreme;
 
     // Extreme trigger binding — 15-char payload, extreme calibration
     RcTriggerBinding xtrig = {};
@@ -106,7 +106,7 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_aux1 = xtrig;
     snap.system.rc_aux2 = xtrig;
     snap.system.rc_aux3 = xtrig;
-    snap.system.rc_sound = xtrig;
+    snap.system.rc_audio = xtrig;
     snap.system.rc_opmode = xtrig;
     snap.system.rc_free0 = xtrig;
     snap.system.rc_free1 = xtrig;
@@ -170,13 +170,15 @@ void test_populateConfigJson_expected_keys_present(void) {
     JsonObject drive = doc["drive"].as<JsonObject>();
     JsonObject rc = doc["rc"].as<JsonObject>();
     JsonObject components = doc["components"].as<JsonObject>();
-    JsonObject dome = doc["dome"].as<JsonObject>();
+    JsonObject domeEsc = doc["domeEsc"].as<JsonObject>();
+    JsonObject protoR2link = doc["protoR2link"].as<JsonObject>();
     JsonObject system = doc["system"].as<JsonObject>();
 
     TEST_ASSERT_TRUE(!drive.isNull());
     TEST_ASSERT_TRUE(!rc.isNull());
     TEST_ASSERT_TRUE(!components.isNull());
-    TEST_ASSERT_TRUE(!dome.isNull());
+    TEST_ASSERT_TRUE(!domeEsc.isNull());
+    TEST_ASSERT_TRUE(!protoR2link.isNull());
     TEST_ASSERT_TRUE(!system.isNull());
 
     TEST_ASSERT_TRUE(!drive["speedLimitMax"].isNull());
@@ -192,7 +194,20 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_FALSE(rc["sbus"]["recvCh2"].as<bool>());
     TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
     TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
-    TEST_ASSERT_TRUE(!dome["neutralUs"].isNull());
+    TEST_ASSERT_TRUE(components["drive"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["audio"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["protoR2link"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["domeEsc"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(!domeEsc["neutralUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["minPulseUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["maxPulseUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["speedLimitPct"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndEnable"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndSpeedPct"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndPauseMin"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndPauseMax"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndMoveMs"].isNull());
+    TEST_ASSERT_TRUE(!protoR2link["wifiPeerIp"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
     TEST_ASSERT_TRUE(!doc["arm1OpenUs"].isNull());
     TEST_ASSERT_TRUE(!doc["arm1CloseUs"].isNull());

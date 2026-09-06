@@ -262,6 +262,22 @@ void requestSystemRestart(uint32_t delayMs) {
 
 void setup() {
     Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+    // Serial is the USB-Serial-JTAG CDC (HWCDC). When the host stops draining
+    // the port while USB stays enumerated - a detached serial monitor is enough:
+    // SOF keepalives continue, so HWCDC's isPlugged() stays true and its
+    // `connected` flag never clears - every blocked write waits out HWCDC's
+    // bounded-progress cap of 20 x tx_timeout_ms. At the 100 ms default that is
+    // ~2 s per write call and ~4 s per paLogLine() (two writes), against a
+    // WATCHDOG_TIMEOUT_S of 3 s. That starved DomeTask's TWDT feed from inside
+    // one PA_LOG_DEBUG and reset the board (#245 defect 1, coredump-verified);
+    // every TWDT-subscribed task that logs is equally exposed. Zero makes the
+    // CDC transport strictly best-effort: a full TX ring drops bytes instead of
+    // blocking the caller. Nothing is lost from the authoritative record -
+    // paLogLine() appends to the log ring (/api/logs) regardless of what the
+    // serial write manages to send.
+    Serial.setTxTimeoutMs(0);
+#endif
     Serial.setDebugOutput(false);
     paLogInit();
     delay(200);
@@ -279,20 +295,38 @@ void setup() {
     configCacheRead(&bootCfg);
     const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
     configCacheSetActiveRcInput(activeRc);
-    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome);
-    configCacheSetActiveAudioEnabled(bootCfg.system.enable_s2_sound);
+    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
+    configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
-    // Layer 4: Initialize Task Watchdog Timer
+    // Layer 4: Task Watchdog Timer.
     // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
-    // trigger_panic). IDF 4.x took (timeout_seconds, trigger_panic) directly.
-    // idle_core_mask=0: do not subscribe idle tasks; only DriveTask subscribes itself.
+    // trigger_panic). Both chip targets ship prebuilt IDF with CONFIG_ESP_TASK_WDT_INIT=y
+    // (5 s, panic, idle core 0 watched), so the system TWDT is already running before
+    // setup() and esp_task_wdt_init() returns ESP_ERR_INVALID_STATE; the reconfigure
+    // path below is the one that actually applies our config. (This comment used to
+    // claim init succeeds on artoo-esp32 - its sdkconfig says otherwise; confirmed on
+    // P4 hardware by the "TWDT already initialized" boot warning, #245.)
+    //
+    // idle_core_mask=0: per IDF task_wdt.c, esp_task_wdt_reconfigure() keeps
+    // explicitly-added task entries and unsubscribes the previous mask's idle tasks,
+    // so after this call the watched set is exactly the tasks that call
+    // esp_task_wdt_add(NULL) on themselves: DriveTask, ServoTask, RCInputTask (when
+    // spawned), SequenceDispatcherTask, and DomeTask (when spawned).
     const esp_task_wdt_config_t twdt_config = {
         .timeout_ms    = WATCHDOG_TIMEOUT_S * 1000U,
         .idle_core_mask = 0,
         .trigger_panic  = true,
     };
-    esp_task_wdt_init(&twdt_config);
+    esp_err_t twdt_init_result = esp_task_wdt_init(&twdt_config);
+    if (twdt_init_result == ESP_ERR_INVALID_STATE) {
+        esp_err_t twdt_reconfig_result = esp_task_wdt_reconfigure(&twdt_config);
+        if (twdt_reconfig_result != ESP_OK) {
+            PA_LOG_ERROR("main", "esp_task_wdt_reconfigure failed: 0x%x", twdt_reconfig_result);
+        }
+    } else if (twdt_init_result != ESP_OK) {
+        PA_LOG_ERROR("main", "esp_task_wdt_init failed: 0x%x", twdt_init_result);
+    }
 
     // Initialize FailsafeGate and DriveArbiter before task creation
     failsafeInit(&robotStateMux);
@@ -328,6 +362,10 @@ void setup() {
         PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
     }
 
+    // Real-time / core pinning contract: see docs/failsafe.md "Real-Time / Core Pinning Contract".
+    // Core 1 real-time (heap-allocation-free): DriveTask, RCInputTask, ServoTask, DomeTask, DomeLinkTask.
+    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, WebEvents, ArduinoOTA.
+
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
@@ -335,42 +373,77 @@ void setup() {
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
     // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
-    xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
+    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES in include/config.h carries
+    // the measured worst-case chain for both chips and why ESP32 is raised too even
+    // though its own figure reads as 32 B under (that figure is a lower bound).
+    xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
+                            nullptr, 1);
     if (rcPlan.taskEnabled) {
-        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
+        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The #248 rule lands on 7168 on both chips
+        // (ESP32-P4 5376 * 1.25 = 6720 -> 7168); ESP32 is the existing 7168, not
+        // a lowering to its own 5248-chain figure, which is a Xtensa lower bound.
+        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
+                                nullptr, 5, nullptr, 1);
     }
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
-    if (bootCfg.system.enable_dome) {
-        xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
-                                1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
+    if (bootCfg.system.enable_dome_esc) {
+        // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain and the sizing rule. The note this line used
+        // to carry -- "sized from profiler HWM: 108 B free at 2048 B" -- was an
+        // artoo-esp32 reading, and on the ESP32-P4 the same source needs 3280 B,
+        // which is 208 B more than the 3072 that reading justified (#248).
+        xTaskCreatePinnedToCore(domeTask, "DomeTask", DOME_TASK_STACK_BYTES, nullptr, 4,
+                                nullptr, 1);
     }
 
     // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
     // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
     // task at all is the preferred form).
-    if (bootCfg.system.enable_s2_sound) {
-        xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
+    if (bootCfg.system.enable_audio) {
+        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES in include/config.h
+        // carries the measured chain. The #248 rule lands on 6144 on both chips
+        // (ESP32-P4 4848 * 1.25 = 6060 -> 6144).
+        xTaskCreatePinnedToCore(audioTask, "AudioTask", AUDIO_TASK_STACK_BYTES, nullptr, 3,
+                                nullptr, 0);
     }
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
+    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES in include/config.h
+    // carries the measured chain and the sizing rule.
     if (auxLedTaskReady) {
-        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 4096, nullptr, 2, nullptr, 0);
+        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", AUX_LED_TASK_STACK_BYTES, nullptr, 2,
+                                nullptr, 0);
     }
 
     // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
-    // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
-    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
+    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES in include/config.h.
+    // The old note here -- "4096: profiler measured 988 B free at 3072 B ... HTTPClient
+    // call-chain needs 3 KB+" -- was reasoned from a high-water mark, which only ever
+    // reports the deepest path that actually ran. The static worst case is 5856 B on
+    // ESP32 and 7360 B on ESP32-P4, so 6144 never covered the P4 at all (#250).
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", DOME_LINK_TASK_STACK_BYTES,
+                            nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // HWM first-iteration: 476 B free  --  WARN path allocates 128 B format buffer +
-    // printf; bumped to 3072 to ensure adequate headroom for all log paths.
-    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
+    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES in include/config.h
+    // carries the per-target frame evidence, the margin and how to reproduce it.
+    //
+    // What this comment used to say was wrong in both halves, and both errors
+    // flattered the result. The format buffer is 256 bytes, not 128
+    // (PA_LOG_SERIAL_LINE_MAX, include/logging.h) -- and the buffer is not what
+    // dominates anyway: it sits inside this task's own frame, which is at most
+    // 400 bytes on either chip. The depth is in newlib below snprintf, which
+    // nothing had measured. So "bumped to 3072 for adequate headroom" was
+    // reasoned from half the buffer and none of the call chain, and on the
+    // ESP32-P4 3072 does not in fact cover it (#245).
+    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", SAFETY_MONITOR_STACK_BYTES,
+                            nullptr, 2, nullptr, 0);
 
     // Index Learned Sequences from LittleFS before the dispatcher can run one.
     // Mounts LittleFS (idempotent) and scans /seq/. Boot scan reuses the run
@@ -380,7 +453,12 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
+    // 5632: the static worst-case chain is 4336 B on this image (#250), 240 B past the
+    // old 4096  --  Learned Sequence load on this task's own stack (seqStorePrepare ->
+    // protocolCheck -> pcFailAt -> snprintf float formatting -> first-use heap/log-mutex
+    // tail). Sized by the #248 rule, chain + 25% rounded up to the next 512 B
+    // (4336 * 1.25 = 5420 -> 5632); the ESP32-P4 chain (4448 B) lands on the same 5632.
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 5632, nullptr, 3, nullptr, 0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.

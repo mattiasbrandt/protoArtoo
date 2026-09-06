@@ -9,29 +9,29 @@ const toSignalMap = (payload, options) => {
 };
 
 test("dome esc reports OFF when disabled or missing", () => {
-  const missing = toSignalMap({ dome: { state: "idle" } });
+  const missing = toSignalMap({ domeEsc: { state: "idle" } });
   assert.equal(missing["h-dome-esc"].state, "off");
   assert.equal(missing["h-dome-esc"].reason, "Disabled");
 
-  const disabled = toSignalMap({ domeEnabled: false, dome: { state: "spinning" } });
+  const disabled = toSignalMap({ domeEnabled: false, domeEsc: { state: "spinning" } });
   assert.equal(disabled["h-dome-esc"].state, "off");
   assert.equal(disabled["h-dome-esc"].reason, "Disabled");
 });
 
 test("dome esc reports OK for idle and spinning states", () => {
-  const idle = toSignalMap({ domeEnabled: true, dome: { state: "idle" } });
+  const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle" } });
   assert.equal(idle["h-dome-esc"].state, "ok");
   assert.equal(idle["h-dome-esc"].reason, "Idle");
   assert.match(idle["h-dome-esc"].detail, /domeEnabled=true, state=idle/);
 
-  const spinning = toSignalMap({ domeEnabled: true, dome: { state: "spinning" } });
+  const spinning = toSignalMap({ domeEnabled: true, domeEsc: { state: "spinning" } });
   assert.equal(spinning["h-dome-esc"].state, "ok");
   assert.equal(spinning["h-dome-esc"].reason, "Spinning");
   assert.match(spinning["h-dome-esc"].detail, /domeEnabled=true, state=spinning/);
 });
 
 test("dome esc falls back to WARN for unknown or missing state", () => {
-  const unknown = toSignalMap({ domeEnabled: true, dome: { state: "paused" } });
+  const unknown = toSignalMap({ domeEnabled: true, domeEsc: { state: "paused" } });
   assert.equal(unknown["h-dome-esc"].state, "warn");
   assert.equal(unknown["h-dome-esc"].reason, "Unknown (paused)");
 
@@ -53,7 +53,7 @@ test("dome link connected includes transport label in reason", () => {
   });
   assert.equal(uart["h-dome-link"].state, "ok");
   assert.equal(uart["h-dome-link"].reason, "Connected - UART (slip ring)");
-  assert.match(uart["h-dome-link"].detail, /UART2 owned by DomeLink/);
+  assert.match(uart["h-dome-link"].detail, /UART2 owned by protoR2link/);
 
   const wifi = toSignalMap({ dome_link: { state: "connected", transport: "wifi" } });
   assert.equal(wifi["h-dome-link"].state, "ok");
@@ -80,9 +80,9 @@ test("stale mode downgrades non-off indicators to WARN", () => {
       littleFsReady: true,
       heapFree: 150000,
       dome_link: { state: "connected" },
-      s2Sound: { state: "idle" },
+      audio: { state: "idle" },
       domeEnabled: true,
-      dome: { state: "idle" },
+      domeEsc: { state: "idle" },
     },
     { stale: true },
   );
@@ -111,7 +111,7 @@ test("stale mode preserves OFF indicators as OFF", () => {
 
 test("sound RX blocked by DomeLink is warning, not module failure", () => {
   const signals = toSignalMap({
-    s2Sound: {
+    audio: {
       state: "idle",
       link_ok: false,
       rx_status: "blocked_by_dome_uart",
@@ -126,7 +126,7 @@ test("sound RX blocked by DomeLink is warning, not module failure", () => {
 
 test("sound no response remains a failure", () => {
   const signals = toSignalMap({
-    s2Sound: {
+    audio: {
       state: "idle",
       link_ok: false,
       rx_status: "no_response",

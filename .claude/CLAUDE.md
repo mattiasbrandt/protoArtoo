@@ -27,10 +27,19 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 - Latching estop behavior
 - TWDT reset -> estop on boot
 - No blocking real-time control loops
+- No automatic controller restart and no drive-path effect from a network fault (ADR 0032)
 
 ## Claude-Specific Additions
 
 ### Token-Efficient and Safe Context Use
+
+> This section is about avoiding *redundant* work — re-reading a file you have
+> already read and that has not changed. It is **never** licence to skip a read
+> you have not done, to guess instead of opening the source of truth, or to
+> trim a deliverable. See [AGENTS.md](../AGENTS.md) "Effort Policy
+> (Non-Negotiable)", which takes precedence wherever the two could be read to
+> conflict.
+
 
 - Avoid redundant re-reads of unchanged files.
 - Re-read when freshness risk exists: after edits, formatters/codegen, failed patch apply, user edits, or before line-specific patches/explanations that depend on exact current text.
@@ -100,30 +109,20 @@ Mandatory test-effort policy in this mode:
 - Do not fall back to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly requests solo execution.
 - On interruption, checkpoint completed results and continue with a new delegated wave.
 
+Routing cues (auto-routing hints for the project subagents):
+- `backend-coder` — bounded firmware/backend implementation: ESP32/Arduino code, PlatformIO build/upload plumbing, API handlers, FreeRTOS tasks, `RobotState`/queues, config/NVS, action registry wiring, SBUS/RC, dome/audio backend control, safety/failsafe logic.
+- `frontend-designer` — anything visible to operators: UI/UX, dashboard layout, copy, controls/selectors, visual design, accessibility, responsive/tablet behavior, Playwright/web validation.
+- `performance-optimizer` — performance, heap, stack, OOM, PANIC, coredump, crash, reset reason, profiler, failed allocations, fragmentation, OTA failures, sluggish HTTP, SSE pressure, CHIRP catalog memory, Learned-sequence buffers, runtime memory evidence.
+- `code-reviewer` — after implementation: independent safety/security/architecture/data-flow/maintainability/stale-comment/regression review.
+- `Explore` — read-only discovery, codebase search, pattern reconnaissance before edits.
+
 ### MemPalace MCP (Claude-Specific Operational Notes)
 
-The canonical MemPalace protocol is defined in `AGENTS.md` under
-`## MemPalace Memory Protocol`. Follow that. Claude-specific additions:
-
-- Auto-save is handled by the user-level MemPalace daemon (`mempalace-daemon.service`,
-  `hooks.auto_save: true` in `~/.mempalace/config.json`), not by Stop/PreCompact hooks in
-  `.claude/settings.json` — this project defines none. Writes persist continuously through
-  the daemon regardless of session end or context compaction; you do not need to manually
-  trigger saves.
-- `mempalace_status` is your first MCP call every session, before any tool use.
-  The response self-teaches the AAAK dialect and reveals the palace structure:
-  use the wing name it returns for all subsequent scoped searches.
-- Prefer `mempalace_search` over re-reading large files when looking for a past
-  decision or rationale. Only fall back to file reads when you need the
-  exact current source of truth (code, config, task spec).
-- `hall_facts` = confirmed design decisions; `hall_discoveries` = notable findings;
-  `hall_events` = session milestones; `hall_preferences` = operator preferences.
-- After `mempalace_status`, call `mempalace_list_agents` to discover available
-  specialist agents. If one exists for the domain being worked on, read its
-  recent diary (`mempalace_diary_read("<agent>", last_n=10)`) before starting
-  and write a AAAK diary entry (`mempalace_diary_write`) after significant
-  domain work completes. Agent definitions live in `~/.mempalace/agents/` —
-  not in `CLAUDE.md`.
+The protocol is `AGENTS.md` "Memory (MemPalace)" and
+`docs/agents/mempalace.md`; the Claude-specific detail is that auto-save is the
+user-level daemon's job (`mempalace-daemon.service`, `hooks.auto_save: true` in
+`~/.mempalace/config.json`), not a Stop/PreCompact hook — this project defines
+none.
 
 ### Hardware and Tooling Reminders
 
@@ -136,12 +135,14 @@ The canonical MemPalace protocol is defined in `AGENTS.md` under
 ### Verification and Reporting
 
 - Use the [AGENTS.md](../AGENTS.md) verification sequence as applicable.
-- Explicitly classify validation status using AGENTS labels:
-  `software-verified`, `controller-upload-verified`, `full-hardware-verified`,
-  `partial`, or `full-hardware-required`.
+- Classify validation status with one of the five AGENTS.md labels (defined in
+  `CONTEXT.md`; reporting template in `.claude/verification-playbook.md`).
 - Do not use "bench verified" or "bench-tested" as a status. Public docs should
   use plain evidence phrases instead of internal labels.
 - For hardware-touching changes, state what was and was not proven.
+- Verification is sized by AGENTS.md "Verification Scale": one Closing Ticket per
+  epic, bench rows in `tools/bench_rows/`, no criterion naming an instrument or
+  number the bench cannot produce today, all boxes ticked closes the ticket.
 
 ## References
 

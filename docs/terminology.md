@@ -17,7 +17,7 @@ This document explains common project terms used in code, docs, logs, and planni
 - [STA](#sta)
 - [AP](#ap)
 - [SBUS](#sbus)
-- ["Native" Tests vs `protoArtoo` Tests](#native-tests-vs-protoartoo-tests)
+- ["Native" Tests vs Firmware Targets](#native-tests-vs-firmware-targets)
 - [Validation Language](#validation-language)
 
 ## Quick Glossary
@@ -285,15 +285,15 @@ Why it matters:
 - The seam between "resolve what RC inputs mean" and "read hardware / write queues" becomes explicit and testable
 - `rcInputProcessorTick()` can be exercised in native unit tests without FreeRTOS or hardware
 
-## "Native" Tests vs `protoArtoo` Tests
+## "Native" Tests vs Firmware Targets
 
-This project has two distinct PlatformIO test/build environments.
+This project distinguishes host-native tests from firmware-target builds and
+on-device tests.
 
 Source of truth:
 
 - `platformio.ini`
 - `[env:native]`
-- `[env:protoArtoo]`
 
 `native` (host machine tests):
 
@@ -307,18 +307,18 @@ Typical `native` scope:
 - Parsers, mapping logic, math helpers, formatting helpers
 - Files under `test/test_native/`
 
-`protoArtoo` (firmware target):
+Firmware targets (for example, `artoo_esp32` and `firebeetle2`):
 
 - Compiles and tests against the ESP32 Arduino target
 - Represents real firmware behavior and toolchain constraints
 - May require connected hardware for meaningful runtime validation
-- Build command: `pio run -e protoArtoo`
-- On-device tests command: `pio test -e protoArtoo`
+- Build command: `make build BUILD_ENV=<affected-env>`
+- On-device tests use a compatible firmware env when hardware coverage exists
 
 When to use which:
 
 - Use `native` while developing logic quickly and repeatedly
-- Use `protoArtoo` before merging/releasing to catch target-specific issues
+- Build every affected firmware target before merging or releasing
 - For hardware behavior (UART, PWM, failsafe timing), only target/hardware validation is authoritative
 
 ## Validation Language

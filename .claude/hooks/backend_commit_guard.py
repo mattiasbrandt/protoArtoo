@@ -67,7 +67,7 @@ def main() -> int:
         return 0
 
     label_map = {
-        "firmware_build": "pio run -e protoArtoo",
+        "firmware_build": "pio run -e artoo_esp32",
     }
     missing_cmds = [label_map[m] for m in missing]
     _print_deny(

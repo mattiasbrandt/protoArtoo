@@ -16,9 +16,9 @@
     <!-- Disabled notice (hidden when DOME is enabled) -->
     <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <h3>🔄 Dome Hardware Disabled</h3>
-      <div class="desc">Dome motor controls are unavailable because the dome output is disabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> DOME — Dome Motor</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>DOME — Dome Motor</strong> to restore dome controls.</div>
+      <div class="desc">Dome rotation controls are unavailable because Dome ESC is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> DOME — Dome ESC</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>DOME — Dome ESC</strong> to restore dome controls.</div>
     </div>
 
     <div class="card">
@@ -43,9 +43,9 @@
       <div id="dome-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
-    <!-- Dome Motor Settings -->
+    <!-- Dome ESC Settings -->
     <div class="card">
-      <h3>⚙️ Dome Motor Settings</h3>
+      <h3>⚙️ Dome ESC Settings</h3>
       <div class="desc">Configure the dome rotation ESC pulse width range.</div>
       <div class="info-note mt-12">
         <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
@@ -54,22 +54,22 @@
       <form id="esc-form" class="form-grid dome-settings-grid mt-16">
         <label class="field">
           <span>Neutral Pulse (µs)</span>
-          <input id="dome-neutral" class="compact-number" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1"
             title="ESC neutral/stop pulse width in microseconds">
         </label>
         <label class="field">
           <span>Minimum Pulse (µs)</span>
-          <input id="dome-min-pulse" class="compact-number" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-min-pulse" class="compact-number" name="domeEscMinPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-reverse pulse width in microseconds">
         </label>
         <label class="field">
           <span>Maximum Pulse (µs)</span>
-          <input id="dome-max-pulse" class="compact-number" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-max-pulse" class="compact-number" name="domeEscMaxPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-forward pulse width in microseconds">
         </label>
         <label class="field">
           <span>Speed Limit (%)</span>
-          <input id="dome-speed-limit" class="compact-number" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
+          <input id="dome-speed-limit" class="compact-number" name="domeEscSpeedLimitPct" type="number" min="0" max="100" step="1"
             title="Maximum dome rotation speed as a percentage of the full ESC range">
         </label>
         <div class="button-row">
@@ -86,30 +86,30 @@
       <form id="rnd-dome-form" class="form-grid dome-settings-grid mt-16">
         <label class="field field-full">
           <span>Enable random movement</span>
-          <input id="dome-rnd-enable" name="domeRndEnable" type="checkbox"
+          <input id="dome-rnd-enable" name="domeEscRndEnable" type="checkbox"
             title="Enable autonomous idle dome rotation">
         </label>
         <label class="field">
           <span>Speed (%)</span>
-          <input id="dome-rnd-speed" class="compact-number" name="domeRndSpeedPct"
+          <input id="dome-rnd-speed" class="compact-number" name="domeEscRndSpeedPct"
             type="number" min="5" max="100" step="1"
             title="Rotation speed during each random movement as a percentage of maximum dome speed">
         </label>
         <label class="field">
           <span>Min pause (s)</span>
-          <input id="dome-rnd-pause-min" class="compact-number" name="domeRndPauseMin"
+          <input id="dome-rnd-pause-min" class="compact-number" name="domeEscRndPauseMin"
             type="number" min="1" max="120" step="1"
             title="Minimum idle pause duration between random movements in seconds">
         </label>
         <label class="field">
           <span>Max pause (s)</span>
-          <input id="dome-rnd-pause-max" class="compact-number" name="domeRndPauseMax"
+          <input id="dome-rnd-pause-max" class="compact-number" name="domeEscRndPauseMax"
             type="number" min="1" max="120" step="1"
             title="Maximum idle pause duration between random movements in seconds">
         </label>
         <label class="field">
           <span>Move duration (ms)</span>
-          <input id="dome-rnd-move-ms" class="compact-number" name="domeRndMoveMs"
+          <input id="dome-rnd-move-ms" class="compact-number" name="domeEscRndMoveMs"
             type="number" min="500" max="10000" step="100"
             title="Duration of each random rotation movement in milliseconds">
         </label>

@@ -89,6 +89,9 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
     out->snd_sys_mode_t = r.readU16("snd_sys_mode_t", def.snd_sys_mode_t);
     out->snd_sys_drv_on = r.readU16("snd_sys_drv_on", def.snd_sys_drv_on);
     out->snd_sys_dome_on = r.readU16("snd_sys_dome_on", def.snd_sys_dome_on);
+    // "snd_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
+    // Preferences key length ceiling (#189).
+    out->snd_sys_net_down = r.readU16("snd_sys_netdown", def.snd_sys_net_down);
     out->snd_rand_min = r.readU16("snd_rand_min", def.snd_rand_min);
     out->snd_rand_max = r.readU16("snd_rand_max", def.snd_rand_max);
     out->snd_int_quiet = r.readU16("snd_int_quiet", def.snd_int_quiet);
@@ -264,7 +267,7 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->enable_aux1          = r.readBool("en_aux1",         def.enable_aux1);
     out->enable_aux2          = r.readBool("en_aux2",         def.enable_aux2);
     out->enable_aux3          = r.readBool("en_aux3",         def.enable_aux3);
-    out->enable_dome          = r.readBool("en_dome",         def.enable_dome);
+    out->enable_dome_esc      = r.readBool("en_dome_esc",     def.enable_dome_esc);
     out->enable_rc_ch1        = r.readBool("en_rc_ch1",       def.enable_rc_ch1);
     out->enable_rc_ch2        = r.readBool("en_rc_ch2",       def.enable_rc_ch2);
     out->enable_rc_ch3        = r.readBool("en_rc_ch3",       def.enable_rc_ch3);
@@ -272,9 +275,9 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->enable_rc_ch5        = r.readBool("en_rc_ch5",       def.enable_rc_ch5);
     out->enable_rc_ch6        = r.readBool("en_rc_ch6",       def.enable_rc_ch6);
     out->single_sbus_use_ch2  = r.readBool("sbus_recv_ch2",   def.single_sbus_use_ch2);
-    out->enable_s1_hoverboard = r.readBool("en_s1",           def.enable_s1_hoverboard);
-    out->enable_s2_sound      = r.readBool("en_s2",           def.enable_s2_sound);
-    out->enable_s3_dome_ctrl  = r.readBool("en_s3",           def.enable_s3_dome_ctrl);
+    out->enable_drive         = r.readBool("en_drive",        def.enable_drive);
+    out->enable_audio         = r.readBool("en_audio",        def.enable_audio);
+    out->enable_protor2link   = r.readBool("en_r2link",       def.enable_protor2link);
     out->stationary           = r.readBool("op_mode",          def.stationary);
     out->rc_input_mode        = (RcInputMode)r.readU8("rc_mode", (uint8_t)def.rc_input_mode);
 
@@ -283,20 +286,20 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->rc_pwm_dome_speed   = loadRcBinding(r, "rcp_dom", def.rc_pwm_dome_speed);
     out->rc_pwm_arm1         = loadRcBinding(r, "rcp_a1",  def.rc_pwm_arm1);
     out->rc_pwm_arm2         = loadRcBinding(r, "rcp_a2",  def.rc_pwm_arm2);
-    out->rc_pwm_sound        = loadRcBinding(r, "rcp_snd", def.rc_pwm_sound);
+    out->rc_pwm_audio        = loadRcBinding(r, "rcp_aud", def.rc_pwm_audio);
     out->rc_sbus_drive_speed = loadRcBinding(r, "rcs_drv", def.rc_sbus_drive_speed);
     out->rc_sbus_drive_steer = loadRcBinding(r, "rcs_str", def.rc_sbus_drive_steer);
     out->rc_sbus_dome_speed  = loadRcBinding(r, "rcs_dom", def.rc_sbus_dome_speed);
     out->rc_sbus_arm1        = loadRcBinding(r, "rcs_a1",  def.rc_sbus_arm1);
     out->rc_sbus_arm2        = loadRcBinding(r, "rcs_a2",  def.rc_sbus_arm2);
-    out->rc_sbus_sound       = loadRcBinding(r, "rcs_snd", def.rc_sbus_sound);
+    out->rc_sbus_audio       = loadRcBinding(r, "rcs_aud", def.rc_sbus_audio);
 
     out->rc_arm1   = loadRcTrigger(r, "rc_arm1",  def.rc_arm1);
     out->rc_arm2   = loadRcTrigger(r, "rc_arm2",  def.rc_arm2);
     out->rc_aux1   = loadRcTrigger(r, "rc_aux1",  def.rc_aux1);
     out->rc_aux2   = loadRcTrigger(r, "rc_aux2",  def.rc_aux2);
     out->rc_aux3   = loadRcTrigger(r, "rc_aux3",  def.rc_aux3);
-    out->rc_sound  = loadRcTrigger(r, "rc_sound", def.rc_sound);
+    out->rc_audio  = loadRcTrigger(r, "rc_aud", def.rc_audio);
     out->rc_opmode = loadRcTrigger(r, "rc_opmode",def.rc_opmode);
     out->rc_free0  = loadRcTrigger(r, "rc_free0", def.rc_free0);
     out->rc_free1  = loadRcTrigger(r, "rc_free1", def.rc_free1);
@@ -431,6 +434,7 @@ bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
     ok = w.writeU16("snd_sys_mode_t", cfg.snd_sys_mode_t) && ok;
     ok = w.writeU16("snd_sys_drv_on", cfg.snd_sys_drv_on) && ok;
     ok = w.writeU16("snd_sys_dome_on", cfg.snd_sys_dome_on) && ok;
+    ok = w.writeU16("snd_sys_netdown", cfg.snd_sys_net_down) && ok;
     ok = w.writeU16("snd_rand_min", cfg.snd_rand_min) && ok;
     ok = w.writeU16("snd_rand_max", cfg.snd_rand_max) && ok;
     ok = w.writeU16("snd_int_quiet", cfg.snd_int_quiet) && ok;
@@ -505,10 +509,17 @@ bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     ok = w.writeU8("dome_rnd_pmin", cfg.dome_rnd_pause_min) && ok;
     ok = w.writeU8("dome_rnd_pmax", cfg.dome_rnd_pause_max) && ok;
     ok = w.writeU16("dome_rnd_ms", cfg.dome_rnd_move_ms) && ok;
-    if (cfg.dome_wifi_peer_ip[0] != '\0') {
-        ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
-    }
-    // Empty peer IP is a valid "not configured" state; omit the key rather than write ""
+    // Written unconditionally, empty included. An empty peer IP is the "not configured"
+    // state, and it must overwrite whatever an earlier save stored: NVS keeps every key a
+    // save does not touch, so skipping the key here would leave the old address to come
+    // back on the next cold boot. Writing "" is a real store, not a no-op:
+    // Preferences::putString only short-circuits on a null pointer, then calls
+    // nvs_set_str (arduino-esp32 3.3.7, libraries/Preferences/src/Preferences.cpp:264-279),
+    // which stores strlen(value) + 1 bytes -- one byte for "" (ESP-IDF 5.5,
+    // components/nvs_flash/src/nvs_handle_simple.cpp:31-37). PrefsWriter::writeStr already
+    // treats putString's 0 return for an empty string as success, and the WiFi serializer
+    // relies on the same path for an empty STA SSID.
+    ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
     return ok;
 }
 
@@ -522,7 +533,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("en_aux1", cfg.enable_aux1) && ok;
     ok = w.writeBool("en_aux2", cfg.enable_aux2) && ok;
     ok = w.writeBool("en_aux3", cfg.enable_aux3) && ok;
-    ok = w.writeBool("en_dome", cfg.enable_dome) && ok;
+    ok = w.writeBool("en_dome_esc", cfg.enable_dome_esc) && ok;
     ok = w.writeBool("en_rc_ch1", cfg.enable_rc_ch1) && ok;
     ok = w.writeBool("en_rc_ch2", cfg.enable_rc_ch2) && ok;
     ok = w.writeBool("en_rc_ch3", cfg.enable_rc_ch3) && ok;
@@ -530,9 +541,9 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("en_rc_ch5", cfg.enable_rc_ch5) && ok;
     ok = w.writeBool("en_rc_ch6", cfg.enable_rc_ch6) && ok;
     ok = w.writeBool("sbus_recv_ch2", cfg.single_sbus_use_ch2) && ok;
-    ok = w.writeBool("en_s1", cfg.enable_s1_hoverboard) && ok;
-    ok = w.writeBool("en_s2", cfg.enable_s2_sound) && ok;
-    ok = w.writeBool("en_s3", cfg.enable_s3_dome_ctrl) && ok;
+    ok = w.writeBool("en_drive", cfg.enable_drive) && ok;
+    ok = w.writeBool("en_audio", cfg.enable_audio) && ok;
+    ok = w.writeBool("en_r2link", cfg.enable_protor2link) && ok;
     ok = w.writeBool("op_mode", cfg.stationary) && ok;
     ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
 
@@ -553,8 +564,8 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_arm2)) {
         ok = w.writeStr("rcp_a2", encoded) && ok;
     }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_sound)) {
-        ok = w.writeStr("rcp_snd", encoded) && ok;
+    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_audio)) {
+        ok = w.writeStr("rcp_aud", encoded) && ok;
     }
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_drive_speed)) {
         ok = w.writeStr("rcs_drv", encoded) && ok;
@@ -571,8 +582,8 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_arm2)) {
         ok = w.writeStr("rcs_a2", encoded) && ok;
     }
-    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_sound)) {
-        ok = w.writeStr("rcs_snd", encoded) && ok;
+    if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_sbus_audio)) {
+        ok = w.writeStr("rcs_aud", encoded) && ok;
     }
 
     // RC trigger bindings
@@ -592,8 +603,8 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_aux3)) {
         ok = w.writeStr("rc_aux3", triggerEncoded) && ok;
     }
-    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_sound)) {
-        ok = w.writeStr("rc_sound", triggerEncoded) && ok;
+    if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_audio)) {
+        ok = w.writeStr("rc_aud", triggerEncoded) && ok;
     }
     if (formatRcTriggerBinding(triggerEncoded, sizeof(triggerEncoded), cfg.rc_opmode)) {
         ok = w.writeStr("rc_opmode", triggerEncoded) && ok;

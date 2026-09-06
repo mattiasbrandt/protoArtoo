@@ -31,6 +31,8 @@ epic issue. Material an agent needs only on some paths lives under
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
 - Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
+- Soak harness operation, its Soak Drivers and its verdict/exit-code contract:
+  `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
@@ -78,13 +80,99 @@ the full thing instead.
 This does not license scope creep. Do the whole of what the ticket asks, and
 nothing beyond it — depth within scope, never width past it.
 
+## Small Finds Ride Along
+
+Work turns up small defects next to the thing you were sent for: a comment that
+lies, a stale name, a missing guard, an off-by-one in a log line, misleading
+operator copy. **Fix those in the ticket you already have open** — own commit,
+`fix(scope): ...`, named in your status comment. You are holding the context; a
+new ticket throws it away and buys it back as a cold start in some later
+session, if anyone ever picks it up.
+
+A find earns its own ticket only when it genuinely cannot ride along — at least
+one of:
+
+- **It needs a decision that is not yours** — behaviour or API change,
+  architecture, a safety invariant, a new dependency, an action-registry rename.
+- **It needs its own verification story** — a droid or controller run, a new
+  harness, a measurement the bench cannot take here.
+- **It touches files this ticket must not touch** — fenced files, another
+  worker's concurrent slice, an unrelated subsystem.
+
+None of those hold, fix it now. One holds, write it on the ticket you are
+already working (or in the file that owns that truth — see "Where a risk is real
+but unmeasurable" below) and carry on. Filing is a decision, not a reflex: a
+backlog of one-line tickets costs more to read than the fixes cost to make.
+
+**Who may file:** the operator and the coordinator create tickets. Workers and
+sub-agents fix or report — never `gh issue create` on their own initiative.
+Filing on the operator's explicit request is always fine. When you think a find
+deserves a number, say so in your report and let the operator or coordinator
+make the call.
+
+## Verification Scale (Non-Negotiable)
+
+protoArtoo is a small hobby project with one known user, the operator. Verification
+is sized to that, not to a production product with a support obligation. Operator
+decision, 2026-09-04, after epic #206 ended with seven open sub-issues that were all
+bench rows, audit bookkeeping and closure steps for one bench day (folded into #274).
+
+The Effort Policy above governs depth *inside* a scope. This section bounds how much
+verification scope exists. Where the two seem to pull apart: this section decides
+what gets verified, that one decides how honestly each piece is done.
+
+- **An epic's verification tail is one ticket.** Bench rows, soak, audit, budget
+  table and closure PR live in one Closing Ticket (CONTEXT.md). Never a runbook
+  ticket per board, never a separate audit ticket, never a separate
+  integration-readiness ticket, never a gathering ticket that stays open by design.
+- **A device check is tracked in one place.** The executable form of a bench row is
+  `tools/bench_rows/<board>.txt`; a ticket points at the sheet and does not restate
+  it. The same transcript is never a criterion on one ticket, a row on another and
+  a matrix line on the epic.
+- **A criterion is written only after checking the bench can measure it today.**
+  Before naming an instrument, a counter, a signal or a number in a criterion,
+  confirm it exists on this bench and in this firmware. If it does not, the
+  criterion is not written; a real but unmeasurable risk goes into the file that
+  owns that hardware truth as a note, the way `docs/pin_map.md` carries the
+  GPIO 48-52 LDO item.
+- **"The criterion says measure X" is not a reason to build a path to X.** Ask first
+  whether X is worth measuring on a hobby droid. A bench row earns its place by one
+  of three things: a safety invariant the change could violate, a defect this repo
+  has actually shipped, or a behaviour that only exists on hardware (a transport, a
+  timing, a boot). A cell a native seam test already proves, a second adapter for a
+  guard that lives in the shared core, a both-boards duplicate of a board-independent
+  behaviour: cut it, and say so.
+- **All boxes ticked closes the ticket.** A ticket whose every criterion is ticked
+  closes in the same pass. It does not stay open for one unobtainable number, a row
+  nobody can run, or "in case something turns up". The remainder is a one-line note
+  where the truth lives, never an open ticket.
+- **Bookkeeping is not a criterion.** "Every row executed at least once", "notify
+  #n", "every closed ticket appears in the log", "close the runbooks": delete them.
+  A checkbox with no product or safety content is not acceptance.
+- **What the gate already enforces is not re-listed.** The slice gate runs the
+  suites, the build, the budgets and the drift check on every merge. An audit that
+  lists them again as criteria is ceremony.
+- **Cuts are visible.** When a verification tail is trimmed, the ticket carries a
+  short "Cut on purpose" table so the operator can veto a cut. Trimmed is fine;
+  hidden is not.
+
+What this does not relax: the safety invariants (Architecture Guardrails above, and
+the Safety-Critical Rules in `.claude/CLAUDE.md`) are still proven to the maximum
+the bench allows, the slice gate's one-test floor stands, and the critic still reads
+the production diff first. It bounds how many tickets, rows and cells exist, not how
+truthfully each one is run.
+
 ## Memory (MemPalace)
 
-MemPalace is **unavailable** (operator, 2026-08-07). Skip every MemPalace step —
-no status call, no search, no diary, no CLI probing — and say so once in the
-report. Durable memory until it returns is the issue tracker, commits,
-`CONTEXT.md` and `docs/adr/`. The full protocol, for when the operator
-re-enables it, is `docs/agents/mempalace.md`.
+Long-term project memory lives in MemPalace (MCP server plus a user-level
+daemon). The protocol — session-start status call, when to search, what to
+persist — is `docs/agents/mempalace.md`; follow it. The issue tracker, commits,
+`CONTEXT.md` and `docs/adr/` remain the durable record for anything a reader
+must be able to find without the MCP server.
+
+If `mempalace_status` errors, skip every MemPalace step for that session and say
+so once in the report. Probing the CLI, retrying, or working around it is out of
+scope.
 
 ## Action Registry
 
@@ -105,6 +193,9 @@ authoritative reference when adding, renaming, or cross-referencing any action.
 - Network is optional and never load-bearing (ADR 0032): a network fault never
   restarts the controller or degrades a droid function; `requestSystemRestart`
   keeps operator-initiated callers only
+- Board Capability Gates and Build Feature Flags (ADR 0029) are always defined
+  as 0 or 1 and tested with `#if`, declared in the `include/*.inc` manifests and
+  annotated in the action registry
 
 ## Execution Model (Non-Blocking)
 
@@ -158,10 +249,11 @@ Routing cues for the Claude subagents live in `.claude/CLAUDE.md`.
 
 Bare `make` launches the interactive deploy wizard (`tools/deploy.py`); `make help`
 lists every named target. `make flash` and `make ota` run `pio test -e native`
-first; `make uploadfs` does not. Overrides go on the command line or in `user.mk`:
-`OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
+first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
+which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
+line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
-Three rules the Makefile cannot enforce for you:
+Five rules the Makefile cannot enforce for you:
 
 - **Dual-target builds go through `make`, never bare `pio`.** The artoo-esp32 and
   ESP32-P4 targets pin different pioarduino platform versions, so each gets its
@@ -173,6 +265,25 @@ Three rules the Makefile cannot enforce for you:
   coredump decode are in `docs/troubleshooting.md`.
 - ArduinoOTA starts on Core 0 when WiFi comes up (port 3232). `192.168.4.1` (the
   AP IP) is never the default `OTA_IP`.
+- **Only one of the four P4 environments is the firmware.** `tools/build_budgets.json`
+  -> `platforms.esp32p4.envs` registers four. `firebeetle2` is the product image.
+  `firebeetle2_bringup` and `firebeetle2_hosted_bench` set `build_src_filter = -<*>`
+  and compile a single `bringup/` translation unit, so they contain **none** of
+  `src/`; `firebeetle2_p4_rt_bench` is `+<*>` plus a harness TU, so it is the
+  firmware *and extra code*, not the shipping image. Flashing any of the three
+  while expecting the product yields a board that boots and serves almost nothing
+  — which **presents as broken firmware rather than as the wrong target**, and that
+  misreading is the expensive part. Corollary: a **new** P4 env must be added to
+  that registry, because `Makefile:46` reads it to choose `PLATFORMIO_CORE_DIR`;
+  an unregistered P4 env silently builds against the artoo-esp32 toolchain pool
+  and fails looking like a code problem.
+- **`src/secrets.h` does not follow worktrees.** It is gitignored, so a build in a
+  fresh worktree **silently falls back to placeholder credentials** instead of
+  failing. The resolution order is `-DBENCH_SSID`/`-DBENCH_PASS` -> `src/secrets.h`
+  -> placeholder; the middle term simply vanishes in a new tree. This produced an
+  uninformative `wifi=DISCONNECTED everConnected=false` on a bench characterisation
+  that had been built against the placeholder SSID. Copy it in when you create a
+  worktree, and never commit it.
 
 ### The build lock
 
@@ -228,7 +339,9 @@ the platform is unproven, the go/no-go gate has not returned a verdict, the
 hardware has not run the real firmware — test effort is near-zero priority. The
 bar is: it builds, it runs on the board, here is the log. Test depth is bought
 back deliberately at **epic closing** and during **robustness work**, when there
-is something proven enough to be worth protecting.
+is something proven enough to be worth protecting - and within the bound in
+"Verification Scale": one Closing Ticket, rows that earn their place, no
+bookkeeping criteria.
 
 Two consequences, both binding:
 
@@ -285,6 +398,14 @@ evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
+**Build-size budget rule (operator decision 2026-08-26):** the per-env flash
+budget in `tools/build_budgets.json` is a tripwire, not a ceiling. When a change
+trips it, the PR that trips it raises the budget with a written reason in the
+budget's rationale field — a conscious decision, never a silent bump — and a
+separate fixed hard ceiling below the partition size never moves. The artoo-esp32
+image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it,
+not only spill from another target. The RAM budget moves by the same
+explicit-decision rule.
 
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized
@@ -301,7 +422,30 @@ Classify verification status explicitly — use only these labels:
 - `controller-upload-verified` — flashed to ESP32 controller; smoke checks passed
 - `full-hardware-verified` — verified on integrated droid hardware
 - `partial` — some evidence exists; controller or hardware checks still open
-- `full-hardware-required` — physical hardware needed before closure
+- `full-hardware-required` — the remaining exposure is droid-only; recorded, not scheduled
+
+**These labels describe evidence. They are not a gate** (operator decision,
+2026-09-01). protoArtoo is a small open-source hobby project, and integrated-droid
+confirmation is a desirable outcome, not a precondition for closing work.
+
+- A ticket, a PR, or an epic **closes on the strongest evidence the available
+  hardware can produce**. `full-hardware-required` names what is still unproven so
+  the next person knows where to look; it never blocks closure on its own.
+- **Do not write a droid-hardware verification ticket as a gate.** Whatever real
+  droid operation turns up is ordinary follow-up work, filed when it appears. A
+  fault in drive, dome, servos, sound, SBUS or battery sense shows itself in the
+  first minutes of driving; a gate does not find it earlier, it only delays the
+  close. #193 was exactly this ticket and was dropped `not planned`.
+- **Where a risk is real but unmeasurable, document it, do not schedule it.** Put
+  it in the file that owns the hardware truth — the `GPIO48-52` LDO watch item
+  lives in `docs/pin_map.md`, "Known Issue: GPIO 48-52 LDO Rails (Unmeasured)" —
+  with how the fault would present and how to diagnose it. A durable note beats a
+  ticket nobody can action.
+- **This does not relax the safety invariants.** The contracts in "Safety-Critical
+  Rules" are still proven to the maximum the available hardware allows, and a gap
+  is named explicitly rather than assumed away. Not being able to reach the droid
+  is a reason to record a limit, never a reason to skip a check the bench can run
+  and "Verification Scale" keeps.
 
 Never use "bench verified" or "bench-tested" — too ambiguous. Public docs use plain
 evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller").
@@ -324,6 +468,15 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Preserve useful code comments. Remove or update them only when factually incorrect,
   stale after a code change, or duplicated by clearer nearby documentation.
 - LSP/lint fixes must be resolved by changing the flagged code, not by deleting nearby comments.
+- **Orchestration bookkeeping never ships in source.** A comment may cite a durable public
+  reference — an issue (`#189`), an ADR, a spec sheet, a `file:line` — and CONTRIBUTING.md's
+  "Code standards summary" asks for one where it helps. It may **not** carry the workflow step
+  that produced the code: no slice numbers (`#189 slice 3`), no wave, attempt, or worker
+  identifiers. A slice decomposition lives in one coordinator's dispatch plan, is not
+  recoverable from the repo, and means nothing to whoever holds the file later — the same reason
+  the phase-era `T<NN>` token was dropped from commit scopes, and why per-slice tracking belongs
+  in the issue checklist comment. Write what the code does and why it is that way, then cite the
+  issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
 
 ### Branch model
 
@@ -455,6 +608,6 @@ push to `main`. Mechanism and fallbacks: the docstring in
 - Issue tracker (GitHub, `gh` conventions): `docs/agents/issue-tracker.md`
 - Triage labels: `docs/agents/triage-labels.md`
 - Domain docs (`CONTEXT.md`, `docs/adr/`): `docs/agents/domain.md`
-- MemPalace protocol, for when it is re-enabled: `docs/agents/mempalace.md`
+- MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`

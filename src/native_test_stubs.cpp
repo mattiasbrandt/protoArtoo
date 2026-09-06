@@ -653,64 +653,17 @@ void logQueueDrop(QueueDropId /*queueId*/, const char* /*description*/) {
 }
 
 // =============================================================================
-// WiFi and LittleFS fake classes for native test builds (moved from
+// LittleFS and ESP fake classes for native test builds (moved from
 // src/web/web_server.cpp). Note: String and millis() stubs are already in
-// test/stubs/include/Arduino.h, so only WiFi-specific and FreeRTOS stubs
-// are defined here.
+// test/stubs/include/Arduino.h, so only LittleFS and ESP stubs are
+// defined here. WiFi stubs were removed when the network manager seam
+// (#188) made them unreachable from native tests.
 // =============================================================================
-
-class IPAddress {
-   public:
-    String toString() const {
-        return String();
-    }
-};
-
-using wl_status_t = int;
-using WiFiEvent_t = int;
-
-static const wl_status_t WL_CONNECTED = 3;
-static const int WIFI_AP = 1;
-static const int WIFI_AP_STA = 2;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_AP_START = 0;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_START = 1;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_GOT_IP = 2;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 3;
 
 class LittleFSClass {
    public:
     bool begin(bool) {
         return false;
-    }
-};
-
-class WiFiClass {
-   public:
-    wl_status_t status() const {
-        return 0;
-    }
-    long RSSI() const {
-        return 0;
-    }
-    IPAddress softAPIP() const {
-        return IPAddress();
-    }
-    IPAddress localIP() const {
-        return IPAddress();
-    }
-    int getMode() const {
-        return WIFI_AP;
-    }
-    int softAPgetStationNum() const {
-        return 0;
-    }
-    void onEvent(void (*)(WiFiEvent_t)) {
-    }
-    void mode(int) {
-    }
-    void softAP(const char*, const char* = nullptr) {
-    }
-    void begin(const char*, const char*) {
     }
 };
 
@@ -727,7 +680,6 @@ class ESPClass {
     }
 };
 
-static WiFiClass WiFi;
 static LittleFSClass LittleFS;
 static ESPClass ESP;
 
@@ -767,5 +719,78 @@ bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlo
 
 // Note: audioQueueDollar and audioQueueTrackStop stubs already exist elsewhere
 // in this file (see lines ~80-86, ~336). No need to redefine them here.
+
+// Network manager seam (web_network_manager.h) implementation for host tests.
+// Records calls so tests can verify the seam is integrated.
+
+// Include here to make types available for the networkManagerApplyBootPosture signature
+#include "web_network_manager.h"
+
+// Test instrumentation: record the last posture received
+struct {
+    int applyBootPostureCallCount = 0;
+    WifiBootPosture lastPosture = WifiBootPosture::PROVISIONING;
+} s_seam_test_state;
+
+// Accessor for tests
+int networkManagerGetApplyBootPostureCallCount() {
+    return s_seam_test_state.applyBootPostureCallCount;
+}
+
+WifiBootPosture networkManagerGetLastPosture() {
+    return s_seam_test_state.lastPosture;
+}
+
+void networkManagerResetTestState() {
+    s_seam_test_state.applyBootPostureCallCount = 0;
+    s_seam_test_state.lastPosture = WifiBootPosture::PROVISIONING;
+}
+
+void networkManagerInitialize() {
+    // No-op: native tests do not call startHttpServerOnce()
+    // or interact with the Arduino WiFi driver
+}
+
+void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
+    (void)settings;
+    // Record the call for test verification
+    s_seam_test_state.applyBootPostureCallCount++;
+    s_seam_test_state.lastPosture = posture;
+}
+
+// Query WiFi connectivity status. Host tests assume no WiFi.
+WifiConnectivityStatus networkManagerQueryConnectivity() {
+    return WifiConnectivityStatus{
+        .wifiConnected = false,
+        .wifiClientConnected = false,
+        .wifiRssi = 0,
+        .staConnected = false,
+        .staEnabled = false,
+        .apIp = {},      // empty string
+        .staIp = {},     // empty string
+        .staSsid = {},   // empty string
+    };
+}
+
+// ESP-IDF reset reason enum and stub — native tests need this for
+// evaluateNetworkRecoveryGesture() to compile
+enum esp_reset_reason_t {
+    ESP_RST_UNKNOWN   = 0,
+    ESP_RST_POWERON   = 1,
+    ESP_RST_EXT       = 2,
+    ESP_RST_SW        = 3,
+    ESP_RST_PANIC     = 4,
+    ESP_RST_INT_WDT   = 5,
+    ESP_RST_TASK_WDT  = 6,
+    ESP_RST_WDT       = 7,
+    ESP_RST_DEEPSLEEP = 8,
+    ESP_RST_BROWNOUT  = 9,
+    ESP_RST_SDIO      = 10,
+};
+
+esp_reset_reason_t esp_reset_reason() {
+    // Always return software reset in native tests
+    return ESP_RST_SW;
+}
 
 #endif

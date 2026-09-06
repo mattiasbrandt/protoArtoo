@@ -1,0 +1,307 @@
+// =============================================================================
+// Identity reason tracking and diagnosis (#200, slice 3)
+//
+// Tests that:
+// 1. "no-response" reason shows retryable copy with reconnection promise
+// 2. "incompatible" reason shows terminal copy without reconnection promise
+// 3. Three diagnosis sentences exist and are correctly placed
+// 4. Diagnosis function exists and does not block bootstrap
+// 5. shell.js dispatches reason field in identity-unavailable event
+// =============================================================================
+
+import { test } from "node:test";
+import assert from "node:assert";
+import { readFileSync } from "fs";
+
+test("three diagnosis sentences are correctly defined in setup.js", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Sentence 1: firmware and filesystem mismatch
+  assert.strictEqual(
+    setupContent.includes("The firmware and filesystem do not match. Upload both from the same release."),
+    true,
+    "should include sentence for fw/fs mismatch"
+  );
+
+  // Sentence 2: versions match but manifest invalid (uses "feature list" language)
+  assert.strictEqual(
+    setupContent.includes("This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it."),
+    true,
+    "should include sentence for invalid manifest"
+  );
+
+  // Sentence 3: no version evidence
+  assert.strictEqual(
+    setupContent.includes("The controller could not report which features are available."),
+    true,
+    "should include sentence for no version evidence"
+  );
+});
+
+test("reasonFor function distinguishes identity-unavailable by reason", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify that reasonFor checks identityErrorReason
+  assert.strictEqual(
+    setupContent.includes("if (identityErrorReason === \"incompatible\")"),
+    true,
+    "should check identityErrorReason for incompatible"
+  );
+
+  // Verify terminal copy is returned for incompatible (uses featureName)
+  assert.strictEqual(
+    setupContent.includes("return `Could not check ${featureName}. The controller did not report its features.`;"),
+    true,
+    "should return terminal copy for incompatible reason"
+  );
+
+  // Verify retryable copy is returned for no-response (default)
+  assert.strictEqual(
+    setupContent.includes("return `Could not check ${featureName}. Reconnecting to the controller…`;"),
+    true,
+    "should return retryable copy for no-response/default"
+  );
+});
+
+test("setIdentityError accepts reason parameter and stores it", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify function signature
+  assert.strictEqual(
+    setupContent.includes("const setIdentityError = (reason = \"no-response\") =>"),
+    true,
+    "setIdentityError should accept reason parameter with default"
+  );
+
+  // Verify reason is stored in identityErrorReason
+  assert.strictEqual(
+    setupContent.includes("identityErrorReason = reason;"),
+    true,
+    "should store reason in identityErrorReason variable"
+  );
+});
+
+test("pa:identity-unavailable event listener extracts and passes reason", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify listener extracts reason from event detail
+  assert.strictEqual(
+    setupContent.includes("const reason = event.detail?.reason || \"no-response\";"),
+    true,
+    "should extract reason from event detail with default"
+  );
+
+  // Verify reason is passed to setIdentityError
+  assert.strictEqual(
+    setupContent.includes("window.PAFeatureAvailability.setIdentityError(reason);"),
+    true,
+    "should pass extracted reason to setIdentityError"
+  );
+});
+
+test("identity feedback message branches on reason (incompatible vs no-response)", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify that identity feedback branches based on reason
+  // This catches mutations that revert to unconditional message
+  assert.strictEqual(
+    setupContent.includes("const message = reason === \"incompatible\""),
+    true,
+    "should branch identity feedback message on reason"
+  );
+
+  // Verify terminal message for incompatible
+  assert.strictEqual(
+    setupContent.includes("? \"Could not load controller identity.\""),
+    true,
+    "should show terminal message for incompatible (no reconnecting promise)"
+  );
+
+  // Verify retryable message for no-response
+  assert.strictEqual(
+    setupContent.includes(": \"Could not load controller identity. Reconnecting…\";"),
+    true,
+    "should show retryable message for no-response"
+  );
+});
+
+test("incompatible reason triggers lazy diagnosis listener registration", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify diagnosis is triggered for incompatible
+  assert.strictEqual(
+    setupContent.includes("if (reason === \"incompatible\") {"),
+    true,
+    "should check for incompatible reason to trigger diagnosis"
+  );
+
+  // Verify pa:assets-ready listener is registered
+  assert.strictEqual(
+    setupContent.includes("window.addEventListener(\"pa:assets-ready\", () => {"),
+    true,
+    "should register pa:assets-ready listener"
+  );
+
+  // Verify performIdentityDiagnosis is called
+  assert.strictEqual(
+    setupContent.includes("performIdentityDiagnosis();"),
+    true,
+    "should call performIdentityDiagnosis on assets-ready"
+  );
+});
+
+test("performIdentityDiagnosis function exists and is async", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify function exists
+  assert.strictEqual(
+    setupContent.includes("const performIdentityDiagnosis = async () => {"),
+    true,
+    "performIdentityDiagnosis should be defined as async function"
+  );
+
+  // Verify it fetches fw-version.json
+  assert.strictEqual(
+    setupContent.includes('await window.PAApi.get(\"/fw-version.json\"'),
+    true,
+    "should fetch /fw-version.json"
+  );
+
+  // Verify it uses PAStatusStream
+  assert.strictEqual(
+    setupContent.includes("window.PAStatusStream?.getLastStatus?.()"),
+    true,
+    "should use PAStatusStream.getLastStatus()"
+  );
+
+  // Verify it calls setIdentityDiagnosis with messages (diagnosis renders in dedicated element)
+  assert.strictEqual(
+    setupContent.includes("setIdentityDiagnosis(diagMessage);"),
+    true,
+    "should call setIdentityDiagnosis with diagnosis message"
+  );
+});
+
+test("diagnosis logic compares expected vs running firmware versions", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify version comparison logic
+  assert.strictEqual(
+    setupContent.includes("if (expectedFwVersion !== runningFwVersion)"),
+    true,
+    "should compare expected vs running firmware versions"
+  );
+
+  // Verify first condition returns fw mismatch sentence
+  assert.strictEqual(
+    setupContent.includes("diagMessage = \"The firmware and filesystem do not match. Upload both from the same release.\";"),
+    true,
+    "should show mismatch sentence when versions differ"
+  );
+
+  // Verify else condition returns invalid manifest sentence (feature list language)
+  assert.strictEqual(
+    setupContent.includes("diagMessage = \"This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.\";"),
+    true,
+    "should show invalid manifest sentence when versions match"
+  );
+});
+
+test("shell.js dispatches reason field in pa:identity-unavailable event", (t) => {
+  const shellContent = readFileSync("./data/shell.js", "utf8");
+
+  // Verify incompatible reason is dispatched on validation failure
+  assert.strictEqual(
+    shellContent.includes("detail: { error: \"invalid manifest\", reason: \"incompatible\" }"),
+    true,
+    "should dispatch reason: incompatible on validation failure"
+  );
+
+  // Verify no-response reason is dispatched on transport failure
+  assert.strictEqual(
+    shellContent.includes("detail: { error, reason: \"no-response\" }"),
+    true,
+    "should dispatch reason: no-response on transport error"
+  );
+});
+
+test("identityErrorReason variable is initialized in module scope", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify variable declaration
+  assert.strictEqual(
+    setupContent.includes("let identityErrorReason = null;  // \"incompatible\" or \"no-response\" when phase === \"error\""),
+    true,
+    "should declare identityErrorReason variable in module scope"
+  );
+});
+
+test("diagnosis message defaults to no version evidence when neither version is known", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify default message
+  assert.strictEqual(
+    setupContent.includes("let diagMessage = \"The controller could not report which features are available.\";"),
+    true,
+    "should default to no-version-evidence message"
+  );
+});
+
+test("identity diagnosis element exists and is separate from feedback", (t) => {
+  const htmlContent = readFileSync("./data/setup.html", "utf8");
+
+  // Verify dedicated diagnosis element exists
+  assert.strictEqual(
+    htmlContent.includes('id="identity-diagnosis"'),
+    true,
+    "should have a dedicated identity-diagnosis element"
+  );
+});
+
+test("setIdentityDiagnosis exists and renders to its own element", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify setter exists
+  assert.strictEqual(
+    setupContent.includes("const setIdentityDiagnosis = (message) => {"),
+    true,
+    "should have setIdentityDiagnosis setter"
+  );
+
+  // Verify it writes to identityDiagnosis element only
+  assert.strictEqual(
+    setupContent.includes("if (identityDiagnosis) identityDiagnosis.textContent = message || \"\";"),
+    true,
+    "should write to identityDiagnosis element's textContent"
+  );
+});
+
+test("diagnosis uses setIdentityDiagnosis not setIdentityFeedback", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify diagnosis is rendered via setIdentityDiagnosis
+  assert.strictEqual(
+    setupContent.includes("setIdentityDiagnosis(diagMessage);"),
+    true,
+    "should render diagnosis via setIdentityDiagnosis"
+  );
+
+  // Count how many times setIdentityDiagnosis is called for diagnosis
+  const diagCalls = (setupContent.match(/setIdentityDiagnosis\(/g) || []).length;
+  assert.strictEqual(
+    diagCalls >= 2,
+    true,
+    "should use setIdentityDiagnosis at least twice (success and error paths)"
+  );
+});
+
+test("diagnosis clears on identity success", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify diagnosis is cleared in pa:identity-available listener
+  assert.strictEqual(
+    setupContent.includes('setIdentityDiagnosis("");'),
+    true,
+    "should clear diagnosis when identity loads successfully"
+  );
+});

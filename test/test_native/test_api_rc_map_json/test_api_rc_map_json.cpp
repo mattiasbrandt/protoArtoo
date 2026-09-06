@@ -90,7 +90,7 @@ void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e3, existing, &working, err, sizeof(err)));
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e4, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, working.system.rc_sound.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, working.system.rc_audio.target);
     TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_HUMMING, working.system.rc_free0.target);
     TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_ALERT, working.system.rc_free1.target);
     TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, working.system.rc_free2.target);
@@ -111,7 +111,7 @@ void test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default(void) {
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch6, existing, &working, err, sizeof(err)));
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch7, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_TRUE(working.system.rc_sound.reverse);
+    TEST_ASSERT_TRUE(working.system.rc_audio.reverse);
     TEST_ASSERT_FALSE(working.system.rc_free0.reverse);
 }
 

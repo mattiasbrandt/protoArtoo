@@ -20,6 +20,10 @@ import threading
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OTA_TIMEOUT_SECONDS = "60"
 OTA_TRANSFER_TIMEOUT_SECONDS = "60"
+# Local (host) TCP port espota listens on for the device's OTA connect-back.
+# Mirrors the Makefile's OTA_HOST_PORT default (#252 Finding 2) so the wizard
+# and `make ota` behave identically on a default-deny inbound firewall.
+OTA_HOST_PORT_DEFAULT = "32320"
 
 # ── ANSI helpers ─────────────────────────────────────────────────────────────
 
@@ -143,9 +147,9 @@ def run_cmd(args: list[str]) -> int:
 
 # (display label, env for USB/build, env for OTA)
 AUDIO_MODULES: list[tuple[str, str, str]] = [
-    ("🔊  DY-SV5W  (default)",  "protoArtoo",           "protoArtoo_ota"),
-    ("🎵  CHIRP",               "protoArtoo_chirp",      "protoArtoo_chirp_ota"),
-    ("🎙  MP3 Trigger",         "protoArtoo_mp3trigger", "protoArtoo_mp3trigger_ota"),
+    ("🔊  DY-SV5W  (default)",  "artoo_esp32",           "artoo_esp32_ota"),
+    ("🎵  CHIRP",               "artoo_esp32_chirp",      "artoo_esp32_chirp_ota"),
+    ("🎙  MP3 Trigger",         "artoo_esp32_mp3trigger", "artoo_esp32_mp3trigger_ota"),
 ]
 
 ACTIONS: list[tuple[str, str]] = [
@@ -197,9 +201,9 @@ def main() -> int:
     action = dict(ACTIONS)[action_label]
 
     # ── Q2: Audio module (skip for test-only) ──
-    env_usb = env_ota = "protoArtoo"
+    env_usb = env_ota = "artoo_esp32"
     if action != "test":
-        current_env  = _user_mk("BUILD_ENV", "protoArtoo")
+        current_env  = _user_mk("BUILD_ENV", "artoo_esp32")
         default_audio = next(
             (a[0] for a in AUDIO_MODULES if a[1] == current_env),
             AUDIO_MODULES[0][0],
@@ -217,6 +221,7 @@ def main() -> int:
     # ── Q3: Connection details ──
     ota_ip     = _user_mk("OTA_IP",      "artoo.local")
     upload_port = _user_mk("UPLOAD_PORT", "/dev/ttyUSB0")
+    ota_host_port = _user_mk("OTA_HOST_PORT", OTA_HOST_PORT_DEFAULT)
 
     if action in ("ota", "uploadfs"):
         ota_ip = _text("OTA target (IP or mDNS host):", default=ota_ip) or ota_ip
@@ -307,6 +312,8 @@ def main() -> int:
             OTA_TIMEOUT_SECONDS,
             "--transfer-timeout",
             OTA_TRANSFER_TIMEOUT_SECONDS,
+            "--host-port",
+            ota_host_port,
         ])
         if rc != 0:
             print()

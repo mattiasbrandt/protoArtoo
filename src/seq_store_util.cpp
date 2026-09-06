@@ -38,7 +38,10 @@ ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
         return ufail("name", "store full (16 sequences max)");
     }
     if (fileLen > SEQ_FILE_MAX_BYTES) {
-        return ufail("json", "file too large (12 KB max)");
+        // The size in the message comes from the same macro as the constant it
+        // reports (see the header), so a per-chip cap cannot tell an operator
+        // one number while enforcing another.
+        return ufail("json", SEQ_FILE_TOO_LARGE_MESSAGE);
     }
     if (freeBytes < SEQ_FS_FREE_FLOOR + fileLen) {
         return ufail("json", "insufficient filesystem space");

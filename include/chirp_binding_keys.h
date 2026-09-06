@@ -34,6 +34,9 @@ constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
     {"sys_mode_t", "chr_sys_mode_t"},
     {"sys_drv_on", "chr_sys_drv_on"},
     {"sys_dome_on", "chr_sys_dome_on"},
+    // "chr_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
+    // Preferences key length ceiling (#189).
+    {"sys_net_down", "chr_sys_netdown"},
 };
 
 inline const char* chirpBindingNvsKey(const char* key) {

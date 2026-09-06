@@ -6,7 +6,7 @@ operator-owned runtime configuration: an Unprovisioned Controller starts WiFi
 Provisioning with a documented Default AP Credential, then the operator chooses either
 WiFi Client Mode or Standalone AP Mode through the existing WiFi page, backed by the
 normal config/API surfaces. The release matrix stays one binary per sound backend
-(`protoArtoo_chirp`, `protoArtoo_mp3trigger`); it does not multiply artifacts by
+(`artoo_esp32_chirp`, `artoo_esp32_mp3trigger`); it does not multiply artifacts by
 WiFi mode.
 
 Device WiFi Settings are retained on the controller and survive firmware upgrades. Moving

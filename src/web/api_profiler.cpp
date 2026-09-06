@@ -21,7 +21,7 @@
 //     heap_caps_alloc_all_task_stat_arrays()
 //     heap_caps_get_all_task_stat()         -> heap_all_tasks_stat_t
 //     heap_caps_free_all_task_stat_arrays()
-//   Tier 3 (CONFIG_HEAP_TRACING only - escalation path):
+//   Tier 3 (PA_HEAP_TRACING troubleshooting image):
 //     heap_trace_init_standalone(buf, 200)  - 200 records ~32B each = ~6 KB static
 //     heap_trace_start(HEAP_TRACE_LEAKS)    - POST /api/profiler/trace/start
 //     heap_trace_stop()                     - POST /api/profiler/trace/stop
@@ -47,12 +47,13 @@
 #include <esp_heap_task_info.h>
 #endif
 
-#ifdef CONFIG_HEAP_TRACING
+#if PA_HEAP_TRACING
 #include <esp_heap_trace.h>
 #endif
 
 #include "api_json_response.h"
 #include "logging.h"
+#include "robot_state.h"
 #include "web_server.h"
 
 static const char* TAG = "Profiler";
@@ -109,7 +110,7 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
-#define PROF_TASK_MAX 9
+#define PROF_TASK_MAX 10
 
 struct TaskHwmEntry {
     const char* name;
@@ -118,9 +119,16 @@ struct TaskHwmEntry {
 };
 
 // Names must match xTaskCreatePinnedToCore() calls in main.cpp.
+//
+// Nothing enforces that, and it drifted: "SeqDisp" was missing until #250, so
+// /api/profiler silently reported nine of the ten tasks and the tenth could not
+// be measured at all. That is worse than an obviously absent endpoint, because
+// the response looks complete -- a task that is never listed reads the same as
+// a task that is disabled. If you add a task in main.cpp, add it here.
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
-    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask"
+    "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
+    "SeqDisp"
 };
 
 static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];
@@ -163,6 +171,20 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
     s_inFailedAllocCb = true;
     s_lastFailSize = (uint32_t)requested_size;
     s_lastFailCaps = caps;
+
+    // Backtrace capture is Xtensa-only. ESP-IDF DECLARES esp_backtrace_get_start()
+    // and esp_backtrace_get_next_frame() in esp_debug_helpers.h for every target, but
+    // only IMPLEMENTS them for Xtensa -- they are hand-written assembly that walks
+    // register windows, which RISC-V does not have. So on the ESP32-P4 the calls
+    // compile cleanly and the link fails with "undefined reference"; verified against
+    // the framework archives, where the symbol is defined once for esp32 and zero
+    // times for esp32p4_es.
+    //
+    // The rest of the record -- the failure count, requested size and caps -- is
+    // architecture-neutral and still the most useful part, so RISC-V keeps it and
+    // simply reports a zero-depth backtrace. /api/profiler already renders a depth of
+    // 0 as an empty list, so no consumer changes.
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
     esp_backtrace_frame_t frame;
     esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
     uint8_t depth = 0;
@@ -174,6 +196,9 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
         }
     }
     s_lastFailBtDepth = depth;
+#else
+    s_lastFailBtDepth = 0;
+#endif
     s_inFailedAllocCb = false;
 }
 
@@ -200,16 +225,46 @@ static portMUX_TYPE s_taskHeapMux = portMUX_INITIALIZER_UNLOCKED;
 #endif  // CONFIG_HEAP_TASK_TRACKING
 
 // =============================================================================
-// Tier 3 - heap leak tracing (CONFIG_HEAP_TRACING only - escalation path)
+// Tier 3 - heap leak tracing (PA_HEAP_TRACING troubleshooting image)
 // Initialised at boot; started/stopped via POST /api/profiler/trace/start|stop.
 // One-session-only diagnostic - disable after evidence collected.
 // =============================================================================
 
-#ifdef CONFIG_HEAP_TRACING
+#if PA_HEAP_TRACING
 #define PROF_TRACE_RECORDS 200
 static heap_trace_record_t s_traceRecords[PROF_TRACE_RECORDS];
 static bool s_traceRunning = false;
 #endif
+
+// Bounded request-lifecycle trace for profiler evidence. The profiler module
+// owns its storage and exposes only an opaque start/finish interface, so the
+// admission path has no Build Feature Flag conditionals or profiler structs.
+// It covers only admitted requests that count against the inflight cap. A
+// long-lived stream is already represented by the SSE client counters and is
+// not the per-request event this ring describes.
+//
+// handlerDoneMs is captured when the matched handler's call into send() has
+// returned through the middleware. esp_http_server writes synchronously from
+// that call, so this means "response written", not merely "response ready".
+// There is no disconnect timestamp because keep-alive sockets outlive their
+// individual requests; socket lifetime belongs to the HTTP socket counters.
+//
+// The server task is the single writer and also serves /api/profiler. A slot
+// may be overwritten before a very long request finishes; that is acceptable
+// for a bounded diagnostic trace, not a correctness-bearing structure.
+#define PROF_REQUEST_TRACE_MAX 32
+struct RequestLifecycleEntry {
+    char requestPath[28];
+    uint32_t startMs;
+    uint32_t handlerDoneMs;
+};
+static RequestLifecycleEntry s_requestTrace[PROF_REQUEST_TRACE_MAX];
+static uint8_t s_requestTraceHead = 0;
+static uint8_t s_requestTraceCount = 0;
+
+static bool s_lastAudioActive = false;
+static bool s_lastSseConnected = false;
+static int s_profilerHwmTick = 0;
 
 // =============================================================================
 // Public API
@@ -233,7 +288,7 @@ void profilerInit() {
     }
     PA_LOG_INFO(TAG, "PA_HEAP_PROFILE=1 active; boot window opened");
 
-#ifdef CONFIG_HEAP_TRACING
+#if PA_HEAP_TRACING
     if (heap_trace_init_standalone(s_traceRecords, PROF_TRACE_RECORDS) == ESP_OK) {
         PA_LOG_INFO(TAG, "Tier 3 heap trace buffer ready (%d records)", PROF_TRACE_RECORDS);
     } else {
@@ -292,8 +347,8 @@ void profilerCollectHwm() {
     taskEXIT_CRITICAL(&s_hwmMux);
 }
 
-#ifdef CONFIG_HEAP_TASK_TRACKING
 void profilerCollectTaskHeap() {
+#ifdef CONFIG_HEAP_TASK_TRACKING
     heap_all_tasks_stat_t tasks_stat = {};
     if (heap_caps_alloc_all_task_stat_arrays(&tasks_stat) != ESP_OK) {
         return;
@@ -326,8 +381,68 @@ void profilerCollectTaskHeap() {
         s_taskHeap[i] = tmp[i];
     }
     taskEXIT_CRITICAL(&s_taskHeapMux);
-}
 #endif  // CONFIG_HEAP_TASK_TRACKING
+}
+
+void profilerObserveOptionalSubsystems() {
+    bool audioActive = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    audioActive = robotState.audioActive;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (audioActive != s_lastAudioActive) {
+        profilerModeTransition(audioActive ? "audio_play" : "audio_stop");
+        s_lastAudioActive = audioActive;
+    }
+
+    const bool sseConnected = webServerHasSSEClients();
+    if (sseConnected != s_lastSseConnected) {
+        profilerModeTransition(sseConnected ? "sse_connect" : "sse_disconnect");
+        s_lastSseConnected = sseConnected;
+    }
+}
+
+void profilerPeriodicCollect() {
+    if (++s_profilerHwmTick < 10) {
+        return;
+    }
+    s_profilerHwmTick = 0;
+    profilerCollectHwm();
+    profilerCollectTaskHeap();
+}
+
+uint8_t profilerRequestStarted(const char* path) {
+    const uint8_t idx = s_requestTraceHead;
+    RequestLifecycleEntry& entry = s_requestTrace[idx];
+    strncpy(entry.requestPath, path, sizeof(entry.requestPath) - 1);
+    entry.requestPath[sizeof(entry.requestPath) - 1] = '\0';
+    entry.startMs = millis();
+    entry.handlerDoneMs = 0;
+    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PROF_REQUEST_TRACE_MAX);
+    if (s_requestTraceCount < PROF_REQUEST_TRACE_MAX) {
+        s_requestTraceCount++;
+    }
+    return idx;
+}
+
+void profilerRequestFinished(uint8_t token) {
+    if (token < PROF_REQUEST_TRACE_MAX) {
+        s_requestTrace[token].handlerDoneMs = millis();
+    }
+}
+
+static size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
+    uint8_t count = s_requestTraceCount;
+    if (count > maxEntries) {
+        count = (uint8_t)maxEntries;
+    }
+    const uint8_t oldest =
+        (uint8_t)((s_requestTraceHead + PROF_REQUEST_TRACE_MAX - s_requestTraceCount) %
+                  PROF_REQUEST_TRACE_MAX);
+    for (uint8_t i = 0; i < count; i++) {
+        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PROF_REQUEST_TRACE_MAX)];
+    }
+    return count;
+}
 
 // =============================================================================
 // /api/profiler endpoint
@@ -509,9 +624,9 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
 
     // Bounded request-lifecycle trace for profiler evidence -- oldest first.
     // Read here, once, after an experiment; never polled during the
-    // workload. See web_request_psychic.cpp for field semantics.
-    RequestLifecycleEntry traceCopy[PA_REQUEST_TRACE_MAX];
-    size_t traceCount = copyRequestLifecycleTrace(traceCopy, PA_REQUEST_TRACE_MAX);
+    // workload. Field and lifetime semantics are documented with the ring.
+    RequestLifecycleEntry traceCopy[PROF_REQUEST_TRACE_MAX];
+    size_t traceCount = copyRequestLifecycleTrace(traceCopy, PROF_REQUEST_TRACE_MAX);
     APPEND(",\"requestTrace\":[");
     for (size_t i = 0; i < traceCount; i++) {
         if (i > 0) APPEND(",");
@@ -551,7 +666,7 @@ void handleProfilerGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-#ifdef CONFIG_HEAP_TRACING
+#if PA_HEAP_TRACING
 void handleProfilerTraceStartPost(WebRequest& req) {
     if (s_traceRunning) {
         webSendJsonError(req, 409, "trace already running");

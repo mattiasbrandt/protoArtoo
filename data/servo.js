@@ -89,8 +89,8 @@
   // renderArmControls() — ARM1/ARM2 open/close/stop buttons
   // -------------------------------------------------------------------------
   const ARM_DEFS = [
-    { id: "arm1", name: "Left Arm",  label: "ARM1" },
-    { id: "arm2", name: "Right Arm", label: "ARM2" },
+    { id: "arm1", name: "Utility Arm 1",  label: "ARM1" },
+    { id: "arm2", name: "Utility Arm 2", label: "ARM2" },
   ];
 
   let renderedArmIds = null;

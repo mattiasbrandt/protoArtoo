@@ -24,6 +24,15 @@ _Avoid_: software verified, bench verified
 The behavior was tested on the integrated droid hardware for the affected subsystem.
 _Avoid_: bench verified, controller upload verified
 
+**Verification Label**:
+A description of the evidence a piece of work actually has - never a gate on closing
+it. Work closes on the strongest evidence the available hardware can produce, and
+`full-hardware-required` records the remaining droid-only exposure rather than
+blocking. Droid confirmation is a desirable outcome for a hobby-scale project, not a
+precondition (operator decision, 2026-09-01; see AGENTS.md "Verification and
+Reporting").
+_Avoid_: hardware gate, droid gate, blocked pending hardware verification
+
 **Public Verification Wording**:
 Short evidence phrasing in public docs that describes what was actually tested without exposing internal process labels.
 _Avoid_: software-verified, controller-upload-verified, full-hardware-verified
@@ -402,23 +411,75 @@ _Avoid_: board port, per-board fork
 The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board, including its fitted ESP32-C6, C6-over-SDIO transport, reset wiring, and co-processor lifecycle. The name and those topology facts refer only to that physical board.
 _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 
+**Board Component Label**:
+A per-Board-Variant display string, declared in `include/component_labels.inc`, naming where a Component Toggle's subsystem is physically connected on that specific board — e.g., artoo_esp32 shows "S1" for Drive. Shown to the operator as supplementary detail (such as a tooltip), never as the toggle's canonical name; a board may omit the label where no established legend exists (ADR 0033).
+_Avoid_: component name, toggle name, PCB silkscreen text as the toggle's identity
+
+**Builder Recommendation**:
+The project's purchase advice about a Board Variant: whether the developer docs tell a builder to buy that board. Purely a statement in builder-facing documentation — it changes no code, no Board Capability Gate, and no support level, and a board carries the same support whichever way it reads. It turns on things a Board Capability Gate deliberately cannot attest (ADR 0029): retail unit consistency, whether a defective unit has a realistic recovery path, and what that recovery costs a builder who is not an equipped expert.
+_Avoid_: recommended board (collides with the recommended ongoing WiFi mode), pass tier, support tier, certification
+
 **Board Capability Gate**:
-A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
+A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support — a single yes/no fact, or (per ADR 0029's 2026-08-26 amendment) a set of mutually-exclusive supported options with one default, such as a Board Variant's drive backend. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
 _Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
 
+**Build Feature Flag**:
+A compile-time `PA_*` flag, chosen per build environment and always defined as 0 or 1, declaring whether this firmware image was built with an optional feature such as the heap profiler. It is a developer choice about the image — not a fact about the board, and not an operator setting; a feature built out is absent from the image, not merely off.
+_Avoid_: build-stripping flag, developer toggle, compile-time component toggle, feature flag (unqualified)
 
+**Feature Availability**:
+The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on; a present feature without one is simply included — it has no on or off, and not every feature visibly inhabits all four states. Operators see "not in this build" as *Not included*, because a builder reads "build" as the droid. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
+_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature, on/off for a feature without a Component Toggle, "build" in operator-facing copy
 
 **Hosted WiFi**:
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
 _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
+
+**WiFi Module**:
+The operator-facing name for a wireless co-processor fitted to a Board Variant - on firebeetle2, the ESP32-C6 that serves Hosted WiFi over SDIO. "Co-processor" stays the internal term; operators see **WiFi module**, the same translation Feature Availability makes when it renders "not in this build" as *Not included*. Boards without one report it as not on this board, so artoo-esp32 owners meet the name too.
+_Avoid_: co-processor (in operator copy), C6, slave, radio module (see Flagged Ambiguities), network module
+
+**WiFi Module Update**:
+Replacing the firmware running on the **WiFi Module**, host-to-module over the existing SDIO link. A third update object beside Firmware Update and Filesystem Update, and never a second kind of firmware update: it is a different chip, a different transport, and it cannot be performed by the same flow.
+_Avoid_: C6 slave OTA, slave-image update, firmware update (for this object), FireBeetle OTA
+
+**WiFi Module Update Support**:
+Whether the firmware currently on a **WiFi Module** answers the update RPCs, in three states: **unknown** (the module is not on the bus, so it was never asked), **not supported** (it answered the link but refused the RPCs - permanent for that image, and the wired path is the only route), and **supported**. Unlike **Feature Availability** it is a fact about an image protoArtoo does not build and cannot declare, so it is discovered by attempt rather than declared - the one sanctioned exception to the no-probing rule, which exists to stop us probing our own features. Unknown is never rendered as not supported: one is a module to go and check, the other is a trip to the wires.
+_Avoid_: WiFi module capability (the glossary already carries two meanings for "capability"), slave OTA support, feature detection, treating an unreadable version as version 0.0.0
 
 **Network-Optional Operation**:
 The droid's defined functions — RC drive, dome, sound, servos, and every safety path — never depend on a network backend being fitted, configured, or reachable. A Board Variant may declare no network backend at all. A network that is absent or down removes only the web UI and web-only operations; it never restarts the controller and never degrades a droid function. Persistent network failure is announced by the droid itself (sound, dome text, serial log), not only through the web UI (ADR 0032).
 _Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
 
 **Bench-Mode**:
-The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
-_Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
+The development posture where a controller board is powered by the computer's USB cable with **nothing else connected to it** — no droid hardware and no test gear. It exercises what the board can show over that cable: boot, task startup, the serial log, HTTP, SSE, OTA, configuration persistence, and whatever the firmware can report about itself.
+
+Attaching anything — a jumper, a probe, a meter — is a **special case, not standard practice**: an exceptional measure the operator calls in a dire situation. It is never a routine capability, never something a ticket may plan around, and **never a route an agent proposes to unblock work**. If a ticket cannot proceed without a measurement, the answer is that the work belongs to the droid gate — not that someone should attach a jumper. So a check that needs a signal on a pin (SBUS input, a UART lane, I2C, WS2812B output, PWM levels or edge quality) **is not scoped as Bench-Mode work**: it belongs to the droid gate, and a criterion that assumes gear on the bench is mis-written. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
+_Avoid_: bench verified, bench tested, bench-attachable peripherals, scoping pin-level electrical checks as bench work, treating an exceptional measurement as a routine one, using bench work as integrated-hardware evidence
+
+**Bench Runbook**:
+The replayable sheet for one Board Variant, `tools/bench_rows/<board>.txt`: named `@row` blocks of Console Client directives, `pause` lines where a human must act, commands only. It is a file, not a ticket. The epic's Closing Ticket points at the sheet, states what each row must show, and receives the dated evidence comment a replay leaves. (Redefined 2026-09-04, operator; until then a Bench Runbook was one ticket per board, which is how epic #206 grew two runbook tickets beside its audit ticket.)
+_Avoid_: a runbook ticket per board, copying rows from the sheet into a ticket, runbook as the acceptance record, per-ticket bench sessions
+
+**Closing Ticket**:
+The one sub-issue that carries an epic's whole verification tail: the bench rows to replay, the handful of measurements not on a sheet, the audit lines that decide closure, and the closure PR. Sized by AGENTS.md "Verification Scale": rows that earn their place, no criterion the bench cannot measure today, no bookkeeping checkboxes, a visible "Cut on purpose" table. Every box ticked closes it.
+_Avoid_: runbook ticket, audit ticket, integration-readiness ticket, gathering ticket, a verification tail spread across several sub-issues
+
+**Soak Driver**:
+One named scenario the soak harness runs against a controller — SSE soak, reconnect storm, C6-reset recovery. Each yields its own verdict, and each may be **Unavailable** on a given Image Mode.
+_Avoid_: test, scenario, mode, check
+
+**Image Mode**:
+Which firmware image's `/api/status` schema the soak harness reads, **declared** on the command line and then checked against the payload — never sniffed from it, because sniffing turns a truncated or half-built response into a confident misreading.
+_Avoid_: auto-detect, schema sniffing, board type
+
+**Run Verdict**:
+The single verdict for a whole soak run, composed from its Soak Driver verdicts and spoken in the same words they use — `PASS`, `FAIL`, `INVALID`. A driver that could not run collapses to `INVALID`: a coverage gap is never a pass.
+_Avoid_: NO IMMEDIATE BLOCKER, NO-GO, INVALID / UNKNOWN, overall result, go/no-go verdict
+
+**Not Assessed**:
+The recorded result for something a run could not measure — a driver that could not run on this Image Mode, or a window too short to judge liveness. Distinct from a pass in both the report and the verdict: what was not observed reads as not measured, never as healthy.
+_Avoid_: skipped, n/a, passing by default, no news is good news
 
 **Bench Runbook**:
 One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
@@ -503,9 +564,12 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - The **Audio Config Map** is the single schema home consumed by both the audio task and the api_audio **Apply Core** (ADR 0013); the playback policy stays config-free behind it.
 - A **Step Core** decides, its task-loop adapter executes; the **Audio Step Core** calls the playback policy internally, so the policy stays its own tested module behind the step seam.
 - A **Component Toggle** and the safety machinery are independent in both directions: a toggle never gates estop latching or the failsafe gate, and estop/safety handling never overrides a toggle or the settings functions — a disabled subsystem stays inert even during estop, since an inert component has no output to stop.
-- A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; developer build-stripping flags are a separate tier, not a mirror of the toggles.
-- A **Board Capability Gate** answers what the board's silicon can do; a **Component Toggle** answers what fitted hardware the operator uses. Where the capability is absent the toggle question never arises (not-on-this-board); where it is present, ADR 0027 toggle semantics apply unchanged.
-- **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
+- A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; a **Build Feature Flag** is a separate tier, not a mirror of the toggles.
+- A **Board Capability Gate** answers what the board's silicon can do; a **Build Feature Flag** answers what this image was built with; a **Component Toggle** answers what fitted hardware the operator uses. Where a required gate or flag is absent the toggle question never arises — the feature's **Feature Availability** is not-on-this-board or not-in-this-build; where both are present, ADR 0027 toggle semantics apply unchanged.
+- **Feature Availability** is declared once per image and read by every page: each registered action, status, event, or config entry names at most one **Board Capability Gate** and one **Build Feature Flag** it requires, and an entry naming neither is universal (ADR 0029).
+- **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts. ESP32-P4 supplies the external network-backend seam, while firebeetle2 owns its fitted C6/SDIO/reset topology (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
+- A **Component Toggle**'s struct field, NVS key, registry name, and JSON API key are generic project vocabulary and never encode one Board Variant's own labeling; a **Board Component Label** is the only per-Board-Variant naming surface (ADR 0033, amended 2026-08-26 to include the API surface).
+- **protoR2link** is the Component Toggle covering the entire dome-body link task, both transports together; **Dome ESC** is a separate Component Toggle for the body's own dome-rotation actuator. The two are independent and never share a group or a label (ADR 0033).
 - On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
 - An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).
@@ -555,9 +619,19 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 > **Domain expert:** "No — loading, live updates, and saving/applying user actions are different proofs."
 
 ## Flagged Ambiguities
+- "bench" was read as *"USB plus whatever test gear you can attach"* — a spare receiver, a signal generator, a loopback, a breakout, a bench servo/ESC, a scope or logic analyser were all listed as in scope. That is not feasible or practical on this project's bench, where a board is powered by the computer's USB cable and nothing else is connected. Resolved by defining **Bench-Mode** as USB-only with nothing attached. Connecting a jumper or probe is possible but is an exceptional measure the operator calls in a dire situation — never a routine capability, and never something a ticket may plan around — so a pin-level electrical check is scoped as droid-gate work by definition rather than by argument. The wrong reading had propagated from this glossary into six tickets and repeatedly produced bench tickets that quietly required hardware nobody could attach.
+- "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.
 - "AP mode" was used for both first-boot onboarding and ongoing hotspot operation; resolved by using **WiFi Provisioning** for onboarding and **Standalone AP Mode** for the ongoing operator-selected posture.
 - "Fresh public release" blurred download source with controller state; resolved by using **Unprovisioned Controller** for the no-settings state.
 - "Switch WiFi from the setup page" is resolved as a **Staged Network Switch**, not a fragile live toggle.
+- "capability" names two things: a panel verb in the **Dome Layout View Model** (`P1 + open`) and a board topology fact in a **Board Capability Gate**; resolved by qualifying every use — "panel capability" in dome-layout text, **Board Capability Gate** for the compile-time tier.
+- "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified.
+- "dome" was used at once for the body's dome-rotation actuator, the **protoR2link** communications link, and the dome's panel/sequence system; resolved by keeping **Dome ESC** (the actuator), **protoR2link** (the link), and **Dome Layout View Model** (the panel read-model) as separate terms, never grouped under a bare "Dome" label (ADR 0033).
+- Component Toggle identifiers (`arm1`/`s1_hoverboard`/etc.) were named after the artoo.uk PCB's own silkscreen legend; resolved by making the identifier generic project vocabulary and moving the board-specific text into a **Board Component Label** (ADR 0033).
+- "OTA" and "firmware update" each named two unrelated things: replacing the controller's own image (host, over WiFi, ArduinoOTA :3232) and replacing the fitted co-processor's image (host-to-module, over SDIO); resolved by keeping **Firmware Update** for the controller and naming the second a **WiFi Module Update**. Issue #241 was retitled for exactly this confusion.
+- "verdict" named two different levels at once: a **Soak Driver**'s own result and the whole run's. Resolved by making the **Run Verdict** speak the drivers' words (`PASS`/`FAIL`/`INVALID`) rather than a second vocabulary. The #184 go/no-go wording ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN") is retired for the same reason its pass-tier wording was: it names a gate that closes with one epic, on an instrument meant to outlive it. The collapse of an unavailable driver to `INVALID` is kept — that is the rule, not the wording (ADR 0035).
+- "the soak script needs re-running because the vocabulary changed" was wrong and is recorded so it is not repeated: **a rename cannot invalidate a measurement.** Driver verdicts are where judgement lives and they were already neutral. What forces a re-run is a change to what the harness *judges* — the reconnect storm's stall classification — never what it *calls* the answer.
+- "radio module" was proposed as the operator noun for the **WiFi Module** and rejected: "radio" already means the RC gear to a droid builder, and in this codebase it already means a radio-button input (`data/wifi.html:77,84`, `data/rc.js:797,934`) - on the two pages the control would sit nearest. The residual risk of **WiFi module** is accepted knowingly: the same chip can serve Bluetooth (`hostedInitBLE()`), so if protoArtoo ever uses it for BLE the name needs revisiting, and a rename is a real change rather than a copy tweak.

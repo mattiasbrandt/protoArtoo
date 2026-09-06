@@ -23,8 +23,8 @@ const statusPayload = {
   heapFree: 120000,
   heapMin: 100000,
   heapLargestBlock: 80000,
-  s1Hoverboard: { state: "disabled" },
-  s2Sound: { state: "disabled", driver: "" },
+  drive: { state: "disabled" },
+  audio: { state: "disabled", driver: "" },
   dome_link: { state: "disabled", transport: "disconnected" },
   auxLed: { pin: 0, available: true, effect: "off", r: 0, g: 0, b: 0 },
 };

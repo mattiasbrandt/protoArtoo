@@ -26,6 +26,9 @@
 // Consecutive power-on boots required to latch Network Recovery Mode.
 constexpr uint8_t WIFI_RECOVERY_GESTURE_THRESHOLD = 3;
 
+// NVS key for persisting the power-cycle count across boots.
+extern const char* kWifiRecoveryCycleKey;
+
 struct WifiRecoveryGestureInput {
     bool wasPowerOnReset = false;  // true only for a true power-on reset
     uint8_t priorCycleCount = 0;   // persisted count carried from the previous boot

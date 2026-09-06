@@ -122,9 +122,10 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost);
 
     // Learned Sequences. POST /api/seq names its own body bound because a
-    // saved sequence runs to SEQ_FILE_MAX_BYTES, three times what the default
-    // allows -- and the store enforces that same number, so the route and the
-    // thing it writes to agree on one limit.
+    // saved sequence runs to SEQ_FILE_MAX_BYTES, several times what the default
+    // allows (the cap is chip-target specific, seq_store_util.h) -- and the
+    // store enforces that same number, so the route and the thing it writes to
+    // agree on one limit.
     webRegisterRoute("/api/seq/list", WebMethod::kGet, handleSeqListGet);
     webRegisterRoute("/api/seq/builtins", WebMethod::kGet, handleSeqBuiltinsGet);
     webRegisterRoute("/api/seq/test", WebMethod::kPost, handleSeqTestPost);
@@ -142,14 +143,14 @@ void webRegisterSeamRoutes() {
 #endif
 
 #if PA_HEAP_PROFILE
-    // Absent entirely on builds without the profiler, which is what setup.js
-    // probes for: it shows the profiler panel only if this route answers 200.
+    // Absent entirely on builds without the profiler. Feature Availability in
+    // /api/identity tells the browser why; it does not probe this route.
     webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet);
-#ifdef CONFIG_HEAP_TRACING
+#endif
+#if PA_HEAP_TRACING
     webRegisterRoute("/api/profiler/trace/start", WebMethod::kPost,
                      handleProfilerTraceStartPost);
     webRegisterRoute("/api/profiler/trace/stop", WebMethod::kPost, handleProfilerTraceStopPost);
-#endif
 #endif
 
     // Streaming OTA uploads, ported early on purpose: with these working on

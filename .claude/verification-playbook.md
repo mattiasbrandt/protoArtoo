@@ -8,13 +8,23 @@ Use this checklist when reporting completion.
 - `controller-upload-verified`: Flashed to ESP32 controller; smoke checks passed.
 - `full-hardware-verified`: Verified on integrated droid hardware.
 - `partial`: Some checks passed, but key checks are deferred.
-- `full-hardware-required`: Validation requires full droid hardware integration and remains pending.
+- `full-hardware-required`: The remaining exposure is droid-only; recorded, not scheduled.
+
+These labels report evidence; they never gate completion. Report the strongest label
+the available hardware supports, name what is still unproven, and finish. Do not
+propose a droid-hardware verification ticket as a precondition - see AGENTS.md
+"Verification and Reporting".
+
+A ticket with every criterion ticked closes in the same pass. Verification scope is
+bounded by AGENTS.md "Verification Scale": one Closing Ticket per epic, no criterion
+the bench cannot measure today, no bookkeeping checkboxes.
 
 ## Risk-based backend checks
 
 Automated tests are evidence, not the goal. Choose checks based on the risk touched:
 
-- Firmware behavior change: start with `pio run -e protoArtoo`.
+- Firmware behavior change: start with `make build BUILD_ENV=<affected-env>`
+  (for example, `artoo_esp32` or `firebeetle2`).
 - Safety invariants, protocol parsing, shared state transitions, config persistence,
   JSON/API contracts, or prior regression paths: add `pio test -e native`.
 - Action registry, RC tokens, or `ACTION_REGISTRY[]`: add `make check-action-drift`.
@@ -24,7 +34,8 @@ Automated tests are evidence, not the goal. Choose checks based on the risk touc
 
 If upload is requested and hardware is available:
 
-- `pio run -e <env> -t upload --upload-port <port-or-host>`
+- USB: `make flash BUILD_ENV=<affected-env> UPLOAD_PORT=<port>`
+- OTA: `make ota BUILD_ENV=<affected-env> OTA_IP=<host>`
 
 ## Frontend fallback checks (hardware unavailable)
 

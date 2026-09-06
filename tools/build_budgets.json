@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "description": "Per-environment flash and RAM build-size budgets for protoArtoo firmware",
+    "flash_unit": "bytes",
+    "ram_unit": "bytes",
+    "notes": [
+      "Flash: binary image size (.bin file) to fit in the OTA partition (from partitions/*.csv app0/app1 size field)",
+      "RAM: static allocation (.data + .bss sections from linker via size -A), not heap or PSRAM",
+      "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
+      "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
+      "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
+      "platforms.esp32p4.envs must list EVERY platformio.ini env whose resolved platform is the P4 one (test_build_budgets.py checks this against platformio.ini): a P4 env missing here builds in the artoo-esp32 core dir and swaps that Arduino core in place. Only envs with an entry under 'envs' below are size-checked",
+      "Baseline measurements recorded with commit SHA (git cat-file -t to verify); baseline_* fields are informational only - check_build_budgets.py and slice_verify.py enforce flash_budget_bytes, flash_ceiling_bytes and ram_budget_bytes, never the baselines",
+      "Baseline method: flash = .pio/build/<env>/firmware.bin size; RAM = .data + .bss from the platform size tool (-A) on firmware.elf, i.e. slice_verify.get_build_sizes(); measured on a clean tree at the recorded commit (no -dirty stamp)"
+    ]
+  },
+  "platforms": {
+    "esp32p4": {
+      "core_dir": "~/.platformio-p4",
+      "size_tool": "riscv32-esp-elf-size",
+      "envs": [
+        "firebeetle2_bringup",
+        "firebeetle2",
+        "firebeetle2_hosted_bench",
+        "firebeetle2_ota",
+        "firebeetle2_p4_rt_bench",
+        "firebeetle2_profiler"
+      ],
+      "libs_dir": "esp32p4_es"
+    },
+    "esp32": {
+      "core_dir": "~/.platformio",
+      "size_tool": "xtensa-esp32-elf-size",
+      "default": true
+    }
+  },
+  "envs": {
+    "artoo_esp32": {
+      "board": "artoo-esp32",
+      "platform": "esp32",
+      "partition_flash_bytes": 1703936,
+      "flash_ceiling_bytes": 1671936,
+      "dram_limit_bytes": 124580,
+      "flash_budget_bytes": 1600000,
+      "ram_budget_bytes": 110000,
+      "baseline_measured_at": "8fea3c73ebce",
+      "baseline_flash_bytes": 1569152,
+      "baseline_ram_bytes": 96312,
+      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
+    },
+    "firebeetle2_bringup": {
+      "board": "FireBeetle 2 ESP32-P4",
+      "platform": "esp32p4",
+      "partition_flash_bytes": 3145728,
+      "flash_ceiling_bytes": 3113728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 400000,
+      "ram_budget_bytes": 45000,
+      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
+      "baseline_flash_bytes": 334448,
+      "baseline_ram_bytes": 24222,
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes). The earlier 321,774 B figure stamped 8fea3c7 is not reproduced by rebuilding 8fea3c7 with the current P4 packages (334,448 B, identical to now), so that delta is package- or method-side, not a source change. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+    },
+    "firebeetle2": {
+      "board": "FireBeetle 2 ESP32-P4 (full firmware)",
+      "platform": "esp32p4",
+      "partition_flash_bytes": 3145728,
+      "flash_ceiling_bytes": 3113728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 2000000,
+      "ram_budget_bytes": 100000,
+      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
+      "baseline_flash_bytes": 1199056,
+      "baseline_ram_bytes": 61214,
+      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes); the earlier 1,606,882 B / 79,952 B figures were recorded for the former firebeetle2_full env at 8fea3c7 and carried across the #203 rename, and do not describe this image. Budget set above measured value to allow image growth during platform development."
+    }
+  }
+}

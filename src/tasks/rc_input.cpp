@@ -49,7 +49,9 @@ static const char* TAG = "RCInputTask";
 
 // SBUS receiver objects  --  RMT-based, no hardware UART consumed.
 // GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
-// SBUS1 and SBUS2 each occupy one RMT channel (3 memory blocks each).
+// SBUS1 and SBUS2 each occupy one RMT RX channel. The memory blocks per
+// channel are derived from the chip's RMT geometry, not fixed at 3 -- see
+// include/sbus_rmt_budget.h (#255).
 // UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
 static SbusDecoder sbus_drive;
 static SbusDecoder sbus_dome;
@@ -98,14 +100,14 @@ static RcMappingConfig rcBuildMappingConfig(const RcInputActiveConfig& active) {
         out.domeSpeed = cfg.system.rc_pwm_dome_speed;
         out.arm1 = cfg.system.rc_pwm_arm1;
         out.arm2 = cfg.system.rc_pwm_arm2;
-        out.sound = cfg.system.rc_pwm_sound;
+        out.sound = cfg.system.rc_pwm_audio;
     } else {
         out.driveSpeed = cfg.system.rc_sbus_drive_speed;
         out.driveSteer = cfg.system.rc_sbus_drive_steer;
         out.domeSpeed = cfg.system.rc_sbus_dome_speed;
         out.arm1 = cfg.system.rc_sbus_arm1;
         out.arm2 = cfg.system.rc_sbus_arm2;
-        out.sound = cfg.system.rc_sbus_sound;
+        out.sound = cfg.system.rc_sbus_audio;
     }
     out.prevSoundPressed = false;  // caller sets from static state
     return out;
@@ -393,7 +395,11 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 void rcInputTask(void* pvParameters) {
     // Register with TWDT unconditionally  --  this task feeds the watchdog
     // regardless of which RC mode is active or what channels are enabled.
+    // Feed immediately after add: the add-to-first-feed window must stay empty
+    // of anything that can stall (the first-iteration HWM log runs inside it,
+    // #245 defect 1).
     esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
 
     rcInputProcessorInit(&s_rcProcessor);
     rcInputStepInit(&s_rcStepState);
@@ -459,7 +465,7 @@ void rcInputTask(void* pvParameters) {
     uint32_t lastSbus2WatchdogDiagMs = 0;
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+            PA_LOG_DEBUG(TAG, "stack HWM: %u bytes free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }

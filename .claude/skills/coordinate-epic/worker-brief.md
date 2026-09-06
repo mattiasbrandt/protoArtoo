@@ -13,6 +13,28 @@ pinned coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
 a rejected category. Then read AGENTS.md.
 
+NO SELF-IMPOSED BUDGETS
+You have no token budget to manage, no efficiency target, and no deadline.
+Nobody is measuring your speed, your tool-call count, or your brevity.
+Finishing fast with shallow work is a failure; taking four times as long and
+getting it right is a success. Do not ration your own effort.
+
+Concretely, and in the order this has actually caused rejections:
+- Read the source of truth every time. Open the header, the vendor .cpp, the
+  library source. Never hand-write a prototype, a wire format, an API contract
+  or a framing convention you could have read. Reading a file is never the
+  expensive option.
+- Never swallow an error to keep moving. `except Exception: pass` and its
+  equivalents are the written form of "I don't want to deal with this now".
+- Never ship a thinner version of what was asked and report it done. If the
+  full thing is genuinely blocked, STOP and say so on the issue.
+- Never trim a deliverable because the ticket is long. The ticket is long
+  because the work is real.
+
+If you find yourself about to write "given token limits", "to be efficient",
+"for brevity", or "a simplified version for now", treat it as the signal that
+you are about to introduce a defect, and do the full thing instead.
+
 WHERE TO SPEND YOUR EFFORT
 The source code is the deliverable; tests are scaffolding that proves it.
 Spend your time on the change itself - is it wired in and called, are the
@@ -23,6 +45,29 @@ tests, not exhaustive suites, and do not polish them; you will not be
 rejected for test naming, structure or volume, and you will be rejected for
 production code that does not do the job.
 
+Verification is sized to the project (AGENTS.md "Verification Scale"): a small
+hobby project with one user. Prove the change where it runs, once. Do not build
+a harness, a matrix or a soak the ticket did not ask for, and do not propose one.
+If a criterion names an instrument, a counter or a number this bench or this
+firmware cannot produce, say so on the issue and stop on that criterion - do not
+build a path to it.
+
+If your slice is a classification table, the evidence column is the
+deliverable. Scripts gather (fields, call sites, citations); you decide every
+row by reading. A row cites `file:line` at both its registration site and
+its handler's declaration header - a gate lives at either - and "universal"
+cites the unconditional site, never a dash. A `FILL` left in the table is an
+unfinished slice.
+
+At the PoC/MVP stage of an epic - the platform is unproven and the go/no-go
+gate has not returned a verdict - test effort is near-zero priority. The bar is
+that it builds and runs on the board. If this brief grants
+--expect-no-new-tests, that is the stage speaking: do NOT manufacture coverage
+to satisfy the gate's test counter. Ship the guard, skip the harness that
+proves the guard; that harness is epic-closing work. If the ticket's acceptance
+criteria are test-shaped and the epic is at PoC stage, say so on the issue
+rather than building the harness silently.
+
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
   clean anything outside it. Out-of-tree touches are an automatic reject.
@@ -30,6 +75,18 @@ BOUNDARIES
   code, no copy-paste where the ticket demands consolidation, no deleted or
   degraded comments, no scope creep beyond the sub-issue. If the clean fix
   reveals a deeper issue, report it on the issue - do not expand scope.
+- Small finds ride along. A lying comment, a stale name, a missing guard, an
+  off-by-one in a log line, inside the files your slice already touches: fix it
+  in THIS ticket as its own commit and name it in your status comment. You are
+  holding the context; a new ticket throws it away.
+- You never create issues. `gh issue create` is not yours. A find too big to
+  ride along - it needs a decision, its own verification run, or files your
+  ticket fences off - goes in your status comment on YOUR issue, and you carry
+  on. The coordinator decides what becomes a ticket.
+- Comment deliberate subtleties at the site: an unguarded include, `#if`
+  over `#ifdef`, a resolution order, a teardown that is part of correctness.
+  A ticket note reaches the reviewer; the comment reaches the maintainer
+  holding the file at 2am.
 - Files the ticket fences off are out of scope even if you form a theory
   that involves them. Test the theory without editing the fenced file and
   report the result either way; the gate's --fenced check rejects the edit.
@@ -47,11 +104,21 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - Status comment mechanics (all agents share one GitHub identity, so
   --edit-last can overwrite the coordinator's comments - never use it):
   1. Before your first slice, create your status comment with a marker first
-     line: gh issue comment {ISSUE} --body "<!-- worker-status-{ISSUE} -->..."
+     line, writing the body to a file and passing it with --body-file:
+     gh issue comment {ISSUE} --body-file <file>
   2. Find its id once: gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
      --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE} -->")) | .id'
-  3. Update that id thereafter: gh api -X PATCH
-     repos/{owner}/{repo}/issues/comments/<id> -f body="..."
+  3. Update that id thereafter, from a file:
+     python3 -c "import json,pathlib,sys; print(json.dumps({'body': pathlib.Path(sys.argv[1]).read_text()}))" <file> > /tmp/patch.json
+     gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input /tmp/patch.json
+  4. READ THE COMMENT BACK and check its length. A bad write returns HTTP 200.
+- NEVER pass a file to gh with -f body="@<file>". -f is raw: it writes the
+  literal string "@/path/to/file" as the comment body and DESTROYS whatever was
+  there, silently, with a 200 response. (@-expansion is -F/--field behaviour,
+  not -f.) This has already cost this repo a worker's full slice report plus the
+  previous slice's report in the same comment. A status report with fenced gate
+  blocks is multi-KB and cannot go on a command line safely, so the file route
+  above is the only correct one - use --body-file or --input, never -f with @.
 - The issue BODY belongs to the coordinator: never edit it and never tick
   acceptance checkboxes - the critic ticks them on verified acceptance.
 - Never leave a green slice uncommitted.

@@ -41,7 +41,7 @@ ConfigSnapshot makeDefaultSnap() {
     snap.drive.speedPresetNormal = 300;
     snap.drive.speedPresetTurbo = 600;
     snap.drive.speedLimitMax = 300;
-    snap.system.enable_dome = false;
+    snap.system.enable_dome_esc = false;
     return snap;
 }
 
@@ -103,18 +103,18 @@ void test_configApply_rcInputMode_enum_reject(void) {
                              result.error.message);
 }
 
-void test_configApply_domeWifiPeerIp_invalid_ipv4_reject(void) {
-    std::map<std::string, std::string> m = {{"domeWifiPeerIp", "not.an.ip"}};
+void test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject(void) {
+    std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", "not.an.ip"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("domeWifiPeerIp must be empty or a valid IPv4 address",
+    TEST_ASSERT_EQUAL_STRING("protoR2linkWifiPeerIp must be empty or a valid IPv4 address",
                              result.error.message);
 }
 
-void test_configApply_domeWifiPeerIp_empty_clears(void) {
-    std::map<std::string, std::string> m = {{"domeWifiPeerIp", ""}};
+void test_configApply_protoR2linkWifiPeerIp_empty_clears(void) {
+    std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", ""}};
     ConfigSnapshot snap = makeDefaultSnap();
     strncpy(snap.dome.dome_wifi_peer_ip, "10.0.0.5", sizeof(snap.dome.dome_wifi_peer_ip));
     ConfigApplyResult result;
@@ -178,9 +178,9 @@ void test_configApply_speedLimitMax_falls_back_to_normal_when_unmatched(void) {
 
 // --- transition action ---
 void test_configApply_dome_enable_transition_queues_dome_on_cue(void) {
-    std::map<std::string, std::string> m = {{"enableDome", "1"}};
+    std::map<std::string, std::string> m = {{"enableDomeEsc", "1"}};
     ConfigSnapshot snap = makeDefaultSnap();
-    snap.system.enable_dome = false;
+    snap.system.enable_dome_esc = false;
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, /*domeEnabledBefore=*/false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
@@ -188,9 +188,9 @@ void test_configApply_dome_enable_transition_queues_dome_on_cue(void) {
 }
 
 void test_configApply_dome_already_enabled_no_cue(void) {
-    std::map<std::string, std::string> m = {{"enableDome", "1"}};
+    std::map<std::string, std::string> m = {{"enableDomeEsc", "1"}};
     ConfigSnapshot snap = makeDefaultSnap();
-    snap.system.enable_dome = true;
+    snap.system.enable_dome_esc = true;
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, /*domeEnabledBefore=*/true, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
@@ -255,8 +255,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_speedLimitMax_out_of_range_rejected);
     RUN_TEST(test_configApply_stationary_bool_reject);
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
-    RUN_TEST(test_configApply_domeWifiPeerIp_invalid_ipv4_reject);
-    RUN_TEST(test_configApply_domeWifiPeerIp_empty_clears);
+    RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
+    RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
     RUN_TEST(test_configApply_speedLimitMax_derives_from_active_preset_when_omitted);

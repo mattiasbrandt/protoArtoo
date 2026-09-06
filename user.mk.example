@@ -15,12 +15,20 @@ OTA_IP      = 10.0.0.22
 
 # PlatformIO build environment for 'make build', 'make flash', 'make ota'.
 # Supported values:
-#   protoArtoo           DY-SV5W audio (default — confirmed hardware)
-#   protoArtoo_chirp     CHIRP audio backend
-#   protoArtoo_mp3trigger  MP3 Trigger audio backend
-BUILD_ENV   = protoArtoo
+#   artoo_esp32             DY-SV5W audio (default — confirmed hardware)
+#   artoo_esp32_chirp       CHIRP audio backend
+#   artoo_esp32_mp3trigger  MP3 Trigger audio backend
+#   firebeetle2             DFRobot FireBeetle 2 ESP32-P4 (the other board)
+BUILD_ENV   = artoo_esp32
 
 # Serial port for USB flash ('make flash').
 # Linux: /dev/ttyUSB0 or /dev/ttyACM0
 # macOS: /dev/cu.usbserial-*
 UPLOAD_PORT = /dev/ttyUSB0
+
+# Local (host) TCP port espota listens on for the device's OTA connect-back.
+# Default: 32320. Only override if that port is already in use on your
+# machine. If your host has a default-deny inbound firewall, allow this port
+# from your robot's LAN instead of changing it — see docs/troubleshooting.md
+# ("OTA fails with 'No response from device'").
+OTA_HOST_PORT = 32320

@@ -83,10 +83,31 @@ void test_body_has_no_gap_or_overlap_at_chunk_boundaries() {
     TEST_ASSERT_EQUAL_UINT(ACTION_REGISTRY_SIZE - 1, topLevelCommas);
 }
 
+void test_body_carries_nullable_feature_requirements_for_every_entry() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleActionsGet(req);
+
+    size_t boardFields = 0;
+    for (const char* p = backend.sentBody;
+         (p = strstr(p, "\"board_capability\":null")) != nullptr; ++p) {
+        boardFields++;
+    }
+    size_t buildFields = 0;
+    for (const char* p = backend.sentBody;
+         (p = strstr(p, "\"build_flag\":null")) != nullptr; ++p) {
+        buildFields++;
+    }
+    TEST_ASSERT_EQUAL_UINT(ACTION_REGISTRY_SIZE, boardFields);
+    TEST_ASSERT_EQUAL_UINT(ACTION_REGISTRY_SIZE, buildFields);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_get_sends_chunked_json_array);
     RUN_TEST(test_body_contains_every_registry_entry);
     RUN_TEST(test_body_has_no_gap_or_overlap_at_chunk_boundaries);
+    RUN_TEST(test_body_carries_nullable_feature_requirements_for_every_entry);
     return UNITY_END();
 }

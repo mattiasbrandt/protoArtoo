@@ -7,8 +7,8 @@ already gathered in #54 (re-verified directly against that issue's comment histo
 
 ## Scope: production builds only
 
-The envelope applies to production release builds (`protoArtoo_chirp` and other
-sound-backend variants), not `protoArtoo_profiler`. #54 confirmed the profiler build's
+The envelope applies to production release builds (`artoo_esp32_chirp` and other
+sound-backend variants), not `artoo_esp32_profiler`. #54 confirmed the profiler build's
 own instrumentation costs real heap (resting `heapLargest8bit` ~11-16K profiler vs.
 ~18420 production, measured back-to-back on the same hardware) -- it exists to gather
 evidence, not to represent what an operator runs, so it is never the pass/fail gate.
@@ -115,7 +115,7 @@ rule, which is a useful retroactive check that the threshold isn't set too loose
 - **Mobile Safari WiFi/AP recovery check**: no envelope numbers exist yet for this
   scenario class -- #54 never ran it. Same rules above apply once it is run; no
   separate number is invented here.
-- **`protoArtoo_profiler`-build lifecycle timing** (`/api/profiler`'s request-start /
+- **`artoo_esp32_profiler`-build lifecycle timing** (`/api/profiler`'s request-start /
   response-ready / disconnect trace): still not captured per #54's own final comment.
   Any timing-stage thresholds beyond the heap/cooldown numbers above stay open
   pending that pass.

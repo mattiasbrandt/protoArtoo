@@ -410,18 +410,18 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             return;
         }
 
-        JsonVariantConst domeCfg = bodyDoc["dome"];
-        if (!domeCfg.isNull()) {
-            if (domeCfg["wifiPeerIp"].is<const char*>()) {
-                if (!parseDomeWifiPeerIp(domeCfg["wifiPeerIp"].as<const char*>(),
+        JsonVariantConst protoR2linkCfg = bodyDoc["protoR2link"];
+        if (!protoR2linkCfg.isNull()) {
+            if (protoR2linkCfg["wifiPeerIp"].is<const char*>()) {
+                if (!parseDomeWifiPeerIp(protoR2linkCfg["wifiPeerIp"].as<const char*>(),
                                         working->dome.dome_wifi_peer_ip,
                                         sizeof(working->dome.dome_wifi_peer_ip))) {
-                    setError(result, "dome.wifiPeerIp must be empty or a valid IPv4 address");
+                    setError(result, "protoR2link.wifiPeerIp must be empty or a valid IPv4 address");
                     return;
                 }
                 result->changed = true;
-            } else if (!domeCfg["wifiPeerIp"].isNull()) {
-                setError(result, "dome.wifiPeerIp must be a string");
+            } else if (!protoR2linkCfg["wifiPeerIp"].isNull()) {
+                setError(result, "protoR2link.wifiPeerIp must be a string");
                 return;
             }
         }
@@ -438,16 +438,16 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         {"enableAux1", &working->system.enable_aux1},
         {"enableAux2", &working->system.enable_aux2},
         {"enableAux3", &working->system.enable_aux3},
-        {"enableDome", &working->system.enable_dome},
+        {"enableDomeEsc", &working->system.enable_dome_esc},
         {"enableRcCh1", &working->system.enable_rc_ch1},
         {"enableRcCh2", &working->system.enable_rc_ch2},
         {"enableRcCh3", &working->system.enable_rc_ch3},
         {"enableRcCh4", &working->system.enable_rc_ch4},
         {"enableRcCh5", &working->system.enable_rc_ch5},
         {"enableRcCh6", &working->system.enable_rc_ch6},
-        {"enableS1Hoverboard", &working->system.enable_s1_hoverboard},
-        {"enableS2Sound", &working->system.enable_s2_sound},
-        {"enableS3DomeCtrl", &working->system.enable_s3_dome_ctrl},
+        {"enableDrive", &working->system.enable_drive},
+        {"enableAudio", &working->system.enable_audio},
+        {"enableProtoR2link", &working->system.enable_protor2link},
     };
 
     for (size_t i = 0; i < sizeof(boolFields) / sizeof(boolFields[0]); ++i) {
@@ -467,97 +467,97 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     uint16_t domeU16;
-    if (paramUint16(params, "domeNeutralUs", 1000, 2000, &domeU16)) {
+    if (paramUint16(params, "domeEscNeutralUs", 1000, 2000, &domeU16)) {
         working->dome.dome_neutral_us = domeU16;
         result->changed = true;
-    } else if (configParamHas(params, "domeNeutralUs")) {
-        setError(result, "domeNeutralUs must be 1000..2000");
+    } else if (configParamHas(params, "domeEscNeutralUs")) {
+        setError(result, "domeEscNeutralUs must be 1000..2000");
         return;
     }
 
-    if (paramUint16(params, "domeMinPulseUs", 1000, 2000, &domeU16)) {
+    if (paramUint16(params, "domeEscMinPulseUs", 1000, 2000, &domeU16)) {
         working->dome.dome_min_pulse_us = domeU16;
         result->changed = true;
-    } else if (configParamHas(params, "domeMinPulseUs")) {
-        setError(result, "domeMinPulseUs must be 1000..2000");
+    } else if (configParamHas(params, "domeEscMinPulseUs")) {
+        setError(result, "domeEscMinPulseUs must be 1000..2000");
         return;
     }
 
-    if (paramUint16(params, "domeMaxPulseUs", 1000, 2000, &domeU16)) {
+    if (paramUint16(params, "domeEscMaxPulseUs", 1000, 2000, &domeU16)) {
         working->dome.dome_max_pulse_us = domeU16;
         result->changed = true;
-    } else if (configParamHas(params, "domeMaxPulseUs")) {
-        setError(result, "domeMaxPulseUs must be 1000..2000");
+    } else if (configParamHas(params, "domeEscMaxPulseUs")) {
+        setError(result, "domeEscMaxPulseUs must be 1000..2000");
         return;
     }
 
     uint8_t domePct;
-    if (paramUint8(params, "domeSpeedLimitPct", 0, 100, &domePct)) {
+    if (paramUint8(params, "domeEscSpeedLimitPct", 0, 100, &domePct)) {
         working->dome.dome_speed_limit_pct = domePct;
         result->changed = true;
-    } else if (configParamHas(params, "domeSpeedLimitPct")) {
-        setError(result, "domeSpeedLimitPct must be 0..100");
+    } else if (configParamHas(params, "domeEscSpeedLimitPct")) {
+        setError(result, "domeEscSpeedLimitPct must be 0..100");
         return;
     }
 
-    if (configParamHas(params, "domeWifiPeerIp")) {
-        const char* rawPeerIp = configParamGet(params, "domeWifiPeerIp");
+    if (configParamHas(params, "protoR2linkWifiPeerIp")) {
+        const char* rawPeerIp = configParamGet(params, "protoR2linkWifiPeerIp");
         if (!parseDomeWifiPeerIp(rawPeerIp, working->dome.dome_wifi_peer_ip,
                                  sizeof(working->dome.dome_wifi_peer_ip))) {
-            setError(result, "domeWifiPeerIp must be empty or a valid IPv4 address");
+            setError(result, "protoR2linkWifiPeerIp must be empty or a valid IPv4 address");
             return;
         }
         result->changed = true;
     }
 
     bool domeRndEnableBool;
-    if (paramBool(params, "domeRndEnable", &domeRndEnableBool)) {
+    if (paramBool(params, "domeEscRndEnable", &domeRndEnableBool)) {
         working->dome.dome_rnd_enable = domeRndEnableBool;
-        appendApplied(&result->applied, "[CFG] domeRndEnable updated to %s",
+        appendApplied(&result->applied, "[CFG] domeEscRndEnable updated to %s",
                       domeRndEnableBool ? "true" : "false");
         result->changed = true;
-    } else if (configParamHas(params, "domeRndEnable")) {
-        setError(result, "domeRndEnable must be true/false or 1/0");
+    } else if (configParamHas(params, "domeEscRndEnable")) {
+        setError(result, "domeEscRndEnable must be true/false or 1/0");
         return;
     }
 
     uint8_t domeRndSpeedPct;
-    if (paramUint8(params, "domeRndSpeedPct", 5, 100, &domeRndSpeedPct)) {
+    if (paramUint8(params, "domeEscRndSpeedPct", 5, 100, &domeRndSpeedPct)) {
         working->dome.dome_rnd_speed_pct = domeRndSpeedPct;
-        appendApplied(&result->applied, "[CFG] domeRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
+        appendApplied(&result->applied, "[CFG] domeEscRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
         result->changed = true;
-    } else if (configParamHas(params, "domeRndSpeedPct")) {
-        setError(result, "domeRndSpeedPct must be 5..100");
+    } else if (configParamHas(params, "domeEscRndSpeedPct")) {
+        setError(result, "domeEscRndSpeedPct must be 5..100");
         return;
     }
 
     uint8_t domeRndPauseMin;
-    if (paramUint8(params, "domeRndPauseMin", 1, 120, &domeRndPauseMin)) {
+    if (paramUint8(params, "domeEscRndPauseMin", 1, 120, &domeRndPauseMin)) {
         working->dome.dome_rnd_pause_min = domeRndPauseMin;
-        appendApplied(&result->applied, "[CFG] domeRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
+        appendApplied(&result->applied, "[CFG] domeEscRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
         result->changed = true;
-    } else if (configParamHas(params, "domeRndPauseMin")) {
-        setError(result, "domeRndPauseMin must be 1..120");
+    } else if (configParamHas(params, "domeEscRndPauseMin")) {
+        setError(result, "domeEscRndPauseMin must be 1..120");
         return;
     }
 
     uint8_t domeRndPauseMax;
-    if (paramUint8(params, "domeRndPauseMax", 1, 120, &domeRndPauseMax)) {
+    if (paramUint8(params, "domeEscRndPauseMax", 1, 120, &domeRndPauseMax)) {
         working->dome.dome_rnd_pause_max = domeRndPauseMax;
-        appendApplied(&result->applied, "[CFG] domeRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
+        appendApplied(&result->applied, "[CFG] domeEscRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
         result->changed = true;
-    } else if (configParamHas(params, "domeRndPauseMax")) {
-        setError(result, "domeRndPauseMax must be 1..120");
+    } else if (configParamHas(params, "domeEscRndPauseMax")) {
+        setError(result, "domeEscRndPauseMax must be 1..120");
         return;
     }
 
     uint16_t domeRndMoveMs;
-    if (paramUint16(params, "domeRndMoveMs", 500, 10000, &domeRndMoveMs)) {
+    if (paramUint16(params, "domeEscRndMoveMs", 500, 10000, &domeRndMoveMs)) {
         working->dome.dome_rnd_move_ms = domeRndMoveMs;
-        appendApplied(&result->applied, "[CFG] domeRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
+        appendApplied(&result->applied, "[CFG] domeEscRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
         result->changed = true;
-    } else if (configParamHas(params, "domeRndMoveMs")) {
-        setError(result, "domeRndMoveMs must be 500..10000");
+    } else if (configParamHas(params, "domeEscRndMoveMs")) {
+        setError(result, "domeEscRndMoveMs must be 500..10000");
         return;
     }
 
@@ -631,7 +631,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     working->drive.speedPresetActive = activePresetAfter;
-    result->actions.playDomeOnCue = !domeEnabledBefore && working->system.enable_dome;
+    result->actions.playDomeOnCue = !domeEnabledBefore && working->system.enable_dome_esc;
 
     return;
 }

@@ -44,6 +44,61 @@
   };
   applyIdentityName("protoartoo");
 
+  // Layer 1 validation: ensure the identity manifest conforms to the expected shape
+  // before it reaches feature availability resolvers. Protects against null, non-objects,
+  // and responses missing required structure. Returns null if validation fails, otherwise
+  // returns the validated identity.
+  const validateIdentityShape = (identity) => {
+    // Identity must be an object
+    if (!identity || typeof identity !== "object" || Array.isArray(identity)) {
+      return null;
+    }
+    // board must be a string
+    if (typeof identity.board !== "string") {
+      return null;
+    }
+    // board_capabilities and build_flags must be objects if present
+    if (!identity.board_capabilities || (typeof identity.board_capabilities !== "object" || Array.isArray(identity.board_capabilities) || identity.board_capabilities === null)) {
+      return null;
+    }
+    if (!identity.build_flags || (typeof identity.build_flags !== "object" || Array.isArray(identity.build_flags) || identity.build_flags === null)) {
+      return null;
+    }
+    // Every present value in board_capabilities and build_flags must be a boolean
+    for (const value of Object.values(identity.board_capabilities)) {
+      if (typeof value !== "boolean") {
+        return null;
+      }
+    }
+    for (const value of Object.values(identity.build_flags)) {
+      if (typeof value !== "boolean") {
+        return null;
+      }
+    }
+    return identity;
+  };
+
+  // Publish the shell's once-per-page identity result for feature consumers.
+  // Identity is fetched once at page load and cached in window.PAIdentity.
+  // Feature availability resolution reads this cache only and never probes endpoints
+  // to discover capabilities — the manifest is authoritative and must not be rediscovered.
+  // Setup listens to the event, while the cache closes late-load ordering gaps.
+  // Layer 1 validation ensures the manifest conforms to the expected shape before
+  // pa:identity-available is published; invalid manifests are treated as unavailable.
+  const publishIdentity = (identity) => {
+    const validatedIdentity = validateIdentityShape(identity);
+    window.PAIdentity = validatedIdentity;
+    if (typeof window.dispatchEvent === "function") {
+      if (validatedIdentity) {
+        window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
+      } else {
+        // Invalid manifest shape is treated as unavailable
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest", reason: "incompatible" } }));
+      }
+    }
+    return validatedIdentity;
+  };
+
 
   window.PAUi = window.PAUi || {};
   if (typeof window.PAUi.setupActionText !== "function") {
@@ -87,21 +142,36 @@
   }
 
   const loadIdentity = async ({ handle = null } = {}) => {
+    let result;
     try {
       const api = handle || window.PAApi;
-      const result = window.PAApi
+      result = api
         ? await api.get("/api/identity")
         : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
-      applyIdentityName(result.data?.droidName);
     } catch (error) {
+      // Transport failure: retryable. Unchanged behaviour.
       console.warn("[shell] identity unavailable:", error);
-      // Rethrow so the bootstrap can show recovery and retry the request
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error, reason: "no-response" } }));
+      }
       throw error;
+    }
+
+    applyIdentityName(result.data?.droidName);
+
+    // publishIdentity is the single validation boundary and has already
+    // dispatched pa:identity-unavailable if the manifest is unusable.
+    if (!publishIdentity(result.data)) {
+      const error = new Error("identity manifest failed validation");
+      error.kind = "incompatible";
+      error.status = 200;   // the response was a valid 2xx; its content was not
+      throw error;          // terminal: the bootstrap maps this to failed-terminal
     }
   };
 
   window.addEventListener("pa:identity-updated", (event) => {
     applyIdentityName(event.detail?.droidName);
+    publishIdentity(event.detail);
   });
 
   // Register identity load with the bootstrap if available; otherwise run it directly.
