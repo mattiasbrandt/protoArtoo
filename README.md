@@ -42,6 +42,7 @@ tested, and designed to be understood and extended by the wider droid-building c
 | Sound location | Dome | **Body** — sole audio source |
 | Drive | Sabertooth / JAW motors | Hoverboard (custom firmware) |
 | RC input | PS2 via SHADOW Android app | RC receivers (PWM/SBUS) + any web browser |
+| Typing a command | No command surface | **Console in the dashboard and over a cable** — same words either way |
 | Board count | 2–3 MarcDuino PCBs | 2 ESP32 boards only |
 | Firmware | Open source (ATmega328P) | **Open source (ESP32)** |
 
@@ -121,6 +122,7 @@ protoArtoo/
 └── docs/
     ├── pin_map.md             # GPIO assignments and UART ownership
     ├── api.md                 # REST API reference
+    ├── console.md             # Controller Console: typing commands to the droid
     ├── sound_playback.md      # Audio backend details and SD card layout
     ├── wifi-provisioning.md   # Runtime WiFi setup, mode switching, recovery (ADR 0015)
     ├── terminology.md         # Project glossary
@@ -311,6 +313,28 @@ The dome has no local sound module. The body is the sole audio authority.
 - Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
 - Real-time page updates — reconnects automatically when switching back to the tab
 - Runtime log level selector (Errors / Warnings / Info / Debug) on Setup page — no reflash required
+
+**Controller Console**
+- Type a command to the droid from the dashboard's Live Logs panel or over a serial
+  cable, and it does the same thing either way — the command is the action's own name
+  and its values, `drive.action.move speed=200 steer=0`, so what you read in the action
+  list is what you type
+- A typed command goes through the same safety layers a tapped button does: an estop or
+  a stationary lock refuses it exactly the same way, and the answer names which one
+  stopped it
+- Answers come back one field per line, each with a number on it, so you can still tell
+  which reply belongs to which command while log lines scroll past — and every command
+  ends in a plain word for what happened: `queued`, `applied`, `blocked`, `unavailable`,
+  `invalid`
+- Arrow keys, history and Tab completion work as they do in a terminal; Tab finishes
+  command names *and* their setting names, built from the droid's own list of what it
+  can do, so a command the firmware does not have can never appear
+- **It keeps answering when the web stops.** Drive the controller short of memory and the
+  pages go quiet; ask for the droid's health over the cable and it still comes back in
+  full — which is when you most need it
+- A console tool for your computer (`tools/console_client.py`, or `make console`) captures
+  a boot log, types at the droid, or replays a written sheet of commands and keeps the
+  transcript
 
 **Safety-First Architecture**
 - Five independent failsafe layers from hardware through application
