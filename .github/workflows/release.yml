@@ -66,7 +66,12 @@ jobs:
           cache-dependency-path: tools/requirements.txt
 
       - name: 📦 Install PlatformIO and Python tools
-        run: pip install platformio && pip install -r tools/requirements.txt
+        # Pinned to the core the tree is verified with. An unpinned install
+        # picked up PlatformIO 6.2.0 on 2026-09-06, whose tool-scons 4.11
+        # fails every env at the link step with "No module named
+        # 'SCons.Tool.FortranCommon'"; 6.1.19 with tool-scons 4.8 links all
+        # of them. Bump deliberately, with a green run, not by drift.
+        run: pip install platformio==6.1.19 && pip install -r tools/requirements.txt
 
       - name: 💾 Cache PlatformIO packages and toolchains
         uses: actions/cache@v6
