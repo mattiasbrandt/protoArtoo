@@ -159,7 +159,7 @@ send system.config.log-level value=info
 
 # #265 - P4 sink stops dropping records. Run ONLY on a build containing
 # #265: system.status.health 13/13 on five consecutive runs, no dropped= on
-# any closing record. (Before #265 merges, ADR 0036's known drop is
+# any closing record. (Before #265 merges, ADR 0038's known drop is
 # expected here and is that ticket's own evidence, not a #215 failure.)
 @row 265 p4-sink-reliability
 send system.status.health

@@ -948,7 +948,7 @@ def main() -> int:
         check_build_budget("artoo_esp32"),
         # Re-walk every task's recorded chain against the image the row above just
         # linked, and fail when a chain has outgrown its *_MEASURED_CHAIN_BYTES
-        # constant (ADR 0038, #271). The static_assert in include/config.h stops the
+        # constant (ADR 0040, #271). The static_assert in include/config.h stops the
         # CONSTANT being trimmed; nothing noticed the CHAIN growing past it, which is
         # the half #226 found with a reboot on both boards.
         #
@@ -958,7 +958,7 @@ def main() -> int:
         # Never give this -fstack-usage. The chain comes from the linked image, not
         # from .su files, and setting PLATFORMIO_BUILD_SRC_FLAGS changes PlatformIO's
         # project checksum - the next plain pio invocation then wipes every directory
-        # under .pio/build/. ADR 0038 assumed the flag was needed; #271 measured that
+        # under .pio/build/. ADR 0040 assumed the flag was needed; #271 measured that
         # it is both unnecessary and destructive.
         check_command_exit(
             "task stack chains",
