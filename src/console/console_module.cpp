@@ -131,8 +131,29 @@ static portMUX_TYPE g_requestIdMux = portMUX_INITIALIZER_UNLOCKED;
 // The injected help reader (set by consoleModuleSetHelpReader)
 static const ConsoleHelpReader* g_helpReader = nullptr;
 
-// Maximum help text size per operation (description + display_name + delimiters)
-static const size_t HELP_TEXT_MAX = 512;
+// Maximum help row size this reader holds, and therefore how far into a row its
+// prose can reach. A row is `name|display_name|description|executor|params` and
+// only the first four fields are rendered, so what has to fit is the row up to
+// and including the executor's closing delimiter -- never the params tail.
+//
+// 512 sat below the catalog it reads. Three rows in data/console_help.txt are
+// longer than that at this tip (561, 562 and 585 bytes; the last prose
+// delimiter any of them needs is at byte 561), so those delimiters fell past
+// the cut and their description and executor were never emitted at all --
+// absent rather than truncated, because the parser in
+// consoleEmitHelpForOperation() emits a field only when it reaches the `|` that
+// closes it (#282). 768 clears the longest of them with ~200 bytes of headroom.
+//
+// The cost is 256 bytes of stack on whichever task is answering: the Console
+// task (10240 B on ESP32, 9216 B on ESP32-P4, measured chains 7984/7360 --
+// include/config.h) or the httpd task (8192 B, whose handleConsolePost() frame
+// is 240 B since #266). Neither is close: the deepest chain on both tasks is
+// the config-write path, and the help branch is a shallow one.
+//
+// It is still a bound, not a guarantee. A row whose executor delimiter falls
+// past it is reported as `unreadable` rather than half-answered -- see the
+// delimiter check in consoleGetHelpText() below.
+static const size_t HELP_TEXT_MAX = 768;
 
 // Set the help reader for the Console module.
 // Called from setup() after LittleFS is ready on Arduino builds.
@@ -143,8 +164,9 @@ void consoleModuleSetHelpReader(const ConsoleHelpReader* reader) {
 
 // Extract help text for an operation using the injected reader.
 // The catalog entry contains offset and length, so this is a single seek + read.
-// Returns true if help text was found, verified to belong to this operation, and
-// written to out_buffer (null-terminated).
+// Returns true if help text was found, verified to belong to this operation,
+// verified to be present through the executor field, and written to out_buffer
+// (null-terminated).
 // If false, out_buffer is left empty. No allocation occurs in this path.
 //
 // canonicalName is the catalog entry's own name, never the operator-typed token:
@@ -168,6 +190,12 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
 
     // Read the help text line (it's one line per entry)
     // Help text format: name|display_name|description|executor|params
+    //
+    // A row longer than the buffer is still read up to the bound rather than
+    // refused here: only the first four fields are rendered, so a row whose
+    // PARAMS tail is what overflows is a complete answer and the delimiter
+    // check below says so. What must never happen is the other case passing
+    // silently -- see that check.
     size_t lineLen = help_length;
     if (lineLen >= buffer_size) {
         lineLen = buffer_size - 1;
@@ -195,6 +223,35 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
     // Confident wrong prose is worse than a missing description.
     size_t nameLen = strlen(canonicalName);
     if (strncmp(out_buffer, canonicalName, nameLen) != 0 || out_buffer[nameLen] != '|') {
+        out_buffer[0] = '\0';
+        return false;
+    }
+
+    // The row must be here IN FULL, through the delimiter that closes the
+    // executor -- the last field this module renders. The parser in
+    // consoleEmitHelpForOperation() emits a field only when it reaches that
+    // field's closing `|`, so a row that stops short of one hands back a help
+    // answer with fields simply missing: no truncation marker, no
+    // help_file_status, `status=ok outcome=completed` (#282). Two things end a
+    // row short and both land here - the buffer bound above, and a help file
+    // that ends mid-row - and both mean the same thing to an operator, so both
+    // report it the same way.
+    //
+    // Four delimiters close name, display_name, description and executor. The
+    // params tail may carry more (a multi-parameter row separates them with
+    // `|` too) and may be absent entirely; neither changes the count that
+    // makes the prose complete.
+    size_t delimiters = 0;
+    for (size_t i = 0; i < bytesRead; ++i) {
+        if (out_buffer[i] == '|') {
+            delimiters++;
+        }
+    }
+    if (delimiters < 4) {
+        // Reported, not half-answered: the caller's degradation branch emits
+        // help_file_status=unreadable and no prose, which is the value
+        // docs/console-protocol.md s.3.4 assigns to prose that could not be
+        // retrieved in full.
         out_buffer[0] = '\0';
         return false;
     }
@@ -362,13 +419,17 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         }
     } else {
         // Help text not available - determine reason and emit explicit degradation
-        // status (ADR 0036: never degrade silently). Three states reach here, and
-        // all three are reported: no reader at all (LittleFS down) as
-        // `unavailable`; a failed seek or an empty read as `unreadable`; and a
+        // status (ADR 0036: never degrade silently). Four states reach here, and
+        // all four are reported: no reader at all (LittleFS down) as
+        // `unavailable`; a failed seek or an empty read as `unreadable`; a
         // read that succeeded but returned another operation's row - the stale
         // help file after a firmware-only update, rejected on field 0 by
         // consoleGetHelpText() above - as `unreadable` too, the value
-        // docs/console-protocol.md s.3.4 assigns to stale offsets (#281).
+        // docs/console-protocol.md s.3.4 assigns to stale offsets (#281); and a
+        // row that arrived without the delimiter closing its executor, which is
+        // what a row longer than the read buffer or a file ending mid-row leaves
+        // behind (#282), as `unreadable` for the same reason - the prose could
+        // not be retrieved in full.
         // No prose field has been emitted at this point, so the record carries the
         // status instead of a half-answer, never both.
         if (g_helpReader == nullptr) {
