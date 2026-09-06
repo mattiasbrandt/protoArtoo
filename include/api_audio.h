@@ -38,7 +38,7 @@
 // playState -> label, verbatim what formatAudioStatusJson() puts in its
 // "play_state" JSON key. Factored out so the Console executor for
 // sound.status.current (src/console/console_module.cpp) renders the same
-// string instead of a second hand-typed switch (ADR 0034).
+// string instead of a second hand-typed switch (ADR 0036).
 // Pure function - no globals, no Arduino, no FreeRTOS.
 const char* audioPlayStateLabel(uint8_t playState);
 
@@ -64,7 +64,7 @@ struct AudioStatusSnapshot {
 };
 
 // Capture the audio status snapshot the same way handleAudioGet() used to
-// gather it inline: RobotState fields under robotStateMux (ADR 0034 "Zone
+// gather it inline: RobotState fields under robotStateMux (ADR 0036 "Zone
 // Snapshot capture"). Shared with the Console module's sound.status.current
 // executor so REST and Console read state through the same function.
 // thread-safe: yes (owns its own short critical section)
@@ -91,7 +91,7 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
                            uint16_t currentTrack, const char* rxStatus,
                            const char* rxDetail);
 
-// Commit Steps (ADR 0034 criterion 1): the handler-owned post-apply side
+// Commit Steps (ADR 0036 criterion 1): the handler-owned post-apply side
 // effects for each of the three audio write Apply Cores, extracted so a
 // non-REST caller (the Controller Console) reaches the identical
 // NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
@@ -118,7 +118,7 @@ struct AudioCategoryRangeCommitOutcome {
 AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
     ConfigSnapshot* snap, const AudioCategoryRangeApplyResult& result);
 
-// Commit Step (ADR 0034 criterion 1) for sound.action.set-volume: the same
+// Commit Step (ADR 0036 criterion 1) for sound.action.set-volume: the same
 // audioQueueSetVolume() + persist-as-default-on-reboot sequence
 // handleAudioPost()'s action=volume branch used to run inline, extracted so
 // the Console reaches the identical sequence instead of a second copy.

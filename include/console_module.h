@@ -2,7 +2,7 @@
 // include/console_module.h
 //
 // Controller Console module - transport-independent operation processor.
-// ADR 0034: one operation core below HTTP handlers, structured key=value records.
+// ADR 0036: one operation core below HTTP handlers, structured key=value records.
 //
 // Public interface for both serial and web adapters to execute operations
 // and receive Console Records.
@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 // =============================================================================
-// Command Sources (ADR 0034)
+// Command Sources (ADR 0036)
 // =============================================================================
 typedef enum {
     CONSOLE_SOURCE_SERIAL = 0,
@@ -40,7 +40,7 @@ typedef enum {
 } ConsoleOperationType;
 
 // =============================================================================
-// Stable Outcome and Reason Sets (ADR 0034)
+// Stable Outcome and Reason Sets (ADR 0036)
 // =============================================================================
 typedef enum {
     CONSOLE_STATUS_OK = 0,
@@ -115,7 +115,7 @@ typedef struct {
     // (consoleSplitCommandLine(), include/console_args.h), then tokenizes
     // the remainder into a ConsoleArgs table (consoleParseArgs(), same
     // header) exactly once - this is the one shared argument contract every
-    // executor reads from, on both adapters (#221, ADR 0034, docs/console-
+    // executor reads from, on both adapters (#221, ADR 0036, docs/console-
     // protocol.md s.1.2).
     const char* operationName;
 } ConsoleRequest;
@@ -172,7 +172,7 @@ typedef struct {
 
 // Set the help reader for the Console module.
 // Pass NULL to disable help text (graceful degradation if LittleFS is unavailable).
-// Called from setup() after LittleFS is ready (see ADR 0034).
+// Called from setup() after LittleFS is ready (see ADR 0036).
 void consoleModuleSetHelpReader(const ConsoleHelpReader* reader);
 
 // =============================================================================

@@ -86,9 +86,9 @@ record, and log lines do not.**
   transport-neutral, so the sink ticket measures that it adds nothing on UART0
   and does not move #219 R1's shared-wire behaviour or the ADR 0017 budgets.
 
-## Amended 2026-09-04 (ADR 0037)
+## Amended 2026-09-04 (ADR 0039)
 
-"Log lines stay best-effort" no longer holds. ADR 0037 makes the Console task
+"Log lines stay best-effort" no longer holds. ADR 0039 makes the Console task
 the only writer of the serial wire: loggers append to the Log Ring and the
 Console task drains it, so the reason logs could not wait - a TWDT-subscribed
 task blocked on the CDC - is gone. Log lines now wait for room under the same
@@ -127,20 +127,20 @@ TX-liveness one, and nothing in this ADR's record policy can tell the two
 apart: on a wedged endpoint every record still waits out
 `CONSOLE_RECORD_ROOM_WAIT_BOUND_MS` and is dropped whole, exactly as it would
 for an attached-but-not-reading host. That is why the #275 fix is upstream of
-this policy - a settle hold-off that stops the wedge being created (ADR 0037's
+this policy - a settle hold-off that stops the wedge being created (ADR 0039's
 amendment) - rather than a change to the wait here. Measured and diagnosed on
 the P4 (USJ hw_ver3) at `017b168d`; register evidence on #275.
 
 ## Amended 2026-09-05 (#276): sustained Serial Backpressure is reported, a single drop is not, and nothing is refused
 
 The record policy above drops a frame whole when its room never comes, and
-since ADR 0037 a drained log line drops the same way. Both were silent apart
+since ADR 0039 a drained log line drops the same way. Both were silent apart
 from the #275 DEBUG probe. The state they share has a name now, **Serial
 Backpressure** (CONTEXT.md): a host is present on the wire but its transmit
 path is not draining - distinct from a detached host, where nothing is
 written, and from the endpoint wedge #275 fixed, which is permanent. The
 grilling of 2026-09-05 weighed refusing commands on such a link and rejected
-it: the serial adapter would carry a command rule of its own (ADR 0034), and a
+it: the serial adapter would carry a command rule of its own (ADR 0036), and a
 refusal on a link that is not draining cannot be seen by the operator either.
 It chose visibility, in the one place the operator already looks:
 
@@ -159,7 +159,7 @@ It chose visibility, in the one place the operator already looks:
 - Both are ordinary log lines. They reach the wire through the drain like
   every other line, so a serial operator sees the recovery line when their
   link drains again; and the WARN cannot recurse into the write path it
-  reports on, because after the bind `paLogLine()` only appends (ADR 0037).
+  reports on, because after the bind `paLogLine()` only appends (ADR 0039).
 - Nothing is refused. A command typed on such a link runs exactly as before,
   its records still wait and drop under this ADR's policy, and
   `Serial.setTxTimeoutMs(0)` stays. No outcome or reason token changes.

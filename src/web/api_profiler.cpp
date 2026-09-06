@@ -71,7 +71,7 @@ static const char* TAG = "Profiler";
 
 // PROF_SNAPSHOT_MAX and ProfilerWindowSnapshot are declared in api_profiler.h:
 // the ring's shape is part of what an adapter reads, so it lives with the
-// reading types rather than being redeclared here (ADR 0034).
+// reading types rather than being redeclared here (ADR 0036).
 
 static ProfilerWindowSnapshot s_snapshots[PROF_SNAPSHOT_MAX];
 static uint8_t s_snapHead = 0;

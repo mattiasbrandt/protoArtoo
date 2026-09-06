@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/console_task.cpp
 //
-// ConsoleTask - Serial console adapter using embedded-cli (ADR 0034)
+// ConsoleTask - Serial console adapter using embedded-cli (ADR 0036)
 // Core 0, non-real-time, created in setup() regardless of network state.
 // No dynamic allocation in its loop; uses static buffers.
 //
@@ -9,7 +9,7 @@
 //  - Initialize embedded-cli with static buffer (no dynamic allocation)
 //  - Accept user input from UART0 (USB CDC on P4, serial bridge on artoo)
 //  - Execute commands through the Console module
-//  - OWN THE SERIAL WIRE (ADR 0037). After consoleSerialBindCli() below, no
+//  - OWN THE SERIAL WIRE (ADR 0039). After consoleSerialBindCli() below, no
 //    other task writes it: a log line is written once, to the Log Ring, and
 //    this task drains it (consoleSerialDrainLogs). There is no serial mutex -
 //    it coordinated writers that no longer exist. #219 R1's per-line locking
@@ -77,7 +77,7 @@ static const char* TAG = "ConsoleTask";
 
 // The task's two poll cadences (#229). CONSOLE_POLL_IDLE_MS is THE 10 ms
 // cadence every ordering guarantee in this subsystem is written against (ADR
-// 0037, docs/console-protocol.md 6); CONSOLE_POLL_ACTIVE_MS is what the loop
+// 0039, docs/console-protocol.md 6); CONSOLE_POLL_ACTIVE_MS is what the loop
 // uses instead for as long as bytes keep arriving, so the transport's receive
 // queue is never asked to hold more than one poll's worth of input. See the
 // vTaskDelay at the bottom of consoleTask() for why that is a correctness
@@ -114,7 +114,7 @@ static char recordBuffer[CONSOLE_RECORD_LINE_MAX] = {};
 static uint32_t currentRequestId = 0;
 
 // Records this request could not send within CONSOLE_RECORD_ROOM_WAIT_BOUND_MS
-// of waiting (ADR 0036). Reset at the top of both entry points that build a
+// of waiting (ADR 0038). Reset at the top of both entry points that build a
 // consoleTaskRecordSink() answer (onCliCommand, onCliLineTooLong) AND drained
 // back to 0 every time a closing record (onRecordResult/onRecordEnd) is
 // emitted, so a request whose sink never reaches a closing callback at all
@@ -195,7 +195,7 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     uint32_t requestId = consoleGetNextRequestId();
     currentRequestId = requestId;
 
-    // Belt-and-suspenders reset (ADR 0036): the closing-record callbacks
+    // Belt-and-suspenders reset (ADR 0038): the closing-record callbacks
     // already drain this to 0, but that only runs if dispatch reaches one.
     // Starting every new request at 0 here means an early return inside
     // consoleExecuteCommand() that skips the sink entirely still leaves the
@@ -212,12 +212,12 @@ static void onCliCommand(EmbeddedCli* cli, CliCommand* cmd) {
     // Create sink for record output (implemented inline below)
     ConsoleRecordSink sink = consoleTaskRecordSink();
 
-    // Drain before dispatch (ADR 0037): anything logged between the last poll
+    // Drain before dispatch (ADR 0039): anything logged between the last poll
     // and this Enter belongs on the wire ahead of the answer to the command,
     // not behind it.
     consoleSerialDrainLogs();
 
-    // Execute through Console module (ADR 0034)
+    // Execute through Console module (ADR 0036)
     consoleExecuteCommand(&request, &sink);
 }
 
@@ -256,21 +256,21 @@ static bool onCliShouldStoreHistory(EmbeddedCli* cli, const char* line) {
 // =============================================================================
 
 // Emit one fully-formatted record line atomically: wait for transmit room
-// (ADR 0036), write the line + terminator in one call. That single write is
+// (ADR 0038), write the line + terminator in one call. That single write is
 // the ONLY unit of atomicity the wire format needs
 // (docs/console-protocol.md section 6: "no line is ever interleaved inside
-// another"), and with one owner on the wire (ADR 0037) nothing is competing
+// another"), and with one owner on the wire (ADR 0039) nothing is competing
 // for it: a multi-record response (begin -> field/item* -> end) is a sequence
 // of independent lines by design, not a block that has to be held -- see the
 // file header (#219 R1).
 //
 // The wait and the single-write framing live in consoleSerialEmitFramedLine()
 // (src/console/console_serial_output.cpp) -- the one emit helper both the
-// record sink here and the pre-bind log path call, per ADR 0036. This
+// record sink here and the pre-bind log path call, per ADR 0038. This
 // function's own job is to drain first and then count what that helper
 // reports dropped.
 //
-// Every record boundary is also a drain point (ADR 0037): whatever this task
+// Every record boundary is also a drain point (ADR 0039): whatever this task
 // has logged since the last one goes out FIRST, so a log line emitted while a
 // command runs lands between records rather than after the whole answer. That
 // is what bounds wire order to "within one record". The drain cannot recurse
@@ -330,7 +330,7 @@ static void onRecordResult(uint32_t requestId, ConsoleStatus status, ConsoleOutc
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 
-    // dropped= (ADR 0036, docs/console-protocol.md 3.1/3.6): stamped on this
+    // dropped= (ADR 0038, docs/console-protocol.md 3.1/3.6): stamped on this
     // request's closing record exactly when nonzero, counting only the
     // records that preceded it -- captured before emitRecordLine() below,
     // which may itself drop THIS line without that counting as a further
@@ -368,7 +368,7 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
         snprintf(reasonStr, sizeof(reasonStr), " reason=%s", consoleReasonString(reason));
     }
 
-    // dropped= (ADR 0036): see onRecordResult's comment above -- same
+    // dropped= (ADR 0038): see onRecordResult's comment above -- same
     // capture-before-emit, same drain-after-emit discipline.
     char droppedStr[24] = {};
     consoleSerialFormatDroppedSuffix(droppedStr, sizeof(droppedStr), g_recordsDroppedThisRequest);
@@ -436,7 +436,7 @@ void consoleTask(void* pvParameters) {
     //
     // writeChar is the ECHO path only: embeddedCliProcess() calls it as the
     // operator types, from this task. It takes no lock, and needs none - this
-    // task is the wire's only writer (ADR 0037), so an echoed byte has
+    // task is the wire's only writer (ADR 0039), so an echoed byte has
     // nothing to be interleaved with. Drained log lines do not come through
     // here at all: they are rendered whole into one frame
     // (consoleSerialEmitLine) and written in one call.
@@ -461,14 +461,14 @@ void consoleTask(void* pvParameters) {
     consoleSerialBindCli(embeddedCli);
 
     // Print the ready banner and initial prompt through the one seam that
-    // writes this wire (ADR 0037) rather than straight at `Serial` under a
+    // writes this wire (ADR 0039) rather than straight at `Serial` under a
     // hand-taken mutex. See CONSOLE_READY_BANNER's own comment for why the
     // two print sites (here and the re-attach path below) split banner text
     // from the "> " invitation differently.
     consoleSerialWriteText(CONSOLE_READY_BANNER);
     consoleSerialWriteText("> ");
 #if !(ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE)
-    // artoo-esp32 only (ADR 0036's flush() decision, #265). On UART0 this is
+    // artoo-esp32 only (ADR 0038's flush() decision, #265). On UART0 this is
     // a real, harmless wait for the driver to finish draining the banner
     // just printed above -- kept, matching the ticket's requirement that
     // artoo-esp32's behavior is unchanged.
@@ -596,14 +596,14 @@ void consoleTask(void* pvParameters) {
             continue;
         }
 
-        // Drain the Log Ring first (ADR 0037). Anything any task logged while
+        // Drain the Log Ring first (ADR 0039). Anything any task logged while
         // this one slept belongs on the wire before this poll's keystrokes
         // echo back, and the redraw each drained line carries repaints the
         // prompt and whatever the operator had half-typed.
         consoleSerialDrainLogs();
 
         // Log stack high water mark once after first command is processed
-        // Measured value guides stack depth sizing for future runs (ADR 0034)
+        // Measured value guides stack depth sizing for future runs (ADR 0036)
         //
         // uxTaskGetStackHighWaterMark() returns WORDS, so the reading is
         // scaled here. What this line used to say - "ESP-IDF's
@@ -716,7 +716,7 @@ void consoleTask(void* pvParameters) {
         // length arriving in order, because the queue then never has to hold
         // more than one poll's worth at a time.
         //
-        // So: the idle cadence stays 10 ms, which is the figure ADR 0037,
+        // So: the idle cadence stays 10 ms, which is the figure ADR 0039,
         // docs/console-protocol.md 6 and this file's own record-ordering
         // guarantee are written against, and it is what the task costs when
         // nobody is typing. The moment a byte actually arrives the next poll

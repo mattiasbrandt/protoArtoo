@@ -3,7 +3,7 @@
 //
 // Every project-created task's stack is re-derived from its Measured Chain by
 // the sizing rule, or pinned with a recorded reason where the rule is declined
-// (#271, ADR 0038).
+// (#271, ADR 0040).
 //
 // include/config.h's static_asserts already stop a stack falling below its own
 // chain -- put one there and the compile fails before a single test runs, which
@@ -21,7 +21,7 @@
 //   declined  - the stack is below the rule and still covers the chain. This is
 //               #248's tight-heap argument: raising all six declined arms on
 //               this board costs 6144 B against ~42.7 KB of measured free heap,
-//               for margin the Xtensa walk cannot confirm. ADR 0038 requires
+//               for margin the Xtensa walk cannot confirm. ADR 0040 requires
 //               the decline to be recorded; include/config.h carries the reason
 //               beside each constant.
 //

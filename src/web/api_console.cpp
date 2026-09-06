@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/api_console.cpp
 //
-// POST /api/console - browser adapter for the Controller Console (ADR 0034).
+// POST /api/console - browser adapter for the Controller Console (ADR 0036).
 // The same command processor (consoleExecuteCommand) that the serial task
 // uses, driven by a web-specific sink, over two response paths:
 //

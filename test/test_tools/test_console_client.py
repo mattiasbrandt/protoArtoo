@@ -1119,7 +1119,7 @@ class CrLfTerminatedWire(unittest.TestCase):
             worst = console_client.run_scripted(transport, directives)
 
         self.assertEqual(worst, console_client.EXIT_LOSS)
-        # Exact: `dropped=2` and nothing else. ADR 0036's drop count is the
+        # Exact: `dropped=2` and nothing else. ADR 0038's drop count is the
         # last token on the line, so it is the field a surviving CR lands in.
         self.assertIn("[LOSS] dropped=2 on closing record id=1", out.getvalue())
 

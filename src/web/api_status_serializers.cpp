@@ -2,7 +2,7 @@
 // src/web/api_status_serializers.cpp
 //
 // JSON serialization helpers for WiFi, health and serial-link status, plus
-// the state-capture ("Zone Snapshot", ADR 0034) functions behind them.
+// the state-capture ("Zone Snapshot", ADR 0036) functions behind them.
 //
 // The format*Json() functions are pure - no globals, no Arduino, no FreeRTOS -
 // and unchanged in shape: they still take plain scalars and own the JSON
@@ -124,7 +124,7 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
 }
 
 // =============================================================================
-// State-capture ("Zone Snapshot", ADR 0034) functions
+// State-capture ("Zone Snapshot", ADR 0036) functions
 // =============================================================================
 
 void captureHealthSnapshot(HealthSnapshot* out) {

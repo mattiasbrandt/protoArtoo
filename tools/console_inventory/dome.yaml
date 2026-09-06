@@ -1174,7 +1174,7 @@ rows:
       - "src/web/web_server.cpp:303-306 - buildStatusJson() calls captureDomeStatusSnapshot() for domeTargetSpeed/domeEnabled (#223)"
     executor_or_core: "captureDomeStatusSnapshot"
     missing_metadata: []
-    notes: "Status query via /api/status SSE stream. #223: promoted to a real console query; captureDomeStatusSnapshot() is the Zone Snapshot capture buildStatusJson() and the Console module both call (ADR 0034)."
+    notes: "Status query via /api/status SSE stream. #223: promoted to a real console query; captureDomeStatusSnapshot() is the Zone Snapshot capture buildStatusJson() and the Console module both call (ADR 0036)."
   - name: dome.status.serial-link
     type: status
     registry_api_path: /api/serial

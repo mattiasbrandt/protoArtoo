@@ -505,7 +505,7 @@ Whichever client is used, the shared rule from the matrix above still holds:
 Treat USB serial as a convenience stream, not the only diagnostic record. The
 project-owned `PA_LOG_*` path writes each line **into the log ring** — the one
 `/api/logs`, the SSE console and `system.status.logs` all read — and the
-Console task copies it from there to the serial port (ADR 0037). The ring is
+Console task copies it from there to the serial port (ADR 0039). The ring is
 the record; serial is a view of it. Prefer `/api/logs`, `/api/status`,
 `/api/profiler`, and `/api/coredump` for evidence that must survive USB
 monitor resets or ambiguous serial captures — except when HTTP itself is the

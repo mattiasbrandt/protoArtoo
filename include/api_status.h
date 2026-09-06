@@ -4,7 +4,7 @@
 // Status and telemetry API endpoints, all ported to the project-owned
 // WebRequest seam (ADR 0021) and bound by the seam route table.
 // Also declares WiFi, health, and serial status state-capture and
-// serialization helpers, shared with the Console module (ADR 0034).
+// serialization helpers, shared with the Console module (ADR 0036).
 // =============================================================================
 #pragma once
 
@@ -22,16 +22,16 @@ struct WiFiConnectivityFields {
 };
 
 // =============================================================================
-// State-capture snapshots (ADR 0034)
+// State-capture snapshots (ADR 0036)
 //
-// Each capture*Snapshot() function is the "Zone Snapshot capture" ADR 0034
+// Each capture*Snapshot() function is the "Zone Snapshot capture" ADR 0036
 // names: the read step behind a status query, factored out of the hand-written
 // build*Json() gather blocks in src/web/api_status.cpp and src/web/web_server.cpp
 // so the REST handler and the Console module (src/console/console_module.cpp)
 // read RobotState/config exactly once, through one function, instead of two
 // copies that can drift apart. The format*Json() functions below are NOT
 // rewritten - they still take plain scalar arguments and still own the JSON
-// shape; only the read step is shared (ADR 0034: "the proven JSON builders
+// shape; only the read step is shared (ADR 0036: "the proven JSON builders
 // are not rewritten").
 // =============================================================================
 

@@ -2,7 +2,7 @@
 // include/console_line_overflow.h
 //
 // The serial adapter's answer to an input line that lost bytes before it
-// could be stored (ADR 0034, #262).
+// could be stored (ADR 0036, #262).
 //
 // WHAT THIS CLOSES. The browser adapter refuses an over-length command
 // outright, with a single `type=result status=err outcome=invalid

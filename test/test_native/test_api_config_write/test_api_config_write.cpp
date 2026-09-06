@@ -193,7 +193,7 @@ void test_rc_map_post_applies_an_empty_map_and_persists() {
 
     handleRcMapPost(req);
 
-    // persistSystemConfig() (ADR 0034, WebRequest-free since #226) reports its
+    // persistSystemConfig() (ADR 0036, WebRequest-free since #226) reports its
     // own failure through this success path unchanged: 200 on a valid empty
     // map, matching the async-era handler's success shape.
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
@@ -258,7 +258,7 @@ void test_wifi_post_rejects_invalid_settings() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"ok\":false"));
 }
 
-// Pins the ADR 0034 Commit Step (wifiCommitApplied(), #227 phase 1): the
+// Pins the ADR 0036 Commit Step (wifiCommitApplied(), #227 phase 1): the
 // handler no longer stages the cache or reads recovery/broadcast state
 // inline, so this exercises that the extracted function still does - NVS/
 // cache staging a subsequent read would see, the status broadcast, and

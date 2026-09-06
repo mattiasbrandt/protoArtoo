@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "description": "One Measured Chain recipe per project-created task per chip target (ADR 0038, #271)",
+    "description": "One Measured Chain recipe per project-created task per chip target (ADR 0040, #271)",
     "unit": "bytes",
     "rule": "stack = ceil_512(ceil(chain * 1.25)); in integer arithmetic, need = (chain * 5 + 3) // 4, stack = ((need + 511) // 512) * 512",
     "notes": [
-      "Thirteen tasks: the ten created in src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp) and HostedRecovery (src/web/web_network_manager_hosted.cpp). HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, so artoo-esp32 has twelve and the ESP32-P4 thirteen. ADR 0038 and #271 both say 'twelve' and then list thirteen; the list is right and the count is not.",
+      "Thirteen tasks: the ten created in src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp) and HostedRecovery (src/web/web_network_manager_hosted.cpp). HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, so artoo-esp32 has twelve and the ESP32-P4 thirteen. ADR 0040 and #271 both say 'twelve' and then list thirteen; the list is right and the count is not.",
       "loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini and is deliberately outside this table.",
       "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why.",
       "'env' is the image tools/check_task_stack_chains.py re-walks for that arm - always the product image for the chip. 'chain_bytes' is the recorded constant and equals the DEEPER of the product and profiler images, because include/config.h is compiled into both; 'deeper_image' records that substitution where the two differ.",

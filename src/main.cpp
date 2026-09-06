@@ -54,7 +54,7 @@ static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
 // Who owns the serial wire, and how far the owner has drained the ring
-// (ADR 0037). Both live under logMux with the ring itself, which is what makes
+// (ADR 0039). Both live under logMux with the ring itself, which is what makes
 // the hand-over exact: paLogLine() reads the flag in the same critical section
 // it appends in, so a line arriving as ownership changes is either written
 // directly (flag still clear, and the cursor is placed past it) or drained
@@ -99,7 +99,7 @@ void logBootHealth() {
 
 }  // namespace
 
-// The ESP-IDF logger's output hook (ADR 0037).
+// The ESP-IDF logger's output hook (ADR 0039).
 //
 // ESP_LOGx does not go through paLogLine(): it formats and hands the result to
 // the IDF's own vprintf, which writes stdout - UART0 - with no project lock
@@ -115,7 +115,7 @@ void logBootHealth() {
 // ESP_COREDUMP_LOG* macros expand to esp_rom_printf()
 // (espcoredump/include_core_dump/esp_core_dump_types.h). Neither goes through
 // esp_log_vprintf, so neither can reach this hook - the panic path keeps its
-// own direct route exactly as ADR 0037 requires, and ADR 0031's rule that
+// own direct route exactly as ADR 0039 requires, and ADR 0031's rule that
 // nothing be added to that path is not touched. That matters here beyond
 // tidiness: this hook takes the ring's critical section, which a panicking
 // core must never be made to wait on.
@@ -214,7 +214,7 @@ void paLogLine(const char* line) {
     }
 
     // ONE write, to the Log Ring, under the ring's own critical section. The
-    // ring was already this line's authoritative record (#245); ADR 0037 makes
+    // ring was already this line's authoritative record (#245); ADR 0039 makes
     // the serial copy something produced FROM it rather than beside it, so a
     // logging task on either core now pays one bounded critical section and a
     // copy, and nothing that depends on the wire.
@@ -233,7 +233,7 @@ void paLogLine(const char* line) {
         // Before the bind there is no Console task to drain the ring, so the
         // line goes straight out - the boot log, unchanged. One framed write,
         // best-effort, exactly as the pre-bind path has always been (#245's
-        // contract, ADR 0036's framing). After the bind this branch is dead by
+        // contract, ADR 0038's framing). After the bind this branch is dead by
         // construction and the drain is the only writer
         // (consoleSerialDrainLogs, src/console/console_serial_output.cpp).
         consoleSerialEmitFramedLine(line, strlen(line), /*waitForRoom=*/false);
@@ -567,7 +567,7 @@ void setup() {
                             nullptr, 3, nullptr, 0);
 
     // ConsoleTask: Core 0 (non-RT)  --  serial console adapter using embedded-cli.
-    // ADR 0034: persistent Controller Console, no network dependency, no dynamic
+    // ADR 0036: persistent Controller Console, no network dependency, no dynamic
     // allocation in its loop. Created on both boards (P4 USB CDC, artoo UART0 bridge).
     //
     // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES in include/config.h
@@ -600,7 +600,7 @@ void setup() {
 
     // Inject the help reader for the Console module after LittleFS is mounted.
     // The reader provides seek+read access to console_help.txt with no per-request
-    // allocation (ADR 0034, address-based read pattern).
+    // allocation (ADR 0036, address-based read pattern).
     // If the help file is unavailable, pass NULL to degrade gracefully.
 #ifdef ARDUINO
     {
@@ -644,12 +644,12 @@ void setup() {
     PA_LOG_INFO("main", "init complete");
     // No Serial.flush() here. The Console task exists by this point (created
     // above), so this line is already the Console task's to put on the wire,
-    // and flushing a wire this task does not own is what ADR 0037 removes.
+    // and flushing a wire this task does not own is what ADR 0039 removes.
     // It was never doing the job it looked like it was doing either: on a
     // CDC-on-boot build main.cpp's own setTxTimeoutMs(0) makes HWCDC::flush()
     // take its `tries == 0` path, which DISCARDS the TX ring and forces the
     // `connected` latch false - so it dropped whatever of the boot log the
-    // host had not yet picked up (ADR 0036's Consequences named these two
+    // host had not yet picked up (ADR 0038's Consequences named these two
     // sites; src/tasks/console_task.cpp:#265 reported them as out of scope
     // then, and this ticket owns src/main.cpp).
 }

@@ -38,7 +38,7 @@
 //
 // WORKER NOTE (#270, reported on the issue, not edited silently): section 2's
 // and section 5's four "the mutex was taken exactly once" assertions now read
-// "the mutex was never taken". ADR 0037 makes the Console task the only writer
+// "the mutex was never taken". ADR 0039 makes the Console task the only writer
 // of this wire, and #270's acceptance requires `logSerialMutex` and its
 // accessor to be DELETED - so an assertion that an emission takes a serial
 // mutex is an assertion that the ticket was not done. Nothing is weakened:
@@ -222,7 +222,7 @@ void test_log_with_empty_input_line_still_emits_once_and_restores_prompt(void) {
 // ----------------------------------------------------------------------------
 
 // No emission touches a serial mutex, because there is not one to touch (ADR
-// 0037: the Console task is the only writer, so the lock had nothing left to
+// 0039: the Console task is the only writer, so the lock had nothing left to
 // coordinate). The attempt-2 defect this case was written for - onRecordEnd
 // releasing a mutex the guard paths never took - is unreachable for the same
 // reason, and both halves are still asserted: zero takes, zero unmatched
@@ -304,7 +304,7 @@ void test_emission_performs_no_nested_take_through_writechar(void) {
     TEST_ASSERT_EQUAL_INT_MESSAGE(
         0, m->failedTakes,
         "the per-character writer reached for a mutex during an emission; it has no lock to "
-        "take and no lock to contend with (ADR 0037)");
+        "take and no lock to contend with (ADR 0039)");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount,
                                   "an emission must take no serial mutex at all (#270)");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a mutex was left held");
@@ -392,7 +392,7 @@ void test_keystroke_echo_output_stays_proportional_to_input(void) {
 }
 
 // =============================================================================
-// 5. ADR 0036 - single-write framing, room-wait, and dropped= accounting (#265)
+// 5. ADR 0038 - single-write framing, room-wait, and dropped= accounting (#265)
 // =============================================================================
 //
 // The seam under test here is consoleSerialEmitFramedLine() and
@@ -474,7 +474,7 @@ void test_framed_line_waits_only_while_connected(void) {
 // Room never clears: the wait terminates at CONSOLE_RECORD_ROOM_WAIT_BOUND_MS
 // rather than spinning forever, the record is dropped, and (same as the
 // disconnected case) the mutex is never taken -- the wait is provably OUTSIDE
-// the mutex, which is the whole point of ADR 0036's "never inside the mutex"
+// the mutex, which is the whole point of ADR 0038's "never inside the mutex"
 // rule for a TWDT-subscribed logger's portMAX_DELAY take to be safe from it.
 void test_framed_line_room_wait_is_bounded_and_stays_outside_the_mutex(void) {
     framedLineFixtureSetUp();
@@ -561,7 +561,7 @@ void test_framed_line_terminates_with_cr_lf_on_both_policies(void) {
         "the boot-time log fallback shares the wire and must end CR LF too");
 }
 
-// ADR 0036 reserves transmit room for the WHOLE line including its
+// ADR 0038 reserves transmit room for the WHOLE line including its
 // terminator, so the reservation had to follow the extra byte. Room for
 // exactly `lineLen + 1` is now one byte short: the record is dropped whole
 // rather than written short of its CR. `lineLen + 2` is the smallest room
@@ -637,7 +637,7 @@ void test_room_reservation_is_capped_at_what_the_transport_can_offer(void) {
 
 // consoleSerialFormatDroppedSuffix: absent (empty, zero-length) when nothing
 // was dropped, present with the exact count otherwise. This is the piece of
-// ADR 0036's wire format proved on the host because
+// ADR 0038's wire format proved on the host because
 // src/tasks/console_task.cpp (which stamps it onto a real record) is not
 // part of the native build (Arduino/FreeRTOS-only, per its own file header).
 void test_dropped_suffix_absent_when_zero() {
@@ -678,7 +678,7 @@ void test_dropped_suffix_too_small_buffer_emits_nothing() {
 // cited: the interactive log path rendered its redraw through
 // embeddedCliPrint(), one Serial.write() per character - ~70 of them for a
 // 59-byte line - while the Console task's echo (embeddedCliProcess, which
-// holds no lock, src/tasks/console_task.cpp) writes to the same wire. ADR 0036
+// holds no lock, src/tasks/console_task.cpp) writes to the same wire. ADR 0038
 // had already ruled that out for Console Records ("every line, record or log,
 // is written with one call"); the redraw is where that decision had not
 // reached.

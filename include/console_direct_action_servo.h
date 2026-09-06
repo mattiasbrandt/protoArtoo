@@ -33,7 +33,7 @@
 // aux3[|both]>, set-position also carries position_us=<500..2500>.
 // parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
 // target<->id mapping and the SAME queue submission handleServoPost() uses,
-// reused verbatim - the ADR 0034 Commit Step beside that handler.
+// reused verbatim - the ADR 0036 Commit Step beside that handler.
 //
 // servo.action.stop (#221 remainder registry fix, docs/action-registry.yaml):
 // the row used to declare zero params even though the underlying /api/servo

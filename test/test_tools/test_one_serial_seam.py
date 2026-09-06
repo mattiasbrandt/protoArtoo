@@ -1,6 +1,6 @@
-"""One task owns the serial wire, and one file writes it (#270, ADR 0037).
+"""One task owns the serial wire, and one file writes it (#270, ADR 0039).
 
-ADR 0037: *"We decided the serial wire is owned by the Console task. After the
+ADR 0039: *"We decided the serial wire is owned by the Console task. After the
 serial adapter binds, no other task writes it."* The behaviour half of that -
 a line logged from a non-Console task reaching the wire only through the drain
 - is proven natively in `test/test_native/test_console_log_drain/`. This is the
@@ -80,7 +80,7 @@ ALLOWED_WIRE_WRITERS: dict[str, tuple[int, str]] = {
         1,
         "THE SINK. The one place a Console byte reaches the wire: one "
         "Serial.write() per unit, records and drained log lines alike (ADR "
-        "0036's framing, ADR 0037's ownership). Everything else in the "
+        "0038's framing, ADR 0039's ownership). Everything else in the "
         "firmware reaches the wire by calling into this file.",
     ),
     "src/main.cpp:begin": (
@@ -213,7 +213,7 @@ class OneSerialSeamTest(unittest.TestCase):
                 rel, member = key.rsplit(":", 1)
                 offenders.append(
                     f"{rel}:{lines[0]}: Serial.{member}() outside the sink. The "
-                    f"Console task owns this wire (ADR 0037): write through "
+                    f"Console task owns this wire (ADR 0039): write through "
                     f"src/console/console_serial_output.cpp, or - for a log line - "
                     f"through PA_LOG_*, which the Console task drains. If this site "
                     f"genuinely must touch the transport, add it to "
@@ -300,7 +300,7 @@ class OneSerialSeamTest(unittest.TestCase):
 
         `src/drivers/sbus_decoder.cpp` and `src/drivers/ledc_pwm.cpp` log
         through the IDF logger, which writes stdout - UART0 - with no project
-        lock and no knowledge of who owns the wire (ADR 0037's current-state
+        lock and no knowledge of who owns the wire (ADR 0039's current-state
         audit). Redirecting it with esp_log_set_vprintf() is what makes those
         lines ordinary Log Ring entries. Nothing in a `Serial.` scan can see
         this, which is exactly why it is asserted here.

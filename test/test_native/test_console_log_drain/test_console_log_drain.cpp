@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_native/test_console_log_drain/test_console_log_drain.cpp
 //
-// ADR 0037: the Console task owns the serial wire; log lines reach it through
+// ADR 0039: the Console task owns the serial wire; log lines reach it through
 // the Log Ring (#270).
 //
 // This is the native half of the invariant's double enforcement. The other
@@ -121,7 +121,7 @@ void tearDown(void) {}
 
 // Until the Console task binds the adapter there is no task to drain the ring,
 // so paLogLine() writes the line itself - the boot log, exactly as before ADR
-// 0037. This is the "the switch to ring-only IS the bind" half of the rule; it
+// 0039. This is the "the switch to ring-only IS the bind" half of the rule; it
 // is here so the rule cannot be satisfied by silencing the boot log.
 void test_a_line_logged_before_the_bind_reaches_the_wire_directly(void) {
     fixtureSetUp(LOG_RING_MAX_LINES);
@@ -140,7 +140,7 @@ void test_a_line_logged_before_the_bind_reaches_the_wire_directly(void) {
 // 2. After the bind: the drain is the only way onto the wire
 // ----------------------------------------------------------------------------
 
-// THE criterion (ADR 0037): a line logged from a non-Console task never
+// THE criterion (ADR 0039): a line logged from a non-Console task never
 // reaches the serial stub except through the drain. `paLogLine` here stands
 // for a Core 1 task's PA_LOG_* - DriveTask's failsafe line, RCInputTask's link
 // warning - which used to write this wire from its own context.
@@ -230,7 +230,7 @@ void test_the_drain_writes_lines_in_the_order_they_were_logged(void) {
 // ----------------------------------------------------------------------------
 
 // Ring eviction - writers overtaking the drain cursor - is the only way a log
-// line is lost from the wire under ADR 0037, and it must not be silent: one
+// line is lost from the wire under ADR 0039, and it must not be silent: one
 // counted marker line, carrying the same `dropped=<n>` token a record's
 // closing line uses, before the drain continues with what the ring still has.
 void test_ring_eviction_emits_one_counted_marker_before_the_drain_continues(void) {
@@ -281,7 +281,7 @@ void test_no_marker_when_the_drain_kept_up(void) {
 // 5. The room policy
 // ----------------------------------------------------------------------------
 
-// ADR 0037 supersedes ADR 0036's "logs stay best-effort": a drained log line
+// ADR 0039 supersedes ADR 0038's "logs stay best-effort": a drained log line
 // waits for transmit room under the same bound as a record, because the reason
 // logs could not wait - a TWDT-subscribed logger blocked on the CDC - is gone
 // with the writers that did the waiting.

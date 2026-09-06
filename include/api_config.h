@@ -24,12 +24,12 @@
 // thread-safe: yes (pure function, no globals)
 void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs);
 
-// Commit Step for the POST /api/config Apply Core (ADR 0034): the complete
+// Commit Step for the POST /api/config Apply Core (ADR 0036): the complete
 // transport-independent tail of a config write - replay the core's applied-
 // field log lines, sync the config cache, resync stationary mode (with its
 // existing edge-detect/drive-on-cue logic, ADR 0012), fire the dome-on-cue
 // action, persist to NVS, and (on success) broadcast the new status. This is
-// "persistSystemConfig(WebRequest&, ...)"'s sibling named in ADR 0034's
+// "persistSystemConfig(WebRequest&, ...)"'s sibling named in ADR 0036's
 // Consequences as the first extraction target: the HTTP handler
 // (handleConfigPost) and the Controller Console (src/console/
 // console_module.cpp) both call this instead of each carrying their own copy

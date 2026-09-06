@@ -135,7 +135,7 @@ void handleServoPost(WebRequest& req) {
         positionUs = (uint16_t)parsed;
     }
 
-    // Commit Step (ADR 0034 criterion 1, include/api_servo.h): the same
+    // Commit Step (ADR 0036 criterion 1, include/api_servo.h): the same
     // servoCmdQueue submission both this handler and the Console's
     // servo.action.* executors now make.
     ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, type, positionUs, SRC_WEB_API);

@@ -40,7 +40,7 @@ enum CommandSource : uint8_t {
     SRC_WEB_API,   // Browser / REST API
     SRC_INTERNAL,  // Internal (safety zeroing, boot defaults)
     SRC_SEQ,       // Sequence coordinator (SequenceDispatcherTask)
-    // Controller Console provenance (ADR 0034, #220). Appended rather than
+    // Controller Console provenance (ADR 0036, #220). Appended rather than
     // interleaved so no existing numeric value shifts. Distinct from
     // SRC_WEB_API: the Console's browser adapter (POST /api/console) and the
     // REST endpoints are different command surfaces even though both arrive

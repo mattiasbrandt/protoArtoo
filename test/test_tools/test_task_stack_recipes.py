@@ -1,6 +1,6 @@
 """Every project-created task has a Measured Chain recipe, on every chip (#271).
 
-`tools/task_stack_recipes.json` is the recipe table ADR 0038 asks for: per task
+`tools/task_stack_recipes.json` is the recipe table ADR 0040 asks for: per task
 and per chip, the environment walked, the root symbols, the frames stitched by
 hand across an indirect call, and the profiler-image substitution where the
 product image's chain is not the deeper one. Three separate things can rot, and
@@ -172,7 +172,7 @@ class TaskStackRecipes(unittest.TestCase):
                 self.assertEqual(entry["created_in"], created[name])
 
     def test_the_three_tasks_outside_main_cpp_are_covered(self):
-        """The criterion is the task, not the file (ADR 0038's rejected option).
+        """The criterion is the task, not the file (ADR 0040's rejected option).
 
         The profiler task list had exactly this blind spot: it scanned
         src/main.cpp only, so WebEvents, the ArduinoOTA task and HostedRecovery
@@ -265,7 +265,7 @@ class TaskStackRecipes(unittest.TestCase):
     def test_every_departure_from_the_rule_carries_its_reason(self):
         """#248's argument is the only thing that licenses declining the rule.
 
-        ADR 0038 requires the decline to be recorded beside the constant. Beside
+        ADR 0040 requires the decline to be recorded beside the constant. Beside
         it in config.h is prose; here it is checked, so a later arm cannot be
         moved off the rule silently.
         """
@@ -283,7 +283,7 @@ class TaskStackRecipes(unittest.TestCase):
     def test_the_p4_arm_pays_the_rule_everywhere(self):
         """The chip that can afford the margin buys it on every task.
 
-        ADR 0038 applies the rule per chip where affordable and declines it on
+        ADR 0040 applies the rule per chip where affordable and declines it on
         #248's reason where not. artoo-esp32 has declines; the ESP32-P4 has
         none, and a new task must not quietly introduce the first one.
         """

@@ -2,7 +2,7 @@
 // include/console_host_attach.h
 //
 // Full input-buffer reset for a (re)attaching host on the serial adapter's
-// embedded-cli instance (ADR 0034, #260).
+// embedded-cli instance (ADR 0036, #260).
 //
 // Called from src/tasks/console_task.cpp when the task's own host-presence
 // tracking (Serial's operator bool()) observes a debounced false->true

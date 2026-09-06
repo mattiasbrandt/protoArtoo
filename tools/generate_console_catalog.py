@@ -135,7 +135,7 @@ typedef struct {
     bool requires_web_control;           // if true, needs webControlEnabled for motion
     bool safety_critical;                // if true, subject to safety constraints
     // No readiness flag lives here. Whether an operation's executor is wired
-    // is answered by running it, never advertised at discovery (ADR 0035).
+    // is answered by running it, never advertised at discovery (ADR 0037).
     // The two availability flags above are genuine compile-time expressions;
     // readiness was not, and the field that claimed it read `true` for every
     // entry - including the ones dispatch refuses with
@@ -144,7 +144,7 @@ typedef struct {
     uint16_t help_length;                // length of help text in help file
     const char* const* fields;           // for type=status: API JSON keys this query answers
                                           // with, verbatim (NULL-terminated, or NULL). Only
-                                          // meaningful when is_query is true (#223, ADR 0034).
+                                          // meaningful when is_query is true (#223, ADR 0036).
     bool is_query;                       // for type=status: true if independently console-
                                           // queryable (registry carries fields:); false if the
                                           // row only describes a field inside another query's
@@ -381,7 +381,7 @@ def generate_catalog_source(entries, offsets, output_path):
                 source += "};\n\n"
 
     # Generate field-name tables for type=status entries that carry fields:
-    # (#223, ADR 0034). The registry's fields: list is the record emitter's
+    # (#223, ADR 0036). The registry's fields: list is the record emitter's
     # contract: names here are the API JSON keys verbatim, checked against the
     # JSON builder and the record emitter by a native test.
     source += "// =============================================================================\n"

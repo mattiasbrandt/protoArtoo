@@ -481,7 +481,7 @@ LogBuffer g_test_log_buffer = {};
 char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
 static char s_testLogsBody[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
 
-// The log SINK stand-in (#270, ADR 0037). main.cpp keeps the ring, the drain
+// The log SINK stand-in (#270, ADR 0039). main.cpp keeps the ring, the drain
 // cursor and the ownership flag together under logMux; native tests are
 // single-threaded, so no lock is needed here, but the SHAPE is deliberately
 // the production one: paLogLine() writes the ring once and consults ownership

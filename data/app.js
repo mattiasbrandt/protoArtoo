@@ -771,7 +771,7 @@
     }
   });
 
-  // Console Tab completion catalog (ADR 0034, #238). Operation names are
+  // Console Tab completion catalog (ADR 0036, #238). Operation names are
   // fetched once per session and cached; a given operation's argument keys
   // are fetched (and cached) only when the operator actually Tabs one -
   // never all 175+ operations' help up front (the coordinator brief is
@@ -1022,7 +1022,7 @@
     }
 
     try {
-      // Send command to the Console endpoint (ADR 0034)
+      // Send command to the Console endpoint (ADR 0036)
       const result = await window.PAApi.postForm("/api/console", { command: token }, { timeoutMs: 5000 });
 
       // Parse and display Console Records from the response.
@@ -1064,7 +1064,7 @@
     }
   };
 
-  // Format a single Console Record and append it to the log (ADR 0034)
+  // Format a single Console Record and append it to the log (ADR 0036)
   const formatAndAppendConsoleRecord = (record) => {
     if (!record || !record.type) return;
 

@@ -3,7 +3,7 @@
 //
 // Controller Console direct-action executors - system domain (#226 criterion
 // 4's Commanded Modes: stationary, sleep/wake, web-control, active mood; plus
-// system.action.set-identity's ADR 0034 Commit Step). Split out of
+// system.action.set-identity's ADR 0036 Commit Step). Split out of
 // src/console/console_module.cpp by #257 so this domain's rows can be
 // extended (sound/dome/servo/drive/system/aux-rc sweeps still open on the
 // epic) without colliding on that one file.
@@ -250,7 +250,7 @@ static void consoleExecuteDirectSetMood(uint32_t requestId, const char* operatio
 // default false> - the same two fields handleIdentityPost() reads (src/web/
 // api_identity.cpp). normalizeDroidName() and parseBoolValue() (include/
 // api_helpers.h) are the SAME pure validators that handler calls, reused
-// verbatim; identitySetCommitApplied() is the extracted ADR 0034 Commit Step
+// verbatim; identitySetCommitApplied() is the extracted ADR 0036 Commit Step
 // (include/api_identity.h) both now share.
 static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* operationName,
                                             const ConsoleArgs& args, ConsoleCommandSource source,

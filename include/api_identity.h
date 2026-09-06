@@ -24,7 +24,7 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 // Manifest additions that outgrow it fail serialization instead of allocating.
 constexpr size_t IDENTITY_JSON_MAX_BYTES = 384;
 
-// Commit Step (ADR 0034 criterion 1): publishes `working` (already carrying
+// Commit Step (ADR 0036 criterion 1): publishes `working` (already carrying
 // the caller's validated droid_name/mdns_use_name - normalizeDroidName() and
 // parseBoolValue(), include/api_helpers.h, are the shared pure validators
 // both callers run first) to the runtime config cache and persists it to

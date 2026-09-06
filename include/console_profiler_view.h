@@ -3,7 +3,7 @@
 //
 // Controller Console rendering of one ProfilerReading (include/api_profiler.h)
 // as Console Records - the adapter half of system.api.get-profiler (#224,
-// ADR 0034).
+// ADR 0036).
 //
 // The reading is produced only by a PA_HEAP_PROFILE=1 image; this rendering is
 // compiled unconditionally. That split is the point: the profiler measurement

@@ -368,11 +368,11 @@ The browser's ordered choice of which Dome Layout to render, separating geometry
 _Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
 
 **Apply Core**:
-A pure module behind a write path: it reads parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. Its side effects live in one Commit Step shared by every adapter; the HTTP handler and the Controller Console are transport adapters over the pair and own only their own response rendering (ADR 0011, amended by ADR 0034). The write-path counterpart of the pure GET JSON builders; cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
+A pure module behind a write path: it reads parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. Its side effects live in one Commit Step shared by every adapter; the HTTP handler and the Controller Console are transport adapters over the pair and own only their own response rendering (ADR 0011, amended by ADR 0036). The write-path counterpart of the pure GET JSON builders; cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
 _Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
 
 **Commit Step**:
-The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0034; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0036; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
 _Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function, adapter-held lock, snapshot-returning outcome
 
 **Working Snapshot**:
@@ -522,11 +522,11 @@ Any reboot caused by a watchdog expiring - task watchdog, interrupt watchdog, or
 _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 
 **Controller Console**:
-The one command language, Operation Catalog, validation, availability and safety rules, result meanings and help shared by the browser Live Logs console and a physical serial terminal; both are Console Adapters over it and neither owns behaviour of its own (ADR 0034).
+The one command language, Operation Catalog, validation, availability and safety rules, result meanings and help shared by the browser Live Logs console and a physical serial terminal; both are Console Adapters over it and neither owns behaviour of its own (ADR 0036).
 _Avoid_: serial console (when the shared thing is meant), CLI, debug shell, recovery console, command subset
 
 **Console Adapter**:
-A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own. The serial adapter is also the sole writer of the serial wire once it has bound: every other task's log line reaches serial through the Log Ring, never directly (ADR 0037).
+A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own. The serial adapter is also the sole writer of the serial wire once it has bound: every other task's log line reaches serial through the Log Ring, never directly (ADR 0039).
 _Avoid_: frontend, shell, REPL, second backend, shared serial writer, log mutex
 
 **Log Ring**:
@@ -538,7 +538,7 @@ The state in which a host is present on the serial adapter but its transmit path
 _Avoid_: blind link (the operator's view, not a firmware state), wedge, slow host, not connected
 
 **Measured Chain**:
-A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0038).
+A task's worst-case static call depth from its entry function, walked from the linked image with the recipe that names its roots and stitches its indirect calls, recorded per chip as a lower bound. It is what a task stack is sized from and floored against; a high-water mark is not a substitute, because it reports only the paths that happened to run (ADR 0040).
 _Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
 
 **Console Client**:

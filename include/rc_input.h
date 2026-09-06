@@ -19,7 +19,7 @@
 void rcInputTask(void* pvParameters);
 
 // Test-dispatch helper used by the REST /api/actions/test route and the
-// Controller Console's non-motion action executor (#220, ADR 0034) - the
+// Controller Console's non-motion action executor (#220, ADR 0036) - the
 // single dispatch core shared with the RC trigger path. src attributes the
 // resulting CommandSource (SRC_WEB_API, SRC_SERIAL_CONSOLE, SRC_WEB_CONSOLE,
 // ...) so downstream logs/state can tell a test-dispatched command from a

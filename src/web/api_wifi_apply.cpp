@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/api_wifi_apply.cpp
 //
-// Apply Core for POST /api/wifi (ADR 0011, ADR 0015), plus its ADR 0034
+// Apply Core for POST /api/wifi (ADR 0011, ADR 0015), plus its ADR 0036
 // Commit Step. See api_wifi_apply.h.
 // =============================================================================
 

@@ -38,7 +38,7 @@ void commandedSetStationary(bool stationary, CommandSource source) {
     // Was "(void)source; Reserved for future logging/telemetry" until #220:
     // the Controller Console adds two new sources (SRC_SERIAL_CONSOLE,
     // SRC_WEB_CONSOLE) whose commands must be distinguishable from RC/Web
-    // API/sequence-triggered ones downstream (ADR 0034 criterion). Logged
+    // API/sequence-triggered ones downstream (ADR 0036 criterion). Logged
     // only on a real transition, matching the existing edge-triggered
     // queueDriveOn/persistence behavior above.
     if (wasStationary != stationary) {

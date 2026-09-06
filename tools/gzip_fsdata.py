@@ -18,7 +18,7 @@ Excluded from gzip:
     (not via serveStatic), so a .gz would break the reported fsVersion.
   - console_help.txt — same shape as version JSON: src/main.cpp opens
     /console_help.txt directly via LittleFS.exists()/.open() in setup() (ADR
-    0034, #219), never through PsychicHttp's serveStatic() (the only place a
+    0036, #219), never through PsychicHttp's serveStatic() (the only place a
     .gz is transparently unwrapped). LittleFS.open() has no such fallback, so
     staging only the .gz left the firmware asking for a name that was never on
     the image. .txt IS otherwise gzipped (GZIP_EXTS below), so this is a
@@ -58,7 +58,7 @@ GZIP_EXTS = {".js", ".css", ".html", ".htm", ".svg", ".txt", ".map"}
 # Extension-excluded assets (version JSON: .json is not in GZIP_EXTS at all)
 # don't need an entry here; this set is for names whose extension IS otherwise
 # gzipped. See docs/console-protocol.md section 3.4 and src/main.cpp for the
-# console_help.txt reader (ADR 0034, #219 D2).
+# console_help.txt reader (ADR 0036, #219 D2).
 RAW_ASSET_NAMES = {"console_help.txt"}
 
 
