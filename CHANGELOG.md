@@ -61,6 +61,13 @@ board is doing.
   because of it.
 
 ### Changed
+- **Reboot the WiFi module from the console.** `system.action.reboot-wifi-module`
+  holds the module's enable line low for a tenth of a second and lets it come
+  back, so you can watch the controller notice the link go and bring it back on
+  its own. Nothing else on the droid pauses while it happens - driving, dome,
+  servos and sound do not go through the WiFi module. Run it from the serial
+  cable: over WiFi the answer would travel on the link the command takes down.
+  An artoo-esp32 has no WiFi module fitted and says so rather than failing.
 - Setting a password from the console is refused with a clear reason rather
   than half-accepted; passwords are set on the WiFi page or in AP mode.
 - Log lines and command replies can no longer land inside each other on the
@@ -92,6 +99,16 @@ board is doing.
   `true` and `false` on their way out of the action list.
 - Console output on the FireBeetle 2 waits for room on the USB port rather than
   arriving in pieces, and a long line keeps its ending.
+- **`help <operation>` was showing the wrong operation's description.** Not only
+  after an update - on shipped images, for 104 of the 194 operations. The help
+  text is addressed by counting bytes into a file, and the counting was done in
+  characters; twenty-three descriptions contain a dash that takes three bytes to
+  write, so every entry after the first one was read from slightly the wrong
+  place. The text that came back was another operation's, and looked perfectly
+  normal. Counting is fixed, and all 194 now read their own entry.
+- If the help file ever does stop matching the firmware - you updated one and not
+  the other - `help` now says it cannot read the entry instead of confidently
+  showing you somebody else's.
 
 ### Still to verify
 - **Nothing here has been exercised on an assembled droid.** Both boards were
@@ -104,6 +121,10 @@ board is doing.
   the line; a tool reading the serial cable directly sees it.
 - On the FireBeetle 2, a single console line longer than 256 characters is cut
   short by the USB port rather than being sent in pieces.
+- **The WiFi module reboot has not been watched working on a board.** The command
+  is wired and the enable line is the one the board's schematic names, but the
+  two writes reporting success is not the same as seeing the module go and come
+  back. Watching the controller notice and recover is still to do.
 
 ## [1.1.0] - 2026-09-06
 
