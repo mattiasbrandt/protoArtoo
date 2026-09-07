@@ -81,3 +81,15 @@ firmware it is computable, and two numbers for one fact is a drift source.
   assessment rested on having spare channels, which is not true. See #300.
 - `docs/droid-parts.yaml` becomes load-bearing at runtime rather than
   documentation. See #301.
+
+## Amended 2026-09-07
+
+The per-output motion field this ADR called **sleep-when-idle** is renamed
+**Output Release** (#300). "Sleep" already names a droid-wide Commanded Mode
+that blocks commands and syncs to the dome, so the two were one word for a
+posture the whole droid is in and a hardware fact about one servo.
+
+The trigger is also sharper than "idle": a release is scheduled from the moment
+the output **arrives** at its target, which this model makes knowable because
+speed, acceleration and easing run in firmware. Any new command to that output
+cancels a pending release. The decision and its evidence are on #300.

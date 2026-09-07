@@ -384,8 +384,12 @@ The browser-editor rule that the connected dome layout gates new authoring but n
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
 **Servo Output**:
-One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address** plus its calibration (open/centre/close), motion (speed, acceleration, easing, sleep-when-idle), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
+One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address** plus its calibration (open/centre/close), motion (speed, acceleration, easing, **Output Release**), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
 _Avoid_: channel (says which bus, not which servo), servo slot, arm
+
+**Output Release**:
+The bounded hold after a **Servo Output** reaches its target, after which its drive is cut so the servo stops holding position. It exists so a jammed, mis-wired or fought part cannot grind indefinitely under held drive. The release is scheduled from **arrival**, not from when the command was issued, because the motion model runs in firmware and knows arrival exactly; any new command to that output cancels a release pending on it. A released output is limp, not moved — release says nothing about where the part ends up.
+_Avoid_: sleep-when-idle, sleep (that names a droid-wide mode), detach, park, torque off
 
 **Output Address**:
 Where a **Servo Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means.
@@ -771,6 +775,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - "AP mode" was used for both first-boot onboarding and ongoing hotspot operation; resolved by using **WiFi Provisioning** for onboarding and **Standalone AP Mode** for the ongoing operator-selected posture.
 - "Fresh public release" blurred download source with controller state; resolved by using **Unprovisioned Controller** for the no-settings state.
 - "Switch WiFi from the setup page" is resolved as a **Staged Network Switch**, not a fragile live toggle.
+- "sleep" named two unrelated things: **Sleep Mode**, the droid-wide Commanded Mode an operator chooses (`robotState.sleepMode`, set through `commandedSetSleep()`, synced to the dome so both halves agree), and the per-output de-energize #286 drafted as "sleep-when-idle". Resolved by naming the second an **Output Release** and never calling it sleep — one is a posture the whole droid is in, the other is a hardware fact about a single servo. The two do meet in one place: `src/tasks/servo_task.cpp:272-278` takes the same park path for sleep as for estop, so both end in a release (#300, 2026-09-07).
 - "capability" names two things: a panel verb in the **Dome Layout View Model** (`P1 + open`) and a board topology fact in a **Board Capability Gate**; resolved by qualifying every use — "panel capability" in dome-layout text, **Board Capability Gate** for the compile-time tier.
 - "capability envelope" was drafted for the framework facilities compiled out of the artoo image; that would have been a third meaning of "capability", so it is a **Framework Envelope** — the silicon keeps the capability, the image simply does not carry the framework code for it.
 - "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified. A fourth tier joined them (#302, 2026-09-07): a **Component Member** names which member of a **Component Family** is fitted, wherever the board's gate offers more than one. The four answer four different questions — can this board be wired for it, is it in this image, is it fitted, and which one is it — and none of them is a "feature flag".
