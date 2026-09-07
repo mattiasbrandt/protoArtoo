@@ -359,6 +359,22 @@ _Avoid_: firmware parses layout geometry, runtime gated on layout cache, layout 
 The browser-editor rule that the connected dome layout gates new authoring but never invalidates existing saved content. New picker authoring requires `in_layout && commandable && mapped && active && !disabled`; otherwise the element is visible-but-not-actionable, or hidden when `in_layout:false`. Existing saved steps always load, edit, and save, carrying non-blocking advisory warnings by severity tier: `inactive` (advisory, not currently commandable), `disabled` (maintenance, operator-suppressed), `in_layout:false` (layout mismatch), `unmapped` (coordinator cannot author new steps). Protocol Check never gains an availability dependency.
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
+**Servo Output**:
+One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address** plus its calibration (open/centre/close), motion (speed, acceleration, easing, sleep-when-idle), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
+_Avoid_: channel (says which bus, not which servo), servo slot, arm
+
+**Output Address**:
+Where a **Servo Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means.
+_Avoid_: pin, slot, channel number on its own
+
+**Endpoint Pair**:
+A **Servo Output**'s `open` and `close` pulse widths, which are **directional**: a reversed linkage is simply `open > close`. There is no invert flag anywhere and no consumer may add one; every consumer takes the min and max of the pair. `centre` is the third position and is not derived from the other two.
+_Avoid_: invert flag, reverse flag, min/max endpoints
+
+**Part**:
+What actually moves on the droid — a utility arm, a charge bay door, a dome pie — identified by its key in `docs/droid-parts.yaml`. Sequences and RC bindings reference the Part; a **Servo Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in.
+_Avoid_: channel, actuator, output (an output drives a Part, it is not one)
+
 **Panel Group**:
 A body-owned coarse authoring concept (All, Pie, Ring) that resolves to group Panel Intent Commands (`:OP00`/`:OP14`/`:OP15` and their `:CL`/`:OF` forms) and drives the `piesOpen`/`ringOpen` latches from ADR 0008. Groups are not Dome Layout elements; the picker derives visible group membership from each element's `panel_kind`. Group availability stays coarse: controls are offered whenever the panel picker is available, are never blocked by inactive or disabled members, and show an advisory only when zero members are currently available.
 _Avoid_: group as a layout element, per-group safety gating, dome-owned groups
@@ -713,6 +729,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 > **Domain expert:** "No — loading, live updates, and saving/applying user actions are different proofs."
 
 ## Flagged Ambiguities
+- "channel" names at least four unrelated things: an **LEDC channel** (the ESP32 PWM peripheral slot), an **RC channel** (an SBUS input), a PCA9685 board channel, and informally the servo itself. Resolved by naming the servo a **Servo Output**, its wiring an **Output Address**, and qualifying every other use ("LEDC channel", "RC channel") -- never a bare "channel" for a thing that moves (#286, 2026-09-07).
 - "bench" was read as *"USB plus whatever test gear you can attach"* — a spare receiver, a signal generator, a loopback, a breakout, a bench servo/ESC, a scope or logic analyser were all listed as in scope. That is not feasible or practical on this project's bench, where a board is powered by the computer's USB cable and nothing else is connected. Resolved by defining **Bench-Mode** as USB-only with nothing attached. Connecting a jumper or probe is possible but is an exceptional measure the operator calls in a dire situation — never a routine capability, and never something a ticket may plan around — so a pin-level electrical check is scoped as droid-gate work by definition rather than by argument. The wrong reading had propagated from this glossary into six tickets and repeatedly produced bench tickets that quietly required hardware nobody could attach.
 - "recommended" named two unrelated things: the **WiFi Client Mode** posture and whether the project tells a builder to buy a board; resolved by keeping **recommended** for the WiFi mode and naming the second one a **Builder Recommendation**. The #184 pass-tier vocabulary ("FULL PASS" / "DEVELOPER-ONLY PASS") is retired — it read as a test verdict on the board when it is a documentation decision about purchase advice.
 - "measured chain" named two numbers that had drifted 720 B apart (2026-09-06, #271): the depth a fresh walk reports and the `*_MEASURED_CHAIN_BYTES` constant it is compared against. Resolved as **Measured Chain** (walked, of one image at one commit) and **Recorded Chain** (written down, what the stack is floored against). The tool already drew the line - `tools/check_task_stack_chains.py` says "the freshly walked chain must be <= the constant" - but called the second one three things, and this file called both the first. The drift itself was ADR 0040 line 25 coming true: "nothing notices the chain growing past it."
