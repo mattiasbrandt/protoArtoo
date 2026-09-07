@@ -50,6 +50,10 @@ knowledge get this on first read?** If not, rewrite it before shipping.
 
 - One name per concept, everywhere: UI, docs, API descriptions, and release
   notes agree. Renames are a real change, not a copy tweak.
+- This file carries the *rules*, not the word list. Operator terms and any
+  collision between two meanings of a word are written in `CONTEXT.md`
+  (Language, and the Flagged Ambiguities ledger) - whichever audience the
+  word started in. Do not start a second glossary here.
 - Part names follow `docs/droid-parts.yaml`: design part names as the base,
   community shorthand (PP/P/HP) as aliases shown alongside.
 - State chips are verb-free state labels readable at arm's length

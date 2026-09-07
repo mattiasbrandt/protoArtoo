@@ -221,6 +221,30 @@ _Avoid_: promising every overload attempt completes, retaining abandoned refresh
 The single shared loading and recovery behavior used by every controller page. Each page declares its required resources and sections, while the bootstrap provides the same Page Recovery View, ordering, retry, and visibility rules without requesting a required resource more than once. Validated state model, page rollout order, Operation Deadline categories, generalization gates, and stop/rollback rules are locked in `docs/page-load-recovery-architecture.md` and ADR 0019.
 _Avoid_: page-specific loader copy, external-only recovery dependency, duplicated stylesheet request, different recovery behavior between pages
 
+**Dashboard**:
+The landing page at `/`: live health, status chips and the traffic-light grid. Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288).
+_Avoid_: Home, landing page, status page
+
+**Configuration**:
+The operator surface for declaring what the droid is made of - fitted Hardware Components and their component types, LED Strip routing, Droid Identity. Split out of the former Setup page so that declaring hardware and inspecting the controller are separate destinations (#288).
+_Avoid_: Setup, Settings, Hardware page
+
+**Maintenance**:
+The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page.
+_Avoid_: Setup, System, Diagnostics page, Tools
+
+**Setup**:
+Reserved for guided first-run configuration and nothing else. No page carries the name today; it is held free so that if guided setup ships it does not collide with a surface the operator returns to. WiFi Provisioning remains the separate first-boot networking term.
+_Avoid_: naming a configuration or maintenance page Setup, using Setup for ongoing configuration
+
+**Foot Drive**:
+The wheeled drive subsystem - the feet, their controller and their speed presets - named in full on every operator surface rather than a bare "Drive". Adopted before the collision arrives: once a body servo controller and the Dome ESC are both drive controllers, an unqualified "Drive" names three things (#288). The `drive` domain label, the Drive State Zone and `drive`-prefixed identifiers are unchanged.
+_Avoid_: Drive alone in operator copy, feet drive, foot motors, wheel drive
+
+**Component Picker**:
+The per-category chooser listing the components supported today as selectable and the components on the roadmap as greyed and unselectable. One builder with two homes - the Configuration page and, if it ships, guided Setup - so the two cannot show different lineups.
+_Avoid_: a wizard-only lineup, a config-only lineup, two pickers
+
 **Browser Load Profile**:
 The expected controller web workload: primarily one visible Firefox tab, with a second ordinary tab supported; development may add a parallel Playwright Chromium session and briefly reach three tabs. Mobile Safari is a focused WiFi recovery check while the controller is serving its own AP, not the general browser-test baseline.
 _Avoid_: treating mobile Safari as the common client, testing only Chromium, requiring operators to keep exactly one tab, unbounded browser concurrency
@@ -753,3 +777,8 @@ _Avoid_: web control, network authentication, console unlock, blanket gate
 - "verdict" named two different levels at once: a **Soak Driver**'s own result and the whole run's. Resolved by making the **Run Verdict** speak the drivers' words (`PASS`/`FAIL`/`INVALID`) rather than a second vocabulary. The #184 go/no-go wording ("NO IMMEDIATE BLOCKER", "NO-GO", "INVALID / UNKNOWN") is retired for the same reason its pass-tier wording was: it names a gate that closes with one epic, on an instrument meant to outlive it. The collapse of an unavailable driver to `INVALID` is kept — that is the rule, not the wording (ADR 0035).
 - "the soak script needs re-running because the vocabulary changed" was wrong and is recorded so it is not repeated: **a rename cannot invalidate a measurement.** Driver verdicts are where judgement lives and they were already neutral. What forces a re-run is a change to what the harness *judges* — the reconnect storm's stall classification — never what it *calls* the answer.
 - "radio module" was proposed as the operator noun for the **WiFi Module** and rejected: "radio" already means the RC gear to a droid builder, and in this codebase it already means a radio-button input (`data/wifi.html:77,84`, `data/rc.js:797,934`) - on the two pages the control would sit nearest. The residual risk of **WiFi module** is accepted knowingly: the same chip can serve Bluetooth (`hostedInitBLE()`), so if protoArtoo ever uses it for BLE the name needs revisiting, and a rename is a real change rather than a copy tweak.
+- "Setup" named two unrelated surfaces: the page an operator returns to in order to change what is fitted, and the guided first run they do once. Resolved by splitting `data/setup.html` into **Configuration** (what the droid is made of) and **Maintenance** (inspecting and repairing it), and reserving **Setup** for guided first run only. The collision was live before a line of wizard code existed - that one page already held eight cards spanning both jobs (#288, 2026-09-07).
+- "Drive" is on course to name three things - the feet, a body servo controller and the Dome ESC - once the component families of the operator-experience standing direction land. Resolved early by renaming the wheeled subsystem **Foot Drive** across operator copy and the nav, while the `drive` domain label, the Drive State Zone and `drive`-prefixed identifiers keep their names. Adopted deliberately without a live collision, so the rename lands while the surface is still small; this is the opposite call to "radio module" above, and the difference is that the collision here is scheduled rather than hypothetical (#288, 2026-09-07).
+- one page carried three names at once - `data-page="home"`, the nav label "Home" and the browser title "Dashboard" - with "RC" / "RC Control" doing the same on a second, and `data/shell.js` flipping title word order between `{name} - X` and `X - {name}`. Resolved by making the nav label, the page title and the docs agree on one word per page, **Dashboard** for the landing page; `data-page` keys stay identifiers and are not operator vocabulary (#288, 2026-09-07).
+- "availability" was about to name two different axes at once: what is true of **this controller** (the seven states `data/setup.js` resolves from the identity manifest) and what is true of **the project** (a component on the roadmap that nobody can have yet). Resolved by keeping roadmap cards out of the availability state machine entirely - they are greyed and unselectable, carry no state token, and never reach `reasonFor()`. `resolve()` therefore never gains a state it has no manifest to produce. The residual is that a greyed card still owes the operator an honest sentence under maker-voice rule 7, which is #298's to write (#288, 2026-09-07).
+- three glossaries already existed - this file (Language, Flagged Ambiguities), `docs/terminology.md` (project acronyms) and the Naming section of `docs/ui-copy-voice.md` - and none of them claimed operator-facing words, so a fourth was nearly started. Resolved by making **CONTEXT.md the single ledger** for terms and collisions whichever audience they start in; the other two carry rules and acronyms and point here (#288, 2026-09-07).
