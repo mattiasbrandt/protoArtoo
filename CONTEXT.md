@@ -388,7 +388,7 @@ One physical servo the body drives, held as an addressed row rather than a named
 _Avoid_: channel (says which bus, not which servo), servo slot, arm
 
 **Output Release**:
-The bounded hold after a **Servo Output** reaches its target, after which its drive is cut so the servo stops holding position. It exists so a jammed, mis-wired or fought part cannot grind indefinitely under held drive. The release is scheduled from **arrival**, not from when the command was issued, because the motion model runs in firmware and knows arrival exactly; any new command to that output cancels a release pending on it. A released output is limp, not moved — release says nothing about where the part ends up.
+The bounded hold after a **Servo Output** reaches its target, after which its drive is cut so the servo stops holding position. It exists so a jammed, mis-wired or fought part cannot grind indefinitely under held drive. In normal operation the release is scheduled from **arrival**, not from when the command was issued, because the motion model runs in firmware and knows arrival exactly; any new command to that output cancels a release pending on it. **Estop and Sleep Mode release every output at once and command no position**: driving many outputs together is the documented brownout path (the 2026-06-17/-18 fix; `src/tasks/sequence_catalog.cpp:205-212`), and a browned-out board drops the parts anyway and clears the toggle latches as it goes. A released output is limp, not moved — release says nothing about where the part ends up.
 _Avoid_: sleep-when-idle, sleep (that names a droid-wide mode), detach, park, torque off
 
 **Output Address**:
