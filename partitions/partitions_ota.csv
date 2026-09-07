@@ -3,7 +3,10 @@
 # Redesigned for arduino-esp32 v3.x (IDF 5.x) which produces ~15% larger
 # binaries than v2.x due to expanded network stack and USB support.
 #
-# App partitions: 1.625MB (0x1A0000) each (~25% headroom over the ~1.58MB build).
+# App partitions: 1.625MB (0x1A0000) each. Builds land 1.49-1.57MB depending on
+# framework pool state, so headroom is 57-141KB (3.5-9%), not the ~25% this line
+# claimed before 2026-09-07. Anything that adds code to the image -- a second
+# driver in a Component Family, say -- is measured against that, not assumed.
 # LittleFS reduced from 704KB to 640KB to carve a 64KB coredump partition. Web UI
 # assets are gzipped at build (tools/gzip_fsdata.py) to ~151KB, so 640KB is ample.
 # Total: exactly 4MB.
