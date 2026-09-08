@@ -242,8 +242,17 @@ The wheeled drive subsystem - the feet, their controller and their speed presets
 _Avoid_: Drive alone in operator copy, feet drive, foot motors, wheel drive
 
 **Component Picker**:
-The per-category chooser listing the components supported today as selectable and the components on the roadmap as greyed and unselectable. One builder with two homes - the Configuration page and guided Setup - so the two cannot show different lineups, and so a card behaves identically in both. Its cards carry three kinds of entry: a supported product, a roadmap product, and *not fitted* - which is a selectable card rather than a checkbox, because declining a category is an answer like any other and clears that category's Component Toggle (#297). The product image is the card's main selection highlight, the thing an operator matches against the hardware in their hand; a card still missing its photo is a cosmetic gap and must never read as a part the board cannot take.
-_Avoid_: a wizard-only lineup, a config-only lineup, two pickers, a separate checkbox for declining a category, a missing photo styled like an unavailable part
+The per-category chooser listing the components supported today as selectable and the components on the roadmap as visible but unselectable. One builder with two homes - the Configuration page and guided Setup - so the two cannot show different lineups, and so a card behaves identically in both. Its cards carry **four** kinds of entry (#297, #298):
+
+| Card | Selectable | Says |
+|---|---|---|
+| supported product | yes | fitted, and driven today |
+| roadmap product | **no** | planned, not built |
+| *not fitted* | yes | nothing in this category |
+| *something else* | yes | something is fitted that is not on the lineup - recorded, explicitly not driven |
+
+*not fitted* and *something else* are **different answers** and both are cards rather than checkboxes, because declining a category and owning unlisted hardware are each an answer like any other; only the first clears that category's Component Toggle. A roadmap card is **not a control at all** - static content, not a disabled button - which is what keeps it out of the availability state machine #288 excluded it from and makes "greyed but still clickable" impossible. There is no "stands in" card: saying an unlisted part will probably work through a protocol we support is a *might*, and #303 gave "might" no home. The product image is the card's main selection highlight, the thing an operator matches against the hardware in their hand; a card still missing its photo is a cosmetic gap and must never read as a part the board cannot take.
+_Avoid_: a wizard-only lineup, a config-only lineup, two pickers, a separate checkbox for declining a category, a missing photo styled like an unavailable part, collapsing *not fitted* and *something else*, a roadmap card rendered as a disabled control, a stands-in or probably-works badge
 
 **Browser Load Profile**:
 The expected controller web workload: primarily one visible Firefox tab, with a second ordinary tab supported; development may add a parallel Playwright Chromium session and briefly reach three tabs. Mobile Safari is a focused WiFi recovery check while the controller is serving its own AP, not the general browser-test baseline.
@@ -512,8 +521,8 @@ The single declaration of every **Component Family** and its members: what the p
 _Avoid_: action registry (that one declares Operations), parts catalog (that one declares Parts — what moves on the droid, not what drives it), codegen (the check reports mismatches, it never rewrites a file)
 
 **Body Controller**:
-The board that hosts protoArtoo and coordinates every other part in the body — drive, servos, sound, and the link to the dome. Always qualified, because a droid carries several controllers and "controller" alone does not say which. Which board fills the role is a **Board Variant**.
-_Avoid_: controller (unqualified, wherever another kind of controller can be on screen), main controller, brain
+The board that hosts protoArtoo and coordinates every other part in the body — drive, servos, sound, and the link to the dome. Always qualified, because a droid carries several controllers and "controller" alone does not say which — **unconditionally, not only where a second kind is on screen**, so the word never depends on what else the page happens to show (#298). This is also the operator noun for the device itself, which is what "reboot", "busy" and "no response" copy is about. "Board" stays available and unqualified for the same hardware, since **Board Variant**, **Board Capability Gate** and **Board Lane** already tie it here; a *different* board on screen is the thing that must be qualified, as the hoverboard's is.
+_Avoid_: controller (unqualified, anywhere in operator copy), main controller, brain, board for another controller's hardware
 
 **Radio Controller**:
 The RC gear a builder drives the droid with, and the lineup category naming which one reaches the **Body Controller**. "Radio" is the word a droid builder already brings — the same reason the Flagged Ambiguities entry below rejected "radio module" for the **WiFi Module**.
@@ -529,7 +538,8 @@ _Avoid_: dome drive, dome motor controller (one word from Dome Controller, a dif
 
 **Feature Availability**:
 The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on; a present feature without one is simply included — it has no on or off, and not every feature visibly inhabits all four states. Operators see "not in this build" as *Not included*, because a builder reads "build" as the droid. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
-_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature, on/off for a feature without a Component Toggle, "build" in operator-facing copy
+A settled negative - not on this board, not in this build - and an unresolved one - still checking, identity unavailable - are different claims and must not be presented alike: the first is a fact about this controller, the second an admission that we cannot say yet (#298).
+_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature, on/off for a feature without a Component Toggle, "build" in operator-facing copy, one visual treatment shared by a settled negative and a transient unknown
 
 **Framework Envelope**:
 The set of framework (ESP-IDF / Arduino core) facilities a build environment compiles out at the `platformio.ini` boundary — declared per environment, every switch revert-ready in place. It is invisible to Feature Availability and reported nowhere: not a Board Capability Gate (the silicon may well have the facility), not a Build Feature Flag (no `PA_*` flag, nothing the project built in or out), and not a Component Toggle (the operator cannot change it). What an operator can notice from it belongs in the operator docs in plain language.
