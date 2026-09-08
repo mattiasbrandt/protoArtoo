@@ -26,7 +26,10 @@ Single-context repo:
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
 
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/grill-with-docs`).
+If the concept you need isn't in the glossary yet, that's a signal — and which signal depends on what you are doing.
+
+- **Describing something that exists**, and the glossary has no word for it: you are probably drifting to a synonym. Reconsider, and use the term the glossary already defines.
+- **Planning something that does not exist yet**: needing a new word is the normal case, not a warning. Minting one is the work — `Gesture`, `Output Release`, `Rehearsal`, `Board Lane` and `Component Family` all began exactly here. Propose the term, and record it in `CONTEXT.md` when the decision that needs it lands. See AGENTS.md "Planning Mode" and `/grill-with-research`.
 
 ## Flag ADR conflicts
 
