@@ -378,8 +378,12 @@ A **Rehearsal** finding that says the sequence will not do what its author wrote
 _Avoid_: error, lint error, validation failure, blocker
 
 **Rehearsal Note**:
-A **Rehearsal** finding worth knowing that does not change what the sequence will do. The lower of the two levels a finding carries, and there is no third one however certain a finding is -- "error" belongs to **Protocol Check** alone.
+A **Rehearsal** finding worth knowing that does not change what the sequence will do. The lower of the two levels a finding carries, and there is no third one however certain a finding is -- "error" belongs to **Protocol Check** alone. The test between the levels is what the author *wrote*, not what they probably meant: a sequence that lights a part and never turns it off performs exactly as written, so it is a Note. Promoting a rule because authors usually mean otherwise turns the level from a definition into a judgement per rule (#287).
 _Avoid_: info, hint, suggestion, nitpick
+
+**Rehearsal Gap**:
+A statement about the **Rehearsal**'s own reach rather than about the sequence: a rule that could have applied to a step and could not be evaluated. Distinct from a finding, and governed by a different rule -- a finding says something is wrong and owes the author a fix, a gap owes them the truth, so "a finding with no fix is a complaint" does not reach it. A gap still says what *would* close it. Something simply inapplicable is not a gap and stays silent: a light has no travel time, so not timing one is not a gap (#287).
+_Avoid_: unchecked warning, skipped rule (a rule that did not apply was not skipped), coverage
 
 **Dome Layout View Model**:
 The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the vendored MK4 model as offline fallback. It is a reasoning and rendering surface, not a saved-sequence storage format.
