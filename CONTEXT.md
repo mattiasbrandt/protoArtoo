@@ -386,7 +386,7 @@ A statement about the **Rehearsal**'s own reach rather than about the sequence: 
 _Avoid_: unchecked warning, skipped rule (a rule that did not apply was not skipped), coverage
 
 **Dome Layout View Model**:
-The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the vendored MK4 model as offline fallback. It is a reasoning and rendering surface, not a saved-sequence storage format.
+The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the stated **Dome Design**'s complement as offline fallback (#333; a hardcoded vendored MK4 until a builder could say what dome they built). It is a reasoning and rendering surface, not a saved-sequence storage format.
 _Avoid_: panel model storage, structured step format, persisted canonical IDs
 
 **Saved-Sequence Storage**:
@@ -398,7 +398,7 @@ The body-owned translation between the Dome Layout View Model (canonical element
 _Avoid_: dome owns command mapping, raw command strings in the layout contract
 
 **Panel Command Target**:
-The body-owned value (ring numeric such as `01`, or pie alias such as `P1`) held in the static `PANEL_COMMAND_TARGETS` map keyed by canonical panel ID and panel kind. Combined with a capability prefix (`:OP`/`:CL`/`:OF`) it forms a Panel Intent Command. The map is bounded to the MK4 commandable set; a layout element marked commandable but absent from the map is shown as unmapped, non-actionable, with a diagnostic, and never authored.
+The body-owned value (ring numeric such as `01`, or pie alias such as `P1`) held in the static `PANEL_COMMAND_TARGETS` map keyed by canonical panel ID and panel kind. Combined with a capability prefix (`:OP`/`:CL`/`:OF`) it forms a Panel Intent Command. The map is bounded to the **Droid Parts Catalog**'s commandable set across every design, so a **Dome Design** can never change what saves (#333; it was bounded to MK4 alone until a design could be stated); a layout element marked commandable but absent from the map is shown as unmapped, non-actionable, with a diagnostic, and never authored.
 _Avoid_: deriving command targets from aliases, guessing unmapped commands
 
 **Element Alias**:
@@ -446,6 +446,30 @@ _Avoid_: a runtime-editable parts file, a firmware table hand-maintained beside 
 What the droid is made of, part by part — a utility arm, a charge bay door, a dome pie, a PSI, the Magic Panel — identified by its key in the **Droid Parts Catalog** and carrying a **Part Kind**. A light is a Part exactly as a panel is, and a device that both moves and lights is several Parts, one per thing an **Output** drives — a holoprojector is a pan Part, a tilt Part and a light Part (#320). Sequences and RC bindings reference the Part; an **Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in. A Part being *known* and a Part being *driveable here* are separate facts: naming one no output records is legal to author and reports `part-not-assigned` when run, so the droid's own wiring - not the catalog - decides what moves (#301).
 _Avoid_: channel, actuator, output (an output drives a Part, it is not one), treating an unclaimed Part as an authoring error
 
+**Droid Build**:
+Everything protoArtoo knows about which droid it is bolted into: a **Dome Design** and a **Body Design**, each with a **Design Variant**, together with the **Fitted Parts** they seeded and any **Common Addition** the builder added. It is what a builder means by "my build". A Droid Build **seeds and never fences** — it decides what a builder is offered and what the mapping views draw, and it never decides what they may author, assign or run. Stored on the device like any other operator answer, so a second browser or a cleared cache meets the same droid; no firmware logic branches on it (ADR 0047, #333).
+_Avoid_: model, droid model, treating a Droid Build as a constraint
+
+**Dome Design**:
+The published droid design the builder's dome was built from — MrBaddeley MK4, MK3, or none at all — chosen from cards where a design we carry is selectable, one we intend to carry is an inert roadmap card (#298), and **my own build** is always selectable and seeds nothing. It seeds the dome half of the **Fitted Parts**, decides which complement the dome map draws, and replaces the hardcoded vendored MK4 at tier 3 of the **Layout Fallback Hierarchy**. It is the builder's statement, not the dome's: when a connected dome reports a layout that disagrees, the difference is surfaced for the builder to resolve and is never silently overwritten (#333).
+_Avoid_: dome model, treating a reported layout as authority over the stated design
+
+**Body Design**:
+The published droid design the builder's body was built from, answered separately from the **Dome Design** because a real droid is a mixture — an MK4 complex dome on an MK4 simple body is the ordinary case, not an edge case. It seeds the body half of the **Fitted Parts** and decides what the body views draw. Unlike the dome half it has no second authority: nothing reports a body complement back, so the builder's answer stands alone (#333).
+_Avoid_: droid design as a single value, body model
+
+**Design Variant**:
+The second field beside a **Dome Design** or **Body Design** — *simple* or *complex* on the designs that publish both. Each design declares its own variant set, which may be empty, so the control appears, repopulates and disappears with the design chosen rather than offering one fixed axis everywhere. A variant is not cosmetic: it decides which complement is drawn, and a simple dome cannot grow the complex pies without being replaced, so drawing the maximal complement at a simple-dome builder would promise parts they can never fit (#333).
+_Avoid_: complexity as a droid-wide switch, a variant set assumed common to every design
+
+**Fitted Parts**:
+The **Part**s actually on this builder's droid — the truth a **Droid Build** holds, as against the **Dome Design** and **Body Design** that merely seeded them. A builder adds a Part their design does not carry and drops one they never fitted, and nothing downstream is gated on the result: a Part outside the set is still authorable, still saveable, and still reports `part-not-assigned` at run if no **Output** claims it (#301). Surfaces draw the chosen design's whole complement and mark what is not fitted in its own treatment, distinct from the dimming that means nothing drives it yet; clicking an unfitted Part adds it. "Fitted" is deliberately the same verb as the Component Picker's *not fitted* card (#297) — both mean physically on this droid. There is no third *planned* state: a builder choreographing for the arm they print this weekend fits it early (#333).
+_Avoid_: part set as a whitelist, a planned or on-order state, treating an unfitted Part as an authoring error
+
+**Common Addition**:
+A **Part** in the **Droid Parts Catalog** that belongs to no design and is offered to every droid — the gripper arm, the claw, the interface arm and tool, the things builders bolt on. Never seeded by a **Dome Design** or **Body Design**; once fitted it draws and behaves exactly as a design part does, carrying its own bearing, position word, name and lane. It is not the `other1`..`other10` escape hatch: that exists for a part we have no word for, while a Common Addition is one we do. Four already live in the catalog with `cad_name: null` and no home — `gripArm`, `gripClaw`, `interArm`, `interTool` (#333).
+_Avoid_: off-model part, other slot, unmodelled part, seeding a Common Addition with a design
+
 **Panel Group**:
 A body-owned coarse authoring concept (All, Pie, Ring) that resolves to group Panel Intent Commands (`:OP00`/`:OP14`/`:OP15` and their `:CL`/`:OF` forms) and drives the `piesOpen`/`ringOpen` latches from ADR 0008. Groups are not Dome Layout elements; the picker derives visible group membership from each element's `panel_kind`. Group availability stays coarse: controls are offered whenever the panel picker is available, are never blocked by inactive or disabled members, and show an advisory only when zero members are currently available. A Panel Group is not the set a **Gesture** spreads across, and the difference is a safety one rather than a shade of meaning: a Panel Group resolves to the one command that drives every member at once, which is the group close the 2026-06-17/-18 brownout fix forbade the body to auto-emit, while a Gesture over the same members is paced.
 _Avoid_: group as a layout element, per-group safety gating, dome-owned groups, treating a Gesture's set as a Panel Group
@@ -459,7 +483,7 @@ One authored move spread across several **Part**s - a wave round the ring, both 
 _Avoid_: macro, group command, brick, a fixed list of panels, defining the vocabulary from the dome's current commands
 
 **Layout Fallback Hierarchy**:
-The browser's ordered choice of which Dome Layout to render, separating geometry freshness from runtime-state freshness. (1) Live: body proxy returns `200` with a supported `schema_revision` -> use geometry and runtime availability. (2) Cached live: live fetch fails (`503`, timeout, invalid JSON) but `localStorage` holds a prior live layout with a supported schema -> reuse the cached geometry but mark runtime availability stale/unverified. (3) Vendored MK4 fallback: no usable cache -> render the offline MK4 model with runtime availability unverified. (4) Unsupported schema -> vendored fallback plus a visible warning; never partially trust geometry or state from an unsupported schema, including anything cached from one. Geometry may be cached or stale; runtime availability is trusted only when freshly live.
+The browser's ordered choice of which Dome Layout to render, separating geometry freshness from runtime-state freshness. (1) Live: body proxy returns `200` with a supported `schema_revision` -> use geometry and runtime availability. (2) Cached live: live fetch fails (`503`, timeout, invalid JSON) but `localStorage` holds a prior live layout with a supported schema -> reuse the cached geometry but mark runtime availability stale/unverified. (3) Stated-design fallback: no usable cache -> render the complement of the stated **Dome Design** with runtime availability unverified (#333). (4) Unsupported schema -> the stated-design fallback plus a visible warning; never partially trust geometry or state from an unsupported schema, including anything cached from one. Geometry may be cached or stale; runtime availability is trusted only when freshly live.
 _Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
 
 **Apply Core**:
