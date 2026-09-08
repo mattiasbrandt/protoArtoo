@@ -11,11 +11,16 @@ If any rule conflicts, follow [AGENTS.md](../AGENTS.md) unless the user explicit
 
 ## Required Canonical Sources
 
-1. [AGENTS.md](../AGENTS.md) (authoritative policy)
-2. [docs/goal.md](../docs/goal.md) and [docs/status.md](../docs/status.md) (public planning baseline)
-3. [tasks/rc_diagnostics_contract.md](../tasks/rc_diagnostics_contract.md) when working RC diagnostics/mapping
-4. [include/config.h](../include/config.h) and [docs/pin_map.md](../docs/pin_map.md) for hardware truth
-5. [docs/action-registry.yaml](../docs/action-registry.yaml) — canonical action/event registry; naming convention and audio/sound boundary
+1. [AGENTS.md](../AGENTS.md) (authoritative policy) — including "Planning Mode"
+   for any decision about something not built yet
+2. `tasks/research-r2d2-*` (local, untracked) — the operator's design source for
+   what protoArtoo should become. Read it **before** the code when planning; it
+   outranks the code for what protoArtoo should do, and the code outranks it for
+   what protoArtoo does today
+3. [docs/goal.md](../docs/goal.md) and [docs/status.md](../docs/status.md) (public planning baseline)
+4. [tasks/rc_diagnostics_contract.md](../tasks/rc_diagnostics_contract.md) when working RC diagnostics/mapping
+5. [include/config.h](../include/config.h) and [docs/pin_map.md](../docs/pin_map.md) for hardware truth
+6. [docs/action-registry.yaml](../docs/action-registry.yaml) — canonical action/event registry; naming convention and audio/sound boundary
 
 ## Safety-Critical Rules (Must Always Hold)
 

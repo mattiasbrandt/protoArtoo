@@ -21,8 +21,15 @@ epic issue. Material an agent needs only on some paths lives under
   These two carry no agent/tool/model wording ("agent", "LLM", "model",
   "Copilot", "Claude").
 - Project language decisions: `CONTEXT.md`; architecture decisions: `docs/adr/`
-- Internal planning/agent working docs (local only, never commit/push): `tasks/**`
-  — including the RC diagnostics/mapping contract `tasks/rc_diagnostics_contract.md`
+- Operator intent and design source (local only, never commit/push):
+  `tasks/research-r2d2-*` — the operator's own curated statement of what
+  protoArtoo should become, carrying dated operator decisions, a source-verified
+  findings pass, a ranked recommendation list and 23 reference screenshots.
+  **For what protoArtoo should do it outranks the code; for what protoArtoo does
+  today the code outranks it.** See "Planning Mode".
+- Other internal planning/agent working docs (local only, never commit/push):
+  `tasks/**` — including the RC diagnostics/mapping contract
+  `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
@@ -78,7 +85,64 @@ a defect alarm: it means you are about to cut something that was asked for. Do
 the full thing instead.
 
 This does not license scope creep. Do the whole of what the ticket asks, and
-nothing beyond it — depth within scope, never width past it.
+nothing beyond it — depth within scope, never width past it. For what that
+sentence does **not** bound, see "Planning Mode" directly below.
+
+## Planning Mode (Non-Negotiable)
+
+Binding on any session working a `wayfinder:*` ticket, an epic body, or a design
+decision about something not built yet. Operator decision, 2026-09-08, after an
+audit of #175 found eight of eleven open tickets framed by the current
+implementation, and traced it to a stale vendored grilling skill that routed
+every design question into a code lookup.
+
+The rest of this file assumes the thing exists. These rules cover the case where
+it does not, and they **overrule** any general-purpose planning skill that says
+otherwise.
+
+**The code prices a decision. It never bounds one.** Read the implementation to
+learn what a choice costs, what it breaks and where it would land. Never read it
+to decide what protoArtoo *should* do. "It does not work that way today" is a
+price tag, never an argument: a question about what the product should do is not
+a question of fact, and the codebase can only report what somebody already built.
+
+**Order of authority for what protoArtoo should become:**
+
+1. A dated operator decision — an issue comment, an ADR, this file.
+2. `tasks/research-r2d2-*`, the operator's design source. Read it before the
+   code, in full, screenshots included.
+3. `CONTEXT.md` and `docs/adr/` — the model as it stands. These record decisions
+   already taken; they do not fence off decisions not yet taken.
+4. The implementation.
+
+Reverse that order for what protoArtoo **does today**: the code wins, and the
+research is a snapshot of another project taken in August 2026. Where the
+research and a later operator decision disagree, the operator decision wins.
+
+**Naming what does not exist is the work, not a guess.** The Effort Policy's
+no-guessing rule governs facts about what exists: never invent a pin number, a
+wire format or a field name in shipped code. It does not reach proposals. In a
+planning ticket, naming a component, a term or a capability protoArtoo does not
+have yet is the deliverable. Mark it a proposal; never mark it `UNKNOWN`, and
+never suppress it because you could not cite a file for it.
+
+**Capability first.** Every planning question opens with what a builder cannot do
+today and should be able to, and closes with the current implementation as a note
+on cost. A ticket whose first section inventories existing code is written wrong.
+A ticket whose specifics are all "A or B" about a surface that already exists is
+a polish ticket wearing a planning ticket's clothes.
+
+**Scope.** "Depth within scope, never width past it" bounds a *build* ticket
+against its own acceptance criteria. It does not bound a wayfinder map: a map's
+scope is its stated **Destination**, and widening that Destination is the
+operator's call, made explicitly on the map. Never cite the Effort Policy to
+refuse a widening the operator has asked for.
+
+**Use `grill-with-research`** — this repo's planning grill — for every
+`wayfinder:grilling` ticket. It composes the maintained `grilling` and
+`domain-modeling` skills and carries the rules above. The general-purpose
+`grill-with-docs` is not used here: its entire challenge surface is the existing
+model, which is the failure this section exists to stop.
 
 ## Small Finds Ride Along
 

@@ -17,9 +17,11 @@ duplicates them:
   Open design decisions in the input mean you are too early: stop and
   recommend the operator run it first. Decision tickets are resolved before
   an execution epic exists.
-- `grill-with-docs` (upstream) - the plan is concrete but has not been
-  stress-tested against the domain model and ADRs. Recommend it before
-  slicing when decisions look settled but undocumented.
+- `grill-with-research` (this repo) - the plan is concrete but has not been
+  stress-tested. Recommend it before slicing when decisions look settled but
+  undocumented. It composes the maintained `grilling` and `domain-modeling`
+  skills and carries AGENTS.md "Planning Mode", so the plan is measured against
+  the operator's research as well as the domain model.
 - `to-tickets` - does the slicing: tracer-bullet tickets, each with native
   blocking edges, published to the tracker. Use it for the breakdown instead
   of slicing ad hoc; it is user-invoked, so ask the operator to run it (or
