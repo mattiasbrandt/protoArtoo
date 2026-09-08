@@ -342,8 +342,16 @@ A high-level dome panel command (`:OP`, `:CL`, or `:OF`) that addresses a logica
 _Avoid_: raw servo pulse command, `:SM` sequence authoring
 
 **Suppression Window**:
-The interval during an active sequence in which the body holds its own idle-random behavior (random dome rotation and random audio) without changing those subsystems' configured modes. Replaces the dome's former seqon/seqoff signalling.
+The interval during an active sequence in which the body holds its own **Resting Behaviour** (random dome movement and idle chatter) without changing those subsystems' configured modes. Replaces the dome's former seqon/seqoff signalling.
 _Avoid_: random disable, seqon/seqoff
+
+**Resting Behaviour**:
+What the droid does when nobody is touching it - today its random dome movement and its idle chatter. It is governed by the **Mood** and by nothing else: **it never changes on its own**, so what the droid will do next is always answerable, which is what a builder standing beside a half-fitted linkage needs and what an operator predicting their own droid at an event needs. It is held during a sequence by the **Suppression Window**, stopped outright by **Estop** and **Sleep Mode**, and yields on the tick a manual command arrives rather than fighting it - the failure the reference documented upstream, where a dome automation write was silently overwritten every loop. Its dome half is **off by default**, so a fresh controller stands still and silent: a starting posture, not a defect (#329).
+_Avoid_: idle mode, autonomous behaviour, ambient as a separate subsystem, a behaviour that winds itself up or gets sleepy on its own
+
+**Mood**:
+How alive the droid is when nobody is touching it, and the one thing that governs its **Resting Behaviour**. There are four, and they are the words a builder arriving from Marcduino already types: `:SE10` **Quiet**, `:SE11` **Full-Awake**, `:SE13` **Mid-Awake**, `:SE14` **Awake+**. One act reaches both halves of the droid - the body sets its own resting cadence, and the same `:SE1x` goes to the dome, which runs its own visual under **Catalog Authority**. The three awake Moods differ on the body **by cadence**: how often something happens, scaled from settings already stored, rather than three names for one behaviour - which is what they were, all three mapping to `$R` (`include/mood.h:82-94`). It is a **Commanded Mode**, persisted and re-applied at boot. **Authoring a Mood is deliberately out of this map's scope** (operator, 2026-09-08): the four stand, and what a builder adjusts is what is already supported.
+_Avoid_: mood as a label on sound, a fifth mood, three names for one body behaviour, mood as a sequence
 
 **Sequence Preemption**:
 The rule that a new DM:* request cancels the active sequence (with minimal safety cleanup) and starts the new one immediately. Estop always aborts.
