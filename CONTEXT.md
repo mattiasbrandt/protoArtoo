@@ -384,7 +384,7 @@ The browser-editor rule that the connected dome layout gates new authoring but n
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
 **Servo Output**:
-One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address** plus its calibration (open/centre/close), motion (speed, acceleration, easing, **Output Release**), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
+One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address**, the **Part** this output drives, plus its calibration (open/centre/close), motion (speed, acceleration, easing, **Output Release**), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
 _Avoid_: channel (says which bus, not which servo), servo slot, arm
 
 **Output Release**:
@@ -399,9 +399,13 @@ _Avoid_: pin, slot, channel number on its own
 A **Servo Output**'s `open` and `close` pulse widths, which are **directional**: a reversed linkage is simply `open > close`. There is no invert flag anywhere and no consumer may add one; every consumer takes the min and max of the pair. `centre` is the third position and is not derived from the other two.
 _Avoid_: invert flag, reverse flag, min/max endpoints
 
+**Droid Parts Catalog**:
+`docs/droid-parts.yaml` - the one declaration of every **Part** on the droid design, and the source both the firmware and the browser are generated from rather than a document either reads at runtime. Its `control` column decides how far each entry travels: a Part the body drives reaches firmware as a compiled id the **Protocol Check** vocabulary gate accepts, while a dome-link or undriven Part reaches the browser only, since the dome owns execution of panel intent under **Catalog Authority** and its targets are already whitelisted. Entries are build-time; `other1`..`other10` are the escape hatch so an off-model part wired to a spare output is never unnameable (#301).
+_Avoid_: a runtime-editable parts file, a firmware table hand-maintained beside the YAML, two catalogs for one droid
+
 **Part**:
-What actually moves on the droid — a utility arm, a charge bay door, a dome pie — identified by its key in `docs/droid-parts.yaml`. Sequences and RC bindings reference the Part; a **Servo Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in.
-_Avoid_: channel, actuator, output (an output drives a Part, it is not one)
+What actually moves on the droid — a utility arm, a charge bay door, a dome pie — identified by its key in the **Droid Parts Catalog**. Sequences and RC bindings reference the Part; a **Servo Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in. A Part being *known* and a Part being *driveable here* are separate facts: naming one no output records is legal to author and reports `part-not-assigned` when run, so the droid's own wiring - not the catalog - decides what moves (#301).
+_Avoid_: channel, actuator, output (an output drives a Part, it is not one), treating an unclaimed Part as an authoring error
 
 **Panel Group**:
 A body-owned coarse authoring concept (All, Pie, Ring) that resolves to group Panel Intent Commands (`:OP00`/`:OP14`/`:OP15` and their `:CL`/`:OF` forms) and drives the `piesOpen`/`ringOpen` latches from ADR 0008. Groups are not Dome Layout elements; the picker derives visible group membership from each element's `panel_kind`. Group availability stays coarse: controls are offered whenever the panel picker is available, are never blocked by inactive or disabled members, and show an advisory only when zero members are currently available.
@@ -650,8 +654,8 @@ The provenance of a command that entered through a Console Adapter - serial cons
 _Avoid_: session, user, client
 
 **Availability Reason**:
-The stable token a Known-but-unavailable Operation reports - `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable` - re-evaluated at execution, never only at discovery.
-_Avoid_: error code, `not_included`, hidden operation
+The stable token a Known-but-unavailable Operation - or a **Part** a sequence step names - reports: `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable`, and `part-not-assigned` (a known Part that no **Servo Output** records on this droid). Always re-evaluated at execution, never only at discovery - which is what lets a step authored before its arm was wired start working once an output claims that Part, with no re-authoring (#301).
+_Avoid_: error code, `not_included`, hidden operation, reporting an unwired Part as `component-disabled` (that names a deliberate choice, not missing wiring)
 
 **Known-but-unavailable**:
 An Operation that stays listed, completable and describable while its Availability Reason says it cannot run now, so operators discover what exists instead of guessing what is missing.
