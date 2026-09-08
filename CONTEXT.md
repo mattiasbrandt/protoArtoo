@@ -122,7 +122,7 @@ The web UI expectation that opening or refreshing a page does not make the contr
 _Avoid_: endless Loading state, activity indicator with no meaningful status, refresh makes it worse, power-cycle recovery, telling the operator to limit normal tab use
 
 **Page Recovery View**:
-The minimum operator-visible state available as soon as the first page response arrives. It remains useful while the rest of the page is loading: it identifies the current loading or retry step, retries failed work with increasing pauses, and provides a Retry now action without depending on the remaining page resources having loaded successfully.
+The minimum operator-visible state available as soon as the first page response arrives. It remains useful while the rest of the page is loading: it identifies the current loading or retry step, retries failed work with increasing pauses, and provides a Retry now action without depending on the remaining page resources having loaded successfully. Under the **Operator Shell** it renders inside the content region rather than over the whole screen, so a surface that cannot load never costs the operator the status chips or the **Latching Estop** control behind it (#325).
 _Avoid_: blank page, spinner-only state, recovery controls that require the failed resource, retrying by refreshing the whole page
 
 **Bounded Page Attempt**:
@@ -218,8 +218,16 @@ The expectation that a normal browser refresh completes or visibly recovers, whi
 _Avoid_: promising every overload attempt completes, retaining abandoned refreshes, crash or reboot under refresh pressure, requiring a power cycle after the pressure ends
 
 **Common Page Bootstrap**:
-The single shared loading and recovery behavior used by every controller page. Each page declares its required resources and sections, while the bootstrap provides the same Page Recovery View, ordering, retry, and visibility rules without requesting a required resource more than once. Validated state model, page rollout order, Operation Deadline categories, generalization gates, and stop/rollback rules are locked in `docs/page-load-recovery-architecture.md` and ADR 0019.
+The single shared loading and recovery behavior used by every controller page. Each page declares its required resources and sections, while the bootstrap provides the same Page Recovery View, ordering, retry, and visibility rules without requesting a required resource more than once. Validated state model, page rollout order, Operation Deadline categories, generalization gates, and stop/rollback rules are locked in `docs/page-load-recovery-architecture.md` and ADR 0019. Under the **Operator Shell** a page becomes a content module that mounts into the shell: its declaration of resources and sections is unchanged, and leaving it unmounts it and stops any polling it owned while the configuration it already fetched is kept, so returning paints without a refetch and the device pays nothing for a screen nobody is reading (#325).
 _Avoid_: page-specific loader copy, external-only recovery dependency, duplicated stylesheet request, different recovery behavior between pages
+
+**Operator Shell**:
+The persistent frame every operator surface is shown inside. It owns the nav, the identity, the status chips, the **Live Page Updates** stream and the **Latching Estop** control, and it survives every navigation; content swaps beneath it as a page mounts and unmounts. So changing what you are looking at never drops the stream and never blanks the droid's state — which mattered enough to decide because the estop lived on two surfaces of twelve, and an operator on the Sequences page had to navigate before they could stop the droid. Addresses are hash routes (`/#sequences`), so a surface stays linkable with no change to how the device serves files. It is a frame, not a view: it carries what the droid is *doing*, never a picture of it (ADR 0048, #325).
+_Avoid_: workspace (that names a pane composition this project is not building), app shell as a layout claim, a live droid view in the frame, a shell that reloads with its content
+
+**Activity Group**:
+How the nav is ordered — by the job a builder is doing rather than by firmware subsystem: **Drive**, **Perform**, **Configure**, **Maintain**. A surface may appear in more than one group, because Sound and Dome are reached for both when driving and when authoring; a group is a way to find something, never a claim to own it. **Dashboard** sits outside the groups as the landing, since it answers *what is my droid doing* rather than *what am I doing*, and guided **Setup** sits outside as a takeover rather than a destination (#325).
+_Avoid_: one home per surface, workspace, a group that owns its members, grouping by subsystem
 
 **Dashboard**:
 The landing page at `/`: live health, status chips and the traffic-light grid. Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288).
