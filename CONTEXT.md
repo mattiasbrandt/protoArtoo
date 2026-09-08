@@ -222,7 +222,7 @@ The single shared loading and recovery behavior used by every controller page. E
 _Avoid_: page-specific loader copy, external-only recovery dependency, duplicated stylesheet request, different recovery behavior between pages
 
 **Operator Shell**:
-The persistent frame every operator surface is shown inside. It owns the nav, the identity, the status chips, the **Live Page Updates** stream and the **Latching Estop** control, and it survives every navigation; content swaps beneath it as a page mounts and unmounts. So changing what you are looking at never drops the stream and never blanks the droid's state — which mattered enough to decide because the estop lived on two surfaces of twelve, and an operator on the Sequences page had to navigate before they could stop the droid. Addresses are hash routes (`/#sequences`), so a surface stays linkable with no change to how the device serves files. It is a frame, not a view: it carries what the droid is *doing*, never a picture of it (ADR 0048, #325).
+The persistent frame every operator surface is shown inside. It owns the nav, the identity, the status chips, the **Live Page Updates** stream and the **Latching Estop** control, and it survives every navigation; content swaps beneath it as a page mounts and unmounts. So changing what you are looking at never drops the stream and never blanks the droid's state — which mattered enough to decide because the estop lived on two surfaces of twelve, and an operator on the Sequences page had to navigate before they could stop the droid. Addresses are hash routes (`/#sequences`), so a surface stays linkable with no change to how the device serves files. It is a frame, not a view: it carries what the droid is *doing*, never a picture of it (ADR 0048, #325). The estop keeps a generous target at every resolution - a floor on that one control rather than a constraint on any layout (#327).
 _Avoid_: workspace (that names a pane composition this project is not building), app shell as a layout claim, a live droid view in the frame, a shell that reloads with its content
 
 **Activity Group**:
@@ -230,7 +230,7 @@ How the nav is ordered — by the job a builder is doing rather than by firmware
 _Avoid_: one home per surface, workspace, a group that owns its members, grouping by subsystem
 
 **Dashboard**:
-The landing page at `/`: live health, status chips and the traffic-light grid. Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288).
+The landing page at `/`: live health, status chips and the traffic-light grid. Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288). The operator surface is designed for computer resolution and is not limited to tablet sizes; Dashboard is the one surface that may be optimised for tablet reach, because it is the one an operator holds while the droid stands on a stand (#327).
 _Avoid_: Home, landing page, status page
 
 **Configuration**:
@@ -734,8 +734,16 @@ The provenance of a command that entered through a Console Adapter - serial cons
 _Avoid_: session, user, client
 
 **Availability Reason**:
-The stable token a Known-but-unavailable Operation - or a **Part** a sequence step names - reports: `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable`, and `part-not-assigned` (a known Part that no **Servo Output** records on this droid). Always re-evaluated at execution, never only at discovery - which is what lets a step authored before its arm was wired start working once an output claims that Part, with no re-authoring (#301).
+The stable token a Known-but-unavailable Operation - or a **Part** a sequence step names - reports: `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable`, and `part-not-assigned` (a known Part that no **Servo Output** records on this droid). Always re-evaluated at execution, never only at discovery - which is what lets a step authored before its arm was wired start working once an output claims that Part, with no re-authoring (#301). Each reason belongs to an **Availability Family**, which is what the operator surface actually renders (#327).
 _Avoid_: error code, `not_included`, hidden operation, reporting an unwired Part as `component-disabled` (that names a deliberate choice, not missing wiring)
+
+**Availability Family**:
+The four groups every way protoArtoo says no falls into, named by **what the builder does next** rather than by what is true inside the controller: **change it here** (`off`, a **Part** not among the **Fitted Parts**, a Part no **Output** claims), **change it elsewhere** (`not-in-this-build`, so reflash; `not-on-this-board`, so different hardware), **still finding out** (`checking`, and the retryable half of `identity-unavailable`), and **settled no** (a roadmap card, and the terminal half of `identity-unavailable`). Eight distinct ways of being unusable had accumulated across #286, #298, #301 and #333 and were competing for one grey; four families is what a builder can learn, and each one answers *so what do I do*. The last two stay apart deliberately — collapsing a settled negative into a transient unknown is the defect #298 had to undo. A family is told apart by treatment, never by hue (#327).
+_Avoid_: one look for everything unavailable, a treatment per state, grouping by what is true in the firmware rather than by what the operator does next
+
+**Status Colour**:
+Colour carries exactly two meanings in the operator surface. **Amber**: *you can do something about this, and should* — an uncalibrated **Servo Output** before its first move, a **Rehearsal Warning**, a Part in a sequence that no **Output** claims. **Red**: *something is stopped or refused* — a latched estop, a save **Protocol Check** would not take. Nothing else colours for state: a thing the builder cannot change is never amber, and neither is a transient unknown, which is what stops one hue carrying four meanings the way it did before #298. The palette is **dark only** and declared once in `data/style.css`, so there is no second palette to drift against; a colour literal outside `:root` is a defect, which is what makes the rule true rather than aspirational (#327).
+_Avoid_: amber for "not normal", amber on a roadmap card, amber on `checking`, a light theme, a colour literal in a component
 
 **Known-but-unavailable**:
 An Operation that stays listed, completable and describable while its Availability Reason says it cannot run now, so operators discover what exists instead of guessing what is missing.
