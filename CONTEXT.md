@@ -409,16 +409,25 @@ _Avoid_: firmware parses layout geometry, runtime gated on layout cache, layout 
 The browser-editor rule that the connected dome layout gates new authoring but never invalidates existing saved content. New picker authoring requires `in_layout && commandable && mapped && active && !disabled`; otherwise the element is visible-but-not-actionable, or hidden when `in_layout:false`. Existing saved steps always load, edit, and save, carrying non-blocking advisory warnings by severity tier: `inactive` (advisory, not currently commandable), `disabled` (maintenance, operator-suppressed), `in_layout:false` (layout mismatch), `unmapped` (coordinator cannot author new steps). Protocol Check never gains an availability dependency.
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
+**Part Kind**:
+What a **Part** usually is — servo-driven, a light or display, an indicator. Successor to the catalog's `lit:` annotation, and **advisory in principle, never a constraint**: it colours a surface and lets one query a surprising mapping, and it never refuses one, because plenty of builds move something the reference drawing shows as a display (#320).
+_Avoid_: part type, part class, component type (that one names what is fitted to an **Output**, not what the Part is)
+
+**Output**:
+An addressed row that drives exactly one **Part**: an **Output Address**, the Part it drives, and a **kind** saying what is on the end of the lead. Rows are mixed by design — a servo, an RGB strip and an indicator chain sit in one table — because an Output Address is where a lead plugs in, whatever it plugs into. Kind decides which columns a row carries at all, so a light row is not a servo row with five meaningless fields (#320).
+_Avoid_: channel, slot, Servo Output (that names one kind of Output)
+
 **Servo Output**:
-One physical servo the body drives, held as an addressed row rather than a named field: an **Output Address**, the **Part** this output drives, plus its calibration (open/centre/close), motion (speed, acceleration, easing, **Output Release**), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
-_Avoid_: channel (says which bus, not which servo), servo slot, arm
+An **Output** whose kind is servo: one physical servo the body drives, carrying — beyond every Output's address, Part and kind — its calibration (open/centre/close), motion (speed, acceleration, easing, **Output Release**), boot behaviour, component type, and a `calibrated` bit. Outputs are addressed rather than named so a body servo controller can add rows instead of forcing a rewrite; the model is deliberately not bounded by the current boards' pin budget (#286).
+_Avoid_: channel (says which bus, not which servo), servo slot, arm, Servo Output for a row that drives something other than a servo
+_Note_: narrowed 2026-09-08 from naming every row in the table, when a row gained the ability to drive a light (#320). The wider term is **Output**.
 
 **Output Release**:
 The bounded hold after a **Servo Output** reaches its target, after which its drive is cut so the servo stops holding position. It exists so a jammed, mis-wired or fought part cannot grind indefinitely under held drive. In normal operation the release is scheduled from **arrival**, not from when the command was issued, because the motion model runs in firmware and knows arrival exactly; any new command to that output cancels a release pending on it. **Estop and Sleep Mode release every output at once and command no position**: driving many outputs together is the documented brownout path (the 2026-06-17/-18 fix; `src/tasks/sequence_catalog.cpp:205-212`), and a browned-out board drops the parts anyway and clears the toggle latches as it goes. A released output is limp, not moved — release says nothing about where the part ends up.
 _Avoid_: sleep-when-idle, sleep (that names a droid-wide mode), detach, park, torque off
 
 **Output Address**:
-Where a **Servo Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means.
+Where an **Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means.
 _Avoid_: pin, slot, channel number on its own
 
 **Endpoint Pair**:
@@ -430,7 +439,7 @@ _Avoid_: invert flag, reverse flag, min/max endpoints
 _Avoid_: a runtime-editable parts file, a firmware table hand-maintained beside the YAML, two catalogs for one droid
 
 **Part**:
-What actually moves on the droid — a utility arm, a charge bay door, a dome pie — identified by its key in the **Droid Parts Catalog**. Sequences and RC bindings reference the Part; a **Servo Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in. A Part being *known* and a Part being *driveable here* are separate facts: naming one no output records is legal to author and reports `part-not-assigned` when run, so the droid's own wiring - not the catalog - decides what moves (#301).
+What the droid is made of, part by part — a utility arm, a charge bay door, a dome pie, a PSI, the Magic Panel — identified by its key in the **Droid Parts Catalog** and carrying a **Part Kind**. A light is a Part exactly as a panel is, and a device that both moves and lights is several Parts, one per thing an **Output** drives — a holoprojector is a pan Part, a tilt Part and a light Part (#320). Sequences and RC bindings reference the Part; an **Output** records which Part it drives. Part names are identity; the **Output Address** is where the lead plugs in. A Part being *known* and a Part being *driveable here* are separate facts: naming one no output records is legal to author and reports `part-not-assigned` when run, so the droid's own wiring - not the catalog - decides what moves (#301).
 _Avoid_: channel, actuator, output (an output drives a Part, it is not one), treating an unclaimed Part as an authoring error
 
 **Panel Group**:
