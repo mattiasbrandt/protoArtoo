@@ -16,4 +16,4 @@ PyYAML>=6.0.3
 # than two that can disagree about what a run looked like. It owns terminal
 # detection, NO_COLOR and TERM=dumb; the harness does not reimplement any of
 # that. Provided by pacman as python-rich on this project's machine.
-rich>=13.0
+rich>=15.0.0
