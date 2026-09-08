@@ -230,20 +230,20 @@ The operator surface for declaring what the droid is made of - fitted Hardware C
 _Avoid_: Setup, Settings, Hardware page
 
 **Maintenance**:
-The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page.
+The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page. It also carries the single deliberate way back into guided Setup once that run has ended (#297).
 _Avoid_: Setup, System, Diagnostics page, Tools
 
 **Setup**:
-Reserved for guided first-run configuration and nothing else. No page carries the name today; it is held free so that if guided setup ships it does not collide with a surface the operator returns to. WiFi Provisioning remains the separate first-boot networking term.
-_Avoid_: naming a configuration or maintenance page Setup, using Setup for ongoing configuration
+The guided first-run wizard, and nothing else. It continues the flow WiFi Provisioning already starts - a fresh controller is unprovisioned and every component toggle is off, so the operator is walked from a connected controller to a declared droid in one numbered pass, every step skippable. Reaching the last step ends the run for good and Setup leaves the nav; Configuration is the surface an operator returns to for every later change. Maintenance carries the single deliberate way back in, for a builder who skipped it or rebuilt the droid wholesale (#297). WiFi Provisioning remains the separate first-boot networking term for the networking step itself.
+_Avoid_: naming a configuration or maintenance page Setup, using Setup for ongoing configuration, a Setup entry that persists in the nav, treating Skip as unfinished
 
 **Foot Drive**:
 The wheeled drive subsystem - the feet, their controller and their speed presets - named in full on every operator surface rather than a bare "Drive". Adopted before the collision arrives: once a body servo controller and the Dome ESC are both drive controllers, an unqualified "Drive" names three things (#288). The `drive` domain label, the Drive State Zone and `drive`-prefixed identifiers are unchanged.
 _Avoid_: Drive alone in operator copy, feet drive, foot motors, wheel drive
 
 **Component Picker**:
-The per-category chooser listing the components supported today as selectable and the components on the roadmap as greyed and unselectable. One builder with two homes - the Configuration page and, if it ships, guided Setup - so the two cannot show different lineups.
-_Avoid_: a wizard-only lineup, a config-only lineup, two pickers
+The per-category chooser listing the components supported today as selectable and the components on the roadmap as greyed and unselectable. One builder with two homes - the Configuration page and guided Setup - so the two cannot show different lineups, and so a card behaves identically in both. Its cards carry three kinds of entry: a supported product, a roadmap product, and *not fitted* - which is a selectable card rather than a checkbox, because declining a category is an answer like any other and clears that category's Component Toggle (#297). The product image is the card's main selection highlight, the thing an operator matches against the hardware in their hand; a card still missing its photo is a cosmetic gap and must never read as a part the board cannot take.
+_Avoid_: a wizard-only lineup, a config-only lineup, two pickers, a separate checkbox for declining a category, a missing photo styled like an unavailable part
 
 **Browser Load Profile**:
 The expected controller web workload: primarily one visible Firefox tab, with a second ordinary tab supported; development may add a parallel Playwright Chromium session and briefly reach three tabs. Mobile Safari is a focused WiFi recovery check while the controller is serving its own AP, not the general browser-test baseline.
