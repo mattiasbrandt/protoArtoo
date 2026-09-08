@@ -366,8 +366,20 @@ The provenance of a Migrated Sequence -- source project, origin URL/commit, and 
 _Avoid_: runtime meta block, metadata, credits
 
 **Protocol Check**:
-The pure safety validator every Learned Sequence passes on save: name/command/structure bounds, retrain coherence, and conservative effect-class inference. Estop, suppression, and auto-reset remain engine-level invariants the format cannot express a bypass for.
-_Avoid_: linter, schema check, sanitizer
+The pure safety validator every Learned Sequence passes on save: name/command/structure bounds, retrain coherence, and conservative effect-class inference. Estop, suppression, and auto-reset remain engine-level invariants the format cannot express a bypass for. It rules on **form** and never on intent -- what the droid will actually do is the **Rehearsal**'s subject, and only Protocol Check can refuse a save (#287).
+_Avoid_: linter, schema check, sanitizer, rehearsal (that one advises and cannot refuse)
+
+**Rehearsal**:
+The advisory pass over a Learned Sequence at the moment it is committed, which reads the sequence and says what will not happen as its author wrote it. It can never refuse a save, which is what keeps "which one said no" from ever being a question: **Protocol Check** is the only gate. Named for what a sequence is -- a performance -- rather than for the mechanism, and deliberately not a second "Check" (#287, ADR 0044).
+_Avoid_: linter, pre-flight check, sequence lint, validation pass, dry run (nothing is driven)
+
+**Rehearsal Warning**:
+A **Rehearsal** finding that says the sequence will not do what its author wrote. It still does not block, because certainty is not authority: the author can know what the droid cannot -- a linkage rebuilt since calibration, an output deliberately driven past its recorded ends.
+_Avoid_: error, lint error, validation failure, blocker
+
+**Rehearsal Note**:
+A **Rehearsal** finding worth knowing that does not change what the sequence will do. The lower of the two levels a finding carries, and there is no third one however certain a finding is -- "error" belongs to **Protocol Check** alone.
+_Avoid_: info, hint, suggestion, nitpick
 
 **Dome Layout View Model**:
 The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the vendored MK4 model as offline fallback. It is a reasoning and rendering surface, not a saved-sequence storage format.
