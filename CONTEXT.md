@@ -230,8 +230,13 @@ The operator surface for declaring what the droid is made of - fitted Hardware C
 _Avoid_: Setup, Settings, Hardware page
 
 **Maintenance**:
-The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page. It also carries the single deliberate way back into guided Setup once that run has ended (#297).
+The operator surface for inspecting and repairing a controller that is already configured - Serial Status, Diagnostics, Memory Profiler, Backup & Restore, reboot. The other half of the former Setup page. It also carries the single deliberate way back into guided Setup once that run has ended (#297). Serial Status keeps only the **live** link readout; the lane, bus and baud it used to assert as fact belong to **Wiring** (#293).
 _Avoid_: Setup, System, Diagnostics page, Tools
+
+**Wiring**:
+The destination that answers the question no other screen can - *"I am holding a servo lead: which output does it go to, and which part will it move?"* - and the printable document it exports, which are the same document from one generator so the bench copy and the screen copy cannot disagree. It is a reference, not a control surface: it writes nothing. Its promise is bounded and stated on its face: **what this image will actually drive**, rendered from the **Board Lane**s the running firmware reports - never a claim about what a builder's PCB looks like, since for artoo-esp32 the authoritative pin source is a traced physical board that no generator can read. It draws **control signals only**; the shared rail is described, never drawn (#293).
+_Avoid_: a hand-drawn diagram, a static image anywhere in the pipeline, drawing power distribution, a fallback board that is not in the droid, claiming to describe the operator's PCB
+
 
 **Setup**:
 The guided first-run wizard, and nothing else. It continues the flow WiFi Provisioning already starts - a fresh controller is unprovisioned and every component toggle is off, so the operator is walked from a connected controller to a declared droid in one numbered pass, every step skippable. Reaching the last step ends the run for good and Setup leaves the nav; Configuration is the surface an operator returns to for every later change. Maintenance carries the single deliberate way back in, for a builder who skipped it or rebuilt the droid wholesale (#297). WiFi Provisioning remains the separate first-boot networking term for the networking step itself.
