@@ -584,6 +584,17 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   the phase-era `T<NN>` token was dropped from commit scopes, and why per-slice tracking belongs
   in the issue checklist comment. Write what the code does and why it is that way, then cite the
   issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
+- **Borrowed code carries its origin's notice; borrowed ideas carry a README credit.**
+  protoArtoo credits what it learned from
+  [r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator)
+  in `README.md`. Crediting a pattern is our choice — no licence condition attaches to an
+  idea. The condition fires on **code**: a file holding Mike Eddington's source, copied or
+  closely derived, must carry his copyright **and** permission notice in its header, because
+  his MIT licence requires the notice to travel with the code and a README line does not
+  discharge it. Reimplementing a documented behaviour from scratch does not trigger it;
+  restating his function to dodge the notice does — ADR 0058 took the port and the notice
+  deliberately, since writing it out fresh "would produce the same function under a different
+  label". The first such file to land also earns an entry in `LICENSE`'s scope section.
 
 ### Branch model
 
