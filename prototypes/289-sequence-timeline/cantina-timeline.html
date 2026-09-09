@@ -1,0 +1,583 @@
+<title>Cantina on a Timeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #0d1114;
+    --panel: #141a1e;
+    --panel-2: #192126;
+    --rule: #232d33;
+    --rule-soft: #1b2429;
+    --ink: #d7e0e4;
+    --ink-2: #9dabb2;
+    --dim: #77878f;
+    --teal: #4fd1c5;
+    --teal-deep: #1f6f68;
+    --amber: #e8a33d;
+    --red: #d9534a;
+    --lane-h: 26px;
+    --rail: 172px;
+    --ui: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1440px; margin: 0 auto; padding: 22px 22px 48px; }
+
+  /* ---------- header ---------- */
+  header { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: flex-end; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
+  .id-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .eyebrow { font-size: 11px; letter-spacing: .13em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  h1 { margin: 0; font-size: 25px; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+  h1 .seq { font-family: var(--mono); font-weight: 500; color: var(--teal); font-size: 22px; }
+  .readouts { display: flex; gap: 22px; flex-wrap: wrap; }
+  .ro { display: flex; flex-direction: column; gap: 1px; }
+  .ro dt { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .ro dd { margin: 0; font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 500; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .seg button {
+    font-family: var(--ui); font-size: 12px; font-weight: 600; letter-spacing: .02em;
+    background: var(--panel); color: var(--ink-2); border: 0; padding: 6px 12px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--teal-deep); color: #eafffb; }
+  .seg button:focus-visible, .toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500;
+    color: var(--ink-2); background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 3px; padding: 6px 11px; cursor: pointer; font-family: var(--ui);
+  }
+  .toggle[aria-pressed="true"] { color: var(--ink); border-color: var(--teal-deep); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); }
+  .toggle[aria-pressed="true"] .dot { background: var(--teal); }
+  .hint { font-size: 12px; color: var(--dim); margin-left: auto; }
+  .hint kbd { font-family: var(--mono); font-size: 11px; background: var(--panel-2); border: 1px solid var(--rule); border-radius: 2px; padding: 1px 4px; }
+
+  /* ---------- stage ---------- */
+  .stage { display: grid; grid-template-columns: minmax(0,1fr) 268px; gap: 18px; align-items: start; }
+  @media (max-width: 1080px) { .stage { grid-template-columns: minmax(0,1fr); } }
+
+  .tl-frame { border: 1px solid var(--rule); background: var(--panel); border-radius: 3px; overflow: hidden; }
+  .tl-scroll { overflow-x: auto; overflow-y: hidden; }
+  .tl { position: relative; min-width: 900px; }
+
+  /* ruler */
+  .ruler { position: relative; height: 34px; border-bottom: 1px solid var(--rule); background: var(--panel-2); cursor: ew-resize; user-select: none; touch-action: none; }
+  .ruler .pad { position: absolute; inset: 0 0 0 var(--rail); }
+  .ruler-label { position: absolute; left: 0; top: 0; bottom: 0; width: var(--rail); display: flex; align-items: center; padding-left: 11px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 600; border-right: 1px solid var(--rule); background: var(--panel-2); z-index: 3; }
+  .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+  .tick.beat { background: var(--rule-soft); }
+  .tick.bar { background: #2e3a41; }
+  .tick-t { position: absolute; top: 4px; font-family: var(--mono); font-size: 10px; color: var(--dim); transform: translateX(3px); font-variant-numeric: tabular-nums; }
+
+  /* lanes */
+  .lane { position: relative; height: var(--lane-h); border-bottom: 1px solid var(--rule-soft); display: flex; }
+  .lane.group-start { border-top: 1px solid var(--rule); }
+  .lane-name {
+    width: var(--rail); flex: 0 0 var(--rail); padding: 0 10px; display: flex; align-items: center; gap: 6px;
+    border-right: 1px solid var(--rule); background: var(--panel); position: sticky; left: 0; z-index: 2;
+    font-size: 12px; white-space: nowrap; overflow: hidden;
+  }
+  .lane-name .sh { font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 500; flex: 0 0 auto; }
+  .lane-name .nm { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .lane-track { position: relative; flex: 1 1 auto; }
+  .lane.undriven .lane-name .sh, .lane.undriven .lane-name .nm { color: var(--dim); font-style: italic; }
+  .lane.idle .lane-name .nm { color: var(--dim); }
+
+  .grp { display: flex; align-items: center; gap: 8px; padding: 7px 11px 5px; background: var(--ground); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule-soft); position: sticky; left: 0; }
+  .grp h2 { margin: 0; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; }
+  .grp .count { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+  /* blocks */
+  .blk { position: absolute; top: 3px; bottom: 3px; border-radius: 2px; overflow: hidden; cursor: default; }
+  .blk-open  { background: rgba(79,209,197,.20); border: 1px solid rgba(79,209,197,.55); }
+  .blk-audio { background: rgba(157,171,178,.14); border: 1px solid rgba(157,171,178,.42); }
+  .blk-vis   { background: rgba(157,171,178,.10); border: 1px solid rgba(157,171,178,.30); border-style: dashed; }
+  .blk-loop  { background: rgba(79,209,197,.09); border: 1px solid rgba(79,209,197,.40); }
+  .blk-ghost { background: rgba(79,209,197,.07); border: 1px dashed rgba(79,209,197,.28); }
+  .blk-term  { background: rgba(217,83,74,.16); border: 1px solid rgba(217,83,74,.5); }
+  .blk span { position: absolute; left: 5px; top: 50%; transform: translateY(-50%); font-family: var(--mono); font-size: 10px; color: var(--ink); white-space: nowrap; pointer-events: none; }
+  .blk-vis span, .blk-audio span { color: var(--ink-2); }
+
+  .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--teal); pointer-events: none; z-index: 4; box-shadow: 0 0 6px rgba(79,209,197,.7); }
+  .playhead::before { content: ""; position: absolute; top: 0; left: -5px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--teal); }
+
+  /* ---------- dome ---------- */
+  .side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 14px; }
+  .card { border: 1px solid var(--rule); background: var(--panel); border-radius: 3px; padding: 13px 14px 15px; }
+  .card h3 { margin: 0 0 3px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; }
+  .card p.sub { margin: 0 0 11px; font-size: 11.5px; color: var(--dim); line-height: 1.45; }
+  .dome-svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 11px; font-size: 11px; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  .readback { margin-top: 11px; border-top: 1px solid var(--rule-soft); padding-top: 9px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); line-height: 1.7; }
+  .readback b { color: var(--ink); font-weight: 500; }
+
+  /* ---------- notes ---------- */
+  .notes { margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+  .note { border-left: 2px solid var(--rule); padding: 2px 0 2px 14px; }
+  .note.ask { border-left-color: var(--teal); }
+  .note h3 { margin: 0 0 5px; font-size: 12px; font-weight: 700; letter-spacing: .02em; color: var(--ink); }
+  .note p { margin: 0 0 7px; font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .note p:last-child { margin-bottom: 0; }
+  .note code, .prose code { font-family: var(--mono); font-size: 11.5px; color: var(--teal); }
+  .note strong { color: var(--ink); font-weight: 600; }
+
+  .prose { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--rule); max-width: 68ch; }
+  .prose p { font-size: 12.5px; color: var(--dim); line-height: 1.6; margin: 0 0 9px; }
+  .prose strong { color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="id-block">
+      <div class="eyebrow">protoArtoo · #289 prototype · representation only</div>
+      <h1><span class="seq">DM:CANTINA</span> as a timeline</h1>
+    </div>
+    <dl class="readouts">
+      <div class="ro"><dt>Playhead</dt><dd id="ro-t">0.000 s</dd></div>
+      <div class="ro"><dt>Beat</dt><dd id="ro-beat">—</dd></div>
+      <div class="ro"><dt>Tempo</dt><dd>130.0 BPM</dd></div>
+      <div class="ro"><dt>Window</dt><dd>17.000 s</dd></div>
+    </dl>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="How the loop is drawn">
+      <button id="loop-authored" aria-pressed="true">Loop as authored</button>
+      <button id="loop-expanded" aria-pressed="false">Loop expanded</button>
+    </div>
+    <button class="toggle" id="tg-undriven" aria-pressed="true"><span class="dot"></span>Parts nothing drives</button>
+    <button class="toggle" id="tg-idle" aria-pressed="true"><span class="dot"></span>Parts this sequence never touches</button>
+    <div class="hint">Drag the ruler to scrub · <kbd>←</kbd> <kbd>→</kbd> step a beat · <kbd>Home</kbd> start</div>
+  </div>
+
+  <div class="stage">
+    <div class="tl-frame">
+      <div class="tl-scroll" id="scroller">
+        <div class="tl" id="tl">
+          <div class="ruler" id="ruler">
+            <div class="ruler-label">Time</div>
+            <div class="pad" id="ruler-pad"></div>
+          </div>
+          <div id="lanes"></div>
+          <div class="playhead" id="playhead" style="left:0"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="card">
+        <h3>Dome at the playhead</h3>
+        <p class="sub">Commanded intent, never device truth. Bearings are the real ones from <code>docs/droid-parts.yaml</code> — 0&deg; astern, 180&deg; ahead.</p>
+        <svg class="dome-svg" id="dome" viewBox="0 0 240 240" role="img" aria-label="Top-down dome showing which panels are open at the playhead"></svg>
+        <div class="legend">
+          <span><i style="background:rgba(79,209,197,.55)"></i>open</span>
+          <span><i style="background:#1b2429;border:1px solid #2e3a41"></i>closed</span>
+          <span><i style="background:#11171a;border:1px dashed #35424a"></i>nothing drives it</span>
+        </div>
+        <div class="readback" id="readback"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="notes">
+    <div class="note ask">
+      <h3>The question this exists to settle</h3>
+      <p>Flip <strong>Loop as authored</strong> to <strong>Loop expanded</strong>. The same fourteen seconds, drawn two ways.</p>
+      <p>Authored keeps the one object a builder made — a 4-beat bar, its period, its repeat count — and it is the only view where re-timing the routine is one edit. Expanded shows all 182 panel commands the droid actually receives, which is what a card list shows today.</p>
+      <p>ADR&nbsp;0046 says a sequence stores what the builder meant. If that holds, authored is the editing view and expanded is a read-only check.</p>
+    </div>
+    <div class="note">
+      <h3>A block is a span, not an event</h3>
+      <p>Every panel command in <code>DM:CANTINA</code> is instantaneous — <code>:OPP1</code> at one millisecond, <code>:CLP1</code> at another. The block between them is <em>derived</em>, by pairing open with close on the same Part.</p>
+      <p>That pairing is the whole argument for a timeline. A card list can show you 26 commands; only this can show you that <strong>PP1 is open for 923&nbsp;ms and PP2 is open for the other half of the bar.</strong></p>
+      <p>It also makes <code>:OF</code> flutter visibly different — it has no defined end, so it can never draw a span.</p>
+    </div>
+    <div class="note">
+      <h3>Three kinds of quiet lane</h3>
+      <p>Turn the two toggles off and on. A lane is dimmed for three unrelated reasons, and collapsing them would be the defect #298 spent a ticket undoing.</p>
+      <p><strong>Nothing drives it</strong> — P5, P6, P8, P9, P12, P14 and every holoprojector carry <code>control: none</code> in the catalog today. Still authorable; that is what makes choreograph-first possible.</p>
+      <p><strong>Driven, untouched here</strong> — P10 is on the dome link and this routine simply never uses it.</p>
+      <p><strong>Driven and used</strong> — the thirteen with blocks.</p>
+    </div>
+    <div class="note">
+      <h3>What it deliberately does not do</h3>
+      <p>Read-only. No dragging a block, no resizing, no inspector, no snapping. Specific&nbsp;1 said land read-only first, and this is that.</p>
+      <p>No Gesture appears here either — <code>DM:CANTINA</code> predates ADR&nbsp;0046 and is hand-written as 26 individual commands. A Gesture would be <em>one</em> block spanning these thirteen lanes, and that is the next thing worth drawing.</p>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p><strong>Where the data comes from.</strong> The steps are the real ones from <code>src/tasks/sequence_catalog.cpp:242</code> — <code>SEQ_LOOP(100, 26, 1846, 14000)</code> over a 26-step body at relative 0&nbsp;ms and 923&nbsp;ms. 1846&nbsp;ms is four beats at 130&nbsp;BPM and 923&nbsp;ms is two, which is where the beat grid comes from rather than a number anyone typed. Part names, shorthand, bearings and <code>control:</code> state are read from <code>docs/droid-parts.yaml</code>.</p>
+    <p><strong>Colour follows #327.</strong> Amber and red are reserved for <em>you can act on this</em> and <em>this is stopped or refused</em>, so neither appears on a block or a lane — teal here is structure and a cursor, never state. Dark only, one palette, no light theme.</p>
+    <p><strong>Not connected to a droid.</strong> Nothing on this page talks to a controller. The dome drawing is commanded intent inferred from the sequence, which is the same claim ADR&nbsp;0045 lets the model make — the dome does not report its panel positions back.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- catalog (docs/droid-parts.yaml) -------------------------------------
+  var PIES = [
+    { id:"pie1", sh:"PP1", nm:"Dome pie 1", brg:150, ctl:"dome-link" },
+    { id:"pie2", sh:"PP2", nm:"Dome pie 2", brg:90,  ctl:"dome-link" },
+    { id:"pie3", sh:"PP3", nm:"Dome pie 3", brg:30,  ctl:"dome-link" },
+    { id:"pie4", sh:"PP4", nm:"Dome pie 4", brg:330, ctl:"dome-link" },
+    { id:"pie5", sh:"PP5", nm:"Dome pie 5", brg:270, ctl:"dome-link" },
+    { id:"pie6", sh:"PP6", nm:"Dome pie 6", brg:210, ctl:"dome-link" }
+  ];
+  var PANELS = [
+    { id:"panel1", sh:"P1", nm:"Dome side panel 1", brg:142.5, ctl:"dome-link" },
+    { id:"panel2", sh:"P2", nm:"Dome side panel 2", brg:128,   ctl:"dome-link" },
+    { id:"panel3", sh:"P3", nm:"Dome side panel 3", brg:114,   ctl:"dome-link" },
+    { id:"panel4", sh:"P4", nm:"Dome side panel 4", brg:94,    ctl:"dome-link" },
+    { id:"panel5", sh:"P5", nm:"Magic Panel",       brg:75.5,  ctl:"none" },
+    { id:"panel6", sh:"P6", nm:"small upper panel", brg:62.5,  ctl:"none" },
+    { id:"panel7", sh:"P7", nm:"Dome side panel 7", brg:45,    ctl:"dome-link" },
+    { id:"panel8", sh:"P8", nm:"Rear PSI",          brg:24,    ctl:"none" },
+    { id:"panel9", sh:"P9", nm:"Rear Logic Display",brg:300,   ctl:"none" },
+    { id:"panel10",sh:"P10",nm:"Dome side panel 10",brg:242,   ctl:"dome-link" },
+    { id:"panel11",sh:"P11",nm:"Dome side panel 11",brg:217,   ctl:"dome-link" },
+    { id:"panel12",sh:"P12",nm:"Front Logic Displays",brg:204, ctl:"none" },
+    { id:"panel13",sh:"P13",nm:"Dome side panel 13",brg:194,   ctl:"dome-link" },
+    { id:"panel14",sh:"P14",nm:"Front PSI",         brg:184,   ctl:"none" }
+  ];
+  var HOLOS = [
+    { id:"hp1Pan", sh:"HP1-1", nm:"Holo 1 pan",  ctl:"none" },
+    { id:"hp1Tilt",sh:"HP1-2", nm:"Holo 1 tilt", ctl:"none" },
+    { id:"hp2Pan", sh:"HP2-1", nm:"Holo 2 pan",  ctl:"none" },
+    { id:"hp2Tilt",sh:"HP2-2", nm:"Holo 2 tilt", ctl:"none" },
+    { id:"hp3Pan", sh:"HP3-1", nm:"Holo 3 pan",  ctl:"none" },
+    { id:"hp3Tilt",sh:"HP3-2", nm:"Holo 3 tilt", ctl:"none" }
+  ];
+  var BODY = [
+    { id:"doorFL",   sh:"FL",  nm:"FLBreadpanDoor",  ctl:"none" },
+    { id:"doorFR",   sh:"FR",  nm:"FRBreadpandoor",  ctl:"none" },
+    { id:"doorRL",   sh:"RL",  nm:"RLBreadpanDoor",  ctl:"none" },
+    { id:"doorRR",   sh:"RR",  nm:"RRBreadpandoor",  ctl:"none" },
+    { id:"dataport", sh:"DP",  nm:"DataPortDoor",    ctl:"none" },
+    { id:"chargebay",sh:"CB",  nm:"ChargingBayDoor", ctl:"none" },
+    { id:"utilUp",   sh:"UA1", nm:"UpperUtilityArm", ctl:"body-ledc" },
+    { id:"utilLo",   sh:"UA2", nm:"LowerUtilityArm", ctl:"body-ledc" }
+  ];
+
+  // ---- the sequence (src/tasks/sequence_catalog.cpp:242) -------------------
+  var LOOP_T = 100, PERIOD = 1846, LOOP_MS = 14000, TERM_T = 15400, WINDOW = 17000;
+  var BEAT = PERIOD / 4;                 // 461.5 ms -> 130.0 BPM
+  var HALF = 923;                        // beat B, two beats in
+  var ITERS = Math.floor(LOOP_MS / PERIOD);   // 7 full bars
+
+  // beat A opens these, beat B closes them; beat B opens the complement
+  var GROUP_A = ["pie1","pie4","pie3","panel1","panel3","panel7","panel13"];
+  var GROUP_B = ["pie2","pie5","pie6","panel2","panel4","panel11"];
+
+  var CMD = {
+    pie1:"PP1", pie2:"PP2", pie3:"PP3", pie4:"PP4", pie5:"PP5", pie6:"PP6",
+    panel1:"01", panel2:"02", panel3:"03", panel4:"04", panel7:"07",
+    panel11:"11", panel13:"13"
+  };
+
+  function blocksFor(id) {
+    var inA = GROUP_A.indexOf(id) >= 0, inB = GROUP_B.indexOf(id) >= 0;
+    if (!inA && !inB) return [];
+    var out = [], i;
+    for (i = 0; i < ITERS; i++) {
+      var base = LOOP_T + i * PERIOD;
+      if (inA) out.push({ t0: base, t1: base + HALF, iter: i });
+      else     out.push({ t0: base + HALF, t1: base + PERIOD, iter: i });
+    }
+    return out;
+  }
+
+  // ---- lane model ---------------------------------------------------------
+  function lane(o) { return o; }
+  var GROUPS = [
+    { title: "Sequences", lanes: [ lane({ sh:"LOOP", nm:"4-beat bar × 7", kind:"loop", ctl:"driven" }) ] },
+    { title: "Sound",     lanes: [ lane({ sh:"$C", nm:"Cantina, bounded", kind:"audio", ctl:"driven" }) ] },
+    { title: "Dome visuals", lanes: [ lane({ sh:"DV", nm:"CANTINA preset", kind:"vis", ctl:"driven" }) ] },
+    { title: "Dome pies",   lanes: PIES.map(function (p) { return lane({ sh:p.sh, nm:p.nm, id:p.id, kind:"part", ctl:p.ctl }); }) },
+    { title: "Dome panels", lanes: PANELS.map(function (p) { return lane({ sh:p.sh, nm:p.nm, id:p.id, kind:"part", ctl:p.ctl }); }) },
+    { title: "Holoprojectors", lanes: HOLOS.map(function (p) { return lane({ sh:p.sh, nm:p.nm, id:p.id, kind:"part", ctl:p.ctl }); }) },
+    { title: "Body", lanes: BODY.map(function (p) { return lane({ sh:p.sh, nm:p.nm, id:p.id, kind:"part", ctl:p.ctl }); }) }
+  ];
+
+  // ---- state --------------------------------------------------------------
+  var state = { t: 0, expanded: false, showUndriven: true, showIdle: true };
+
+  var elLanes = document.getElementById("lanes");
+  var elRuler = document.getElementById("ruler");
+  var elPad   = document.getElementById("ruler-pad");
+  var elHead  = document.getElementById("playhead");
+  var elTl    = document.getElementById("tl");
+  var elDome  = document.getElementById("dome");
+  var elRead  = document.getElementById("readback");
+  var elRoT   = document.getElementById("ro-t");
+  var elRoB   = document.getElementById("ro-beat");
+
+  function trackWidth() {
+    var w = elTl.clientWidth - parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--rail"));
+    return Math.max(240, w);
+  }
+  function xOf(ms) { return (ms / WINDOW) * trackWidth(); }
+
+  // ---- ruler --------------------------------------------------------------
+  function drawRuler() {
+    elPad.innerHTML = "";
+    var i, x, d;
+    for (i = 0; ; i++) {
+      var t = LOOP_T + i * BEAT;
+      if (t > WINDOW) break;
+      x = xOf(t);
+      d = document.createElement("div");
+      d.className = "tick " + (i % 4 === 0 ? "bar" : "beat");
+      d.style.left = x + "px";
+      elPad.appendChild(d);
+    }
+    for (i = 0; i <= WINDOW; i += 1000) {
+      x = xOf(i);
+      d = document.createElement("div");
+      d.className = "tick";
+      d.style.left = x + "px";
+      elPad.appendChild(d);
+      var lab = document.createElement("div");
+      lab.className = "tick-t";
+      lab.style.left = x + "px";
+      lab.textContent = (i / 1000) + "s";
+      elPad.appendChild(lab);
+    }
+  }
+
+  // ---- lanes --------------------------------------------------------------
+  function blockEl(cls, t0, t1, label) {
+    var b = document.createElement("div");
+    b.className = "blk " + cls;
+    b.style.left = xOf(t0) + "px";
+    b.style.width = Math.max(2, xOf(t1) - xOf(t0)) + "px";
+    b.title = label + "  ·  " + (t0 / 1000).toFixed(3) + "s → " + (t1 / 1000).toFixed(3) + "s";
+    if (label && xOf(t1) - xOf(t0) > 46) {
+      var s = document.createElement("span");
+      s.textContent = label;
+      b.appendChild(s);
+    }
+    return b;
+  }
+
+  function drawLanes() {
+    elLanes.innerHTML = "";
+    GROUPS.forEach(function (g) {
+      var visible = g.lanes.filter(function (L) {
+        if (L.kind !== "part") return true;
+        var undriven = L.ctl === "none";
+        var idle = !undriven && blocksFor(L.id).length === 0;
+        if (undriven && !state.showUndriven) return false;
+        if (idle && !state.showIdle) return false;
+        return true;
+      });
+      if (!visible.length) return;
+
+      var h = document.createElement("div");
+      h.className = "grp";
+      h.innerHTML = '<h2>' + g.title + '</h2><span class="count">' + visible.length + " of " + g.lanes.length + "</span>";
+      elLanes.appendChild(h);
+
+      visible.forEach(function (L) {
+        var row = document.createElement("div");
+        row.className = "lane";
+        var undriven = L.kind === "part" && L.ctl === "none";
+        var bl = L.kind === "part" ? blocksFor(L.id) : [];
+        if (undriven) row.className += " undriven";
+        else if (L.kind === "part" && !bl.length) row.className += " idle";
+
+        var nameEl = document.createElement("div");
+        nameEl.className = "lane-name";
+        nameEl.innerHTML = '<span class="sh">' + L.sh + '</span><span class="nm">' + L.nm + "</span>";
+        row.appendChild(nameEl);
+
+        var track = document.createElement("div");
+        track.className = "lane-track";
+
+        if (L.kind === "loop") {
+          if (state.expanded) {
+            for (var i = 0; i < ITERS; i++) {
+              track.appendChild(blockEl("blk-ghost", LOOP_T + i * PERIOD, LOOP_T + (i + 1) * PERIOD, "bar " + (i + 1)));
+            }
+          } else {
+            track.appendChild(blockEl("blk-loop", LOOP_T, LOOP_T + LOOP_MS, "SEQ_LOOP · 1846 ms × 7 bars"));
+          }
+        } else if (L.kind === "audio") {
+          track.appendChild(blockEl("blk-audio", 0, TERM_T, "$C — bounded, cut at cleanup"));
+        } else if (L.kind === "vis") {
+          track.appendChild(blockEl("blk-vis", 0, TERM_T, "DV:CANTINA"));
+        } else if (bl.length) {
+          if (state.expanded) {
+            bl.forEach(function (b) {
+              track.appendChild(blockEl("blk-open", b.t0, b.t1, ":OP" + CMD[L.id]));
+            });
+          } else {
+            track.appendChild(blockEl("blk-open", bl[0].t0, bl[0].t1, ":OP" + CMD[L.id]));
+            for (var j = 1; j < bl.length; j++) {
+              var g2 = blockEl("blk-ghost", bl[j].t0, bl[j].t1, "");
+              track.appendChild(g2);
+            }
+          }
+        }
+        row.appendChild(track);
+        elLanes.appendChild(row);
+      });
+    });
+
+    var termRow = document.createElement("div");
+    termRow.className = "lane group-start";
+    termRow.innerHTML = '<div class="lane-name"><span class="sh">TERM</span><span class="nm">auto cleanup</span></div>';
+    var tt = document.createElement("div");
+    tt.className = "lane-track";
+    tt.appendChild(blockEl("blk-term", TERM_T, WINDOW, "@0T1 @0P1 *ST00 :CL00"));
+    termRow.appendChild(tt);
+    elLanes.appendChild(termRow);
+  }
+
+  // ---- dome preview -------------------------------------------------------
+  function openAt(id, t) {
+    var bl = blocksFor(id);
+    for (var i = 0; i < bl.length; i++) if (t >= bl[i].t0 && t < bl[i].t1) return true;
+    return false;
+  }
+  function polar(cx, cy, r, degClockwiseFromAstern) {
+    // 0 deg = astern = downward on screen; clockwise viewed from above
+    var a = (degClockwiseFromAstern - 90) * Math.PI / 180;
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  }
+  function sector(cx, cy, r0, r1, c0, c1) {
+    var p0 = polar(cx, cy, r1, c0), p1 = polar(cx, cy, r1, c1),
+        p2 = polar(cx, cy, r0, c1), p3 = polar(cx, cy, r0, c0);
+    var large = Math.abs(c1 - c0) > 180 ? 1 : 0;
+    return "M" + p0[0].toFixed(2) + "," + p0[1].toFixed(2) +
+           "A" + r1 + "," + r1 + " 0 " + large + " 1 " + p1[0].toFixed(2) + "," + p1[1].toFixed(2) +
+           "L" + p2[0].toFixed(2) + "," + p2[1].toFixed(2) +
+           "A" + r0 + "," + r0 + " 0 " + large + " 0 " + p3[0].toFixed(2) + "," + p3[1].toFixed(2) + "Z";
+  }
+  function drawDome() {
+    var cx = 120, cy = 120, parts = [];
+    parts.push('<circle cx="120" cy="120" r="112" fill="#11171a" stroke="#232d33"/>');
+    PIES.forEach(function (p) {
+      var on = openAt(p.id, state.t);
+      parts.push('<path d="' + sector(cx, cy, 34, 66, p.brg - 28, p.brg + 28) + '" fill="' +
+        (on ? "rgba(79,209,197,.55)" : "#1b2429") + '" stroke="#2e3a41" stroke-width="1"/>');
+      var lp = polar(cx, cy, 50, p.brg);
+      parts.push('<text x="' + lp[0].toFixed(1) + '" y="' + (lp[1] + 3).toFixed(1) +
+        '" font-family="IBM Plex Mono, monospace" font-size="9" fill="' + (on ? "#04201d" : "#77878f") +
+        '" text-anchor="middle">' + p.sh + "</text>");
+    });
+    PANELS.forEach(function (p) {
+      var undriven = p.ctl === "none";
+      var on = openAt(p.id, state.t);
+      parts.push('<path d="' + sector(cx, cy, 74, 104, p.brg - 11, p.brg + 11) + '" fill="' +
+        (on ? "rgba(79,209,197,.55)" : (undriven ? "#11171a" : "#1b2429")) +
+        '" stroke="' + (undriven ? "#35424a" : "#2e3a41") + '" stroke-width="1"' +
+        (undriven ? ' stroke-dasharray="2 2"' : "") + "/>");
+      var lp = polar(cx, cy, 89, p.brg);
+      parts.push('<text x="' + lp[0].toFixed(1) + '" y="' + (lp[1] + 3).toFixed(1) +
+        '" font-family="IBM Plex Mono, monospace" font-size="8" fill="' +
+        (on ? "#04201d" : (undriven ? "#5c6b73" : "#9dabb2")) + '" text-anchor="middle">' + p.sh + "</text>");
+    });
+    parts.push('<text x="120" y="18" font-family="Archivo, sans-serif" font-size="9" letter-spacing="1.6" fill="#77878f" text-anchor="middle">FRONT</text>');
+    elDome.innerHTML = parts.join("");
+  }
+
+  // ---- readout ------------------------------------------------------------
+  function refreshReadout() {
+    elRoT.textContent = (state.t / 1000).toFixed(3) + " s";
+    if (state.t < LOOP_T || state.t > LOOP_T + LOOP_MS) {
+      elRoB.textContent = "—";
+    } else {
+      var n = (state.t - LOOP_T) / BEAT;
+      elRoB.textContent = "bar " + (Math.floor(n / 4) + 1) + " · " + (Math.floor(n % 4) + 1) + "/4";
+    }
+    var openNames = [];
+    PIES.concat(PANELS).forEach(function (p) { if (openAt(p.id, state.t)) openNames.push(p.sh); });
+    elRead.innerHTML = "<b>open</b> " + (openNames.length ? openNames.join(" ") : "—") +
+      "<br><b>count</b> " + openNames.length + " of 20 drivable";
+  }
+
+  function render() { drawLanes(); positionHead(); drawDome(); refreshReadout(); }
+  function positionHead() {
+    var rail = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--rail"));
+    elHead.style.left = (rail + xOf(state.t)) + "px";
+  }
+
+  // ---- scrub --------------------------------------------------------------
+  function seekFromEvent(ev) {
+    var rail = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--rail"));
+    var r = elTl.getBoundingClientRect();
+    var x = ev.clientX - r.left - rail;
+    var ms = Math.max(0, Math.min(WINDOW, (x / trackWidth()) * WINDOW));
+    state.t = ms;
+    positionHead(); drawDome(); refreshReadout();
+  }
+  var dragging = false;
+  elRuler.addEventListener("pointerdown", function (ev) {
+    dragging = true; elRuler.setPointerCapture(ev.pointerId); seekFromEvent(ev); ev.preventDefault();
+  });
+  elRuler.addEventListener("pointermove", function (ev) { if (dragging) seekFromEvent(ev); });
+  elRuler.addEventListener("pointerup", function (ev) { dragging = false; elRuler.releasePointerCapture(ev.pointerId); });
+  elRuler.addEventListener("pointercancel", function () { dragging = false; });
+  elRuler.setAttribute("tabindex", "0");
+  elRuler.setAttribute("role", "slider");
+  elRuler.setAttribute("aria-label", "Playhead");
+  elRuler.addEventListener("keydown", function (ev) {
+    var step = ev.shiftKey ? BEAT * 4 : BEAT;
+    if (ev.key === "ArrowRight") { state.t = Math.min(WINDOW, state.t + step); }
+    else if (ev.key === "ArrowLeft") { state.t = Math.max(0, state.t - step); }
+    else if (ev.key === "Home") { state.t = 0; }
+    else if (ev.key === "End") { state.t = WINDOW; }
+    else return;
+    ev.preventDefault(); positionHead(); drawDome(); refreshReadout();
+  });
+
+  // ---- controls -----------------------------------------------------------
+  var bA = document.getElementById("loop-authored"), bE = document.getElementById("loop-expanded");
+  bA.addEventListener("click", function () {
+    state.expanded = false; bA.setAttribute("aria-pressed", "true"); bE.setAttribute("aria-pressed", "false"); render();
+  });
+  bE.addEventListener("click", function () {
+    state.expanded = true; bA.setAttribute("aria-pressed", "false"); bE.setAttribute("aria-pressed", "true"); render();
+  });
+  function bindToggle(id, key) {
+    var el = document.getElementById(id);
+    el.addEventListener("click", function () {
+      state[key] = !state[key];
+      el.setAttribute("aria-pressed", state[key] ? "true" : "false");
+      render();
+    });
+  }
+  bindToggle("tg-undriven", "showUndriven");
+  bindToggle("tg-idle", "showIdle");
+
+  window.addEventListener("resize", function () { drawRuler(); render(); });
+
+  drawRuler();
+  state.t = LOOP_T + BEAT * 0.5;   // open on a beat, not at zero
+  render();
+})();
+</script>
