@@ -465,6 +465,10 @@ _Avoid_: unchecked warning, skipped rule (a rule that did not apply was not skip
 The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the stated **Dome Design**'s complement as offline fallback (#333; a hardcoded vendored MK4 until a builder could say what dome they built). It is a reasoning and rendering surface, not a saved-sequence storage format.
 _Avoid_: panel model storage, structured step format, persisted canonical IDs
 
+**Body View**:
+The drawing of the droid a builder reads state from — parts as shapes at nominal positions on a front face and a rear face, drawn as an **arrangement rather than a likeness**, so it reads correctly on a droid that is nobody's published design. Its job is showing **many parts at once**, which a named list cannot do; finding a part is not its job, because a body part's name already carries its location in a way a dome part's number never does. It shows **one kind of state at a time and says which** — what the droid was last told, or what a **Sequence** says at a chosen moment — because both are commanded intent and would otherwise be indistinguishable. A **click only ever selects**: the acts available on the picked Part are named beside the drawing, which is also where its explanation lives, visible rather than on hover (ADR 0059). A part can be **moved from it on a deliberate press**, taking the same **Non-RC Control** consent calibration does. Parts with no position word are named in a list beside it rather than placed or omitted, so the view never writes (ADR 0063).
+_Avoid_: a recognisable droid silhouette, colour standing for what a Part is, live state and a Sequence's moment drawn together, a click that adds or assigns, placing your own parts on the drawing
+
 **Saved-Sequence Storage**:
 Learned Sequence dome steps persist as Panel Intent Command strings (`{ "type": "dome", "cmd": ":OP01" }`) per ADR 0008. The Dome Layout View Model does not change this: canonical element IDs and capabilities are resolved to command strings before save and run. Structured per-step storage stays deferred until a separate protoArtoo ADR supersedes ADR 0008.
 _Avoid_: persist by canonical element ID, structured step JSON, dual-write storage
@@ -490,7 +494,7 @@ The browser-editor rule that the connected dome layout gates new authoring but n
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
 **Part Kind**:
-What a **Part** usually is — servo-driven, a light or display, an indicator. Successor to the catalog's `lit:` annotation, and **advisory in principle, never a constraint**: it colours a surface and lets one query a surprising mapping, and it never refuses one, because plenty of builds move something the reference drawing shows as a display (#320).
+What a **Part** usually is — servo-driven, a light or display, an indicator. Successor to the catalog's `lit:` annotation, and **advisory in principle, never a constraint**: it gives a Part its own treatment on a surface and lets one query a surprising mapping, and it never refuses one, because plenty of builds move something the reference drawing shows as a display (#320).
 _Avoid_: part type, part class, component type (that one names what is fitted to an **Output**, not what the Part is)
 
 **Output**:
@@ -543,7 +547,7 @@ The second field beside a **Dome Design** or **Body Design** — *simple* or *co
 _Avoid_: complexity as a droid-wide switch, a variant set assumed common to every design
 
 **Fitted Parts**:
-The **Part**s actually on this builder's droid — the truth a **Droid Build** holds, as against the **Dome Design** and **Body Design** that merely seeded them. A builder adds a Part their design does not carry and drops one they never fitted, and nothing downstream is gated on the result: a Part outside the set is still authorable, still saveable, and still reports `part-not-assigned` at run if no **Output** claims it (#301). Surfaces draw the chosen design's whole complement and mark what is not fitted in its own treatment, distinct from the dimming that means nothing drives it yet; clicking an unfitted Part adds it. "Fitted" is deliberately the same verb as the Component Picker's *not fitted* card (#297) — both mean physically on this droid. There is no third *planned* state: a builder choreographing for the arm they print this weekend fits it early (#333).
+The **Part**s actually on this builder's droid — the truth a **Droid Build** holds, as against the **Dome Design** and **Body Design** that merely seeded them. A builder adds a Part their design does not carry and drops one they never fitted, and nothing downstream is gated on the result: a Part outside the set is still authorable, still saveable, and still reports `part-not-assigned` at run if no **Output** claims it (#301). Surfaces draw the chosen design's whole complement and mark what is not fitted in its own treatment, distinct from the dimming that means nothing drives it yet. Adding an unfitted Part is a named act the surface offers once the Part is picked, never a meaning attached to the click itself (ADR 0063). "Fitted" is deliberately the same verb as the Component Picker's *not fitted* card (#297) — both mean physically on this droid. There is no third *planned* state: a builder choreographing for the arm they print this weekend fits it early (#333).
 _Avoid_: part set as a whitelist, a planned or on-order state, treating an unfitted Part as an authoring error
 
 **Common Addition**:
