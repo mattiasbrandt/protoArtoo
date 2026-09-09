@@ -53,23 +53,24 @@ foreign file is refused today as *not supported* rather than *impossible*.
 a rebuild, and moving to a replaced or second controller. A file from anywhere
 else is identified and refused with a reason, never half-read.
 
-**A backup carries three restorable groups**, and the second decision picks which
-land:
+**A backup carries three parts a restore may write on their own**, and the second
+decision picks which land. They keep the names they already have:
 
-| Group | What it holds | What it is exposed to |
+| Part | What it holds | What it is exposed to |
 |---|---|---|
-| **Choreography** | Learned Sequences | authoring - changes when the builder writes |
-| **The droid** | the **Droid Build**, **Fitted Parts**, Part-to-**Output** assignments and calibration, component config, audio roles | the workshop - changes when a linkage is rebuilt |
-| **Tonight** | the **RC Map** | the hall - changes on the day |
+| **Sequences** | the **Sequence**s the builder authored | changes when the builder writes one |
+| **Configuration** | the **Droid Build**, **Fitted Parts**, Part-to-**Output** assignments and calibration, component config, audio roles | changes when a linkage is rebuilt |
+| **RC Map** | which action each **RC Channel** fires | changes on the day |
 
 They are three because they go stale at three different rates, and because the
 RC Map is the one with a clock on it: since #330 it is the running order, so
 restoring a month-old one twenty minutes before a show replaces what the droid
 will do. The shipped panel already keeps `rc_map` apart from `config` for
-reasons nobody wrote down; this states them.
+reasons nobody wrote down; this states them - and no part is renamed, because
+`RC mappings` is what the restore panel calls that tick-box today.
 
-**A restore replaces within a group, never merges.** Restoring choreography makes
-the sequences exactly the file's. The 16-slot cap can therefore never be
+**A restore replaces the part it writes, never merges into it.** Restoring
+Sequences makes them exactly the file's. The 16-slot cap can therefore never be
 exceeded, because the file was itself a valid droid, and a builder knows what
 they have afterwards without reading a report. A copy of what is about to be
 replaced is offered first, and **a failed save stops the replace** - which is what
@@ -77,7 +78,7 @@ makes the offer load-bearing rather than decorative.
 
 **A cross-board restore takes what is board-independent and says what it left.**
 The file records which board wrote it. Restoring onto a different one writes
-choreography, the RC Map and the audio roles - none of which names a pin - and
+the Sequences, the RC Map and the audio roles - none of which names a pin - and
 leaves board-specific config behind, naming it on the receipt. A builder moving
 from artoo-esp32 to firebeetle2 keeps everything they authored and re-answers
 only what is genuinely about the new board.
@@ -104,7 +105,7 @@ droid and a travel fraction is bounded by construction. What an import does is
 - **The author's physics cannot travel even if someone wanted it to.** ADR 0052
   put speed, acceleration and easing on the Output, so an imported sequence has
   nowhere to carry them.
-- Each group's **TOUCHES / LEAVES ALONE** lines are written against these three
+- Each part's **TOUCHES / LEAVES ALONE** lines are written against these three
   and no others, which is what keeps the contract checkable.
 
 ## Alternatives considered
@@ -113,10 +114,10 @@ droid and a travel fraction is bounded by construction. What an import does is
 on 16 slots a merge fills the droid with near-duplicates and leaves a builder
 unable to tell which of two similar names they were running last week.
 
-**One group, all or nothing.** Rejected: recovering one deleted routine would
+**One part, all or nothing.** Rejected: recovering one deleted routine would
 mean taking back a month of unrelated settings with it.
 
-**Four groups, splitting the controller's own setup out.** Rejected for now: it
+**Four parts, splitting the controller's own setup out.** Rejected for now: it
 puts WiFi credentials in a backup file, which is a decision of its own and not
 one this ticket needed to take.
 
