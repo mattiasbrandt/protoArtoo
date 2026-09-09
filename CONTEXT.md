@@ -413,6 +413,10 @@ _Avoid_: default sequence, stock sequence
 A DM:* sequence defined as a JSON file on the controller filesystem (/seq/), created or edited without reflashing, accepted only after passing Protocol Check, and executed by the same coordinator engine as a Factory Sequence.
 _Avoid_: custom sequence, user macro, script
 
+**Take**:
+A performance captured live off the sticks and kept - the word a builder already uses, and performance language on purpose. It records **commanded targets rather than raw stick**, so it replays through the same firmware ramp it was performed through, and it names the **Part** rather than an output address, so it survives a re-address. A take is **one object, edited whole** - placed, trimmed and replaced, never stepped through - because a capture is the purest expansion there is and a **Sequence** stores what the builder meant (ADR 0046, ADR 0057). Its captured motion lives in **its own file** that a Sequence references, since a performance does not fit beside one. A take covers whatever the builder mapped to a control before recording, and takes **layer**: a later take over other Parts builds a performance up in passes rather than demanding one perfect pass. Where two takes cover the same Part the later one wins and the overlap is a **Rehearsal Warning**, so nothing is destroyed and two takes can be compared. A **cue** fired during a take is not motion and does not go in it - it lands as an ordinary step beside it, movable and retimable without performing again (ADR 0061).
+_Avoid_: recording (the verb, and it collides with audio), a take as a second kind of Sequence, capturing raw stick, editing a take step by step, a take that names an output address
+
 **Retrained Sequence**:
 A Learned Sequence bearing a Factory Sequence's name. It shadows the factory one on every trigger path (RC, web, dome RX) via runtime-first lookup precedence (runtime -> catalog -> alias -> fallback).
 _Avoid_: override sequence, patched sequence
