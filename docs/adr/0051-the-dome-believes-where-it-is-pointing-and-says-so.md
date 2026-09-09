@@ -1,7 +1,8 @@
 # The dome believes where it is pointing, and says so
 
-Status: accepted (2026-09-08, issue #322). Describes the **target** model.
-Nothing in it ships today.
+Status: accepted (2026-09-08, issue #322), amended 2026-09-09. Describes the
+**target** model. Nothing in it ships today. **The 2026-09-09 amendment at the
+foot withdraws the fixed-map half of one answer; the moving marker stands.**
 
 ## Context
 
@@ -164,3 +165,83 @@ ADR 0043's release — do not drive a thing you are stopping.
   on a feedback-capable drive.
 - **#287 is unblocked**, and inherits both the new timed case and the unknown-state
   rule.
+
+## Amended 2026-09-09 — the drawing turns for the builder, and the marker still speaks for the droid
+
+Recorded after a grilling session with the operator on 2026-09-09, which reopened
+issue #322 under #175's rule: *"not to re-litigate taste, but when it was argued
+from a current limitation rather than from what a builder needs."*
+
+The rejected option above gave two reasons, and the 2026-09-09 research pass
+measured both against a working implementation:
+
+- **The legibility reason costs eight lines.** One SVG group is rotated and every
+  `<text>` is counter-rotated about its own anchor. The angle persists with a
+  reset. Eight lines is not a cost that decides anything.
+- **The pointer-target reason had no evidence.** The reference applies rotation to
+  the *same renderer it uses as an assignment picker*, has shipped it that way for
+  many releases, and records it as a problem in none of its four review documents.
+  Its own stated reason for building it is a builder problem we have more of: *"a
+  builder is stood over an open dome... reading a fixed drawing means doing the
+  rotation in your head on every single panel. That is exactly where P7 gets
+  mapped to P11."*
+
+**The dome map rotates, by an angle the builder sets.** A control and a reset. It
+does not follow anything the droid reports.
+
+**One angle serves every dome drawing.** The dome page, the picker, and any later
+surface that draws the dome read the same accessor, so two surfaces can never
+disagree about which way the dome faces. The reference paid for the alternative:
+its `wizard.js:1981` is headed *"ONE DRAWING, ONE ORIENTATION (v1.67.0)"*, written
+after two of its surfaces drew the same map and disagreed. A body view takes none
+of this — an elevation is not a radial projection, and "rotate to match how you
+are standing" is a different act there.
+
+**The rotation is view-only, and the marker stays.** Two things now turn on one
+picture for different reasons: the marker moves because the dome turned, and is a
+fact about the droid; the drawing turns because the builder asked, and is a
+preference about the viewer. Neither writes to the other.
+
+**The angle lives in the browser, per device.** It describes where a person is
+standing, so a laptop and a tablet at the same bench hold their own, and nothing
+about a viewer is stored on the droid.
+
+### Rejected in the amendment
+
+- **Rotating the drawing automatically to the Dome Bearing.** The one option no
+  picture-only project can have, since our dome actually turns and the droid holds
+  a belief about it. Rejected on this ADR's own rule: any manual turn leaves the
+  bearing **unknown**, and hand-turning the dome to reach a panel *is* the mapping
+  session. It would be unavailable exactly when it is wanted.
+- **Letting the builder's alignment set an unknown bearing**, recovering it without
+  turning the dome to front. Rejected: the drawing's angle and the bearing agree
+  only if the builder is standing at the droid's front, so anyone working from the
+  side would set a bearing wrong by exactly their own position — and this ADR's
+  posture is that a bearing is believed, never quietly assumed.
+- **The rotation replacing the marker.** One number and one control, nothing to
+  confuse. Rejected: it turns a view preference into a claim about the droid, and
+  every idle nudge would rewrite what the droid believes.
+- **One angle per surface.** Each surface remembers how the builder left it.
+  Rejected as the regression already run upstream.
+- **Storing the angle on the droid** so every device agrees. Rejected for the same
+  reason the rotation does not write to the bearing: a viewer's standing position
+  is not a fact about the droid.
+- **Not persisting it at all.** Rejected on the reference's own argument — a bench
+  does not move, and re-orienting on every visit is the cost that kills the
+  feature.
+
+### Consequences of the amendment
+
+- The **fixed map** half of the decision above is withdrawn; the **moving marker**
+  half stands unchanged, including its unknown treatment.
+- One accessor holds the angle, and every dome drawing reads it.
+  `tools/check_dome_panel_drift.py` covers only one edge of the three-source
+  triangle — the dome's `/api/dome/layout`, the vendored `dome_panel_model.js`
+  fallback, and a body surface — so nothing today would catch two drawings
+  disagreeing.
+- **The drawing's design stays #317's.** Its specific 9 proposed rotation and is
+  still open. This amendment settles the policy — it ships, one angle, view-only,
+  browser-local — and #317 keeps the tick weighting, the counter-rotated labels,
+  the FRONT indicator and where the control sits.
+- Two rotating indicators on one picture is a real confusion risk and a copy
+  problem: the marker and the drawing must not read as the same kind of thing.
