@@ -238,8 +238,8 @@ The rate-limited notice the **Operator Shell** shows when input arrives for some
 _Avoid_: a notice per rejected command, an error (nothing failed), a modal, dropping the input silently
 
 **Dashboard**:
-The landing page at `/`: live health, the traffic-light grid, and the telemetry the **Status Plate** refuses - uptime, heap, signal strength and the rest of what `/api/events` carries that would not change an operator's next move (#324). Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288). The operator surface is designed for computer resolution and is not limited to tablet sizes; Dashboard is the one surface that may be optimised for tablet reach, because it is the one an operator holds while the droid stands on a stand (#327).
-_Avoid_: Home, landing page, status page
+The landing page at `/`: live health, the traffic-light grid, and the telemetry the **Status Plate** refuses - uptime, heap, signal strength and the rest of what `/api/events` carries that would not change an operator's next move (#324). Called Dashboard in the nav, the browser title and the docs alike; `data-page="home"` stays an identifier and is not operator vocabulary (#288). The operator surface is designed for computer resolution and is not limited to tablet sizes; Dashboard is the one surface that may be optimised for tablet reach, because it is the one an operator holds while the droid stands on a stand (#327). It is also **where a droid is performed**: the Sequences a builder mapped to their **RC Channel**s are its big targets, with a stop and the **Stand Down Sequence** always in reach, and a full-screen posture clears nav and chrome away for a droid on a stand at an event. That makes controls on Dashboard deliberate rather than drift - it already carries estop, sleep, mood and operation mode - and it does not touch #324's rule, which is about **Status Plate** chips. The posture never detaches from the **Operator Shell**: hiding the nav never hides the **Latching Estop** (#330).
+_Avoid_: Home, landing page, status page, a performing surface of its own, a show mode
 
 **Configuration**:
 The operator surface for declaring what the droid is made of - fitted Hardware Components and their component types, LED Strip routing, Droid Identity. Split out of the former Setup page so that declaring hardware and inspecting the controller are separate destinations (#288).
@@ -400,6 +400,10 @@ _Avoid_: override sequence, patched sequence
 **Memory Wipe**:
 Deleting a Retrained Sequence, after which the Factory Sequence programming returns instantly (its catalog entry resurfaces in lookup).
 _Avoid_: reset, restore, revert
+
+**Stand Down Sequence**:
+The one **Sequence** a builder nominates as *put the droid back the way it stands* - what they reach for when something opened at the wrong moment in front of people. It defaults to `DM:RESET` and the surface says plainly what that default does not do: **it leaves the pies open**, deliberately, because an uncalibrated pie driven closed blind can bind. A builder who knows their own linkages points it at a Sequence that closes them; only they can make that call, which is why the choice is theirs rather than ours. It is not the **Estop**, which is for danger and already aborts a run into its own bounded cleanup, and it is not a stop - stopping ends the run, standing down puts the droid back (#330).
+_Avoid_: reset (see Memory Wipe), home all, close everything (nothing closes everything), safe pose, park
 
 **Migrated Sequence**:
 A Factory Sequence translated from another community project (a nod to the R2 Builders Guild) and committed into the C++ catalog via the GitHub issue -> PR migration workflow. Not an operator runtime import (see ADR 0007).
@@ -649,6 +653,18 @@ _Avoid_: controller (unqualified, anywhere in operator copy), main controller, b
 **Radio Controller**:
 The RC gear a builder drives the droid with, and the lineup category naming which one reaches the **Body Controller**. "Radio" is the word a droid builder already brings — the same reason the Flagged Ambiguities entry below rejected "radio module" for the **WiFi Module**.
 _Avoid_: controller (unqualified), RC controller (says radio twice), radio module (that names the WiFi Module)
+
+**RC Transmitter**:
+The handset in the operator's hands - the thing with the sticks and switches - as distinct from the receiver in the droid that protoArtoo actually reads. A member of the **Radio Controller** lineup category rather than a rival to it. Always qualified, because "transmitter" alone names any radio and a builder arriving from the hobby says "RC" before they say "transmitter" (#330).
+_Avoid_: transmitter (unqualified), handset, radio (that is the Radio Controller category), TX in operator copy
+
+**RC Channel**:
+One of the 18 numbers an SBUS frame carries, and what a builder assigns a switch to on their **RC Transmitter**. protoArtoo never sees the switch - it sees a number and decides high, mid or low. The qualifier is mandatory: the Flagged Ambiguities entry settled on 2026-09-07 that "channel" names at least four unrelated things, and this is the RC one (#286, #330).
+_Avoid_: channel (unqualified), button slot (ShadowMD's word, and both counts this project quoted for it - 83 and 40 - are ShadowMD's), button, slot
+
+**RC Map**:
+Which action each **RC Channel** fires, and therefore **what the droid will do tonight** - protoArtoo has no separate running order and needs none, because this already is one and already persists. A builder authors a **Sequence**, maps it to an RC Channel, and it appears among the droid's big targets on **Dashboard**: the same list read from two ends, so the **RC Transmitter** and the browser can never offer different shows. There are **11** trigger bindings against 18 RC Channels, 2 bound by default and 9 free; the ceiling is presented and explained, never used to refuse (operator, 2026-09-09). Always qualified, because **Parts** owns the other mapping - which **Output** moves which **Part** (#330).
+_Avoid_: map (unqualified), playlist, loadout, running order as a second object, show (that is what an operator does, not a thing we store)
 
 **Dome Controller**:
 The separate controller fitted in the dome — an AstroPixelsPlus-class board — which owns the dome's panels and lighting and is reached over **protoR2link**. Not the **Dome ESC**, which the body drives directly, and not **Dome Rotation**, which is the lineup category for what turns the dome.
