@@ -595,6 +595,17 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   restating his function to dodge the notice does — ADR 0058 took the port and the notice
   deliberately, since writing it out fresh "would produce the same function under a different
   label". The first such file to land also earns an entry in `LICENSE`'s scope section.
+  **Verbatim operator-facing strings** — *use these ends*, *Set MIN / Set CENTER / Set MAX*,
+  *- not wired -* — are vocabulary and travel under the README credit rather than the
+  per-file notice. The 2026-08-22 directive splits ideas from code and is silent on strings,
+  so that reading is the project's, not the licence's; a file that takes his strings **and**
+  his structure is a port either way. **`tasks/research-r2d2-sim-calibration-spec.md` is the
+  trap here**: it is ours, but it transcribes his constants, DOM and CSS class names and exact
+  button markup, so a file built straight from it is a port even though no file of his was
+  opened. Treat it as one. The notice to carry is `Copyright (c) 2026 Mike Eddington` plus the
+  MIT permission paragraph, read from his `LICENSE:1-3` at `175ad1b` (v1.79.0) on 2026-09-10 —
+  **re-read his current `LICENSE` before pasting it**, since a copyright line is his to change
+  and ours to copy exactly.
 
 ### Branch model
 
