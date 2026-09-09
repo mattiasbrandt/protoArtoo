@@ -50,8 +50,11 @@ table a builder returns to.
 protoArtoo steps through the unclaimed Outputs, nudges each one briefly, and
 records the assignment when the builder says *that one moved*. The nudge is
 **bounded and symmetric about where the Output already is** - never to an endpoint,
-never to a recorded end that may not exist. It is motion, so it takes the same
-**Non-RC Control** consent calibration does, any estop ends the run, and a run
+never to a recorded end that may not exist. It is motion, but it asks for no
+**Non-RC Control** consent - that flag has never reached `POST /api/servo`, and
+ADR 0064 settled one rule for every browser-initiated servo move. Corrected
+2026-09-09; this clause originally said it took the same consent calibration
+does, which #291 reversed the following day. Any estop ends the run, and a run
 nothing responds to leaves the Part *- not wired -*.
 
 **The multiplicity is asymmetric.** A **Part** is driven by **at most one Output**,

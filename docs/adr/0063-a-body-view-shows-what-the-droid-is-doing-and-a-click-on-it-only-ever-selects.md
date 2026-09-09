@@ -69,9 +69,11 @@ is the KIND of thing'."*
 
 **A part can be moved from the drawing, on a deliberate press.** Picking a part
 and pressing runs it through its travel and back, as one command. Same shape as
-ADR 0062's timeline pose — never following a drag — and it takes the same
-**Non-RC Control** consent that calibration and **Find by Moving** take. This is
-the ticket's own capability question, answered yes.
+ADR 0062's timeline pose — never following a drag — and like every other
+browser-initiated servo move it asks for no **Non-RC Control** consent
+(ADR 0064). Corrected 2026-09-09; this originally claimed the consent, which the
+firmware has never applied to `POST /api/servo`. This is the ticket's own
+capability question, answered yes.
 
 **A click only ever selects.** Picking a part fills a panel beside the drawing
 with its name, its **Part Kind**, what drives it, and the acts available on it as

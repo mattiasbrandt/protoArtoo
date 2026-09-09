@@ -133,12 +133,14 @@ to a channel yet: Panel 7, Panel 9"*).
 - **Two things a builder can do that they could not**: read their own routine as
   time, including what it leaves open when it ends; and send the droid to one
   moment without sitting through the run.
-- **The pose press is motion**, so it takes the same **Non-RC Control** consent
-  that calibration and **Find by Moving** take. It inherits #292's recorded gap
-  rather than creating one: that consent gates `POST /api/drive` and the
-  action-test path only, and never `POST /api/servo`, a sequence or the dome. It
-  needs no new bound — it commands exactly what a normal run commands at that
-  instant.
+- **The pose press is motion, and it asks for no `Non-RC Control` consent** —
+  the same rule as the dial, **Find by Moving** and a **Body View**'s press
+  (ADR 0064). That consent gates `POST /api/drive` and the action-test path only,
+  and never `POST /api/servo`, a sequence or the dome, so naming it here would
+  claim a gate the firmware does not apply. Corrected 2026-09-09: this line
+  originally said the press took that consent, which contradicted its own next
+  sentence. It needs no new bound — it commands exactly what a normal run
+  commands at that instant.
 - **#298's route obligation is not honoured by this slice.** The note names the
   parts and does not link to **Parts**. Deliberate, and recorded here so it is a
   known omission rather than a defect the next reader re-derives.
