@@ -503,6 +503,15 @@ of makers worldwide. The [Mr Baddeley Facebook Community](https://www.facebook.c
 is the primary hub for builders sharing progress, troubleshooting, and celebrating
 their droids.
 
+**[Printed Droid](https://www.printed-droid.com/)** — Their
+[R2-D2 terminology reference](https://www.printed-droid.com/kb/r2-d2-terminology)
+is the community's shared vocabulary for dome parts: PP1..PP6 pie panels, P1..P14
+lower dome panels, HPn-1/HPn-2 holoprojector axes. protoArtoo speaks that dialect
+throughout, because it is what builders already type and expect, and
+`docs/droid-parts.yaml` takes its panel bearings from their published drawing
+convention. Those bearings are facts about the droid; their drawing is their own
+work and is not reproduced here.
+
 **[astromech.net](https://astromech.net/)** — The broader astromech building
 community. The collective open knowledge around MarcDuino, SHADOW, panel wiring,
 dome mechanics, and electronics is what makes personal droid builds possible.
