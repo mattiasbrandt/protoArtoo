@@ -16,7 +16,7 @@ expressible, because they hit the ceiling and paid for it:
 | Sequence | What it cost | Where |
 |---|---|---|
 | `DM:RESET` | 7 hand-written steps at 450 ms apart to close the ring safely — a measured brownout cadence, spaced by hand | `src/tasks/sequence_catalog.cpp:218-225` |
-| `DM:CANTINA` | 26 hand-written body steps for a two-beat alternation, on an 1846 ms period computed off 130 BPM by hand | `src/tasks/sequence_catalog.cpp:250-290` |
+| `DM:CANTINA` | 26 hand-written body steps for a two-beat alternation, on an 1846 ms period computed off 130 BPM by hand | `src/tasks/sequence_catalog.cpp:239-280` |
 | `DM:FLUTTER`, `DM:OVERLOAD` | reach for **dice** (`SEQ_RAND`) because there is no way to say *these panels, in this order, offset* | `src/tasks/sequence_catalog.cpp:371-400` |
 
 Two premises fell to the source while this was argued.
