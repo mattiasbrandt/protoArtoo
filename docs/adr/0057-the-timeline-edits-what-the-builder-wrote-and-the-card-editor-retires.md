@@ -103,7 +103,8 @@ editable slice, not a polish ticket after it.
   recorded them as sub-modes with none.
 - `SLOTSET_HOLD` needs a drawing that attaches a block to its predecessor rather
   than to a lane. It is the only step form with no lane of its own.
-- Undo is a requirement on the first editable slice (#299), not a later ticket.
+- Undo is a requirement on the first editable slice, not a later ticket. That
+  is the slice after #299, which ADR 0062 lands read-only.
 - The read-only check is a second reading of the same steps, so it needs no
   storage, no migration and no second model.
 - **Found here, routed rather than closed here:** `docs/droid-parts.yaml`
