@@ -110,6 +110,34 @@ answer just unblocked.
 Finding **facts** is your job, never the operator's: dispatch a subagent rather
 than asking for something you could look up. The **decisions** are theirs.
 
+### Keep the question short - the reasoning goes above it
+
+Put the evidence, the tension and the file:line facts in your **message**, and
+leave the `question` field itself to one or two sentences: the decision, and
+nothing else. Same for option descriptions - a trade-off, not an essay.
+
+The reason is mechanical. The operator can attach a free-text **note to the
+option they pick**, and that note is where the nuance lands - *"this is not
+firm"*, *"only that half"*, *"not a priority now"*. A question that fills the
+panel crowds that affordance out, and the nuance then arrives as a separate
+message after you have already acted on the bare choice. Two corrections on
+2026-09-09 cost a round trip each for exactly this reason.
+
+So: long question, nuance lost and paid for later. Short question, nuance
+arrives with the decision.
+
+### An option label is not a place to introduce a term
+
+The operator is choosing the **structure**, not the words. A name that appears
+only in a label or a description has never been put to them, and treating a
+selection as agreement to it is how invented vocabulary reaches `CONTEXT.md`.
+
+Write options in words that already exist - the ledger's terms, and the labels
+the shipped surface already uses. If a decision genuinely needs a new name, that
+is its own question, asked in plain sight, after the thing itself is settled.
+`docs/ui-copy-voice.md` is the standing rule: *renames are a real change, not a
+copy tweak.*
+
 ## Documentation
 
 `domain-modeling`'s rules stand: update `CONTEXT.md` inline as terms resolve,
