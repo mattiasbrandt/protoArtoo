@@ -434,6 +434,29 @@ If you are building a droid and considering the Artoo Controller PCB:
 
 ---
 
+### Design and prior art — r2d2-astromech-simulator
+
+**[Mike Eddington](https://github.com/mikeeddington-lgtm)** wrote
+[r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator),
+a browser-based astromech simulator and servo-sequence authoring tool, and the most
+carefully made operator interface in the droid-builder space. protoArtoo's own operator
+experience is better for having studied it.
+
+Ideas and interaction patterns we adapted:
+
+- capturing a servo endpoint where the servo already is, instead of typing a number
+- validating a sequence when it is committed, and never refusing to save it
+- a timeline of authored moves rather than a table of compiled frames
+- picking a part on a drawing of the droid instead of from a long list
+- saying on the surface itself what it cannot show — an incomplete map and a misleading one are different things
+- explanation written as a required field on the thing it describes, not left to review
+
+His is a *simulator* for planning a droid; protoArtoo configures and drives a real one.
+Much of it is therefore deliberately not copied, and the differences taught us as much as
+the similarities.
+
+---
+
 ### Firmware
 
 **Hoverboard Firmware**
