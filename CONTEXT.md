@@ -2,6 +2,22 @@
 
 This context defines the project language for protoArtoo release planning and validation so public status, internal task notes, and implementation work use the same terms.
 
+## How an `_Avoid_` line is read
+
+Every term carries an `_Avoid_` line, and it is the vocabulary checker's input as
+well as a reader's guidance (ADR 0059). The entries are a mix of two kinds, and
+**backticks mark which is which**:
+
+- `` `main controller` `` — a literal string a checker greps for in operator-facing
+  text. Write it in backticks.
+- a concept no grep can test, such as *BPM as a measured property of a track* — a
+  rule for a person. Write it plain.
+
+An entry that is a rule with a scope clause — *"controller (unqualified, anywhere in
+operator copy)"* — stays plain, because the parenthetical is the part that matters
+and the bare word has legitimate uses. Adding a backticked entry is how a checkable
+vocabulary rule gets added, so a glossary edit can change what the build accepts.
+
 ## Language
 
 **Phase 5**:
