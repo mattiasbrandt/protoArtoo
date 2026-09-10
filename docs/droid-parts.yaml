@@ -1,10 +1,11 @@
-# protoArtoo Droid Parts Catalog — MrBaddeley MK4 (default model)
-# ================================================================
-# Source of truth for the physical parts of the default droid design: every
-# panel, door, arm, and fixture, with its community-standard shorthand and
-# position. This is DATA ONLY — mapping UI, body SVG views, and per-part
-# control land later (see issue #175). Code that needs a part vocabulary
-# (dome map, body views, sequence lanes, wiring sheet) reads from here.
+# protoArtoo Droid Parts Catalog
+# ==============================
+# Source of truth for the physical parts of the droid designs protoArtoo
+# carries: every panel, door, arm, and fixture, with its community-standard
+# shorthand and position. This is DATA ONLY — mapping UI, body SVG views, and
+# per-part control land later (see issue #175). Code that needs a part
+# vocabulary (dome map, body views, sequence lanes, wiring sheet) reads from
+# here.
 #
 # Naming policy (operator decision 2026-08-22):
 #   The BASE name for a part follows MrBaddeley's design part names (cad_name)
@@ -15,6 +16,53 @@
 #   Dome cad_name values are TBD: they must be read out of the actual MK4
 #   design files (the dome CAD names are known to be unordered/duplicated,
 #   which is why ids here are position-ordered instead) — do not guess them.
+#
+# Designs and what they seed (ADR 0047, operator decision 2026-09-08):
+#   A part is declared ONCE below, with everything true about it wherever it
+#   appears. The `designs:` block names the designs and does one thing: it
+#   lists the part ids each design and variant SEEDS, so choosing MrBaddeley
+#   MK4 fits that complement in a single press.
+#   A design SEEDS, it never FENCES. The Fitted Parts on the builder's own
+#   droid are the truth; a design is a running start at them. A part outside
+#   the seeded set is still authorable, still saveable and still wirable, and
+#   nothing in this block narrows what Protocol Check accepts — that
+#   vocabulary is the union of every design's complement plus the parts no
+#   design lists.
+#   One seed list serves both halves of the answer. A builder states a Dome
+#   Design and a Body Design separately — an MK4 complex dome on an MK4 simple
+#   body is an ordinary droid, not an edge case — so a reader takes the dome
+#   half of a design's seeds for the Dome Design and the body half for the
+#   Body Design. Which half a part belongs to is the section it is declared in
+#   below, which is why no seed list repeats it.
+#   MrBaddeley MK4 is the design protoArtoo pre-selects, recorded as an answer
+#   rather than an absence (#333). Which variant it pre-selects has no field
+#   here yet.
+#   A part no design lists is a Common Addition: the four arms with
+#   `cad_name: null`, offered to every droid whatever it was built from. The
+#   `other_slots` escape hatch at the foot of this file sits outside every
+#   design too.
+#   Adding a design is one block here and no edit to any part row — the
+#   operation ADR 0047 exists to make cheap. Bearings are community geometry
+#   rather than design geometry (one Printed Droid drawing for the character),
+#   so no design carries coordinates of its own.
+#
+# Design entry fields:
+#   id:         stable design id — what a stored Droid Build refers to.
+#   label:      the operator-facing name on the card.
+#   short:      short form for chips and the wiring sheet's build summary.
+#   blurb:      the one sentence the card shows.
+#   variants:   this design's OWN variant set. A design with no variants omits
+#               the key rather than carrying an empty list, so the second
+#               control disappears instead of offering an empty axis.
+#   seeds:      the part ids a design — or one of its variants — puts on the
+#               droid. A variant carries its own seeds because a variant is
+#               not cosmetic: a simple dome cannot grow the complex pies, so
+#               drawing the maximal complement at a simple-dome builder would
+#               promise parts they can never fit.
+#               `seeds: TBD` means the complement is not known here and must
+#               not be guessed. It is a scalar rather than a short list on
+#               purpose: a reader expecting a list fails loudly instead of
+#               quietly seeding an empty droid.
 #
 # Field notes:
 #   id:         protoArtoo part id — stable, position-ordered per class
@@ -42,12 +90,44 @@
 # displays rather than a servo. A mapping onto one of these is unusual but
 # legal — query it, never refuse it.
 
-model:
-  design: MrBaddeley MK4
-  dome_pies_large: 6      # PP1..PP6 — the six primary pie panels
-  dome_pies_small: 6      # MK4 design also has 6 small inner pies (no PP shorthand)
-  dome_lower_panels: 14   # P1..P14
-  holoprojectors: 3       # HP1..HP3, pan+tilt each
+designs:
+  - id: mk4
+    label: MrBaddeley MK4
+    short: MK4
+    blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the body doors and utility arms that go with them.
+    note: >-
+      The MK4 dome also carries 6 small inner pies, which have no PP shorthand.
+      This catalog declares no part ids for them, so no variant can seed them
+      yet; the count lived in the header block this section replaced and is
+      kept here until they are declared as parts.
+    variants:
+      - id: simple
+        label: Simple
+        # TBD: which of the parts below a simple MK4 build carries. The split
+        # between MrBaddeley's simple and complex MK4 exports is recorded
+        # nowhere in this repository, so it must be read out of those design
+        # files before it is written here — do not guess it (#337).
+        seeds: TBD
+      - id: complex
+        label: Complex
+        # The maximal MK4 complement: every part declared below except the
+        # four Common Additions, which belong to no design.
+        seeds: [pie1, pie2, pie3, pie4, pie5, pie6,                       # PP1..PP6
+                panel1, panel2, panel3, panel4, panel5, panel6, panel7,   # P1..P14
+                panel8, panel9, panel10, panel11, panel12, panel13, panel14,
+                hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,        # HP1..HP3
+                domeBtn1, domeBtn2,                                       # dome fixtures
+                doorFL, doorFR, doorRL, doorRR,                           # body doors
+                dataport, chargebay, smallDoor, drawer,
+                utilUp, utilLo]                                           # body arms
+
+  - id: own
+    label: My own build
+    short: Own build
+    blurb: For a droid that is nobody's published design — nothing is fitted for you, and each part joins the list as you build it.
+    # No `variants:` key: this design has no variant set, and an empty list
+    # would put a second control on the card with nothing in it.
+    seeds: []
 
 dome_pies:
   - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 150, position: rear-right,  control: dome-link, dome_link_panel: TBD }
