@@ -489,12 +489,58 @@ ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& serv
     return report;
 }
 
-// The row a lead plugs into, by its Output Address. A task that knows which
-// channel it is about - and every servo consumer does - asks for the row that
-// way rather than by index, because a row's index is a storage slot and its
-// address is what the droid is wired to.
-bool configCacheFindServoOutput(ServoOutputDriver driver, uint8_t channel, ServoOutputRow* out) {
-    if (out == nullptr) {
+// -----------------------------------------------------------------------------
+// The two questions the servo drive path asks of a row  --  answered as values,
+// never as a row.
+//
+// Both live here rather than as one find-me-the-row accessor because their
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
+// re-derives from the linked image on every slice. A ServoOutputRow is 70 B,
+// so handing one out puts 70 B on a Core 1 real-time frame to answer a question
+// whose answer is two numbers or one. A caller that only wants an endpoint pair
+// should not pay for a Part list, a Motion Profile and a boot behaviour it will
+// not read.
+//
+// Neither copies a row inside this file either: the clamp takes its row by
+// reference and the pair is read field by field, both straight out of the live
+// table under the lock.
+// -----------------------------------------------------------------------------
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component comes back so a caller
+// that wants to say what moved the number can name the part without holding the
+// row it came from.
+//
+// With no live row addressed there, the request is returned unchanged and
+// *component is SERVO_COMP_NONE: an output the table does not describe has no
+// band to be held to, and clamping it into the cautious one would be inventing
+// a component nobody fitted. The two cases stay apart at the caller because a
+// returned value equal to the request is, by construction, nothing to report.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component) {
+    uint16_t clamped = requestedUs;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        clamped = servoOutputClampPulse(servoOutputCache.rows[index], requestedUs);
+        if (component != nullptr) {
+            *component = servoOutputCache.rows[index].component;
+        }
+    } else if (component != nullptr) {
+        *component = SERVO_COMP_NONE;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return clamped;
+}
+
+// The Endpoint Pair of the output addressed there, directional: `open` is
+// whichever number the builder recorded as open, larger or smaller than close.
+// False when no live row is addressed there, and the out-params are untouched
+// so a caller's own fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs) {
+    if (openUs == nullptr || closeUs == nullptr) {
         return false;
     }
     bool found;
@@ -502,7 +548,8 @@ bool configCacheFindServoOutput(ServoOutputDriver driver, uint8_t channel, Servo
     const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
     found = index < SERVO_OUTPUT_ROW_MAX;
     if (found) {
-        *out = servoOutputCache.rows[index];
+        *openUs = servoOutputCache.rows[index].open_us;
+        *closeUs = servoOutputCache.rows[index].close_us;
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return found;

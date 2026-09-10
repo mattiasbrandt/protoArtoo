@@ -1420,6 +1420,54 @@ void test_a_save_carries_the_rows_number_into_the_old_forms_keys() {
     TEST_ASSERT_EQUAL_STRING("1180", writer.data().at("arm2_cl").c_str());
 }
 
+// The servo drive path's only two doors onto a row, and both answer with values
+// rather than with the row: their caller's worst-case static chain is a measured
+// constant (ADR 0040) and a ServoOutputRow is 70 B to answer a question whose
+// answer is one number or two.
+void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    // An MG996R output holds 1000..2000, and the caller is told which part
+    // bounded the number without being handed the row it came from.
+    ServoComponentType component = SERVO_COMP_RGB;  // poisoned, must be overwritten
+    TEST_ASSERT_EQUAL_UINT16(
+        1000, configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, 500, &component));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, component);
+
+    // An address no row claims has no band to be held to: the request comes back
+    // untouched and no component is invented for it.
+    component = SERVO_COMP_RGB;
+    TEST_ASSERT_EQUAL_UINT16(
+        500, configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, LEDC_CH_DOME, 500, &component));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, component);
+
+    // The pair comes back directional - a reversed linkage stays reversed.
+    ConfigSnapshot calibrated = {};
+    configSnapshotDefaults(&calibrated);
+    calibrated.servo.arm1_open_us = 1200;
+    calibrated.servo.arm1_close_us = 1900;
+    configCacheApplyServoCalibration(calibrated.servo);
+
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1200, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1900, closeUs);
+
+    // And an unclaimed address leaves the caller's own fallback standing.
+    openUs = 7;
+    closeUs = 9;
+    TEST_ASSERT_FALSE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_DOME, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(7, openUs);
+    TEST_ASSERT_EQUAL_UINT16(9, closeUs);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1475,5 +1523,6 @@ int main() {
 
     RUN_TEST(test_the_fixed_servo_fields_come_from_the_rows);
     RUN_TEST(test_a_save_carries_the_rows_number_into_the_old_forms_keys);
+    RUN_TEST(test_the_drive_path_asks_the_cache_for_values_not_a_row);
     return UNITY_END();
 }

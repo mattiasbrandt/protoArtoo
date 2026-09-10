@@ -84,24 +84,6 @@ static bool isArmEnabled(uint8_t armId) {
 }
 
 // -----------------------------------------------------------------------------
-// servoOutputForArm()
-// The addressed Servo Output row behind an armId (ADR 0041). armId is this
-// task's own index for a channel; the row is found by the Output Address that
-// channel IS, so nothing here assumes the table is in armId order.
-//
-// False means no live row is addressed to that channel  --  a table an expander
-// has not filled in yet, or a controller read before configLoadServoOutputs()
-// ran. Neither is a reason to guess a row.
-// -----------------------------------------------------------------------------
-static bool servoOutputForArm(uint8_t armId, ServoOutputRow* out) {
-    const uint8_t channel = armIdToLedcChannel(armId);
-    if (channel >= LEDC_CH_MAX) {
-        return false;
-    }
-    return configCacheFindServoOutput(SERVO_DRIVER_LEDC, channel, out);
-}
-
-// -----------------------------------------------------------------------------
 // setArmPosition()
 // Set single arm to specific pulse width.
 // armId: 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3
@@ -114,6 +96,10 @@ static bool servoOutputForArm(uint8_t armId, ServoOutputRow* out) {
 // 500 us by any route, including this one. What is written is what robotState
 // then reports, because the target a status reader sees has to be the pulse the
 // pin is actually holding.
+//
+// The cache answers with the clamped number and the component that bounded it,
+// never with the row: this frame is on ServoTask's measured chain (ADR 0040) and
+// a ServoOutputRow is 70 B to answer a question whose answer is one number.
 // -----------------------------------------------------------------------------
 static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
     if (!isArmEnabled(armId)) {
@@ -126,14 +112,15 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
         return;
     }
 
-    uint16_t commandedUs = pulseUs;
-    ServoOutputRow row = {};
-    if (configCacheFindServoOutput(SERVO_DRIVER_LEDC, channel, &row)) {
-        commandedUs = servoOutputClampPulse(row, pulseUs);
-        if (commandedUs != pulseUs) {
-            PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - driving %d us instead",
-                        armId + 1, pulseUs, servoCompTypeToString(row.component), commandedUs);
-        }
+    // A returned width equal to the request is nothing to report, which is also
+    // what an output no row describes comes back as - so the two cases need no
+    // second flag to tell them apart.
+    ServoComponentType component = SERVO_COMP_NONE;
+    const uint16_t commandedUs =
+        configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, channel, pulseUs, &component);
+    if (commandedUs != pulseUs) {
+        PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - driving %d us instead",
+                    armId + 1, pulseUs, servoCompTypeToString(component), commandedUs);
     }
 
     ledcPwmSetPulseWidth(channel, commandedUs);
@@ -161,12 +148,15 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 // With no row addressed to this output there is no calibration to read, so the
 // pair is the cautious band's two ends  --  the same numbers an unconfigured
 // row defaults to, rather than the full 500-2500 us a servo will take.
+//
+// Two numbers cross this frame, not the thirteen fields they sit in: ServoTask's
+// worst-case chain is a measured constant (ADR 0040) and a whole row would spend
+// 70 B of it on fields this path never reads.
 // -----------------------------------------------------------------------------
 static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    ServoOutputRow row = {};
-    if (servoOutputForArm(armId, &row)) {
-        openUs = row.open_us;
-        closeUs = row.close_us;
+    const uint8_t channel = armIdToLedcChannel(armId);
+    if (channel < LEDC_CH_MAX &&
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &openUs, &closeUs)) {
         return;
     }
     openUs = SERVO_BAND_STD.hi;

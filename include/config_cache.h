@@ -55,12 +55,30 @@ void configCacheReadWifi(WifiConfig* out);
 bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
 uint8_t configCacheServoOutputCount();
 
-// configCacheFindServoOutput: the same one row, addressed the way a consumer
-// actually knows it. An index is a storage slot; an Output Address is where the
-// lead plugs in, and rows past the five this controller ships with are an
-// expander's to address in whatever order they land. Returns false when no live
-// row is addressed there.
-bool configCacheFindServoOutput(ServoOutputDriver driver, uint8_t channel, ServoOutputRow* out);
+// The two questions the servo drive path asks, answered as values rather than
+// as a row. There is deliberately no find-me-the-row-by-address accessor: the
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// ADR 0040's checker re-derives from the linked image on every slice, and a
+// ServoOutputRow is 70 B. A caller that wants an endpoint pair should not put a
+// Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
+//
+// An Output Address, not an index: an index is a storage slot, while the address
+// is where the lead plugs in, and rows past the five this controller ships with
+// are an expander's to address in whatever order they land.
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component names that part so a
+// caller can say what moved the number. With no live row addressed there the
+// request comes back unchanged and *component is SERVO_COMP_NONE -- an output
+// the table does not describe has no band to be held to.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component);
+
+// The Endpoint Pair of the output addressed there, directional. False when no
+// live row is addressed there, with the out-params untouched so the caller's own
+// fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs);
 
 // configCacheApplyServoCalibration: the write direction of the migrate-phase
 // bridge. The Apply Core is pure and cannot reach the row table, so the Commit
