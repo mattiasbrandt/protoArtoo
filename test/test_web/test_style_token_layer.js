@@ -244,4 +244,20 @@ test("neither reserved colour is spent on a choice or on an answer that has not 
   assert.deepEqual(spends, [], "a reserved colour on something that is not a call to act");
 });
 
+test("no colour literal exists outside :root", () => {
+  // The rule that makes "amber means one thing" true rather than aspirational.
+  // The reference project shipped two literals - a modal backdrop and a button
+  // ground - that only showed up once a second theme put them on a light card.
+  const offenders = declarationsOf(({ value }) => COLOUR_LITERAL.test(value)).map(
+    ({ rule, property, value }) => `${rule.selector} { ${property}: ${value} }`,
+  );
+  assert.deepEqual(offenders, [], "a colour literal belongs in :root, not in a rule");
+});
+
+test("no token in :root is orphaned", () => {
+  const used = new Set([...stripComments(CSS).matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+  const orphans = [...TOKENS.keys()].filter((token) => !used.has(token));
+  assert.deepEqual(orphans, [], "a token nothing reads is a decision nobody can find");
+});
+
 module.exports = { RULES, ROOT, TOKENS, NON_ROOT, resolve, declarationsOf, stripComments, parseRules };
