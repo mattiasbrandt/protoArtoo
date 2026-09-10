@@ -214,6 +214,10 @@ reporting passes that never ran. In the worker's worktree, personally:
    acceptance, while you still hold the context, is the difference between a
    pointer and a cold start.
 
+   Routing happens BEFORE anything about the finding reaches the operator, and
+   for most findings it is the whole of the handling - see Reporting for what
+   is left to escalate and what is not.
+
 ## Rejection bookkeeping and escalation
 
 - On every rejection, update ONE pinned coordinator comment on the sub-issue:
@@ -317,6 +321,41 @@ assume: clean-rebuild your base and symbol-check every merged slice.
 ## Reporting
 
 Keep one evolving status comment per epic with the frontier state (running /
-in review / rework / merged). Interrupt the operator only when: a ticket is
-rejected twice, the frontier stalls, an integration conflict is non-trivial,
-or a device session is needed. Otherwise work autonomously.
+in review / rework / merged).
+
+**Record first, escalate second, and escalate only the residue.** A finding is
+written onto the ticket that will act on it (critic protocol step 7) BEFORE
+anything about it reaches the operator - and most findings stop there. Telling
+the operator about a concern you have not recorded converts their attention
+into the only place it lives, which is the failure this rule exists to prevent.
+What reaches them is then the decision, in one line, with the record already
+linked.
+
+**Reaches the operator, batched, with a recommended default:**
+
+- a **decision that is theirs**: product scope, a term or vocabulary, what a
+  droid should do, which hardware is supported, priority between tickets;
+- an **error or a defect that blocks**: the frontier stalled, a ticket rejected
+  twice with the same signature, a non-trivial integration conflict, a
+  toolchain or bench fault nobody can work around, a safety invariant at risk;
+- an act that **needs their approval**: a device session, a shared build
+  configuration or budget change, pushing a shared integration branch, minting
+  a ticket on an epic that is not yours, anything outward-facing or expensive.
+
+**Does NOT reach the operator - route it and carry on:**
+
+- a worker's find you can place on an open sub-issue that owns those files;
+- a ticket defect of your own making: repair the body, say so on the ticket;
+- a criterion that is unreachable from the slice in hand because the files
+  belong to another ticket - move it, with the reason recorded;
+- an acceptance detail, a cut you are entitled to make, a fence you re-cut,
+  a rework you are sending back;
+- another target's or another epic's problem, once it is written on the ticket
+  that owns that target and named in your status comment.
+
+The test before typing a concern to the operator: **"if they say nothing, does
+the work still happen?"** If yes, it was routing, not escalation - the sub-issue
+carries it and the status comment mentions it. If no, ask, and make the ask a
+decision with options and a default rather than a description of a worry.
+
+Otherwise work autonomously.
