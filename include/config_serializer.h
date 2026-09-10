@@ -12,6 +12,7 @@
 
 #include "config_store.h"
 #include "config_io.h"
+#include "servo_output_row.h"
 
 // configDeserialize: Load a ConfigSnapshot from a ConfigReader.
 // Applies defaults from configSnapshotDefaults(), then overwrites with stored values.
@@ -40,3 +41,28 @@ void configDeserializeServo(const ConfigReader& r, ServoConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
+
+// -----------------------------------------------------------------------------
+// Addressed Servo Output rows (ADR 0041)
+//
+// Stored beside the five fixed servo field sets, on their own keys, and
+// deliberately NOT part of ConfigSnapshot: the snapshot crosses three nested
+// stack frames on the serial config-write path and the table is far larger than
+// any field this schema has added before (see the static_assert in
+// config_store.h for why that number is load-bearing).
+//
+// One key holds the row count and one string key holds each row. A save writes
+// the count and rows 0..count-1, so a record left above the count by an earlier
+// larger table is never read; the save that raises the count again writes those
+// rows in the same pass.
+// -----------------------------------------------------------------------------
+bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
+bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
+bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);
+
+// Fills *out with servoOutputTableDefaults() then overwrites with stored rows.
+// A row whose key is absent keeps its default silently -- that is a device that
+// has never written it, not a damaged record. A row whose record exists but
+// cannot be read is repaired field by field and counted in *report.
+void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
+                                   ServoOutputRepairReport* report);

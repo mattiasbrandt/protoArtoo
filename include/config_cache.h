@@ -34,6 +34,19 @@ void configCacheReadServo(ServoConfig* out);
 bool configCacheServoAnyEnabled();
 void configCacheReadWifi(WifiConfig* out);
 
+// The addressed Servo Output rows (ADR 0041), which live beside the five fixed
+// servo field sets rather than inside ConfigSnapshot. The live table is filled
+// once by configLoadServoOutputs() on the boot path; nothing writes a row at
+// runtime until the surface that edits one exists.
+//
+// configCacheReadServoOutput hands out ONE row: the table is far larger than
+// anything else this cache copies by value, and a task that wants one output
+// should not pay for twenty-four. It returns false for an index at or past the
+// live count, so "there is no such output" and "here is a zeroed row" are not
+// the same answer.
+bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
+uint8_t configCacheServoOutputCount();
+
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);

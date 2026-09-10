@@ -306,11 +306,34 @@ void loadConfigToState() {
     prefs.begin(NVS_NAMESPACE, true);
     ConfigSnapshot snap;
     bool configOk = configLoad(prefs, &snap);
+    // Addressed Servo Output rows load on their own keys, beside the snapshot
+    // (ADR 0041). Their table never crosses this frame -- see
+    // configLoadServoOutputs().
+    ServoOutputRepairReport servoOutputRepair = {};
+    configLoadServoOutputs(prefs, &servoOutputRepair);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
     if (!configOk) {
         PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
+    }
+
+    // A stored row that could not be read has already taken its safe defaults.
+    // Say so: a value changing under somebody is the thing this project says
+    // out loud, and an output that quietly lost its calibration is exactly the
+    // case a builder needs told.
+    if (servoOutputRepair.countRepaired) {
+        PA_LOG_WARN("config", "stored servo output count out of range; keeping the default %u rows",
+                    (unsigned)SERVO_OUTPUT_ROW_DEFAULT_COUNT);
+    }
+    if (servoOutputRepair.rowsRepaired > 0) {
+        char note[96] = {};
+        servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
+        PA_LOG_WARN("config",
+                    "servo outputs repaired: %u row(s), %u field(s); output %u: %s",
+                    (unsigned)servoOutputRepair.rowsRepaired,
+                    (unsigned)servoOutputRepair.fieldsRepaired,
+                    (unsigned)servoOutputRepair.firstRow, note);
     }
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
@@ -333,6 +356,7 @@ bool saveConfigToNvs() {
     }
 
     bool ok = configSave(prefs, snap);
+    ok = configSaveServoOutputs(prefs) && ok;
     prefs.end();
     return ok;
 }

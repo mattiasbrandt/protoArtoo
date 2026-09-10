@@ -20,6 +20,7 @@
 
 #include "config.h"
 #include "robot_state.h"
+#include "servo_output_row.h"  // ServoOutputRepairReport, for the load below
 
 // NVS schema version
 // 0 (legacy) -> 1: key renames. 1 -> 2: log_level renumbered for the WARN tier
@@ -467,6 +468,17 @@ void configLoadWifi(Preferences& prefs, WifiConfig* out);
 // Returns false if any write fails; true on success.
 void configSnapshotDefaults(ConfigSnapshot* snap);
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
+
+// configLoadServoOutputs / configSaveServoOutputs: the addressed Servo Output
+// rows (ADR 0041). They sit outside ConfigSnapshot and outside configLoad /
+// configSave, on their own NVS keys -- see include/config_serializer.h for why
+// the table is not a snapshot field.
+//
+// Caller opens Preferences with begin() before calling, exactly as for the
+// snapshot pair above. configLoadServoOutputs fills the live table read by
+// configCacheReadServoOutput(); *report says what a damaged stored row cost.
+void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report);
+bool configSaveServoOutputs(Preferences& prefs);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);

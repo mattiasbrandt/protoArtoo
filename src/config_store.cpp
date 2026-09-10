@@ -382,6 +382,38 @@ bool configCacheDomeEnabled() {
     return enabled;
 }
 
+// The addressed Servo Output rows, live (ADR 0041). Zero-initialised like
+// configCache above, and filled by configLoadServoOutputs() from main's boot
+// path before any task starts -- the same boot-order contract configCacheApply()
+// already relies on. A reader that runs before that sees a count of zero, which
+// is the truthful answer at that point rather than a guessed row.
+static ServoOutputTable servoOutputCache = {};
+
+uint8_t configCacheServoOutputCount() {
+    uint8_t count;
+    taskENTER_CRITICAL(&configCacheMux);
+    count = servoOutputCache.count;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return count;
+}
+
+// One row at a time, deliberately: the whole table is far larger than anything
+// this cache hands out by value, and a task that wants one output should not
+// pay for twenty-four.
+bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
+    if (out == nullptr || index >= SERVO_OUTPUT_ROW_MAX) {
+        return false;
+    }
+    bool live;
+    taskENTER_CRITICAL(&configCacheMux);
+    live = index < servoOutputCache.count;
+    if (live) {
+        *out = servoOutputCache.rows[index];
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return live;
+}
+
 void configCacheReadServo(ServoConfig* out) {
     if (out == nullptr) {
         return;
@@ -771,6 +803,33 @@ void configLoadWifi(Preferences& prefs, WifiConfig* out) {
     if (out == nullptr) return;
     PrefsReader reader(prefs);
     configDeserializeWifi(reader, out);
+}
+
+void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report) {
+    PrefsReader reader(prefs);
+    // Deserialised straight into the live table rather than through a caller's
+    // local. ServoOutputTable is the largest thing this schema stores and
+    // loadConfigToState() runs on loopTask, whose stack is sized against a
+    // measured worst-case chain (include/config.h, #250) -- so the table never
+    // becomes a stack frame. Safe because this runs once, from setup(), before
+    // any task that reads the table exists.
+    configDeserializeServoOutputs(reader, &servoOutputCache, report);
+}
+
+bool configSaveServoOutputs(Preferences& prefs) {
+    PrefsWriter writer(prefs);
+    const uint8_t count = configCacheServoOutputCount();
+    bool ok = configSerializeServoOutputCount(count, writer);
+    for (uint8_t i = 0; i < count; ++i) {
+        // A row at a time under the cache lock: no whole-table copy on this
+        // caller's stack, and no critical section held across an NVS write.
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row)) {
+            continue;
+        }
+        ok = configSerializeServoOutputRow(i, row, writer) && ok;
+    }
+    return ok;
 }
 
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
