@@ -482,12 +482,14 @@ static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UAR
 // =============================================================================
 
 // Drive constants
-// These constants apply to all chip targets; board-specific pins are defined above.
+// These constants apply to all chip targets; board-specific pins are defined
+// above. A drive controller's own wire settings -- baud, framing, how long its
+// far end tolerates a gap -- are not here: they belong to the backend that
+// speaks them, in its catalogue row in include/drive_backend.h.
 constexpr int16_t SPEED_LIMIT_MAX = 600;  // Absolute max drive output (never exceeded)
 constexpr int16_t SPEED_PRESET_SLOW = 200;
 constexpr int16_t SPEED_PRESET_NORMAL = 350;
 constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
-constexpr uint32_t HOVERBOARD_BAUD = 115200;
 constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Zero-frame continuity rate, every drive backend
 // The tick period DriveTask actually sleeps, derived so the number has one
 // home: include/drive_backend.h static_asserts it against the active backend's

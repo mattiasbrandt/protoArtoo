@@ -57,12 +57,12 @@ struct DriveBackendProfile {
 // its last command when the stream stops, which is why zero-frame continuity
 // is unconditional above this line.
 inline constexpr DriveBackendProfile kDriveBackend = {
-    "hoverboard",
-    "hoverboard_gen2x",
-    HOVERBOARD_BAUD,
-    20,
-    DriveStarvation::Drifts,
-    true,
+    .id = "hoverboard",
+    .protocol = "hoverboard_gen2x",
+    .baud = 115200,
+    .continuityDeadlineMs = 20,
+    .starvation = DriveStarvation::Drifts,
+    .reportsFeedback = true,
 };
 #else
   #error "no Board Capability Gate selects a drive backend: add a row and select it here"
