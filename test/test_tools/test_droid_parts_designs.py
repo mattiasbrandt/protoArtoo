@@ -105,6 +105,38 @@ class DroidPartsDesigns(unittest.TestCase):
             else:
                 self.assertIn("seeds", design, f"{design['id']} declares no complement at all")
 
+    def test_a_design_with_variants_declares_which_one_is_default(self):
+        """#356: one `default_variant:` per design, and none where there is no axis."""
+        for design in self.designs:
+            if "variants" in design:
+                self.assertIn(
+                    "default_variant", design, f"{design['id']} declares no default_variant"
+                )
+                variant_ids = [v["id"] for v in design["variants"]]
+                self.assertIn(
+                    design["default_variant"],
+                    variant_ids,
+                    f"{design['id']} defaults to a variant it does not declare",
+                )
+            else:
+                self.assertNotIn(
+                    "default_variant",
+                    design,
+                    f"{design['id']} has no variants but declares a default",
+                )
+
+    def test_the_default_variant_seeds_something(self):
+        """Nobody is pre-selected onto an unknown or empty complement (#356)."""
+        for design in self.designs:
+            if "variants" not in design:
+                continue
+            default = design["default_variant"]
+            seeds = next(v["seeds"] for v in design["variants"] if v["id"] == default)
+            self.assertIsInstance(
+                seeds, list, f"{design['id']}/{default} is the default but its seeds are {seeds!r}"
+            )
+            self.assertTrue(seeds, f"{design['id']}/{default} is the default but seeds nothing")
+
     def test_every_seeded_id_is_a_declared_part(self):
         for design in self.designs:
             for variant_id, seeds in seed_groups(design):
