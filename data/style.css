@@ -948,7 +948,7 @@ input.input-narrow:focus {
   margin: 3px 0;
   padding: 5px 10px 5px var(--space-md);
   border-left: 3px solid var(--border);
-  border-radius: var(--space-xs);
+  border-radius: 6px;
   background-image: linear-gradient(90deg, color-mix(in srgb, var(--border) 12%, transparent), transparent 44%);
   transition: border-color 0.18s ease, background-image 0.18s ease, opacity 0.18s ease;
 }
