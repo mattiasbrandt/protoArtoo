@@ -58,6 +58,10 @@ task.md
 /rc-snap*.md
 /rc-snapshot.md
 
+# Screenshots and traces the test/playwright/ scripts write. Every script picks
+# its own output/playwright/<something> directory, so the whole tree is theirs.
+/output/
+
 # Python/virtualenv (if using scripts or tools)
 __pycache__/
 *.pyc
