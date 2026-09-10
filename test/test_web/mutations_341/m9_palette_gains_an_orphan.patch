@@ -1,0 +1,12 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..36511d09 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -37,6 +37,7 @@
+   --success: #54c87a;
+   --warning: #e8a832;
+   --white: #f0f4f8;
++  --unused-hue: #123456;
+ 
+   /* Neutral endpoints. Never painted straight on: they exist so a translucent
+      lift or a shadow can be written as a share of one of them - for example
