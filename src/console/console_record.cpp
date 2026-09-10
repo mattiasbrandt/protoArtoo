@@ -93,6 +93,8 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "malformed-argument";
         case CONSOLE_REASON_READ_ONLY:
             return "read-only";
+        case CONSOLE_REASON_PART_NOT_ASSIGNED:
+            return "part-not-assigned";
         default:
             return "unknown";
     }

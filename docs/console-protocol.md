@@ -263,6 +263,14 @@ never type an ID.
   | `component-disabled` | the owning Component Toggle is off |
   | `blocked-by-state` | estop, sleep, stationary or another state rule holds it |
   | `temporarily-unavailable` | busy right now; try again |
+  | `part-not-assigned` | the droid knows this Part, but no Output on it drives the Part, so nothing moves (#301) |
+
+  `part-not-assigned` is the one that is a fact about the builder's wiring
+  rather than about the image, the board or a toggle. No operation reports it
+  yet - the body step type that names a Part does not exist - but the token is
+  defined here rather than minted later, because the whole point of it is that
+  a step authored before its arm was wired starts working once an Output claims
+  that Part, with nothing re-authored.
 
   Other reasons name the specific failure: `line-too-long`,
   `secret-not-settable`, `read-only` (the operation reads, but nothing in the

@@ -2,10 +2,23 @@
 # ==============================
 # Source of truth for the physical parts of the droid designs protoArtoo
 # carries: every panel, door, arm, and fixture, with its community-standard
-# shorthand and position. This is DATA ONLY — mapping UI, body SVG views, and
-# per-part control land later (see issue #175). Code that needs a part
-# vocabulary (dome map, body views, sequence lanes, wiring sheet) reads from
-# here.
+# shorthand and position.
+#
+# AFTER EDITING THIS FILE, REGENERATE:
+#
+#     python3 tools/generate_droid_parts_catalog.py
+#
+# It rewrites two committed outputs: include/droid_parts.h, the id vocabulary
+# firmware resolves a Part against, and data/droid_parts.js, the names,
+# shorthand, aliases and position every operator surface labels a Part with.
+# Editing this file without regenerating them leaves the firmware's vocabulary
+# gate and every Part name on screen stale against the catalog they came from
+# — a Part a builder can see and not wire, or wire and not see (#301, #356).
+#
+# Nothing reads this file at runtime. It is generated into the firmware and the
+# browser at build time, so neither depends on a filesystem that can go missing
+# (#301). Code that needs a part vocabulary (dome map, body views, sequence
+# lanes, wiring sheet) reads a generated output, never this YAML.
 #
 # Naming policy (operator decision 2026-08-22):
 #   The BASE name for a part follows MrBaddeley's design part names (cad_name)
@@ -35,8 +48,11 @@
 #   Body Design. Which half a part belongs to is the section it is declared in
 #   below, which is why no seed list repeats it.
 #   MrBaddeley MK4 is the design protoArtoo pre-selects, recorded as an answer
-#   rather than an absence (#333). Which variant it pre-selects has no field
-#   here yet.
+#   rather than an absence (#333). Which variant it pre-selects is its
+#   `default_variant`, one field per design rather than one per half: a Dome
+#   Design and a Body Design are answered separately and each carries its own
+#   design row, so one field already lets a builder run a complex dome on a
+#   simple body (operator decision 2026-09-10, #356).
 #   A part no design lists is a Common Addition: the four arms with
 #   `cad_name: null`, offered to every droid whatever it was built from. The
 #   `other_slots` escape hatch at the foot of this file sits outside every
@@ -54,6 +70,14 @@
 #   variants:   this design's OWN variant set. A design with no variants omits
 #               the key rather than carrying an empty list, so the second
 #               control disappears instead of offering an empty axis.
+#   default_variant:
+#               which of this design's own variants a builder is pre-selected
+#               onto. Required exactly when `variants:` is present, and its
+#               value must be one of them; a design with no variants carries no
+#               default either, by the same rule that keeps it from carrying an
+#               empty `variants:` list. Pick the variant that actually seeds
+#               something, so nobody is ever pre-selected onto a complement
+#               that is empty or unknown.
 #   seeds:      the part ids a design — or one of its variants — puts on the
 #               droid. A variant carries its own seeds because a variant is
 #               not cosmetic: a simple dome cannot grow the complex pies, so
@@ -62,7 +86,9 @@
 #               `seeds: TBD` means the complement is not known here and must
 #               not be guessed. It is a scalar rather than a short list on
 #               purpose: a reader expecting a list fails loudly instead of
-#               quietly seeding an empty droid.
+#               quietly seeding an empty droid. It generates as `null` — never
+#               as the string "TBD" and never as `[]` — so a consumer reaching
+#               for the complement throws instead of seeding an empty droid.
 #
 # Field notes:
 #   id:         protoArtoo part id — stable, position-ordered per class
@@ -78,13 +104,31 @@
 #               entries carry real bearings; body entries carry position
 #               words only until measured on our droid.
 #   position:   compass-ish word — easier to find on a real droid than a number.
-#   control:    how protoArtoo can reach the part TODAY:
+#   control:    how protoArtoo can reach the part TODAY, and — because it is
+#               the same fact — how far the part travels when this file is
+#               generated (#301):
 #               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
 #               body-ledc  = local LEDC PWM channel on the Artoo PCB
 #               none       = present on the droid design, nothing drives it yet
+#               A part the body drives reaches both generated outputs; a
+#               dome-link or undriven part reaches the browser only, since the
+#               dome owns execution of panel intent under Catalog Authority.
+#               The tokens are not this file's to invent: they are declared in
+#               include/droid_part_control.inc, and the generator refuses a
+#               control path the firmware does not define.
+#               A row that omits `control:` entirely is not a driven thing at
+#               all — the dome fixtures are orientation references, not servos
+#               — and reaches the browser only, generated as `control: null` to
+#               keep it distinct from a `none` that is waiting to be wired.
 #   dome_link_panel: the :OPnn/:CLnn number our AstroPixelsPlus fork serves
 #               for this part. TBD until verified against the fork's panel
 #               table on hardware — do not guess.
+#
+# `TBD` is a declared unknown and never reaches a generated output as a value:
+# the generator omits the key instead, so a consumer sees "not known here"
+# rather than a part whose CAD name is literally the word TBD. A `cad_name:`
+# that is explicitly null is a different statement — the part HAS no CAD name,
+# which is what marks a Common Addition (ADR 0047) — and does generate.
 #
 # Dome panel notes ("lit"): panels Printed Droid lists as carrying lights or
 # displays rather than a servo. A mapping onto one of these is unusual but
@@ -100,6 +144,11 @@ designs:
       This catalog declares no part ids for them, so no variant can seed them
       yet; the count lived in the header block this section replaced and is
       kept here until they are declared as parts.
+    # Complex, because it is the only MK4 variant with a complement today: a
+    # builder pre-selected onto `simple` would be pre-selected onto a seed list
+    # nobody has read out of MrBaddeley's exports yet (operator decision
+    # 2026-09-10, #356).
+    default_variant: complex
     variants:
       - id: simple
         label: Simple
@@ -126,7 +175,9 @@ designs:
     short: Own build
     blurb: For a droid that is nobody's published design — nothing is fitted for you, and each part joins the list as you build it.
     # No `variants:` key: this design has no variant set, and an empty list
-    # would put a second control on the card with nothing in it.
+    # would put a second control on the card with nothing in it. No
+    # `default_variant:` either, for the same reason — there is nothing to
+    # default to.
     seeds: []
 
 dome_pies:
@@ -197,6 +248,16 @@ body_arms:
 
 # Escape hatch for off-model hardware wired to spare outputs (fire
 # extinguisher, custom rigs). Exists so a real output is never unnameable.
+# The slots are ids, not rows: the generator mints `other1`..`other<count>`
+# from the two fields below, so widening the hatch is a number here rather
+# than ten more rows to keep in step.
 other_slots:
   count: 10
   id_prefix: other        # other1..other10
+  # What the browser calls them. A Common Addition is a part we have a word
+  # for; these are the ones we do not, so the name says only which slot it is
+  # — "Other part 7" — and the builder's own hardware supplies the meaning.
+  label_prefix: Other part
+  # Declared, not assumed: a spare output is a body output, so these ids must
+  # reach firmware or a real output stays unnameable there (#301).
+  control: body-ledc
