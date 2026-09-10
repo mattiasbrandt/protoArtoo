@@ -77,6 +77,19 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 #include "board_capabilities.inc"
 #undef PA_BOARD_CAPABILITY
 
+    // Board Lanes sit beside the Gates deliberately (CONTEXT.md "Board Lane"):
+    // a Gate answers whether the board can support something, a Lane answers
+    // where it is routed, and an operator surface needs both from one payload
+    // rather than keeping its own copy of one board's wiring.
+    writer.append("},\"board_lanes\":{");
+    first = true;
+#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                                    \
+    writer.append("%s\"%s\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}", first ? "" : ",", #name,  \
+                  (unsigned)(uart_port), (unsigned)(tx_pin), (unsigned)(rx_pin));         \
+    first = false;
+#include "board_lanes.inc"
+#undef PA_BOARD_LANE
+
     writer.append("},\"build_flags\":{");
     first = true;
 #define PA_BUILD_FLAG(name)                                                      \

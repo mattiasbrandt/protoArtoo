@@ -18,13 +18,39 @@
 
 namespace {
 
-constexpr const char* kAvailabilitySuffix =
+constexpr const char* kCapabilities =
     ",\"board\":\"artoo_esp32\",\"board_capabilities\":{"
     "\"PA_CAP_NATIVE_WIFI\":true,\"PA_CAP_HOSTED_WIFI\":false,"
     "\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\":true,"
-    "\"PA_CAP_DEDICATED_AUDIO_UART\":false},"
-    "\"build_flags\":{\"PA_HEAP_PROFILE\":false,\"PA_HEAP_TRACING\":false,"
+    "\"PA_CAP_DEDICATED_AUDIO_UART\":false}";
+
+constexpr const char* kBuildFlags =
+    ",\"build_flags\":{\"PA_HEAP_PROFILE\":false,\"PA_HEAP_TRACING\":false,"
     "\"PA_ADMISSION_TRACE\":true}}";
+
+// The Board Lane rows are composed from the pin-map constants rather than
+// restated as literals here. A test that copies the GPIO numbers would be a
+// second home for them, which is the defect the Lane exists to close -- and it
+// would pass while the manifest reported a stale board's wiring.
+void buildAvailabilitySuffix(char* out, size_t outSize) {
+    snprintf(out, outSize,
+             "%s,\"board_lanes\":{"
+             "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
+             "\"audio\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
+             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}}%s",
+             kCapabilities,
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX,
+             (unsigned)UART_PORT_AUDIO, (unsigned)PIN_AUDIO_TX, (unsigned)PIN_AUDIO_RX,
+             (unsigned)UART_PORT_DOME, (unsigned)PIN_DOME_TX, (unsigned)PIN_DOME_RX,
+             kBuildFlags);
+}
+
+void buildExpectedIdentity(char* out, size_t outSize, const char* droidName, bool mdnsUseName) {
+    char suffix[IDENTITY_JSON_MAX_BYTES] = {};
+    buildAvailabilitySuffix(suffix, sizeof(suffix));
+    snprintf(out, outSize, "{\"droidName\":\"%s\",\"mdnsUseName\":%s%s", droidName,
+             mdnsUseName ? "true" : "false", suffix);
+}
 
 void applyIdentity(const char* name, bool mdnsUseName) {
     ConfigSnapshot snap = {};
@@ -53,8 +79,7 @@ void test_get_returns_identity_json() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
     char expected[IDENTITY_JSON_MAX_BYTES] = {};
-    snprintf(expected, sizeof(expected), "{\"droidName\":\"r2-d2\",\"mdnsUseName\":true%s",
-             kAvailabilitySuffix);
+    buildExpectedIdentity(expected, sizeof(expected), "r2-d2", true);
     TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
     TEST_ASSERT_EQUAL_UINT(1, backend.sendCalls);
 }
@@ -108,8 +133,7 @@ void test_post_valid_name_applies_and_echoes() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     char expected[IDENTITY_JSON_MAX_BYTES] = {};
-    snprintf(expected, sizeof(expected), "{\"droidName\":\"chopper\",\"mdnsUseName\":true%s",
-             kAvailabilitySuffix);
+    buildExpectedIdentity(expected, sizeof(expected), "chopper", true);
     TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
 
     ConfigSnapshot snap = {};
@@ -123,6 +147,7 @@ void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
     TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protoartoo", false));
     TEST_ASSERT_LESS_THAN(sizeof(body), strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"board_capabilities\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"board_lanes\""));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"build_flags\""));
 
     char tooSmall[64] = {};
@@ -133,8 +158,9 @@ void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
 // the worst case -- a DROID_NAME_MAX_LEN name -- but the case above uses a
 // 10-character one, so it would keep passing with 22 bytes less headroom than
 // the comment claims. Adding a fourth board capability (#254) spent 36 of the
-// 85 bytes that arithmetic had, leaving 49, so assert the worst case directly:
-// the next manifest row must not be able to overflow at 32 characters while a
+// 85 bytes that arithmetic had; the three Board Lanes (#339) then spent 127 of
+// what a 512 B budget carries, leaving 50. Assert the worst case directly: the
+// next manifest row must not be able to overflow at 32 characters while a
 // short name still fits.
 void test_identity_manifest_fits_with_longest_droid_name() {
     char longName[DROID_NAME_MAX_LEN + 1];
@@ -145,6 +171,24 @@ void test_identity_manifest_fits_with_longest_droid_name() {
     TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), longName, false));
     TEST_ASSERT_LESS_OR_EQUAL_UINT(sizeof(body) - 1, strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"PA_CAP_DEDICATED_AUDIO_UART\":false"));
+    // The last Board Lane row is the first thing an overflow would eat, and a
+    // truncated payload must not reach the browser as a shorter valid one.
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"protor2link\":{"));
+}
+
+// A Board Lane must report what the board's own pin-map arm declares. The
+// manifest is an unguarded X-macro expanded twice in the serializer's
+// translation unit, and the expensive failure there is a silently EMPTY object
+// -- valid JSON, 200 OK, and no routing reaching the browser at all.
+void test_identity_reports_the_drive_lane_from_the_pin_map() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+    TEST_ASSERT_NULL(strstr(body, "\"board_lanes\":{}"));
+
+    char lane[64] = {};
+    snprintf(lane, sizeof(lane), "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX);
+    TEST_ASSERT_NOT_NULL(strstr(body, lane));
 }
 
 int main() {
@@ -156,5 +200,6 @@ int main() {
     RUN_TEST(test_post_valid_name_applies_and_echoes);
     RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     RUN_TEST(test_identity_manifest_fits_with_longest_droid_name);
+    RUN_TEST(test_identity_reports_the_drive_lane_from_the_pin_map);
     return UNITY_END();
 }

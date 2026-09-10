@@ -32,10 +32,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 INCLUDE_DIR = REPO_ROOT / "include"
 
 # Everything the probed headers pull in, staged into the probe's include path.
-# config.h drags the two manifest .inc files and the FireBeetle pin inventory.
+# config.h drags the three manifest .inc files and the FireBeetle pin inventory.
 PROBE_HEADER_SET = (
     "config.h",
     "board_capabilities.inc",
+    "board_lanes.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
     "log_buffer.h",

@@ -28,14 +28,19 @@ namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // Fixed buffer for identity JSON serialization including the manifest.
-    // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
+    // IDENTITY_JSON_MAX_BYTES = 512 B; usable JSON is 511 B (1 byte for NUL).
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
-    // manifest -- 4 capabilities, 3 flags -- that worst case is 334 B of JSON,
-    // leaving 383 - 334 = 49 B of headroom.
-    // Each row emits ,"<name>":false, so it costs name_len + 9 bytes at worst
-    // (name_len + 8 for the first row in an object, which has no leading comma).
-    // Every capability or flag added grows this payload toward the ceiling.
+    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes -- that worst case is
+    // 461 B of JSON, leaving 511 - 461 = 50 B of headroom. Both Board Variants
+    // reach the same 461 B: every lane's UART index is one digit and every lane
+    // pin is two on both boards.
+    // A capability or flag row emits ,"<name>":false, so it costs name_len + 9
+    // bytes at worst (name_len + 8 for the first row in an object, which has no
+    // leading comma). A Board Lane row emits
+    // ,"<name>":{"uart":N,"tx":NN,"rx":NN} and costs name_len + 29 at worst,
+    // one more for each extra digit in a pin or controller index.
+    // Every capability, flag or lane added grows this payload toward the ceiling.
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");

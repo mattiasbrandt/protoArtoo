@@ -454,6 +454,25 @@ static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UAR
     "PA_CAP_DEDICATED_AUDIO_UART must agree with the UART controller allocation:"
     " capability 0 means audio shares UART_PORT_DOME, capability 1 means it does not");
 
+// -----------------------------------------------------------------------------
+// Board Lane coherence guards (CONTEXT.md "Board Lane").
+//
+// Every lane in include/board_lanes.inc is reported to the browser in the
+// identity manifest, so an unrouted lane would put PA_PIN_UNASSIGNED (255) on
+// an operator's screen as a GPIO number. Fail the build instead: a lane that
+// is declared is a lane that is routed. A shared TX/RX pin is the other way a
+// lane row can be wrong by construction -- one wire cannot be both ends.
+// -----------------------------------------------------------------------------
+#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                             \
+    static_assert((tx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned TX pin");                     \
+    static_assert((rx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned RX pin");                     \
+    static_assert((tx_pin) != (rx_pin),                                            \
+        "board lane " #name " routes TX and RX to the same GPIO");
+#include "board_lanes.inc"
+#undef PA_BOARD_LANE
+
 // =============================================================================
 // Protocol and Feature Constants (chip-target specific, board-agnostic)
 // =============================================================================
