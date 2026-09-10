@@ -172,6 +172,14 @@ class GeneratorRefusals(unittest.TestCase):
         self.assertFalse(self.scratch.firmware.exists())
         self.assertFalse(self.scratch.browser.exists())
 
+    def test_a_catalog_that_gives_firmware_no_vocabulary_at_all(self):
+        """An empty id table is a firmware that can never resolve a Part."""
+        text = self.scratch.catalog.read_text(encoding="utf-8")
+        self.scratch.catalog.write_text(
+            text.replace("control: body-ledc", "control: dome-link"), encoding="utf-8"
+        )
+        self.assertRefused("no Part reaches firmware")
+
     def test_a_control_manifest_row_it_cannot_read(self):
         """The firmware's own declaration is parsed, never guessed around."""
         text = self.scratch.control.read_text(encoding="utf-8")

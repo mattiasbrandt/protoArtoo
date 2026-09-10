@@ -542,6 +542,18 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
                 f"{id_limit} ({rel(SERVO_OUTPUT_ROW_PATH)})"
             )
 
+    # An empty id table is not a smaller vocabulary, it is a firmware that can
+    # never resolve a Part to an Output - and a zero-length array that does not
+    # compile, so the failure would surface as a build error in a generated file
+    # rather than as the catalog mistake it is.
+    if not problems and not any(
+        part["control"] is not None and control_paths[part["control"]][1] for part in parts
+    ):
+        problems.append(
+            "no Part reaches firmware: every control path in the catalog is one the "
+            "firmware does not drive, so the generated id table would be empty"
+        )
+
     if problems:
         raise CatalogError(problems)
 
