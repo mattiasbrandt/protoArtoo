@@ -1,0 +1,13 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..3c08d75c 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -989,7 +989,7 @@ input.input-narrow:focus {
+ .feature-availability-row.feature-state-not-in-this-build:focus-within,
+ .feature-availability-row.feature-state-not-on-this-board:hover,
+ .feature-availability-row.feature-state-not-on-this-board:focus-within {
+-  opacity: 1;
++  opacity: var(--avail-dim-elsewhere);
+ }
+ 
+ /* still finding out — the controller has not answered yet, or could not be

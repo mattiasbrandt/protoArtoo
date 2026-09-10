@@ -1,0 +1,13 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..497afe88 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -978,7 +978,7 @@ input.input-narrow:focus {
+ .feature-availability-row.feature-state-not-in-this-build,
+ .feature-availability-row.feature-state-not-on-this-board {
+   border-left-style: dashed;
+-  border-left-color: var(--border);
++  border-left-color: var(--warning);
+   background-image: none;
+   opacity: var(--avail-dim-elsewhere);
+ }

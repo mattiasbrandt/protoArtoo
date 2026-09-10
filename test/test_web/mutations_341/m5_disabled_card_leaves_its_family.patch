@@ -1,0 +1,14 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..c2a67a33 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -964,8 +964,7 @@ input.input-narrow:focus {
+    reach it. Full brightness and a solid rail: this is a live control that
+    happens to be off, not something that has been taken away. */
+ .availability-change-here,
+-.feature-availability-row.feature-state-off,
+-.card.disabled-card {
++.feature-availability-row.feature-state-off {
+   border-left-color: var(--silver);
+   background-image: linear-gradient(90deg, color-mix(in srgb, var(--silver) 8%, transparent), transparent 44%);
+ }

@@ -1,0 +1,14 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..6754a370 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -78,9 +78,6 @@
+ 
+   /* Corner radii. --radius-pill is a capsule of any height; --radius-round is
+      a circle and only ever goes on a square box. */
+-  --radius-xs: 3px;
+-  --radius-sm: 4px;
+-  --radius-md: 8px;
+   --radius-lg: 12px;
+   --radius-pill: 999px;
+   --radius-round: 50%;

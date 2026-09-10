@@ -1,0 +1,13 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..b684cea8 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -3642,7 +3642,7 @@ label.sound-search-field {
+    on purpose; both now look selected the same way. */
+ .opmode-btn.drive.active,
+ .opmode-btn.stationary.active {
+-  border-color: var(--accent-bright);
++  border-color: var(--warning);
+   background: color-mix(in srgb, var(--accent) 20%, transparent);
+   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+ }

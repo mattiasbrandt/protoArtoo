@@ -1,0 +1,13 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..20d369dd 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -1553,7 +1553,7 @@ input.input-narrow:focus {
+ }
+ 
+ .log-line-debug {
+-  color: var(--text-dim);
++  color: var(--text-faint);
+ }
+ 
+ .log-line-command {

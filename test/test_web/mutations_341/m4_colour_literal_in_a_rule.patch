@@ -1,0 +1,13 @@
+diff --git i/data/style.css w/data/style.css
+index dd3a8594..9d0e8a3e 100644
+--- i/data/style.css
++++ w/data/style.css
+@@ -1549,7 +1549,7 @@ input.input-narrow:focus {
+ }
+ 
+ .log-line-warn {
+-  color: var(--warning);
++  color: #e8a832;
+ }
+ 
+ .log-line-debug {
