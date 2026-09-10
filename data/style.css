@@ -3719,7 +3719,7 @@ label.sound-search-field {
 }
 
 /* =========================================================================
-   Learned Sequence Editor (seq.html) — Slice A+
+   Learned Sequence Editor (seq.html)
    ========================================================================= */
 
 .seq-card-header-row {
@@ -4095,7 +4095,7 @@ label.sound-search-field {
 }
 
 /* ========================================================================
-   Slice B: Editor Skeleton & Step Table Styles
+   Sequence editor: skeleton and step table
    ======================================================================== */
 
 .seq-editor-metadata {
@@ -4292,7 +4292,7 @@ label.sound-search-field {
   margin-bottom: 12px;
 }
 
-/* Slice 1: Collapsed step cards */
+/* Collapsed step cards */
 .step-card {
   display: flex;
   flex-direction: column;
@@ -4300,7 +4300,6 @@ label.sound-search-field {
   border: 1px solid var(--border);
   border-radius: 4px;
   position: relative;
-  draggable: true;
 }
 
 .step-card.dragging {
@@ -4320,7 +4319,7 @@ label.sound-search-field {
   background: color-mix(in srgb, var(--danger) 5%, transparent);
 }
 
-/* Slice 5: Per-card validation surfacing */
+/* Per-card validation surfacing */
 .step-card.step-card-invalid {
   border-color: var(--danger);
   border-width: 2px;
@@ -4546,7 +4545,7 @@ label.sound-search-field {
   color: var(--white);
 }
 
-/* Slice 4: Grouped icon card picker (Common + Advanced sections) */
+/* Grouped icon card picker (Common + Advanced sections) */
 .step-type-picker {
   display: flex;
   flex-direction: column;
@@ -4574,7 +4573,7 @@ label.sound-search-field {
   flex-wrap: wrap;
 }
 
-/* Slice 4: Icon card styling (richer than flat buttons) */
+/* Icon card styling (richer than flat buttons) */
 .step-type-card {
   display: flex;
   flex-direction: column;
@@ -4618,7 +4617,7 @@ label.sound-search-field {
   line-height: 1.2;
 }
 
-/* Slice 4: Reference panel (What Each Step Type Does) */
+/* Reference panel (What Each Step Type Does) */
 .step-type-reference {
   display: flex;
   flex-direction: column;
@@ -4701,7 +4700,7 @@ label.sound-search-field {
   padding-left: 8px;
 }
 
-/* Slice 2: Grouped field containers (Target / Behavior / Timing) */
+/* Grouped field containers (Target / Behavior / Timing) */
 .step-field-group {
   display: flex;
   flex-direction: column;
@@ -4723,7 +4722,7 @@ label.sound-search-field {
   align-items: center;
 }
 
-/* Slice 2: Per-card contextual help line */
+/* Per-card contextual help line */
 .step-help-line {
   font-size: 0.75rem;
   color: var(--text-dim);
