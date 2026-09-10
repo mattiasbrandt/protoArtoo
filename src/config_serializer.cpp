@@ -721,6 +721,11 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         out->count = storedCount;
     }
 
+    // Per-row masks are collected first because one rule cannot be decided a row
+    // at a time: "a Part is driven by at most one Output" is a fact about the
+    // whole table, so it runs once every row has been read.
+    uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
+
     for (uint8_t i = 0; i < out->count; ++i) {
         char key[8] = {};
         servoOutputRowKey(i, key, sizeof(key));
@@ -733,18 +738,28 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         }
         const ServoOutputRow fallback = out->rows[i];
         ServoOutputRow parsed = fallback;
-        const uint16_t repaired = servoOutputRowParse(stored.c_str(), fallback, &parsed);
+        rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed);
         out->rows[i] = parsed;
-        if (repaired == 0) {
+    }
+
+    const uint32_t contested = servoOutputTableEnforcePartOwnership(out);
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if ((contested & ((uint32_t)1u << i)) != 0) {
+            rowMask[i] |= SERVO_FIELD_PARTS;
+        }
+    }
+
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if (rowMask[i] == 0) {
             continue;
         }
         if (local.rowsRepaired == 0) {
             local.firstRow = i;
-            local.firstRowMask = repaired;
+            local.firstRowMask = rowMask[i];
         }
         local.rowsRepaired++;
         for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
-            if ((repaired & (uint16_t)(1u << bit)) != 0) {
+            if ((rowMask[i] & (uint16_t)(1u << bit)) != 0) {
                 local.fieldsRepaired++;
             }
         }

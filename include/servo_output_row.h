@@ -139,9 +139,16 @@ constexpr uint8_t SERVO_OUTPUT_CHANNEL_UNSET = 0xFF;
 // the row a place to store a sentence.
 constexpr uint8_t SERVO_OUTPUT_PART_ID_MAX = 12;
 
+// How many Parts one Output may drive. A lead Y-harnessed to both breadpan
+// doors moves both, and a model that can name only one of them leaves the other
+// reading "- not wired -" while it moves anyway, which is a wrong answer rather
+// than a missing feature (ADR 0050). Four is the operator's decision of
+// 2026-09-10: ADR 0050 says "several" and names no number, and four covers a
+// ganged pair with room to spare.
+constexpr uint8_t SERVO_OUTPUT_PART_SLOTS = 4;
+
 // ADR 0052 sizes the model at thirteen-to-twenty-three Outputs once an expander
-// is fitted. Twenty-four rows covers that with one spare, and the whole table
-// measures 770 B of static RAM on artoo-esp32 (nm on the linked image).
+// is fitted. Twenty-four rows covers that with one spare.
 constexpr uint8_t SERVO_OUTPUT_ROW_MAX = 24;
 
 // The five LEDC outputs this controller drives today.
@@ -153,11 +160,20 @@ constexpr uint8_t SERVO_OUTPUT_ROW_DEFAULT_COUNT = 5;
 struct ServoOutputRow {
     ServoOutputDriver driver;  // Output Address, half one
     uint8_t channel;           // Output Address, half two
-    // The Part this output drives, by its Droid Parts Catalog id. Empty means
-    // no Part is assigned yet, which is legal: the droid's own wiring decides
-    // what moves. The catalog does not reach firmware as a vocabulary until
-    // #301, so this is checked for shape, not for membership.
-    char part[SERVO_OUTPUT_PART_ID_MAX + 1];
+    // The Parts this output drives, by their Droid Parts Catalog ids, filled
+    // slots first and empty slots after. An empty list is legal and means no
+    // Part is assigned yet: the droid's own wiring decides what moves, not the
+    // catalog. The catalog does not reach firmware as a vocabulary until #301,
+    // so an id is checked for shape, not for membership.
+    //
+    // The multiplicity is asymmetric and both halves matter (ADR 0050). An
+    // Output may drive several Parts, so a ganged lead tells the truth about
+    // everything it moves. A Part is driven by at most one Output, because
+    // "which Output drives this Part" must have exactly one answer or firmware
+    // resolves it by whichever row it scans first. The second half is a rule
+    // about the whole table, so it is enforced there:
+    // servoOutputTableEnforcePartOwnership().
+    char parts[SERVO_OUTPUT_PART_SLOTS][SERVO_OUTPUT_PART_ID_MAX + 1];
     uint16_t open_us;     // Endpoint Pair, directional: reverse is open > close
     uint16_t centre_us;   // the third position; not derived from the other two
     uint16_t close_us;    // Endpoint Pair, directional
@@ -170,6 +186,11 @@ struct ServoOutputRow {
     bool calibrated;                // a human measured this against the linkage
 };
 
+// The whole table measures 1682 B of static RAM on artoo-esp32 - a 70-byte row
+// times twenty-four, plus the count - read with `nm -S` off the linked image
+// rather than projected. The budget in tools/build_budgets.json was raised to
+// 112,000 B for exactly this spend; that budget is heap headroom rather than
+// spare DRAM, so a row field is not free even though the segment has room.
 struct ServoOutputTable {
     uint8_t count;
     ServoOutputRow rows[SERVO_OUTPUT_ROW_MAX];
@@ -190,7 +211,7 @@ enum ServoOutputEnd : uint8_t {
 enum ServoOutputField : uint16_t {
     SERVO_FIELD_DRIVER = 1u << 0,
     SERVO_FIELD_CHANNEL = 1u << 1,
-    SERVO_FIELD_PART = 1u << 2,
+    SERVO_FIELD_PARTS = 1u << 2,
     SERVO_FIELD_OPEN = 1u << 3,
     SERVO_FIELD_CENTRE = 1u << 4,
     SERVO_FIELD_CLOSE = 1u << 5,
@@ -219,7 +240,7 @@ struct ServoOutputRepairReport {
 // refused mechanically). Index matches ServoOutputField's bit position.
 inline const char* servoOutputFieldName(uint8_t bitIndex) {
     static const char* const kNames[SERVO_OUTPUT_FIELD_COUNT] = {
-        "driver", "channel", "part",  "open",   "centre",    "close",     "throw",
+        "driver", "channel", "parts", "open",   "centre",    "close",     "throw",
         "accel",  "release", "ease",  "boot",   "component", "calibrated",
     };
     return (bitIndex < SERVO_OUTPUT_FIELD_COUNT) ? kNames[bitIndex] : "";
@@ -371,6 +392,73 @@ inline bool servoOutputPartIdIsValid(const char* part) {
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputPartCount() / servoOutputPartAt() / servoOutputDrivesPart()
+// The row's Part list, read the one way. Slots are kept filled-first, so the
+// count is where the first empty slot is and a caller never has to skip holes.
+// -----------------------------------------------------------------------------
+inline uint8_t servoOutputPartCount(const ServoOutputRow& row) {
+    uint8_t count = 0;
+    while (count < SERVO_OUTPUT_PART_SLOTS && row.parts[count][0] != '\0') {
+        ++count;
+    }
+    return count;
+}
+
+inline const char* servoOutputPartAt(const ServoOutputRow& row, uint8_t slot) {
+    return (slot < SERVO_OUTPUT_PART_SLOTS) ? row.parts[slot] : "";
+}
+
+inline bool servoOutputDrivesPart(const ServoOutputRow& row, const char* partId) {
+    if (partId == nullptr || partId[0] == '\0') {
+        return false;
+    }
+    const uint8_t count = servoOutputPartCount(row);
+    for (uint8_t i = 0; i < count; ++i) {
+        if (strcmp(row.parts[i], partId) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputClearParts() / servoOutputAddPart() / servoOutputRemovePartAt()
+// The three writes the list allows. Add refuses an invalid id, a Part the row
+// already drives, and a fifth Part; remove closes the gap so the list stays
+// filled-first. None of them is a policy decision - which row keeps a contested
+// Part is servoOutputTableEnforcePartOwnership()'s.
+// -----------------------------------------------------------------------------
+inline void servoOutputClearParts(ServoOutputRow* row) {
+    if (row == nullptr) {
+        return;
+    }
+    memset(row->parts, 0, sizeof(row->parts));
+}
+
+inline bool servoOutputAddPart(ServoOutputRow* row, const char* partId) {
+    if (row == nullptr || partId == nullptr || partId[0] == '\0' ||
+        !servoOutputPartIdIsValid(partId) || servoOutputDrivesPart(*row, partId)) {
+        return false;
+    }
+    const uint8_t count = servoOutputPartCount(*row);
+    if (count >= SERVO_OUTPUT_PART_SLOTS) {
+        return false;
+    }
+    snprintf(row->parts[count], sizeof(row->parts[count]), "%s", partId);
+    return true;
+}
+
+inline void servoOutputRemovePartAt(ServoOutputRow* row, uint8_t slot) {
+    if (row == nullptr || slot >= SERVO_OUTPUT_PART_SLOTS) {
+        return;
+    }
+    for (uint8_t i = slot; i + 1 < SERVO_OUTPUT_PART_SLOTS; ++i) {
+        memcpy(row->parts[i], row->parts[i + 1], sizeof(row->parts[i]));
+    }
+    row->parts[SERVO_OUTPUT_PART_SLOTS - 1][0] = '\0';
+}
+
+// -----------------------------------------------------------------------------
 // servoOutputRowDefaults()
 // A row nobody has configured: addressed, unassigned, uncalibrated, limp at
 // power-up, never released, and with an Endpoint Pair spanning what its
@@ -385,7 +473,7 @@ inline void servoOutputRowDefaults(ServoOutputRow* row, ServoOutputDriver driver
     const ServoPulseBand band = servoComponentBand(component);
     row->driver = driver;
     row->channel = channel;
-    row->part[0] = '\0';
+    servoOutputClearParts(row);
     row->open_us = band.hi;
     row->centre_us = (uint16_t)((band.lo + band.hi) / 2u);
     row->close_us = band.lo;
@@ -581,14 +669,31 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
         repaired |= SERVO_FIELD_CHANNEL;
     }
 
-    // An unreadable Part id takes the fallback's -- unassigned on a whole row,
-    // the part the output already had on a partial one -- rather than being
-    // trimmed into some other part's name.
-    row->part[SERVO_OUTPUT_PART_ID_MAX] = '\0';
-    if (!servoOutputPartIdIsValid(row->part)) {
-        memcpy(row->part, fallback.part, sizeof(row->part));
-        row->part[SERVO_OUTPUT_PART_ID_MAX] = '\0';
-        repaired |= SERVO_FIELD_PART;
+    // The Part list is repaired entry by entry rather than replaced whole: an
+    // id nobody can read costs its own slot, never the three beside it that a
+    // builder assigned. What is left is compacted so the list stays
+    // filled-first, and a Part named twice in one row keeps one slot -- driving
+    // the same Part twice from one lead is the same lead.
+    for (uint8_t slot = 0; slot < SERVO_OUTPUT_PART_SLOTS; ++slot) {
+        row->parts[slot][SERVO_OUTPUT_PART_ID_MAX] = '\0';
+    }
+    for (uint8_t slot = 0; slot < SERVO_OUTPUT_PART_SLOTS;) {
+        const char* id = row->parts[slot];
+        bool drop = id[0] != '\0' && !servoOutputPartIdIsValid(id);
+        for (uint8_t earlier = 0; !drop && earlier < slot; ++earlier) {
+            drop = id[0] != '\0' && strcmp(row->parts[earlier], id) == 0;
+        }
+        // A filled slot after an empty one is a gap; closing it is the same
+        // removal, so it lands in the same branch.
+        if (!drop && id[0] == '\0' && servoOutputPartAt(*row, (uint8_t)(slot + 1))[0] != '\0') {
+            drop = true;
+        }
+        if (drop) {
+            servoOutputRemovePartAt(row, slot);
+            repaired |= SERVO_FIELD_PARTS;
+            continue;  // the slot now holds what followed it, so re-check it
+        }
+        ++slot;
     }
 
     const uint16_t clampedOpen = servoOutputClampPulse(*row, row->open_us);
@@ -640,16 +745,40 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 // words. An unassigned Part writes "-" rather than an empty field, so a short
 // record is a damaged record rather than an ambiguous one.
 // -----------------------------------------------------------------------------
-constexpr size_t SERVO_OUTPUT_ROW_STR_MAX = 127;
+// The longest record a full row can produce: 4 driver + 3 channel + 51 parts
+// (four ids and three commas) + 15 endpoints + 15 times + 9 "overshoot" + 12
+// "home-release" + 6 "mg996r" + 1 calibrated + 12 separators = 128 characters.
+// 191 leaves room for a longer word without a format change reaching the wire.
+constexpr size_t SERVO_OUTPUT_ROW_STR_MAX = 191;
 
 inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow& row) {
     if (buf == nullptr || bufSize == 0) {
         return false;
     }
+
+    // The Part list is one field, its ids joined by commas. A comma cannot
+    // occur in an id (servoOutputPartIdIsValid), so the inner separator can
+    // never be mistaken for the outer one.
+    char partList[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1)] = {};
+    const uint8_t partCount = servoOutputPartCount(row);
+    if (partCount == 0) {
+        snprintf(partList, sizeof(partList), "-");
+    } else {
+        size_t used = 0;
+        for (uint8_t i = 0; i < partCount; ++i) {
+            const int n = snprintf(partList + used, sizeof(partList) - used, "%s%s",
+                                   i == 0 ? "" : ",", row.parts[i]);
+            if (n <= 0 || (size_t)n >= sizeof(partList) - used) {
+                return false;
+            }
+            used += (size_t)n;
+        }
+    }
+
     const int written =
         snprintf(buf, bufSize, "%s:%u:%s:%u:%u:%u:%u:%u:%u:%s:%s:%s:%u",
                  servoOutputDriverToString(row.driver), (unsigned)row.channel,
-                 row.part[0] == '\0' ? "-" : row.part, (unsigned)row.open_us,
+                 partList, (unsigned)row.open_us,
                  (unsigned)row.centre_us, (unsigned)row.close_us, (unsigned)row.throw_ms,
                  (unsigned)row.accel_ms, (unsigned)row.release_ms, servoEasingToString(row.easing),
                  servoBootBehaviourToString(row.boot), servoCompTypeToString(row.component),
@@ -731,12 +860,23 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
         repaired |= SERVO_FIELD_CHANNEL;
     }
 
-    if (strcmp(fields[2], "-") == 0) {
-        out->part[0] = '\0';
-    } else if (servoOutputPartIdIsValid(fields[2])) {
-        snprintf(out->part, sizeof(out->part), "%s", fields[2]);
-    } else {
-        repaired |= SERVO_FIELD_PART;
+    // The Part list: "-" for none, otherwise up to four comma-separated ids.
+    // An entry that cannot be read, one the row already drives, and a fifth all
+    // cost themselves and nothing else - a row with three good Parts keeps
+    // them.
+    servoOutputClearParts(out);
+    if (strcmp(fields[2], "-") != 0) {
+        char* entry = fields[2];
+        while (entry != nullptr) {
+            char* comma = strchr(entry, ',');
+            if (comma != nullptr) {
+                *comma = '\0';
+            }
+            if (!servoOutputAddPart(out, entry)) {
+                repaired |= SERVO_FIELD_PARTS;
+            }
+            entry = (comma != nullptr) ? comma + 1 : nullptr;
+        }
     }
 
     struct NumericField {
@@ -788,6 +928,57 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
 
     repaired |= servoOutputRowNormalise(out, fallback);
     return repaired;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputTableEnforcePartOwnership()
+// The other half of ADR 0050's asymmetry, and the only rule that cannot live on
+// a single row: a Part is driven by at most one Output.
+//
+// It matters because *which Output drives this Part* must have exactly one
+// answer. Two rows claiming one Part would leave firmware resolving it by
+// whichever row it happens to scan first, so the droid's behaviour would depend
+// on table order.
+//
+// The lowest-numbered row keeps a contested Part and the later ones lose their
+// slot, reported rather than refused. That is a repair of a table that should
+// never have existed, not the model's reassignment rule: moving a Part to
+// another Output is an act at the write door, which clears the old row itself
+// (ADR 0050 - "assigning it elsewhere MOVES it"). First-wins is chosen here
+// only because a repair has to be deterministic, and scan order is exactly what
+// the rule exists to stop mattering.
+//
+// Returns a bitmask of the rows that lost a Part, bit i for row i.
+// -----------------------------------------------------------------------------
+static_assert(SERVO_OUTPUT_ROW_MAX <= 32,
+              "the ownership pass reports affected rows in a uint32_t bitmask");
+
+inline uint32_t servoOutputTableEnforcePartOwnership(ServoOutputTable* table) {
+    if (table == nullptr) {
+        return 0;
+    }
+    const uint8_t count =
+        (table->count <= SERVO_OUTPUT_ROW_MAX) ? table->count : SERVO_OUTPUT_ROW_MAX;
+    uint32_t affected = 0;
+    for (uint8_t i = 1; i < count; ++i) {
+        for (uint8_t slot = 0; slot < SERVO_OUTPUT_PART_SLOTS;) {
+            const char* id = table->rows[i].parts[slot];
+            if (id[0] == '\0') {
+                break;  // filled-first, so the rest of this row is empty too
+            }
+            bool claimed = false;
+            for (uint8_t earlier = 0; !claimed && earlier < i; ++earlier) {
+                claimed = servoOutputDrivesPart(table->rows[earlier], id);
+            }
+            if (claimed) {
+                servoOutputRemovePartAt(&table->rows[i], slot);
+                affected |= (uint32_t)1u << i;
+                continue;  // the slot now holds what followed it
+            }
+            ++slot;
+        }
+    }
+    return affected;
 }
 
 // -----------------------------------------------------------------------------
