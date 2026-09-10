@@ -69,7 +69,6 @@ constexpr FixedServoFieldSet kFixedServoFieldSets[] = {
      &ServoConfig::aux3_type},
 };
 
-
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def);
