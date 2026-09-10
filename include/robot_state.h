@@ -95,7 +95,10 @@ enum AuxLedEffect : uint8_t {
 };
 
 struct AuxLedState {
-    uint8_t pin;  // 0 when disabled; otherwise active GPIO number
+    // 0 when disabled; otherwise the active GPIO number. This is the RESOLVED
+    // pin, not the operator's choice: ServoConfig::aux_led_pin is the AUX slot
+    // selection 0..3 that auxLedSelectionToGpio() turns into this.
+    uint8_t pin;
     uint8_t r;
     uint8_t g;
     uint8_t b;

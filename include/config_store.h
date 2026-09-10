@@ -279,6 +279,12 @@ struct ServoConfig {
     ServoComponentType aux3_type;
     uint16_t seq_open_ms;
     uint16_t seq_close_ms;
+    // NOT a GPIO, despite the name: an AUX slot selection, 0..AUX_LED_PIN_MAX
+    // (AUX_LED_PIN_DISABLED/AUX1/AUX2/AUX3, include/config.h). The GPIO it
+    // resolves to is the board's, via auxLedSelectionToGpio(), and it is
+    // robotState.auxLed.pin -- a different field with the same word in it that
+    // really does hold a GPIO. The NVS key aux_led_pin is operator-visible and
+    // stays; this comment is the guard against reading the two as one thing.
     uint8_t aux_led_pin;
     uint8_t aux_led_count;
 };
