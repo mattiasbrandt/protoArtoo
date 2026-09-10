@@ -95,9 +95,13 @@ struct ServoPulseBand {
     uint16_t hi;
 };
 
-// 1000-2000 us, the cautious sweep and exactly what an MG996R takes.
-constexpr ServoPulseBand SERVO_BAND_STD = {ESC_PULSE_MIN_US, ESC_PULSE_MAX_US};
-// 500-2500 us, everything a servo will take.
+// 1000-2000 us, the cautious sweep, and exactly what an MG996R takes -- the
+// same pair servoTypeDefaultClose()/servoTypeDefaultOpen() already record for
+// that part. Written out rather than borrowed from ESC_PULSE_MIN_US /
+// ESC_PULSE_MAX_US, which carry the same two numbers for an unrelated reason
+// (the dome ESC's range) and would couple a servo policy to an ESC fact.
+constexpr ServoPulseBand SERVO_BAND_STD = {1000, 2000};
+// 500-2500 us, everything a servo will take. This one IS the servo constant.
 constexpr ServoPulseBand SERVO_BAND_ABS = {SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US};
 
 // -----------------------------------------------------------------------------
@@ -577,8 +581,9 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
         repaired |= SERVO_FIELD_CHANNEL;
     }
 
-    // A row nobody can read must not claim to drive a Part: an unreadable id
-    // clears rather than being trimmed into a different part's name.
+    // An unreadable Part id takes the fallback's -- unassigned on a whole row,
+    // the part the output already had on a partial one -- rather than being
+    // trimmed into some other part's name.
     row->part[SERVO_OUTPUT_PART_ID_MAX] = '\0';
     if (!servoOutputPartIdIsValid(row->part)) {
         memcpy(row->part, fallback.part, sizeof(row->part));
@@ -670,8 +675,9 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
 
     constexpr uint16_t kAllFields = (uint16_t)((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u);
 
-    if (raw == nullptr || raw[0] == '\0' || strnlen(raw, SERVO_OUTPUT_ROW_STR_MAX + 1) >
-                                                SERVO_OUTPUT_ROW_STR_MAX) {
+    const bool unreadable = raw == nullptr || raw[0] == '\0' ||
+                            strnlen(raw, SERVO_OUTPUT_ROW_STR_MAX + 1) > SERVO_OUTPUT_ROW_STR_MAX;
+    if (unreadable) {
         return kAllFields;
     }
 
