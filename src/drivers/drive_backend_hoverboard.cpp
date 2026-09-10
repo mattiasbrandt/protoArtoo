@@ -30,6 +30,12 @@ namespace {
 // shape of state without DriveTask learning about it.
 HoverboardFeedbackParser g_feedbackParser;
 
+// Static zero-initialisation is NOT the parser's initialised state -- it leaves
+// seekingStart false, which is mid-frame. Only driveBackendBegin() puts the
+// parser in a state that can decode, so poll refuses until it has run rather
+// than parsing whatever the zeroes happen to mean.
+bool g_begun = false;
+
 }  // namespace
 
 // buildHoverboardFrame() takes (steer, speed); the seam takes (speed, steer).
@@ -52,11 +58,18 @@ void driveBackendBegin(HardwareSerial& uart) {
     // After begin(), never before: a mid-stream accumulator left over from a
     // prior UART session would otherwise corrupt the first new frame.
     initHoverboardFeedbackParser(&g_feedbackParser);
+    g_begun = true;
 }
 
 void driveBackendSend(HardwareSerial& uart, int16_t speed, int16_t steer) {
     uint8_t frame[DRIVE_BACKEND_FRAME_MAX_BYTES];
     const size_t len = driveBackendEncode(frame, sizeof(frame), speed, steer);
+    // Unreachable by construction: encode refuses only a buffer shorter than
+    // one frame, and this one is the catalogue's frame ceiling, which the
+    // static_assert above ties to the backend's own frame length. Kept as a
+    // hard guard rather than a log or a partial write, because a truncated
+    // frame would make the far end resync mid-command while the tick that
+    // follows is 20 ms away.
     if (len == 0) {
         return;
     }
@@ -64,7 +77,7 @@ void driveBackendSend(HardwareSerial& uart, int16_t speed, int16_t steer) {
 }
 
 bool driveBackendPollFeedback(HardwareSerial& uart, DriveFeedback* out) {
-    if (out == nullptr) {
+    if (out == nullptr || !g_begun) {
         return false;
     }
 
