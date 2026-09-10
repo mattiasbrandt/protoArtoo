@@ -714,6 +714,29 @@ builder would choose **instead of** protoArtoo rather than alongside it."* That
 framing is right, and it makes CHIRP the closest thing this project has to a
 direct comparator on the radio side.
 
+> [!IMPORTANT]
+> **The Droid Control half has no published source yet.** The `joymonkey/CHIRP`
+> repository tree at its current tip contains only `CHIRP_Audio_Trigger/` --
+> sketches, firmware `.uf2` images, sounds and board photographs. The Droid
+> Control goals are in the README; the code is not in the repository. So the
+> working CRSF implementation to read is still ShadyRC (Section 11.1), not this.
+
+### 11.6 Three generations, and only the oldest has code
+
+Checked across the author's repositories on 2026-09-10, because it is easy to
+assume the newest name is the one to study:
+
+| Project | ELRS/CRSF | State |
+| --- | --- | --- |
+| `dEvolution` -- **ShadyRC Crossfire** | **yes, working** | **field-tested source**, read in full for this sheet |
+| `sentinel` -- *"An updated droid control system for use with EdgeTX/ExpressLRS radios"* | announced | **placeholder** -- README and LICENSE only, no code |
+| `CHIRP` -- Droid Control | announced, goals documented | **no Droid Control source published**; the Audio Trigger half is complete |
+
+The ambition has been restated three times and implemented once. That is worth
+knowing before anyone goes looking for a modern reference implementation --
+**and it means protoArtoo would not be following a finished peer, it would be
+arriving at roughly the same time as one.**
+
 > [!NOTE]
 > No other astromech project surveyed supports CRSF. The SHADOW family is PS3
 > Navigation over Bluetooth, Padawan360 is Xbox over USB, Reeltwo and MarcDuino
