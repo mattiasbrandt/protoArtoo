@@ -83,13 +83,30 @@ the same pass - never left open for one unobtainable number.
 `<base>` throughout this skill is the epic's integration branch - read it
 from the epic's coordination section (it changes at Phase 5 closure).
 
-- `gh issue develop <n> --base <base> --name <type>/<slug>`, then
-  `git worktree add ../wt-<n> <branch>`.
-- **Stale-base trap:** `gh issue develop` branches from ORIGIN's ref, which
-  can be many commits behind the local integration branch. After creating the
-  worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
-  `<base>` tip; if not, `reset --hard` it there before the worker
-  starts. Every worktree, every time.
+- **Make the branch and worktree with the tool, not by hand:**
+  `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug>`.
+  It creates the linked branch, adds `../wt-<n>`, puts it on the local
+  `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
+  branch so the issue's Development section names the real base, and prints
+  how far `origin/<base>` is behind. `--check <path> --base <base>` re-verifies
+  an existing worktree before a re-dispatch; `--dry-run` reports and creates
+  nothing.
+- **Why the tool exists, so nobody "simplifies" it away.** `gh issue develop`
+  creates the branch **server-side, from the remote ref** - its own help says
+  so. An epic's integration branch advances **locally**, because AGENTS.md
+  "Push and remote policy" makes pushing a shared integration branch an
+  operator-approved act. So `origin/<base>` runs N merges behind `<base>` and
+  every hand-made worktree starts at the wrong commit. This used to be a
+  sentence here telling the coordinator to `reset --hard` after every worktree,
+  every time; it was obeyed, and it was still the wrong shape, because a rule
+  that must be remembered on every repetition is a defect waiting for the
+  repetition where it is not.
+- **The gap itself is the operator's call, and not the tool's to close.**
+  Pushing `<base>` after each accepted merge would remove the divergence at
+  source and make `gh issue develop --base` correct by construction. That is an
+  approved act, not a coordinator convenience: ask for it once per epic rather
+  than assuming it, and until it is granted let the tool report the gap on
+  every run.
 - **Seed only the research this ticket cites.** From the repo root,
   `cp --parents <cited paths> ../wt-<n>/` - which reproduces each path exactly
   as the ticket and the epic write it, screenshots included. Copy the files
