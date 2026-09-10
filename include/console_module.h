@@ -98,6 +98,18 @@ typedef enum {
     // the operation, from the registry's `read_only: true` through the
     // generated catalog - never from a list of names in the dispatcher.
     CONSOLE_REASON_READ_ONLY = 16,
+    // A known Part that no Output on this droid claims, so nothing moves when
+    // a step names it (#301). The sixth Availability Reason, and the only one
+    // that is a fact about the builder's wiring rather than about the image,
+    // the board or a toggle - which is why reporting an unwired Part as
+    // COMPONENT_DISABLED would be wrong: that names a deliberate choice.
+    //
+    // Never cached from discovery. Authoring a step for an arm that is not
+    // wired yet is legal, and the same saved step starts working the moment an
+    // Output records the Part, with no re-authoring - so the question is asked
+    // of the Servo Output table at execution, every time
+    // (droidPartAvailabilityReason(), include/droid_part_availability.h).
+    CONSOLE_REASON_PART_NOT_ASSIGNED = 17,
 } ConsoleReason;
 
 // =============================================================================

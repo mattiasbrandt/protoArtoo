@@ -199,18 +199,20 @@ void test_reason_is_present_for_every_real_reason_and_absent_for_none(void) {
     TEST_ASSERT_FALSE_MESSAGE(consoleReasonIsPresent(CONSOLE_REASON_NONE),
                               "NONE must not render a reason field");
 
-    const ConsoleReason kReal[] = {
-        CONSOLE_REASON_NOT_IN_THIS_BUILD,      CONSOLE_REASON_NOT_ON_THIS_BOARD,
-        CONSOLE_REASON_COMPONENT_DISABLED,     CONSOLE_REASON_BLOCKED_BY_STATE,
-        CONSOLE_REASON_TEMPORARILY_UNAVAILABLE, CONSOLE_REASON_LINE_TOO_LONG,
-        CONSOLE_REASON_SECRET_NOT_SETTABLE,    CONSOLE_REASON_UNKNOWN_OPERATION,
-        CONSOLE_REASON_UNKNOWN_ARGUMENT,       CONSOLE_REASON_MISSING_ARGUMENT,
-        CONSOLE_REASON_OUT_OF_RANGE,           CONSOLE_REASON_NOT_EXECUTABLE,
-        CONSOLE_REASON_EXECUTOR_NOT_READY,     CONSOLE_REASON_QUEUE_FULL,
-    };
-    for (size_t i = 0; i < sizeof(kReal) / sizeof(kReal[0]); ++i) {
-        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(kReal[i]),
+    // Walked as a range rather than listed. The hand-kept list this replaces
+    // had already fallen two reasons behind the enum - MALFORMED_ARGUMENT and
+    // READ_ONLY were appended and never added here - so it was asserting about
+    // whichever reasons happened to exist when someone last remembered. The
+    // enum's values are contiguous from NONE, so the only thing to keep in step
+    // is the last enumerator, and getting that wrong is visible: a reason with
+    // no string renders "unknown", which is asserted below.
+    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_PART_NOT_ASSIGNED;
+         ++reason) {
+        const ConsoleReason real = (ConsoleReason)reason;
+        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(real),
                                  "a real reason must render a reason field");
+        TEST_ASSERT_TRUE_MESSAGE(strcmp(consoleReasonString(real), "unknown") != 0,
+                                 "every reason in the enum needs its own token");
     }
 }
 
