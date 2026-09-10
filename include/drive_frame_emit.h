@@ -5,9 +5,12 @@
 // Extracted from drive.cpp for native testability (ADR 0005).
 //
 // The driveTickDecide() function encodes the zero-frame continuity invariant:
-// a frame to the hoverboard is emitted every tick regardless of failsafe state
-// or command freshness. The function takes these inputs to allow comprehensive
-// testing across all state combinations; the decision is unconditionally true.
+// a frame to the drive backend is emitted every tick regardless of failsafe
+// state or command freshness. It is generic on purpose -- every controller has
+// some version of "keep talking to me" and they differ (include/drive_backend.h),
+// so the guarantee lives here where no backend can reach it. The function
+// takes these inputs to allow comprehensive testing across all state
+// combinations; the decision is unconditionally true.
 // =============================================================================
 #pragma once
 

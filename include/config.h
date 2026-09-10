@@ -5,7 +5,11 @@
 // Supports multiple controller board variants on different chip targets.
 // See docs/pin_map.md and docs/adr/0028-two-layer-board-abstraction.md
 //
-// PCB serial port legend (from PCB silkscreen):
+// artoo-esp32 PCB serial port legend, read off that board's silkscreen. It is
+// one Board Variant's wiring, not a project-wide fact: firebeetle2 has no S1,
+// S2 or S3 header and routes all three signals to other GPIO. Where a signal
+// is routed on the board being built is a Board Lane (include/board_lanes.inc),
+// and the silkscreen text is a Board Component Label (include/component_labels.inc).
 //   S0 = ESP debug           (UART0, GPIO 1/3)
 //   S1 = Hoverboard          (UART1, GPIO 16 TX / 17 RX)
 //   S2 = Sound               (GPIO 26 TX / 35 RX)
@@ -454,18 +458,44 @@ static_assert((UART_PORT_AUDIO == UART_PORT_DOME) == (PA_CAP_DEDICATED_AUDIO_UAR
     "PA_CAP_DEDICATED_AUDIO_UART must agree with the UART controller allocation:"
     " capability 0 means audio shares UART_PORT_DOME, capability 1 means it does not");
 
+// -----------------------------------------------------------------------------
+// Board Lane coherence guards (CONTEXT.md "Board Lane").
+//
+// Every lane in include/board_lanes.inc is reported to the browser in the
+// identity manifest, so an unrouted lane would put PA_PIN_UNASSIGNED (255) on
+// an operator's screen as a GPIO number. Fail the build instead: a lane that
+// is declared is a lane that is routed. A shared TX/RX pin is the other way a
+// lane row can be wrong by construction -- one wire cannot be both ends.
+// -----------------------------------------------------------------------------
+#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                             \
+    static_assert((tx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned TX pin");                     \
+    static_assert((rx_pin) != PA_PIN_UNASSIGNED,                                   \
+        "board lane " #name " declares an unassigned RX pin");                     \
+    static_assert((tx_pin) != (rx_pin),                                            \
+        "board lane " #name " routes TX and RX to the same GPIO");
+#include "board_lanes.inc"
+#undef PA_BOARD_LANE
+
 // =============================================================================
 // Protocol and Feature Constants (chip-target specific, board-agnostic)
 // =============================================================================
 
 // Drive constants
-// These constants apply to all chip targets; board-specific pins are defined above.
+// These constants apply to all chip targets; board-specific pins are defined
+// above. A drive controller's own wire settings -- baud, framing, how long its
+// far end tolerates a gap -- are not here: they belong to the backend that
+// speaks them, in its catalogue row in include/drive_backend.h.
 constexpr int16_t SPEED_LIMIT_MAX = 600;  // Absolute max drive output (never exceeded)
 constexpr int16_t SPEED_PRESET_SLOW = 200;
 constexpr int16_t SPEED_PRESET_NORMAL = 350;
 constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
-constexpr uint32_t HOVERBOARD_BAUD = 115200;
-constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Frame rate for hoverboard UART
+constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Zero-frame continuity rate, every drive backend
+// The tick period DriveTask actually sleeps, derived so the number has one
+// home: include/drive_backend.h static_asserts it against the active backend's
+// declared continuity deadline. Integer division truncates, which errs toward
+// a SHORTER period -- feeding the far end sooner than it asked, never later.
+constexpr uint16_t DRIVE_FRAME_PERIOD_MS = (uint16_t)(1000 / DRIVE_FREQ_HZ);
 
 // -----------------------------------------------------------------------------
 // SBUS constants

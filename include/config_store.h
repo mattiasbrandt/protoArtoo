@@ -167,9 +167,14 @@ enum class ConfigKey : uint8_t {
     ENABLE_RC_CH5 = 110,
     ENABLE_RC_CH6 = 111,
     SINGLE_SBUS_USE_CH2 = 112,
-    ENABLE_S1_HOVERBOARD = 113,
-    ENABLE_S2_SOUND = 114,
-    ENABLE_S3_DOME_CTRL = 115,
+    // The three serial-component toggles carry generic project vocabulary, not
+    // the artoo.uk PCB's S1/S2/S3 silkscreen legend (ADR 0033). Their persisted
+    // keys have been en_drive / en_audio / en_r2link since the schema 2 -> 3
+    // migration, so these identifiers were the last place the board's own
+    // labels survived and renaming them migrates nothing.
+    ENABLE_DRIVE = 113,
+    ENABLE_AUDIO = 114,
+    ENABLE_PROTOR2LINK = 115,
     STATIONARY = 116,
     RC_INPUT_MODE = 117,
 
@@ -275,6 +280,12 @@ struct ServoConfig {
     ServoComponentType aux3_type;
     uint16_t seq_open_ms;
     uint16_t seq_close_ms;
+    // NOT a GPIO, despite the name: an AUX slot selection, 0..AUX_LED_PIN_MAX
+    // (AUX_LED_PIN_DISABLED/AUX1/AUX2/AUX3, include/config.h). The GPIO it
+    // resolves to is the board's, via auxLedSelectionToGpio(), and it is
+    // robotState.auxLed.pin -- a different field with the same word in it that
+    // really does hold a GPIO. The NVS key aux_led_pin is operator-visible and
+    // stays; this comment is the guard against reading the two as one thing.
     uint8_t aux_led_pin;
     uint8_t aux_led_count;
 };

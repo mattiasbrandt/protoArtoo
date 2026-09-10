@@ -3,12 +3,14 @@
 //
 // RMT-based SBUS decoder for ESP32.
 // Receives SBUS frames (100 kbaud, 8E2, inverted) on any GPIO using the
-// ESP32 RMT peripheral. No hardware UART is consumed  --  UART1 and UART2
-// remain exclusively owned by DriveTask (hoverboard) and DomeLinkTask
-// (dome serial) respectively. Resolves both Conflict A (UART1) and
-// Conflict B (UART2) from the UART contention audit.
+// ESP32 RMT peripheral. No hardware UART is consumed  --  UART_PORT_DRIVE and
+// UART_PORT_DOME remain exclusively owned by DriveTask (the Foot Drive backend)
+// and DomeLinkTask (protoR2link) respectively. Resolves both Conflict A (UART1)
+// and Conflict B (UART2) from the UART contention audit.
 //
-// Hardware: HOTRC SBUS-A receivers on GPIO 15 (drive) and GPIO 13 (dome).
+// Hardware: HOTRC SBUS-A receivers on PIN_SBUS1_RX (drive) and PIN_SBUS2_RX
+// (dome). Both are per Board Variant (include/config.h): GPIO 15 and 13 on
+// artoo-esp32, 28 and 29 on firebeetle2.
 // Protocol: 25-byte frame; supports standard 100 kbaud SBUS and fast 200 kbaud
 // timing variants seen on some receiver/transmitter combinations.
 //

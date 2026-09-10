@@ -445,8 +445,8 @@ static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* opera
 //  - ADR 0032 is the reason there is nothing to guard. The network is never
 //    load-bearing: a network fault never restarts the controller and never
 //    degrades a droid function. The WiFi module carries the network and only
-//    the network -- drive goes out over the hoverboard UART, the dome over its
-//    own serial link, servos over LEDC, sound over the audio UART -- so
+//    the network -- drive goes out over the drive lane, the dome over its
+//    own serial link, servos over LEDC, sound over the audio lane -- so
 //    dropping it takes no droid function with it, and a stationary/estop gate
 //    would guard nothing.
 //  - The concrete risk raised on the ticket was not a lost control line but a

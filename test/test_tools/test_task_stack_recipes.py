@@ -55,6 +55,7 @@ import check_task_stack_chains as checker  # noqa: E402
 PROBE_HEADER_SET = (
     "config.h",
     "board_capabilities.inc",
+    "board_lanes.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
 )

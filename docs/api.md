@@ -83,13 +83,23 @@ served normally; only requests that had no answer either way reach this reply.
 ### GET /api/identity
 
 Returns the droid's cosmetic name, mDNS hostname preference, canonical Board
-Variant id, and the complete compile-time Feature Availability manifest.
+Variant id, the complete compile-time Feature Availability manifest, and the
+Board Lanes this image routes each signal over.
 
 - Success: `200` JSON with:
   - `droidName` and `mdnsUseName`
   - `board`: `artoo_esp32` or `firebeetle2`
   - `board_capabilities`: an object containing every `PA_CAP_*` declaration
     from `include/board_capabilities.inc`, with boolean values
+  - `board_lanes`: an object containing every Board Lane from
+    `include/board_lanes.inc`, keyed by signal, each carrying the `uart`
+    controller index and the `tx` / `rx` GPIO numbers this board routes it
+    over. A capability says what the board can be wired for; a lane says where
+    it is routed, so a wiring sheet is generated from the running firmware
+    rather than from a page that keeps its own copy of one board's pin numbers.
+    The `audio` lane shares its controller with `protor2link` wherever
+    `PA_CAP_DEDICATED_AUDIO_UART` is false, and on such a board only its RX
+    rides that controller - read the lane and the capability together.
   - `build_flags`: an object containing every Build Feature Flag from
     `include/build_flags.inc`, with boolean values
 - Errors: `500` on response build overflow
@@ -103,7 +113,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -114,7 +124,7 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
   - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
 - Success: `200` JSON with the updated identity and the same `board`,
-  `board_capabilities`, and `build_flags` fields as GET
+  `board_capabilities`, `board_lanes`, and `build_flags` fields as GET
 - Errors:
   - `400` `{"ok":false,"error":"droidName is required"}`
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
