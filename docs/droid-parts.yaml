@@ -112,6 +112,23 @@ designs:
                 dataport, chargebay, smallDoor, drawer,
                 utilUp, utilLo]                                           # body arms
 
+  # DEMONSTRATION (#337 acceptance: "adding a second design is one block").
+  # This hunk is the whole cost of carrying another design - no part row moves
+  # and no part is declared twice. MK3 is a design protoArtoo does not carry
+  # yet, so its complement and its variant set are unknown here and stay TBD
+  # rather than being invented. Removed in the commit that follows this one.
+  - id: mk3
+    label: MrBaddeley MK3
+    short: MK3
+    blurb: The earlier MrBaddeley astromech - pick this if your dome or body came off the MK3 files rather than the MK4 ones.
+    variants:
+      - id: simple
+        label: Simple
+        seeds: TBD
+      - id: complex
+        label: Complex
+        seeds: TBD
+
   - id: own
     label: My own build
     short: Own build
