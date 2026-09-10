@@ -725,6 +725,22 @@ uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fix
     return 0;
 }
 
+void configProjectServoRowIntoFixedFields(const ServoOutputRow& row, ServoConfig* fixed) {
+    if (fixed == nullptr || row.driver != SERVO_DRIVER_LEDC) {
+        return;
+    }
+    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
+        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
+        if (row.channel != set.channel) {
+            continue;
+        }
+        fixed->*(set.openUs) = row.open_us;
+        fixed->*(set.closeUs) = row.close_us;
+        fixed->*(set.component) = row.component;
+        return;
+    }
+}
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
     return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
 }

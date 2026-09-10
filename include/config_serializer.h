@@ -68,6 +68,12 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 // Deleted with the fields it names.
 uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed);
 
+// configProjectServoRowIntoFixedFields: the same bridge, read direction. What
+// the row holds, said in the old form's names, so a surface still asking for
+// arm1OpenUs is answered with the number the droid will actually drive to. The
+// mapping is the one above's, stated once. Deleted with the fields it fills.
+void configProjectServoRowIntoFixedFields(const ServoOutputRow& row, ServoConfig* fixed);
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
 bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
 bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);

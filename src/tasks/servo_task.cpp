@@ -18,7 +18,9 @@
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
 #include "servo_helpers.h"
+#include "servo_output_row.h"  // the addressed rows an endpoint lives on (ADR 0041)
 
 static const char* TAG = "SERVO";
 
@@ -82,11 +84,36 @@ static bool isArmEnabled(uint8_t armId) {
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputForArm()
+// The addressed Servo Output row behind an armId (ADR 0041). armId is this
+// task's own index for a channel; the row is found by the Output Address that
+// channel IS, so nothing here assumes the table is in armId order.
+//
+// False means no live row is addressed to that channel  --  a table an expander
+// has not filled in yet, or a controller read before configLoadServoOutputs()
+// ran. Neither is a reason to guess a row.
+// -----------------------------------------------------------------------------
+static bool servoOutputForArm(uint8_t armId, ServoOutputRow* out) {
+    const uint8_t channel = armIdToLedcChannel(armId);
+    if (channel >= LEDC_CH_MAX) {
+        return false;
+    }
+    return configCacheFindServoOutput(SERVO_DRIVER_LEDC, channel, out);
+}
+
+// -----------------------------------------------------------------------------
 // setArmPosition()
 // Set single arm to specific pulse width.
 // armId: 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3
 // Returns silently (no log, no PWM write) if the arm is disabled.
 // Per ADR 0027, disabled channels never PWM-commanded and never update robotState.
+//
+// The pulse width is bounded by what the fitted component takes before it
+// reaches the pin. ADR 0041 puts that clamp at every door onto a row  --  the
+// store, an edit and a drive command  --  so an MG996R output cannot reach
+// 500 us by any route, including this one. What is written is what robotState
+// then reports, because the target a status reader sees has to be the pulse the
+// pin is actually holding.
 // -----------------------------------------------------------------------------
 static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
     if (!isArmEnabled(armId)) {
@@ -98,53 +125,52 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
         PA_LOG_WARN(TAG, "setArmPosition: invalid armId %d", armId);
         return;
     }
-    ledcPwmSetPulseWidth(channel, pulseUs);
+
+    uint16_t commandedUs = pulseUs;
+    ServoOutputRow row = {};
+    if (configCacheFindServoOutput(SERVO_DRIVER_LEDC, channel, &row)) {
+        commandedUs = servoOutputClampPulse(row, pulseUs);
+        if (commandedUs != pulseUs) {
+            PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - driving %d us instead",
+                        armId + 1, pulseUs, servoCompTypeToString(row.component), commandedUs);
+        }
+    }
+
+    ledcPwmSetPulseWidth(channel, commandedUs);
 
     taskENTER_CRITICAL(&robotStateMux);
     if (armId == 0) {
-        robotState.armOpen[0] = (pulseUs > SERVO_PULSE_NEUTRAL_US);
-        robotState.arm1TargetUs = pulseUs;
+        robotState.armOpen[0] = (commandedUs > SERVO_PULSE_NEUTRAL_US);
+        robotState.arm1TargetUs = commandedUs;
     } else if (armId == 1) {
-        robotState.armOpen[1] = (pulseUs > SERVO_PULSE_NEUTRAL_US);
-        robotState.arm2TargetUs = pulseUs;
+        robotState.armOpen[1] = (commandedUs > SERVO_PULSE_NEUTRAL_US);
+        robotState.arm2TargetUs = commandedUs;
     }
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // -----------------------------------------------------------------------------
 // getOpenClosePositions()
-// Get configured open/close pulse widths for arm.
-// ARM1/ARM2 use NVS-backed cal; AUX1-3 also use NVS-backed per-channel cal.
+// The Endpoint Pair of the addressed Servo Output behind this arm (ADR 0041).
+//
+// The pair is directional and stays that way: `open` is whichever number the
+// builder recorded as open, larger or smaller than close. A reversed linkage is
+// open < close and nothing else records it, so taking min/max here would be the
+// invert flag the model refuses, arriving by the back door.
+//
+// With no row addressed to this output there is no calibration to read, so the
+// pair is the cautious band's two ends  --  the same numbers an unconfigured
+// row defaults to, rather than the full 500-2500 us a servo will take.
 // -----------------------------------------------------------------------------
 static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    ServoConfig cfg = {};
-    configCacheReadServo(&cfg);
-    switch (armId) {
-        case 0:
-            openUs = cfg.arm1_open_us;
-            closeUs = cfg.arm1_close_us;
-            break;
-        case 1:
-            openUs = cfg.arm2_open_us;
-            closeUs = cfg.arm2_close_us;
-            break;
-        case 2:
-            openUs = cfg.aux1_open_us;
-            closeUs = cfg.aux1_close_us;
-            break;
-        case 3:
-            openUs = cfg.aux2_open_us;
-            closeUs = cfg.aux2_close_us;
-            break;
-        case 4:
-            openUs = cfg.aux3_open_us;
-            closeUs = cfg.aux3_close_us;
-            break;
-        default:
-            openUs = SERVO_PULSE_MAX_US;
-            closeUs = SERVO_PULSE_MIN_US;
-            break;
+    ServoOutputRow row = {};
+    if (servoOutputForArm(armId, &row)) {
+        openUs = row.open_us;
+        closeUs = row.close_us;
+        return;
     }
+    openUs = SERVO_BAND_STD.hi;
+    closeUs = SERVO_BAND_STD.lo;
 }
 
 // -----------------------------------------------------------------------------

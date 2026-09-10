@@ -533,7 +533,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
-    // Legacy top-level calibration fields consumed by data/servo.js
+    // Legacy top-level calibration fields consumed by data/servo.js. The
+    // numbers are the addressed Servo Output rows' (ADR 0041): the config cache
+    // fills these ten fields from the rows on the way out, so what a surface
+    // renders is what the droid will drive to, without this pure builder having
+    // to reach a table it cannot see. The names go when the fields do.
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
     doc["arm1CloseUs"] = snap.servo.arm1_close_us;
     doc["arm2OpenUs"] = snap.servo.arm2_open_us;

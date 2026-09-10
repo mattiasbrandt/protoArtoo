@@ -356,12 +356,48 @@ bool activeAudioEnabled = false;
 uint16_t activeComponentToggleMask = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
+// The addressed Servo Output rows, live (ADR 0041). Declared here rather than
+// beside the accessors below because the two cache reads project it into the
+// fixed servo fields on their way out -- see projectServoOutputRows().
+//
+// Zero-initialised like configCache above, and filled by configLoadServoOutputs()
+// from main's boot path before any task starts -- the same boot-order contract
+// configCacheApply() already relies on. A reader that runs before that sees a
+// count of zero, which is the truthful answer at that point rather than a
+// guessed row.
+static ServoOutputTable servoOutputCache = {};
+
+// -----------------------------------------------------------------------------
+// projectServoOutputRows()  --  called with configCacheMux held.
+//
+// The migrate phase's read direction (#286). The rows are where an endpoint
+// lives now, and the ten fixed fields are a view of them: a surface still
+// asking for arm1OpenUs, and the serializer that writes the old form back to
+// NVS, both see the number the droid will actually drive to. That is what makes
+// "a calibration cannot disagree with itself depending on which path read it"
+// true while two shapes coexist, rather than true only as long as every writer
+// remembers to touch both.
+//
+// A row is the only source: with no rows loaded yet the fields stand as they
+// are, which is the boot window before configLoadServoOutputs() has run.
+// Deleted with the fields it fills.
+// -----------------------------------------------------------------------------
+static void projectServoOutputRows(ServoConfig* servo) {
+    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
+                              ? servoOutputCache.count
+                              : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        configProjectServoRowIntoFixedFields(servoOutputCache.rows[i], servo);
+    }
+}
+
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache;
+    projectServoOutputRows(&out->servo);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
@@ -381,13 +417,6 @@ bool configCacheDomeEnabled() {
     taskEXIT_CRITICAL(&configCacheMux);
     return enabled;
 }
-
-// The addressed Servo Output rows, live (ADR 0041). Zero-initialised like
-// configCache above, and filled by configLoadServoOutputs() from main's boot
-// path before any task starts -- the same boot-order contract configCacheApply()
-// already relies on. A reader that runs before that sees a count of zero, which
-// is the truthful answer at that point rather than a guessed row.
-static ServoOutputTable servoOutputCache = {};
 
 uint8_t configCacheServoOutputCount() {
     uint8_t count;
@@ -460,12 +489,32 @@ ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& serv
     return report;
 }
 
+// The row a lead plugs into, by its Output Address. A task that knows which
+// channel it is about - and every servo consumer does - asks for the row that
+// way rather than by index, because a row's index is a storage slot and its
+// address is what the droid is wired to.
+bool configCacheFindServoOutput(ServoOutputDriver driver, uint8_t channel, ServoOutputRow* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *out = servoOutputCache.rows[index];
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
 void configCacheReadServo(ServoConfig* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache.servo;
+    projectServoOutputRows(out);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 

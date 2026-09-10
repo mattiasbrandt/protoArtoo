@@ -1354,6 +1354,43 @@ void test_configLoad_current_schema_does_not_remap_log_level() {
     prefs.end();
 }
 
+// --- the fixed servo fields are a view of the rows (#342) --------------------
+
+// While two shapes coexist, an endpoint has to read the same whichever door
+// asks. The rows are where it lives, so the cache fills the ten fixed fields
+// from them on the way out and a stale field cannot reach a reader. Drop the
+// projection and this goes red with the two disagreeing.
+void test_the_fixed_servo_fields_come_from_the_rows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    // A fixed field carrying something no row agrees with - which is what a
+    // controller rolled back and forward again would have in NVS.
+    snap.servo.arm1_open_us = 1234;
+    configCacheApply(snap);
+
+    ServoConfig servo = {};
+    configCacheReadServo(&servo);
+    TEST_ASSERT_EQUAL_UINT16(2000, servo.arm1_open_us);
+
+    ConfigSnapshot readBack = {};
+    configCacheRead(&readBack);
+    TEST_ASSERT_EQUAL_UINT16(2000, readBack.servo.arm1_open_us);
+
+    // And it follows the row rather than being pinned to a default.
+    ConfigSnapshot calibrated = {};
+    configSnapshotDefaults(&calibrated);
+    calibrated.servo.arm1_open_us = 1750;
+    configCacheApplyServoCalibration(calibrated.servo);
+    configCacheReadServo(&servo);
+    TEST_ASSERT_EQUAL_UINT16(1750, servo.arm1_open_us);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1406,5 +1443,7 @@ int main() {
     RUN_TEST(test_wifiConfigToView_reports_unset_empty_passwords);
     RUN_TEST(test_wifiConfigsDiffer_true_when_mode_or_ssid_or_password_changes);
     RUN_TEST(test_configLoad_save_wifi_round_trip);
+
+    RUN_TEST(test_the_fixed_servo_fields_come_from_the_rows);
     return UNITY_END();
 }

@@ -357,6 +357,30 @@ void test_a_write_the_component_band_cannot_take_is_moved_not_refused() {
     TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
 }
 
+// What comes back has to be what the droid will do. The row holds the clamped
+// number, so the echo does too - a response that repeated the request back
+// would tell a builder their 500 us landed while the arm moved to 1000.
+void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam params[] = {{"arm1Type", "mg996r"}, {"arm1OpenUs", "500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_INT(1000, doc["arm1OpenUs"].as<int>());
+
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
@@ -367,6 +391,7 @@ int main() {
     RUN_TEST(test_config_post_body_matches_a_read_of_the_committed_config);
     RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
+    RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);

@@ -27,6 +27,14 @@
 // configCacheRead: Fill a ConfigSnapshot from the live config cache.
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
 // domain they need into stack locals, then release the cache lock before doing work.
+//
+// While the migrate phase lasts, both this and configCacheReadServo() fill the
+// ten fixed servo endpoint fields and the five component types FROM the
+// addressed rows (#286, ADR 0041). An endpoint lives on its row now; the fixed
+// fields are a view of it, so a surface still asking for arm1OpenUs and the
+// serializer that writes the old form back to NVS both see the number the droid
+// will actually drive to, and no path can read a stale one. That projection
+// goes away with the fields.
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
@@ -36,8 +44,8 @@ void configCacheReadWifi(WifiConfig* out);
 
 // The addressed Servo Output rows (ADR 0041), which live beside the five fixed
 // servo field sets rather than inside ConfigSnapshot. The live table is filled
-// once by configLoadServoOutputs() on the boot path; nothing writes a row at
-// runtime until the surface that edits one exists.
+// by configLoadServoOutputs() on the boot path and changed at runtime only by
+// the Commit Step, through configCacheApplyServoCalibration() below.
 //
 // configCacheReadServoOutput hands out ONE row: the table is far larger than
 // anything else this cache copies by value, and a task that wants one output
@@ -46,6 +54,13 @@ void configCacheReadWifi(WifiConfig* out);
 // the same answer.
 bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
 uint8_t configCacheServoOutputCount();
+
+// configCacheFindServoOutput: the same one row, addressed the way a consumer
+// actually knows it. An index is a storage slot; an Output Address is where the
+// lead plugs in, and rows past the five this controller ships with are an
+// expander's to address in whatever order they land. Returns false when no live
+// row is addressed there.
+bool configCacheFindServoOutput(ServoOutputDriver driver, uint8_t channel, ServoOutputRow* out);
 
 // configCacheApplyServoCalibration: the write direction of the migrate-phase
 // bridge. The Apply Core is pure and cannot reach the row table, so the Commit
