@@ -28,6 +28,15 @@
 #   nothing in this block narrows what Protocol Check accepts — that
 #   vocabulary is the union of every design's complement plus the parts no
 #   design lists.
+#   One seed list serves both halves of the answer. A builder states a Dome
+#   Design and a Body Design separately — an MK4 complex dome on an MK4 simple
+#   body is an ordinary droid, not an edge case — so a reader takes the dome
+#   half of a design's seeds for the Dome Design and the body half for the
+#   Body Design. Which half a part belongs to is the section it is declared in
+#   below, which is why no seed list repeats it.
+#   MrBaddeley MK4 is the design protoArtoo pre-selects, recorded as an answer
+#   rather than an absence (#333). Which variant it pre-selects has no field
+#   here yet.
 #   A part no design lists is a Common Addition: the four arms with
 #   `cad_name: null`, offered to every droid whatever it was built from. The
 #   `other_slots` escape hatch at the foot of this file sits outside every
