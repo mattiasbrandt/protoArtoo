@@ -45,6 +45,7 @@ epic issue. Material an agent needs only on some paths lives under
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
+- Sabertooth / SyRen packet serial truth: `docs/spec-sheets/sabertooth-syren-packet-serial.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
