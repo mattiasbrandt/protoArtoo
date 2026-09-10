@@ -326,10 +326,9 @@ nav a.active {
   border-left-color: var(--warning);
 }
 
-.card.disabled-card {
-  border-left-color: var(--warning);
-  background: linear-gradient(180deg, rgba(232, 168, 50, 0.10), rgba(232, 168, 50, 0.04));
-}
+/* .card.disabled-card is the whole-page form of "off": a page whose component
+   is switched off in Setup. It is an Availability Family member and wears the
+   "change it here" treatment declared with the other three, further down. */
 
 .card-header-row {
   display: flex;
@@ -877,32 +876,126 @@ input.input-narrow:focus {
   flex: 1;
 }
 
-/* Feature Availability — astromech power-rail states shared by component rows
-   and build-conditional diagnostic panels. */
+/* ── Availability Families ───────────────────────────────────────────────────
+   Feature Availability: the astromech power-rail states shared by component
+   rows and by build-conditional diagnostic panels.
+
+   CONTEXT.md "Availability Family" groups every way protoArtoo says no into
+   four, named by what the builder does next, and states that a family is told
+   apart by treatment, never by hue. The carriers below are therefore rail
+   style, brightness and motion, and not one of the four spends --warning or
+   --danger. Before this, four of these states shared a single amber hatch,
+   which told a builder that a board which will never run a feature and a
+   controller still fetching its manifest were the same kind of answer.
+
+   Amber cannot come back here. CONTEXT.md "Status Colour" reserves it for
+   "you can do something about this, and should", and two of these families -
+   change it elsewhere, settled no - are things the builder cannot change from
+   any screen protoArtoo has, while a third is a transient unknown.
+
+   The treatments are read from r2d2-astromech-simulator v1.79.0 (175ad1b),
+   which answers the same question twice. .blkbrick.unwired
+   (src/css/09-sequencer.css:245) carries "nothing drives this" with a dashed
+   border, a dimmer text tier and reduced opacity and no accent colour at all,
+   and it deletes the ramp wedges because they are a promise about movement
+   that brick cannot keep. .raildot.na and .optgrid.na
+   (src/css/07-startup.css:612) dress "not used by this model" in opacity
+   alone, and lift it back on hover and focus-within so a dimmed thing can
+   still be read rather than being visually deleted.
+
+     change it here        solid silver rail, full brightness
+     change it elsewhere   dashed rail, dimmed, lifts on hover and focus
+     still finding out     dotted rail, half dimmed, breathing lamp
+     settled no            no rail at all, dimmest, lamp removed
+
+   Each family also has a bare .availability-* class, so a surface that arrives
+   later wears its family directly instead of editing these shared rules.
+
+   One state is not yet split at the source. identity-unavailable covers two
+   different failures - a transport failure that is retryable, and a manifest
+   the controller could not describe, which is terminal - and CONTEXT.md puts
+   the first in "still finding out" and the second in "settled no". The copy
+   already tells them apart (data/setup.js reasonFor()), but the DOM carries a
+   single feature-state-identity-unavailable class for both, so CSS cannot.
+   It is dressed as "still finding out" here, which is the reading its own
+   label ("Availability unknown") makes, until the element carries the
+   distinction. */
 .feature-availability-row {
   position: relative;
   flex-wrap: wrap;
   margin: 3px 0;
-  padding: 5px 10px 5px 12px;
+  padding: 5px 10px 5px var(--space-md);
   border-left: 3px solid var(--border);
-  border-radius: 6px;
-  background: linear-gradient(90deg, rgba(42, 74, 122, 0.12), transparent 44%);
-  transition: border-color 0.18s ease, background 0.18s ease;
+  border-radius: var(--space-xs);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--border) 12%, transparent), transparent 44%);
+  transition: border-color 0.18s ease, background-image 0.18s ease, opacity 0.18s ease;
 }
 
+/* Available, and running. Green is not one of the two reserved colours and is
+   not being spent on a way of saying no - it marks the states that are a yes. */
 .feature-availability-row.feature-state-on {
   border-left-color: var(--success);
-  background: linear-gradient(90deg, rgba(84, 200, 122, 0.11), transparent 44%);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--success) 11%, transparent), transparent 44%);
 }
 
+/* change it here — the switch is on a protoArtoo page and the builder can
+   reach it. Full brightness and a solid rail: this is a live control that
+   happens to be off, not something that has been taken away. */
+.availability-change-here,
+.feature-availability-row.feature-state-off,
+.card.disabled-card {
+  border-left-color: var(--silver);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--silver) 8%, transparent), transparent 44%);
+}
+
+/* change it elsewhere — reflash, or a different controller board. Nothing on
+   this screen moves it, so it spends no colour at all: a dashed rail and a
+   drop in brightness, lifted back by hover and focus-within so a dimmed row is
+   still readable and its controls still reachable by keyboard. */
+.availability-change-elsewhere,
 .feature-availability-row.feature-state-not-in-this-build,
-.feature-availability-row.feature-state-not-on-this-board,
+.feature-availability-row.feature-state-not-on-this-board {
+  border-left-style: dashed;
+  border-left-color: var(--border);
+  background-image: none;
+  opacity: var(--avail-dim-elsewhere);
+}
+
+.availability-change-elsewhere:hover,
+.availability-change-elsewhere:focus-within,
+.feature-availability-row.feature-state-not-in-this-build:hover,
+.feature-availability-row.feature-state-not-in-this-build:focus-within,
+.feature-availability-row.feature-state-not-on-this-board:hover,
+.feature-availability-row.feature-state-not-on-this-board:focus-within {
+  opacity: 1;
+}
+
+/* still finding out — the controller has not answered yet, or could not be
+   reached. A dotted rail reads as an incomplete line, and the brightness sits
+   between "you can act on this" and "you cannot": the answer is coming. */
+.availability-finding-out,
 .feature-availability-row.feature-state-checking,
 .feature-availability-row.feature-state-identity-unavailable {
-  border-left-color: var(--warning);
-  background:
-    repeating-linear-gradient(135deg, rgba(232, 168, 50, 0.04) 0 8px, transparent 8px 16px),
-    linear-gradient(90deg, rgba(232, 168, 50, 0.10), transparent 52%);
+  border-left-style: dotted;
+  border-left-color: var(--text-dim);
+  background-image: none;
+  opacity: var(--avail-dim-finding);
+}
+
+/* settled no — a roadmap card, or a controller that will never describe
+   itself. There is no next move, so the rail goes: a rail is a promise about a
+   route, and this family is the one with no destination. The gutter is kept so
+   the row does not shift when a state changes. Dimmest of the four, and still
+   liftable, because "nothing to do here" must not mean "unreadable". */
+.availability-settled-no {
+  border-left-color: transparent;
+  background-image: none;
+  opacity: var(--avail-dim-settled);
+}
+
+.availability-settled-no:hover,
+.availability-settled-no:focus-within {
+  opacity: 0.85;
 }
 
 .feature-state {
@@ -914,20 +1007,27 @@ input.input-narrow:focus {
   color: var(--success);
 }
 
-.feature-state-off {
-  color: var(--text-dim);
-}
-
+/* Every way of saying no reads in the quiet text tier. The words already
+   differ - "Not included", "Not on this board", "Checking controller",
+   "Availability unknown" - and the family is carried by the row around them. */
+.feature-state-off,
 .feature-state-not-in-this-build,
 .feature-state-not-on-this-board,
 .feature-state-checking,
 .feature-state-identity-unavailable {
-  color: var(--warning);
+  color: var(--text-dim);
+}
+
+/* still finding out is the one answer that is not final, and italic is how the
+   reference marks a value it cannot yet stand behind. */
+.feature-state-checking,
+.feature-state-identity-unavailable {
+  font-style: italic;
 }
 
 .feature-availability-reason {
   flex-basis: 100%;
-  margin: 0 0 4px 64px;
+  margin: 0 0 var(--space-2xs) 64px;
   color: var(--text-dim);
   font-size: 0.8rem;
   line-height: 1.35;
@@ -937,11 +1037,14 @@ input.input-narrow:focus {
   display: none;
 }
 
+/* A switch the builder is not allowed to move. Hatched so it reads as barred
+   rather than merely inert, and hatched in the neutral lift rather than in a
+   colour, because which family barred it is already said by the row. */
 .feature-availability-row input:disabled + .toggle-slider {
   cursor: not-allowed;
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  border-color: var(--border);
   background:
-    repeating-linear-gradient(135deg, rgba(232, 168, 50, 0.14) 0 5px, transparent 5px 10px),
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--lift) 6%, transparent) 0 5px, transparent 5px 10px),
     var(--surface-alt);
 }
 
@@ -953,7 +1056,7 @@ input.input-narrow:focus {
 .feature-availability-panel {
   position: relative;
   overflow: hidden;
-  border-left: 4px solid var(--warning);
+  border-left: 4px solid var(--border);
 }
 
 .feature-availability-panel.feature-state-on {
@@ -961,12 +1064,23 @@ input.input-narrow:focus {
 }
 
 .feature-availability-panel.feature-state-not-in-this-build,
-.feature-availability-panel.feature-state-not-on-this-board,
+.feature-availability-panel.feature-state-not-on-this-board {
+  border-left-style: dashed;
+  opacity: var(--avail-dim-elsewhere);
+}
+
+.feature-availability-panel.feature-state-not-in-this-build:hover,
+.feature-availability-panel.feature-state-not-in-this-build:focus-within,
+.feature-availability-panel.feature-state-not-on-this-board:hover,
+.feature-availability-panel.feature-state-not-on-this-board:focus-within {
+  opacity: 1;
+}
+
 .feature-availability-panel.feature-state-checking,
 .feature-availability-panel.feature-state-identity-unavailable {
-  background:
-    repeating-linear-gradient(135deg, rgba(232, 168, 50, 0.025) 0 10px, transparent 10px 20px),
-    var(--surface);
+  border-left-style: dotted;
+  border-left-color: var(--text-dim);
+  opacity: var(--avail-dim-finding);
 }
 
 .feature-availability-header {
@@ -981,26 +1095,25 @@ input.input-narrow:focus {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  padding: 6px 8px 6px 12px;
+  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(6, 13, 24, 0.48);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--well) 48%, transparent);
 }
 
 .feature-availability-status {
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 
 .feature-availability-lamp {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: var(--space-2xs);
+  left: var(--space-2xs);
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  background: var(--warning);
-  box-shadow: 0 0 8px rgba(232, 168, 50, 0.42);
+  border-radius: var(--radius-round);
+  background: var(--text-dim);
   transition: left 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -1013,33 +1126,61 @@ input.input-narrow:focus {
   height: 24px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 50%;
-  background: rgba(6, 13, 24, 0.48);
+  border-radius: var(--radius-round);
+  background: color-mix(in srgb, var(--well) 48%, transparent);
   flex-shrink: 0;
 }
 
+/* The default lamp is unlit: a quiet bulb in its socket, no glow and no
+   colour. Each family lights it, dims it or removes it below. */
 .feature-availability-lamp-indicator .feature-availability-lamp {
   position: static;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  /* Default: amber warning for unavailable states (not-in-this-build, not-on-this-board, checking, identity-unavailable).
-     All unavailable causes share amber — the operator cannot act differently on them.
-     Green (success) reserved for available states (on, included). */
-  background: var(--warning);
-  box-shadow: 0 0 8px rgba(232, 168, 50, 0.42);
-  transition: background 0.18s ease, box-shadow 0.18s ease;
+  border-radius: var(--radius-round);
+  background: var(--text-dim);
+  transition: background 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
 /* Available features: compile-time present (included) and runtime enabled (on) */
 .feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp,
 .feature-availability-lamp-indicator.feature-state-included .feature-availability-lamp {
   background: var(--success);
-  box-shadow: 0 0 9px rgba(84, 200, 122, 0.55);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--success) 55%, transparent);
+}
+
+/* change it elsewhere: an empty socket rather than a dark bulb, so the row
+   reads as "no lamp fitted here" instead of "lamp fitted and out". */
+.availability-change-elsewhere .feature-availability-lamp,
+.feature-availability-lamp-indicator.feature-state-not-in-this-build .feature-availability-lamp,
+.feature-availability-lamp-indicator.feature-state-not-on-this-board .feature-availability-lamp {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+}
+
+/* still finding out: the one family with motion. The lamp breathes because
+   something is genuinely in progress; the reduced-motion block near the end of
+   this file stops it, and the dotted rail still carries the family. */
+.availability-finding-out .feature-availability-lamp,
+.feature-availability-lamp-indicator.feature-state-checking .feature-availability-lamp,
+.feature-availability-lamp-indicator.feature-state-identity-unavailable .feature-availability-lamp {
+  animation: availabilityBreath 1.8s ease-in-out infinite;
+}
+
+@keyframes availabilityBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* settled no: the lamp goes entirely. A lamp is a claim that this state can
+   change, and this is the family for which it cannot - the same move the
+   reference makes when it deletes the ramp wedges from an unwired brick. */
+.availability-settled-no .feature-availability-lamp {
+  display: none;
 }
 
 .feature-availability-panel > .feature-availability-reason {
-  margin: 8px 0 0;
+  margin: var(--space-sm) 0 0;
 }
 
 .feature-availability-content {
