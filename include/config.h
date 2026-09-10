@@ -5,7 +5,11 @@
 // Supports multiple controller board variants on different chip targets.
 // See docs/pin_map.md and docs/adr/0028-two-layer-board-abstraction.md
 //
-// PCB serial port legend (from PCB silkscreen):
+// artoo-esp32 PCB serial port legend, read off that board's silkscreen. It is
+// one Board Variant's wiring, not a project-wide fact: firebeetle2 has no S1,
+// S2 or S3 header and routes all three signals to other GPIO. Where a signal
+// is routed on the board being built is a Board Lane (include/board_lanes.inc),
+// and the silkscreen text is a Board Component Label (include/component_labels.inc).
 //   S0 = ESP debug           (UART0, GPIO 1/3)
 //   S1 = Hoverboard          (UART1, GPIO 16 TX / 17 RX)
 //   S2 = Sound               (GPIO 26 TX / 35 RX)

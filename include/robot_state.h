@@ -146,7 +146,7 @@ struct DomeCommand {
 // RobotState  --  shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
 struct RobotState {
-    // --- Zone 1: Drive output + hoverboard feedback + failsafe gate (DriveTask) ---
+    // --- Zone 1: Drive output + drive backend feedback + failsafe gate (DriveTask) ---
     int16_t driveOutputSpeed;
     int16_t driveOutputSteer;
     CommandSource driveOutputSource;
@@ -162,6 +162,11 @@ struct RobotState {
     uint32_t failsafeLastZeroOutputMs;     // millis() when DriveTask first asserted zero output
     uint32_t failsafeLastTriggerToZeroMs;  // latency from trigger to first zero output (ms)
     FailsafeSource failsafeLastTriggerSource;
+    // Drive backend feedback, filled from DriveFeedback (include/drive_backend.h)
+    // where the fitted backend reports at all -- not every controller does. The
+    // hb_ prefix is the hoverboard's and outlives it here only because
+    // /api/status publishes these names; renaming the fields is a status-payload
+    // change (#346), not a drive-path one.
     int16_t hb_batteryRaw;
     int16_t hb_boardTempRaw;
     int16_t hb_speedR;

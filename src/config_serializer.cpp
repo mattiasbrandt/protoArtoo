@@ -49,8 +49,9 @@ void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig
     out->sbusTimeoutMs     = r.readU32("sbus_tmo", def.sbusTimeoutMs);
     out->webDriveTimeoutMs = r.readU32("web_tmo",  def.webDriveTimeoutMs);
 
-    // Clamp to physical hoverboard limit (SPEED_LIMIT_MAX = 600) and valid timeout windows;
-    // guards against corrupt NVS values reaching DriveTask
+    // Clamp to the project's absolute drive cap (SPEED_LIMIT_MAX, include/config.h)
+    // and valid timeout windows; guards against corrupt NVS values reaching
+    // DriveTask. The cap is generic and no drive backend can raise it.
     out->speedLimitMax     = constrain(out->speedLimitMax,     (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
     out->speedPresetSlow   = constrain(out->speedPresetSlow,   (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
     out->speedPresetNormal = constrain(out->speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);

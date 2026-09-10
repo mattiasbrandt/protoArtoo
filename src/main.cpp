@@ -467,7 +467,7 @@ void setup() {
     // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, WebEvents, ArduinoOTA.
 
     // Launch real-time tasks on Core 1
-    // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
+    // DriveTask: 50 Hz drive backend frames, feeds TWDT, Layer 3 web timeout
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
     // when no RC input is active for the boot-selected mode and routing.
     // ServoTask: 50 Hz servo PWM updates

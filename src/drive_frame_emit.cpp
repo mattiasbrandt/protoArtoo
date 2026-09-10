@@ -11,9 +11,10 @@ DriveTickActions driveTickDecide(const DriveTickInputs& in) {
     DriveTickActions actions;
 
     // Zero-frame rule: ALWAYS emit a frame, every tick, regardless of failsafe state.
-    // The hoverboard controller must receive periodic frames to prevent motor drift
-    // if RC/web input is stalled or failsafe is active. Even a zero-speed frame
-    // must be sent every cycle. This invariant is unconditional and lives here.
+    // The drive backend must be fed inside the deadline it declares, or its far
+    // end acts on its own -- the hoverboard fitted today holds its last command
+    // and the wheels DRIFT. Even a zero-speed frame must be sent every cycle.
+    // This invariant is unconditional and lives here.
     actions.shouldEmitFrame = true;
 
     // Pass through arbiter-resolved output (failsafe has already zeroed if active).
