@@ -200,6 +200,20 @@ reporting passes that never ran. In the worker's worktree, personally:
    yourself; tick the remainder in the same pass as the evidence-bearing
    closing comment.
 
+7. **Route every finding onto the ticket that will act on it, in the same
+   pass.** A worker reports what it could not fix - a fenced file, a decision
+   above its pay grade, another target's problem. Those die in a closed
+   ticket, in your acceptance comment, or in a session summary unless they are
+   written where the work is: a comment on the open sub-issue that owns those
+   files, naming what was found, `file:line`, which ticket found it, and **what
+   this ticket has to do about it**; or an acceptance criterion on that
+   sub-issue where the work is definite; or a handover to the epic that owns
+   the target, never a ticket minted on yours. Only when none of those exist
+   does it go back to the operator to place. Naming a finding is not routing
+   it - "belongs to C3" in a closing comment is how it is lost. Doing this at
+   acceptance, while you still hold the context, is the difference between a
+   pointer and a cold start.
+
 ## Rejection bookkeeping and escalation
 
 - On every rejection, update ONE pinned coordinator comment on the sub-issue:
