@@ -10,6 +10,7 @@
 // back off the wire the way it went on.
 // =============================================================================
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include <unity.h>
@@ -527,6 +528,89 @@ void test_an_out_of_range_stored_count_keeps_the_default() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, loaded.count);
 }
 
+// --- the bridge from the five fixed field sets (#286, ADR 0041) --------------
+
+void test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre() {
+    ServoOutputRow row = mg996rRow();
+    // A reversed linkage: the builder's open is the LOWER number.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 1200, 1900, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT16(1200, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.close_us);
+    // Halfway between the builder's own two ends, not the middle of the band.
+    TEST_ASSERT_EQUAL_UINT16(1550, row.centre_us);
+    // Sorting the pair here would be the invert flag ADR 0041 refuses.
+    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
+}
+
+void test_a_fixed_pair_carries_nothing_it_was_never_told() {
+    ServoOutputRow row = mg996rRow();
+    row.throw_ms = 2500;
+    row.accel_ms = 400;
+    row.boot = SERVO_BOOT_HOME_HOLD;
+    row.easing = SERVO_EASE_SOFT;
+    row.release_ms = 3000;
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+
+    servoOutputAdoptFixedPair(&row, 1900, 1100, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(2500, row.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(400, row.accel_ms);
+    TEST_ASSERT_EQUAL_UINT16(3000, row.release_ms);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_HOLD, row.boot);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_SOFT, row.easing);
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(row, 0));
+    // The old form stored no such bit, and one nobody measured is not one to
+    // infer: false is the value that degrades overshoot and warns.
+    TEST_ASSERT_FALSE(row.calibrated);
+}
+
+void test_a_fixed_pair_the_band_cannot_take_is_reported() {
+    ServoOutputRow row = mg996rRow();
+    // 500/2500 was legal in the old form; an MG996R row cannot take either.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 2500, 500, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1000, row.close_us);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_OPEN) != 0);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_CLOSE) != 0);
+    // Nothing is silently clamped away: the note names the fields.
+    char note[96] = {};
+    servoOutputRepairNote(repaired, true, note, sizeof(note));
+    TEST_ASSERT_NOT_NULL(strstr(note, "open"));
+    TEST_ASSERT_NOT_NULL(strstr(note, "close"));
+}
+
+void test_the_component_is_settled_before_the_pair_is_clamped() {
+    ServoOutputRow row = mg996rRow();
+    // Naming the component that takes the wider band is the unlock (#286): the
+    // same 600 us that an MG996R row refuses lands untouched on an MG90S.
+    const uint16_t repaired = servoOutputAdoptFixedPair(&row, 2400, 600, SERVO_COMP_MG90S);
+
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT16(2400, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+}
+
+// --- finding the row behind an Output Address --------------------------------
+
+void test_an_address_finds_its_row_and_an_unclaimed_one_does_not() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+    TEST_ASSERT_EQUAL_UINT8(4, servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    // The dome channel drives an ESC, so no servo row is addressed there.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX,
+                            servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_DOME));
+    // A row past the live count is not addressed yet, whatever it holds.
+    table.count = 2;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX,
+                            servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -566,6 +650,12 @@ int main(int, char**) {
     RUN_TEST(test_a_device_that_never_wrote_a_row_reports_nothing);
     RUN_TEST(test_a_damaged_stored_row_is_counted_and_named);
     RUN_TEST(test_an_out_of_range_stored_count_keeps_the_default);
+
+    RUN_TEST(test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre);
+    RUN_TEST(test_a_fixed_pair_carries_nothing_it_was_never_told);
+    RUN_TEST(test_a_fixed_pair_the_band_cannot_take_is_reported);
+    RUN_TEST(test_the_component_is_settled_before_the_pair_is_clamped);
+    RUN_TEST(test_an_address_finds_its_row_and_an_unclaimed_one_does_not);
 
     return UNITY_END();
 }
