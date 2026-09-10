@@ -251,15 +251,18 @@ void test_a_row_carries_up_to_four_parts_and_refuses_a_fifth() {
     ServoOutputRow row = mg996rRow();
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFL"));
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFR"));
+
+    // A Part the row already drives is not a second slot: the same lead. Asked
+    // here, with two slots still free, so it is the duplicate that refuses and
+    // not the cap.
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(row));
+
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorRL"));
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorRR"));
     TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
 
     TEST_ASSERT_FALSE(servoOutputAddPart(&row, "dataport"));
-    TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
-
-    // A Part the row already drives is not a second slot: the same lead.
-    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "doorFL"));
     TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
 
     TEST_ASSERT_TRUE(servoOutputDrivesPart(row, "doorRR"));
