@@ -47,6 +47,7 @@ epic issue. Material an agent needs only on some paths lives under
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
 - Sabertooth / SyRen packet serial truth: `docs/spec-sheets/sabertooth-syren-packet-serial.md`
 - Flipsky VESC / VESC UART truth: `docs/spec-sheets/flipsky-vesc-foot-drive.md`
+- Xbox controller / XInput, GIP and Bluetooth HID truth: `docs/spec-sheets/xbox-controller-input.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
