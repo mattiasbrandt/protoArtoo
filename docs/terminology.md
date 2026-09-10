@@ -2,6 +2,10 @@
 
 This document explains common project terms used in code, docs, logs, and planning.
 
+It covers acronyms and framework names. Operator-facing vocabulary - what a
+page is called, what a control is called, and how a word that means two things
+was resolved - lives in `CONTEXT.md` under Language and Flagged Ambiguities.
+
 ## Table of Contents
 
 - [Quick Glossary](#quick-glossary)

@@ -13,6 +13,26 @@ pinned coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
 a rejected category. Then read AGENTS.md.
 
+THE TICKET IS YOUR SOURCE
+You are building a decision somebody already took, so everything it turned on
+is written into the ticket itself: the numbers, the strings verbatim, and the
+small code pattern showing how the problem was already solved elsewhere. Work
+from that. It is there precisely so you do not have to reach the same quality
+by iteration.
+
+This project's planning research is gitignored and absent from a worktree by
+default. Under `tasks/` here you will find only the files THIS ticket cites,
+copied in by the coordinator at the paths the ticket writes; the rest of
+`tasks/` does not exist for you and is not yours to go looking for. What is
+there is a disposable copy - never edit it, and nothing under `tasks/` is ever
+committed.
+
+If a pattern, a number or a string you need is missing from the ticket, SAY SO
+on the issue, then use the copied research to unblock yourself. Reporting it is
+not optional: a thin ticket is a coordinator defect that gets repaired for the
+next wave, and a gap you quietly work around stays a gap. Do NOT re-derive the
+pattern, and do not substitute an audit of protoArtoo's own code for it.
+
 NO SELF-IMPOSED BUDGETS
 You have no token budget to manage, no efficiency target, and no deadline.
 Nobody is measuring your speed, your tool-call count, or your brevity.

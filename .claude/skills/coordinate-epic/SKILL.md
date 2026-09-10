@@ -17,9 +17,11 @@ duplicates them:
   Open design decisions in the input mean you are too early: stop and
   recommend the operator run it first. Decision tickets are resolved before
   an execution epic exists.
-- `grill-with-docs` (upstream) - the plan is concrete but has not been
-  stress-tested against the domain model and ADRs. Recommend it before
-  slicing when decisions look settled but undocumented.
+- `grill-with-research` (this repo) - the plan is concrete but has not been
+  stress-tested. Recommend it before slicing when decisions look settled but
+  undocumented. It composes the maintained `grilling` and `domain-modeling`
+  skills and carries AGENTS.md "Planning Mode", so the plan is measured against
+  the operator's research as well as the domain model.
 - `to-tickets` - does the slicing: tracer-bullet tickets, each with native
   blocking edges, published to the tracker. Use it for the breakdown instead
   of slicing ad hoc; it is user-invoked, so ask the operator to run it (or
@@ -36,6 +38,26 @@ derived from the actual files each ticket touches (never assign two tickets
 that modify the same file concurrently), behaviour-fixing tickets ranked
 ahead of behaviour-neutral refactors and docs. Paste the orchestration model
 and critic protocol into the epic body so they survive this session.
+
+**A ticket carries what an implementer needs; it does not point at it.** An
+implementation agent should not have to re-invent quality that already exists.
+A worker is opened in an isolated worktree and has only the ticket: `tasks/` is
+gitignored, so the research this repo plans from reaches a worktree only as the
+narrow copy the assignment step seeds, and a link back to the decision ticket
+is provenance rather than delivery. So when a map converts, three things are
+**copied into each build ticket** - into its body, or a comment where the body
+is a closed decision record - rather than cited:
+
+- the numbers the decision turns on,
+- the strings quoted verbatim,
+- the small code pattern showing how the problem was already solved elsewhere:
+  the smallest excerpt that carries the idea, named and explained, never an
+  implementation dump and never our own code re-audited.
+
+Measured on #175, 2026-09-09: 31 of its 39 children cited code and showed none.
+This is coordinator work - `to-tickets` does not do it - and a ticket that
+reaches a worker without it is your defect, not the worker's. Repair the ticket
+rather than answering the worker in prose.
 
 **Sub-issues are minted at slicing time, not mid-flight.** A small defect a
 worker or the critic turns up - a lying comment, a stale name, a missing guard,
@@ -68,6 +90,25 @@ from the epic's coordination section (it changes at Phase 5 closure).
   worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
   `<base>` tip; if not, `reset --hard` it there before the worker
   starts. Every worktree, every time.
+- **Seed only the research this ticket cites.** From the repo root,
+  `cp --parents <cited paths> ../wt-<n>/` - which reproduces each path exactly
+  as the ticket and the epic write it, screenshots included. Copy the files
+  that ticket or the epic actually references and no more: `tasks/` is 294 MB,
+  and handing a worker all 6,889 lines of research companions invites the hunt
+  the pattern in the ticket exists to prevent. **Seed only a path the ticket
+  already excerpts from** - a citation is seeded as the provenance of a pattern
+  the worker can already read, never in place of one. That keeps this step
+  coupled to the clause above rather than an escape from it: skip the pattern
+  and there is nothing to cite, nothing is seeded, and the worker blocks and
+  reports instead of quietly reading its way around a thin ticket. Record the
+  copied set in the ticket's pinned comment so a re-dispatch seeds the same
+  one. The existing `/tasks/` ignore rule covers the destination, so nothing
+  copied there can be committed (verified with `git check-ignore`); copy rather than symlink,
+  because a symlink named `tasks` is *not* matched by `/tasks/` and would turn
+  a worker write into a silent edit of the operator's originals. This is the
+  fallback for a ticket that turns out thin, never a substitute for putting the
+  pattern in the ticket - the worker reports the gap either way, so you repair
+  the ticket for the next wave.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.

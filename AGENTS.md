@@ -21,8 +21,15 @@ epic issue. Material an agent needs only on some paths lives under
   These two carry no agent/tool/model wording ("agent", "LLM", "model",
   "Copilot", "Claude").
 - Project language decisions: `CONTEXT.md`; architecture decisions: `docs/adr/`
-- Internal planning/agent working docs (local only, never commit/push): `tasks/**`
-  — including the RC diagnostics/mapping contract `tasks/rc_diagnostics_contract.md`
+- Operator intent and design source (local only, never commit/push):
+  `tasks/research-r2d2-*` — the operator's own curated statement of what
+  protoArtoo should become, carrying dated operator decisions, a source-verified
+  findings pass, a ranked recommendation list and 23 reference screenshots.
+  **For what protoArtoo should do it outranks the code; for what protoArtoo does
+  today the code outranks it.** See "Planning Mode".
+- Other internal planning/agent working docs (local only, never commit/push):
+  `tasks/**` — including the RC diagnostics/mapping contract
+  `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
@@ -78,7 +85,64 @@ a defect alarm: it means you are about to cut something that was asked for. Do
 the full thing instead.
 
 This does not license scope creep. Do the whole of what the ticket asks, and
-nothing beyond it — depth within scope, never width past it.
+nothing beyond it — depth within scope, never width past it. For what that
+sentence does **not** bound, see "Planning Mode" directly below.
+
+## Planning Mode (Non-Negotiable)
+
+Binding on any session working a `wayfinder:*` ticket, an epic body, or a design
+decision about something not built yet. Operator decision, 2026-09-08, after an
+audit of #175 found eight of eleven open tickets framed by the current
+implementation, and traced it to a stale vendored grilling skill that routed
+every design question into a code lookup.
+
+The rest of this file assumes the thing exists. These rules cover the case where
+it does not, and they **overrule** any general-purpose planning skill that says
+otherwise.
+
+**The code prices a decision. It never bounds one.** Read the implementation to
+learn what a choice costs, what it breaks and where it would land. Never read it
+to decide what protoArtoo *should* do. "It does not work that way today" is a
+price tag, never an argument: a question about what the product should do is not
+a question of fact, and the codebase can only report what somebody already built.
+
+**Order of authority for what protoArtoo should become:**
+
+1. A dated operator decision — an issue comment, an ADR, this file.
+2. `tasks/research-r2d2-*`, the operator's design source. Read it before the
+   code, in full, screenshots included.
+3. `CONTEXT.md` and `docs/adr/` — the model as it stands. These record decisions
+   already taken; they do not fence off decisions not yet taken.
+4. The implementation.
+
+Reverse that order for what protoArtoo **does today**: the code wins, and the
+research is a snapshot of another project taken in August 2026. Where the
+research and a later operator decision disagree, the operator decision wins.
+
+**Naming what does not exist is the work, not a guess.** The Effort Policy's
+no-guessing rule governs facts about what exists: never invent a pin number, a
+wire format or a field name in shipped code. It does not reach proposals. In a
+planning ticket, naming a component, a term or a capability protoArtoo does not
+have yet is the deliverable. Mark it a proposal; never mark it `UNKNOWN`, and
+never suppress it because you could not cite a file for it.
+
+**Capability first.** Every planning question opens with what a builder cannot do
+today and should be able to, and closes with the current implementation as a note
+on cost. A ticket whose first section inventories existing code is written wrong.
+A ticket whose specifics are all "A or B" about a surface that already exists is
+a polish ticket wearing a planning ticket's clothes.
+
+**Scope.** "Depth within scope, never width past it" bounds a *build* ticket
+against its own acceptance criteria. It does not bound a wayfinder map: a map's
+scope is its stated **Destination**, and widening that Destination is the
+operator's call, made explicitly on the map. Never cite the Effort Policy to
+refuse a widening the operator has asked for.
+
+**Use `grill-with-research`** — this repo's planning grill — for every
+`wayfinder:grilling` ticket. It composes the maintained `grilling` and
+`domain-modeling` skills and carries the rules above. The general-purpose
+`grill-with-docs` is not used here: its entire challenge surface is the existing
+model, which is the failure this section exists to stop.
 
 ## Small Finds Ride Along
 
@@ -520,6 +584,28 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   the phase-era `T<NN>` token was dropped from commit scopes, and why per-slice tracking belongs
   in the issue checklist comment. Write what the code does and why it is that way, then cite the
   issue. This binds commit subjects too: `Refs #189` yes, "slice 3" no.
+- **Borrowed code carries its origin's notice; borrowed ideas carry a README credit.**
+  protoArtoo credits what it learned from
+  [r2d2-astromech-simulator](https://github.com/mikeeddington-lgtm/r2d2-astromech-simulator)
+  in `README.md`. Crediting a pattern is our choice — no licence condition attaches to an
+  idea. The condition fires on **code**: a file holding Mike Eddington's source, copied or
+  closely derived, must carry his copyright **and** permission notice in its header, because
+  his MIT licence requires the notice to travel with the code and a README line does not
+  discharge it. Reimplementing a documented behaviour from scratch does not trigger it;
+  restating his function to dodge the notice does — ADR 0058 took the port and the notice
+  deliberately, since writing it out fresh "would produce the same function under a different
+  label". The first such file to land also earns an entry in `LICENSE`'s scope section.
+  **Verbatim operator-facing strings** — *use these ends*, *Set MIN / Set CENTER / Set MAX*,
+  *- not wired -* — are vocabulary and travel under the README credit rather than the
+  per-file notice. The 2026-08-22 directive splits ideas from code and is silent on strings,
+  so that reading is the project's, not the licence's; a file that takes his strings **and**
+  his structure is a port either way. **`tasks/research-r2d2-sim-calibration-spec.md` is the
+  trap here**: it is ours, but it transcribes his constants, DOM and CSS class names and exact
+  button markup, so a file built straight from it is a port even though no file of his was
+  opened. Treat it as one. The notice to carry is `Copyright (c) 2026 Mike Eddington` plus the
+  MIT permission paragraph, read from his `LICENSE:1-3` at `175ad1b` (v1.79.0) on 2026-09-10 —
+  **re-read his current `LICENSE` before pasting it**, since a copyright line is his to change
+  and ours to copy exactly.
 
 ### Branch model
 
