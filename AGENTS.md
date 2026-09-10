@@ -44,6 +44,7 @@ epic issue. Material an agent needs only on some paths lives under
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
+- PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
