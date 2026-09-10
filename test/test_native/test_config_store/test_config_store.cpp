@@ -13,7 +13,10 @@
 
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_serializer.h"
 #include "robot_state.h"
+
+#include "../../../test/stubs/config/map_config_io.h"
 
 // Provided by native_test_stubs.cpp
 extern RobotState robotState;
@@ -1391,6 +1394,32 @@ void test_the_fixed_servo_fields_come_from_the_rows() {
     TEST_ASSERT_EQUAL_UINT16(1750, servo.arm1_open_us);
 }
 
+// The fixed field sets are the copy of what the rows replaced, and a copy is
+// only worth offering if it stays honest: a save writes the row's number into
+// the old form's keys, so a controller rolled back to firmware that only knows
+// the old form still finds the calibration a builder made.
+void test_a_save_carries_the_rows_number_into_the_old_forms_keys() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    snap.servo.arm2_open_us = 1820;
+    snap.servo.arm2_close_us = 1180;
+    configCacheApplyServoCalibration(snap.servo);
+
+    ConfigSnapshot toStore = {};
+    configCacheRead(&toStore);
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(toStore, writer));
+
+    TEST_ASSERT_EQUAL_STRING("1820", writer.data().at("arm2_op").c_str());
+    TEST_ASSERT_EQUAL_STRING("1180", writer.data().at("arm2_cl").c_str());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1445,5 +1474,6 @@ int main() {
     RUN_TEST(test_configLoad_save_wifi_round_trip);
 
     RUN_TEST(test_the_fixed_servo_fields_come_from_the_rows);
+    RUN_TEST(test_a_save_carries_the_rows_number_into_the_old_forms_keys);
     return UNITY_END();
 }

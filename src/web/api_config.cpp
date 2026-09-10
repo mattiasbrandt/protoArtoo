@@ -706,7 +706,12 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     const ServoOutputRepairReport servoOutputRepair =
         configCacheApplyServoCalibration(working->servo);
     if (servoOutputRepair.rowsRepaired > 0) {
-        char note[96] = {};
+        // 64 B rather than the boot path's 96: this frame is on the Console
+        // config-write chain include/config.h measures, and an adoption can
+        // only ever report the three pulse widths plus the component and the
+        // channel -- "channel, open, centre, close, component took the safe
+        // default" is 52. The note truncates safely if that ever grows.
+        char note[64] = {};
         servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
         PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",
                     (unsigned)servoOutputRepair.firstRow, note);
