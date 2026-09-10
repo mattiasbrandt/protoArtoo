@@ -484,7 +484,12 @@ constexpr int16_t SPEED_PRESET_SLOW = 200;
 constexpr int16_t SPEED_PRESET_NORMAL = 350;
 constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
 constexpr uint32_t HOVERBOARD_BAUD = 115200;
-constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Frame rate for hoverboard UART
+constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Zero-frame continuity rate, every drive backend
+// The tick period DriveTask actually sleeps, derived so the number has one
+// home: include/drive_backend.h static_asserts it against the active backend's
+// declared continuity deadline. Integer division truncates, which errs toward
+// a SHORTER period -- feeding the far end sooner than it asked, never later.
+constexpr uint16_t DRIVE_FRAME_PERIOD_MS = (uint16_t)(1000 / DRIVE_FREQ_HZ);
 
 // -----------------------------------------------------------------------------
 // SBUS constants

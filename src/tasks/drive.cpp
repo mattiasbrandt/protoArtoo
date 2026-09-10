@@ -1,8 +1,10 @@
 // =============================================================================
 // src/tasks/drive.cpp
 //
-// DriveTask  --  sends 8-byte Gen2.x frames to the hoverboard at 50 Hz.
-// Owns UART1 / Serial1 on GPIO PIN_DRIVE_TX / PIN_DRIVE_RX.
+// DriveTask  --  feeds the Foot Drive backend one frame every tick at 50 Hz.
+// Owns the drive lane this Board Variant declares (UART_PORT_DRIVE on
+// PIN_DRIVE_TX / PIN_DRIVE_RX); what is spoken over it is the backend's, not
+// this task's -- include/drive_backend.h.
 // Runs on Core 1 (real-time).
 //
 // Safety layers implemented here:
@@ -11,6 +13,7 @@
 //
 // SAFETY: SPEED_LIMIT_MAX cap applied unconditionally before every frame.
 // SAFETY: Zero frames sent when any failsafe is active (never silent).
+// Both are settled above the backend seam and no backend can reach them.
 // =============================================================================
 
 #include <Arduino.h>
@@ -20,21 +23,23 @@
 #include "config_cache.h"
 #include "drive_arbiter.h"
 #include "drive.h"
+#include "drive_backend.h"
 #include "drive_frame_emit.h"
 #include "failsafe_gate.h"
-#include "hoverboard_uart.h"
 #include "logging.h"
 #include "robot_state.h"
 
 static const char* TAG = "DriveTask";
 
-// UART1 (Serial1) is dedicated to the hoverboard on PCB header S1.
-// Pins are fixed by the traced board routing: GPIO 16 TX, GPIO 17 RX.
-static HardwareSerial hoverSerial(1);
+// The drive lane is dedicated to the Foot Drive backend and shared with
+// nothing (include/config.h static_asserts that). Which controller index and
+// which GPIO pair it is are Board Lane facts declared per Board Variant, not
+// one board's traced routing: GPIO 16/17 on artoo-esp32, 20/21 on firebeetle2.
+static HardwareSerial driveSerial(UART_PORT_DRIVE);
 
 // -----------------------------------------------------------------------------
 // driveTask()
-// Sends Gen2.x 8-byte frames to the hoverboard at DRIVE_FREQ_HZ (50 Hz).
+// Sends one backend frame at DRIVE_FREQ_HZ (50 Hz), every tick, unconditionally.
 // Registers with TWDT on entry  --  if this loop hangs, chip resets in 3 s.
 // Applies SPEED_LIMIT_MAX cap and all active failsafe overrides every frame.
 // Thread safety: all RobotState reads/writes use taskENTER/EXIT_CRITICAL.
@@ -47,8 +52,8 @@ void driveTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
     esp_task_wdt_reset();
 
-    // Feature toggle: when cfg_enable_drive is false, do not open
-    // UART1 or send any frames. Task idles here feeding TWDT only.
+    // Feature toggle: when cfg_enable_drive is false, do not open the drive
+    // lane or send any frames. Task idles here feeding TWDT only.
     // Mirrors the DomeLinkTask disabled path.
     {
         ConfigSnapshot cfg = {};
@@ -57,19 +62,17 @@ void driveTask(void* pvParameters) {
         if (!enabled) {
             for (;;) {
                 esp_task_wdt_reset();
-                vTaskDelay(pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ));
+                vTaskDelay(pdMS_TO_TICKS(DRIVE_FRAME_PERIOD_MS));
             }
         }
     }
 
-    HoverboardFeedbackParser hbParser;
-    hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_DRIVE_RX, PIN_DRIVE_TX);
-    initHoverboardFeedbackParser(&hbParser);  // clear parser state after UART reinit
-    PA_LOG_INFO(TAG, "started \u2014 UART1 %lu baud, GPIO TX=%d RX=%d",
-                (unsigned long)HOVERBOARD_BAUD, PIN_DRIVE_TX, PIN_DRIVE_RX);
+    driveBackendBegin(driveSerial);
+    PA_LOG_INFO(TAG, "started \u2014 %s (%s) on UART%u, %lu baud, GPIO TX=%d RX=%d",
+                kDriveBackend.id, kDriveBackend.protocol, (unsigned)UART_PORT_DRIVE,
+                (unsigned long)kDriveBackend.baud, PIN_DRIVE_TX, PIN_DRIVE_RX);
 
-    uint8_t frameBuf[8];
-    const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz
+    const TickType_t period = pdMS_TO_TICKS(DRIVE_FRAME_PERIOD_MS);  // 20 ms at 50 Hz
     TickType_t lastWakeTime = xTaskGetTickCount();  // Initialize for vTaskDelayUntil
     bool hwmLogged = false;
 
@@ -106,7 +109,7 @@ void driveTask(void* pvParameters) {
 
         // Mirror resolved output to robotState for SSE status reporting.
         // Written here (post-resolve) so the values match what is actually sent
-        // to the hoverboard, not what was last submitted by any one source.
+        // to the drive backend, not what was last submitted by any one source.
         taskENTER_CRITICAL(&robotStateMux);
         robotState.driveOutputSpeed = driveOut.speed;
         robotState.driveOutputSteer = driveOut.steer;
@@ -142,7 +145,9 @@ void driveTask(void* pvParameters) {
             zeroRecordedForTriggerMs = 0;
         }
 
-        // Send frame  --  always (zero-frame rule: never go silent, hoverboard must coast, not drift)
+        // Send frame  --  always (zero-frame rule: never go silent). The
+        // backend declares how long its far end tolerates a gap; whether a
+        // frame goes out at all is decided here and never down there.
         // Pure step decision: encode frame emission and payload.
         DriveTickInputs tickIn{
             .failsafeActive = failsafeActive,
@@ -151,41 +156,43 @@ void driveTask(void* pvParameters) {
         };
         DriveTickActions tickActions = driveTickDecide(tickIn);
         if (tickActions.shouldEmitFrame) {
-            buildHoverboardFrame(frameBuf, tickActions.steer, tickActions.speed);
-            hoverSerial.write(frameBuf, sizeof(frameBuf));
+            driveBackendSend(driveSerial, tickActions.speed, tickActions.steer);
         }
 
-        // Read hoverboard controller feedback  --  non-blocking, drains available bytes.
-        // Decodes battery voltage, board temperature, and motor speed from the
-        // Gen2.x feedback frame the hoverboard controller sends back at 10-100 Hz.
-        // If no valid frame arrives within HB_FEEDBACK_STALE_MS, mark feedback as
+        // Read drive backend feedback  --  non-blocking, drains available bytes.
+        // Feedback is not universal, so this asks the profile rather than the
+        // controller: a backend that cannot report is compiled out of the
+        // block entirely instead of polling a wire nothing answers on.
+        // If no valid reading arrives within kFeedbackStaleMs, mark feedback
         // invalid so the UI does not display stale readings indefinitely.
         static constexpr uint32_t kFeedbackStaleMs = 5000;
 
-        HoverboardFeedback hbFb;
-        if (readHoverboardFeedback(hoverSerial, &hbParser, &hbFb)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.hb_batteryRaw    = hbFb.batteryRaw;
-            robotState.hb_boardTempRaw  = hbFb.boardTempRaw;
-            robotState.hb_speedR        = hbFb.speedR;
-            robotState.hb_speedL        = hbFb.speedL;
-            robotState.hb_currentL      = hbFb.currentL;
-            robotState.hb_currentR      = hbFb.currentR;
-            robotState.hb_feedbackValid = true;
-            robotState.hb_lastFeedbackMs = millis();
-            taskEXIT_CRITICAL(&robotStateMux);
-        } else {
-            // Check for stale data: invalidate if no frame received recently.
-            taskENTER_CRITICAL(&robotStateMux);
-            bool wasValid  = robotState.hb_feedbackValid;
-            uint32_t lastMs = robotState.hb_lastFeedbackMs;
-            taskEXIT_CRITICAL(&robotStateMux);
-            if (wasValid && (uint32_t)(millis() - lastMs) > kFeedbackStaleMs) {
+        if (kDriveBackend.reportsFeedback) {
+            DriveFeedback fb;
+            if (driveBackendPollFeedback(driveSerial, &fb)) {
                 taskENTER_CRITICAL(&robotStateMux);
-                robotState.hb_feedbackValid = false;
+                robotState.hb_batteryRaw    = fb.batteryRaw;
+                robotState.hb_boardTempRaw  = fb.boardTempRaw;
+                robotState.hb_speedR        = fb.speedR;
+                robotState.hb_speedL        = fb.speedL;
+                robotState.hb_currentL      = fb.currentL;
+                robotState.hb_currentR      = fb.currentR;
+                robotState.hb_feedbackValid = true;
+                robotState.hb_lastFeedbackMs = millis();
                 taskEXIT_CRITICAL(&robotStateMux);
-                PA_LOG_INFO(TAG, "hoverboard feedback stale (>%lu ms) - invalidated",
-                            (unsigned long)kFeedbackStaleMs);
+            } else {
+                // Check for stale data: invalidate if no frame received recently.
+                taskENTER_CRITICAL(&robotStateMux);
+                bool wasValid  = robotState.hb_feedbackValid;
+                uint32_t lastMs = robotState.hb_lastFeedbackMs;
+                taskEXIT_CRITICAL(&robotStateMux);
+                if (wasValid && (uint32_t)(millis() - lastMs) > kFeedbackStaleMs) {
+                    taskENTER_CRITICAL(&robotStateMux);
+                    robotState.hb_feedbackValid = false;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    PA_LOG_INFO(TAG, "drive backend feedback stale (>%lu ms) - invalidated",
+                                (unsigned long)kFeedbackStaleMs);
+                }
             }
         }
 
