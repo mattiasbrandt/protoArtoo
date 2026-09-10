@@ -72,12 +72,22 @@ SERVO_OUTPUT_ROW_PATH = ROOT / "include" / "servo_output_row.h"
 FIRMWARE_OUTPUT_PATH = ROOT / "include" / "droid_parts.h"
 BROWSER_OUTPUT_PATH = ROOT / "data" / "droid_parts.js"
 
+# Where each file BELONGS, as generated text names it. Every path above is
+# injectable so the generator can be aimed at a scratch tree, and these are what
+# keep that from leaking: what it writes there is byte for byte what it writes
+# here, which is the whole basis of comparing a committed artefact against a
+# fresh run (#358).
+CATALOG_NAME = rel(CATALOG_PATH)
+GENERATOR_NAME = rel(__file__)
+FIRMWARE_NAME = rel(FIRMWARE_OUTPUT_PATH)
+BROWSER_NAME = rel(BROWSER_OUTPUT_PATH)
+
 REGENERATION_NOTE = f"""\
-After editing {rel(CATALOG_PATH)}, run this generator. It rewrites two
+After editing {CATALOG_NAME}, run this generator. It rewrites two
 committed outputs:
 
-  {rel(FIRMWARE_OUTPUT_PATH):<24} the id vocabulary firmware resolves a Part against
-  {rel(BROWSER_OUTPUT_PATH):<24} the names, shorthand, aliases and position every
+  {FIRMWARE_NAME:<24} the id vocabulary firmware resolves a Part against
+  {BROWSER_NAME:<24} the names, shorthand, aliases and position every
   {'':<24} operator surface labels a Part with
 
 Editing the catalog without regenerating them leaves the firmware's vocabulary
@@ -576,7 +586,7 @@ def provenance(catalog, name, what):
 // =============================================================================
 // {name}
 //
-// Auto-generated from {rel(CATALOG_PATH)} by {rel(Path(__file__))}
+// Auto-generated from {CATALOG_NAME} by {GENERATOR_NAME}
 // DO NOT EDIT MANUALLY
 //
 // Source digest: sha256 {catalog['digest']}
@@ -598,7 +608,7 @@ def generate_firmware_header(catalog, output_path=None):
     lines = [
         provenance(
             catalog,
-            rel(FIRMWARE_OUTPUT_PATH),
+            FIRMWARE_NAME,
             "The Droid Parts Catalog's id vocabulary, and only that. A Part is\n"
             "// identity; an Output Address is only wiring, so there is no parts table\n"
             "// in firmware beyond these ids - which Output drives which Part is\n"
@@ -722,8 +732,8 @@ def generate_browser_module(catalog, output_path=None):
     """Write data/droid_parts.js - data only, in one committed module."""
     output_path = Path(output_path) if output_path else BROWSER_OUTPUT_PATH
     payload = {
-        "source": rel(CATALOG_PATH),
-        "generator": rel(__file__),
+        "source": CATALOG_NAME,
+        "generator": GENERATOR_NAME,
         "sourceSha256": catalog["digest"],
         "designs": catalog["designs"],
         "parts": [browser_part(part) for part in catalog["parts"]],
@@ -737,9 +747,9 @@ def generate_browser_module(catalog, output_path=None):
     body = json.dumps(payload, indent=2, ensure_ascii=True).replace("\n", "\n  ")
     header = f"""\
 /**
- * {rel(BROWSER_OUTPUT_PATH)}
+ * {BROWSER_NAME}
  *
- * Auto-generated from {rel(CATALOG_PATH)} by {rel(Path(__file__))}
+ * Auto-generated from {CATALOG_NAME} by {GENERATOR_NAME}
  * DO NOT EDIT MANUALLY
  *
  * Source digest: sha256 {catalog['digest']}
@@ -806,11 +816,14 @@ def generate(quiet=False, catalog_path=None, firmware_path=None, browser_path=No
         raise CatalogError([f"firmware id table carries ids no part row declares: {stray}"])
 
     if not quiet:
-        print(f"Loaded {rel(CATALOG_PATH)}: {len(declared_ids)} parts, "
+        # The summary says where this run actually read and wrote, which is not
+        # always where the files belong - the generated text says that.
+        print(f"Loaded {rel(catalog_path or CATALOG_PATH)}: {len(declared_ids)} parts, "
               f"{len(catalog['designs'])} designs")
-        print(f"Generated {rel(FIRMWARE_OUTPUT_PATH)}: {len(ids)} ids "
+        print(f"Generated {rel(firmware_path or FIRMWARE_OUTPUT_PATH)}: {len(ids)} ids "
               f"({', '.join(ids) if ids else 'none'})")
-        print(f"Generated {rel(BROWSER_OUTPUT_PATH)}: {len(emitted_ids)} parts")
+        print(f"Generated {rel(browser_path or BROWSER_OUTPUT_PATH)}: "
+              f"{len(emitted_ids)} parts")
     return catalog
 
 
