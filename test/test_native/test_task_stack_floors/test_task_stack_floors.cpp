@@ -69,7 +69,7 @@ struct TaskStackArm {
 static const TaskStackArm kArms[] = {
     {"DriveTask", 4080U, 5632U, RULE_ABOVE},
     {"RCInputTask", 5248U, 7168U, RULE_ABOVE},
-    {"ServoTask", 3200U, 4096U, RULE_APPLIED},
+    {"ServoTask", 3216U, 4096U, RULE_APPLIED},
     {"DomeTask", 2992U, 3072U, RULE_DECLINED},
     {"AudioTask", 5280U, 6144U, RULE_DECLINED},
     {"AuxLedTask", 3504U, 4096U, RULE_DECLINED},
@@ -194,7 +194,11 @@ void test_safety_monitor_was_raised_because_its_floor_failed() {
 // HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1 and is proven in
 // test/test_tools/test_task_stack_recipes.py.
 void test_the_previously_unmeasured_tasks_now_carry_chains() {
-    TEST_ASSERT_EQUAL_UINT32(3200U, SERVO_TASK_MEASURED_CHAIN_BYTES);
+    // 3216 since 2026-09-11 (#342): the ADR 0041 drive-command clamp is one
+    // Xtensa frame step on setArmPosition(). The stack did not move with it --
+    // the rule takes 3216 to the same 4096 the arm already held, which is the
+    // arithmetic test_every_arm_follows_the_derivation_it_claims re-does.
+    TEST_ASSERT_EQUAL_UINT32(3216U, SERVO_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, SERVO_TASK_STACK_BYTES);
     TEST_ASSERT_EQUAL_UINT32(3696U, OTA_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, OTA_TASK_STACK_BYTES);
