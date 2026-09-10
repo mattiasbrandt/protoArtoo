@@ -231,6 +231,18 @@ static void executeSequence(uint8_t seqId) {
     PA_LOG_INFO(TAG, "Sequence :SE%02d started", seqId);
 }
 
+// -----------------------------------------------------------------------------
+// abortSequenceAndPark()
+// End the sequence now and put the arm(s) at their close position.
+//
+// This path SNAPS, and it must keep snapping. A Servo Output's Motion Profile
+// (ADR 0052) gives it a ramp, and a ramp opens a gap between the commanded
+// position and where the servo actually is -- so easing into a safe state
+// leaves the droid somewhere nobody asked for while it eases. Estop and Sleep
+// Mode both land here, and both bypass the ramp: whoever wires the profile into
+// the drive path writes the endpoint straight through, exactly as the two
+// setArmPosition() calls below do (ADR 0041, ADR 0043).
+// -----------------------------------------------------------------------------
 static void abortSequenceAndPark(const char* reason) {
     if (seqState.state == SEQ_IDLE) {
         return;
