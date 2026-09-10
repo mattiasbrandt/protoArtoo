@@ -419,14 +419,33 @@ nav a.active {
 }
 
 
+/* A health lamp with no state class yet: the dashboard renders these before
+   the first status frame arrives, and page_bootstrap.js lights one "info"
+   while a page is still loading. Both are transient unknowns, and CONTEXT.md
+   "Status Colour" keeps amber off a transient unknown - it is not something
+   the builder can act on, it is the answer not having arrived. Unlit and
+   neutral until the droid says otherwise. */
 .indicator {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  background: var(--warning);
-  box-shadow: 0 0 6px var(--warning);
+  border-radius: var(--radius-round);
+  background: var(--text-dim);
+  box-shadow: none;
+  opacity: 0.55;
   flex: 0 0 14px;
-  transition: background 0.3s ease, box-shadow 0.3s ease;
+  transition: background 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+}
+
+.indicator.ok,
+.indicator.fail,
+.indicator.warn,
+.indicator.info {
+  opacity: 1;
+}
+
+.indicator.info {
+  background: var(--accent-bright);
+  box-shadow: 0 0 6px var(--accent-bright);
 }
 
 .indicator.ok {
@@ -439,6 +458,9 @@ nav a.active {
   box-shadow: 0 0 6px var(--danger);
 }
 
+/* Amber earns its place here: a health signal reads "warn" when a subsystem is
+   degraded, and a degraded droid is something the builder can and should do
+   something about. */
 .indicator.warn {
   background: var(--warning);
   box-shadow: 0 0 6px var(--warning);
@@ -1627,9 +1649,9 @@ body[data-page="wifi"] .wifi-mode-title {
   font-weight: 700;
 }
 
-body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"] {
-  border-left-color: var(--warning);
-}
+/* Standalone AP Mode gets no rail of its own. CONTEXT.md calls it a valid
+   operator-selected posture beyond onboarding, and amber would say the builder
+   ought to change it. The failure postures below keep the red rail. */
 
 body[data-page="wifi"] #wifi-posture-card[data-posture="provisioning"],
 body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"],
@@ -3558,10 +3580,10 @@ label.sound-search-field {
   box-shadow: 0 0 8px rgba(74, 144, 217, 0.4);
 }
 
-.mood-btn.quiet.active    { border-color: var(--text-dim); background: rgba(136,153,176,0.15); }
-.mood-btn.mid.active      { border-color: var(--warning);  background: rgba(232,168,50,0.15);  }
-.mood-btn.full.active     { border-color: var(--accent);   background: rgba(74,144,217,0.15);  }
-.mood-btn.awakeplus.active { border-color: var(--success); background: rgba(84,200,122,0.15);  }
+/* The four Moods used to wear four hues when selected, which put amber on
+   Mid-Awake and green on Awake+ - colour spent on a choice the builder made,
+   not on a state they can act on. Selection is one thing and looks like one
+   thing: .mood-btn.active above. Which Mood is which is the icon and the word. */
 
 /* ---- Operation Mode ---- */
 .opmode-grid {
@@ -3615,16 +3637,14 @@ label.sound-search-field {
   color: var(--white);
 }
 
-.opmode-btn.drive.active {
-  border-color: var(--accent-bright);
-  background: rgba(74, 144, 217, 0.2);
-  box-shadow: 0 0 10px rgba(74, 144, 217, 0.35);
-}
-
+/* Drive and Stationary are both deliberate Commanded Modes. Stationary used to
+   wear amber, which read as "something is wrong" for a mode the operator chose
+   on purpose; both now look selected the same way. */
+.opmode-btn.drive.active,
 .opmode-btn.stationary.active {
-  border-color: var(--warning);
-  background: rgba(232, 168, 50, 0.15);
-  box-shadow: 0 0 10px rgba(232, 168, 50, 0.3);
+  border-color: var(--accent-bright);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* ---- Board image on setup page ---- */

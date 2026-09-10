@@ -218,4 +218,30 @@ test("a dimmed Availability Family lifts on hover and on focus-within", () => {
   }
 });
 
+test("neither reserved colour is spent on a choice or on an answer that has not arrived", () => {
+  // CONTEXT.md "Status Colour" avoid-list: amber for "not normal", amber on a
+  // transient unknown. Each of these was one of those before #341.
+  const shouldNotWearAmber = [
+    [".indicator", "a dashboard health lamp before the first status frame"],
+    [".mood-btn.quiet.active", "a Mood the operator chose"],
+    [".mood-btn.mid.active", "a Mood the operator chose"],
+    [".mood-btn.full.active", "a Mood the operator chose"],
+    [".mood-btn.awakeplus.active", "a Mood the operator chose"],
+    [".opmode-btn.drive.active", "a Commanded Mode the operator chose"],
+    [".opmode-btn.stationary.active", "a Commanded Mode the operator chose"],
+    ['body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"]', "a valid operator-selected posture"],
+  ];
+  const amber = TOKENS.get("--warning");
+  const red = TOKENS.get("--danger");
+  const spends = [];
+  for (const [selector, why] of shouldNotWearAmber) {
+    for (const [property, value] of treatmentOf(selector)) {
+      if (value.includes(amber) || value.includes(red)) {
+        spends.push(`${selector} (${why}) { ${property}: ${value} }`);
+      }
+    }
+  }
+  assert.deepEqual(spends, [], "a reserved colour on something that is not a call to act");
+});
+
 module.exports = { RULES, ROOT, TOKENS, NON_ROOT, resolve, declarationsOf, stripComments, parseRules };
