@@ -30,6 +30,15 @@ uint32_t floatToBits(float value) {
     return result;
 }
 
+// Addressed Servo Output row keys. "so_cnt" holds the row count; each row gets
+// "soNN", two digits so an NVS dump reads in row order and four characters
+// clear of the 15-character Preferences key ceiling.
+constexpr char SERVO_OUTPUT_COUNT_KEY[] = "so_cnt";
+
+void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
+    snprintf(buf, bufSize, "so%02u", (unsigned)index);
+}
+
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def);
@@ -663,4 +672,100 @@ void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {
 
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
     deserializeWifi(r, out, getDefaults().wifi);
+}
+
+// =============================================================================
+// Addressed Servo Output rows  --  see include/config_serializer.h
+// =============================================================================
+
+bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
+    return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
+}
+
+bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w) {
+    if (index >= SERVO_OUTPUT_ROW_MAX) {
+        return false;
+    }
+    char key[8] = {};
+    servoOutputRowKey(index, key, sizeof(key));
+    char encoded[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    if (!servoOutputRowFormat(encoded, sizeof(encoded), row)) {
+        return false;
+    }
+    return w.writeStr(key, encoded);
+}
+
+bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w) {
+    const uint8_t count =
+        (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
+    bool ok = configSerializeServoOutputCount(count, w);
+    for (uint8_t i = 0; i < count; ++i) {
+        ok = configSerializeServoOutputRow(i, table.rows[i], w) && ok;
+    }
+    return ok;
+}
+
+void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
+                                   ServoOutputRepairReport* report) {
+    if (out == nullptr) {
+        return;
+    }
+    servoOutputTableDefaults(out);
+
+    ServoOutputRepairReport local = {};
+
+    const uint8_t storedCount = r.readU8(SERVO_OUTPUT_COUNT_KEY, out->count);
+    if (storedCount > SERVO_OUTPUT_ROW_MAX) {
+        local.countRepaired = true;  // keep the default count rather than the stored one
+    } else {
+        out->count = storedCount;
+    }
+
+    // Per-row masks are collected first because one rule cannot be decided a row
+    // at a time: "a Part is driven by at most one Output" is a fact about the
+    // whole table, so it runs once every row has been read.
+    uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
+
+    for (uint8_t i = 0; i < out->count; ++i) {
+        char key[8] = {};
+        servoOutputRowKey(i, key, sizeof(key));
+        const String stored = r.readStr(key, "");
+        if (stored.length() == 0) {
+            // Absent, not damaged: a device that has never written this row
+            // keeps its defaults and says nothing about it. Only a record that
+            // exists and cannot be read counts as a repair.
+            continue;
+        }
+        const ServoOutputRow fallback = out->rows[i];
+        ServoOutputRow parsed = fallback;
+        rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed);
+        out->rows[i] = parsed;
+    }
+
+    const uint32_t contested = servoOutputTableEnforcePartOwnership(out);
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if ((contested & ((uint32_t)1u << i)) != 0) {
+            rowMask[i] |= SERVO_FIELD_PARTS;
+        }
+    }
+
+    for (uint8_t i = 0; i < out->count; ++i) {
+        if (rowMask[i] == 0) {
+            continue;
+        }
+        if (local.rowsRepaired == 0) {
+            local.firstRow = i;
+            local.firstRowMask = rowMask[i];
+        }
+        local.rowsRepaired++;
+        for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
+            if ((rowMask[i] & (uint16_t)(1u << bit)) != 0) {
+                local.fieldsRepaired++;
+            }
+        }
+    }
+
+    if (report != nullptr) {
+        *report = local;
+    }
 }
