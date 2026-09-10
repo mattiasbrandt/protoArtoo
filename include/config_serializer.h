@@ -56,6 +56,18 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 // larger table is never read; the save that raises the count again writes those
 // rows in the same pass.
 // -----------------------------------------------------------------------------
+// configAdoptFixedServoFields: the bridge from the old form onto ONE row, and
+// the only statement anywhere of which Output Address each fixed servo field
+// set was ever about -- the five sets carry their channel in their names and
+// nowhere else. Both directions of the migrate phase come through here so the
+// mapping has one home: the loader crosses a row that has no stored record, and
+// the config write path crosses a row whose fields a builder has just changed.
+//
+// Returns the repair mask (0 when no fixed set is addressed to this row, which
+// is what an expander's row gets -- untouched, and reported as nothing).
+// Deleted with the fields it names.
+uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed);
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
 bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
 bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);

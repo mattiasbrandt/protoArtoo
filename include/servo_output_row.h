@@ -782,7 +782,11 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 //   - Centre takes the midpoint of the pair, not the midpoint of the band. The
 //     old form had no centre, so there is nothing to carry; halfway between the
 //     builder's own two ends is the only honest guess and it is what a linkage's
-//     rest position usually is.
+//     rest position usually is. It is a *default*, so it is re-derived only
+//     while the row is unmeasured: once somebody has captured a position on this
+//     output, its centre is theirs and a later crossing must not compute over
+//     it. This bridge is crossed again on every config write, so without that
+//     guard a measured centre would last exactly until the next form POST.
 //   - Everything else keeps what it had. The Part list, the Motion Profile, the
 //     Output Release, the boot behaviour and the `calibrated` bit are new
 //     fields, and a value nobody stored is not one to infer -- least of all the
@@ -812,7 +816,9 @@ inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, 
     row->component = component;
     row->open_us = openUs;
     row->close_us = closeUs;
-    row->centre_us = (uint16_t)(((uint32_t)openUs + (uint32_t)closeUs) / 2u);
+    if (!row->calibrated) {
+        row->centre_us = (uint16_t)(((uint32_t)openUs + (uint32_t)closeUs) / 2u);
+    }
     return servoOutputRowNormalise(row, before);
 }
 

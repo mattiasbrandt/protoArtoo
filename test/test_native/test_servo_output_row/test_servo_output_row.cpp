@@ -566,6 +566,20 @@ void test_a_fixed_pair_carries_nothing_it_was_never_told() {
     TEST_ASSERT_FALSE(row.calibrated);
 }
 
+void test_a_measured_centre_is_not_recomputed_by_a_later_crossing() {
+    ServoOutputRow row = mg996rRow();
+    servoOutputCapture(&row, SERVO_END_CENTRE, 1300);
+    TEST_ASSERT_TRUE(row.calibrated);
+
+    // The bridge is crossed again on every config write. A centre somebody
+    // measured is theirs; only an unmeasured one is a default to re-derive.
+    servoOutputAdoptFixedPair(&row, 1900, 1100, SERVO_COMP_MG996R);
+
+    TEST_ASSERT_EQUAL_UINT16(1300, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+}
+
 void test_a_fixed_pair_the_band_cannot_take_is_reported() {
     ServoOutputRow row = mg996rRow();
     // 500/2500 was legal in the old form; an MG996R row cannot take either.
@@ -748,6 +762,7 @@ int main(int, char**) {
 
     RUN_TEST(test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre);
     RUN_TEST(test_a_fixed_pair_carries_nothing_it_was_never_told);
+    RUN_TEST(test_a_measured_centre_is_not_recomputed_by_a_later_crossing);
     RUN_TEST(test_a_fixed_pair_the_band_cannot_take_is_reported);
     RUN_TEST(test_the_component_is_settled_before_the_pair_is_clamped);
     RUN_TEST(test_an_address_finds_its_row_and_an_unclaimed_one_does_not);

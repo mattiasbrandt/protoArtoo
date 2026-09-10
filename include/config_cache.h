@@ -47,6 +47,14 @@ void configCacheReadWifi(WifiConfig* out);
 bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
 uint8_t configCacheServoOutputCount();
 
+// configCacheApplyServoCalibration: the write direction of the migrate-phase
+// bridge. The Apply Core is pure and cannot reach the row table, so the Commit
+// Step hands the snapshot it just applied here and the endpoints land on the
+// rows every reader now uses. Called from the Commit Step and from nowhere
+// else -- the boot path has already crossed the bridge the other way, where a
+// stored row wins over the old form. Returns what the component band moved.
+ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo);
+
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);

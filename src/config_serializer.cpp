@@ -69,23 +69,6 @@ constexpr FixedServoFieldSet kFixedServoFieldSets[] = {
      &ServoConfig::aux3_type},
 };
 
-// Adopt the fixed field set addressed to this row, if there is one. A row an
-// expander added has no old form to inherit from and comes back 0 -- untouched,
-// and not reported as anything.
-uint16_t adoptFixedFieldSetFor(ServoOutputRow* row, const ServoConfig& fixed) {
-    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
-        return 0;
-    }
-    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
-        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
-        if (row->channel != set.channel) {
-            continue;
-        }
-        return servoOutputAdoptFixedPair(row, fixed.*(set.openUs), fixed.*(set.closeUs),
-                                         fixed.*(set.component));
-    }
-    return 0;
-}
 
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
@@ -727,6 +710,21 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
 // Addressed Servo Output rows  --  see include/config_serializer.h
 // =============================================================================
 
+uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed) {
+    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
+        return 0;
+    }
+    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
+        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
+        if (row->channel != set.channel) {
+            continue;
+        }
+        return servoOutputAdoptFixedPair(row, fixed.*(set.openUs), fixed.*(set.closeUs),
+                                         fixed.*(set.component));
+    }
+    return 0;
+}
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
     return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
 }
@@ -799,7 +797,7 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         // pulse width the component band had to move, and a builder's own number
         // changing under them is exactly what this project says out loud.
         rowMask[i] = (stored.length() == 0)
-                         ? adoptFixedFieldSetFor(&parsed, fixed)
+                         ? configAdoptFixedServoFields(&parsed, fixed)
                          : servoOutputRowParse(stored.c_str(), fallback, &parsed);
         out->rows[i] = parsed;
     }

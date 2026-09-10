@@ -693,6 +693,21 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 
     configCacheApply(*working);
 
+    // The endpoints a builder just changed still arrive as arm1OpenUs and its
+    // nine siblings, and the Apply Core that validated them is pure, so this is
+    // where they reach the addressed rows the firmware reads (#286, ADR 0041).
+    // A pulse width the component band moved is said out loud rather than
+    // quietly applied -- an MG996R output cannot take the old form's legal
+    // 500 us, and a builder who typed it is owed the reason.
+    const ServoOutputRepairReport servoOutputRepair =
+        configCacheApplyServoCalibration(working->servo);
+    if (servoOutputRepair.rowsRepaired > 0) {
+        char note[96] = {};
+        servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
+        PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",
+                    (unsigned)servoOutputRepair.firstRow, note);
+    }
+
     // Sync stationary mode with edge detection and drive-on cue. Safe to call
     // unconditionally: when the request omits "stationary", configApply() left
     // working->system.stationary at the cache value read before the call, which
@@ -715,6 +730,17 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.persisted = false;
+        return outcome;
+    }
+    // Rows first, and the fixed field sets only once the rows are down. While
+    // both forms are stored, the fixed sets are the copy of what is about to be
+    // replaced, and a failed save has to stop the replace: a row write that
+    // fails here leaves both stores holding the same older value, which is
+    // recoverable, where the other order would leave the rows stale and winning
+    // over a field set that already carried the new number (#286, ADR 0056).
+    if (!configSaveServoOutputs(prefs)) {
+        prefs.end();
         outcome.persisted = false;
         return outcome;
     }

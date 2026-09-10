@@ -414,6 +414,52 @@ bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
     return live;
 }
 
+// The write direction of the migrate-phase bridge (#286, ADR 0041).
+//
+// POST /api/config still carries a builder's endpoints as arm1OpenUs and its
+// nine siblings, and the Apply Core that validates them is pure -- it mutates a
+// ConfigSnapshot and cannot reach this table. So the Commit Step calls this
+// with the snapshot it just applied, and the numbers land on the rows the whole
+// firmware now reads. Without it a builder would calibrate an arm, get the old
+// value back on the next read, and watch the droid drive to it.
+//
+// One direction only, and only from the Commit Step. Nothing on the boot path
+// may call it: configLoadServoOutputs() has already crossed the bridge in the
+// other direction there, with a stored row winning over the old form, and
+// pushing the fields back over the top would undo exactly that. It is deleted
+// with the fields it reads.
+//
+// Returns what the component band moved, in the same report the loader fills,
+// so a value changing under a builder is said in one voice wherever it happens.
+ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo) {
+    ServoOutputRepairReport report = {};
+    // The whole pass is inside one critical section: it is bounded by the row
+    // count, does no allocation and no I/O, and a half-applied table is a table
+    // a reader could catch mid-edit.
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
+                              ? servoOutputCache.count
+                              : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        const uint16_t repaired = configAdoptFixedServoFields(&servoOutputCache.rows[i], servo);
+        if (repaired == 0) {
+            continue;
+        }
+        if (report.rowsRepaired == 0) {
+            report.firstRow = i;
+            report.firstRowMask = repaired;
+        }
+        report.rowsRepaired++;
+        for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
+            if ((repaired & (uint16_t)(1u << bit)) != 0) {
+                report.fieldsRepaired++;
+            }
+        }
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return report;
+}
+
 void configCacheReadServo(ServoConfig* out) {
     if (out == nullptr) {
         return;
