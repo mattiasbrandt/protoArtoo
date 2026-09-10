@@ -985,7 +985,7 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::ENABLE_RC_CH5:
         case ConfigKey::ENABLE_RC_CH6:
         case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_S1_HOVERBOARD:
+        case ConfigKey::ENABLE_DRIVE:
         case ConfigKey::ENABLE_S2_SOUND:
         case ConfigKey::ENABLE_S3_DOME_CTRL:
         case ConfigKey::STATIONARY:
@@ -1030,7 +1030,7 @@ ConfigValidationResult configValidateBool(ConfigKey key, bool value) {
         case ConfigKey::ENABLE_RC_CH5:
         case ConfigKey::ENABLE_RC_CH6:
         case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_S1_HOVERBOARD:
+        case ConfigKey::ENABLE_DRIVE:
         case ConfigKey::ENABLE_S2_SOUND:
         case ConfigKey::ENABLE_S3_DOME_CTRL:
         case ConfigKey::STATIONARY:

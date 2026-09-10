@@ -166,7 +166,11 @@ enum class ConfigKey : uint8_t {
     ENABLE_RC_CH5 = 110,
     ENABLE_RC_CH6 = 111,
     SINGLE_SBUS_USE_CH2 = 112,
-    ENABLE_S1_HOVERBOARD = 113,
+    // Generic project vocabulary, not the artoo.uk PCB's silkscreen legend
+    // (ADR 0033). The persisted key has been en_drive since the schema 2 -> 3
+    // migration, so this identifier is the last place the board's own label
+    // survived and renaming it migrates nothing.
+    ENABLE_DRIVE = 113,
     ENABLE_S2_SOUND = 114,
     ENABLE_S3_DOME_CTRL = 115,
     STATIONARY = 116,
