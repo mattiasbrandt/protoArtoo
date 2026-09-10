@@ -61,8 +61,15 @@ bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, Con
 bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);
 
 // Fills *out with servoOutputTableDefaults() then overwrites with stored rows.
-// A row whose key is absent keeps its default silently -- that is a device that
-// has never written it, not a damaged record. A row whose record exists but
-// cannot be read is repaired field by field and counted in *report.
+// A row whose record exists but cannot be read is repaired field by field and
+// counted in *report.
+//
+// A row whose key is absent crosses the bridge instead (#286): it adopts the
+// fixed field set addressed to its channel, so a builder's existing calibration
+// arrives on the rows on first read, with no migration marker to keep and no
+// write on the boot path. A stored row always wins over the old form, which is
+// what makes the adoption idempotent -- it stops mattering for a row the moment
+// that row is saved. The only repair an adoption can report is a pulse width the
+// component band had to move, and it is counted like any other.
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                                    ServoOutputRepairReport* report);

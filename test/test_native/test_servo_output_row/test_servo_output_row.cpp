@@ -611,6 +611,101 @@ void test_an_address_finds_its_row_and_an_unclaimed_one_does_not() {
                             servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
 }
 
+// --- the bridge, crossed on first read ---------------------------------------
+
+void test_an_upgrading_controller_finds_its_calibration_on_the_rows() {
+    // A controller that calibrated two arms and one aux before ADR 0041: five
+    // fixed field sets in NVS, and not one row record.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)1850);
+    reader.set("arm1_cl", (uint32_t)1150);
+    reader.set("arm1_type", (uint32_t)SERVO_COMP_MG996R);
+    reader.set("aux1_op", (uint32_t)1400);
+    reader.set("aux1_cl", (uint32_t)1900);
+    reader.set("aux1_type", (uint32_t)SERVO_COMP_MG996R);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    const uint8_t arm1 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_ARM1);
+    TEST_ASSERT_EQUAL_UINT16(1850, loaded.rows[arm1].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1150, loaded.rows[arm1].close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, loaded.rows[arm1].centre_us);
+
+    // A reversed linkage on aux1 is still reversed on the row.
+    const uint8_t aux1 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_AUX1);
+    TEST_ASSERT_EQUAL_UINT16(1400, loaded.rows[aux1].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, loaded.rows[aux1].close_us);
+    TEST_ASSERT_TRUE(servoOutputIsReversed(loaded.rows[aux1]));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, loaded.rows[aux1].component);
+
+    // Nothing was moved, so nothing is reported.
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+    // And the new fields are still the safe values, not something inferred.
+    TEST_ASSERT_FALSE(loaded.rows[arm1].calibrated);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, loaded.rows[arm1].boot);
+}
+
+void test_a_saved_row_wins_over_the_old_form() {
+    // Both forms present, disagreeing: the row is the output from now on.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)1850);
+    reader.set("arm1_cl", (uint32_t)1150);
+    reader.set("so00", std::string("ledc:0:doorFL:1700:1400:1200:800:200:0:soft:limp:mg996r:1"));
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT16(1700, loaded.rows[0].open_us);
+    TEST_ASSERT_EQUAL_UINT16(1200, loaded.rows[0].close_us);
+    TEST_ASSERT_TRUE(loaded.rows[0].calibrated);
+    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(loaded.rows[0], 0));
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+
+    // The row beside it has no record, so it still crosses the bridge.
+    const uint8_t arm2 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_ARM2);
+    TEST_ASSERT_EQUAL_UINT16(2000, loaded.rows[arm2].open_us);
+}
+
+void test_an_old_value_the_band_cannot_take_is_reported_at_load() {
+    // 2500 us was legal in the old form on any output. On an MG996R row it is
+    // not, so it moves -- and a builder's own number changing under them is
+    // said out loud rather than quietly clamped.
+    MapReader reader;
+    reader.set("arm1_op", (uint32_t)2500);
+    reader.set("arm1_type", (uint32_t)SERVO_COMP_MG996R);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    TEST_ASSERT_EQUAL_UINT16(2000, loaded.rows[0].open_us);
+    TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT8(0, report.firstRow);
+    TEST_ASSERT_TRUE((report.firstRowMask & SERVO_FIELD_OPEN) != 0);
+}
+
+void test_naming_the_wider_component_carries_the_old_value_across_intact() {
+    // The same 2500 us on an output whose builder said what is fitted (#286:
+    // the wider band is an unlock, not a default).
+    MapReader reader;
+    reader.set("aux2_op", (uint32_t)2500);
+    reader.set("aux2_cl", (uint32_t)600);
+    reader.set("aux2_type", (uint32_t)SERVO_COMP_MG90S);
+
+    ServoOutputTable loaded = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &loaded, &report);
+
+    const uint8_t aux2 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_AUX2);
+    TEST_ASSERT_EQUAL_UINT16(2500, loaded.rows[aux2].open_us);
+    TEST_ASSERT_EQUAL_UINT16(600, loaded.rows[aux2].close_us);
+    TEST_ASSERT_EQUAL_UINT16(1550, loaded.rows[aux2].centre_us);
+    TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -656,6 +751,11 @@ int main(int, char**) {
     RUN_TEST(test_a_fixed_pair_the_band_cannot_take_is_reported);
     RUN_TEST(test_the_component_is_settled_before_the_pair_is_clamped);
     RUN_TEST(test_an_address_finds_its_row_and_an_unclaimed_one_does_not);
+
+    RUN_TEST(test_an_upgrading_controller_finds_its_calibration_on_the_rows);
+    RUN_TEST(test_a_saved_row_wins_over_the_old_form);
+    RUN_TEST(test_an_old_value_the_band_cannot_take_is_reported_at_load);
+    RUN_TEST(test_naming_the_wider_component_carries_the_old_value_across_intact);
 
     return UNITY_END();
 }
