@@ -45,6 +45,18 @@ void tearDown() {
 
 // --- POST /api/config -------------------------------------------------------
 
+// The addressed Servo Output rows only exist once something has loaded them
+// (ADR 0041); on a controller that is main's boot path. Empty storage gives the
+// five default rows, which is the state a fresh controller boots into.
+void seedServoOutputRows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+
 void test_config_post_applies_a_field_and_echoes_the_snapshot() {
     const WebRequestTestParam params[] = {{"speedLimitMax", "80"}};
     WebRequestTestBackend backend;
@@ -293,6 +305,82 @@ void test_wifi_post_commit_step_persists_and_reports_runtime_state() {
     TEST_ASSERT_TRUE(doc["wifi"]["networkRecovery"].as<bool>());
 }
 
+// --- the calibration write reaches the addressed rows (#342) ----------------
+
+// A builder's endpoints still arrive as arm1OpenUs and its siblings, and every
+// reader of them is now the row. Drop configCacheApplyServoCalibration() from
+// the Commit Step and this goes red: the write lands in the snapshot, the droid
+// keeps driving to the old number, and the next read hands the old one back.
+void test_a_calibration_write_lands_on_the_addressed_row() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam params[] = {{"arm1OpenUs", "1750"}, {"arm1CloseUs", "1250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(1750, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1250, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+}
+
+// The old form let any output take 500-2500 us. The row's component type
+// governs the clamp (#286), so a value an MG996R cannot reach does not reach
+// it - and the write still succeeds rather than being refused, because clamping
+// is not refusing (ADR 0044).
+void test_a_write_the_component_band_cannot_take_is_moved_not_refused() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam params[] = {{"aux1Type", "mg996r"}, {"aux1OpenUs", "2500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ServoOutputRow row = {};
+    const uint8_t aux1 = 2;  // the third default row is LEDC_CH_AUX1
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(aux1, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, row.channel);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, row.component);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+}
+
+// What comes back has to be what the droid will do. The row holds the clamped
+// number, so the echo does too - a response that repeated the request back
+// would tell a builder their 500 us landed while the arm moved to 1000.
+void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam params[] = {{"arm1Type", "mg996r"}, {"arm1OpenUs", "500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_INT(1000, doc["arm1OpenUs"].as<int>());
+
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+    TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
@@ -301,6 +389,9 @@ int main() {
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
     RUN_TEST(test_config_commit_leaves_working_agreeing_with_the_config_cache);
     RUN_TEST(test_config_post_body_matches_a_read_of_the_committed_config);
+    RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
+    RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
+    RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);

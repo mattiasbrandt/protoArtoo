@@ -13,7 +13,10 @@
 
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_serializer.h"
 #include "robot_state.h"
+
+#include "../../../test/stubs/config/map_config_io.h"
 
 // Provided by native_test_stubs.cpp
 extern RobotState robotState;
@@ -1354,6 +1357,117 @@ void test_configLoad_current_schema_does_not_remap_log_level() {
     prefs.end();
 }
 
+// --- the fixed servo fields are a view of the rows (#342) --------------------
+
+// While two shapes coexist, an endpoint has to read the same whichever door
+// asks. The rows are where it lives, so the cache fills the ten fixed fields
+// from them on the way out and a stale field cannot reach a reader. Drop the
+// projection and this goes red with the two disagreeing.
+void test_the_fixed_servo_fields_come_from_the_rows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    // A fixed field carrying something no row agrees with - which is what a
+    // controller rolled back and forward again would have in NVS.
+    snap.servo.arm1_open_us = 1234;
+    configCacheApply(snap);
+
+    ServoConfig servo = {};
+    configCacheReadServo(&servo);
+    TEST_ASSERT_EQUAL_UINT16(2000, servo.arm1_open_us);
+
+    ConfigSnapshot readBack = {};
+    configCacheRead(&readBack);
+    TEST_ASSERT_EQUAL_UINT16(2000, readBack.servo.arm1_open_us);
+
+    // And it follows the row rather than being pinned to a default.
+    ConfigSnapshot calibrated = {};
+    configSnapshotDefaults(&calibrated);
+    calibrated.servo.arm1_open_us = 1750;
+    configCacheApplyServoCalibration(calibrated.servo);
+    configCacheReadServo(&servo);
+    TEST_ASSERT_EQUAL_UINT16(1750, servo.arm1_open_us);
+}
+
+// The fixed field sets are the copy of what the rows replaced, and a copy is
+// only worth offering if it stays honest: a save writes the row's number into
+// the old form's keys, so a controller rolled back to firmware that only knows
+// the old form still finds the calibration a builder made.
+void test_a_save_carries_the_rows_number_into_the_old_forms_keys() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    snap.servo.arm2_open_us = 1820;
+    snap.servo.arm2_close_us = 1180;
+    configCacheApplyServoCalibration(snap.servo);
+
+    ConfigSnapshot toStore = {};
+    configCacheRead(&toStore);
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(toStore, writer));
+
+    TEST_ASSERT_EQUAL_STRING("1820", writer.data().at("arm2_op").c_str());
+    TEST_ASSERT_EQUAL_STRING("1180", writer.data().at("arm2_cl").c_str());
+}
+
+// The servo drive path's only two doors onto a row, and both answer with values
+// rather than with the row: their caller's worst-case static chain is a measured
+// constant (ADR 0040) and a ServoOutputRow is 70 B to answer a question whose
+// answer is one number or two.
+void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    // An MG996R output holds 1000..2000, and the caller is told which part
+    // bounded the number without being handed the row it came from.
+    ServoComponentType component = SERVO_COMP_RGB;  // poisoned, must be overwritten
+    TEST_ASSERT_EQUAL_UINT16(
+        1000, configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, 500, &component));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, component);
+
+    // An address no row claims has no band to be held to: the request comes back
+    // untouched and no component is invented for it.
+    component = SERVO_COMP_RGB;
+    TEST_ASSERT_EQUAL_UINT16(
+        500, configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, LEDC_CH_DOME, 500, &component));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, component);
+
+    // The pair comes back directional - a reversed linkage stays reversed.
+    ConfigSnapshot calibrated = {};
+    configSnapshotDefaults(&calibrated);
+    calibrated.servo.arm1_open_us = 1200;
+    calibrated.servo.arm1_close_us = 1900;
+    configCacheApplyServoCalibration(calibrated.servo);
+
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1200, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1900, closeUs);
+
+    // And an unclaimed address leaves the caller's own fallback standing.
+    openUs = 7;
+    closeUs = 9;
+    TEST_ASSERT_FALSE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_DOME, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(7, openUs);
+    TEST_ASSERT_EQUAL_UINT16(9, closeUs);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1406,5 +1520,9 @@ int main() {
     RUN_TEST(test_wifiConfigToView_reports_unset_empty_passwords);
     RUN_TEST(test_wifiConfigsDiffer_true_when_mode_or_ssid_or_password_changes);
     RUN_TEST(test_configLoad_save_wifi_round_trip);
+
+    RUN_TEST(test_the_fixed_servo_fields_come_from_the_rows);
+    RUN_TEST(test_a_save_carries_the_rows_number_into_the_old_forms_keys);
+    RUN_TEST(test_the_drive_path_asks_the_cache_for_values_not_a_row);
     return UNITY_END();
 }

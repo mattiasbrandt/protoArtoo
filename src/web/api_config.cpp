@@ -533,7 +533,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
-    // Legacy top-level calibration fields consumed by data/servo.js
+    // Legacy top-level calibration fields consumed by data/servo.js. The
+    // numbers are the addressed Servo Output rows' (ADR 0041): the config cache
+    // fills these ten fields from the rows on the way out, so what a surface
+    // renders is what the droid will drive to, without this pure builder having
+    // to reach a table it cannot see. The names go when the fields do.
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
     doc["arm1CloseUs"] = snap.servo.arm1_close_us;
     doc["arm2OpenUs"] = snap.servo.arm2_open_us;
@@ -693,6 +697,26 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 
     configCacheApply(*working);
 
+    // The endpoints a builder just changed still arrive as arm1OpenUs and its
+    // nine siblings, and the Apply Core that validated them is pure, so this is
+    // where they reach the addressed rows the firmware reads (#286, ADR 0041).
+    // A pulse width the component band moved is said out loud rather than
+    // quietly applied -- an MG996R output cannot take the old form's legal
+    // 500 us, and a builder who typed it is owed the reason.
+    const ServoOutputRepairReport servoOutputRepair =
+        configCacheApplyServoCalibration(working->servo);
+    if (servoOutputRepair.rowsRepaired > 0) {
+        // 64 B rather than the boot path's 96: this frame is on the Console
+        // config-write chain include/config.h measures, and an adoption can
+        // only ever report the three pulse widths plus the component and the
+        // channel -- "channel, open, centre, close, component took the safe
+        // default" is 52. The note truncates safely if that ever grows.
+        char note[64] = {};
+        servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
+        PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",
+                    (unsigned)servoOutputRepair.firstRow, note);
+    }
+
     // Sync stationary mode with edge detection and drive-on cue. Safe to call
     // unconditionally: when the request omits "stationary", configApply() left
     // working->system.stationary at the cache value read before the call, which
@@ -715,6 +739,17 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
+        outcome.persisted = false;
+        return outcome;
+    }
+    // Rows first, and the fixed field sets only once the rows are down. While
+    // both forms are stored, the fixed sets are the copy of what is about to be
+    // replaced, and a failed save has to stop the replace: a row write that
+    // fails here leaves both stores holding the same older value, which is
+    // recoverable, where the other order would leave the rows stale and winning
+    // over a field set that already carried the new number (#286, ADR 0056).
+    if (!configSaveServoOutputs(prefs)) {
+        prefs.end();
         outcome.persisted = false;
         return outcome;
     }

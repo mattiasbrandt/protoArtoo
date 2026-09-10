@@ -1159,7 +1159,7 @@ Updates supported config fields and persists to NVS.
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
-- servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`
+- servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
 

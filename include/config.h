@@ -775,8 +775,19 @@ constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5248;
 // above rule (6656): the pre-#256 literal, kept rather than lowered onto a
 // Xtensa figure that can prove an overrun and cannot prove a margin.
 constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3200;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3200 -> 4000 -> 4096
+// Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
+// setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
+// stops servo.action.set-position driving a fitted part past what its component
+// takes, and the one route around the band that a stored-endpoint clamp cannot
+// cover. It is what the clamp costs once the interface is as narrow as the
+// answer: the pair of whole-ServoOutputRow copies that first paid for it, here
+// and on getOpenClosePositions(), is gone, and the cache now hands back one
+// number and one enum. The 3200 it replaces was the chain exactly, with no
+// headroom at all, so any byte added to this frame tripped it whoever added it.
+// The stack does not move with it -- the rule takes 3216 -> 4020 -> 4096, the
+// 4096 this arm already held, leaving 880 B spare.
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3216;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
 constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
 // rule declined (4608, +1536 B): #248's tight-heap reason. This is the thinnest
 // floor in the block -- 80 B on a lower-bound walk, which is under the cost of

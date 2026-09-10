@@ -519,6 +519,34 @@ inline void servoOutputTableDefaults(ServoOutputTable* table) {
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputTableFindByAddress()
+// The row a lead plugs into, found by its Output Address. Returns
+// SERVO_OUTPUT_ROW_MAX when no live row is addressed there, so "there is no
+// such output" and "row 0" are not the same answer.
+//
+// Every consumer that knows a channel and wants the row behind it comes here
+// rather than assuming the table is in channel order: rows past
+// SERVO_OUTPUT_ROW_DEFAULT_COUNT are an expander's to address, and a table that
+// has to stay sorted is a rule nothing enforces.
+//
+// The lowest-numbered match wins, for the same reason
+// servoOutputTableEnforcePartOwnership() picks that one: two rows sharing an
+// address is a table that should not exist, and a repair has to be
+// deterministic rather than depend on scan order.
+// -----------------------------------------------------------------------------
+inline uint8_t servoOutputTableFindByAddress(const ServoOutputTable& table,
+                                             ServoOutputDriver driver, uint8_t channel) {
+    const uint8_t count =
+        (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (table.rows[i].driver == driver && table.rows[i].channel == channel) {
+            return i;
+        }
+    }
+    return SERVO_OUTPUT_ROW_MAX;
+}
+
+// -----------------------------------------------------------------------------
 // Token vocabulary  --  the stored form of the three enums
 // -----------------------------------------------------------------------------
 inline const char* servoOutputDriverToString(ServoOutputDriver driver) {
@@ -737,6 +765,61 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
     }
 
     return repaired;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputAdoptFixedPair()
+// The bridge a builder's existing calibration crosses (#286, ADR 0041): the two
+// numbers a fixed field set held  --  arm1_open_us and arm1_close_us, and the
+// same for arm2 and aux1..3  --  become this row's Endpoint Pair.
+//
+// Three deliberate choices, and each of them is somebody's data:
+//
+//   - The pair keeps its direction. `open` stays `open` whichever of the two is
+//     the larger number, so a builder who calibrated a reversed linkage still
+//     has a reversed linkage afterwards. Sorting them here is the invert flag
+//     ADR 0041 refuses, arriving by the back door.
+//   - Centre takes the midpoint of the pair, not the midpoint of the band. The
+//     old form had no centre, so there is nothing to carry; halfway between the
+//     builder's own two ends is the only honest guess and it is what a linkage's
+//     rest position usually is. It is a *default*, so it is re-derived only
+//     while the row is unmeasured: once somebody has captured a position on this
+//     output, its centre is theirs and a later crossing must not compute over
+//     it. This bridge is crossed again on every config write, so without that
+//     guard a measured centre would last exactly until the next form POST.
+//   - Everything else keeps what it had. The Part list, the Motion Profile, the
+//     Output Release, the boot behaviour and the `calibrated` bit are new
+//     fields, and a value nobody stored is not one to infer -- least of all the
+//     `calibrated` bit, which decides whether overshoot may run past ends it was
+//     never given (servoOutputEffectiveEasing()). Guessing it from "these
+//     numbers are not the factory defaults" is wrong in both directions: a
+//     builder can measure their way back to 2000/1000, and a half-finished
+//     calibration can leave one output moved and untrusted. False is the value
+//     that degrades overshoot and warns, so false is what an unmeasured bit is.
+//
+// The component type is settled before the pair, because it decides the band the
+// pair is clamped into -- an MG996R row cannot take 500 us however it arrived.
+// Normalising against the row as it stood is the partial-edit door
+// servoOutputRowNormalise() describes: this is one edit applied over a row that
+// already exists, so a field this bridge does not carry keeps its value rather
+// than taking a default.
+//
+// Returns the repair mask, so a number the band moved is reported rather than
+// silently lost.
+// -----------------------------------------------------------------------------
+inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, uint16_t closeUs,
+                                          ServoComponentType component) {
+    if (row == nullptr) {
+        return 0;
+    }
+    const ServoOutputRow before = *row;
+    row->component = component;
+    row->open_us = openUs;
+    row->close_us = closeUs;
+    if (!row->calibrated) {
+        row->centre_us = (uint16_t)(((uint32_t)openUs + (uint32_t)closeUs) / 2u);
+    }
+    return servoOutputRowNormalise(row, before);
 }
 
 // -----------------------------------------------------------------------------

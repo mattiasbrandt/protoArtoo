@@ -39,6 +39,36 @@ void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
     snprintf(buf, bufSize, "so%02u", (unsigned)index);
 }
 
+// -----------------------------------------------------------------------------
+// The five fixed field sets, each beside the Output Address it has always meant.
+//
+// This table IS the bridge (#286, ADR 0041). Nowhere else in the firmware does
+// anything record that `arm1_open_us` was about LEDC channel 0 -- the five sets
+// carry the address in their names and nothing else, which is exactly why an
+// expander could never be another one of them. Stating it once here is what
+// lets a builder's existing calibration cross onto the rows, and it goes away
+// with the fields it names when the contract slice deletes them.
+// -----------------------------------------------------------------------------
+struct FixedServoFieldSet {
+    uint8_t channel;
+    uint16_t ServoConfig::*openUs;
+    uint16_t ServoConfig::*closeUs;
+    ServoComponentType ServoConfig::*component;
+};
+
+constexpr FixedServoFieldSet kFixedServoFieldSets[] = {
+    {LEDC_CH_ARM1, &ServoConfig::arm1_open_us, &ServoConfig::arm1_close_us,
+     &ServoConfig::arm1_type},
+    {LEDC_CH_ARM2, &ServoConfig::arm2_open_us, &ServoConfig::arm2_close_us,
+     &ServoConfig::arm2_type},
+    {LEDC_CH_AUX1, &ServoConfig::aux1_open_us, &ServoConfig::aux1_close_us,
+     &ServoConfig::aux1_type},
+    {LEDC_CH_AUX2, &ServoConfig::aux2_open_us, &ServoConfig::aux2_close_us,
+     &ServoConfig::aux2_type},
+    {LEDC_CH_AUX3, &ServoConfig::aux3_open_us, &ServoConfig::aux3_close_us,
+     &ServoConfig::aux3_type},
+};
+
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def);
@@ -679,6 +709,37 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
 // Addressed Servo Output rows  --  see include/config_serializer.h
 // =============================================================================
 
+uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed) {
+    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
+        return 0;
+    }
+    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
+        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
+        if (row->channel != set.channel) {
+            continue;
+        }
+        return servoOutputAdoptFixedPair(row, fixed.*(set.openUs), fixed.*(set.closeUs),
+                                         fixed.*(set.component));
+    }
+    return 0;
+}
+
+void configProjectServoRowIntoFixedFields(const ServoOutputRow& row, ServoConfig* fixed) {
+    if (fixed == nullptr || row.driver != SERVO_DRIVER_LEDC) {
+        return;
+    }
+    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
+        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
+        if (row.channel != set.channel) {
+            continue;
+        }
+        fixed->*(set.openUs) = row.open_us;
+        fixed->*(set.closeUs) = row.close_us;
+        fixed->*(set.component) = row.component;
+        return;
+    }
+}
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
     return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
 }
@@ -727,19 +788,32 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
     // whole table, so it runs once every row has been read.
     uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
 
+    // The bridge, crossed on first read (#286): a controller upgrading from
+    // before ADR 0041 has five fixed field sets and no row records at all, so a
+    // row nothing has written adopts the set addressed to its channel. A stored
+    // row wins over it, because once a row exists the row IS the output -- which
+    // is also what makes this idempotent and marker-free: the bridge stops
+    // mattering for a row the moment that row is saved.
+    //
+    // Read through the same ConfigReader as everything else, so what crosses is
+    // what is actually stored rather than what some caller happens to hold.
+    ServoConfig fixed = {};
+    deserializeServo(r, &fixed, getDefaults().servo);
+
     for (uint8_t i = 0; i < out->count; ++i) {
         char key[8] = {};
         servoOutputRowKey(i, key, sizeof(key));
         const String stored = r.readStr(key, "");
-        if (stored.length() == 0) {
-            // Absent, not damaged: a device that has never written this row
-            // keeps its defaults and says nothing about it. Only a record that
-            // exists and cannot be read counts as a repair.
-            continue;
-        }
         const ServoOutputRow fallback = out->rows[i];
         ServoOutputRow parsed = fallback;
-        rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed);
+        // An absent record is a device that has never written this row, not a
+        // damaged one, so what it gets is the old form rather than a complaint.
+        // A repair is still counted: the only thing an adoption can report is a
+        // pulse width the component band had to move, and a builder's own number
+        // changing under them is exactly what this project says out loud.
+        rowMask[i] = (stored.length() == 0)
+                         ? configAdoptFixedServoFields(&parsed, fixed)
+                         : servoOutputRowParse(stored.c_str(), fallback, &parsed);
         out->rows[i] = parsed;
     }
 

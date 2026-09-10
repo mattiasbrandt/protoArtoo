@@ -100,9 +100,9 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 3200,
-          "product_bytes": 3200,
-          "profiler_bytes": 3200,
+          "chain_bytes": 3216,
+          "product_bytes": 3216,
+          "profiler_bytes": 3216,
           "rule": "applied"
         },
         "esp32p4": {

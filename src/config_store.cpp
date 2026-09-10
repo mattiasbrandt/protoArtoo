@@ -356,12 +356,48 @@ bool activeAudioEnabled = false;
 uint16_t activeComponentToggleMask = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
+// The addressed Servo Output rows, live (ADR 0041). Declared here rather than
+// beside the accessors below because the two cache reads project it into the
+// fixed servo fields on their way out -- see projectServoOutputRows().
+//
+// Zero-initialised like configCache above, and filled by configLoadServoOutputs()
+// from main's boot path before any task starts -- the same boot-order contract
+// configCacheApply() already relies on. A reader that runs before that sees a
+// count of zero, which is the truthful answer at that point rather than a
+// guessed row.
+static ServoOutputTable servoOutputCache = {};
+
+// -----------------------------------------------------------------------------
+// projectServoOutputRows()  --  called with configCacheMux held.
+//
+// The migrate phase's read direction (#286). The rows are where an endpoint
+// lives now, and the ten fixed fields are a view of them: a surface still
+// asking for arm1OpenUs, and the serializer that writes the old form back to
+// NVS, both see the number the droid will actually drive to. That is what makes
+// "a calibration cannot disagree with itself depending on which path read it"
+// true while two shapes coexist, rather than true only as long as every writer
+// remembers to touch both.
+//
+// A row is the only source: with no rows loaded yet the fields stand as they
+// are, which is the boot window before configLoadServoOutputs() has run.
+// Deleted with the fields it fills.
+// -----------------------------------------------------------------------------
+static void projectServoOutputRows(ServoConfig* servo) {
+    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
+                              ? servoOutputCache.count
+                              : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        configProjectServoRowIntoFixedFields(servoOutputCache.rows[i], servo);
+    }
+}
+
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache;
+    projectServoOutputRows(&out->servo);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
@@ -381,13 +417,6 @@ bool configCacheDomeEnabled() {
     taskEXIT_CRITICAL(&configCacheMux);
     return enabled;
 }
-
-// The addressed Servo Output rows, live (ADR 0041). Zero-initialised like
-// configCache above, and filled by configLoadServoOutputs() from main's boot
-// path before any task starts -- the same boot-order contract configCacheApply()
-// already relies on. A reader that runs before that sees a count of zero, which
-// is the truthful answer at that point rather than a guessed row.
-static ServoOutputTable servoOutputCache = {};
 
 uint8_t configCacheServoOutputCount() {
     uint8_t count;
@@ -414,12 +443,125 @@ bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
     return live;
 }
 
+// The write direction of the migrate-phase bridge (#286, ADR 0041).
+//
+// POST /api/config still carries a builder's endpoints as arm1OpenUs and its
+// nine siblings, and the Apply Core that validates them is pure -- it mutates a
+// ConfigSnapshot and cannot reach this table. So the Commit Step calls this
+// with the snapshot it just applied, and the numbers land on the rows the whole
+// firmware now reads. Without it a builder would calibrate an arm, get the old
+// value back on the next read, and watch the droid drive to it.
+//
+// One direction only, and only from the Commit Step. Nothing on the boot path
+// may call it: configLoadServoOutputs() has already crossed the bridge in the
+// other direction there, with a stored row winning over the old form, and
+// pushing the fields back over the top would undo exactly that. It is deleted
+// with the fields it reads.
+//
+// Returns what the component band moved, in the same report the loader fills,
+// so a value changing under a builder is said in one voice wherever it happens.
+ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo) {
+    ServoOutputRepairReport report = {};
+    // The whole pass is inside one critical section: it is bounded by the row
+    // count, does no allocation and no I/O, and a half-applied table is a table
+    // a reader could catch mid-edit.
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
+                              ? servoOutputCache.count
+                              : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        const uint16_t repaired = configAdoptFixedServoFields(&servoOutputCache.rows[i], servo);
+        if (repaired == 0) {
+            continue;
+        }
+        if (report.rowsRepaired == 0) {
+            report.firstRow = i;
+            report.firstRowMask = repaired;
+        }
+        report.rowsRepaired++;
+        for (uint8_t bit = 0; bit < SERVO_OUTPUT_FIELD_COUNT; ++bit) {
+            if ((repaired & (uint16_t)(1u << bit)) != 0) {
+                report.fieldsRepaired++;
+            }
+        }
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return report;
+}
+
+// -----------------------------------------------------------------------------
+// The two questions the servo drive path asks of a row  --  answered as values,
+// never as a row.
+//
+// Both live here rather than as one find-me-the-row accessor because their
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
+// re-derives from the linked image on every slice. A ServoOutputRow is 70 B,
+// so handing one out puts 70 B on a Core 1 real-time frame to answer a question
+// whose answer is two numbers or one. A caller that only wants an endpoint pair
+// should not pay for a Part list, a Motion Profile and a boot behaviour it will
+// not read.
+//
+// Neither copies a row inside this file either: the clamp takes its row by
+// reference and the pair is read field by field, both straight out of the live
+// table under the lock.
+// -----------------------------------------------------------------------------
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component comes back so a caller
+// that wants to say what moved the number can name the part without holding the
+// row it came from.
+//
+// With no live row addressed there, the request is returned unchanged and
+// *component is SERVO_COMP_NONE: an output the table does not describe has no
+// band to be held to, and clamping it into the cautious one would be inventing
+// a component nobody fitted. The two cases stay apart at the caller because a
+// returned value equal to the request is, by construction, nothing to report.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component) {
+    uint16_t clamped = requestedUs;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        clamped = servoOutputClampPulse(servoOutputCache.rows[index], requestedUs);
+        if (component != nullptr) {
+            *component = servoOutputCache.rows[index].component;
+        }
+    } else if (component != nullptr) {
+        *component = SERVO_COMP_NONE;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return clamped;
+}
+
+// The Endpoint Pair of the output addressed there, directional: `open` is
+// whichever number the builder recorded as open, larger or smaller than close.
+// False when no live row is addressed there, and the out-params are untouched
+// so a caller's own fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs) {
+    if (openUs == nullptr || closeUs == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *openUs = servoOutputCache.rows[index].open_us;
+        *closeUs = servoOutputCache.rows[index].close_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
 void configCacheReadServo(ServoConfig* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache.servo;
+    projectServoOutputRows(out);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 

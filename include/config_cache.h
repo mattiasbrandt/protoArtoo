@@ -27,6 +27,14 @@
 // configCacheRead: Fill a ConfigSnapshot from the live config cache.
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
 // domain they need into stack locals, then release the cache lock before doing work.
+//
+// While the migrate phase lasts, both this and configCacheReadServo() fill the
+// ten fixed servo endpoint fields and the five component types FROM the
+// addressed rows (#286, ADR 0041). An endpoint lives on its row now; the fixed
+// fields are a view of it, so a surface still asking for arm1OpenUs and the
+// serializer that writes the old form back to NVS both see the number the droid
+// will actually drive to, and no path can read a stale one. That projection
+// goes away with the fields.
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
@@ -36,8 +44,8 @@ void configCacheReadWifi(WifiConfig* out);
 
 // The addressed Servo Output rows (ADR 0041), which live beside the five fixed
 // servo field sets rather than inside ConfigSnapshot. The live table is filled
-// once by configLoadServoOutputs() on the boot path; nothing writes a row at
-// runtime until the surface that edits one exists.
+// by configLoadServoOutputs() on the boot path and changed at runtime only by
+// the Commit Step, through configCacheApplyServoCalibration() below.
 //
 // configCacheReadServoOutput hands out ONE row: the table is far larger than
 // anything else this cache copies by value, and a task that wants one output
@@ -46,6 +54,39 @@ void configCacheReadWifi(WifiConfig* out);
 // the same answer.
 bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
 uint8_t configCacheServoOutputCount();
+
+// The two questions the servo drive path asks, answered as values rather than
+// as a row. There is deliberately no find-me-the-row-by-address accessor: the
+// caller is ServoTask, whose worst-case static chain is a measured constant
+// ADR 0040's checker re-derives from the linked image on every slice, and a
+// ServoOutputRow is 70 B. A caller that wants an endpoint pair should not put a
+// Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
+//
+// An Output Address, not an index: an index is a storage slot, while the address
+// is where the lead plugs in, and rows past the five this controller ships with
+// are an expander's to address in whatever order they land.
+
+// The pulse width this output will actually be driven to, bounded by what the
+// component fitted to it takes (ADR 0041). *component names that part so a
+// caller can say what moved the number. With no live row addressed there the
+// request comes back unchanged and *component is SERVO_COMP_NONE -- an output
+// the table does not describe has no band to be held to.
+uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t channel,
+                                          uint16_t requestedUs, ServoComponentType* component);
+
+// The Endpoint Pair of the output addressed there, directional. False when no
+// live row is addressed there, with the out-params untouched so the caller's own
+// fallback stands.
+bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
+                                         uint16_t* openUs, uint16_t* closeUs);
+
+// configCacheApplyServoCalibration: the write direction of the migrate-phase
+// bridge. The Apply Core is pure and cannot reach the row table, so the Commit
+// Step hands the snapshot it just applied here and the endpoints land on the
+// rows every reader now uses. Called from the Commit Step and from nowhere
+// else -- the boot path has already crossed the bridge the other way, where a
+// stored row wins over the old form. Returns what the component band moved.
+ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo);
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.

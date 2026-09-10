@@ -56,13 +56,38 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 // larger table is never read; the save that raises the count again writes those
 // rows in the same pass.
 // -----------------------------------------------------------------------------
+// configAdoptFixedServoFields: the bridge from the old form onto ONE row, and
+// the only statement anywhere of which Output Address each fixed servo field
+// set was ever about -- the five sets carry their channel in their names and
+// nowhere else. Both directions of the migrate phase come through here so the
+// mapping has one home: the loader crosses a row that has no stored record, and
+// the config write path crosses a row whose fields a builder has just changed.
+//
+// Returns the repair mask (0 when no fixed set is addressed to this row, which
+// is what an expander's row gets -- untouched, and reported as nothing).
+// Deleted with the fields it names.
+uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed);
+
+// configProjectServoRowIntoFixedFields: the same bridge, read direction. What
+// the row holds, said in the old form's names, so a surface still asking for
+// arm1OpenUs is answered with the number the droid will actually drive to. The
+// mapping is the one above's, stated once. Deleted with the fields it fills.
+void configProjectServoRowIntoFixedFields(const ServoOutputRow& row, ServoConfig* fixed);
+
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
 bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
 bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);
 
 // Fills *out with servoOutputTableDefaults() then overwrites with stored rows.
-// A row whose key is absent keeps its default silently -- that is a device that
-// has never written it, not a damaged record. A row whose record exists but
-// cannot be read is repaired field by field and counted in *report.
+// A row whose record exists but cannot be read is repaired field by field and
+// counted in *report.
+//
+// A row whose key is absent crosses the bridge instead (#286): it adopts the
+// fixed field set addressed to its channel, so a builder's existing calibration
+// arrives on the rows on first read, with no migration marker to keep and no
+// write on the boot path. A stored row always wins over the old form, which is
+// what makes the adoption idempotent -- it stops mattering for a row the moment
+// that row is saved. The only repair an adoption can report is a pulse width the
+// component band had to move, and it is counted like any other.
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                                    ServoOutputRepairReport* report);
