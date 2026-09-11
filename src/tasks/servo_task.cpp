@@ -262,6 +262,14 @@ static void executeSequence(uint8_t seqId) {
 // Mode both land here, and both bypass the ramp: whoever wires the profile into
 // the drive path writes the endpoint straight through, exactly as the two
 // setArmPosition() calls below do (ADR 0041, ADR 0043).
+//
+// Both ADRs are cited as decisions this snap has to survive, NOT as behaviour
+// this function implements -- and ADR 0043 in particular is not implemented at
+// this call site. It decides that estop and Sleep Mode RELEASE every servo
+// output and command no position; what happens below is the opposite, a drive
+// to `close` with PWM held. The ADR says as much itself ("the code at
+// 939ed705 implements none of it yet"), and whoever brings the release here
+// replaces this park rather than adding to it.
 // -----------------------------------------------------------------------------
 static void abortSequenceAndPark(const char* reason) {
     if (seqState.state == SEQ_IDLE) {
