@@ -15,6 +15,7 @@
 #include <esp_task_wdt.h>
 
 #include "audio_dollar_parser.h"
+#include "audio_sound_member.h"
 #include "audio_task.h"
 #include "aux_led.h"
 #include "config_store.h"
@@ -449,14 +450,21 @@ void setup() {
     configCacheSetActiveComponentToggles(bootCfg.system);
     // Resolve, do not copy: a saved member this image no longer carries a
     // driver for becomes the one it does, so the active value is always a
-    // module AudioTask can actually bind to. nullptr means this image has no
+    // module the firmware can actually bind to. nullptr means this image has no
     // selectable sound module at all, which a static_assert in
-    // src/tasks/audio_task.cpp already makes unbuildable -- the check is here
-    // so that assert being relaxed one day is a quiet 0 rather than a boot
+    // src/tasks/audio_sound_member.cpp already makes unbuildable -- the check is
+    // here so that assert being relaxed one day is a quiet 0 rather than a boot
     // crash in setup().
     const ComponentPartEntry* bootSoundMember =
         componentResolveMember(COMPONENT_CATEGORY_SOUND, bootCfg.system.sound_member);
     configCacheSetActiveSoundMember(bootSoundMember != nullptr ? bootSoundMember->value : 0);
+    // Bind the member to its driver here, not in AudioTask: the task is created
+    // only when audio output is enabled at boot (ADR 0027), and every status
+    // surface -- sound.status.current, /api/audio/status, buildStatusJson --
+    // asks which module is fitted whether or not it was. Binding it before any
+    // task exists is also what lets those Core 0 readers take the pointer
+    // without a lock (#380).
+    audioBindSoundMember(configCacheReadActiveSoundMember());
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Task Watchdog Timer.

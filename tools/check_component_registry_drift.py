@@ -7,7 +7,7 @@ manifest and the operator lineup all derive. Most of that derivation is
 mechanical and cannot drift: the tables are X-macro expansions of the manifest,
 each sound driver returns its own row's capability word through
 `componentPartCapabilities()`, and a `static_assert` in
-`src/tasks/audio_task.cpp` ties the driver instances to the manifest's
+`src/tasks/audio_sound_member.cpp` ties the driver instances to the manifest's
 selectable count.
 
 What is left is what no compiler can see, and this is it. Three questions, all

@@ -28,7 +28,9 @@
 // Driver selection: the Sound Component Member, a runtime setting staged at
 // reboot (ADR 0042). Every image carries a driver for every supported sound
 // module; PA_AUDIO_DRIVER now only names the one a controller that has never
-// been told starts with.
+// been told starts with. Which instance runs it is not this task's to decide --
+// setup() binds it (include/audio_sound_member.h) so the status surfaces name
+// the configured module on a boot where this task is never created.
 // =============================================================================
 
 #include "audio_task.h"
@@ -39,14 +41,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <string.h>
-#include "audio_chirp.h"
 #include "audio_config_map.h"
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
-#include "audio_dy_sv5w.h"
-#include "audio_mp3trigger.h"
+#include "audio_sound_member.h"
 #include "audio_task_step.h"
-#include "component_registry.h"
 #include "config.h"
 #include "config_nvsio.h"
 #include "config_cache.h"
@@ -58,82 +57,20 @@
 
 static const char* TAG = "AudioTask";
 
-// -----------------------------------------------------------------------------
-// Sound is a Component Family, and the image carries every selectable member
-// -----------------------------------------------------------------------------
-// Each supported sound module has a driver instance here, and which one runs is
-// the Component Member -- a runtime setting, staged at reboot like a Component
-// Toggle (ADR 0042). The old #if chain picked one at compile time, which made
-// the Configuration page's picker a display rather than a control for anyone
-// running a prebuilt release image.
-//
-// Instance cost, not code cost, is what made this affordable: a driver object is
-// its AudioSerialIO seam and a handful of scalars, and CHIRP's ~16 KB catalog is
-// heap-allocated on first discovery rather than held statically
-// (include/audio_chirp.h).
-//
-// All three share one soft-UART TX mux (src/drivers/audio_soft_uart_tx.h), and
-// they always needed to: every env compiles all of src/, so that header's
-// per-translation-unit copies were never the one-driver-per-build case its
-// comment claimed. Only one member is active per boot in any case, and
-// AudioTask is the sole writer to PIN_AUDIO_TX.
-static AudioDriverDySv5w s_dySv5w;
-static AudioDriverMp3Trigger s_mp3Trigger;
-static AudioDriverChirp s_chirp;
-
-// The one place left in the firmware that maps a product id to code. Everything
-// downstream asks the driver what it supports, never which one it is.
-struct SoundMemberDriver {
-    const char* id;        // Component Registry row id
-    AudioDriver* driver;
-};
-static const SoundMemberDriver kSoundMemberDrivers[] = {
-    {"dy_sv5w", &s_dySv5w},
-    {"mp3_trigger", &s_mp3Trigger},
-    {"chirp", &s_chirp},
-};
-
-// Add a selectable Sound row to include/component_registry.inc without giving it
-// an instance above and the build stops here, rather than the row quietly
-// becoming a member nothing can run.
-static_assert(sizeof(kSoundMemberDrivers) / sizeof(kSoundMemberDrivers[0]) ==
-                  componentCategorySelectableCount(COMPONENT_CATEGORY_SOUND),
-              "a selectable Sound member has no driver instance in kSoundMemberDrivers");
-
-// Resolved once, before the task's first begin(), and never reassigned while the
-// task runs -- which is what makes it safe for the Core 0 web handlers below to
-// read it without a lock. A member change is saved immediately and takes effect
-// at the next boot, exactly as a Component Toggle does.
-static AudioDriver* driver = &s_dySv5w;
-static const ComponentPartEntry* s_soundMember = nullptr;
-
-// Bind `driver` to the member the registry resolved. componentResolveMember()
-// has already substituted the build default for a stored value this image
-// cannot drive, so the only way to reach the final return is a registry row
-// with no instance -- which the static_assert above makes unbuildable.
-static void bindSoundMember(uint8_t storedMemberValue) {
-    s_soundMember = componentResolveMember(COMPONENT_CATEGORY_SOUND, storedMemberValue);
-    if (s_soundMember != nullptr) {
-        for (size_t i = 0; i < sizeof(kSoundMemberDrivers) / sizeof(kSoundMemberDrivers[0]); ++i) {
-            if (strcmp(kSoundMemberDrivers[i].id, s_soundMember->id) == 0) {
-                driver = kSoundMemberDrivers[i].driver;
-                return;
-            }
-        }
-    }
-    // Unreachable while the static_assert above holds. Said out loud rather than
-    // left as a silent fallthrough, because the symptom would otherwise be a
-    // droid playing through the wrong module with nothing in the log.
-    PA_LOG_ERROR(TAG, "sound member %u has no driver instance - falling back to %s",
-                 (unsigned)storedMemberValue, driver->driverName());
+// The driver the boot-resolved Sound Component Member runs on. setup() bound it
+// before this task existed (include/audio_sound_member.h), so it is already
+// correct here and stays correct for the Core 0 surfaces below even on a boot
+// where audio output is disabled and this task is never created (#380).
+static AudioDriver* driver() {
+    return audioActiveSoundMember().driver;
 }
 
 const char* audioGetDriverName() {
-    return driver->driverName();
+    return driver()->driverName();
 }
 
 uint8_t audioGetCapabilities() {
-    return driver->capabilities();
+    return driver()->capabilities();
 }
 
 const char* audioRxStatusToken(AudioRxStatus status) {
@@ -172,20 +109,20 @@ static void setAudioRxStatus(AudioRxStatus status) {
 
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
     if (count) {
-        *count = driver->getCatalogEntryCount();
+        *count = driver()->getCatalogEntryCount();
     }
-    return driver->getCatalogEntries();
+    return driver()->getCatalogEntries();
 }
 
 const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
     if (count) {
-        *count = driver->getCatalogBankCount();
+        *count = driver()->getCatalogBankCount();
     }
-    return driver->getCatalogBanks();
+    return driver()->getCatalogBanks();
 }
 
 bool audioIsCatalogReady() {
-    return driver->isCatalogReady();
+    return driver()->isCatalogReady();
 }
 
 // Audio output is staged at reboot (ADR 0027); when inactive, commands are
@@ -467,7 +404,7 @@ bool audioQueueRefreshBindings(CommandSource src) {
 static AudioBindingCache s_audioBindings = {};
 
 static bool refreshChirpBindingCacheFromNvs() {
-    const bool catalogCapable = (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+    const bool catalogCapable = (driver()->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
     if (!catalogCapable) {
         s_audioBindings = AudioBindingCache{};
         return false;
@@ -528,7 +465,7 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                             commandSourceToString(source));
                 return;
             }
-            driver->playTrack(intent.track);
+            driver()->playTrack(intent.track);
             if (intent.requestKind == AUDIO_PLAYBACK_REQ_RANDOM_TICK) {
                 PA_LOG_DEBUG(TAG, "random track %u%s", (unsigned)intent.track,
                              intent.flatFallbackUsed ? " (flat fallback)" : "");
@@ -556,7 +493,7 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                             (unsigned)intent.index);
                 return;
             }
-            driver->playTrackBanked(intent.index, intent.bank, intent.page);
+            driver()->playTrackBanked(intent.index, intent.bank, intent.page);
             if (intent.slot != AUDIO_SLOT_NONE) {
                 PA_LOG_INFO(TAG, "[%s] play slot=%u bank=%u page=%c index=%u",
                             commandSourceToString(source), (unsigned)intent.slot,
@@ -581,17 +518,17 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
 
         case AUDIO_PLAYBACK_INTENT_STOP:
-            driver->stop();
+            driver()->stop();
             PA_LOG_INFO(TAG, "[%s] stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
-            driver->stop();
+            driver()->stop();
             PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
-            driver->setVolume(intent.volume);
+            driver()->setVolume(intent.volume);
             PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(source),
                         (unsigned)intent.volume);
             break;
@@ -656,15 +593,6 @@ void audioTask(void* pvParameters) {
 
     const bool audioEnabledAtBoot = configCacheReadActiveAudioEnabled();
 
-    // Bind the Component Member before anything reads `driver`. The value comes
-    // from the boot-latched active member that setup() resolved, never from the
-    // live config cache: a member saved while the droid is running takes effect
-    // at the next boot, exactly as a Component Toggle does (ADR 0027, ADR 0042).
-    // The task is the only writer and it does this once, before its first loop,
-    // so the Core 0 web handlers that read `driver` are reading a pointer that
-    // never moves again -- the same contract audioEnabledAtBoot has.
-    bindSoundMember(configCacheReadActiveSoundMember());
-
     AudioStepState step{};
     AudioNamedTracks named{};
     AudioPlaybackConfig playback{};
@@ -692,7 +620,7 @@ void audioTask(void* pvParameters) {
         taskENTER_CRITICAL(&robotStateMux);
         sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
-        const uint8_t caps = driver->capabilities();
+        const uint8_t caps = driver()->capabilities();
         const bool catalogCapable = (caps & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 
         AudioStepTickInputs tickIn{};
@@ -702,7 +630,7 @@ void audioTask(void* pvParameters) {
         const AudioStepTickActions tick = audioStepTick(step, tickIn);
 
         if (tick.stopDriver) {
-            driver->stop();
+            driver()->stop();
             if (tick.stopReason == AUDIO_STEP_STOP_DISABLED) {
                 PA_LOG_INFO(TAG, "audio disabled - stopping active playback");
             }
@@ -727,7 +655,7 @@ void audioTask(void* pvParameters) {
             // Driver begin() blocks for seconds, and a soft-UART TX additionally holds
             // a critical section per byte; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
-            const bool initOk = driver->begin(step.currentVol);
+            const bool initOk = driver()->begin(step.currentVol);
             const AudioStepInitResultActions ir =
                 audioStepInitResult(step, initOk, catalogCapable);
             if (ir.giveUp) {
@@ -749,16 +677,17 @@ void audioTask(void* pvParameters) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
             }
+            const ComponentPartEntry* member = audioActiveSoundMember().part;
             PA_LOG_INFO(TAG, "audio driver init - member=%s driver=%s vol=%u",
-                        s_soundMember != nullptr ? s_soundMember->id : "?", driver->driverName(),
+                        member != nullptr ? member->id : "?", driver()->driverName(),
                         (unsigned)step.currentVol);
             if (ir.seedModuleState) {
                 // Seed RobotState from getCachedState()  --  begin() runs pre-init
                 // queries so m_device and m_totalTracks may already be populated
                 // (non-0xFF/0) if the module responded.
                 AudioModuleState ms{};
-                driver->getCachedState(ms);
-                writeModuleState(ms, driver->classifyRxStatus(ms.linkOk));
+                driver()->getCachedState(ms);
+                writeModuleState(ms, driver()->classifyRxStatus(ms.linkOk));
                 PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
                             ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
                             (unsigned)ms.totalTracks);
@@ -792,7 +721,7 @@ void audioTask(void* pvParameters) {
             }
             if (ca.refreshCatalog) {
                 bool acquired = audioUartClaim();
-                bool ok = acquired && driver->refreshCatalog();
+                bool ok = acquired && driver()->refreshCatalog();
                 if (acquired) {
                     audioUartRelease();
                     setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
@@ -814,7 +743,7 @@ void audioTask(void* pvParameters) {
                 AudioModuleState ms{};
                 bool acquired = audioUartClaim();
                 if (acquired) {
-                    bool ok = driver->queryModuleState(ms);
+                    bool ok = driver()->queryModuleState(ms);
                     audioUartRelease();
                     writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                     PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
@@ -862,7 +791,7 @@ void audioTask(void* pvParameters) {
             AudioModuleState ms{};
             bool acquired = audioUartClaim();
             if (acquired) {
-                bool ok = driver->queryModuleState(ms);
+                bool ok = driver()->queryModuleState(ms);
                 audioUartRelease();
                 writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                 PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
