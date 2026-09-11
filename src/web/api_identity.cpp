@@ -2,8 +2,12 @@
 // src/web/api_identity.cpp
 //
 // Droid identity API endpoints
-//   GET  /api/identity  - current cosmetic droid name and mDNS opt-in
-//   POST /api/identity  - persist validated droid name and mDNS opt-in
+//   GET  /api/identity             - cosmetic droid name, mDNS opt-in, and the
+//                                    compile-time Feature Availability manifest
+//   POST /api/identity             - persist validated droid name and mDNS opt-in
+//   GET  /api/identity/components  - the Component Registry lineup: every
+//                                    product the project supports or plans,
+//                                    and what this image can drive
 //
 // First route ported to the WebRequest seam (ADR 0021): the same handler
 // source compiles and serves under every backend and names no vendor type.
@@ -16,6 +20,7 @@
 
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
@@ -77,6 +82,26 @@ IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
                 working->system.mdns_use_name ? "true" : "false");
     outcome.persisted = true;
     return outcome;
+}
+
+// GET /api/identity/components -- the Component Registry lineup.
+//
+// Every row, including the parts nothing drives: a builder sees a product we
+// have not written a driver for as PLANNED rather than as silently absent, and
+// a Component Picker reads one lineup from the controller instead of keeping
+// its own (ADR 0042 as amended 2026-09-09).
+void handleComponentsGet(WebRequest& req) {
+    // Pin the active member before the send. Sound is the only family with one
+    // today; a family without a member setting reports active_member null,
+    // which is what never pinning it gives.
+    componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_SOUND,
+                                         configCacheReadActiveSoundMember());
+
+    if (!req.sendChunked("application/json", fillComponentRegistryJson)) {
+        webSendJsonError(req, 500, "response alloc failed");
+        return;
+    }
+    PA_LOG_DEBUG(TAG, "GET /api/identity/components (%zu parts)", COMPONENT_PART_COUNT);
 }
 
 void handleIdentityPost(WebRequest& req) {

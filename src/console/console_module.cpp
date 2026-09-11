@@ -65,6 +65,7 @@
 #include "commanded_modes.h"   // commandedSetStationary/Sleep/WebControl/RcDebug() - Commanded
                                // Mode setters (#226 criterion 4: Commanded Modes go only
                                // through these, never the queued RC-dispatch core below)
+#include "component_registry.h"  // the Component Registry tables system.api.get-components reads
 #include "config_cache.h"      // configCacheRead/Apply, configCacheReadActiveComponentToggle
 #include "console_config_fields.h"  // kComponentToggleFields[] - Component Toggle name<->field
                                      // table (#226; see its own header for why this is
@@ -1191,6 +1192,57 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
     }
 }
 
+// system.api.get-components (#340): item-indexed over COMPONENT_CATEGORIES[]
+// and COMPONENT_PARTS[] (src/component_registry.cpp), the same two tables
+// GET /api/identity/components serializes, read element by element the way
+// rc.api.get-bindable-actions reads ACTION_REGISTRY[] rather than through that
+// route's chunked JSON writer (which is file-static in
+// src/web/api_identity_serializers.cpp anyway).
+//
+// Categories come first because they carry the answer an operator at a serial
+// console is usually after -- which sound module this controller is actually
+// running -- and the parts that follow are the lineup it was chosen from. Each
+// item names its own kind, so "sound" the category and a part in it can never
+// be read as the same row. `-` is the absent value throughout: no member
+// setting, no active member, no Board Capability Gate.
+static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
+                                                 const ConsoleRecordSink* sink) {
+    if (sink->onRecordItem) {
+        for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
+            const ComponentCategoryEntry& cat = COMPONENT_CATEGORIES[i];
+            const ComponentPartEntry* active =
+                cat.id == COMPONENT_CATEGORY_SOUND
+                    ? componentPartByValue(configCacheReadActiveSoundMember())
+                    : nullptr;
+            char itemBuf[160];
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "category:%s name:%s selectable:%u memberKey:%s activeMember:%s", cat.token,
+                     cat.name, (unsigned)componentCategorySelectableCount(cat.id),
+                     cat.memberKey != nullptr ? cat.memberKey : "-",
+                     active != nullptr ? active->id : "-");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+
+        for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+            const ComponentPartEntry& part = COMPONENT_PARTS[i];
+            char itemBuf[192];
+            snprintf(itemBuf, sizeof(itemBuf),
+                     "part:%s name:%s category:%s protocol:%s status:%s capabilities:%u "
+                     "included:%s boardCapability:%s",
+                     part.id, part.name, componentCategory(part.category)->token, part.protocol,
+                     part.status == COMPONENT_STATUS_SUPPORTED ? "supported" : "roadmap",
+                     (unsigned)part.capabilities, part.included ? "true" : "false",
+                     part.gate != nullptr ? part.gate : "-");
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -1222,6 +1274,7 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"sound.api.get-mood-map", consoleExecuteSoundApiGetMoodMap},
     {"sound.api.get-catalog", consoleExecuteSoundApiGetCatalog},
     {"system.api.get-identity", consoleExecuteSystemApiGetIdentity},
+    {"system.api.get-components", consoleExecuteSystemApiGetComponents},
     {"system.api.get-validation", consoleExecuteSystemApiGetValidation},
     {"rc.api.get-bindable-actions", consoleExecuteRcApiGetBindableActions},
 #if PA_HEAP_PROFILE

@@ -44,7 +44,7 @@ void test_catalog_lookup_by_name() {
 void test_catalog_count_and_iteration() {
     size_t count = consoleCatalogGetCount();
     TEST_ASSERT_GREATER_THAN(0, count);
-    TEST_ASSERT_EQUAL_INT(194, count);  // Registry has 194 entries (#243 added system.action.reboot-wifi-module)
+    TEST_ASSERT_EQUAL_INT(195, count);  // Registry has 195 entries (#340 added system.api.get-components)
 
     // Verify we can iterate all entries
     size_t count_via_api = 0;

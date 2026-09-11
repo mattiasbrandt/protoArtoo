@@ -144,6 +144,65 @@ curl -s -X POST http://artoo.local/api/identity \
 {"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
+### GET /api/identity/components
+
+Returns the Component Registry: every hardware product the project intends to
+support, in its category, together with what this image can actually drive.
+The controller is the source of the lineup - a browser copy is only a fallback,
+because firmware and web assets are uploaded separately and a controller can
+report a part its own web assets have never heard of.
+
+Separate from `GET /api/identity` because that payload is bounded at 512 B and
+this one runs to roughly 4.7 KB; it is sent chunked.
+
+- Success: `200` JSON with:
+  - `categories`: one entry per Component Family, each carrying
+    - `id`, `name`: the stable token and the operator-visible category name
+    - `selectable`: how many of its members this image can drive
+    - `member_key`: the setting that names which member is fitted, or `null`
+      where there is nothing to choose. Present only where `selectable` is
+      greater than 1.
+    - `active_member`: the member the controller has been running since its
+      last boot, or `null`. A member change is staged at reboot, so this can
+      differ from the saved choice `GET /api/config` reports under
+      `components.audio.member`.
+  - `parts`: one entry per product, each carrying
+    - `id`, `name`: the stable token and the operator-visible product name
+    - `value`: the stable numeric id a member setting stores
+    - `category`: the `categories` id it belongs to
+    - `protocol`: the Component Protocol token firmware speaks to it. Several
+      products share one token where one driver serves them all.
+    - `status`: `supported` (implemented and drivable) or `roadmap` (planned,
+      not built). A project fact.
+    - `capabilities`: what this product can be asked, as its family's own
+      bitmask. `0` where the family has no vocabulary yet.
+    - `included`: whether this image carries a driver for it. A controller
+      fact, not a project one: a `supported` part can read `false`.
+    - `board_capability`: the `PA_CAP_*` gate it requires, or `null` for a part
+      that needs none.
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/identity/components
+```
+
+#### Example response
+
+Abridged - the real payload carries all 7 categories and all 21 parts. Every
+line below is verbatim from an `artoo_esp32` build.
+
+```json
+{"categories":[
+  {"id":"body_controller","name":"Body Controller","selectable":1,"member_key":null,"active_member":null},
+  {"id":"sound","name":"Sound","selectable":3,"member_key":"snd_member","active_member":"dy_sv5w"}
+],"parts":[
+  {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","capabilities":0,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
+  {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","capabilities":63,"included":true,"board_capability":null},
+  {"id":"dfplayer_mini","value":21,"name":"DFPlayer Mini","category":"sound","protocol":"dfplayer_serial","status":"roadmap","capabilities":0,"included":false,"board_capability":null}
+]}
+```
+
 ## Safety and Drive
 
 ### POST /api/estop
@@ -520,6 +579,12 @@ curl -s -X POST http://artoo.local/api/aux-led/effect \
 Returns live audio module status.
 
 - Success: `200` JSON includes backend/driver and runtime status fields
+  - `driver`: the active sound module's display name, exactly as its driver
+    reports it - `DY-SV5W`, `MP3Trigger` or `CHIRP`. Which one is running is
+    the Sound Component Member, chosen at runtime; see
+    `GET /api/identity/components`.
+  - `capabilities`: the `AUDIO_CAP_*` bitmask declared on that module's
+    Component Registry row. Clients branch on a bit, never on `driver`.
 
 #### Example request
 
@@ -530,7 +595,7 @@ curl -s http://artoo.local/api/audio
 #### Example response
 
 ```json
-{"driver":"dy-sv5w","capabilities":3,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0}
+{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0}
 ```
 
 ### POST /api/audio

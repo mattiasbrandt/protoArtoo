@@ -3384,6 +3384,30 @@ entries:
   - droidName
   - mdnsUseName
   executor: sendIdentityResponse
+- name: system.api.get-components
+  display_name: Get Component Lineup
+  display_group: System
+  description: Every hardware product the project supports or plans, and which of them this image can drive
+  domain: system
+  type: status
+  marcduino_cmd: null
+  api_path: /api/identity/components
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_identity.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+  # #340: item-indexed over COMPONENT_CATEGORIES[] and COMPONENT_PARTS[]
+  # (src/component_registry.cpp), two flash-resident const tables read element
+  # by element - the same no-fields:/is_query:-true shape
+  # rc.api.get-bindable-actions uses for an answer that is a sequence of item
+  # records rather than scalar JSON keys. Both table sizes bound it by
+  # construction, so no paging protocol is needed.
+  executor: fillComponentRegistryJson
+  is_query: true
 - name: system.action.set-identity
   display_name: Set Droid Identity
   description: Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in

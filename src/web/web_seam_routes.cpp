@@ -33,6 +33,13 @@
 void webRegisterSeamRoutes() {
     webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet);
     webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
+    // The Component Registry lineup. Order does not matter for this pair the way
+    // it does for /api/audio/tracks below: that note is the async backend's, and
+    // the psychic backend matches with httpd_uri_match_wildcard(), which for a
+    // template carrying neither '*' nor '?' requires equal lengths -- so
+    // /api/identity cannot swallow /api/identity/components
+    // (framework-espidf esp_http_server/src/httpd_uri.c:57-64).
+    webRegisterRoute("/api/identity/components", WebMethod::kGet, handleComponentsGet);
 
     // The routes data/app.js and data/shell.js fetch on every page load.
     webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet);

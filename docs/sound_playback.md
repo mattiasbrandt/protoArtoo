@@ -21,30 +21,51 @@ task or subsystem writes to the audio GPIO directly.
 
 ## 1. Backend Architecture
 
-Audio hardware is selected at compile time via the `PA_AUDIO_DRIVER` build flag
-in `platformio.ini`. Each backend implements the `AudioDriver` interface and owns
-all details of the wire protocol, command format, and volume scaling for its
-module. The rest of the firmware is completely agnostic to which module is
-physically installed.
+Sound is a **Component Family**: every image carries a driver for every
+supported module, and which one runs is the **Component Member** — a runtime
+setting a builder changes from the browser, staged at reboot like a component
+toggle (ADR 0042). There is no rebuild and no reflash to change sound module.
+
+Each backend implements the `AudioDriver` interface and owns all details of the
+wire protocol, command format, and volume scaling for its module. The rest of
+the firmware is completely agnostic to which module is physically installed —
+it asks the driver what it supports and never which one it is.
+
+`PA_AUDIO_DRIVER` keeps exactly one job: it names the module a controller that
+has never been asked starts with. It no longer decides what the image can
+drive.
 
 Interface reference:
 
-- `include/audio_driver.h`
+- `include/audio_driver.h` — the interface
+- `include/component_registry.inc` — the one declaration of every module, with
+  its operator-visible name, protocol, status and capability bits
 
 Volume is normalised to **0–30** at the interface boundary. Each backend maps
 this to its module's native range.
 
 ### Available backends
 
-| `PA_AUDIO_DRIVER` | Backend | Protocol | Status |
-|---|---|---|---|
-| `AUDIO_SOFT_UART` | Software UART binary frame | Binary frames, 9600 baud | ✅ Implemented |
-| `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | ✅ Implemented — TX+RX, live status queries |
-| `AUDIO_DFPLAYER` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Not yet implemented |
-| `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented — hardware validation pending |
+Every row below ships in every image. The three implemented modules are all
+selectable at runtime; DFPlayer Mini is present in the lineup as planned, with
+no driver behind it.
 
-To switch backends: change `PA_AUDIO_DRIVER` in `platformio.ini`, wire up the
-new module, and flash. No other firmware changes required.
+| Member id | Module | Protocol | Status |
+|---|---|---|---|
+| `dy_sv5w` | DY-SV5W | Binary frames, 9600 baud | ✅ Implemented |
+| `mp3_trigger` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented — hardware validation pending |
+| `chirp` | CHIRP Audio Trigger | ASCII commands, configurable baud | ✅ Implemented — TX+RX, live status queries |
+| `dfplayer_mini` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Planned — no driver in the image |
+
+To change module: wire up the new one and pick it on the Configuration page.
+The change is saved immediately and takes effect at the next boot. The same
+choice over the API is `POST /api/config` with `soundMember=<member id>`; the
+lineup itself is `GET /api/identity/components`.
+
+The `PA_AUDIO_DRIVER` values (`AUDIO_SOFT_UART`, `AUDIO_CHIRP`,
+`AUDIO_MP3TRIGGER`) still name the same three modules, and still select which
+one a freshly flashed controller starts on. `AUDIO_DFPLAYER` is not one of
+them: naming an unbuilt module as a build's default is a build error.
 
 ---
 
