@@ -13,6 +13,7 @@
 #include "rc_mapping.h"
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -35,6 +36,38 @@ uint32_t floatToBits(float value) {
 // "soNN", two digits so an NVS dump reads in row order and four characters
 // clear of the 15-character Preferences key ceiling.
 constexpr char SERVO_OUTPUT_COUNT_KEY[] = "so_cnt";
+
+// Droid Build keys (ADR 0047). Five records, each twelve characters and so
+// three clear of the 15-character Preferences ceiling, named so an NVS dump
+// reads as the answer it is: which design each half was built from, at which
+// variant, and which Parts are on the droid.
+constexpr char DROID_BUILD_DOME_DESIGN_KEY[] = "dbuild_domed";
+constexpr char DROID_BUILD_DOME_VARIANT_KEY[] = "dbuild_domev";
+constexpr char DROID_BUILD_BODY_DESIGN_KEY[] = "dbuild_bodyd";
+constexpr char DROID_BUILD_BODY_VARIANT_KEY[] = "dbuild_bodyv";
+constexpr char DROID_BUILD_FITTED_KEY[] = "dbuild_parts";
+
+// -----------------------------------------------------------------------------
+// readDroidDesignChoice()
+// One half of a stored Droid Build, or the default when what is stored is not
+// an answer this image's catalog can name. Returns true when it had to repair.
+//
+// Both fields move together: a design and the variant of that design are one
+// answer, and keeping a stored variant beside a defaulted design would produce
+// a pairing neither the builder nor the catalog ever stated.
+// -----------------------------------------------------------------------------
+bool readDroidDesignChoice(const ConfigReader& r, const char* designKey,
+                           const char* variantKey, DroidDesignChoice* out) {
+    const String design = r.readStr(designKey, out->design);
+    const String variant = r.readStr(variantKey, out->variant);
+    DroidDesignChoice stored = {};
+    if (!droidDesignChoiceSet(&stored, design.c_str(), variant.c_str()) ||
+        !droidDesignChoiceIsKnown(stored)) {
+        return true;  // *out is left holding the default it arrived with
+    }
+    *out = stored;
+    return false;
+}
 
 void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
     snprintf(buf, bufSize, "so%02u", (unsigned)index);
@@ -768,6 +801,82 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
             if ((rowMask[i] & (uint16_t)(1u << bit)) != 0) {
                 local.fieldsRepaired++;
             }
+        }
+    }
+
+    if (report != nullptr) {
+        *report = local;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// configSerializeDroidBuild()
+// The Droid Build, written as the answer a builder gave.
+//
+// The Fitted Parts are joined on the heap rather than in a local char buffer on
+// purpose: the joined list is DROID_FITTED_PARTS_STR_MAX bytes, and a frame
+// that size would sit on the serial config-write path, whose task stack chain
+// is a measured constant that a 916-byte snapshot already nearly overran once
+// (include/config.h, #226). One bounded allocation on a Core 0 write path costs
+// that chain nothing, and a failed one is reported rather than swallowed -
+// the caller answers "not persisted" and the writer has touched nothing.
+// -----------------------------------------------------------------------------
+bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w) {
+    // The one step that can fail for a reason other than storage goes first, so
+    // a controller that could not allocate has not had half an answer written
+    // over the one it already held.
+    char* fitted = (char*)malloc(DROID_FITTED_PARTS_STR_MAX + 1);
+    if (fitted == nullptr) {
+        return false;  // the caller reports a failed persist; nothing was written
+    }
+    size_t used = 0;
+    for (size_t i = droidFittedPartsNextIndex(cfg.fitted, 0); i < DROID_PART_COUNT;
+         i = droidFittedPartsNextIndex(cfg.fitted, i + 1)) {
+        const int n = snprintf(fitted + used, DROID_FITTED_PARTS_STR_MAX + 1 - used, "%s%s",
+                               used == 0 ? "" : ",", droidPartIdAt(i));
+        if (n <= 0 || (size_t)n >= DROID_FITTED_PARTS_STR_MAX + 1 - used) {
+            free(fitted);
+            return false;  // the bound above is arithmetic, so this is unreachable
+        }
+        used += (size_t)n;
+    }
+    // A droid with nothing fitted is an answer, and writing it as an empty
+    // string would read back as a controller nobody has answered yet.
+    if (used == 0) {
+        snprintf(fitted, DROID_FITTED_PARTS_STR_MAX + 1, "%s", DROID_FITTED_PARTS_NONE);
+    }
+    bool ok = w.writeStr(DROID_BUILD_DOME_DESIGN_KEY, cfg.dome.design);
+    ok = w.writeStr(DROID_BUILD_DOME_VARIANT_KEY, cfg.dome.variant) && ok;
+    ok = w.writeStr(DROID_BUILD_BODY_DESIGN_KEY, cfg.body.design) && ok;
+    ok = w.writeStr(DROID_BUILD_BODY_VARIANT_KEY, cfg.body.variant) && ok;
+    ok = w.writeStr(DROID_BUILD_FITTED_KEY, fitted) && ok;
+    free(fitted);
+    return ok;
+}
+
+void configDeserializeDroidBuild(const ConfigReader& r, DroidBuildConfig* out,
+                                 DroidBuildRepairReport* report) {
+    if (out == nullptr) {
+        return;
+    }
+    droidBuildDefaults(out);
+
+    DroidBuildRepairReport local = {};
+    local.domeRepaired = readDroidDesignChoice(r, DROID_BUILD_DOME_DESIGN_KEY,
+                                               DROID_BUILD_DOME_VARIANT_KEY, &out->dome);
+    local.bodyRepaired = readDroidDesignChoice(r, DROID_BUILD_BODY_DESIGN_KEY,
+                                               DROID_BUILD_BODY_VARIANT_KEY, &out->body);
+
+    // Three states, and the middle one is the whole reason this record is not
+    // read as a plain string: absent means nobody has answered, so the
+    // pre-selected design's complement stands; "-" means a builder said their
+    // droid carries nothing yet, which is theirs to say and is kept.
+    const String fitted = r.readStr(DROID_BUILD_FITTED_KEY, "");
+    if (fitted.length() > 0) {
+        if (strcmp(fitted.c_str(), DROID_FITTED_PARTS_NONE) == 0) {
+            droidFittedPartsClear(&out->fitted);
+        } else {
+            local.partsDropped = droidFittedPartsParse(fitted.c_str(), &out->fitted);
         }
     }
 

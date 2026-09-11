@@ -182,6 +182,49 @@ bool paramUint8(const ConfigParamSource& params, const char* name, uint8_t minVa
     return true;
 }
 
+// -----------------------------------------------------------------------------
+// applyDroidBuildHalf()
+// One half of a Droid Build - a design and the variant of that design - read,
+// checked against the catalog vocabulary, and recorded for the Commit Step.
+//
+// Returns false and sets the error when the request named this half and got it
+// wrong. A request that named neither field of the half leaves `*changed` false
+// and is not an error: a POST that is not about the Droid Build is most of
+// them.
+//
+// The pair moves together because a variant means nothing on its own. Sending
+// one without the other would ask this function to validate half an answer
+// against the other half's stored design, which is a pairing the builder never
+// stated - and on a design change it is exactly the pairing that is wrong.
+//
+// The refusal does not echo what was asked for, for the reason the sound member
+// refusal above gives: setError() takes a literal and the message lands in a
+// JSON body.
+bool applyDroidBuildHalf(const ConfigParamSource& params, const char* designName,
+                         const char* variantName, const char* refusal,
+                         DroidDesignChoice* out, bool* changed,
+                         ConfigApplyResult* result) {
+    const bool hasDesign = configParamHas(params, designName);
+    const bool hasVariant = configParamHas(params, variantName);
+    if (!hasDesign && !hasVariant) {
+        return true;
+    }
+    if (!hasDesign || !hasVariant) {
+        setError(result, refusal);
+        return false;
+    }
+    DroidDesignChoice choice = {};
+    if (!droidDesignChoiceSet(&choice, configParamGet(params, designName),
+                              configParamGet(params, variantName)) ||
+        !droidDesignChoiceIsKnown(choice)) {
+        setError(result, refusal);
+        return false;
+    }
+    *out = choice;
+    *changed = true;
+    return true;
+}
+
 bool paramBool(const ConfigParamSource& params, const char* name, bool* out) {
     const char* raw = configParamGet(params, name);
     if (raw == nullptr || out == nullptr) {
@@ -345,6 +388,58 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->system.sound_member = member->value;
         appendApplied(&result->applied, "[CFG] soundMember updated to %s (takes effect at reboot)",
                       member->name);
+        result->changed = true;
+    }
+
+    // The Droid Build (ADR 0047): which droid a builder says they built, and
+    // which Parts are on it.
+    //
+    // Nothing downstream is gated on any of it. The Fitted Parts are checked
+    // against the catalog vocabulary only so a Part id this build cannot name
+    // never reaches storage - the same form check droidPartIdIsKnown() is, and
+    // NOT a narrowing of it: a Part outside the fitted set stays authorable,
+    // saveable and wirable, which is the decision this whole field exists to
+    // keep (ADR 0047, #333).
+    //
+    // The two halves are never compared. An MK3 body under an MK4 dome is an
+    // ordinary droid, and refusing that pairing is the other way this could
+    // quietly undo itself.
+    if (!applyDroidBuildHalf(params, "domeDesign", "domeVariant",
+                             "domeDesign and domeVariant must be sent together, and name a "
+                             "design and one of its own variants",
+                             &result->droidBuild.dome, &result->droidBuild.domeChanged, result)) {
+        return;
+    }
+    if (result->droidBuild.domeChanged) {
+        appendApplied(&result->applied, "[CFG] domeDesign updated to %s/%s",
+                      result->droidBuild.dome.design, result->droidBuild.dome.variant);
+        result->changed = true;
+    }
+    if (!applyDroidBuildHalf(params, "bodyDesign", "bodyVariant",
+                             "bodyDesign and bodyVariant must be sent together, and name a "
+                             "design and one of its own variants",
+                             &result->droidBuild.body, &result->droidBuild.bodyChanged, result)) {
+        return;
+    }
+    if (result->droidBuild.bodyChanged) {
+        appendApplied(&result->applied, "[CFG] bodyDesign updated to %s/%s",
+                      result->droidBuild.body.design, result->droidBuild.body.variant);
+        result->changed = true;
+    }
+
+    // The Fitted Parts arrive whole, as a comma-separated Part id list. An
+    // EMPTY value is a real answer - a droid with nothing fitted yet - and is
+    // applied; the field being absent is what means "this request is not about
+    // the Fitted Parts".
+    if (configParamHas(params, "fittedParts")) {
+        const char* raw = configParamGet(params, "fittedParts");
+        if (droidFittedPartsParse(raw, &result->droidBuild.fitted) != 0) {
+            setError(result, "fittedParts names a Part this build does not model");
+            return;
+        }
+        result->droidBuild.fittedChanged = true;
+        appendApplied(&result->applied, "[CFG] fittedParts updated to %u part(s)",
+                      (unsigned)droidFittedPartsCount(result->droidBuild.fitted));
         result->changed = true;
     }
 

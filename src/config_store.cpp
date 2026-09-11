@@ -362,6 +362,14 @@ portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 // guessed row.
 static ServoOutputTable servoOutputCache = {};
 
+// The Droid Build, live (ADR 0047).
+//
+// Filled by configLoadDroidBuild() from main's boot path, like the rows above.
+// Nothing on a real-time path reads it: it exists so the surfaces that draw a
+// builder's droid meet the same answer from any browser, and no firmware
+// behaviour branches on it.
+static DroidBuildConfig droidBuildCache = {};
+
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
@@ -386,6 +394,31 @@ bool configCacheDomeEnabled() {
     enabled = configCache.system.enable_dome_esc;
     taskEXIT_CRITICAL(&configCacheMux);
     return enabled;
+}
+
+// The Droid Build, whole: sixty bytes, read by a surface builder rather than by
+// anything on a control path, so there is no case for handing out one half at a
+// time the way the rows above do.
+void configCacheReadDroidBuild(DroidBuildConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = droidBuildCache;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// The one runtime write onto the Droid Build, from the Commit Step.
+//
+// A Droid Build is answered whole - both halves and the Fitted Parts arrive
+// together - so unlike the addressed row edits above there is nothing to merge
+// here, and the Apply Core has already refused anything the catalog does not
+// declare. Nothing on the boot path may call it: configLoadDroidBuild() has
+// read the stored answer there, and pushing over the top would undo it.
+void configCacheApplyDroidBuild(const DroidBuildConfig& build) {
+    taskENTER_CRITICAL(&configCacheMux);
+    droidBuildCache = build;
+    taskEXIT_CRITICAL(&configCacheMux);
 }
 
 uint8_t configCacheServoOutputCount() {
@@ -959,6 +992,20 @@ void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report)
     // becomes a stack frame. Safe because this runs once, from setup(), before
     // any task that reads the table exists.
     configDeserializeServoOutputs(reader, &servoOutputCache, report);
+}
+
+void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report) {
+    PrefsReader reader(prefs);
+    // Straight into the live copy, like the rows above: it runs once from
+    // setup(), before anything that reads it exists.
+    configDeserializeDroidBuild(reader, &droidBuildCache, report);
+}
+
+bool configSaveDroidBuild(Preferences& prefs) {
+    PrefsWriter writer(prefs);
+    DroidBuildConfig build = {};
+    configCacheReadDroidBuild(&build);
+    return configSerializeDroidBuild(build, writer);
 }
 
 bool configSaveServoOutputs(Preferences& prefs) {

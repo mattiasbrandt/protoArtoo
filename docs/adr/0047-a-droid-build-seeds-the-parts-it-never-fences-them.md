@@ -1,7 +1,16 @@
 # A Droid Build seeds the parts, it never fences them
 
 Status: accepted (2026-09-08, issue #333). Describes the **target** model.
-Nothing in it ships today.
+
+What ships since #343: the Droid Build is stored on the controller, a fresh
+flash records the catalog's pre-selected design at its default variant with
+that design's complement fitted, one `applyDroidBuild()` seam seeds a stated
+design without removing a fitted Part, and tier 3 of the Layout Fallback
+Hierarchy consults the stated Dome Design instead of assuming MK4. What does
+not: the three card kinds, the roadmap card, every mapping view's third visual
+state and add-by-clicking, **Common Addition** vocabulary, and the
+reconciliation surface for a dome whose reported layout disagrees with the
+stated design.
 
 ## Context
 

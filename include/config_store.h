@@ -19,6 +19,7 @@
 #include <Preferences.h>
 
 #include "config.h"
+#include "droid_build.h"       // DroidBuildConfig / DroidBuildRepairReport, for the load below
 #include "robot_state.h"
 #include "servo_output_row.h"  // ServoOutputRepairReport, for the load below
 
@@ -507,6 +508,16 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 // configCacheReadServoOutput(); *report says what a damaged stored row cost.
 void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report);
 bool configSaveServoOutputs(Preferences& prefs);
+
+// configLoadDroidBuild / configSaveDroidBuild: the Droid Build (ADR 0047).
+// Outside ConfigSnapshot for the same reason the rows above are, and on their
+// own NVS keys -- see include/config_serializer.h. Caller opens Preferences
+// with begin() before calling.
+//
+// configLoadDroidBuild fills the live answer read by configCacheReadDroidBuild();
+// *report says what a stored answer this image cannot name cost.
+void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report);
+bool configSaveDroidBuild(Preferences& prefs);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);

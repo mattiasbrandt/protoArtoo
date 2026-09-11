@@ -1,0 +1,13 @@
+diff --git i/data/dome_panel_model.js w/data/dome_panel_model.js
+index 3322ec6a..afac9184 100644
+--- i/data/dome_panel_model.js
++++ w/data/dome_panel_model.js
+@@ -34,7 +34,7 @@
+ // The design and variant this SVG draws, read by data/dome_layout.js. It is
+ // here rather than there because it is a fact about this picture.
+ window.DOME_PANEL_MAP_DESIGN = 'mk4';
+-window.DOME_PANEL_MAP_VARIANT = 'complex';
++window.DOME_PANEL_MAP_VARIANT = 'simple';
+ 
+ // Full AstroPixelsPlus dome SVG — ported verbatim from AstroPixelsPlus/data/panels.html lines 63-202
+ // Selectable elements (ring, pie, callouts) already carry data-target in this

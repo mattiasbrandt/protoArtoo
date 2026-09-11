@@ -145,6 +145,37 @@ class GeneratorRefusals(unittest.TestCase):
         )
         self.assertRefused("declares a default_variant but no variants")
 
+    def test_no_design_says_which_one_a_fresh_controller_starts_on(self):
+        """A fresh flash with no pre-selected design has no answer to record,
+        which is the blank droid map ADR 0047 refused."""
+        self.scratch.edit("\n    preselected: true", "")
+        self.assertRefused("exactly one design carries `preselected: true`")
+
+    def test_two_designs_both_claim_to_be_pre_selected(self):
+        self.scratch.edit(
+            "  - id: own\n    label: My own build",
+            "  - id: own\n    preselected: true\n    label: My own build",
+        )
+        self.assertRefused("exactly one design carries `preselected: true`")
+
+    def test_preselected_written_as_anything_but_true(self):
+        """`preselected: false` would read as a second answer to a question
+        that has exactly one, so a design that is not pre-selected omits it."""
+        self.scratch.edit("\n    preselected: true", "\n    preselected: false")
+        self.assertRefused("the only value it takes is true")
+
+    def test_a_design_pre_selected_onto_a_complement_nobody_has_read(self):
+        """Pre-selecting a variant whose seeds are TBD would bring a fresh
+        controller up claiming a design and fitting nothing."""
+        self.scratch.edit("default_variant: complex", "default_variant: simple")
+        self.assertRefused("cannot start on a complement nobody has read")
+
+    def test_a_design_id_that_is_not_an_identifier(self):
+        """A design id is stored verbatim in device config and becomes a C
+        identifier fragment in the generated header."""
+        self.scratch.edit("  - id: mk4\n", "  - id: mk-4\n")
+        self.assertRefused("is not an unquoted identifier")
+
     def test_a_misspelled_part_field(self):
         """A key nobody reads generates an entry silently missing a field."""
         self.scratch.edit("position: rear-right,  control: dome-link",
@@ -318,6 +349,49 @@ class GeneratorPromises(unittest.TestCase):
             self.assertEqual(part["control"], "none")
             self.assertIn(f'"{part["id"]}"', firmware)
         self.assertNotIn("kind", firmware)
+
+    def test_every_part_says_which_half_of_the_droid_a_design_seeds_it_into(self):
+        """One seed list serves both halves, and which half a Part is in comes
+        from the section it is declared in - so the split is emitted rather
+        than restated by every surface that has to make it."""
+        _, browser = self.scratch.generate()
+        halves = {}
+        for part in browser_payload(browser)["parts"]:
+            halves.setdefault(part["section"], set()).add(part.get("half"))
+        self.assertEqual(halves["dome_pies"], {"dome"})
+        self.assertEqual(halves["dome_lights"], {"dome"})
+        self.assertEqual(halves["holoprojectors"], {"dome"})
+        self.assertEqual(halves["dome_fixtures"], {"dome"})
+        self.assertEqual(halves["body_doors"], {"body"})
+        self.assertEqual(halves["body_arms"], {"body"})
+        # The escape hatch belongs to no design, so it is in neither half -
+        # absent rather than a third word nothing seeds.
+        self.assertEqual(halves["other_slots"], {None})
+
+    def test_the_firmware_carries_the_vocabulary_and_one_complement(self):
+        """Firmware checks a stored Droid Build against the designs the catalog
+        declares, and carries exactly one complement: the one a fresh
+        controller comes up fitted with (ADR 0047, #343)."""
+        firmware, browser = self.scratch.generate()
+        payload = browser_payload(browser)
+        preselected = [d for d in payload["designs"] if d.get("preselected")]
+        self.assertEqual([d["id"] for d in preselected], ["mk4"])
+
+        self.assertIn('constexpr const char* DROID_BUILD_DEFAULT_DESIGN = "mk4";', firmware)
+        self.assertIn('constexpr const char* DROID_BUILD_DEFAULT_VARIANT = "complex";', firmware)
+        self.assertIn('{"mk4", DROID_DESIGN_VARIANTS_MK4, 2},', firmware)
+        self.assertIn('{"own", nullptr, 0},', firmware)
+
+        seeds = next(
+            v["seeds"] for v in preselected[0]["variants"] if v["id"] == "complex"
+        )
+        self.assertIn(
+            f"constexpr size_t DROID_BUILD_DEFAULT_FITTED_COUNT = {len(seeds)};", firmware
+        )
+        # The other complements stay in the browser module: a design CHANGE is
+        # seeded from there, and firmware is not a second copy of it.
+        self.assertNotIn('"blurb"', firmware)
+        self.assertNotIn("DROID_DESIGN_VARIANTS_OWN", firmware)
 
     def test_the_regeneration_note_names_both_outputs(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:

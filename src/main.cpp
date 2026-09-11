@@ -312,6 +312,11 @@ void loadConfigToState() {
     // configLoadServoOutputs().
     ServoOutputRepairReport servoOutputRepair = {};
     configLoadServoOutputs(prefs, &servoOutputRepair);
+    // The Droid Build loads the same way and for the same reason (ADR 0047).
+    // Nothing below reads it: it is loaded here so the surfaces that draw a
+    // builder's droid meet the answer this controller holds, from any browser.
+    DroidBuildRepairReport droidBuildRepair = {};
+    configLoadDroidBuild(prefs, &droidBuildRepair);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
@@ -335,6 +340,19 @@ void loadConfigToState() {
                     (unsigned)servoOutputRepair.rowsRepaired,
                     (unsigned)servoOutputRepair.fieldsRepaired,
                     (unsigned)servoOutputRepair.firstRow, note);
+    }
+
+    // A stored Droid Build this image's catalog can no longer name has taken
+    // the pre-selected design instead. Said out loud for the same reason: a
+    // builder whose stated design vanished under a firmware update should hear
+    // it here rather than discover it on the parts list.
+    if (!droidBuildRepairReportIsClean(droidBuildRepair)) {
+        PA_LOG_WARN("config",
+                    "droid build repaired: dome=%s body=%s, %u fitted part(s) this build "
+                    "does not declare",
+                    droidBuildRepair.domeRepaired ? "default" : "kept",
+                    droidBuildRepair.bodyRepaired ? "default" : "kept",
+                    (unsigned)droidBuildRepair.partsDropped);
     }
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)

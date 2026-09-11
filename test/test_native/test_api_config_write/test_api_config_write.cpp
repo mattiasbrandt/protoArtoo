@@ -16,6 +16,7 @@
 
 #include "api_config.h"
 #include "config_cache.h"
+#include "droid_build.h"
 #include "web_request_test_backend.h"
 
 extern bool g_test_commanded_stationary;
@@ -381,6 +382,101 @@ void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
     TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
 }
 
+// --- the Droid Build through the whole route (ADR 0047) -----------------------
+
+// The commit step is the only place a stated Droid Build meets the live one,
+// and the only place a half the request did not name has to survive.
+void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    configCacheApplyDroidBuild(before);
+
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "mk4"}, {"domeVariant", "simple"},
+        {"fittedParts", "utilUp,gripArm"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_STRING("simple", after.dome.variant);
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(after.fitted));
+    // The half the request said nothing about is untouched: changing a Dome
+    // Design says nothing about the body.
+    TEST_ASSERT_EQUAL_STRING(before.body.design, after.body.design);
+    TEST_ASSERT_EQUAL_STRING(before.body.variant, after.body.variant);
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("simple", doc["droidBuild"]["domeVariant"]);
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
+}
+
+// The criterion this whole decision turns on, asked of the running route: after
+// any Droid Build change, Protocol Check still accepts every Part the catalog
+// declares. A design seeds the Parts; it never fences them.
+void test_the_part_vocabulary_is_unchanged_by_a_droid_build_write() {
+    size_t before = 0;
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        if (droidPartIdIsKnown(droidPartIdAt(i))) {
+            before++;
+        }
+    }
+
+    // The narrowest droid a builder can state: one design that seeds nothing,
+    // and not a single Part fitted.
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "own"}, {"domeVariant", ""},
+        {"bodyDesign", "own"}, {"bodyVariant", ""},
+        {"fittedParts", ""},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 5;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(after.fitted));
+
+    size_t afterCount = 0;
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        if (droidPartIdIsKnown(droidPartIdAt(i))) {
+            afterCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)before, (uint32_t)afterCount);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT, (uint32_t)afterCount);
+}
+
+void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    configCacheApplyDroidBuild(before);
+
+    const WebRequestTestParam params[] = {{"domeDesign", "mk9"}, {"domeVariant", "complex"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_STRING(before.dome.design, after.dome.design);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
@@ -392,6 +488,9 @@ int main() {
     RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
+    RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
+    RUN_TEST(test_the_part_vocabulary_is_unchanged_by_a_droid_build_write);
+    RUN_TEST(test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);

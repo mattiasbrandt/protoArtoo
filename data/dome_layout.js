@@ -6,8 +6,17 @@
 // Implements the 4-tier fallback hierarchy from ADR 0009:
 //   1. Live: fetch /api/dome/layout with supported schema -> cached
 //   2. Cached-live: fetch fails but localStorage has prior live layout
-//   3. Vendored: no cache -> offline MK4 fallback (no geometry)
+//   3. Stated design: no cache -> the Dome Design the builder stated, which
+//      replaces the hardcoded vendored MK4 here (ADR 0047, #333)
 //   4. Unsupported: 200 OK but schema_revision not in SUPPORTED_DOME_LAYOUT_SCHEMAS
+//
+// Tier 3 asks window.DroidBuild what dome the builder says they built and
+// answers with the vendored drawing only where that drawing IS their dome. It
+// still carries no geometry of its own: the catalog records bearings whose
+// convention is unresolved (docs/droid-parts.yaml), so drawing a complement
+// without a vendored picture is not something this tier can do yet - what it
+// can do is stop claiming an MK4 dome belongs to a builder who stated
+// otherwise, and say which case they are in.
 //
 // Subscribes to dome connection state changes (dome_link.state) and refetches
 // when transitioning INTO connected state. No polling.
@@ -16,7 +25,9 @@
 //   - load() / refresh(): fetch and resolve the model
 //   - getModel(): current normalized model
 //   - onChange(cb): register callback fired after each resolve
-//   - getSource(): 'live' | 'cached' | 'vendored' | 'unsupported'
+//   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
+//     'vendored' and 'stated-design' are both tier 3: the first says the
+//     built-in drawing is this builder's dome, the second that it is not.
 // =============================================================================
 
 (() => {
@@ -184,6 +195,64 @@
     };
   }
 
+  /**
+   * Tier 3: what the builder says their dome is, and whether the built-in
+   * drawing is a drawing of it.
+   *
+   * The Dome Design is the builder's statement, so this reads it through the
+   * one Droid Build seam rather than working out a complement of its own
+   * (data/droid_build.js). Three outcomes, and they are different sentences to
+   * a builder standing at a bench:
+   *
+   *   the built-in drawing IS their dome  -> show it, as this tier always has
+   *   it is a drawing of another design   -> do not show it as theirs
+   *   this build does not record what     -> say so; `mk4/simple` is that case
+   *     their design and variant carry       today, and drawing an empty dome
+   *                                          would read as "you fitted nothing"
+   *
+   * A page that has not loaded the Droid Build seam, or a controller too old to
+   * answer, leaves the design unstated - and an unstated design keeps exactly
+   * the behaviour this tier had before, which is the vendored drawing.
+   *
+   * Tier 4 - an unsupported schema - resolves the same way and says so on top:
+   * its geometry is not trusted either, so what it can show is exactly what
+   * this tier can show, plus the schema warning.
+   *
+   * @param {string} [forcedSource] - tier 4 passes 'unsupported'
+   * @param {string} [forcedWarning] - tier 4's schema warning, which wins
+   * @returns {object} the normalized model, with tier-3 fields on top
+   */
+  function statedDesignLayout(forcedSource, forcedWarning) {
+    const build = window.DroidBuild?.current?.() || null;
+    const designId = build ? build.dome.design : '';
+    const variantId = build ? build.dome.variant : '';
+    const complement = window.DroidBuild?.complementFor
+      ? window.DroidBuild.complementFor(designId, variantId, 'dome')
+      : { ids: [], known: false };
+
+    const drawingIsTheirs =
+      designId === '' ||
+      (designId === window.DOME_PANEL_MAP_DESIGN &&
+       variantId === window.DOME_PANEL_MAP_VARIANT);
+
+    let warning = null;
+    if (designId !== '' && !complement.known) {
+      warning = 'This build does not record which panels that dome design carries';
+    } else if (!drawingIsTheirs) {
+      warning = 'The built-in dome map is not the design you stated';
+    }
+
+    const source = forcedSource || (drawingIsTheirs ? 'vendored' : 'stated-design');
+    const model = normalizeLayout({}, false, source, forcedWarning || warning);
+    model.domeDesign = designId;
+    model.domeVariant = variantId;
+    model.complementKnown = complement.known;
+    // What the two consumers of this tier actually branch on: may the built-in
+    // MK4 drawing be shown as this builder's dome.
+    model.usesVendoredDrawing = drawingIsTheirs;
+    return model;
+  }
+
   // ── Fetch & Resolve ────────────────────────────────────────────────────
 
   /**
@@ -213,6 +282,13 @@
    * @returns {Promise<void>}
    */
   async function resolveLayout() {
+    // The boot re-apply of the Droid Build, before anything can need it. It is
+    // held by the seam, so every surface on the page that asks joins this one
+    // request rather than opening another, and a failure to read it leaves the
+    // design unstated - which is the pre-#343 behaviour rather than a broken
+    // picker.
+    await window.DroidBuild?.load?.();
+
     const liveLayout = await fetchLiveLayout();
 
     let model;
@@ -236,9 +312,12 @@
         );
       } else {
         // Tier 4: Schema not supported
-        // Emit warning and fall back to vendored
         warning = `Layout schema ${schemaRev} not supported (supported: ${Array.from(SUPPORTED_DOME_LAYOUT_SCHEMAS).join(', ')})`;
-        model = normalizeLayout({}, false, 'unsupported', warning);
+        // Tier 4 is tier 3 plus this warning: an unsupported schema's geometry
+        // is not trusted, so what can be shown is what the stated Dome Design
+        // allows - including, for a design the built-in drawing is not of, no
+        // drawing at all (ADR 0047).
+        model = statedDesignLayout('unsupported', warning);
         source = 'unsupported';
       }
     } else if (liveLayout === null) {
@@ -274,9 +353,9 @@
         model = normalizeLayout(cachedLayout.rawLayout, false, 'cached');
         source = 'cached';
       } else {
-        // Tier 3: Vendored fallback
-        model = normalizeLayout({}, false, 'vendored');
-        source = 'vendored';
+        // Tier 3: the stated Dome Design (ADR 0047)
+        model = statedDesignLayout();
+        source = model.source;
       }
     }
 
@@ -370,7 +449,7 @@
 
   /**
    * Get the current source tier.
-   * @returns {string} 'live' | 'cached' | 'vendored' | 'unsupported'
+   * @returns {string} 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
    */
   function getSource() {
     return currentSource;

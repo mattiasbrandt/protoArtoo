@@ -124,6 +124,34 @@ PART_SECTIONS = (
     "body_arms",
 )
 
+# Which half of the droid each part section belongs to. One seed list serves
+# both halves of a Droid Build: a reader takes the dome half of a design's
+# complement for the Dome Design and the body half for the Body Design, and
+# "which half" is the section the part is declared in (docs/droid-parts.yaml,
+# ADR 0047). That sentence is the catalog's, so the mapping is emitted from
+# here rather than restated in every browser surface that has to split a
+# complement in two. The escape-hatch slots are in neither half: they belong to
+# no design, so no design ever seeds one.
+SECTION_HALVES = {
+    "dome_pies": "dome",
+    "dome_panels": "dome",
+    "dome_lights": "dome",
+    "holoprojectors": "dome",
+    "dome_fixtures": "dome",
+    "body_doors": "body",
+    "body_arms": "body",
+}
+
+# A section that declares parts and no half would silently drop those parts out
+# of every complement a design seeds, which reads as "that design does not carry
+# them" rather than as the omission it is. Loud on import, because it is a
+# mistake in this file rather than in the catalog.
+if set(SECTION_HALVES) != set(PART_SECTIONS):
+    raise RuntimeError(
+        "SECTION_HALVES and PART_SECTIONS disagree: "
+        f"{sorted(set(SECTION_HALVES) ^ set(PART_SECTIONS))}"
+    )
+
 TOP_LEVEL_KEYS = frozenset(("designs", "other_slots")) | frozenset(PART_SECTIONS)
 
 # Every key a part row may carry. A row with a key that is not here is a typo
@@ -163,7 +191,10 @@ PART_KEYS = frozenset(
 # it rather than sitting here unused.
 PART_KINDS = frozenset(("light",))
 
-DESIGN_KEYS = frozenset(("id", "label", "short", "blurb", "note", "variants", "default_variant", "seeds"))
+DESIGN_KEYS = frozenset(
+    ("id", "preselected", "label", "short", "blurb", "note", "variants",
+     "default_variant", "seeds")
+)
 VARIANT_KEYS = frozenset(("id", "label", "seeds"))
 OTHER_SLOT_KEYS = frozenset(("count", "id_prefix", "label_prefix", "control"))
 
@@ -521,8 +552,11 @@ def read_designs(doc, declared_ids, problems):
             continue
         check_keys(where, design, DESIGN_KEYS, problems)
         design_id = design.get("id")
-        if not isinstance(design_id, str) or not design_id.strip():
-            problems.append(f"{where}: no id")
+        # The same shape a part id has to take, and for two more reasons: a
+        # design id is stored verbatim in device config, and the generated
+        # firmware header builds a C identifier out of it.
+        if not isinstance(design_id, str) or not ID_RE.match(design_id):
+            problems.append(f"{where}: id {design_id!r} is not an unquoted identifier")
             continue
         where = f"designs/{design_id}"
         if design_id in seen:
@@ -537,6 +571,19 @@ def read_designs(doc, declared_ids, problems):
             card[field] = value
         row = {"id": design_id, "label": card["label"], "short": card["short"],
                "blurb": card["blurb"]}
+
+        # Emitted only where it is true: a design row carrying
+        # `preselected: false` would read as a second answer to a question that
+        # has exactly one.
+        preselected = design.get("preselected")
+        if preselected is not None:
+            if preselected is not True:
+                problems.append(
+                    f"{where}: preselected is {preselected!r}; the only value it "
+                    "takes is true, and a design that is not pre-selected omits it"
+                )
+            else:
+                row["preselected"] = True
 
         variants = design.get("variants")
         default_variant = design.get("default_variant")
@@ -597,6 +644,35 @@ def read_designs(doc, declared_ids, problems):
             row["defaultVariant"] = default_variant
         row["variants"] = variant_rows
         rows.append(row)
+
+    # Exactly one design is what a fresh controller starts on. None leaves a
+    # fresh flash with no answer to record, which is the blank map ADR 0047
+    # refused; two leaves the choice to whoever reads the list first.
+    preselected_ids = [r["id"] for r in rows if r.get("preselected")]
+    if len(preselected_ids) != 1:
+        problems.append(
+            "designs: exactly one design carries `preselected: true` "
+            f"(found {preselected_ids or 'none'})"
+        )
+    else:
+        chosen = next(r for r in rows if r["id"] == preselected_ids[0])
+        # A pre-selected design has to be able to answer both halves of a
+        # Droid Build on a fresh flash, so the complement its default variant
+        # seeds must be known. `own` could legitimately be pre-selected and
+        # seed nothing; a variant whose seeds are TBD could not, because the
+        # controller would come up claiming a design and fitting nothing.
+        if "variants" in chosen:
+            default_variant = chosen.get("defaultVariant")
+            seeds = next(
+                (v["seeds"] for v in chosen["variants"] if v["id"] == default_variant),
+                None,
+            )
+            if default_variant is not None and seeds is None:
+                problems.append(
+                    f"designs/{chosen['id']}: is pre-selected at variant "
+                    f"{default_variant!r}, whose complement is not known here; "
+                    "a fresh controller cannot start on a complement nobody has read"
+                )
     return rows
 
 
@@ -707,7 +783,23 @@ def generate_firmware_header(catalog, output_path=None):
             "// build never heard of. What drives a Part is the `control:` column in\n"
             "// the catalog and the Servo Output rows on the droid itself - neither\n"
             "// of them is a question about names (operator decision, 2026-09-11,\n"
-            "// #358).",
+            "// #358).\n"
+            "//\n"
+            "// Beside the ids: the design vocabulary a stored Droid Build is\n"
+            "// checked against, and the answer a fresh controller starts on. A\n"
+            "// Droid Build seeds the Parts and never fences them (ADR 0047), so\n"
+            "// nothing here narrows droidPartIdIsKnown() and no firmware\n"
+            "// behaviour branches on a design - the vocabulary is here for the\n"
+            "// same reason the id table is, to refuse a value the catalog never\n"
+            "// declared at the door rather than store it and puzzle a surface\n"
+            "// with it (#343).\n"
+            "//\n"
+            "// ONE complement reaches firmware: the one the pre-selected design\n"
+            "// fits on a fresh flash, so a controller nobody has opened a browser\n"
+            "// at still comes up with the parts that design carries instead of an\n"
+            "// empty list. Every other design's complement stays in the browser\n"
+            "// module beside this file, which is where a design CHANGE is seeded\n"
+            "// from - one seam, and firmware is not a second copy of it.",
         ),
         "",
         "#pragma once",
@@ -729,21 +821,32 @@ def generate_firmware_header(catalog, output_path=None):
         "};",
         "",
         "// -----------------------------------------------------------------------------",
+        "// droidPartIndexOf()",
+        "// Where a Part sits in the table above, or DROID_PART_COUNT for an id this",
+        "// build does not model. The index is emission order and is meaningful only",
+        "// inside one image - the catalog can grow - so it is for addressing a Part",
+        "// in memory, never for storing which Part was meant.",
+        "// -----------------------------------------------------------------------------",
+        "inline size_t droidPartIndexOf(const char* id) {",
+        "    if (id == nullptr || id[0] == '\\0') {",
+        "        return DROID_PART_COUNT;",
+        "    }",
+        "    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {",
+        "        if (strcmp(DROID_PART_IDS[i], id) == 0) {",
+        "            return i;",
+        "        }",
+        "    }",
+        "    return DROID_PART_COUNT;",
+        "}",
+        "",
+        "// -----------------------------------------------------------------------------",
         "// droidPartIdIsKnown()",
         "// The Protocol Check vocabulary gate: is this a Part this build models at all.",
         "// It answers nothing about wiring - a known Part with no Output is still a",
         "// known Part, and saying so is the whole point (#301).",
         "// -----------------------------------------------------------------------------",
         "inline bool droidPartIdIsKnown(const char* id) {",
-        "    if (id == nullptr || id[0] == '\\0') {",
-        "        return false;",
-        "    }",
-        "    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {",
-        "        if (strcmp(DROID_PART_IDS[i], id) == 0) {",
-        "            return true;",
-        "        }",
-        "    }",
-        "    return false;",
+        "    return droidPartIndexOf(id) < DROID_PART_COUNT;",
         "}",
         "",
         "// -----------------------------------------------------------------------------",
@@ -756,8 +859,150 @@ def generate_firmware_header(catalog, output_path=None):
         "}",
         "",
     ]
+    lines += design_header_lines(catalog)
     output_path.write_text("\n".join(lines), encoding="utf-8")
     return ids
+
+
+def design_identifier(design_id):
+    """The C identifier fragment for a design id.
+
+    Design ids are unquoted identifiers (read_designs refuses anything else),
+    so upper-casing one is enough; the prefix is what keeps a digit-leading id
+    from producing an illegal name.
+    """
+    return f"DROID_DESIGN_VARIANTS_{design_id.upper()}"
+
+
+def design_header_lines(catalog):
+    """The design vocabulary and the answer a fresh controller starts on."""
+    designs = catalog["designs"]
+    preselected = next(d for d in designs if d.get("preselected"))
+    default_variant = preselected.get("defaultVariant", "")
+    if "variants" in preselected:
+        default_seeds = next(
+            v["seeds"] for v in preselected["variants"] if v["id"] == default_variant
+        )
+    else:
+        default_seeds = preselected["seeds"]
+
+    design_id_longest = max(len(d["id"]) for d in designs)
+    variant_ids = [v["id"] for d in designs for v in d.get("variants", [])]
+    variant_longest = max((len(v) for v in variant_ids), default=0)
+
+    lines = [
+        "// -----------------------------------------------------------------------------",
+        "// The design vocabulary",
+        "//",
+        "// A Droid Build names a Dome Design and a Body Design, each at a Design",
+        "// Variant, and the two halves are answered independently - an MK3 body under",
+        "// an MK4 dome is an ordinary droid rather than an error, so nothing below",
+        "// compares one half against the other (ADR 0047, #333).",
+        "// -----------------------------------------------------------------------------",
+        f"constexpr size_t DROID_DESIGN_COUNT = {len(designs)};",
+        "",
+        "// The longest design id and the longest variant id, so a struct storing an",
+        "// answer sizes its fields against the vocabulary rather than against a guess.",
+        f"constexpr size_t DROID_DESIGN_ID_MAX_LEN = {design_id_longest};",
+        f"constexpr size_t DROID_VARIANT_ID_MAX_LEN = {variant_longest};",
+        "",
+    ]
+    for design in designs:
+        variants = design.get("variants")
+        if not variants:
+            continue
+        name = design_identifier(design["id"])
+        joined = ", ".join(f'"{v["id"]}"' for v in variants)
+        lines.append(f"inline constexpr const char* const {name}[] = {{{joined}}};")
+    lines += [
+        "",
+        "// A design and the variant set that is its own. `variants` is nullptr where a",
+        "// design declares none, which is a different statement from an empty set: the",
+        "// second control disappears rather than offering an empty axis.",
+        "struct DroidDesignRow {",
+        "    const char* id;",
+        "    const char* const* variants;",
+        "    size_t variantCount;",
+        "};",
+        "",
+        "inline constexpr DroidDesignRow DROID_DESIGNS[DROID_DESIGN_COUNT] = {",
+    ]
+    for design in designs:
+        variants = design.get("variants")
+        if variants:
+            name = design_identifier(design["id"])
+            lines.append(f'    {{"{design["id"]}", {name}, {len(variants)}}},')
+        else:
+            lines.append(f'    {{"{design["id"]}", nullptr, 0}},')
+    lines += [
+        "};",
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// droidDesignRow()",
+        "// The row for a design id, or nullptr for one this catalog never declared.",
+        "// -----------------------------------------------------------------------------",
+        "inline const DroidDesignRow* droidDesignRow(const char* id) {",
+        "    if (id == nullptr || id[0] == '\\0') {",
+        "        return nullptr;",
+        "    }",
+        "    for (size_t i = 0; i < DROID_DESIGN_COUNT; ++i) {",
+        "        if (strcmp(DROID_DESIGNS[i].id, id) == 0) {",
+        "            return &DROID_DESIGNS[i];",
+        "        }",
+        "    }",
+        "    return nullptr;",
+        "}",
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// droidDesignVariantIsKnown()",
+        "// Is `variant` one this design declares. An empty variant is the right answer",
+        "// for a design that declares no variant set at all, and the wrong one for a",
+        "// design that does - which is what keeps a half-answered Droid Build out of",
+        "// storage.",
+        "// -----------------------------------------------------------------------------",
+        "inline bool droidDesignVariantIsKnown(const char* designId, const char* variant) {",
+        "    const DroidDesignRow* row = droidDesignRow(designId);",
+        "    if (row == nullptr || variant == nullptr) {",
+        "        return false;",
+        "    }",
+        "    if (row->variantCount == 0) {",
+        "        return variant[0] == '\\0';",
+        "    }",
+        "    for (size_t i = 0; i < row->variantCount; ++i) {",
+        "        if (strcmp(row->variants[i], variant) == 0) {",
+        "            return true;",
+        "        }",
+        "    }",
+        "    return false;",
+        "}",
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// The answer a fresh controller starts on",
+        "//",
+        "// The catalog's pre-selected design at its own default variant, for both",
+        "// halves, together with the complement that variant seeds. It is recorded as",
+        "// an answer rather than left absent so a builder reads it and corrects it;",
+        "// an empty droid map would never prompt them to (ADR 0047, #333).",
+        "//",
+        "// This is the ONLY complement in firmware. A design CHANGE is seeded by the",
+        "// browser seam against the catalog module beside this file, so nothing here",
+        "// has to be consulted again once a builder has answered.",
+        "// -----------------------------------------------------------------------------",
+        f'constexpr const char* DROID_BUILD_DEFAULT_DESIGN = "{preselected["id"]}";',
+        f'constexpr const char* DROID_BUILD_DEFAULT_VARIANT = "{default_variant}";',
+        "",
+        f"constexpr size_t DROID_BUILD_DEFAULT_FITTED_COUNT = {len(default_seeds)};",
+        "",
+        "inline constexpr const char* const "
+        "DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DEFAULT_FITTED_COUNT] = {",
+    ]
+    for part_id in default_seeds:
+        lines.append(f'    "{part_id}",')
+    lines += [
+        "};",
+        "",
+    ]
+    return lines
 
 
 # =============================================================================
@@ -773,6 +1018,13 @@ def browser_part(part):
         "section": part["section"],
         "name": part["name"],
     }
+    # Which half of the droid a design seeds this Part into. Absent on the
+    # escape-hatch slots, which belong to no design and are therefore in
+    # neither half - a surface splitting a complement must be able to tell
+    # "the body half" from "no half at all".
+    half = SECTION_HALVES.get(part["section"])
+    if half is not None:
+        record["half"] = half
     if part["shorthand"] is not None and declared(part["shorthand"]):
         record["shorthand"] = part["shorthand"]
     record["aliases"] = part["aliases"]

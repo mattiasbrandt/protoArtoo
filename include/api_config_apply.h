@@ -30,6 +30,7 @@
 
 #include "api_param_source.h"
 #include "config_cache.h"
+#include "droid_build.h"
 #include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
 
 struct ConfigApplyError {
@@ -71,12 +72,36 @@ struct ConfigServoOutputEdits {
     size_t count = 0;
 };
 
+// What the request asked of the Droid Build (ADR 0047).
+//
+// A Droid Build lives outside ConfigSnapshot on its own NVS keys, so it cannot
+// be applied onto `working` the way a snapshot field is; the core validates it
+// here and the Commit Step hands it to configCacheApplyDroidBuild().
+//
+// Each half is answered as a PAIR - a design and the variant of that design -
+// because a variant only means anything against the design it belongs to, and a
+// request carrying one without the other would have the core validate a pairing
+// nobody stated. The Fitted Parts arrive whole for the same reason a set does:
+// there is no merge to do and nothing here has to know what was fitted before.
+//
+// `changed` is false on a request that named none of it, which is every request
+// the Droid Build is not about.
+struct ConfigDroidBuildEdit {
+    bool domeChanged = false;
+    bool bodyChanged = false;
+    bool fittedChanged = false;
+    DroidDesignChoice dome = {};
+    DroidDesignChoice body = {};
+    DroidFittedParts fitted = {};
+};
+
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
     ConfigApplyError error;
     ConfigApplyActions actions;
     ConfigAppliedFields applied;
     ConfigServoOutputEdits servoOutputs;
+    ConfigDroidBuildEdit droidBuild;
 };
 
 // `working` must already hold the current cached snapshot (shell reads it

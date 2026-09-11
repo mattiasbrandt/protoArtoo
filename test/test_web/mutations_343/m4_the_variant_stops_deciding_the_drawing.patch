@@ -1,0 +1,14 @@
+diff --git i/data/dome_layout.js w/data/dome_layout.js
+index 3ff9d350..f015bf84 100644
+--- i/data/dome_layout.js
++++ w/data/dome_layout.js
+@@ -232,8 +232,7 @@
+ 
+     const drawingIsTheirs =
+       designId === '' ||
+-      (designId === window.DOME_PANEL_MAP_DESIGN &&
+-       variantId === window.DOME_PANEL_MAP_VARIANT);
++      designId === window.DOME_PANEL_MAP_DESIGN;
+ 
+     let warning = null;
+     if (designId !== '' && !complement.known) {

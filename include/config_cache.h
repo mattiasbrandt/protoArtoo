@@ -94,6 +94,19 @@ ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver,
 ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
                                                          size_t count);
 
+// The Droid Build (ADR 0047): which droid a builder says they built, and which
+// Parts are on it. Outside ConfigSnapshot on its own NVS keys, filled by
+// configLoadDroidBuild() on the boot path and changed at runtime only by the
+// Commit Step.
+//
+// Handed out whole rather than a half at a time: it is sixty bytes, and its
+// readers are the surfaces that draw a builder's droid rather than anything on
+// a control path. No firmware behaviour branches on it - a Droid Build seeds
+// the Parts and never fences them, so droidPartIdIsKnown() is the whole catalog
+// whatever this answer says.
+void configCacheReadDroidBuild(DroidBuildConfig* out);
+void configCacheApplyDroidBuild(const DroidBuildConfig& build);
+
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);

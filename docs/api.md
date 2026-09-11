@@ -1198,6 +1198,12 @@ Returns current config snapshot.
 - top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
 - `aux_led_pin`, `aux_led_count`
 - `system.logLevel`
+- `droidBuild`: the Droid Build (ADR 0047) — `domeDesign`, `domeVariant`,
+  `bodyDesign`, `bodyVariant` (design ids from `data/droid_parts.js`'s
+  `designs`, the variant empty for a design that declares none), and `fitted`,
+  the Part ids actually on this droid. A design **seeds** the Parts and never
+  fences them: `fitted` says what is on the droid, and every Part the catalog
+  declares stays legal to author, save and wire whatever it contains.
 - `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart). Plaintext passwords are never returned.
 
 #### Example request
@@ -1229,6 +1235,21 @@ Updates supported config fields and persists to NVS.
   Independent of `enableAudio`: the toggle says a sound module is fitted, the
   member says which product it is. Saved immediately, **takes effect at the next
   reboot** like a component toggle.
+- droid build (ADR 0047): `domeDesign` + `domeVariant`, and `bodyDesign` +
+  `bodyVariant`. Each half is sent as a **pair** — a variant means nothing
+  without the design it belongs to — and each must name a design the catalog
+  declares at one of that design's own variants (empty for a design with no
+  variant set). The two halves are never compared: an MK3 body under an MK4
+  dome is an ordinary droid. Anything else is `400`
+  `{"ok":false,"error":"domeDesign and domeVariant must be sent together, and
+  name a design and one of its own variants"}`.
+- droid build: `fittedParts` — the Parts on this droid, as a comma-separated
+  list of Part ids. Sent whole; an **empty** value is a real answer (a droid
+  with nothing fitted yet) while omitting the field says the request is not
+  about the Fitted Parts. An id the build does not model is `400`
+  `{"ok":false,"error":"fittedParts names a Part this build does not model"}`.
+  This is a form check and not a narrowing: a Part outside `fittedParts` is
+  still legal to author, save and wire.
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`

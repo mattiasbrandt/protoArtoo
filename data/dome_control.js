@@ -67,14 +67,23 @@
     let pickerContainer = null;
 
     // Build the picker SVG for the current model. Live/cached tiers have real
-    // elements and render through DomeLayoutRender; vendored/unsupported tiers
-    // have an empty elements[] (geometry from an unsupported schema is never
-    // trusted), so fall back to the vendored MK4 SVG — same fallback seq.js
-    // uses for the sequence editor picker.
+    // elements and render through DomeLayoutRender; the offline tiers have an
+    // empty elements[] (geometry from an unsupported schema is never trusted),
+    // so they fall back to the built-in MK4 SVG — same fallback seq.js uses for
+    // the sequence editor picker.
+    //
+    // The built-in drawing is shown only where it IS the dome the builder says
+    // they built (ADR 0047): a drawing of somebody else's design presented as
+    // theirs is worse than no drawing, because every panel on it is one they
+    // would go looking for. `usesVendoredDrawing` is set by tier 3; a model
+    // without it is an older shape and keeps the old behaviour.
     function pickerHtmlFor(model) {
       const hasLiveElements = model?.elements?.length > 0;
       if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
         return window.DomeLayoutRender.renderPicker(model);
+      }
+      if (model?.usesVendoredDrawing === false) {
+        return '';
       }
       return window.DOME_PANEL_MAP_SVG || '';
     }
@@ -87,7 +96,7 @@
         bannerEl.remove();
         bannerEl = null;
       }
-      const bannerHtml = renderSourceBanner(source);
+      const bannerHtml = renderSourceBanner(source, model);
       if (bannerHtml) {
         bodyEl.insertAdjacentHTML('afterbegin', bannerHtml);
         bannerEl = bodyEl.firstElementChild;
@@ -403,7 +412,7 @@
       }
     }
 
-    function renderSourceBanner(source) {
+    function renderSourceBanner(source, model) {
       let banner = '';
       if (source === 'live') {
         // No banner for live
@@ -411,6 +420,15 @@
         banner = '<div class="dome-source-banner info">📦 Last known layout (runtime unverified)</div>';
       } else if (source === 'unsupported') {
         banner = '<div class="dome-source-banner warn">⚠ Unsupported layout schema — showing built-in fallback</div>';
+      } else if (source === 'stated-design') {
+        // Tier 3 with a dome the built-in drawing is not of. Two different
+        // jobs for the builder, so two different sentences: one is "we have no
+        // picture of your dome", the other is "we do not know what your dome
+        // carries at all" — and the second is the one somebody has to go and
+        // read out of the design files (ADR 0047).
+        banner = model?.complementKnown === false
+          ? '<div class="dome-source-banner warn">🔌 Dome not reachable — this build does not know which panels that dome design carries</div>'
+          : '<div class="dome-source-banner warn">🔌 Dome not reachable — no built-in map for the dome design you stated</div>';
       } else if (source === 'vendored') {
         banner = '<div class="dome-source-banner warn">🔌 Dome not reachable — showing MK4 built-in layout</div>';
       }
