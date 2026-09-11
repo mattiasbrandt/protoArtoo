@@ -27,8 +27,9 @@
 //      componentPartCapabilities("<registry id>") from capabilities().
 //   3. Give the product a supported PA_COMPONENT_PART row in
 //      include/component_registry.inc, or flip an existing roadmap row.
-//   4. Add the instance to kSoundMemberDrivers in src/tasks/audio_task.cpp --
-//      a static_assert there fails the build until you do.
+//   4. Add the instance to kSoundMemberDrivers in
+//      src/tasks/audio_sound_member.cpp -- a static_assert there fails the
+//      build until you do.
 // =============================================================================
 #pragma once
 
