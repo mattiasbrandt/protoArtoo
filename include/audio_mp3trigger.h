@@ -89,6 +89,8 @@ class AudioDriverMp3Trigger : public AudioDriver {
     uint8_t capabilities() const override {
         return componentPartCapabilities("mp3_trigger");
     }
+    static_assert(componentPartExists("mp3_trigger"),
+                  "AudioDriverMp3Trigger cites a product id no Component Registry row declares; a typo here would otherwise read as a module that can be asked nothing");
 
     // Query module state via S0 (link check) and S1 (track count).
     // Assumes the caller holds the audio UART claim; this driver does no

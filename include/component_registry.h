@@ -128,13 +128,37 @@ constexpr uint8_t componentPartCapabilities(const char* id) {
     return 0;
 }
 
+// Whether any row declares this id, resolved at compile time. A driver cites
+// its own row by id to read its capability word, and a typo there would
+// otherwise resolve to a silent 0 rather than to a build failure -- so each
+// concrete driver static_asserts this beside the lookup it depends on.
+constexpr bool componentPartExists(const char* id) {
+#define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
+#define PA_COMPONENT_PART(value, part_id, name, category, protocol, status, capabilities, gate, \
+                          included)                                                             \
+    if (component_registry_detail::idEquals(id, part_id)) {                                     \
+        return true;                                                                            \
+    }
+#include "component_registry.inc"
+#undef PA_COMPONENT_PART
+#undef PA_COMPONENT_CATEGORY
+    return false;
+}
+
 // A part is SELECTABLE when the project supports it and this image carries a
 // driver for it. That pair -- not the Board Capability Gate's option set -- is
 // what "more than one selectable member" counts: the Gate answers what the
 // board can be wired for, and what the running image carries is a different
 // question (ADR 0042 amended 2026-09-09, CONTEXT.md "Component Member").
+//
+// Written over the two fields as well as over a row, because the constexpr
+// count below walks the manifest rather than the table and would otherwise
+// have to spell the same condition a second time.
+constexpr bool componentPartIsSelectable(ComponentStatus status, bool included) {
+    return status == COMPONENT_STATUS_SUPPORTED && included;
+}
 inline bool componentPartIsSelectable(const ComponentPartEntry& part) {
-    return part.status == COMPONENT_STATUS_SUPPORTED && part.included;
+    return componentPartIsSelectable(part.status, part.included);
 }
 
 // How many selectable members this family has in this image.
@@ -147,8 +171,7 @@ constexpr uint8_t componentCategorySelectableCount(ComponentCategoryId category)
 #define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
 #define PA_COMPONENT_PART(value, id, name, part_category, protocol, status, capabilities, gate, \
                           included)                                                             \
-    if ((part_category) == category && (status) == COMPONENT_STATUS_SUPPORTED &&                 \
-        ((included) != 0)) {                                                                    \
+    if ((part_category) == category && componentPartIsSelectable((status), (included) != 0)) {  \
         ++count;                                                                                \
     }
 #include "component_registry.inc"
@@ -158,7 +181,7 @@ constexpr uint8_t componentCategorySelectableCount(ComponentCategoryId category)
 }
 
 // The family's Component Member setting exists only where more than one member
-// is selectable. Both halves are derived from the table above, so a family that
+// is selectable. Both halves are derived from the manifest, so a family that
 // grows a second driver reports a member setting the moment the row lands --
 // and the declared memberKey is checked against this in
 // test/test_native/test_component_registry rather than being trusted.

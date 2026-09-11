@@ -62,6 +62,8 @@ class AudioDriverChirp : public AudioDriver {
     uint8_t capabilities() const override {
         return componentPartCapabilities("chirp");
     }
+    static_assert(componentPartExists("chirp"),
+                  "AudioDriverChirp cites a product id no Component Registry row declares; a typo here would otherwise read as a module that can be asked nothing");
 
     AudioRxStatus classifyRxStatus(bool linkOk) const override;
 

@@ -53,6 +53,8 @@ class AudioDriverDySv5w : public AudioDriver {
     uint8_t capabilities() const override {
         return componentPartCapabilities("dy_sv5w");
     }
+    static_assert(componentPartExists("dy_sv5w"),
+                  "AudioDriverDySv5w cites a product id no Component Registry row declares; a typo here would otherwise read as a module that can be asked nothing");
 
     // Query live module state via UART RX: device, play state, current track.
     // Sends three query frames and waits up to 300 ms each for a response.
