@@ -134,14 +134,30 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         }
     }
 
-    if (!executeManualCommand(command)) {
+    const ManualCommandResult result = executeManualCommand(command);
+    if (result == ManualCommandResult::Unsupported) {
         // Matches handleManualCommandPost()'s own single failure shape
-        // (400 "unsupported command") - executeManualCommand() returns one
-        // bool for every branch it owns, so an audio-queue-full $ command
-        // and a genuinely unrecognized keyword answer the same way on both
-        // the REST route and here; that conflation is pre-existing in the
-        // reused core, not introduced by this executor.
+        // (400 "unsupported command") - executeManualCommand() answers
+        // Unsupported for every rejecting branch it owns, so an
+        // audio-queue-full $ command and a genuinely unrecognized keyword
+        // answer the same way on both the REST route and here; that
+        // conflation is pre-existing in the reused core, not introduced by
+        // this executor.
         consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (result == ManualCommandResult::SaveFailed) {
+        // A command that applied but whose config save did not reach flash
+        // (#376). Read from consoleExecuteDirectSetMode()
+        // (include/console_direct_action_system.h), which answers the identical
+        // outcome for the identical operation over system.action.set-mode: the
+        // command ran, the store did not, and that is an internal error rather
+        // than anything the caller got wrong. Nothing produces SaveFailed
+        // today; include/api_drive.h says why it is answered anyway.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
         return;
     }
 

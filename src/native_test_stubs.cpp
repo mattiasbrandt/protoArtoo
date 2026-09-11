@@ -55,10 +55,39 @@ unsigned long millis() {
     return g_test_millis;
 }
 
-// NVS save stub  --  not under test; POST handler calls it but tests call
-// populateConfigJson() directly without going through registerConfigRoutes().
+// NVS save stand-in  --  main.cpp's saveConfigToNvs() sequence, run against the
+// Preferences double.
+//
+// This returned true unconditionally until #376, on the grounds that the POST
+// handler calling it was not under test. It is now: the drive routes answer
+// differently when a save does not reach flash, and that answer can only be
+// exercised if the save can fail. Returning a constant cannot fail, so the
+// stand-in runs the real sequence instead -- rows first, then the fixed field
+// sets (#286, ADR 0041), the order main.cpp keeps and for the same reason --
+// through PrefsWriter and the double #375 taught to fail a string write.
+//
+// The Preferences instance is file-scope rather than local to the function so a
+// test can schedule that failure on it and read back what landed; see
+// include/config_save_test_hooks.h.
+#include "config_cache.h"  // ConfigSnapshot, configCacheRead()
+#include "config_save_test_hooks.h"  // declares g_test_config_prefs, defined here
+#include "config_store.h"  // configSave(), configSaveServoOutputs()
+
+Preferences g_test_config_prefs;
+
 bool saveConfigToNvs() {
-    return true;
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+
+    if (!g_test_config_prefs.begin(NVS_NAMESPACE, false)) {
+        return false;
+    }
+    bool ok = configSaveServoOutputs(g_test_config_prefs);
+    if (ok) {
+        ok = configSave(g_test_config_prefs, snap);
+    }
+    g_test_config_prefs.end();
+    return ok;
 }
 
 // dome_link.cpp is excluded from the native build. Provide a controllable stub

@@ -291,6 +291,11 @@ Sets operation mode.
 - Errors:
 - `400` `{"ok":false,"error":"missing mode parameter"}`
 - `400` `{"ok":false,"error":"invalid mode - use 'stationary' or 'driving'"}`
+- `500` `{"ok":false,"error":"mode applied but NVS save failed"}`
+
+The `500` means the droid IS in the requested mode now, and only the store
+missed: it comes back up in the previous mode after a reboot. The mode is not
+rolled back, because rolling it back could re-enable drive nobody asked for.
 
 #### Example request
 
@@ -1850,6 +1855,10 @@ Executes supported manual command.
 - `400` `{"ok":false,"error":"missing command"}`
 - `423` `{"error":"sleeping","hint":"POST /api/wake"}`
 - `400` `{"ok":false,"error":"unsupported command"}`
+- `500` `{"ok":false,"error":"command applied but NVS save failed"}`
+
+The `500` carries the same meaning as `POST /api/mode`'s: the command ran, its
+config store did not reach flash, and a reboot undoes it.
 
 #### Example request
 

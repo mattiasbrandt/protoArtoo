@@ -151,11 +151,58 @@ bool paramLowercase(WebRequest& req, const char* name, char* out, size_t outSize
     return true;
 }
 
+// Store the mode the droid has just been put into, and say whether it reached
+// flash. saveConfigToNvs() writes the whole config cache, the new mode
+// included -- commandedSetStationary() has already synced it there.
+//
+// One helper rather than four bare calls because there is a decision behind it
+// (#376), and the four mode paths in this file have to take the same one:
+//
+//   A failed save is REPORTED. The runtime mode is not reverted.
+//
+// The other consumer of this return in the tree does revert:
+// applySpeedPresetPersisted() (src/drive_speed_preset.cpp) puts the previous
+// cap back and warns. That is right there and wrong here. A speed preset is a
+// stored preference whose runtime value IS the stored number, so restoring the
+// old one leaves a coherent pair and costs the operator nothing. A mode is a
+// state the droid is already in: commandedSetStationary() has moved the drive
+// gating and, on the way out of Stationary, queued the drive-on cue. Undoing
+// that on the strength of a flash error would re-enable drive nobody asked
+// for -- the wrong direction for this toggle to fail in -- and would run the
+// transition a second time.
+//
+// It also keeps the two adapters for one action answering alike: the Console's
+// drive.action.set-mode executor already reports rather than reverts
+// (include/console_direct_action_system.h).
+//
+// What "reported" looks like is the caller's to decide, because each surface
+// has its own vocabulary. What none of them may do is answer plain success.
+bool saveCommandedMode() {
+    return saveConfigToNvs();
+}
+
+// POST /api/mode's two branches, which differ only in the mode they command.
+// The answer on a failed save reads the way POST /api/audio's volume branch
+// already words the same outcome ("volume applied but NVS save failed",
+// src/web/api_audio.cpp): applied is true, stored is not.
+void applyModeAndAnswer(WebRequest& req, bool stationary) {
+    commandedSetStationary(stationary, SRC_WEB_API);
+    const bool stored = saveCommandedMode();
+    requestStatusBroadcastNow();
+    PA_LOG_INFO(TAG, "[WEB] Mode set to %s (stored=%s)", stationary ? "stationary" : "driving",
+                stored ? "yes" : "no");
+    if (!stored) {
+        webSendJsonError(req, 500, "mode applied but NVS save failed");
+        return;
+    }
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
 }  // namespace
 
-bool executeManualCommand(const char* raw) {
+ManualCommandResult executeManualCommand(const char* raw) {
     if (raw == nullptr || raw[0] == '\0') {
-        return false;
+        return ManualCommandResult::Unsupported;
     }
 
     // Marcduino commands are case-sensitive - route them directly on raw
@@ -165,7 +212,14 @@ bool executeManualCommand(const char* raw) {
 
     // $ - audio commands: route to AudioTask
     if (prefix == '$') {
-        return audioQueueDollar(raw, SRC_WEB_API);
+        // A full audio queue lands on Unsupported, which is what this branch has
+        // always answered: the bool it returns covers "not a $ command I know"
+        // and "queue full" alike, and both reached the caller's single failure
+        // shape. #376 split the SAVE outcome out, not this one -- the
+        // conflation is pre-existing and stays here rather than being widened
+        // into.
+        return audioQueueDollar(raw, SRC_WEB_API) ? ManualCommandResult::Applied
+                                                  : ManualCommandResult::Unsupported;
     }
 
     // : and # - body-processed Marcduino: servo sequences, panel cmds, config
@@ -175,16 +229,17 @@ bool executeManualCommand(const char* raw) {
         uint8_t moodId = moodIdFromSeCommand(raw);
         if (moodId != 0) {
             applyMood(moodId);
-            return true;
+            return ManualCommandResult::Applied;
         }
         parseMarcduinoCommand(raw);
-        return true;  // always accept - body handles or discards per routing table
+        // Always accept - body handles or discards per routing table
+        return ManualCommandResult::Applied;
     }
 
     // * @ % & ! - dome-bound Marcduino: forward to dome TX queue
     if (prefix == '*' || prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!') {
         domeQueueTx(raw);
-        return true;
+        return ManualCommandResult::Applied;
     }
 
     // Keyword commands (estop, reboot, etc.) - case-insensitive. Only build the
@@ -193,46 +248,60 @@ bool executeManualCommand(const char* raw) {
     // match one and is resolved as unknown.
     char command[24] = {};
     if (!copyLowercase(raw, command, sizeof(command))) {
-        return false;
+        return ManualCommandResult::Unsupported;
     }
     ManualCommand cmd = resolveManualCommand(command);
 
     switch (cmd) {
         case MC_ESTOP:
             failsafeTrigger(FailsafeLayer::ESTOP);
-            return true;
+            return ManualCommandResult::Applied;
 
         case MC_CLEAR_ESTOP:
             failsafeClearEstop();
             requestStatusBroadcastNow();
-            return true;
+            return ManualCommandResult::Applied;
 
         case MC_ENABLE_WEB_CONTROL:
             commandedSetWebControl(true, SRC_WEB_API);
-            return true;
+            return ManualCommandResult::Applied;
 
         case MC_DISABLE_WEB_CONTROL:
             commandedSetWebControl(false, SRC_WEB_API);
             driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
-            return true;
+            return ManualCommandResult::Applied;
 
         case MC_REBOOT:
             requestSystemRestart(500);
-            return true;
+            return ManualCommandResult::Applied;
 
+        // The two mode keywords, and the only branches here that persist
+        // anything: saveCommandedMode() above carries the decision they and
+        // handleModePost() take together.
+        //
+        // NEITHER IS REACHABLE TODAY. The ':'/'#' Marcduino branch above claims
+        // every '#'-prefixed line before the keyword resolver ever runs, so
+        // "#st" and "#sm" go to parseMarcduinoCommand(), whose own '#' case
+        // matches neither and logs "unhandled body command"
+        // (src/drivers/dome_rx_parser.cpp). They have been shadowed since the
+        // Marcduino prefix routing landed the day after them (4f10228f,
+        // 2026-03-17). They are written to consume the save result anyway, so
+        // that whoever un-shadows them gets the same answer POST /api/mode
+        // gives rather than the discarded one this file used to have.
+        // test_api_motion_routes.cpp pins the shadowing.
         case MC_STATIONARY_MODE:
             commandedSetStationary(true, SRC_WEB_API);
-            saveConfigToNvs();
-            return true;
+            return saveCommandedMode() ? ManualCommandResult::Applied
+                                       : ManualCommandResult::SaveFailed;
 
         case MC_DRIVING_MODE:
             commandedSetStationary(false, SRC_WEB_API);
-            saveConfigToNvs();
-            return true;
+            return saveCommandedMode() ? ManualCommandResult::Applied
+                                       : ManualCommandResult::SaveFailed;
 
         case MC_UNKNOWN:
         default:
-            return false;
+            return ManualCommandResult::Unsupported;
     }
 }
 
@@ -244,17 +313,9 @@ void handleModePost(WebRequest& req) {
     }
 
     if (strcmp(mode, "stationary") == 0) {
-        commandedSetStationary(true, SRC_WEB_API);
-        saveConfigToNvs();
-        requestStatusBroadcastNow();
-        PA_LOG_INFO(TAG, "[WEB] Mode set to stationary");
-        req.send(200, "application/json", "{\"ok\":true}");
+        applyModeAndAnswer(req, true);
     } else if (strcmp(mode, "driving") == 0) {
-        commandedSetStationary(false, SRC_WEB_API);
-        saveConfigToNvs();
-        requestStatusBroadcastNow();
-        PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
-        req.send(200, "application/json", "{\"ok\":true}");
+        applyModeAndAnswer(req, false);
     } else {
         webSendJsonError(req, 400, "invalid mode - use 'stationary' or 'driving'");
     }
