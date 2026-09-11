@@ -645,6 +645,40 @@ void addServoOutputFields(JsonDocument& doc) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// addDroidBuildFields()
+// The Droid Build: which droid a builder says they built, and which Parts are
+// on it (ADR 0047).
+//
+// Out here with the others because it lives outside ConfigSnapshot, on its own
+// NVS keys - see include/config_serializer.h - so a pure snapshot serializer
+// cannot see it.
+//
+// The Fitted Parts go out as ids rather than as the bitmap they are held in:
+// the bits are emission order, and firmware and the browser module are shipped
+// by two separate steps ('make ota' and 'make uploadfs'), so a bit index is the
+// one form that could mean a different Part at each end of the wire.
+//
+// An empty `fitted` array is a real answer - a droid with nothing fitted yet -
+// and every Part the catalog declares stays nameable regardless: this block
+// reports what is ON the droid, never what may be authored for it.
+void addDroidBuildFields(JsonDocument& doc) {
+    DroidBuildConfig build = {};
+    configCacheReadDroidBuild(&build);
+
+    JsonObject droidBuild = doc["droidBuild"].to<JsonObject>();
+    droidBuild["domeDesign"] = build.dome.design;
+    droidBuild["domeVariant"] = build.dome.variant;
+    droidBuild["bodyDesign"] = build.body.design;
+    droidBuild["bodyVariant"] = build.body.variant;
+
+    JsonArray fitted = droidBuild["fitted"].to<JsonArray>();
+    for (size_t i = droidFittedPartsNextIndex(build.fitted, 0); i < DROID_PART_COUNT;
+         i = droidFittedPartsNextIndex(build.fitted, i + 1)) {
+        fitted.add(droidPartIdAt(i));
+    }
+}
+
 // The config snapshot response, shared by the read route and the write route's
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
@@ -662,6 +696,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     }
     addServoOutputFields(doc);
     addAudioMemberFields(doc);
+    addDroidBuildFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
@@ -779,6 +814,26 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
                     (unsigned)servoOutputRepair.firstRow, note);
     }
 
+    // The Droid Build the request stated, onto the live answer (ADR 0047). A
+    // half the request did not name is left exactly as it stood: a builder
+    // changing their Dome Design is not saying anything about their body, and
+    // a merge here is what keeps that true.
+    if (result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
+        result.droidBuild.fittedChanged) {
+        DroidBuildConfig droidBuild = {};
+        configCacheReadDroidBuild(&droidBuild);
+        if (result.droidBuild.domeChanged) {
+            droidBuild.dome = result.droidBuild.dome;
+        }
+        if (result.droidBuild.bodyChanged) {
+            droidBuild.body = result.droidBuild.body;
+        }
+        if (result.droidBuild.fittedChanged) {
+            droidBuild.fitted = result.droidBuild.fitted;
+        }
+        configCacheApplyDroidBuild(droidBuild);
+    }
+
     // Sync stationary mode with edge detection and drive-on cue. Safe to call
     // unconditionally: when the request omits "stationary", configApply() left
     // working->system.stationary at the cache value read before the call, which
@@ -816,6 +871,17 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         return outcome;
     }
     if (!configSave(prefs, *working)) {
+        prefs.end();
+        outcome.persisted = false;
+        return outcome;
+    }
+    // Only where the request said something about it: an absent Fitted Parts
+    // record is what tells the next boot that nobody has answered yet, and
+    // writing one on every config POST would spend that distinction on a
+    // request that was about the log level.
+    if ((result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
+         result.droidBuild.fittedChanged) &&
+        !configSaveDroidBuild(prefs)) {
         prefs.end();
         outcome.persisted = false;
         return outcome;

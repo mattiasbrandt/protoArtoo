@@ -16,6 +16,7 @@
 
 #include "api_config.h"
 #include "config_cache.h"
+#include "droid_build.h"
 #include "web_request_test_backend.h"
 
 namespace {
@@ -159,6 +160,79 @@ void test_worst_case_config_fits_the_response_buffer() {
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
 }
 
+// The Droid Build lives outside ConfigSnapshot on its own NVS keys, so it
+// reaches this payload through the handler rather than through the pure
+// snapshot serializer - which makes the handler the only place its shape, and
+// its share of the bounded response buffer, can be held down.
+void test_the_droid_build_reaches_the_config_payload() {
+    DroidBuildConfig build = {};
+    droidBuildDefaults(&build);
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.dome, "mk4", "complex"));
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.body, "own", ""));
+    TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, "gripArm"));
+    configCacheApplyDroidBuild(build);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleConfigGet(req);
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("mk4", doc["droidBuild"]["domeDesign"]);
+    TEST_ASSERT_EQUAL_STRING("complex", doc["droidBuild"]["domeVariant"]);
+    // A mixed droid is reported as one: nothing compares the halves.
+    TEST_ASSERT_EQUAL_STRING("own", doc["droidBuild"]["bodyDesign"]);
+    TEST_ASSERT_EQUAL_STRING("", doc["droidBuild"]["bodyVariant"]);
+
+    // The Parts travel as ids, never as the bit indices they are held in:
+    // firmware and data/droid_parts.js ship in two separate steps, so an index
+    // is the one form that could mean a different Part at each end.
+    JsonArray fitted = doc["droidBuild"]["fitted"].as<JsonArray>();
+    TEST_ASSERT_EQUAL_UINT32(DROID_BUILD_DEFAULT_FITTED_COUNT + 1, (uint32_t)fitted.size());
+    bool sawGripArm = false;
+    for (JsonVariant part : fitted) {
+        if (strcmp(part.as<const char*>(), "gripArm") == 0) {
+            sawGripArm = true;
+        }
+    }
+    TEST_ASSERT_TRUE(sawGripArm);
+}
+
+// The worst case this payload can reach: a maximal config AND a droid with
+// every Part in the catalog fitted. The response buffer is a fixed 3072 B and
+// an overflow is a 500, so the bound is measured here rather than reasoned
+// about - the Fitted Parts are the one field in this payload that grows every
+// time the catalog does.
+void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
+    ConfigSnapshot snap = {};
+    memset(snap.wifi.sta_ssid, 'S', sizeof(snap.wifi.sta_ssid) - 1);
+    memset(snap.wifi.ap_ssid, 'A', sizeof(snap.wifi.ap_ssid) - 1);
+    memset(snap.wifi.sta_password, 'P', sizeof(snap.wifi.sta_password) - 1);
+    memset(snap.wifi.ap_password, 'Q', sizeof(snap.wifi.ap_password) - 1);
+    memset(snap.dome.dome_wifi_peer_ip, '9', sizeof(snap.dome.dome_wifi_peer_ip) - 1);
+    configCacheApply(snap);
+
+    DroidBuildConfig build = {};
+    droidBuildDefaults(&build);
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, droidPartIdAt(i)));
+    }
+    configCacheApplyDroidBuild(build);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleConfigGet(req);
+
+    // A 500 here is the overflow branch, which is what this test exists to
+    // catch before a builder meets it as a blank config page.
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_LESS_THAN_UINT32(3072u, (uint32_t)strlen(backend.sentBody));
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT,
+                             (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_get_returns_config_json);
@@ -166,5 +240,7 @@ int main() {
     RUN_TEST(test_the_old_field_names_are_answered_from_the_rows);
     RUN_TEST(test_pending_apply_is_true_when_staged_differs_from_active);
     RUN_TEST(test_worst_case_config_fits_the_response_buffer);
+    RUN_TEST(test_the_droid_build_reaches_the_config_payload);
+    RUN_TEST(test_a_fully_fitted_droid_build_still_fits_the_response_buffer);
     return UNITY_END();
 }

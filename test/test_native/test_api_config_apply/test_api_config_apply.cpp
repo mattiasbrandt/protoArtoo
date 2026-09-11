@@ -299,6 +299,125 @@ void test_configApply_multiple_fields_record_applied_lines_in_order(void) {
     TEST_ASSERT_EQUAL_STRING("[CFG] sbusTimeoutMs updated to 200", result.applied.lines[1]);
 }
 
+// --- the Droid Build (ADR 0047) ---
+//
+// The Apply Core is the door a stated Droid Build comes through, and there are
+// exactly three ways it could undo the decision it implements: fence the Parts,
+// refuse a mixed droid, or take half an answer.
+
+void test_configApply_droid_build_records_both_halves_and_the_parts(void) {
+    std::map<std::string, std::string> m;
+    m["domeDesign"] = "mk4";
+    m["domeVariant"] = "complex";
+    m["bodyDesign"] = "own";
+    m["bodyVariant"] = "";
+    m["fittedParts"] = "utilUp,utilLo,gripArm";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_TRUE(result.changed);
+    TEST_ASSERT_TRUE(result.droidBuild.domeChanged);
+    TEST_ASSERT_TRUE(result.droidBuild.bodyChanged);
+    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
+    TEST_ASSERT_EQUAL_STRING("mk4", result.droidBuild.dome.design);
+    TEST_ASSERT_EQUAL_STRING("complex", result.droidBuild.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("own", result.droidBuild.body.design);
+    TEST_ASSERT_EQUAL_STRING("", result.droidBuild.body.variant);
+    TEST_ASSERT_EQUAL_UINT32(3u, (uint32_t)droidFittedPartsCount(result.droidBuild.fitted));
+    TEST_ASSERT_TRUE(droidFittedPartsHas(result.droidBuild.fitted, "gripArm"));
+}
+
+void test_configApply_a_mixed_droid_saves_without_complaint(void) {
+    // A dome from one design and a body from another. Neither half gates the
+    // other, and a real droid is a mixture.
+    std::map<std::string, std::string> m;
+    m["domeDesign"] = "mk4";
+    m["domeVariant"] = "complex";
+    m["bodyDesign"] = "own";
+    m["bodyVariant"] = "";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_TRUE(result.droidBuild.domeChanged);
+    TEST_ASSERT_TRUE(result.droidBuild.bodyChanged);
+}
+
+void test_configApply_a_design_without_its_variant_is_refused(void) {
+    std::map<std::string, std::string> m;
+    m["domeDesign"] = "mk4";  // and no domeVariant
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
+}
+
+void test_configApply_a_variant_that_is_not_that_design_s_is_refused(void) {
+    std::map<std::string, std::string> m;
+    m["domeDesign"] = "own";      // declares no variants
+    m["domeVariant"] = "complex";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
+}
+
+void test_configApply_a_design_this_build_does_not_declare_is_refused(void) {
+    std::map<std::string, std::string> m;
+    m["domeDesign"] = "mk9";
+    m["domeVariant"] = "complex";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+}
+
+void test_configApply_an_empty_fitted_list_is_an_answer(void) {
+    // A builder saying their droid carries nothing yet is different from a
+    // request that said nothing about the Fitted Parts at all.
+    std::map<std::string, std::string> m;
+    m["fittedParts"] = "";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(result.droidBuild.fitted));
+}
+
+void test_configApply_a_part_this_build_cannot_name_is_refused(void) {
+    std::map<std::string, std::string> m;
+    m["fittedParts"] = "utilUp,periscope";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_FALSE(result.droidBuild.fittedChanged);
+}
+
+void test_configApply_without_droid_build_params_records_no_edit(void) {
+    std::map<std::string, std::string> m;
+    m["logLevel"] = "3";
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
+    TEST_ASSERT_FALSE(result.droidBuild.bodyChanged);
+    TEST_ASSERT_FALSE(result.droidBuild.fittedChanged);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -325,5 +444,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_json_body_invalid_json_rejected);
     RUN_TEST(test_configApply_json_body_aux_led_pin_type_error);
     RUN_TEST(test_configApply_multiple_fields_record_applied_lines_in_order);
+    RUN_TEST(test_configApply_droid_build_records_both_halves_and_the_parts);
+    RUN_TEST(test_configApply_a_mixed_droid_saves_without_complaint);
+    RUN_TEST(test_configApply_a_design_without_its_variant_is_refused);
+    RUN_TEST(test_configApply_a_variant_that_is_not_that_design_s_is_refused);
+    RUN_TEST(test_configApply_a_design_this_build_does_not_declare_is_refused);
+    RUN_TEST(test_configApply_an_empty_fitted_list_is_an_answer);
+    RUN_TEST(test_configApply_a_part_this_build_cannot_name_is_refused);
+    RUN_TEST(test_configApply_without_droid_build_params_records_no_edit);
     return UNITY_END();
 }
