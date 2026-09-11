@@ -18,6 +18,13 @@
  * a Common Addition, and `control: null` says the row declares no control path
  * at all, which is a dome fixture rather than a part waiting to be wired.
  *
+ * NOTHING IN THE BROWSER READS `control` YET (#375). Every record below carries
+ * it and no page or module consults it - what drives a Part is still answered
+ * by the Servo Output rows on the droid itself. It is staged for C1a (#347),
+ * the first surface that draws a Part row and has to say what drives each one.
+ * Said out loud because a field nothing consults reads as shipped otherwise.
+ * Drop this paragraph when #347 lands its consumer.
+ *
  * A variant whose complement is unknown carries `seeds: null`, never `[]`, so
  * reaching for it throws instead of quietly seeding an empty droid. `own`
  * carries `seeds: []`, which is a real and deliberate empty complement.
