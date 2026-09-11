@@ -25,6 +25,8 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-11
+
 ### Changed
 - **A fix that lands now ships.** Merging to `main` publishes a release on its
   own, instead of waiting for the end of an epic. A bug fix becomes a patch
