@@ -50,6 +50,7 @@ epic issue. Material an agent needs only on some paths lives under
 - Xbox controller / XInput, GIP and Bluetooth HID truth: `docs/spec-sheets/xbox-controller-input.md`
 - ExpressLRS / CRSF truth: `docs/spec-sheets/elrs-crsf-radio.md`
 - Pololu Maestro / Maestro serial truth: `docs/spec-sheets/pololu-maestro-servo-controller.md`
+- DFPlayer Mini / DFPlayer serial truth: `docs/spec-sheets/dfplayer-mini-sound.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
