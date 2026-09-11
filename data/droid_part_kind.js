@@ -24,6 +24,12 @@
 // way - a light can fight nothing, so a light row does not carry the column
 // (#318).
 //
+// One thing a light's Kind does NOT answer, deliberately: what a latched estop
+// does to it. ADR 0043 releases servo OUTPUTS, and a light has no travel to
+// release - a latched estop leaves the holos running today. That is an open
+// question (#318) rather than a behaviour this module implies, so nothing here
+// reports a light as stopped, held, or released.
+//
 // It is ADVISORY, and it never refuses anything. Plenty of builds move
 // something the reference drawing shows as a display, so a servo Output mapped
 // onto a lit panel saves exactly as any other mapping does; `lightOn()` is
