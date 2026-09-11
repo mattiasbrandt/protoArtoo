@@ -104,22 +104,27 @@
 #               entries carry real bearings; body entries carry position
 #               words only until measured on our droid.
 #   position:   compass-ish word — easier to find on a real droid than a number.
-#   control:    how protoArtoo can reach the part TODAY, and — because it is
-#               the same fact — how far the part travels when this file is
-#               generated (#301):
+#   control:    how protoArtoo can reach the part TODAY:
 #               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
 #               body-ledc  = local LEDC PWM channel on the Artoo PCB
 #               none       = present on the droid design, nothing drives it yet
-#               A part the body drives reaches both generated outputs; a
-#               dome-link or undriven part reaches the browser only, since the
-#               dome owns execution of panel intent under Catalog Authority.
+#               It says what is DRIVABLE, never what is NAMEABLE. EVERY part
+#               declared here reaches both generated outputs, so a builder who
+#               wires a spare output to the front-left breadpan door records
+#               `doorFL` on that row rather than an `otherN` slot, and a part
+#               nothing drives reports part-not-assigned instead of reading as
+#               an id the build never heard of (operator decision 2026-09-11,
+#               #358). Which part an output actually moves is the builder's own
+#               droid's answer, held on the Servo Output rows; the dome still
+#               owns execution of panel intent under Catalog Authority, which
+#               is a statement about who drives, not about who may be named.
 #               The tokens are not this file's to invent: they are declared in
 #               include/droid_part_control.inc, and the generator refuses a
 #               control path the firmware does not define.
 #               A row that omits `control:` entirely is not a driven thing at
 #               all — the dome fixtures are orientation references, not servos
-#               — and reaches the browser only, generated as `control: null` to
-#               keep it distinct from a `none` that is waiting to be wired.
+#               — and is generated as `control: null` to keep it distinct from
+#               a `none` that is waiting to be wired.
 #   dome_link_panel: the :OPnn/:CLnn number our AstroPixelsPlus fork serves
 #               for this part. TBD until verified against the fork's panel
 #               table on hardware — do not guess.
@@ -300,6 +305,8 @@ other_slots:
   # for; these are the ones we do not, so the name says only which slot it is
   # — "Other part 7" — and the builder's own hardware supplies the meaning.
   label_prefix: Other part
-  # Declared, not assumed: a spare output is a body output, so these ids must
-  # reach firmware or a real output stays unnameable there (#301).
+  # Declared, not assumed: a spare output is a body output, so this is what
+  # drives whatever a builder wired to one. It no longer decides whether the
+  # slots reach firmware - every declared part does, #358 - but leaving it out
+  # would say the slots are undriven, which is the opposite of what they are.
   control: body-ledc

@@ -11,11 +11,15 @@ apart, and what keeps either from depending on a filesystem that can go missing
        |-> include/droid_parts.h   the id vocabulary firmware resolves against
        '-> data/droid_parts.js     names, shorthand, aliases, position
 
-The `control:` column decides how far each entry travels. A Part the body drives
-reaches both outputs; a dome-link Part or one nothing drives yet reaches the
-browser only, because the dome owns execution of panel intent under Catalog
-Authority and its targets are already whitelisted there. Firmware therefore
-carries only ids it can actually resolve to an Output of its own.
+Every Part the catalog declares reaches both outputs. A Part is identity, so the
+vocabulary firmware compiles in is the vocabulary the catalog declares, and the
+`control:` column says what is DRIVABLE rather than what is NAMEABLE: a builder
+who wires a spare output to the front-left breadpan door names `doorFL`, not an
+`otherN` slot, and a Part nothing drives still reports part-not-assigned rather
+than reading as an id the build never heard of (operator decision, 2026-09-11,
+#358). What the dome drives is still the dome's to execute under Catalog
+Authority - that is a question about wiring, which the Servo Output rows on the
+builder's own droid answer, and never a question about names.
 
 Modelled on tools/generate_console_catalog.py, which does the same job for
 docs/action-registry.yaml: one YAML, one generator, committed outputs stamped
@@ -29,9 +33,10 @@ nothing can resolve:
 
   - a `control:` token include/droid_part_control.inc does not declare. The
     firmware declares the control paths; the catalog does not get to invent one.
-  - a firmware-bound id too long for the Part field on a Servo Output row
+  - an id too long for the Part field on a Servo Output row
     (SERVO_OUTPUT_PART_ID_MAX, include/servo_output_row.h). An id that cannot be
-    stored against an output is an id no output can ever claim.
+    stored against an output is an id no output can ever claim, and since #358
+    every declared id is storable, so every declared id is measured.
   - `seeds:` that is neither a list of declared part ids nor the scalar `TBD`.
     `TBD` generates as `null` rather than as `[]`, so a consumer reaching for an
     unknown complement throws instead of quietly seeding an empty droid.
@@ -45,6 +50,11 @@ nothing can resolve:
 The first two refusals keep no copy of the firmware's lists: both are read out
 of the firmware headers at generation time, because a list written down twice is
 a list that drifts.
+
+Staleness is the one thing this generator cannot catch, because it is what
+happens when nobody runs it. tools/check_droid_parts_drift.py is the guard for
+that: it runs this generator with the writes intercepted and byte-compares the
+result against the committed outputs (#358).
 """
 
 import argparse
@@ -172,7 +182,7 @@ TBD = "TBD"
 ABSENT = object()
 
 CONTROL_ROW_RE = re.compile(
-    r"^PA_PART_CONTROL\(\s*([A-Z0-9_]+)\s*,\s*\"([^\"]+)\"\s*,\s*([01])\s*\)$"
+    r"^PA_PART_CONTROL\(\s*([A-Z0-9_]+)\s*,\s*\"([^\"]+)\"\s*\)$"
 )
 SERVO_PART_ID_MAX_RE = re.compile(
     r"^constexpr\s+uint8_t\s+SERVO_OUTPUT_PART_ID_MAX\s*=\s*(\d+)\s*;"
@@ -195,10 +205,12 @@ class CatalogError(Exception):
 def load_control_paths(path=None):
     """Read include/droid_part_control.inc: the control paths firmware defines.
 
-    Returns an ordered dict of yaml token -> (enumerator, reaches_firmware).
-    Comments and the preprocessor guard are skipped; every other non-empty line
-    must be exactly one manifest row, so a malformed declaration cannot quietly
-    drop a control path out of the vocabulary this generator validates against.
+    Returns an ordered dict of yaml token -> enumerator. The manifest says which
+    control paths EXIST; since #358 it no longer says how far a Part on one
+    travels, because every declared Part reaches both outputs. Comments and the
+    preprocessor guard are skipped; every other non-empty line must be exactly
+    one manifest row, so a malformed declaration cannot quietly drop a control
+    path out of the vocabulary this generator validates against.
     """
     path = path or CONTROL_MANIFEST_PATH
     paths = {}
@@ -211,12 +223,12 @@ def load_control_paths(path=None):
             raise CatalogError(
                 [f"{rel(path)}:{line_number}: not a PA_PART_CONTROL row: {line}"]
             )
-        enumerator, token, reaches = match.groups()
+        enumerator, token = match.groups()
         if token in paths:
             raise CatalogError(
                 [f"{rel(path)}:{line_number}: control path {token!r} declared twice"]
             )
-        paths[token] = (enumerator, reaches == "1")
+        paths[token] = enumerator
     if not paths:
         raise CatalogError([f"{rel(path)} declares no control paths"])
     return paths
@@ -225,10 +237,12 @@ def load_control_paths(path=None):
 def load_part_id_limit(path=None):
     """Read SERVO_OUTPUT_PART_ID_MAX: how long an id a Servo Output row holds.
 
-    Parsed rather than restated. A firmware-bound id longer than this could be
-    authored in the catalog and never stored against an output, so the generator
-    refuses it here and the generated header asserts the same bound at compile
-    time for whoever changes the row model instead of the catalog.
+    Parsed rather than restated. An id longer than this could be authored in the
+    catalog and never stored against an output, so the generator refuses it
+    here. The other direction - a row model that shrinks under a catalog which
+    already fits - is caught at compile time by the static_assert in
+    include/droid_part_availability.h, which is where the two headers can be
+    seen together without a cycle.
     """
     path = path or SERVO_OUTPUT_ROW_PATH
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -609,28 +623,20 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
     resolve_hosts(parts, problems)
     designs = read_designs(doc, declared_ids, problems)
 
+    # EVERY declared id is measured, not just the ones the body drives today.
+    # Since #358 the generated vocabulary is what the catalog declares, so any id
+    # here can be stored on a Servo Output row's Part field - which is exactly
+    # what makes the bound apply to all of them. Before that decision this check
+    # ran on firmware-bound ids only, and a browser-only id could be authored
+    # fifteen characters long and silently never claimable (A1c hit it and
+    # shortened `smallUpperPanel` to `upperPanel`).
     for part in parts:
-        control = part["control"]
-        if control is None:
-            continue
-        if control_paths[control][1] and len(part["id"]) > id_limit:
+        if len(part["id"]) > id_limit:
             problems.append(
-                f"{part['section']}/{part['id']}: reaches firmware but its id is "
-                f"{len(part['id'])} characters, and a Servo Output row holds "
-                f"{id_limit} ({rel(SERVO_OUTPUT_ROW_PATH)})"
+                f"{part['section']}/{part['id']}: its id is {len(part['id'])} "
+                f"characters, and a Servo Output row holds {id_limit} "
+                f"({rel(SERVO_OUTPUT_ROW_PATH)})"
             )
-
-    # An empty id table is not a smaller vocabulary, it is a firmware that can
-    # never resolve a Part to an Output - and a zero-length array that does not
-    # compile, so the failure would surface as a build error in a generated file
-    # rather than as the catalog mistake it is.
-    if not problems and not any(
-        part["control"] is not None and control_paths[part["control"]][1] for part in parts
-    ):
-        problems.append(
-            "no Part reaches firmware: every control path in the catalog is one the "
-            "firmware does not drive, so the generated id table would be empty"
-        )
 
     if problems:
         raise CatalogError(problems)
@@ -648,16 +654,6 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
 # =============================================================================
 # The firmware id table
 # =============================================================================
-
-
-def firmware_parts(catalog):
-    """The parts the body drives, which are the only ids firmware can resolve."""
-    control_paths = catalog["control_paths"]
-    return [
-        part
-        for part in catalog["parts"]
-        if part["control"] is not None and control_paths[part["control"]][1]
-    ]
 
 
 def provenance(catalog, name, what):
@@ -688,12 +684,9 @@ def provenance(catalog, name, what):
 def generate_firmware_header(catalog, output_path=None):
     """Write include/droid_parts.h - the id vocabulary and nothing else."""
     output_path = Path(output_path) if output_path else FIRMWARE_OUTPUT_PATH
-    parts = firmware_parts(catalog)
+    parts = catalog["parts"]
     ids = [part["id"] for part in parts]
     longest = max((len(i) for i in ids), default=0)
-    controls = sorted(
-        {catalog["control_paths"][part["control"]][0] for part in parts}
-    )
 
     lines = [
         provenance(
@@ -707,31 +700,21 @@ def generate_firmware_header(catalog, output_path=None):
             "// module this generator writes beside this file; a rename there can\n"
             "// never produce a new id here.\n"
             "//\n"
-            "// Only Parts the body drives are here. A dome-link Part, or one nothing\n"
-            "// drives yet, reaches the browser alone: the dome owns execution of\n"
-            "// panel intent under Catalog Authority, so firmware carries only ids it\n"
-            "// can resolve to an Output of its own.",
+            "// EVERY Part the catalog declares is here, whatever drives it. A Part\n"
+            "// being KNOWN and a Part being DRIVEABLE HERE are separate facts: a\n"
+            "// builder who wires a spare output to the front-left breadpan door\n"
+            "// records `doorFL` on that row, and a dome panel nothing on the body\n"
+            "// drives reports part-not-assigned rather than reading as an id this\n"
+            "// build never heard of. What drives a Part is the `control:` column in\n"
+            "// the catalog and the Servo Output rows on the droid itself - neither\n"
+            "// of them is a question about names (operator decision, 2026-09-11,\n"
+            "// #358).",
         ),
         "",
         "#pragma once",
         "",
         "#include <stddef.h>",
         "#include <string.h>",
-        "",
-        '#include "droid_part_control.h"',
-        "",
-        "// One per control path this file emitted a Part under. The catalog does not",
-        "// get to decide which paths reach firmware: a Part generated here whose",
-        "// control path the firmware does not drive fails the build rather than",
-        "// shipping an id no Output can ever claim.",
-    ]
-    for enumerator in controls:
-        lines.append(
-            f"static_assert(droidPartControlReachesFirmware({enumerator}),\n"
-            f'              "a control path the firmware does not drive reached the "\n'
-            f'              "generated id table: {enumerator}");'
-        )
-    lines += [
         "",
         f"constexpr size_t DROID_PART_COUNT = {len(ids)};",
         "",
@@ -917,9 +900,14 @@ def generate(quiet=False, catalog_path=None, firmware_path=None, browser_path=No
                 f"unaccounted {sorted(set(emitted_ids) - set(declared_ids))}"
             ]
         )
-    stray = sorted(set(ids) - set(declared_ids))
-    if stray:
-        raise CatalogError([f"firmware id table carries ids no part row declares: {stray}"])
+    if ids != declared_ids:
+        raise CatalogError(
+            [
+                "firmware id table and catalog disagree about which parts exist: "
+                f"missing {sorted(set(declared_ids) - set(ids))}, "
+                f"unaccounted {sorted(set(ids) - set(declared_ids))}"
+            ]
+        )
 
     if not quiet:
         # The summary says where this run actually read and wrote, which is not

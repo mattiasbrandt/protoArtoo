@@ -107,13 +107,10 @@ class GeneratorRefusals(unittest.TestCase):
         self.assertRefused("is not a path the firmware defines")
 
     def test_an_escape_hatch_on_a_path_the_firmware_does_not_define(self):
-        self.scratch.edit("\n  control: body-ledc", "\n  control: dome-link")
-        # dome-link is a path the firmware defines but does not drive, so the
-        # slots stop reaching firmware rather than being refused - and then a
-        # real output has no id, which is what the emitted table shows.
-        firmware, _ = self.scratch.generate()
-        self.assertNotIn('"other1"', firmware)
-        self.assertIn("DROID_PART_COUNT = 2", firmware)
+        """The hatch is minted by its own code path, and it is refused the same
+        way a part row is: the catalog cannot invent a control path anywhere."""
+        self.scratch.edit("\n  control: body-ledc", "\n  control: i2c-expander")
+        self.assertRefused("other_slots.control")
 
     def test_an_id_too_long_for_the_part_field_on_an_output_row(self):
         """An id no Output can store is an id no Output can ever claim."""
@@ -173,13 +170,21 @@ class GeneratorRefusals(unittest.TestCase):
         self.assertFalse(self.scratch.firmware.exists())
         self.assertFalse(self.scratch.browser.exists())
 
-    def test_a_catalog_that_gives_firmware_no_vocabulary_at_all(self):
-        """An empty id table is a firmware that can never resolve a Part."""
+    def test_the_vocabulary_does_not_depend_on_what_drives_a_part(self):
+        """A Part is identity, so `control:` cannot move an id in or out of the
+        generated table (#358). Handing the whole droid to the dome used to
+        empty that table; now it changes nothing but the digest."""
+        before, _ = self.scratch.generate()
         text = self.scratch.catalog.read_text(encoding="utf-8")
         self.scratch.catalog.write_text(
             text.replace("control: body-ledc", "control: dome-link"), encoding="utf-8"
         )
-        self.assertRefused("no Part reaches firmware")
+        after, _ = self.scratch.generate()
+        self.assertIn("DROID_PART_COUNT = 58", after)
+        self.assertEqual(
+            [line for line in after.splitlines() if "Source digest" not in line],
+            [line for line in before.splitlines() if "Source digest" not in line],
+        )
 
     def test_a_part_kind_the_catalog_does_not_declare(self):
         """A misspelled Kind reads as "no Kind", and the part is treated as
@@ -203,8 +208,8 @@ class GeneratorRefusals(unittest.TestCase):
         """The firmware's own declaration is parsed, never guessed around."""
         text = self.scratch.control.read_text(encoding="utf-8")
         self.scratch.control.write_text(
-            text.replace('PA_PART_CONTROL(DROID_PART_CONTROL_NONE, "none", 0)',
-                         'PA_PART_CONTROL(DROID_PART_CONTROL_NONE, none, 0)'),
+            text.replace('PA_PART_CONTROL(DROID_PART_CONTROL_NONE, "none")',
+                         'PA_PART_CONTROL(DROID_PART_CONTROL_NONE, none)'),
             encoding="utf-8",
         )
         self.assertRefused("not a PA_PART_CONTROL row")
@@ -295,9 +300,11 @@ class GeneratorPromises(unittest.TestCase):
         self.assertEqual(parts["magicPanel"].get("position"), parts["panel5"]["position"])
         self.assertEqual(parts["magicPanel"]["sitsOn"], "panel5")
 
-    def test_a_light_is_named_in_the_browser_and_nowhere_in_firmware(self):
-        """A light drives nothing from the body, so it reaches the browser
-        alone - the same rule a dome panel follows, for the same reason."""
+    def test_a_light_is_named_in_both_outputs_and_kinded_in_only_one(self):
+        """A light is a Part exactly as a panel is, so firmware names it too
+        (#358). What stays browser-only is the Part Kind: firmware has no use
+        for one, and a flag declared where nothing consults it is the defect
+        that field exists to avoid."""
         firmware, browser = self.scratch.generate()
         lights = [
             part for part in browser_payload(browser)["parts"]
@@ -309,7 +316,8 @@ class GeneratorPromises(unittest.TestCase):
         )
         for part in lights:
             self.assertEqual(part["control"], "none")
-            self.assertNotIn(f'"{part["id"]}"', firmware)
+            self.assertIn(f'"{part["id"]}"', firmware)
+        self.assertNotIn("kind", firmware)
 
     def test_the_regeneration_note_names_both_outputs(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:

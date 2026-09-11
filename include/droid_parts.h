@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 5f90098e371e7136f426fbf27180d47a2aa1b6a03899538f0f5f33c270212935
+// Source digest: sha256 953f5e7b3030131b9ac4cb06c066784af2f68026dbe378dcbe1d5ce7ffe3e5b9
 //
 // The Droid Parts Catalog's id vocabulary, and only that. A Part is
 // identity; an Output Address is only wiring, so there is no parts table
@@ -14,10 +14,15 @@
 // module this generator writes beside this file; a rename there can
 // never produce a new id here.
 //
-// Only Parts the body drives are here. A dome-link Part, or one nothing
-// drives yet, reaches the browser alone: the dome owns execution of
-// panel intent under Catalog Authority, so firmware carries only ids it
-// can resolve to an Output of its own.
+// EVERY Part the catalog declares is here, whatever drives it. A Part
+// being KNOWN and a Part being DRIVEABLE HERE are separate facts: a
+// builder who wires a spare output to the front-left breadpan door
+// records `doorFL` on that row, and a dome panel nothing on the body
+// drives reports part-not-assigned rather than reading as an id this
+// build never heard of. What drives a Part is the `control:` column in
+// the catalog and the Servo Output rows on the droid itself - neither
+// of them is a question about names (operator decision, 2026-09-11,
+// #358).
 // =============================================================================
 
 #pragma once
@@ -25,23 +30,59 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "droid_part_control.h"
-
-// One per control path this file emitted a Part under. The catalog does not
-// get to decide which paths reach firmware: a Part generated here whose
-// control path the firmware does not drive fails the build rather than
-// shipping an id no Output can ever claim.
-static_assert(droidPartControlReachesFirmware(DROID_PART_CONTROL_BODY_LEDC),
-              "a control path the firmware does not drive reached the "
-              "generated id table: DROID_PART_CONTROL_BODY_LEDC");
-
-constexpr size_t DROID_PART_COUNT = 12;
+constexpr size_t DROID_PART_COUNT = 58;
 
 // The longest id here, so a consumer sizing a buffer against the vocabulary
 // reads the number rather than counting the table.
-constexpr size_t DROID_PART_ID_MAX_LEN = 7;
+constexpr size_t DROID_PART_ID_MAX_LEN = 10;
 
 inline constexpr const char* const DROID_PART_IDS[DROID_PART_COUNT] = {
+    "pie1",  // dome_pies
+    "pie2",  // dome_pies
+    "pie3",  // dome_pies
+    "pie4",  // dome_pies
+    "pie5",  // dome_pies
+    "pie6",  // dome_pies
+    "panel1",  // dome_panels
+    "panel2",  // dome_panels
+    "panel3",  // dome_panels
+    "panel4",  // dome_panels
+    "panel5",  // dome_panels
+    "panel6",  // dome_panels
+    "panel7",  // dome_panels
+    "panel8",  // dome_panels
+    "panel9",  // dome_panels
+    "panel10",  // dome_panels
+    "panel11",  // dome_panels
+    "panel12",  // dome_panels
+    "panel13",  // dome_panels
+    "panel14",  // dome_panels
+    "logicFront",  // dome_lights
+    "logicRear",  // dome_lights
+    "magicPanel",  // dome_lights
+    "psiFront",  // dome_lights
+    "psiRear",  // dome_lights
+    "upperPanel",  // dome_lights
+    "hp1Pan",  // holoprojectors
+    "hp1Tilt",  // holoprojectors
+    "hp2Pan",  // holoprojectors
+    "hp2Tilt",  // holoprojectors
+    "hp3Pan",  // holoprojectors
+    "hp3Tilt",  // holoprojectors
+    "domeBtn1",  // dome_fixtures
+    "domeBtn2",  // dome_fixtures
+    "chargebay",  // body_doors
+    "dataport",  // body_doors
+    "doorFL",  // body_doors
+    "doorFR",  // body_doors
+    "doorRL",  // body_doors
+    "doorRR",  // body_doors
+    "drawer",  // body_doors
+    "smallDoor",  // body_doors
+    "gripArm",  // body_arms
+    "gripClaw",  // body_arms
+    "interArm",  // body_arms
+    "interTool",  // body_arms
     "utilLo",  // body_arms
     "utilUp",  // body_arms
     "other1",  // other_slots

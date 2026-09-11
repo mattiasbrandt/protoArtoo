@@ -35,8 +35,8 @@ test("the module publishes the catalog under one global", () => {
 });
 
 test("every part a builder can name is here, dome and body alike", () => {
-  // The browser is the side that carries the whole vocabulary: firmware gets
-  // only the parts the body drives.
+  // Both outputs carry the whole vocabulary since #358. What the browser has
+  // and firmware does not is the operator copy: names, shorthand and aliases.
   for (const id of ["pie1", "panel14", "hp3Tilt", "domeBtn2", "doorFL", "utilUp"]) {
     assert.ok(byId.has(id), `${id} is missing from the browser catalog`);
   }
