@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 377525f4..d86e72fa 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -383,7 +383,7 @@
+ 
+   const applyEstopStatus = (payload) => {
+     if (!payload || typeof payload !== "object") return;
+-    estopLatched = !!payload.estop;
++    estopLatched = !payload.estop;
+     renderEstopState();
+   };
+ 

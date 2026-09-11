@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 075adc4a..1a024475 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -116,7 +116,7 @@
+   // something -- the same shape the Drive surface's recovery row already has.
+   const renderEstopClear = () => {
+     if (!estopClear) return;
+-    const enabled = isEstopLatched && !estopClearPending;
++    const enabled = !estopClearPending;
+     estopClear.disabled = !enabled;
+     estopClear.classList.toggle("is-pending", estopClearPending);
+     estopClear.setAttribute("aria-disabled", enabled ? "false" : "true");

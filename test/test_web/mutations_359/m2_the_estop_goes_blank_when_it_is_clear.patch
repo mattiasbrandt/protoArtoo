@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 377525f4..1da09d6a 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -258,7 +258,7 @@
+   // ---------------------------------------------------------------------------
+   const ESTOP_STATE_TEXT = {
+     unknown: "Estop: finding out",
+-    clear: "Estop: clear",
++    clear: "",
+     latched: "Estop: latched",
+   };
+ 

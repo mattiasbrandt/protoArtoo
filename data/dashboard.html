@@ -24,7 +24,7 @@
       <div class="snapshot-pills mt-12">
         <span id="snapshot-web-control" class="status-pill pill-info status-pill-compact">🕹️ Web control: ...</span>
         <span id="snapshot-mode" class="status-pill pill-info status-pill-compact">🧭 Mode: ...</span>
-        <span id="snapshot-estop" class="status-pill pill-info status-pill-compact">🛑 E-Stop: ...</span>
+        <span id="snapshot-estop" class="status-pill pill-info status-pill-compact">🛑 Estop: ...</span>
         <span id="snapshot-mood" class="status-pill pill-info status-pill-compact">🎬 Mood: ...</span>
       </div>
     </div>
@@ -43,8 +43,12 @@
 
     <template id="topbar-actions-template">
       <div class="index-top-actions">
+        <!-- Clearing only. Stopping the droid is the Operator Shell's, on
+             every screen; the direction that lets a latched droid move again
+             stays on the two surfaces an operator went to on purpose
+             (ADR 0048). Enabled only while the latch is actually set. -->
         <div class="top-action">
-          <button class="btn top-action-button" id="estop-toggle" title="E-Stop" aria-label="Toggle emergency stop" aria-pressed="false" disabled>🛑 E-Stop</button>
+          <button class="btn top-action-button" id="estop-clear" type="button" title="Let the droid move again. Only while the estop is latched." aria-label="Clear the latched estop" disabled>🟢 Clear Estop</button>
           <div id="estop-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         <div class="top-action">

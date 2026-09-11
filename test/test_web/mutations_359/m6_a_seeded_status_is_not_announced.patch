@@ -1,0 +1,12 @@
+diff --git i/data/status_stream.js w/data/status_stream.js
+index 5b66abf5..376d7517 100644
+--- i/data/status_stream.js
++++ w/data/status_stream.js
+@@ -132,7 +132,6 @@
+     seed(status) {
+       if (!status || typeof status !== "object") return;
+       lastStatus = status;
+-      emit("status", lastStatus);
+     },
+     isSupported() {
+       return typeof EventSource !== "undefined";

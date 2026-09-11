@@ -7,7 +7,10 @@
 // - Config load/save via shared API helper
 // =============================================================================
 (() => {
-  const estopButton = document.getElementById("estop-button");
+  // Latching is the Operator Shell's control and is on every surface
+  // (ADR 0048); this surface keeps the release, because the direction that
+  // lets a latched droid move again should stay somewhere an operator went on
+  // purpose.
   const clearEstopButton = document.getElementById("clear-estop-button");
   if (clearEstopButton) clearEstopButton.disabled = true;
   const enableWebControlButton = document.getElementById("enable-web-control-button");
@@ -172,8 +175,11 @@
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
     try {
-      // Estop requests skip the slot and are never retried
-      const isEstop = path === "/api/estop" || path === "/api/estop/clear";
+      // Clearing the estop skips the request slot and is never retried, the
+      // same way latching it does from the shell: an operator command about
+      // drive safety must not wait behind page work, and must not be replayed
+      // (CONTEXT.md, Browser Request Priority).
+      const isEstop = path === "/api/estop/clear";
       const apiMethod = isEstop ? window.PAApi.estopPostForm : window.PAApi.postForm;
       await apiMethod(path, {}, { timeoutMs: 3000 });
       window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
@@ -426,7 +432,6 @@
     setDriveHardwareEnabled(Boolean(result.data.drive));
   };
 
-  estopButton?.addEventListener("click", () => postCommand("/api/estop", "Estop latch"));
   clearEstopButton?.addEventListener("click", () => postCommand("/api/estop/clear", "Estop clear"));
   enableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/enable", "Web control enable"));
   disableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/disable", "Web control disable"));
