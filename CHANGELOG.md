@@ -5,15 +5,35 @@ All notable changes to `protoArtoo` are documented here.
 Format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning 2.0.0](https://semver.org/).
 
-This changelog is tag-based. Entries are added only when a version is actually
-released and tagged in git.
+**Write under `## [Unreleased]` as the work lands.** You do not name the version
+and you do not write the date — CI does both. A merge to `main` releases itself
+(`.github/workflows/auto-release.yml`, #285), and when that merge carries a new
+feature or a breaking change, CI renames `[Unreleased]` to `## [X.Y.Z] - <date>`
+in the same run that cuts the tag. An empty `[Unreleased]` fails that release
+rather than publishing a bare heading.
 
-Every semantic version release belongs here:
-- patch releases for bug fixes
+**Patch releases are not listed here.** A bug-fix release ships notes generated
+from the commit subjects in its range, so a fix reaches people without waiting
+on anyone to write prose. What belongs in this file is the operator-facing story
+of a feature release, in the maker voice of `docs/ui-copy-voice.md`:
+
 - minor releases for new backwards-compatible features
 - major releases for breaking changes
 
+Every `## [X.Y.Z]` heading below corresponds to a tag; the gaps between them are
+the patch releases, whose notes live on their own GitHub Release.
+
 ## [Unreleased]
+
+### Changed
+- **A fix that lands now ships.** Merging to `main` publishes a release on its
+  own, instead of waiting for the end of an epic. A bug fix becomes a patch
+  release within minutes of the merge — notes generated from what the commits
+  say, and the source to build from. A new feature still becomes a full release
+  with firmware and filesystem images for every board and sound backend, and
+  release notes written by hand. Three releases in the 17 days before this
+  change were all feature-sized, and every bug fix in between reached the
+  source and stopped there.
 
 ## [1.2.0] - 2026-09-06
 
