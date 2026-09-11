@@ -131,9 +131,13 @@
 
   const CMD_MARKER = "—";
 
-  // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
+  // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants.
+  // Every bit here is consulted below: a capability the firmware declares and
+  // nothing reads is worse than no capability, because the page then reports a
+  // field the fitted module cannot actually answer.
   const AUDIO_CAP_STATUS_QUERY = 0x01;
   const AUDIO_CAP_DEVICE_TYPE = 0x02;
+  const AUDIO_CAP_TRACK_COUNT = 0x04;
   const AUDIO_CAP_CURRENT_TRACK = 0x08;
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
@@ -193,6 +197,7 @@
   const modCurrentTrack = document.getElementById("mod-current-track");
   const modDeviceRow = document.getElementById("mod-device-row");
   const modCurrentTrackRow = document.getElementById("mod-current-track-row");
+  const modTotalTracksRow = document.getElementById("mod-total-tracks-row");
   const modStatusTable = document.getElementById("mod-status-table");
   const modPollSection = document.getElementById("mod-poll-section");
   const modQueryNote = document.getElementById("mod-query-note");
@@ -297,6 +302,7 @@
   const applyCapabilityUI = (caps) => {
     const supportsStatusQuery = (caps & AUDIO_CAP_STATUS_QUERY) !== 0;
     const supportsDeviceType = (caps & AUDIO_CAP_DEVICE_TYPE) !== 0;
+    const supportsTrackCount = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;
     const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
     const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
     const supportsCatalog = (caps & AUDIO_CAP_CATALOG) !== 0;
@@ -329,6 +335,7 @@
     applyChirpBindingBadges();
 
     setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
+    setElementVisible(modTotalTracksRow, supportsStatusQuery && supportsTrackCount);
     setElementVisible(modCurrentTrackRow, supportsStatusQuery && supportsCurrentTrack);
     setElementVisible(modPollSection, showManualPoll);
     setElementVisible(btnPoll, showManualPoll);

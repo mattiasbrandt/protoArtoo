@@ -230,7 +230,11 @@
           }
         }
         if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
-          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while protoR2link owns UART2")}</div>`;
+          // Name the module that is actually fitted. This line said "CHIRP"
+          // unconditionally, which was wrong on a DY-SV5W or MP3 Trigger droid
+          // even before the sound module became a runtime choice.
+          const moduleName = entry?.driver || "Sound module";
+          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml(moduleName + " RX unavailable while protoR2link owns UART2")}</div>`;
         }
         return `
         <div class="status-item" id="comp-${key}">
