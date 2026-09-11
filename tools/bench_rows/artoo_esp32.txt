@@ -180,9 +180,19 @@ pause Confirm the endpoints read back are the pre-migration numbers from #355, n
 send servo.action.set-position target=arm1 position_us=1850
 send servo.status.current
 
-# A6 (#339) - "The controller says where it actually routes each signal."
+# A6 (#339) - "The controller says where it actually routes each signal." The
+# Lane manifest is HTTP-only by design and the console cannot stand in for it:
+# board_lanes is emitted by GET /api/identity alone
+# (src/web/api_identity_serializers.cpp), while the console's
+# system.api.get-identity deliberately answers with the two ConfigSnapshot
+# fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
+# src/console/console_module.cpp). So the console sends prove the controller is
+# up and answering as itself, and the lane evidence is fetched over HTTP at the
+# pause -- the same split this sheet's header already uses for flash and heap
+# figures that are read from /api/status rather than typed at the console.
 @row 339 the-controller-says-where-it-routes
 send system.api.get-identity
+pause Fetch GET /api/identity from this board and keep the board_lanes object for #355, then press Enter
 send system.status.health
 
 # A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
