@@ -168,7 +168,18 @@ class FixtureRouteTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
-        self.assertIn(b"log-console", body, "the dashboard shell must still be served")
+        # Since ADR 0048 the document at "/" is the Operator Shell frame, and
+        # the Dashboard's markup -- Live Logs included -- lives in the surface
+        # file the shell mounts. Both halves are pinned: a page route must
+        # still answer with the shell rather than being swallowed by the API
+        # routing, and the surface must still be reachable at its own address.
+        self.assertIn(b"shell-content", body, "a page route must still answer with the shell")
+
+        status, content_type, body = self.get("/dashboard.html")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn(b"log-console", body, "the Dashboard surface must still be served")
 
 
 if __name__ == "__main__":
