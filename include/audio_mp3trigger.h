@@ -32,7 +32,9 @@
 // Baud rate: 9600 (community standard). Factory default is 38400; configure
 // via a baud init file in the SD root. See docs/sound_playback.md #2.3.
 //
-// Only compiled when PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER (platformio.ini).
+// Every image carries this driver: sound is a Component Family whose member is
+// chosen at runtime and staged at reboot (ADR 0042), so PA_AUDIO_DRIVER now
+// only names which module a controller that has never been told starts with.
 // =============================================================================
 #pragma once
 
@@ -40,6 +42,7 @@
 
 #include "audio_driver.h"
 #include "audio_serial_io.h"
+#include "component_registry.h"
 
 // Stop workaround: play the community-standard silent blank track 254.
 // Operator must have 254XXXX.MP3 in the SD root (all R2 packs include it).
@@ -80,8 +83,11 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // Capabilities bitmask: status query, track count, current track (cached).
     // No device-type concept (0x02 not set).
     // Play-state query not available in this protocol (0x10 not set).
+    // The bits are declared on this product's Component Registry row and read
+    // from there rather than restated here, so the row and the driver cannot
+    // drift apart (ADR 0042).
     uint8_t capabilities() const override {
-        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_TRACK_COUNT | AUDIO_CAP_CURRENT_TRACK;  // 0x0D
+        return componentPartCapabilities("mp3_trigger");
     }
 
     // Query module state via S0 (link check) and S1 (track count).

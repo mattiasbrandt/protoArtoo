@@ -18,7 +18,9 @@
 // Reference: https://github.com/joymonkey/CHIRP
 // See docs/sound_playback.md #2.2 for full protocol and file layout details.
 //
-// Only compiled when PA_AUDIO_DRIVER == AUDIO_CHIRP (platformio.ini).
+// Every image carries this driver: sound is a Component Family whose member is
+// chosen at runtime and staged at reboot (ADR 0042), so PA_AUDIO_DRIVER now
+// only names which module a controller that has never been told starts with.
 // =============================================================================
 #pragma once
 
@@ -27,6 +29,7 @@
 
 #include "audio_driver.h"
 #include "audio_serial_io.h"
+#include "component_registry.h"
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
@@ -54,9 +57,10 @@ class AudioDriverChirp : public AudioDriver {
         return "CHIRP";
     }
 
+    // Read from this product's Component Registry row rather than restated
+    // here, so the row and the driver cannot drift apart (ADR 0042).
     uint8_t capabilities() const override {
-        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
-               AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG;  // 0x3F
+        return componentPartCapabilities("chirp");
     }
 
     AudioRxStatus classifyRxStatus(bool linkOk) const override;

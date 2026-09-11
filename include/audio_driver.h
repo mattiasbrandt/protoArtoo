@@ -9,18 +9,26 @@
 // to the audio serial GPIO directly.
 //
 // Design:
-//   - One concrete driver is compiled in per build, selected by PA_AUDIO_DRIVER.
+//   - Sound is a Component Family: the image carries a driver for every
+//     supported module and one of them is the Component Member, a runtime
+//     setting staged at reboot (ADR 0042). AudioTask binds it once at startup.
 //   - Volume range is normalised 0-30 at the interface level; concrete drivers
 //     scale to their module's native range if different.
 //   - Drivers expose capability bits so AudioTask can choose safe query strategy
 //     per backend (for example polling only when stopped vs safe-during-play).
+//     The bits themselves are declared once, on the module's Component Registry
+//     row (include/component_registry.inc), and each driver returns its own
+//     row's word rather than restating it.
 //   - Any ACK/status RX path is driver-internal and optional.
 //
 // Adding a new driver:
 //   1. Create include/audio_<name>.h and src/drivers/audio_<name>.cpp.
-//   2. Subclass AudioDriver and implement required interface methods.
-//   3. Add a new AUDIO_<NAME> constant below.
-//   4. Instantiate in AudioTask behind #if PA_AUDIO_DRIVER == AUDIO_<NAME>.
+//   2. Subclass AudioDriver and implement required interface methods, returning
+//      componentPartCapabilities("<registry id>") from capabilities().
+//   3. Give the product a supported PA_COMPONENT_PART row in
+//      include/component_registry.inc, or flip an existing roadmap row.
+//   4. Add the instance to kSoundMemberDrivers in src/tasks/audio_task.cpp --
+//      a static_assert there fails the build until you do.
 // =============================================================================
 #pragma once
 
@@ -30,7 +38,10 @@
 
 // -----------------------------------------------------------------------------
 // Build-flag constants  --  match values used in platformio.ini build_flags.
-// PA_AUDIO_DRIVER must be set to one of these at compile time.
+// PA_AUDIO_DRIVER must be set to one of these at compile time. It no longer
+// decides what the image can drive -- every image carries every supported
+// module -- only which one a controller that has never been told starts with
+// (src/component_registry.cpp).
 // -----------------------------------------------------------------------------
 #define AUDIO_SOFT_UART 1  // Software UART TX binary-frame driver (default)
 #define AUDIO_DFPLAYER 2
