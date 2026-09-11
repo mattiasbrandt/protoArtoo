@@ -1849,13 +1849,26 @@ Executes supported manual command.
 - Body field: `command`
 - Rate limit: minimum 100 ms between calls
 - Sleep mode blocks prefixed control commands (`$ : # * @ % & !`)
+- Accepts: the keyword commands `estop`, `clear_estop`, `enable_web_control`,
+  `disable_web_control`, `reboot` (case-insensitive), and any Marcduino line,
+  routed by its prefix (`docs/commands.md`)
+- Refuses: `#st` and `#sm`, in any case -- see below
 - Success: `200` `{"ok":true}`
 - Errors:
 - `429` `{"ok":false,"error":"rate limit exceeded"}`
 - `400` `{"ok":false,"error":"missing command"}`
 - `423` `{"error":"sleeping","hint":"POST /api/wake"}`
 - `400` `{"ok":false,"error":"unsupported command"}`
+- `400` `{"ok":false,"error":"a # line goes to the Marcduino body parser, so #st and #sm never change mode","hint":"POST /api/mode with mode=stationary or mode=driving","field":"command"}`
 - `500` `{"ok":false,"error":"command applied but NVS save failed"}`
+
+`#st` and `#sm` read like mode keywords but are refused. Every `#`-prefixed
+line goes to the Marcduino body parser, which has a case for neither, so no
+mode ever changed -- and this route used to answer `{"ok":true}` for that
+anyway. Use `POST /api/mode` with `mode=stationary` or `mode=driving`, which is
+the same capability the Console offers as `system.action.set-mode`. The Console
+action `dome.action.send-command`, which shares this route's dispatch, refuses
+the same two lines with `status=err outcome=invalid reason=out_of_range`.
 
 The `500` carries the same meaning as `POST /api/mode`'s: the command ran, its
 config store did not reach flash, and a reboot undoes it.
