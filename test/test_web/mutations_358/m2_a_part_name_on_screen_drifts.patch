@@ -1,0 +1,13 @@
+diff --git i/data/droid_parts.js w/data/droid_parts.js
+index f069e2ec..2a3a1196 100644
+--- i/data/droid_parts.js
++++ w/data/droid_parts.js
+@@ -624,7 +624,7 @@
+         "index": 36,
+         "id": "doorFL",
+         "section": "body_doors",
+-        "name": "Left body door",
++        "name": "Body door",
+         "aliases": [
+           "Left body door",
+           "FL door"
