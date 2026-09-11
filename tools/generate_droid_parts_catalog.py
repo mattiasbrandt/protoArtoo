@@ -646,7 +646,6 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
     return {
         "parts": parts,
         "designs": designs,
-        "control_paths": control_paths,
         "digest": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
 
