@@ -284,19 +284,25 @@
     return SOUND_VIEW_MODE_ADVANCED;
   };
 
-  // Owned by this surface: whether the module can be asked at all is the
-  // capability's answer below, and whether asking is wanted at all is the
-  // shell's -- it stops this when the operator leaves Sound and starts it again
-  // on the way back (ADR 0048, #360). Created here rather than inside the
-  // reset, because the surface a poll belongs to is decided when it is made.
+  // Owned by this surface: the shell stops it when the operator leaves Sound and
+  // starts it again on the way back (ADR 0048, #360). Created here rather than
+  // inside the reset below, because the surface a poll belongs to is decided
+  // when it is made.
+  //
+  // The cadence is the module's to grant and the return-to-tab read is not:
+  // this page has always re-read the module's state on coming back to the tab
+  // whatever the backend can do, while only a backend that is safe to query
+  // while playing gets asked every two seconds. skipWhen is what keeps those
+  // two apart in one poll -- it gates the cadence tick and not the refresh.
+  let moduleStatusCadenceWanted = false;
   const moduleStatusPoll = window.PASurface.poll(
     () => updateModuleStatus().catch(() => {}),
-    { cadenceMs: 2000 }
+    { cadenceMs: 2000, skipWhen: () => !moduleStatusCadenceWanted, refreshOnReturn: true }
   );
+  moduleStatusPoll.start();
 
   const resetModuleStatusAutoRefresh = (caps) => {
-    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) moduleStatusPoll.start();
-    else moduleStatusPoll.stop();
+    moduleStatusCadenceWanted = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
   };
 
   const applyCapabilityUI = (caps) => {
@@ -2325,12 +2331,6 @@
   };
 
   startPageLoad();
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") {
-      updateModuleStatus().catch(() => {});
-    }
-  });
 
   // Poll button — sends a POST /api/audio/query which runs queryModuleState()
   // in AudioTask, then re-fetches /api/audio after 1.5 s to show the result.

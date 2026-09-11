@@ -215,14 +215,14 @@ for (const { file, cadenceMs, what } of SURFACE_POLLS) {
     const env = loadPageModule(file, { respond: () => ({}) });
     await env.settle();
 
-    const poll = env.intervals.find((timer) => timer.ms === cadenceMs);
-    assert.ok(poll, `${file} installs a ${cadenceMs} ms poll`);
+    const polls = env.intervals.filter((timer) => timer.ms === cadenceMs);
+    assert.ok(polls.length > 0, `${file} installs a ${cadenceMs} ms poll`);
 
     env.window.PASurface.showing("some-other-surface");
 
     assert.ok(
-      env.cleared.intervals.includes(poll.id),
-      `${file}'s poll must stop when its surface is not the one on screen`,
+      polls.every((poll) => env.cleared.intervals.includes(poll.id)),
+      `${file}'s ${cadenceMs} ms polling must stop when its surface is not the one on screen`,
     );
   });
 }
