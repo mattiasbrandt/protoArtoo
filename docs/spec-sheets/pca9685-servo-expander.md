@@ -579,10 +579,23 @@ Mini Maestro 24 about USD 2.29. The expander is 2.5x to 5x cheaper per channel a
 pushes ramping, timing accuracy and startup behaviour into our firmware.
 
 > [!NOTE]
-> **Maestro availability, checked 2026-09-10:** all eight Maestro SKUs showed
-> *"Out of stock"* with a Backorder button on Pololu's category page. Worth
-> confirming before planning around one. The PCA9685 chip itself is Active at NXP
-> and enrolled in Product Longevity (*"available for a minimum of 10 years"*).
+> **Maestro availability: corrected 2026-09-11.** This sheet previously recorded
+> all eight Maestro SKUs as *"Out of stock"* with a Backorder button, read from
+> Pololu's category page on 2026-09-10. **That was wrong.** Every product page
+> carries `"availability":"InStock"` in its JSON-LD and `Status: Active and
+> Preferred`.
+>
+> The category page emits a hidden
+> `<div ... style='display: none'>Out of stock.</div>` for **every** product
+> regardless of stock, with real stock injected by JavaScript, and the *"backorders
+> allowed"* text is a static link to the ordering policy rather than a stock state.
+> Any tool that converts the page to text reports the whole family as out of stock.
+> **Read `"availability"` from the JSON-LD, never the rendered page.**
+>
+> The PCA9685 chip itself is Active at NXP and enrolled in Product Longevity
+> (*"available for a minimum of 10 years"*). Maestro pricing and stock now live in
+> [`pololu-maestro-servo-controller.md`](pololu-maestro-servo-controller.md)
+> Section 2.
 
 ## 12. What protoArtoo would have to do
 
