@@ -58,7 +58,7 @@ static AudioDriverDySv5w s_driver;
 #include "audio_chirp.h"
 static AudioDriverChirp s_driver;
 #elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
-#error "AUDIO_DFPLAYER driver not yet implemented - see T15 / T16"
+#error "AUDIO_DFPLAYER driver not yet implemented - see #305 and docs/spec-sheets/dfplayer-mini-sound.md"
 #elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
 #include "audio_mp3trigger.h"
 static AudioDriverMp3Trigger s_driver;
