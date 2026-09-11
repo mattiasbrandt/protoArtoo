@@ -14,6 +14,7 @@
 #include "component_registry.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_nvsio.h"
 #include "config_serializer.h"
 #include "robot_state.h"
 #include "servo_legacy_field_sets.h"
@@ -267,6 +268,95 @@ void test_a_saved_row_removes_the_key_set_it_replaced() {
     TEST_ASSERT_EQUAL_UINT16(1850, openUs);
     TEST_ASSERT_EQUAL_UINT16(1150, closeUs);
     prefs.end();
+}
+
+// Test: a row write that never reached flash keeps the key set it replaces (#375)
+//
+// The failure the two guards exist for, finally reachable now the stub can fail
+// a write. nvs_set_str() fails on a full or fragmented partition, putString()
+// returns 0, and while writeStr() called that success `ok` stayed true and the
+// five legacy key sets were removed on top of a row that was never stored. The
+// next boot then found no `soNN` record and no old keys either, and defaulted
+// the row: the builder's calibration gone, with the save reported as succeeded.
+void test_a_failed_row_write_keeps_the_legacy_keys() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    prefs.putUShort("arm1_op", 1850);
+    prefs.putUShort("arm1_cl", 1150);
+    prefs.putUChar("arm1_type", (uint8_t)SERVO_COMP_MG996R);
+
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+
+    // Exactly one write fails, and it is the first row's -- the count write is
+    // a putUChar and every later row still lands, so this is a partial save
+    // rather than an NVS that stopped answering.
+    prefs.failNextStringWrites(1);
+    TEST_ASSERT_FALSE(configSaveServoOutputs(prefs));
+
+    TEST_ASSERT_FALSE(prefs.isKey("so00"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_op"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_cl"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_type"));
+
+    // So the bridge is still there to cross: a reload finds the same numbers.
+    ServoOutputRepairReport again = {};
+    configLoadServoOutputs(prefs, &again);
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1850, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1150, closeUs);
+    prefs.end();
+}
+
+// Test: the two zeros putString() returns are told apart (#375)
+//
+// An empty value that stored fine and a write that failed both come back as 0.
+// The empty one is a real stored value -- configSerializeDome() writes an empty
+// dome_wip for "no peer set" -- so the fix must keep reporting it as success
+// while reporting the other as the failure it is.
+void test_an_empty_string_stores_and_a_failed_write_does_not() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    PrefsWriter writer(prefs);
+
+    TEST_ASSERT_TRUE(writer.writeStr("dome_wip", ""));
+    TEST_ASSERT_TRUE(prefs.isKey("dome_wip"));
+    TEST_ASSERT_EQUAL_STRING("", prefs.getString("dome_wip", "unset").c_str());
+
+    prefs.failNextStringWrites(1);
+    TEST_ASSERT_FALSE(writer.writeStr("droid_name", "artoo"));
+    TEST_ASSERT_FALSE(prefs.isKey("droid_name"));
+
+    // The write after the scheduled failure lands, and reports so.
+    TEST_ASSERT_TRUE(writer.writeStr("droid_name", "artoo"));
+    TEST_ASSERT_EQUAL_STRING("artoo", prefs.getString("droid_name", "unset").c_str());
+
+    // nullptr was already an error and still is.
+    TEST_ASSERT_FALSE(writer.writeStr("droid_name", nullptr));
+    prefs.end();
+}
+
+// Test: the serializer reports a row that did not land (#375)
+//
+// One layer up from PrefsWriter, through the ConfigWriter seam: the accumulator
+// must carry a single failed record all the way out of the multi-row save
+// rather than letting the later rows' success overwrite it.
+void test_a_failed_row_write_is_reported_by_the_serializer() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    MapWriter writer;
+    writer.failNextStringWrites(1);
+    TEST_ASSERT_FALSE(configSerializeServoOutputs(table, writer));
+
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("so_cnt"));
+    TEST_ASSERT_EQUAL_size_t(0, writer.data().count("so00"));
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("so01"));
 }
 
 // Test: configValidate dome speed limits
@@ -1557,6 +1647,9 @@ int main() {
     RUN_TEST(test_configValidate_audio_volume);
     RUN_TEST(test_a_saved_config_writes_no_fixed_servo_key);
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
+    RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
+    RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);
+    RUN_TEST(test_a_failed_row_write_is_reported_by_the_serializer);
     RUN_TEST(test_configValidate_dome_speed);
     RUN_TEST(test_configValidate_booleans);
     RUN_TEST(test_configLoad_legacy_schema_v0);

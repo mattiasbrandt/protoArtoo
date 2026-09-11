@@ -91,9 +91,25 @@ bool PrefsWriter::writeStr(const char* key, const char* value) {
     if (value == nullptr) {
         return false;
     }
-    // putString returns length(), which is 0 for empty strings  --  not an error.
-    prefs_.putString(key, value);
-    return true;
+    // Zero means two different things here, and only one of them is an error
+    // (#375). putString() returns strlen(value) on success -- so 0 for an empty
+    // value that stored perfectly well, which configSerializeDome() relies on
+    // for an unset dome_wip -- and it also returns 0 when nvs_set_str() or
+    // nvs_commit() failed, which is a full or fragmented partition and a value
+    // that is not in NVS at all. Reporting both as success is what let
+    // configSaveServoOutputs() delete a builder's legacy calibration on top of
+    // a row that was never written.
+    //
+    // The one case the two zeros still cannot be told apart is an EMPTY value
+    // whose write failed; that reports success. Distinguishing it would cost an
+    // isKey() probe -- up to ten nvs_get_* calls in the vendor's getType() --
+    // on every empty write, and nothing irreversible rests on an empty value:
+    // a Servo Output row always encodes to a non-empty record, and the
+    // deliberate empty (dome_wip) is read back as "no peer set" either way.
+    //
+    // > 0 is what writeBool, writeF32 and writeSchemaVersion above already do;
+    // this was the outlier.
+    return prefs_.putString(key, value) > 0 || value[0] == '\0';
 }
 
 bool PrefsWriter::writeSchemaVersion(uint8_t v) {
