@@ -4,7 +4,7 @@ This script decides, unattended, whether a merge to `main` publishes a release
 and what version it carries. Nobody reviews that decision before it happens, so
 the rules it applies are pinned here rather than left to a reading of the code.
 
-Two regressions live in this file:
+Three regressions live in this file:
 
 * `test_last_commit_in_range_is_not_lost` -- the log format delimits records
   with the ASCII separators \\x1e and \\x1f, and Python's str.strip() counts
@@ -14,6 +14,9 @@ Two regressions live in this file:
 * `test_notes_exclude_the_version_sync_bot` -- version-sync.yml commits once
   per push to main, and 87 of the 174 non-fix commits between v1.2.0 and
   2026-09-11 were that bot. Listing them makes generated notes unreadable.
+* `test_range_start_follows_to_not_head` -- `decide --to <ref>` measured the
+  range from HEAD's last tag rather than from <ref>'s, so a preview run from a
+  stale branch named a version that was already published.
 """
 
 import json
@@ -307,6 +310,34 @@ class DecideCliTest(unittest.TestCase):
             self.assertEqual(written["bump"], "patch")
             self.assertEqual(written["tag"], "v1.2.1")
             self.assertEqual(written["tier"], "patch")
+
+    def test_range_start_follows_to_not_head(self):
+        """Regression: `--to <ref>` measured the range from HEAD's last tag.
+
+        Previewing a release for another ref from a stale branch reported a
+        version that was already published -- observed on 2026-09-11 against
+        origin/main from a pre-rebase branch, which answered v1.2.1 when
+        v1.2.1 already existed. CI never hit it (it checks out main and lets
+        --to default to HEAD), which is exactly why it needed a test.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            # A released line: v1.2.1 exists and carries the fix.
+            _commit(repo, "fix(web): the released fix")
+            _git(repo, "tag", "-a", "v1.2.1", "-m", "v1.2.1")
+            _git(repo, "branch", "released")
+            # A stale side branch that forked before v1.2.1 was cut.
+            _git(repo, "checkout", "-q", "-b", "stale", "v1.2.0")
+            _commit(repo, "docs(plan): something on the side")
+
+            # HEAD is `stale`, whose last tag is v1.2.0; the answer must come
+            # from the ref being asked about, not from where we are standing.
+            code, out, err = _run(repo, "decide", "--to", "released")
+            self.assertEqual(code, 0, err)
+            plan = json.loads(out)
+            self.assertEqual(plan["current"], "v1.2.1")
+            self.assertEqual(plan["bump"], "none")
+            self.assertEqual(plan["commits"], 0)
 
     def test_no_release_tag_at_all_is_a_clear_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

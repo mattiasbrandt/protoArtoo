@@ -395,11 +395,16 @@ def _emit_outputs(values):
 
 def _cmd_decide(args):
     repo = args.repo
-    frm = args.frm or latest_release_tag(repo)
+    # Reachable from --to, not from HEAD: the two are the same in CI, which
+    # checks out main and lets --to default to HEAD, but a preview against
+    # another ref (`--to origin/main` from a stale branch) would otherwise
+    # measure the range from whichever release the *working* branch descends
+    # from and report a version that is already published.
+    frm = args.frm or latest_release_tag(repo, before=args.to)
     if frm is None:
         raise ReleasePlanError(
-            "no release tag is reachable from HEAD, so there is no range to read. "
-            "Tag a base version by hand before auto-release can take over."
+            f"no release tag is reachable from {args.to}, so there is no range "
+            "to read. Tag a base version by hand before auto-release can take over."
         )
     commits = commits_in(repo, frm, args.to)
     bump = bump_for(commits)
