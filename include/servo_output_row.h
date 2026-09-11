@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "droid_parts.h"  // droidPartIdIsKnown() - the compiled Part vocabulary
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
 #include "robot_state.h"  // ServoComponentType (firmware and native alike)
 #include "servo_component_helpers.h"  // servoCompTypeToString, parseServoCompType
@@ -163,8 +164,9 @@ struct ServoOutputRow {
     // The Parts this output drives, by their Droid Parts Catalog ids, filled
     // slots first and empty slots after. An empty list is legal and means no
     // Part is assigned yet: the droid's own wiring decides what moves, not the
-    // catalog. The catalog does not reach firmware as a vocabulary until #301,
-    // so an id is checked for shape, not for membership.
+    // catalog. An id that is not in the catalog vocabulary this build compiled
+    // is refused at every door (servoOutputPartIdIsValid), so a stored slot
+    // always names a Part the firmware can resolve.
     //
     // The multiplicity is asymmetric and both halves matter (ADR 0050). An
     // Output may drive several Parts, so a ganged lead tells the truth about
@@ -368,9 +370,22 @@ inline bool servoOutputChannelIsValid(ServoOutputDriver driver, uint8_t channel)
 
 // -----------------------------------------------------------------------------
 // servoOutputPartIdIsValid()
-// Shape only: a catalog id is an unquoted identifier, and an empty part means
-// no Part is assigned. Membership of docs/droid-parts.yaml is checked once the
-// catalog reaches firmware as a compiled vocabulary (#301).
+// Shape, then membership: a catalog id is an unquoted identifier, and it has to
+// be one this build actually models. An empty part means no Part is assigned
+// and stays legal -- the droid's own wiring decides what moves, so an Output
+// with nothing on it is an ordinary answer rather than a damaged row.
+//
+// The membership half is droidPartIdIsKnown()'s, the compiled vocabulary
+// include/droid_parts.h generates from docs/droid-parts.yaml (#301, #356). An
+// id no build models is refused here rather than stored, so it is reported by
+// whichever door was asked -- servoOutputAddPart() returns false and
+// servoOutputRowNormalise() drops the slot and raises SERVO_FIELD_PARTS -- and
+// never reaches droidPartAvailabilityReason() to be answered as if it were
+// unwired hardware.
+//
+// Shape is checked first and it is not decoration: it bounds the string before
+// the vocabulary walk compares it, so an id with no terminator inside the row's
+// slot cannot be handed to strcmp().
 // -----------------------------------------------------------------------------
 inline bool servoOutputPartIdIsValid(const char* part) {
     if (part == nullptr) {
@@ -380,6 +395,9 @@ inline bool servoOutputPartIdIsValid(const char* part) {
     if (len > SERVO_OUTPUT_PART_ID_MAX) {
         return false;
     }
+    if (len == 0) {
+        return true;  // no Part assigned; nothing to look up
+    }
     for (size_t i = 0; i < len; ++i) {
         const char c = part[i];
         const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -388,7 +406,7 @@ inline bool servoOutputPartIdIsValid(const char* part) {
             return false;
         }
     }
-    return true;
+    return droidPartIdIsKnown(part);
 }
 
 // -----------------------------------------------------------------------------

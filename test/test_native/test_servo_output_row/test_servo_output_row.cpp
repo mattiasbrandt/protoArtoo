@@ -198,14 +198,14 @@ void test_an_unreadable_record_takes_the_safe_defaults_and_reports() {
 void test_one_bad_field_does_not_cost_the_row_its_calibration() {
     const ServoOutputRow defaults = mg996rRow();
     // Everything readable except the ease word.
-    const char* record = "ledc:0:doorFL,doorFR:1900:1500:1100:750:200:0:bouncy:home-hold:mg996r:1";
+    const char* record = "ledc:0:utilUp,utilLo:1900:1500:1100:750:200:0:bouncy:home-hold:mg996r:1";
     ServoOutputRow parsed = {};
     const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
 
     TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_EASING, repaired);
     TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
-    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(parsed, 0));
-    TEST_ASSERT_EQUAL_STRING("doorFR", servoOutputPartAt(parsed, 1));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(parsed, 1));
     TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
     TEST_ASSERT_EQUAL_UINT16(1100, parsed.close_us);
     TEST_ASSERT_EQUAL_UINT16(750, parsed.throw_ms);
@@ -218,7 +218,7 @@ void test_an_empty_field_is_not_zero() {
     const ServoOutputRow defaults = mg996rRow();
     // An empty travel time is not zero, and " 750" is not 750: either would
     // switch off the comparisons every clamp downstream is made of.
-    const char* record = "ledc:0:doorFL:1900:1500:1100::200:0:none:limp:mg996r:1";
+    const char* record = "ledc:0:utilUp:1900:1500:1100::200:0:none:limp:mg996r:1";
     ServoOutputRow parsed = {};
     const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
 
@@ -250,30 +250,30 @@ void test_a_partial_edit_keeps_what_it_could_not_read() {
 
 void test_a_row_carries_up_to_four_parts_and_refuses_a_fifth() {
     ServoOutputRow row = mg996rRow();
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFR"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilLo"));
 
     // A Part the row already drives is not a second slot: the same lead. Asked
     // here, with two slots still free, so it is the duplicate that refuses and
     // not the cap.
-    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "doorFL"));
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "utilUp"));
     TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(row));
 
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorRL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorRR"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other1"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other2"));
     TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
 
-    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "dataport"));
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "other3"));
     TEST_ASSERT_EQUAL_UINT8(4, servoOutputPartCount(row));
 
-    TEST_ASSERT_TRUE(servoOutputDrivesPart(row, "doorRR"));
-    TEST_ASSERT_FALSE(servoOutputDrivesPart(row, "dataport"));
+    TEST_ASSERT_TRUE(servoOutputDrivesPart(row, "other2"));
+    TEST_ASSERT_FALSE(servoOutputDrivesPart(row, "other3"));
 }
 
 void test_an_empty_part_list_stays_legal() {
     const ServoOutputRow defaults = mg996rRow();
     ServoOutputRow row = mg996rRow();
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFL"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
     servoOutputClearParts(&row);
 
     char record[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
@@ -288,8 +288,8 @@ void test_an_empty_part_list_stays_legal() {
 void test_a_ganged_pair_survives_the_wire() {
     const ServoOutputRow defaults = mg996rRow();
     ServoOutputRow row = mg996rRow();
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "doorFR"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilLo"));
 
     char record[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
     TEST_ASSERT_TRUE(servoOutputRowFormat(record, sizeof(record), row));
@@ -298,8 +298,8 @@ void test_a_ganged_pair_survives_the_wire() {
     const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
     TEST_ASSERT_EQUAL_UINT16(0, repaired);
     TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
-    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(parsed, 0));
-    TEST_ASSERT_EQUAL_STRING("doorFR", servoOutputPartAt(parsed, 1));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(parsed, 1));
 }
 
 void test_one_unreadable_part_costs_only_its_own_slot() {
@@ -307,36 +307,72 @@ void test_one_unreadable_part_costs_only_its_own_slot() {
     // The middle id carries a character no catalog id can, and the list names
     // one Part twice.
     const char* record =
-        "ledc:0:doorFL,door FR,doorRL,doorFL:1900:1500:1100:750:200:0:none:limp:mg996r:1";
+        "ledc:0:utilUp,door FR,other1,utilUp:1900:1500:1100:750:200:0:none:limp:mg996r:1";
     ServoOutputRow parsed = {};
     const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
 
     TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_PARTS, repaired);
     TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(parsed));
-    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(parsed, 0));
-    TEST_ASSERT_EQUAL_STRING("doorRL", servoOutputPartAt(parsed, 1));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_STRING("other1", servoOutputPartAt(parsed, 1));
     // The rest of the row never paid for it.
     TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_TRUE(parsed.calibrated);
+}
+
+void test_a_part_no_build_models_is_refused_rather_than_stored() {
+    ServoOutputRow row = mg996rRow();
+    // "doorFL" is a real Droid Parts Catalog id, and the catalog gives it
+    // `control: none` -- so this build compiles no Part vocabulary entry for it
+    // and cannot resolve it to an Output. An id nothing models is reported
+    // here, not accepted and answered later as unwired hardware.
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("doorFL"));
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(row));
+
+    // Shape alone was never the question: this one is a perfectly formed
+    // identifier and still not a Part.
+    TEST_ASSERT_FALSE(servoOutputPartIdIsValid("banana"));
+    TEST_ASSERT_TRUE(servoOutputPartIdIsValid("utilUp"));
+    // No Part assigned stays legal, and stays the empty answer.
+    TEST_ASSERT_TRUE(servoOutputPartIdIsValid(""));
+}
+
+void test_a_stored_part_outside_the_vocabulary_drops_and_is_reported() {
+    const ServoOutputRow defaults = mg996rRow();
+    // A row saved against a build whose catalog named the breadpan doors, read
+    // back by one whose catalog does not. The slot goes and says so; the
+    // twelve fields beside it are untouched.
+    const char* record =
+        "ledc:0:utilUp,doorFL:1900:1500:1100:750:200:0:none:limp:mg996r:1";
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_PARTS, repaired);
+    TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(parsed));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(parsed, 0));
+    TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_EQUAL_UINT16(750, parsed.throw_ms);
     TEST_ASSERT_TRUE(parsed.calibrated);
 }
 
 void test_a_part_two_rows_claim_stays_with_the_first() {
     ServoOutputTable table = {};
     servoOutputTableDefaults(&table);
-    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[1], "doorFL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "doorFL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "doorFR"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[1], "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "utilLo"));
 
     const uint32_t affected = servoOutputTableEnforcePartOwnership(&table);
 
     // Which Output drives this Part has exactly one answer, and it does not
     // depend on which row firmware scans first.
     TEST_ASSERT_EQUAL_UINT32((uint32_t)1u << 3, affected);
-    TEST_ASSERT_TRUE(servoOutputDrivesPart(table.rows[1], "doorFL"));
-    TEST_ASSERT_FALSE(servoOutputDrivesPart(table.rows[3], "doorFL"));
+    TEST_ASSERT_TRUE(servoOutputDrivesPart(table.rows[1], "utilUp"));
+    TEST_ASSERT_FALSE(servoOutputDrivesPart(table.rows[3], "utilUp"));
     // The later row keeps the Part nobody contested, and keeps it in slot 0.
     TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(table.rows[3]));
-    TEST_ASSERT_EQUAL_STRING("doorFR", servoOutputPartAt(table.rows[3], 0));
+    TEST_ASSERT_EQUAL_STRING("utilLo", servoOutputPartAt(table.rows[3], 0));
 }
 
 void test_a_contested_part_is_reported_by_the_loader() {
@@ -399,8 +435,8 @@ void test_every_field_round_trips_through_storage() {
     ServoOutputRow& row = saved.rows[1];
     row.driver = SERVO_DRIVER_LEDC;
     row.channel = LEDC_CH_AUX2;
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "chargebay"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "dataport"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other4"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&row, "other3"));
     row.component = SERVO_COMP_MG90S;  // set before the endpoints it bounds
     row.open_us = 700;                 // reversed pair, and outside the MG996R band
     row.centre_us = 1500;
@@ -432,8 +468,8 @@ void test_every_field_round_trips_through_storage() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, back.driver);
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX2, back.channel);
     TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(back));
-    TEST_ASSERT_EQUAL_STRING("chargebay", servoOutputPartAt(back, 0));
-    TEST_ASSERT_EQUAL_STRING("dataport", servoOutputPartAt(back, 1));
+    TEST_ASSERT_EQUAL_STRING("other4", servoOutputPartAt(back, 0));
+    TEST_ASSERT_EQUAL_STRING("other3", servoOutputPartAt(back, 1));
     TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, back.component);
     TEST_ASSERT_EQUAL_UINT16(700, back.open_us);
     TEST_ASSERT_EQUAL_UINT16(1500, back.centre_us);
@@ -499,7 +535,7 @@ void test_a_damaged_stored_row_is_counted_and_named() {
     for (const auto& pair : writer.data()) {
         reader.set(pair.first.c_str(), pair.second);
     }
-    reader.set("so02", std::string("ledc:3:doorFL:1900:1500:1100:750:200:0:none:limp:mg996r:yes"));
+    reader.set("so02", std::string("ledc:3:utilUp:1900:1500:1100:750:200:0:none:limp:mg996r:yes"));
 
     ServoOutputTable loaded = {};
     ServoOutputRepairReport report = {};
@@ -512,7 +548,7 @@ void test_a_damaged_stored_row_is_counted_and_named() {
     // An unreadable calibrated bit never reads as measured.
     TEST_ASSERT_FALSE(loaded.rows[2].calibrated);
     // ...and the rest of the row survived it.
-    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(loaded.rows[2], 0));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(loaded.rows[2], 0));
     TEST_ASSERT_EQUAL_UINT16(750, loaded.rows[2].throw_ms);
 }
 
@@ -666,7 +702,7 @@ void test_a_saved_row_wins_over_the_old_form() {
     MapReader reader;
     reader.set("arm1_op", (uint32_t)1850);
     reader.set("arm1_cl", (uint32_t)1150);
-    reader.set("so00", std::string("ledc:0:doorFL:1700:1400:1200:800:200:0:soft:limp:mg996r:1"));
+    reader.set("so00", std::string("ledc:0:utilUp:1700:1400:1200:800:200:0:soft:limp:mg996r:1"));
 
     ServoOutputTable loaded = {};
     ServoOutputRepairReport report = {};
@@ -675,7 +711,7 @@ void test_a_saved_row_wins_over_the_old_form() {
     TEST_ASSERT_EQUAL_UINT16(1700, loaded.rows[0].open_us);
     TEST_ASSERT_EQUAL_UINT16(1200, loaded.rows[0].close_us);
     TEST_ASSERT_TRUE(loaded.rows[0].calibrated);
-    TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(loaded.rows[0], 0));
+    TEST_ASSERT_EQUAL_STRING("utilUp", servoOutputPartAt(loaded.rows[0], 0));
     TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
 
     // The row beside it has no record, so it still crosses the bridge.
@@ -749,6 +785,8 @@ int main(int, char**) {
     RUN_TEST(test_an_empty_part_list_stays_legal);
     RUN_TEST(test_a_ganged_pair_survives_the_wire);
     RUN_TEST(test_one_unreadable_part_costs_only_its_own_slot);
+    RUN_TEST(test_a_part_no_build_models_is_refused_rather_than_stored);
+    RUN_TEST(test_a_stored_part_outside_the_vocabulary_drops_and_is_reported);
     RUN_TEST(test_a_part_two_rows_claim_stays_with_the_first);
     RUN_TEST(test_a_contested_part_is_reported_by_the_loader);
     RUN_TEST(test_the_receipt_names_the_field_and_the_door);
