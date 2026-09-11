@@ -224,16 +224,22 @@ send system.status.health
 # tools/bench_rows/artoo_esp32.txt:137+. Same rule as that block and as this
 # sheet: what a row must answer stays on the Closing Ticket (#355), never here.
 #
-# Board 1 has no WiFi and no HTTP -- its C6 is permanently unflashable -- so a
-# Wave 0 capability whose ACTION arrives on POST /api/config is unavailable on
-# this board rather than merely awkward. Three of artoo's four rows are cut for
-# that reason, and the cuts are named on #355's "Cut on purpose" table:
+# This sheet covers both P4 boards, and they are NOT equivalent for Wave 0.
+# Board 1's C6 is permanently unflashable, so board 1 has no WiFi and no HTTP:
+# on it, a Wave 0 capability whose ACTION arrives on POST /api/config is
+# unavailable rather than merely awkward, and the three rows below marked
+# "needs a working C6" cannot be run there at all. A P4 whose C6 works reaches
+# the LAN normally (PA_CAP_HOSTED_WIFI is 1 on this chip arm) and carries the
+# full set, exactly as artoo does.
+#
+# So the cuts below are BOARD 1 cuts, not P4 cuts. Read them as:
 #
 #   - A7's sound member (#340): a Component Member is SET on POST /api/config
 #     and no console operation writes one (src/console/console_catalog.cpp has
 #     sound.action.* and sound.config.volume, nothing that selects a member).
-#     The READ half is folded into the vocabulary row below; the change half,
-#     which is the capability, cannot be performed here at all.
+#     The READ half is folded into the vocabulary row below. On board 1 the
+#     change half cannot be performed at all; on a working-C6 P4 it runs as
+#     the-sound-member-survives-a-reboot-on-the-p4 below.
 #   - A2/A3/A4's calibration crossing (#338 #342 #345): the distinctive
 #     pre-migration endpoints are written on POST /api/config too -- the catalog
 #     carries servo.action.* but no servo.config.* -- so the one-shot cannot be
@@ -287,3 +293,42 @@ send system.status.health
 send system.action.reboot
 pause Wait for the board to come back, re-attach, then press Enter
 send system.status.health
+
+# -----------------------------------------------------------------------------
+# The three rows below NEED A WORKING C6 (HTTP). Board 1 cannot run them; skip
+# them there. On a P4 whose C6 works they mirror the artoo sheet exactly, and
+# they are where the second Board Variant earns its place: its Board Capability
+# Gates and its Board Lanes are not artoo's.
+# -----------------------------------------------------------------------------
+
+# A6 (#339) on the P4 - the lanes here are a DIFFERENT answer, not a duplicate:
+# this chip arm gives audio its own controller (UART_PORT_AUDIO=3) where
+# artoo-esp32 shares one with the dome link, and PA_CAP_DEDICATED_AUDIO_UART
+# reports 1 here and 0 there. The Lane manifest is HTTP-only by design (see the
+# block comment above), so both reads happen at the pause.
+@row 339 the-controller-says-where-it-routes-on-the-p4
+send system.api.get-identity
+pause Fetch GET /api/identity from this board and keep board_lanes and board_capabilities for #355. Check every lane against this chip's arm of include/config.h. Press Enter.
+send system.status.health
+
+# A7 (#340) on the P4 - the Component Member change, which board 1 cannot make.
+@row 340 the-sound-member-survives-a-reboot-on-the-p4
+send system.api.get-components
+send sound.status.current
+pause POST /api/config with soundMember=<the other supported member id>. The write is accepted immediately and takes effect at reboot. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+send sound.status.current
+
+# A2/A3/A4 (#338 #342 #345) on the P4 - the full crossing, on a second board's
+# real flash. Same shape as artoo's calibration-crosses-onto-the-rows: the
+# distinctive pre-migration values are written over HTTP BEFORE the Wave 0
+# image is flashed, and #355 carries the numbers for this board (they are
+# deliberately different from artoo's so the two transcripts cannot be
+# confused). Endpoints are not console-readable, so both reads are HTTP.
+@row 345 the-calibration-crosses-onto-the-rows-on-the-p4
+pause Fetch GET /api/config and keep the ten endpoint values for #355 - they must be this board's pre-migration numbers, not defaults. Press Enter.
+send system.action.set-mode mode=stationary
+send system.status.health
+pause Fetch GET /api/config again. The first save has now run, so this is the post-migration read. Press Enter.
