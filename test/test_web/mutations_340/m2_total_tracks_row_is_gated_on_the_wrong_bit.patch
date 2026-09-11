@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 2238dee7..a30058ff 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -335,7 +335,7 @@
+     applyChirpBindingBadges();
+ 
+     setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
+-    setElementVisible(modTotalTracksRow, supportsStatusQuery && supportsTrackCount);
++    setElementVisible(modTotalTracksRow, supportsStatusQuery && supportsCurrentTrack);
+     setElementVisible(modCurrentTrackRow, supportsStatusQuery && supportsCurrentTrack);
+     setElementVisible(modPollSection, showManualPoll);
+     setElementVisible(btnPoll, showManualPoll);
