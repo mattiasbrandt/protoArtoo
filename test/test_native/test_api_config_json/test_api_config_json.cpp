@@ -193,7 +193,6 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(rc["sbus"]["recvCh2"].is<bool>());
     TEST_ASSERT_FALSE(rc["sbus"]["recvCh2"].as<bool>());
     TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
-    TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
     TEST_ASSERT_TRUE(components["drive"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["audio"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["protoR2link"]["enabled"].is<bool>());
@@ -209,16 +208,19 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(!domeEsc["rndMoveMs"].isNull());
     TEST_ASSERT_TRUE(!protoR2link["wifiPeerIp"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm1OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm1CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm2OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["arm2CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux1OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux1CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux2OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux2CloseUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux3OpenUs"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux3CloseUs"].isNull());
+    // The ten endpoint fields and the five component types are deliberately
+    // absent here. A ConfigSnapshot has carried neither since #345 - both live
+    // on an addressed Servo Output row - and this builder is pure, so it cannot
+    // reach the live table. handleConfigGet() adds them from the rows, and
+    // test_api_config_get is where that is proved. If one ever reappears in
+    // this document it is a second source for an endpoint, which is the whole
+    // defect ADR 0041 removed.
+    TEST_ASSERT_TRUE(doc["arm1OpenUs"].isNull());
+    TEST_ASSERT_TRUE(doc["arm1CloseUs"].isNull());
+    TEST_ASSERT_TRUE(doc["aux3OpenUs"].isNull());
+    TEST_ASSERT_TRUE(doc["aux3CloseUs"].isNull());
+    TEST_ASSERT_TRUE(components["arm1"]["type"].isNull());
+    TEST_ASSERT_TRUE(components["aux3"]["type"].isNull());
     TEST_ASSERT_TRUE(!doc["aux_led_pin"].isNull());
     TEST_ASSERT_TRUE(!doc["aux_led_count"].isNull());
     TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_DISABLED, doc["aux_led_pin"].as<unsigned>());

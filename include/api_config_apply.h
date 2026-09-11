@@ -30,6 +30,7 @@
 
 #include "api_param_source.h"
 #include "config_cache.h"
+#include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
 
 struct ConfigApplyError {
     bool hasError = false;
@@ -53,11 +54,29 @@ struct ConfigAppliedFields {
     size_t count = 0;
 };
 
+// What the request asked of the addressed Servo Output rows (ADR 0041).
+//
+// Endpoints and component types still arrive in the five fixed field sets'
+// parameter names -- arm1OpenUs, arm1Type and their siblings -- because the
+// pages that send them are not rebuilt onto the rows until the C1 wave. The
+// Apply Core is pure and cannot reach the live table, so it validates the
+// numbers and records them here, addressed, and the Commit Step applies them
+// through configCacheApplyServoOutputEdits(). Nothing stores an endpoint on the
+// way: since #345 the row is the only place one lives.
+//
+// One entry per Output Address the request named, so a POST that carries one
+// arm changes one row. `count` is zero on a request that named none.
+struct ConfigServoOutputEdits {
+    ServoOutputEdit edits[SERVO_LEGACY_FIELD_SET_COUNT];
+    size_t count = 0;
+};
+
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
     ConfigApplyError error;
     ConfigApplyActions actions;
     ConfigAppliedFields applied;
+    ConfigServoOutputEdits servoOutputs;
 };
 
 // `working` must already hold the current cached snapshot (shell reads it

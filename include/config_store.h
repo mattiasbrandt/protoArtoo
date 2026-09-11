@@ -27,6 +27,15 @@
 // (old 2=Info/3=Debug become 3/4; see configLoad()).
 // 2 -> 3: component toggle identity rename (en_s1->en_drive, en_dome->en_dome_esc,
 // en_s3->en_r2link, en_s2->en_audio, rcp_snd->rcp_aud, rcs_snd->rcs_aud, rc_sound->rc_aud)
+//
+// Deliberately NOT bumped for #345, which removed the five fixed servo key
+// sets. This number gates a migration that runs at load, and the removal needs
+// none: the row form has been stored beside the old keys since #338, the row
+// loader adopts a key set on a row nothing has written, and a stored row always
+// wins -- so the crossing is idempotent and marker-free in both directions. A
+// bump would buy nothing and cost something real: `stored > CURRENT` is the
+// reset-to-defaults branch, so an image from before this slice would wipe a
+// controller that had already been stamped by one after it.
 constexpr uint8_t CONFIG_SCHEMA_VERSION = 3;
 constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
 
@@ -114,72 +123,60 @@ enum class ConfigKey : uint8_t {
     SND_CAT_WHIS_LO = 67,
     SND_CAT_WHIS_HI = 68,
 
-    // Servo calibration
-    ARM1_OPEN_US = 69,
-    ARM1_CLOSE_US = 70,
-    ARM2_OPEN_US = 71,
-    ARM2_CLOSE_US = 72,
-    ARM1_TYPE = 73,
-    ARM2_TYPE = 74,
-    AUX1_OPEN_US = 75,
-    AUX1_CLOSE_US = 76,
-    AUX2_OPEN_US = 77,
-    AUX2_CLOSE_US = 78,
-    AUX3_OPEN_US = 79,
-    AUX3_CLOSE_US = 80,
-    AUX1_TYPE = 81,
-    AUX2_TYPE = 82,
-    AUX3_TYPE = 83,
+    // Servo calibration has no entry here. An endpoint and the component type
+    // beside it live on an addressed Servo Output row, whose validator is
+    // servoOutputRowNormalise() -- one validator at every door, and this enum
+    // is not one of them (#345, ADR 0041).
 
     // Dome
-    DOME_MIN_SPEED = 84,
-    DOME_MAX_SPEED = 85,
-    DOME_NEUTRAL_US = 86,
-    DOME_MIN_PULSE_US = 87,
-    DOME_MAX_PULSE_US = 88,
-    DOME_SPEED_LIMIT_PCT = 89,
-    DOME_RND_ENABLE = 90,
-    DOME_RND_SPEED_PCT = 91,
-    DOME_RND_PAUSE_MIN = 92,
-    DOME_RND_PAUSE_MAX = 93,
-    DOME_RND_MOVE_MS = 94,
-    DOME_WIFI_PEER_IP = 95,
+    DOME_MIN_SPEED = 69,
+    DOME_MAX_SPEED = 70,
+    DOME_NEUTRAL_US = 71,
+    DOME_MIN_PULSE_US = 72,
+    DOME_MAX_PULSE_US = 73,
+    DOME_SPEED_LIMIT_PCT = 74,
+    DOME_RND_ENABLE = 75,
+    DOME_RND_SPEED_PCT = 76,
+    DOME_RND_PAUSE_MIN = 77,
+    DOME_RND_PAUSE_MAX = 78,
+    DOME_RND_MOVE_MS = 79,
+    DOME_WIFI_PEER_IP = 80,
 
     // Sequence timing
-    SEQ_OPEN_MS = 96,
-    SEQ_CLOSE_MS = 97,
+    SEQ_OPEN_MS = 81,
+    SEQ_CLOSE_MS = 82,
 
     // AUX LED
-    AUX_LED_PIN = 98,
-    AUX_LED_COUNT = 99,
+    AUX_LED_PIN = 83,
+    AUX_LED_COUNT = 84,
 
     // Feature toggles
-    ENABLE_ARM1 = 100,
-    ENABLE_ARM2 = 101,
-    ENABLE_AUX1 = 102,
-    ENABLE_AUX2 = 103,
-    ENABLE_AUX3 = 104,
-    ENABLE_DOME = 105,
-    ENABLE_RC_CH1 = 106,
-    ENABLE_RC_CH2 = 107,
-    ENABLE_RC_CH3 = 108,
-    ENABLE_RC_CH4 = 109,
-    ENABLE_RC_CH5 = 110,
-    ENABLE_RC_CH6 = 111,
-    SINGLE_SBUS_USE_CH2 = 112,
+    ENABLE_ARM1 = 85,
+    ENABLE_ARM2 = 86,
+    ENABLE_AUX1 = 87,
+    ENABLE_AUX2 = 88,
+    ENABLE_AUX3 = 89,
+    ENABLE_DOME = 90,
+    ENABLE_RC_CH1 = 91,
+    ENABLE_RC_CH2 = 92,
+    ENABLE_RC_CH3 = 93,
+    ENABLE_RC_CH4 = 94,
+    ENABLE_RC_CH5 = 95,
+    ENABLE_RC_CH6 = 96,
+    SINGLE_SBUS_USE_CH2 = 97,
     // The three serial-component toggles carry generic project vocabulary, not
     // the artoo.uk PCB's S1/S2/S3 silkscreen legend (ADR 0033). Their persisted
     // keys have been en_drive / en_audio / en_r2link since the schema 2 -> 3
     // migration, so these identifiers were the last place the board's own
     // labels survived and renaming them migrates nothing.
-    ENABLE_DRIVE = 113,
-    ENABLE_AUDIO = 114,
-    ENABLE_PROTOR2LINK = 115,
-    STATIONARY = 116,
-    RC_INPUT_MODE = 117,
+    ENABLE_DRIVE = 98,
+    ENABLE_AUDIO = 99,
+    ENABLE_PROTOR2LINK = 100,
+    STATIONARY = 101,
+    RC_INPUT_MODE = 102,
 
     // Total count for array bounds
-    _COUNT = 118,
+    _COUNT = 103,
 };
 
 struct DriveConfig {
@@ -262,22 +259,23 @@ struct AudioConfig {
     uint16_t snd_cat_whis_hi;
 };
 
+// No endpoint, no component type: those are an addressed Servo Output row's,
+// and a row is the only place either is stored (#345, ADR 0041). What is left
+// here is servo-adjacent config that is not per-output -- a sequence dwell the
+// whole droid shares, and the AUX LED selection.
 struct ServoConfig {
-    uint16_t arm1_open_us;
-    uint16_t arm1_close_us;
-    uint16_t arm2_open_us;
-    uint16_t arm2_close_us;
-    ServoComponentType arm1_type;
-    ServoComponentType arm2_type;
-    uint16_t aux1_open_us;
-    uint16_t aux1_close_us;
-    uint16_t aux2_open_us;
-    uint16_t aux2_close_us;
-    uint16_t aux3_open_us;
-    uint16_t aux3_close_us;
-    ServoComponentType aux1_type;
-    ServoComponentType aux2_type;
-    ServoComponentType aux3_type;
+    // The dwell a body sequence holds an arm open or closed for. 1000 ms is a
+    // GUESS, not a measurement, and it is the one this firmware has always
+    // stood in for travel time with.
+    //
+    // ADR 0041 says these should default from the computed travel time once one
+    // exists. Nothing computes one yet: travel time is derived from a row's
+    // Motion Profile by the ramp, and the ramp is not in Waves 0-3 at all, so
+    // there is no figure to default from and no way to measure this number's
+    // error. Deleting them would take the dwell away from a sequence that needs
+    // one; re-defaulting them would be picking a second guess. So they stay,
+    // said out loud: whoever wires the Motion Profile into ServoTask should
+    // default these from it and delete this paragraph (#345, routed from #338).
     uint16_t seq_open_ms;
     uint16_t seq_close_ms;
     // NOT a GPIO, despite the name: an AUX slot selection, 0..AUX_LED_PIN_MAX
@@ -433,12 +431,18 @@ struct ConfigSnapshot {
     WifiConfig wifi;
 };
 
-// 944 bytes, measured - and pinned here because two comments elsewhere had
+// 916 bytes, measured - and pinned here because two comments elsewhere had
 // drifted from it and one of them was load-bearing. Every by-value crossing of
-// this struct contributes a 944-byte stack frame: three nested frames on the
+// this struct contributes a 916-byte stack frame: three nested frames on the
 // serial config-write path each carried one, which is how the Console task's
 // chain grew past its stack and panicked both boards (#226). The serializer
 // called it 744 B and ConfigCommitOutcome called itself small.
+//
+// It was 944 B until #345 took the five fixed servo field sets out of
+// ServoConfig - ten endpoints and five component types, 28 B with the padding
+// they carried. A shrink needs no re-measurement to be safe, because every
+// chain this struct is on gets shorter; the number is still updated here so the
+// next reader is not told a frame is bigger than it is.
 //
 // The same number on both chip targets and on the host compiler: every member
 // is an integral, float, enum or char array type, so this struct's alignment
@@ -452,7 +456,7 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
-static_assert(sizeof(ConfigSnapshot) == 944,
+static_assert(sizeof(ConfigSnapshot) == 916,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

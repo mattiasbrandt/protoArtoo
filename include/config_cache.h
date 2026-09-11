@@ -28,13 +28,9 @@
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
 // domain they need into stack locals, then release the cache lock before doing work.
 //
-// While the migrate phase lasts, both this and configCacheReadServo() fill the
-// ten fixed servo endpoint fields and the five component types FROM the
-// addressed rows (#286, ADR 0041). An endpoint lives on its row now; the fixed
-// fields are a view of it, so a surface still asking for arm1OpenUs and the
-// serializer that writes the old form back to NVS both see the number the droid
-// will actually drive to, and no path can read a stale one. That projection
-// goes away with the fields.
+// A ConfigSnapshot carries no servo endpoint and no component type: since #345
+// both live on an addressed Servo Output row and nowhere else, so a caller that
+// wants one asks the row accessors below rather than this snapshot.
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
@@ -42,10 +38,11 @@ void configCacheReadServo(ServoConfig* out);
 bool configCacheServoAnyEnabled();
 void configCacheReadWifi(WifiConfig* out);
 
-// The addressed Servo Output rows (ADR 0041), which live beside the five fixed
-// servo field sets rather than inside ConfigSnapshot. The live table is filled
-// by configLoadServoOutputs() on the boot path and changed at runtime only by
-// the Commit Step, through configCacheApplyServoCalibration() below.
+// The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
+// on their own NVS keys -- see include/config_serializer.h for why the table is
+// not a snapshot field. The live table is filled by configLoadServoOutputs() on
+// the boot path and changed at runtime only by the Commit Step, through
+// configCacheApplyServoOutputEdits() below.
 //
 // configCacheReadServoOutput hands out ONE row: the table is far larger than
 // anything else this cache copies by value, and a task that wants one output
@@ -80,13 +77,22 @@ uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t chan
 bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
                                          uint16_t* openUs, uint16_t* closeUs);
 
-// configCacheApplyServoCalibration: the write direction of the migrate-phase
-// bridge. The Apply Core is pure and cannot reach the row table, so the Commit
-// Step hands the snapshot it just applied here and the endpoints land on the
-// rows every reader now uses. Called from the Commit Step and from nowhere
-// else -- the boot path has already crossed the bridge the other way, where a
-// stored row wins over the old form. Returns what the component band moved.
-ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo);
+// What is fitted to the output addressed there, and SERVO_COMP_NONE when no
+// live row is addressed there -- "nothing is recorded as fitted here" and "this
+// output does not exist" are the same answer to a surface that only wants to
+// name the part. A caller that needs to tell the two apart asks
+// configCacheReadServoOutputEndpoints(), which returns false for the second.
+ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel);
+
+// configCacheApplyServoOutputEdits: the one runtime write onto the rows. The
+// Apply Core is pure and cannot reach the table, so it records what a request
+// asked for as addressed ServoOutputEdits and the Commit Step hands them here.
+// Called from the Commit Step and from nowhere else -- the boot path has
+// already read the stored rows, and an edit pushed over the top would undo
+// that. An edit naming an Output Address no live row has changes nothing and
+// reports nothing. Returns what the component band moved.
+ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
+                                                         size_t count);
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.

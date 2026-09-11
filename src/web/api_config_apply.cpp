@@ -561,67 +561,73 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         return;
     }
 
-    struct ServoCalField {
-        const char* param;
-        uint16_t* field;
-    };
+    // The five fixed field sets, taken as edits to the rows that replaced them
+    // (#345, ADR 0041). One pass per Output Address, so the three parameters
+    // that name the same output arrive as one edit and the component type is
+    // settled against the pair it will clamp rather than by parameter order.
+    //
+    // The bounds here are still 500..2500, the widest a servo takes, and they
+    // are not the authoritative clamp: that is the fitted component's band, and
+    // it is applied on the row, where it can report having moved a number. A
+    // 500 us arriving for an MG996R is a legal request this core accepts and
+    // the Commit Step answers with a warning naming the part.
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        ServoOutputEdit edit = {};
+        edit.driver = SERVO_DRIVER_LEDC;
+        edit.channel = set.channel;
+        edit.fields = 0;
 
-    ServoCalField servoCalFields[] = {
-        {"arm1OpenUs", &working->servo.arm1_open_us},   {"arm1CloseUs", &working->servo.arm1_close_us},
-        {"arm2OpenUs", &working->servo.arm2_open_us},   {"arm2CloseUs", &working->servo.arm2_close_us},
-        {"aux1OpenUs", &working->servo.aux1_open_us},   {"aux1CloseUs", &working->servo.aux1_close_us},
-        {"aux2OpenUs", &working->servo.aux2_open_us},   {"aux2CloseUs", &working->servo.aux2_close_us},
-        {"aux3OpenUs", &working->servo.aux3_open_us},   {"aux3CloseUs", &working->servo.aux3_close_us},
-    };
+        struct EndpointParam {
+            const char* param;
+            uint16_t ServoOutputEdit::*member;
+            uint16_t bit;
+        };
+        const EndpointParam kEndpoints[] = {
+            {set.openField, &ServoOutputEdit::open_us, SERVO_FIELD_OPEN},
+            {set.closeField, &ServoOutputEdit::close_us, SERVO_FIELD_CLOSE},
+        };
+        for (size_t e = 0; e < sizeof(kEndpoints) / sizeof(kEndpoints[0]); ++e) {
+            if (!configParamHas(params, kEndpoints[e].param)) {
+                continue;
+            }
+            uint16_t pulseUs = 0;
+            if (!paramUint16(params, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs,
+                             &pulseUs)) {
+                char err[192];
+                snprintf(err, sizeof(err), "%s must be 500..2500", kEndpoints[e].param);
+                setError(result, err);
+                return;
+            }
+            edit.*(kEndpoints[e].member) = pulseUs;
+            edit.fields |= kEndpoints[e].bit;
+        }
 
-    for (size_t i = 0; i < sizeof(servoCalFields) / sizeof(servoCalFields[0]); ++i) {
-        if (!configParamHas(params, servoCalFields[i].param)) {
+        if (configParamHas(params, set.typeParam)) {
+            const char* raw = configParamGet(params, set.typeParam);
+            ServoComponentType parsed = SERVO_COMP_NONE;
+            if (strcmp(raw, "0") == 0 || strcmp(raw, "1") == 0 || strcmp(raw, "2") == 0 ||
+                strcmp(raw, "3") == 0) {
+                parsed = (ServoComponentType)atoi(raw);
+            } else {
+                parsed = parseServoCompType(raw);
+            }
+
+            if (!isValidServoCompType((uint8_t)parsed)) {
+                char err[180];
+                snprintf(err, sizeof(err), "%s must be none/mg996r/mg90s/rgb", set.typeParam);
+                setError(result, err);
+                return;
+            }
+
+            edit.component = parsed;
+            edit.fields |= SERVO_FIELD_COMPONENT;
+        }
+
+        if (edit.fields == 0) {
             continue;
         }
-        uint16_t pulseUs = 0;
-        if (!paramUint16(params, servoCalFields[i].param, kServoPulseMinUs, kServoPulseMaxUs, &pulseUs)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be 500..2500", servoCalFields[i].param);
-            setError(result, err);
-            return;
-        }
-        *servoCalFields[i].field = pulseUs;
-        result->changed = true;
-    }
-
-    struct ServoTypeField {
-        const char* param;
-        ServoComponentType* field;
-    };
-
-    ServoTypeField servoTypeFields[] = {
-        {"arm1Type", &working->servo.arm1_type}, {"arm2Type", &working->servo.arm2_type},
-        {"aux1Type", &working->servo.aux1_type}, {"aux2Type", &working->servo.aux2_type},
-        {"aux3Type", &working->servo.aux3_type},
-    };
-
-    for (size_t i = 0; i < sizeof(servoTypeFields) / sizeof(servoTypeFields[0]); ++i) {
-        if (!configParamHas(params, servoTypeFields[i].param)) {
-            continue;
-        }
-
-        const char* raw = configParamGet(params, servoTypeFields[i].param);
-        ServoComponentType parsed = SERVO_COMP_NONE;
-        if (strcmp(raw, "0") == 0 || strcmp(raw, "1") == 0 || strcmp(raw, "2") == 0 ||
-            strcmp(raw, "3") == 0) {
-            parsed = (ServoComponentType)atoi(raw);
-        } else {
-            parsed = parseServoCompType(raw);
-        }
-
-        if (!isValidServoCompType((uint8_t)parsed)) {
-            char err[180];
-            snprintf(err, sizeof(err), "%s must be none/mg996r/mg90s/rgb", servoTypeFields[i].param);
-            setError(result, err);
-            return;
-        }
-
-        *servoTypeFields[i].field = parsed;
+        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
         result->changed = true;
     }
 
