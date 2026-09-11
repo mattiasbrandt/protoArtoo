@@ -274,10 +274,16 @@ send sound.status.current
 # reach flash reports err rather than ok, so the record this row returns is
 # itself the evidence. It does NOT prove a builder's calibration crossed: that
 # needs distinctive pre-migration values this board cannot be given.
+# Nothing here reads the endpoints back: servo.status.current is is_query:false
+# in the catalog -- a field descriptor, never an executable command (it answers
+# not-executable, measured on artoo 2026-09-11) -- and there is no
+# servo.config.* operation and no HTTP on this board. So this row evidences the
+# save and the board's survival of it, and #355 says plainly that the values
+# themselves are unreadable here.
 @row 345 the-first-save-migrates-on-this-board
-send servo.status.current
+send system.status.health
 send system.action.set-mode mode=stationary
 send system.status.health
 send system.action.reboot
 pause Wait for the board to come back, re-attach, then press Enter
-send servo.status.current
+send system.status.health

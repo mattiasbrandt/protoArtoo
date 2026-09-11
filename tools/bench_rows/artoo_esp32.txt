@@ -161,7 +161,7 @@ send system.action.reboot-wifi-module
 send system.api.get-components
 send sound.status.current
 send sound.action.play-track track=1
-pause Confirm sound played, then POST /api/config with the OTHER supported sound member and press Enter
+pause The audible half is Not Assessed at this bench - nothing is fitted, and sound.status.current reports link_ok:false device:none. Now POST /api/config with soundMember=<the other supported member id, e.g. mp3_trigger> - the write is accepted immediately and takes effect at reboot - then press Enter.
 send system.action.reboot
 pause Wait for the board to come back, re-attach, then press Enter
 send system.api.get-components
@@ -174,11 +174,24 @@ send sound.action.play-track track=1
 # and A4 removes the legacy keys after the first successful save. The
 # distinctive pre-migration values are set BEFORE the Wave 0 image is flashed;
 # #355 carries that ordering and the numbers.
+#
+# The endpoints are NOT console-readable and no wording of this row can make
+# them so: servo.status.current is is_query:false in the catalog -- a row that
+# describes a field inside another response, never an independently executable
+# command -- so it answers err/unavailable/not-executable, as it did on
+# 2026-09-11. There is no servo.config.* operation either. Both reads are
+# therefore GET /api/config at a pause.
+#
+# system.action.set-mode is the SAVE. It calls saveConfigToNvs(), which runs
+# configSaveServoOutputs() before configSave() (src/main.cpp), so an ordinary
+# mode change IS a full config save and is what performs the migration. That is
+# why "don't touch servo settings yet" is not sufficient guidance to a bench
+# operator: the first save of ANY kind migrates.
 @row 345 calibration-crosses-onto-the-rows
-send servo.status.current
-pause Confirm the endpoints read back are the pre-migration numbers from #355, not defaults, then press Enter
-send servo.action.set-position target=arm1 position_us=1850
-send servo.status.current
+pause Fetch GET /api/config and keep the ten endpoint values for #355 - they must be the pre-migration numbers, not defaults. Press Enter.
+send system.action.set-mode mode=stationary
+send system.status.health
+pause Fetch GET /api/config again. The first save has now run, so this is the post-migration read. Press Enter.
 
 # A6 (#339) - "The controller says where it actually routes each signal." The
 # Lane manifest is HTTP-only by design and the console cannot stand in for it:
@@ -202,4 +215,4 @@ send system.status.health
 # with, and that it is the whole catalog rather than the drivable subset.
 @row 358 the-part-vocabulary-the-controller-answers-with
 send system.api.get-components
-send servo.status.current
+send sound.status.current
