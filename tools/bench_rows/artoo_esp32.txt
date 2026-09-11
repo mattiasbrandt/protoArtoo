@@ -132,3 +132,64 @@ send system.config.log-level value=info
 # row's board_capability entirely. Agent-runnable - it needs nobody at the bench.
 @row 243 wifi-module-reboot-not-on-this-board
 send system.action.reboot-wifi-module
+
+# =============================================================================
+# Epic #175 Wave 0 -- the capability lines, replayed as a builder performs them
+#
+# Added 2026-09-11, operator direction. Every ticket in this epic carries a
+# capability line -- what a builder can newly do -- and until now nothing
+# converted one into an action anyone performs: a green suite proves the code
+# is right and proves nobody has used it. Each row below IS a capability line,
+# phrased as the action, written while the slice that delivered it was warm.
+#
+# What a row must answer stays on the Closing Ticket (#355), never here, in
+# keeping with this sheet's own rule. Rows needing a person carry `pause`.
+#
+# Two limits, stated rather than discovered at the bench:
+#   - The Console cannot SET a Component Member or an endpoint; those arrive on
+#     POST /api/config, and no page builds them until C3 (#351) and C1 (#347).
+#     So those steps are `pause` directives naming the request, not `send`.
+#   - Ceiling for the whole block is Controller Upload Verified. The bench is
+#     unseated: a row wanting a moving arm is Not Assessed and says so.
+# =============================================================================
+
+# A7 (#340) - "Say which sound module is actually fitted, and change it later,
+# rather than it being decided when the firmware was built." The CHANGE is the
+# capability, so one reading proves nothing: read the lineup and the fitted
+# member, change it, reboot, and hear which module answers.
+@row 340 sound-member-survives-a-reboot
+send system.api.get-components
+send sound.status.current
+send sound.action.play-track track=1
+pause Confirm sound played, then POST /api/config with the OTHER supported sound member and press Enter
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+send sound.status.current
+send sound.action.play-track track=1
+
+# A2/A3/A4 (#338 #342 #345) - "Your calibration survives the move to addressed
+# outputs", and there is only one place an endpoint is stored. The migration is
+# the capability and it is ONE-SHOT per board: a pre-migration NVS crosses once,
+# and A4 removes the legacy keys after the first successful save. The
+# distinctive pre-migration values are set BEFORE the Wave 0 image is flashed;
+# #355 carries that ordering and the numbers.
+@row 345 calibration-crosses-onto-the-rows
+send servo.status.current
+pause Confirm the endpoints read back are the pre-migration numbers from #355, not defaults, then press Enter
+send servo.action.set-position target=arm1 position_us=1850
+send servo.status.current
+
+# A6 (#339) - "The controller says where it actually routes each signal."
+@row 339 the-controller-says-where-it-routes
+send system.api.get-identity
+send system.status.health
+
+# A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
+# firmware and the browser both know", and since #358 a Part is nameable
+# whether or not this body drives it. The browser half has no page until C1a
+# (#347), so this row proves the firmware half: what the controller answers
+# with, and that it is the whole catalog rather than the drivable subset.
+@row 358 the-part-vocabulary-the-controller-answers-with
+send system.api.get-components
+send servo.status.current
