@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Artoo Controller PCB: a carrier board with a socketed ESP32 D1 Mini module in the middle, four three-pin serial headers labelled S0 to S3 down one edge, six RC channel pins across the top, and six servo outputs labelled ARM1 to ARM5 and DOME down the other edge">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="55.3" y="40.0" width="289.5" height="220.0" rx="4" stroke-width="2.4"/>
+    <rect x="153.7" y="106.0" width="92.6" height="88.0" rx="3" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="157.0" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="168.6" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="180.1" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="191.7" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="203.3" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="214.9" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="226.4" y="110.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="238.0" y="110.1" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="157.0" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="168.6" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="180.1" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="191.7" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="203.3" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="214.9" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="226.4" y="184.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="238.0" y="184.9" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="200.0" y="154.4" text-anchor="middle">ESP32 D1 Mini</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="68.7" y="68.2" width="5.2" height="5.2" rx="1"/>
+      <rect x="77.7" y="68.2" width="5.2" height="5.2" rx="1"/>
+      <rect x="86.7" y="68.2" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="64.3" y="73.8" text-anchor="end">S0</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="68.7" y="110.0" width="5.2" height="5.2" rx="1"/>
+      <rect x="77.7" y="110.0" width="5.2" height="5.2" rx="1"/>
+      <rect x="86.7" y="110.0" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="64.3" y="115.6" text-anchor="end">S1</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="68.7" y="151.8" width="5.2" height="5.2" rx="1"/>
+      <rect x="77.7" y="151.8" width="5.2" height="5.2" rx="1"/>
+      <rect x="86.7" y="151.8" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="64.3" y="157.4" text-anchor="end">S2</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="68.7" y="193.6" width="5.2" height="5.2" rx="1"/>
+      <rect x="77.7" y="193.6" width="5.2" height="5.2" rx="1"/>
+      <rect x="86.7" y="193.6" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="64.3" y="199.2" text-anchor="end">S3</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="151.1" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="167.0" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="182.9" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="198.8" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="214.8" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="230.7" y="48.4" width="5.2" height="5.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7.5" opacity="0.58">
+      <text x="153.7" y="47.0" text-anchor="start">CH1-6</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="66.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="66.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="66.1" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="71.6" text-anchor="end">ARM1</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="98.7" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="98.7" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="98.7" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="104.2" text-anchor="end">ARM2</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="131.2" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="131.2" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="131.2" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="136.7" text-anchor="end">ARM3</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="163.8" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="163.8" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="163.8" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="169.3" text-anchor="end">ARM4</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="196.3" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="196.3" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="196.3" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="201.8" text-anchor="end">ARM5</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="312.2" y="228.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="320.7" y="228.9" width="5.0" height="5.0" rx="1"/>
+      <rect x="329.2" y="228.9" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.58">
+      <text x="336.7" y="234.4" text-anchor="end">DOME</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="168.6" y="245.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="177.6" y="245.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="186.6" y="245.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="195.6" y="245.5" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7.5" opacity="0.58">
+      <text x="165.1" y="251.0" text-anchor="end">I2C</text>
+    </g>
+    <rect x="252.1" y="244.0" width="14" height="8" rx="1.5" stroke-width="1.15"/>
+  </g>
+</svg>

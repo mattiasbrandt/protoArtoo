@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="DFPlayer Mini sound module: a small square board with eight pins along each long edge and a microSD card slot covering most of the top face">
+<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<rect x="108" y="86" width="184" height="128" rx="4" stroke-width="2.4"/>
+<rect x="134" y="106" width="132" height="66" rx="3" stroke-width="1.6"/>
+<rect x="146" y="114" width="108" height="50" rx="2" stroke-width="1.15" opacity="0.85"/>
+<path d="M258 118 l10 0 l0 10" stroke-width="1.15" opacity="0.8"/>
+</g>
+<g fill="currentColor" opacity="0.9"><rect x="120.6" y="80" width="6.8" height="12" rx="1.5"/><rect x="120.6" y="208" width="6.8" height="12" rx="1.5"/><rect x="142.2" y="80" width="6.8" height="12" rx="1.5"/><rect x="142.2" y="208" width="6.8" height="12" rx="1.5"/><rect x="163.8" y="80" width="6.8" height="12" rx="1.5"/><rect x="163.8" y="208" width="6.8" height="12" rx="1.5"/><rect x="185.4" y="80" width="6.8" height="12" rx="1.5"/><rect x="185.4" y="208" width="6.8" height="12" rx="1.5"/><rect x="207.0" y="80" width="6.8" height="12" rx="1.5"/><rect x="207.0" y="208" width="6.8" height="12" rx="1.5"/><rect x="228.6" y="80" width="6.8" height="12" rx="1.5"/><rect x="228.6" y="208" width="6.8" height="12" rx="1.5"/><rect x="250.2" y="80" width="6.8" height="12" rx="1.5"/><rect x="250.2" y="208" width="6.8" height="12" rx="1.5"/><rect x="271.8" y="80" width="6.8" height="12" rx="1.5"/><rect x="271.8" y="208" width="6.8" height="12" rx="1.5"/></g>
+<g fill="none" stroke="currentColor" stroke-linecap="round">
+<rect x="138" y="182" width="40" height="20" rx="2" stroke-width="1.3"/>
+<circle cx="254" cy="192" r="7" stroke-width="1.3"/>
+</g>
+<g fill="currentColor" font-family="ui-monospace,monospace" font-size="10.5" opacity="0.7">
+<text x="188" y="197">MP3-TF-16P</text>
+</g>
+</svg>

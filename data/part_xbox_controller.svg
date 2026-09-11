@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Xbox controller: a moulded gamepad with two thumbsticks, a four-button diamond, a directional pad, shoulder bumpers and triggers, and a lit ring around the central Home button">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M120 118 q-34 -16 -56 6 q-24 24 -30 74 q-5 40 16 52 q22 12 40 -18 l18 -30 q8 -12 22 -12 h120 q14 0 22 12 l18 30 q18 30 40 18 q21 -12 16 -52 q-6 -50 -30 -74 q-22 -22 -56 -6 z" stroke-width="2.4"/>
+    <circle cx="146" cy="150" r="19" stroke-width="1.4"/>
+    <circle cx="146" cy="150" r="10" stroke-width="1.15"/>
+    <circle cx="254" cy="186" r="19" stroke-width="1.4"/>
+    <circle cx="254" cy="186" r="10" stroke-width="1.15"/>
+    <circle cx="254" cy="137" r="6.4" stroke-width="1.15"/>
+    <circle cx="267" cy="150" r="6.4" stroke-width="1.15"/>
+    <circle cx="254" cy="163" r="6.4" stroke-width="1.15"/>
+    <circle cx="241" cy="150" r="6.4" stroke-width="1.15"/>
+    <path d="M140 186 h-9 v-9 h-9 v-9 h9 v-9 h9 v9 h9 v9 h-9 z" stroke-width="1.15" transform="translate(6,0)"/>
+    <circle cx="200" cy="132" r="13" stroke-width="1.4"/>
+    <circle cx="200" cy="132" r="6.4" stroke-width="1.15"/>
+    <circle cx="178" cy="150" r="4.6" stroke-width="1.15"/>
+    <circle cx="222" cy="150" r="4.6" stroke-width="1.15"/>
+    <path d="M104 112 q22 -14 46 -8" stroke-width="1.4"/>
+    <path d="M296 112 q-22 -14 -46 -8" stroke-width="1.4"/>
+  </g>
+</svg>

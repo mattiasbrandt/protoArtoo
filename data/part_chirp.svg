@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="CHIRP Audio Trigger: a small board with three round navigation buttons marked prev, play and next, a microSD card slot, a USB socket on the bottom edge and two chips for the processor and audio output">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="44.1" y="44.0" width="311.8" height="212.0" rx="4" stroke-width="2.4"/>
+    <rect x="187.5" y="56.0" width="137.2" height="89.0" rx="3" stroke-width="1.6"/>
+    <rect x="197.1" y="67.6" width="118.0" height="65.9" rx="2" stroke-width="1.15" opacity="0.85"/>
+    <circle cx="66.1" cy="107.6" r="8.5" stroke-width="1.4"/>
+    <circle cx="66.1" cy="107.6" r="3.6" stroke-width="1.15"/>
+    <circle cx="90.1" cy="107.6" r="8.5" stroke-width="1.4"/>
+    <circle cx="90.1" cy="107.6" r="3.6" stroke-width="1.15"/>
+    <circle cx="114.1" cy="107.6" r="8.5" stroke-width="1.4"/>
+    <circle cx="114.1" cy="107.6" r="3.6" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="66.1" y="129.6" text-anchor="middle">PREV</text>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="90.1" y="129.6" text-anchor="middle">PLAY</text>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="114.1" y="129.6" text-anchor="middle">NEXT</text>
+    </g>
+    <rect x="137.6" y="244.0" width="30" height="12" rx="2" stroke-width="1.4"/>
+    <rect x="142.6" y="247.0" width="20" height="6" rx="1.5" stroke-width="1.15"/>
+    <rect x="231.2" y="175.4" width="34.0" height="20.0" rx="2" stroke-width="1.4"/>
+    <rect x="271.2" y="183.9" width="18.0" height="13.0" rx="2" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="342.4" y="88.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="342.4" y="97.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="342.4" y="106.1" width="5.0" height="5.0" rx="1"/>
+      <rect x="342.4" y="115.1" width="5.0" height="5.0" rx="1"/>
+    </g>
+  </g>
+</svg>

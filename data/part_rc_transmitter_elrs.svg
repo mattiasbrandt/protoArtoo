@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="An ExpressLRS handset: a two-gimbal transmitter with a telemetry screen between the sticks, four labelled switches across the top and two dials that hold their position">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 106 h208 q22 0 22 22 v92 q0 22 -22 22 h-40 q-14 0 -18 12 l-6 18 q-5 14 -20 14 h-62 q-15 0 -20 -14 l-6 -18 q-4 -12 -18 -12 h-40 q-22 0 -22 -22 v-92 q0 -22 22 -22 z" stroke-width="2.4"/>
+    <rect x="166" y="150" width="68" height="42" rx="3" stroke-width="1.4"/>
+    <circle cx="132" cy="170" r="26" stroke-width="1.4"/>
+    <circle cx="132" cy="170" r="9" stroke-width="1.15"/>
+    <circle cx="268" cy="170" r="26" stroke-width="1.4"/>
+    <circle cx="268" cy="170" r="9" stroke-width="1.15"/>
+    <rect x="111.5" y="118" width="9" height="17" rx="2" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="116.0" y="114.0" text-anchor="middle">SA</text>
+    </g>
+    <rect x="135.5" y="118" width="9" height="17" rx="2" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="140.0" y="114.0" text-anchor="middle">SB</text>
+    </g>
+    <rect x="255.5" y="118" width="9" height="17" rx="2" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="260.0" y="114.0" text-anchor="middle">SD</text>
+    </g>
+    <rect x="279.5" y="118" width="9" height="17" rx="2" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="284.0" y="114.0" text-anchor="middle">SE</text>
+    </g>
+    <circle cx="176" cy="126" r="8.5" stroke-width="1.4"/>
+    <line x1="176" y1="126" x2="176" y2="119" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="176.0" y="112.0" text-anchor="middle">S1</text>
+    </g>
+    <circle cx="224" cy="126" r="8.5" stroke-width="1.4"/>
+    <line x1="224" y1="126" x2="224" y2="119" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.6">
+      <text x="224.0" y="112.0" text-anchor="middle">S2</text>
+    </g>
+  </g>
+</svg>

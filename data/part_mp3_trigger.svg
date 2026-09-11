@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="SparkFun MP3 Trigger: a board with a hardware decoder chip, a microSD card slot, an audio output jack and a row of trigger inputs along the bottom edge">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="73.7" y="50.0" width="252.6" height="200.0" rx="4" stroke-width="2.4"/>
+    <rect x="179.8" y="60.0" width="126.3" height="72.0" rx="3" stroke-width="1.6"/>
+    <rect x="188.6" y="69.4" width="108.6" height="53.3" rx="2" stroke-width="1.15" opacity="0.85"/>
+    <rect x="87.7" y="90.0" width="40.0" height="26.0" rx="2" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.55">
+      <text x="89.7" y="131.0" text-anchor="start">VS1053</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="87.0" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="114.6" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="142.1" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="169.7" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="197.3" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="224.9" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="252.5" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="280.0" y="236.3" width="5.4" height="5.4" rx="1"/>
+      <rect x="307.6" y="236.3" width="5.4" height="5.4" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.6">
+      <text x="89.7" y="232.0" text-anchor="start">TRIG</text>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="311.8" y="157.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="311.8" y="166.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="311.8" y="175.5" width="5.0" height="5.0" rx="1"/>
+      <rect x="311.8" y="184.5" width="5.0" height="5.0" rx="1"/>
+    </g>
+    <circle cx="149.5" cy="182.0" r="8" stroke-width="1.4"/>
+    <circle cx="149.5" cy="182.0" r="3.4" stroke-width="1.15"/>
+  </g>
+</svg>

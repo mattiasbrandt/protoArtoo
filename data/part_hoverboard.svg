@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="A salvaged hoverboard controller: a board outlined with a dashed edge because no two are alike, carrying a bank of power transistors, three motor leads at each end for the two wheels, a battery pair and one small serial header">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="44.0" y="60.3" width="312.0" height="179.4" rx="4" stroke-width="2.4" stroke-dasharray="9 5"/>
+    <g stroke-width="3.2" opacity="0.88">
+      <path d="M44.0 103.4 h-26"/>
+      <path d="M44.0 124.9 h-26"/>
+      <path d="M44.0 146.4 h-26"/>
+    </g>
+    <g stroke-width="3.2" opacity="0.88">
+      <path d="M356.0 103.4 h26"/>
+      <path d="M356.0 124.9 h26"/>
+      <path d="M356.0 146.4 h26"/>
+    </g>
+    <g stroke-width="4.2" opacity="0.88">
+      <path d="M175.0 239.7 v26"/>
+      <path d="M225.0 239.7 v26"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="178.5" y="197.4" width="5.6" height="5.6" rx="1"/>
+      <rect x="189.5" y="197.4" width="5.6" height="5.6" rx="1"/>
+      <rect x="200.5" y="197.4" width="5.6" height="5.6" rx="1"/>
+      <rect x="211.5" y="197.4" width="5.6" height="5.6" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity="0.62">
+      <text x="181.3" y="189.5" text-anchor="start">UART</text>
+    </g>
+    <g stroke-width="1.15" opacity="0.8">
+      <rect x="100.2" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+      <rect x="134.5" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+      <rect x="168.8" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+      <rect x="203.1" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+      <rect x="237.4" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+      <rect x="271.8" y="81.8" width="23.4" height="25.1" rx="1.5"/>
+    </g>
+  </g>
+</svg>
