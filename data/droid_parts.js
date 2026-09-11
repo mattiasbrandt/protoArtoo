@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 b746fa5162b68337cd108f0024fe720efde48ae92183bef4be34ecafb70a7ebc
+ * Source digest: sha256 3ae06f66274e5dde4fb0f2b3a4673aa2e36e982c2519cae4493f3aba9a4e3028
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -39,13 +39,14 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "b746fa5162b68337cd108f0024fe720efde48ae92183bef4be34ecafb70a7ebc",
+    "sourceSha256": "3ae06f66274e5dde4fb0f2b3a4673aa2e36e982c2519cae4493f3aba9a4e3028",
     "designs": [
       {
         "id": "mk4",
         "label": "MrBaddeley MK4",
         "short": "MK4",
         "blurb": "The MK4 astromech most builders here printed \u2014 six pie panels, fourteen side panels, three holoprojectors, and the body doors and utility arms that go with them.",
+        "preselected": true,
         "defaultVariant": "complex",
         "variants": [
           {
@@ -119,6 +120,7 @@
         "id": "pie1",
         "section": "dome_pies",
         "name": "Dome pie 1",
+        "half": "dome",
         "shorthand": "PP1",
         "aliases": [
           "PP1",
@@ -133,6 +135,7 @@
         "id": "pie2",
         "section": "dome_pies",
         "name": "Dome pie 2",
+        "half": "dome",
         "shorthand": "PP2",
         "aliases": [
           "PP2",
@@ -147,6 +150,7 @@
         "id": "pie3",
         "section": "dome_pies",
         "name": "Dome pie 3",
+        "half": "dome",
         "shorthand": "PP3",
         "aliases": [
           "PP3",
@@ -161,6 +165,7 @@
         "id": "pie4",
         "section": "dome_pies",
         "name": "Dome pie 4",
+        "half": "dome",
         "shorthand": "PP4",
         "aliases": [
           "PP4",
@@ -175,6 +180,7 @@
         "id": "pie5",
         "section": "dome_pies",
         "name": "Dome pie 5",
+        "half": "dome",
         "shorthand": "PP5",
         "aliases": [
           "PP5",
@@ -189,6 +195,7 @@
         "id": "pie6",
         "section": "dome_pies",
         "name": "Dome pie 6",
+        "half": "dome",
         "shorthand": "PP6",
         "aliases": [
           "PP6",
@@ -203,6 +210,7 @@
         "id": "panel1",
         "section": "dome_panels",
         "name": "Dome side panel 1",
+        "half": "dome",
         "shorthand": "P1",
         "aliases": [
           "P1",
@@ -217,6 +225,7 @@
         "id": "panel2",
         "section": "dome_panels",
         "name": "Dome side panel 2",
+        "half": "dome",
         "shorthand": "P2",
         "aliases": [
           "P2",
@@ -231,6 +240,7 @@
         "id": "panel3",
         "section": "dome_panels",
         "name": "Dome side panel 3",
+        "half": "dome",
         "shorthand": "P3",
         "aliases": [
           "P3",
@@ -245,6 +255,7 @@
         "id": "panel4",
         "section": "dome_panels",
         "name": "Dome side panel 4",
+        "half": "dome",
         "shorthand": "P4",
         "aliases": [
           "P4",
@@ -259,6 +270,7 @@
         "id": "panel5",
         "section": "dome_panels",
         "name": "Dome side panel 5",
+        "half": "dome",
         "shorthand": "P5",
         "aliases": [
           "P5",
@@ -273,6 +285,7 @@
         "id": "panel6",
         "section": "dome_panels",
         "name": "Dome side panel 6",
+        "half": "dome",
         "shorthand": "P6",
         "aliases": [
           "P6",
@@ -287,6 +300,7 @@
         "id": "panel7",
         "section": "dome_panels",
         "name": "Dome side panel 7",
+        "half": "dome",
         "shorthand": "P7",
         "aliases": [
           "P7",
@@ -301,6 +315,7 @@
         "id": "panel8",
         "section": "dome_panels",
         "name": "Dome side panel 8",
+        "half": "dome",
         "shorthand": "P8",
         "aliases": [
           "P8",
@@ -315,6 +330,7 @@
         "id": "panel9",
         "section": "dome_panels",
         "name": "Dome side panel 9",
+        "half": "dome",
         "shorthand": "P9",
         "aliases": [
           "P9",
@@ -329,6 +345,7 @@
         "id": "panel10",
         "section": "dome_panels",
         "name": "Dome side panel 10",
+        "half": "dome",
         "shorthand": "P10",
         "aliases": [
           "P10",
@@ -343,6 +360,7 @@
         "id": "panel11",
         "section": "dome_panels",
         "name": "Dome side panel 11",
+        "half": "dome",
         "shorthand": "P11",
         "aliases": [
           "P11",
@@ -357,6 +375,7 @@
         "id": "panel12",
         "section": "dome_panels",
         "name": "Dome side panel 12",
+        "half": "dome",
         "shorthand": "P12",
         "aliases": [
           "P12",
@@ -371,6 +390,7 @@
         "id": "panel13",
         "section": "dome_panels",
         "name": "Dome side panel 13",
+        "half": "dome",
         "shorthand": "P13",
         "aliases": [
           "P13",
@@ -385,6 +405,7 @@
         "id": "panel14",
         "section": "dome_panels",
         "name": "Dome side panel 14",
+        "half": "dome",
         "shorthand": "P14",
         "aliases": [
           "P14",
@@ -399,6 +420,7 @@
         "id": "logicFront",
         "section": "dome_lights",
         "name": "Front Logic Displays",
+        "half": "dome",
         "aliases": [
           "FLD",
           "Front display"
@@ -414,6 +436,7 @@
         "id": "logicRear",
         "section": "dome_lights",
         "name": "Rear Logic Display",
+        "half": "dome",
         "aliases": [
           "RLD",
           "Rear display"
@@ -429,6 +452,7 @@
         "id": "magicPanel",
         "section": "dome_lights",
         "name": "Magic Panel",
+        "half": "dome",
         "aliases": [
           "MP"
         ],
@@ -443,6 +467,7 @@
         "id": "psiFront",
         "section": "dome_lights",
         "name": "Front PSI",
+        "half": "dome",
         "aliases": [
           "FPSI"
         ],
@@ -457,6 +482,7 @@
         "id": "psiRear",
         "section": "dome_lights",
         "name": "Rear PSI",
+        "half": "dome",
         "aliases": [
           "RPSI"
         ],
@@ -471,6 +497,7 @@
         "id": "upperPanel",
         "section": "dome_lights",
         "name": "Small upper panel",
+        "half": "dome",
         "aliases": [],
         "position": "front-right",
         "bearingDeg": 62.5,
@@ -483,6 +510,7 @@
         "id": "hp1Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 1 pan",
+        "half": "dome",
         "shorthand": "HP1-1",
         "aliases": [
           "HP1-1",
@@ -499,6 +527,7 @@
         "id": "hp1Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 1 tilt",
+        "half": "dome",
         "shorthand": "HP1-2",
         "aliases": [
           "HP1-2",
@@ -515,6 +544,7 @@
         "id": "hp2Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 2 pan",
+        "half": "dome",
         "shorthand": "HP2-1",
         "aliases": [
           "HP2-1",
@@ -531,6 +561,7 @@
         "id": "hp2Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 2 tilt",
+        "half": "dome",
         "shorthand": "HP2-2",
         "aliases": [
           "HP2-2",
@@ -547,6 +578,7 @@
         "id": "hp3Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 3 pan",
+        "half": "dome",
         "shorthand": "HP3-1",
         "aliases": [
           "HP3-1",
@@ -563,6 +595,7 @@
         "id": "hp3Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 3 tilt",
+        "half": "dome",
         "shorthand": "HP3-2",
         "aliases": [
           "HP3-2",
@@ -579,6 +612,7 @@
         "id": "domeBtn1",
         "section": "dome_fixtures",
         "name": "Dome button 1",
+        "half": "dome",
         "aliases": [],
         "position": "front",
         "bearingDeg": 8,
@@ -589,6 +623,7 @@
         "id": "domeBtn2",
         "section": "dome_fixtures",
         "name": "Dome button 2",
+        "half": "dome",
         "aliases": [],
         "position": "front",
         "bearingDeg": 20,
@@ -599,6 +634,7 @@
         "id": "chargebay",
         "section": "body_doors",
         "name": "Chargebay door",
+        "half": "body",
         "aliases": [
           "Chargebay door",
           "Charge bay"
@@ -612,6 +648,7 @@
         "id": "dataport",
         "section": "body_doors",
         "name": "Dataport door",
+        "half": "body",
         "aliases": [
           "Dataport door",
           "Dataport"
@@ -625,6 +662,7 @@
         "id": "doorFL",
         "section": "body_doors",
         "name": "Left body door",
+        "half": "body",
         "aliases": [
           "Left body door",
           "FL door"
@@ -638,6 +676,7 @@
         "id": "doorFR",
         "section": "body_doors",
         "name": "Right body door",
+        "half": "body",
         "aliases": [
           "Right body door",
           "FR door"
@@ -651,6 +690,7 @@
         "id": "doorRL",
         "section": "body_doors",
         "name": "Rear-left body door",
+        "half": "body",
         "aliases": [
           "Rear-left body door",
           "RL door"
@@ -664,6 +704,7 @@
         "id": "doorRR",
         "section": "body_doors",
         "name": "Rear-right body door",
+        "half": "body",
         "aliases": [
           "Rear-right body door",
           "RR door"
@@ -677,6 +718,7 @@
         "id": "drawer",
         "section": "body_doors",
         "name": "Drawer",
+        "half": "body",
         "aliases": [
           "Drawer"
         ],
@@ -689,6 +731,7 @@
         "id": "smallDoor",
         "section": "body_doors",
         "name": "Small long door",
+        "half": "body",
         "aliases": [
           "Small long door"
         ],
@@ -701,6 +744,7 @@
         "id": "gripArm",
         "section": "body_arms",
         "name": "Gripper arm",
+        "half": "body",
         "aliases": [
           "Gripper arm"
         ],
@@ -713,6 +757,7 @@
         "id": "gripClaw",
         "section": "body_arms",
         "name": "Gripper claw",
+        "half": "body",
         "aliases": [
           "Gripper claw"
         ],
@@ -725,6 +770,7 @@
         "id": "interArm",
         "section": "body_arms",
         "name": "Interface arm",
+        "half": "body",
         "aliases": [
           "Interface arm"
         ],
@@ -737,6 +783,7 @@
         "id": "interTool",
         "section": "body_arms",
         "name": "Interface tool",
+        "half": "body",
         "aliases": [
           "Interface tool"
         ],
@@ -749,6 +796,7 @@
         "id": "utilLo",
         "section": "body_arms",
         "name": "Lower utility arm",
+        "half": "body",
         "aliases": [
           "Lower utility arm"
         ],
@@ -761,6 +809,7 @@
         "id": "utilUp",
         "section": "body_arms",
         "name": "Upper utility arm",
+        "half": "body",
         "aliases": [
           "Upper utility arm"
         ],

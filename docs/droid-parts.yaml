@@ -64,6 +64,16 @@
 #
 # Design entry fields:
 #   id:         stable design id — what a stored Droid Build refers to.
+#   preselected:
+#               true on the ONE design a fresh controller starts on, and absent
+#               on every other. It is a field rather than "the first row"
+#               because a stored Droid Build has to name a design the day the
+#               rows are reordered, and because MK4 shipping pre-selected is a
+#               decision (ADR 0047, #333) rather than an accident of order. The
+#               generator refuses a catalog with none or with two, and the
+#               design carrying it is the one a fresh flash records as its
+#               answer — together with its `default_variant` and the complement
+#               that variant seeds.
 #   label:      the operator-facing name on the card.
 #   short:      short form for chips and the wiring sheet's build summary.
 #   blurb:      the one sentence the card shows.
@@ -193,6 +203,10 @@
 
 designs:
   - id: mk4
+    # The design a fresh controller starts on, recorded as an answer rather
+    # than left absent (ADR 0047): a builder reads MK4 and corrects it, which
+    # an empty droid map would never prompt them to do.
+    preselected: true
     label: MrBaddeley MK4
     short: MK4
     blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the body doors and utility arms that go with them.
