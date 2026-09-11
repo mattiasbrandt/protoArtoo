@@ -253,6 +253,14 @@
           }, TAKEOVER_DEADLINE_MS);
         }
 
+        // A surface document reached directly carries a thin delegate that has
+        // already handed this visit to the Operator Shell (ADR 0048). The
+        // navigation it queued has not happened yet, so this document keeps
+        // parsing -- but its bootstrap would only load a page that is about to
+        // be replaced, and the controller sheds connections in the opening
+        // burst by design. Stand down instead of spending one.
+        if (window.PAShellDelegate) return;
+
         if (document.body) start();
         else document.addEventListener("DOMContentLoaded", start, { once: true });
       })();

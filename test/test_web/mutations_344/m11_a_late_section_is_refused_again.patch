@@ -1,0 +1,12 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index ac9df9d8..ebae444e 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -338,6 +338,7 @@
+         const known = new Set(prev.sections.map((s) => s.name));
+         const added = action.names.filter((name) => !known.has(name)).map(makeStep);
+         if (added.length === 0) return prev;
++        if (prev.sections.some((s) => s.status !== "pending")) return prev;
+         // recomputeSectionsStable re-derives the flag from the new list, so a
+         // page that was momentarily stable with nothing to do becomes unstable
+         // again as soon as it declares real work.

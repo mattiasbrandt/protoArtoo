@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..88f5d6d3 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -467,7 +467,7 @@
+     const previous = currentSurface ? mounted.get(currentSurface.page) : null;
+     if (previous) detach(previous);
+ 
+-    const existing = mounted.get(surface.page);
++    const existing = null;
+     if (existing) {
+       attach(surface, existing);
+       return;

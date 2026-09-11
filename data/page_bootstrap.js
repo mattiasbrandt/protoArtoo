@@ -306,23 +306,46 @@
         return settleActive(prev, action.outcome);
       }
 
+      case "ADD_RESOURCES": {
+        // Under the Operator Shell resources arrive in waves: the shell's own
+        // chain first, then one wave per surface that mounts. Appending keeps
+        // Resource Step Recovery exactly as it was -- one cursor, in declared
+        // order -- and simply gives it further to walk. Completed steps are
+        // never revisited, so a shared script loads once for the session, and
+        // sections wait behind the new wave the way they waited behind the
+        // first.
+        const known = new Set(prev.resources.map((r) => r.name));
+        const added = action.names.filter((name) => !known.has(name)).map(makeStep);
+        if (added.length === 0) return prev;
+        const resources = [...prev.resources, ...added];
+        return pump({
+          ...prev,
+          resources,
+          resourcesReady: prev.resourceCursor >= resources.length,
+        });
+      }
+
       case "DECLARE_SECTIONS": {
         // Page scripts declare their own sections as they execute, which is
-        // during resource loading -- before any section work may start. Only
-        // additive, and only while no section has run yet, so this can never
-        // discard in-progress or completed section state.
+        // during resource loading -- before any section work of their own may
+        // start. Additive only: a name already known is left alone, so this can
+        // never discard in-progress or completed section state.
+        //
+        // Declaring is deliberately NOT restricted to the first wave. A surface
+        // mounted into the Operator Shell runs its scripts long after the
+        // earlier surfaces' sections are done, and its own sections are new
+        // names appended to a settled list (ADR 0048).
         const known = new Set(prev.sections.map((s) => s.name));
         const added = action.names.filter((name) => !known.has(name)).map(makeStep);
         if (added.length === 0) return prev;
-        if (prev.sections.some((s) => s.status !== "pending")) return prev;
         // recomputeSectionsStable re-derives the flag from the new list, so a
         // page that was momentarily stable with nothing to do becomes unstable
         // again as soon as it declares real work.
-        return recomputeSectionsStable({
+        return pump(recomputeSectionsStable({
           ...prev,
           sections: [...prev.sections, ...added],
           deadlines: { ...prev.deadlines, ...(action.deadlines || {}) },
-        });
+        }));
       }
 
       case "REFRESH_SECTIONS": {
@@ -889,6 +912,11 @@
 // clock, loads the stylesheet and the page's script chain, runs page-declared
 // section loads, renders the Page Recovery View, and gates Live Page Updates.
 //
+// Under the Operator Shell (ADR 0048) the chain arrives in waves rather than
+// once: the shell's own chain at boot, then one wave per surface that mounts,
+// each declaring its own sections as its scripts execute. mountResources() is
+// that seam, and Resource Step Recovery covers every wave the same way.
+//
 // Replaces page_loader.js on pages that have adopted the bootstrap. It keeps
 // that file's contract intact -- one resource at a time, retry a failed load
 // rather than abandoning the chain, swap [data-deferred-src] once assets are
@@ -943,6 +971,24 @@
       done({ kind: "network" });
     };
     document.body.appendChild(script);
+  };
+
+  // Every resource in a page's declared chain is a script, so loadScript is the
+  // default. A surface mounted by the Operator Shell also needs its markup, and
+  // that is a resource in exactly the same sense: it must arrive before the
+  // scripts that bind to it, and a shed connection must be retried rather than
+  // abandoned. Registering a loader for that one step keeps markup and scripts
+  // under one Resource Step Recovery instead of two retry mechanisms (the
+  // mistake ADR 0019 records page_loader.js making).
+  const resourceLoaders = new Map();
+
+  const loadResource = (name, done) => {
+    const custom = resourceLoaders.get(name);
+    if (custom) {
+      custom(done);
+      return;
+    }
+    loadScript(name, done);
   };
 
   const runSection = (name, done) => {
@@ -1036,7 +1082,10 @@
   const cancelActive = (active) => {
     if (!active) return;
     if (active.kind === "resource") {
-      // Remove the pending script tag if it's still loading
+      // Remove the pending script tag if it's still loading. A resource with a
+      // custom loader has no tag to pull; its late result is discarded by the
+      // attempt-id check in settle(), so the reducer's accounting stays honest
+      // either way.
       document.querySelectorAll(`script[src="${active.name}"]`).forEach((script) => {
         if (!script.hasLoaded) {
           script.remove();
@@ -1065,7 +1114,7 @@
     const id = active.id;
 
     if (active.kind === "resource") {
-      loadScript(active.name, (error) => settle(id, error));
+      loadResource(active.name, (error) => settle(id, error));
     } else if (active.kind === "section") {
       const controller = runSection(active.name, (error) => settle(id, error));
       activeSectionRun = controller ? { id, controller } : null;
@@ -1174,8 +1223,12 @@
   // Page-facing API
   // ---------------------------------------------------------------------------
   window.PABootstrap = {
-    // Page scripts call this as they execute, which is during resource
-    // loading -- before any section work is allowed to start.
+    // Page scripts call this as they execute, which is while the wave of
+    // resources carrying them is still loading -- so their own sections are
+    // always declared before any of their section work may start. Under the
+    // Operator Shell that wave is the surface's mount rather than the initial
+    // page load, which is why declaring is no longer restricted to the first
+    // one (ADR 0048).
     registerSection(name, load, { label = null, deadlineMs = null } = {}) {
       sectionLoaders.set(name, load);
       if (label) window.PARecoveryView?.setLabels({ [name]: label });
@@ -1184,15 +1237,21 @@
         names: [name],
         deadlines: deadlineMs ? { [name]: deadlineMs } : undefined,
       });
-      // Sections may only be declared before any section work starts, so a
-      // late registration is refused. Silently dropping it would leave a page
-      // whose data simply never loads and no indication why.
-      if (!state.sections.some((s) => s.name === name)) {
-        console.warn(
-          `[page-bootstrap] section "${name}" registered after section work began; it will not load. ` +
-            "Register sections while the page script is executing."
-        );
-      }
+    },
+
+    // Adds a wave of resources for a surface the Operator Shell is mounting.
+    // An entry is either a script URL or { name, load } for a resource this
+    // host cannot load by itself -- the surface's markup. A name already in
+    // the chain is skipped, so a script shared with an earlier surface loads
+    // once for the session and its module state is never re-created.
+    mountResources(entries) {
+      const wave = entries.map((entry) => (typeof entry === "string" ? { name: entry } : entry));
+      // Register loaders before dispatching: the reducer may start the first
+      // of them synchronously, and syncActive then looks the loader up.
+      wave.forEach(({ name, load }) => {
+        if (load) resourceLoaders.set(name, load);
+      });
+      apply({ type: "ADD_RESOURCES", names: wave.map((entry) => entry.name) });
     },
     setResourceLabels(entries) {
       window.PARecoveryView?.setLabels(entries);

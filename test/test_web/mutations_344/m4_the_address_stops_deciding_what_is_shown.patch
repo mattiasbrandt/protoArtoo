@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..ba22ba1b 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -506,7 +506,7 @@
+   // something, and the one thing it must never do is leave the operator on a
+   // screen that says nothing at all.
+   const applyRoute = () => {
+-    const surface = surfaceFromHash() || rememberedSurface();
++    const surface = rememberedSurface();
+     if (mountInFlight) {
+       pendingPage = surface.page;
+       return;

@@ -618,6 +618,13 @@
   // section has settled -- which is where a "loaded" message becomes true.
   // Settled includes a section that is visibly waiting to retry, so report
   // what actually happened rather than claiming a clean load.
+  //
+  // Reported off the bootstrap's own section state rather than off
+  // pa:assets-ready, which is a once-per-session event: under the Operator
+  // Shell this surface mounts long after that event has fired, and a listener
+  // registered then would never hear it -- leaving the page with no load
+  // message and, worse, never starting its polling (ADR 0048, #344).
+  let loadOutcomeReported = false;
   const reportLoadOutcome = () => {
     const bootstrap = window.PABootstrap?.getState?.();
     const failing = bootstrap?.sections?.filter((s) => s.status !== "done") || [];
@@ -630,9 +637,12 @@
   };
 
   if (window.PABootstrap) {
-    window.addEventListener("pa:assets-ready", reportLoadOutcome, { once: true });
     window.addEventListener("pa:bootstrap-change", (event) => {
       gateOnSectionState(event.detail?.sections || []);
+      if (event.detail?.sectionsStable && !loadOutcomeReported) {
+        loadOutcomeReported = true;
+        reportLoadOutcome();
+      }
     });
     startPageLoad();
   } else {

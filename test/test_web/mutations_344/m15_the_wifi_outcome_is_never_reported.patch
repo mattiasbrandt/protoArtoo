@@ -1,0 +1,13 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index a2061460..a3981405 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -639,7 +639,7 @@
+   if (window.PABootstrap) {
+     window.addEventListener("pa:bootstrap-change", (event) => {
+       gateOnSectionState(event.detail?.sections || []);
+-      if (event.detail?.sectionsStable && !loadOutcomeReported) {
++      if (event.detail?.sectionsStable && loadOutcomeReported) {
+         loadOutcomeReported = true;
+         reportLoadOutcome();
+       }

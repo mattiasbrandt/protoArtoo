@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..9bf17e7a 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -229,7 +229,7 @@
+   // last status it saw. Consumers render the outcome rather than counting it,
+   // so hearing it again is a repaint.
+   const replaySessionFacts = () => {
+-    if (!lastIdentityEvent) return;
++    if (lastIdentityEvent) return;
+     if (typeof window.dispatchEvent !== "function") return;
+     window.dispatchEvent(new CustomEvent(lastIdentityEvent.type, { detail: lastIdentityEvent.detail }));
+   };

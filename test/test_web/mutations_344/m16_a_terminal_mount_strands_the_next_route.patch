@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index 39a63584..8e771b8c 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -459,7 +459,6 @@
+         // otherwise have applied it was never declared.
+         if (error?.kind !== "incompatible" && error?.kind !== "device-error") return;
+         mountInFlight = null;
+-        Promise.resolve().then(applyPendingPage);
+       });
+   };
+ 
