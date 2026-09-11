@@ -584,8 +584,8 @@
       if (child.id === TOPBAR_ACTIONS_ID) {
         // A surface's topbar actions belong beside the nav, not in the content
         // region. They are moved rather than copied, so the handlers the
-        // surface's scripts bind to them survive an unmount. Moving the estop
-        // itself onto the shell is #359's.
+        // surface's scripts bind to them survive an unmount. The estop is not
+        // one of these: it is chrome the shell writes itself, above.
         actionNodes = Array.from(document.importNode(child.content, true).children);
         return;
       }
