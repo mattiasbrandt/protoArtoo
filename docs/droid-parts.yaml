@@ -103,6 +103,37 @@
 #               180 = dead ahead (Printed Droid drawing convention). Dome
 #               entries carry real bearings; body entries carry position
 #               words only until measured on our droid.
+#
+#               UNRESOLVED, and visible in the rows below: the convention on
+#               the line above and the `position:` words on the same rows do
+#               not agree, and the drawing that settles it is not in this
+#               repository. Of the 27 dome rows carrying both a bearing and a
+#               front-or-rear position word, reading 0 as dead ASTERN puts 25
+#               of them on the wrong half of the droid, while reading 0 as dead
+#               AHEAD puts 2 there — and those 2 are one row and the light that
+#               inherits from it: `panel9` at 300 degrees, written `rear-left`.
+#               So the position words were almost all written as if 0 were dead
+#               ahead, and `panel9` is the lone outlier under that reading
+#               (measured 2026-09-11, #358; A1c measured the dome_panels subset
+#               alone and got 22 rows, 21 against 1, which says the same thing).
+#
+#               The NAMES go the other way and side with the documented
+#               convention: `panel8` at 24 degrees is the Rear PSI and
+#               `panel14` at 184 degrees is the Front PSI, and the vendored
+#               dome map agrees with the names (data/dome_panel_model.js labels
+#               P8 RPSI, P14 FPSI, P12 FLDs, P9 RLD). That is why a light
+#               generated below reads `psiRear` at `position: front`: a light
+#               inherits its host panel's geometry, so the contradiction is
+#               carried into the generated output rather than introduced by it.
+#               Do not "fix" either side from this file — the drawing decides.
+#
+#               Nothing consumes `position` yet. C4a (#352) and C4b (#372) are
+#               the first slices that would place a Part by it, and this must
+#               be settled before either draws anything. The drift check
+#               (tools/check_droid_parts_drift.py) will pin an output whose
+#               position words contradict their names quite happily: it guards
+#               staleness, never truth, so a green drift check is not agreement
+#               that the geometry is right.
 #   position:   compass-ish word — easier to find on a real droid than a number.
 #   control:    how protoArtoo can reach the part TODAY:
 #               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
