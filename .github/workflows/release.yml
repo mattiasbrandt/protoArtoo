@@ -17,8 +17,45 @@ permissions:
   contents: read
 
 jobs:
+  # Which of the two release tiers is this tag? (#285)
+  #
+  #   patch — release notes generated from the commit subjects in the range,
+  #           and the source tag. No firmware images: a fix should reach people
+  #           quickly, and rebuilding four environments for a one-line change
+  #           should not gate that.
+  #   full  — the curated CHANGELOG.md section as notes, plus all eight
+  #           firmware and filesystem images and SHA256SUMS.txt, as v1.2.0 did.
+  #
+  # Decided by semver alone: a patch release is the only kind whose Z is
+  # non-zero, so vX.Y.Z with Z > 0 is a patch and Z == 0 is a minor or major.
+  # No history lookup, and no table to keep in step with anything.
+  classify:
+    name: classify the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v7
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: 🎚️ Decide the tier
+        id: tier
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 tools/release_plan.py tier "$TAG" --github-output
+
   build:
     name: build (${{ matrix.env }})
+    needs: classify
+    # A patch release ships no images, so the four builds are skipped outright
+    # rather than run and thrown away.
+    if: needs.classify.outputs.tier == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -116,16 +153,35 @@ jobs:
 
   publish:
     name: publish release
-    needs: build
+    needs: [classify, build]
+    # `build` is skipped for a patch tag, and a skipped dependency skips its
+    # dependants by default — so publish states the condition itself: run when
+    # the tier is known and the builds either passed or were never needed.
+    if: >-
+      always() &&
+      needs.classify.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      TIER: ${{ needs.classify.outputs.tier }}
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v7
+        with:
+          # Generated patch notes are read from the commit range since the
+          # previous release tag, which a shallow clone does not have.
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
 
       - name: ⬇️ Download all build artifacts
+        if: needs.classify.outputs.tier == 'full'
         uses: actions/download-artifact@v8
         with:
           pattern: release-artifacts-*
@@ -133,17 +189,35 @@ jobs:
           merge-multiple: true
 
       - name: 🔏 Generate SHA256 checksums
+        if: needs.classify.outputs.tier == 'full'
         run: |
           cd release-artifacts
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: 📝 Extract CHANGELOG section for this tag
+        # Minor and major only. A missing section fails the release rather than
+        # publishing generated notes in its place: a feature reached main with
+        # nothing written about it, and a bare heading is worse than stopping.
+        # auto-release.yml promotes [Unreleased] into place before it tags, so
+        # reaching here without a section means the tag was pushed by hand.
+        if: needs.classify.outputs.tier == 'full'
         env:
           TAG: ${{ github.ref_name }}
         run: |
           version="${TAG#v}"
           python3 tools/extract_changelog_section.py "$version" > release-notes.md
+
+      - name: 📝 Generate notes for this patch tag
+        # Patch only. Terse, honest and clearly machine-written — an automatic
+        # patch release cannot wait for someone to write maker-voice prose,
+        # which is the whole reason the two tiers exist (#285).
+        if: needs.classify.outputs.tier == 'patch'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 tools/release_plan.py notes "$TAG" > release-notes.md
+          cat release-notes.md
 
       - name: 🚀 Create GitHub Release
         env:
@@ -157,5 +231,12 @@ jobs:
           case "$TAG" in
             *-*) args+=(--prerelease) ;;
           esac
-          gh release create "$TAG" "${args[@]}" release-artifacts/*
+          if [ "$TIER" = "full" ]; then
+            gh release create "$TAG" "${args[@]}" release-artifacts/*
+          else
+            # No assets: the glob would expand to nothing and take the command
+            # with it, so a patch release is its own line rather than a clever
+            # empty array.
+            gh release create "$TAG" "${args[@]}"
+          fi
           gh release edit "$TAG" --draft=false
