@@ -46,7 +46,13 @@
       "baseline_measured_at": "f422280098dd8747cc9fd1d8bf89af387a332df7",
       "baseline_flash_bytes": 1391856,
       "baseline_ram_bytes": 100900,
-      "budget_rationale": "Measured 1,391,856 B flash (87.0% of the budget, 81.7% of the partition) and 100,900 B static RAM at baseline_measured_at, where the Framework Envelope in platformio.ini compiles out the framework facilities this controller does not offer. Against the 1,596,112 B / 102,600 B image built from the same packages at the parent commit that is -204,256 B flash and -1,700 B RAM. Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget stays at 1,600,000 B: the recovered bytes are headroom for in-flight work, not a new floor. RAM budget stays at 110,000 B and is a heap-headroom figure, not a percentage of dram_limit_bytes - static .data+.bss shares the DRAM segment with the heap, and the request-admission floors in include/web_admission.h are calibrated against the largest free block, so a static byte saved is a heap byte gained. Compiling out Bluetooth widened the linker's static-DRAM segment from 124,580 to 180,736 B, but the firmware already released the Bluetooth region to the heap at boot via esp_bt_controller_mem_release(), so the real ceiling this budget guards has not moved."
+      "budget_rationale": "Measured 1,391,856 B flash (87.0% of the budget, 81.7% of the partition) and 100,900 B static RAM at baseline_measured_at, where the Framework Envelope in platformio.ini compiles out the framework facilities this controller does not offer. Against the 1,596,112 B / 102,600 B image built from the same packages at the parent commit that is -204,256 B flash and -1,700 B RAM. Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget stays at 1,600,000 B: the recovered bytes are headroom for in-flight work, not a new floor. RAM budget stays at 110,000 B and is a heap-headroom figure, not a percentage of dram_limit_bytes - static .data+.bss shares the DRAM segment with the heap, and the request-admission floors in include/web_admission.h are calibrated against the largest free block, so a static byte saved is a heap byte gained. Compiling out Bluetooth widened the linker's static-DRAM segment from 124,580 to 180,736 B, but the firmware already released the Bluetooth region to the heap at boot via esp_bt_controller_mem_release(), so the real ceiling this budget guards has not moved.",
+      "partition_fs_bytes": 655360,
+      "fs_ceiling_bytes": 655360,
+      "fs_budget_bytes": 409600,
+      "fs_baseline_measured_at": "0b55e00f",
+      "fs_baseline_bytes": 397312,
+      "fs_budget_rationale": "Measured 397,312 B at fs_baseline_measured_at: 40 files staging to 299,320 B of content, which LittleFS rounds into 97 blocks of 4,096 B. Rounding is the larger half of the cost and is not noise - 102,088 B of it, 70,892 B from the 26 files already larger than one block. Ceiling is the whole 655,360 B partition, with no reserve: unlike flash there are no OTA headers to leave room for. Budget at 409,600 B is 100 blocks, three blocks of slack over the baseline - deliberately tight, because this budget exists to make growth visible and 15% of slack would have hidden the growth that prompted it. epic/operator-experience already measures 434,176 B (106 blocks) and is expected to trip this once on merge; that raise states its own arithmetic here rather than being bumped quietly (ADR 0065). Measurement is the count of blocks in littlefs.bin that are not erased (all 0xFF); the file's own size is always the full partition and is never the measurement."
     },
     "firebeetle2_bringup": {
       "board": "FireBeetle 2 ESP32-P4",
@@ -72,7 +78,13 @@
       "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
       "baseline_flash_bytes": 1199056,
       "baseline_ram_bytes": 61214,
-      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes); the earlier 1,606,882 B / 79,952 B figures were recorded for the former firebeetle2_full env at 8fea3c7 and carried across the #203 rename, and do not describe this image. Budget set above measured value to allow image growth during platform development."
+      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes); the earlier 1,606,882 B / 79,952 B figures were recorded for the former firebeetle2_full env at 8fea3c7 and carried across the #203 rename, and do not describe this image. Budget set above measured value to allow image growth during platform development.",
+      "partition_fs_bytes": 10354688,
+      "fs_ceiling_bytes": 10354688,
+      "fs_budget_bytes": 1048576,
+      "fs_baseline_measured_at": "0b55e00f",
+      "fs_baseline_bytes": 397312,
+      "fs_budget_rationale": "Measured 397,312 B at fs_baseline_measured_at -- byte for byte what artoo_esp32 measures, because one data/ image is still built for both, which is the whole reason #382 exists: this board has 9,957,376 B free and carries the 4 MB board's filesystem. Ceiling is the whole 10,354,688 B partition. Budget at 1,048,576 B is deliberately loose and guards a different thing from artoo_esp32's: with 9.5 MB spare there is no scarcity here, so this number exists to catch an accident -- a build that images something enormous -- not to ration. It is expected to rise when each file declares which environments carry it and the default asset set's photographs land here and not on the legacy set (ADR 0065)."
     }
   }
 }
