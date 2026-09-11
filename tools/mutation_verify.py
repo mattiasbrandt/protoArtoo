@@ -39,6 +39,7 @@ import sys
 
 from slice_verify import (
     ROOT,
+    TEST_MEMORY_LIMIT_BYTES,
     WEB_TEST_TIMEOUT,
     info,
     parse_tap_counts,
@@ -71,7 +72,12 @@ def restore(patch_path: str, files: list[str]) -> bool:
 
 
 def run_suite(cmd: list[str], timeout: int) -> tuple[int, dict[str, int], bool, bool]:
-    proc = run(cmd, cwd=ROOT, timeout=timeout)
+    # Capped as well as timed. This is the call that runs the whole suite once
+    # per patch, so it is where a runaway in the code under mutation is most
+    # likely to be met -- and a mutation is deliberately broken code, which is
+    # exactly the state an unbounded loop lives in (see TEST_MEMORY_LIMIT_BYTES
+    # in slice_verify for the measurement this is sized from).
+    proc = run(cmd, cwd=ROOT, timeout=timeout, memory_limit=TEST_MEMORY_LIMIT_BYTES)
     output = proc.stdout + proc.stderr
     counts = parse_tap_counts(output) or {}
     has_not_ok = any(

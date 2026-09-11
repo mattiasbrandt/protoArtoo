@@ -67,6 +67,7 @@ import contextlib
 import json
 import os
 import re
+import resource
 import subprocess
 import sys
 import tempfile
@@ -123,6 +124,25 @@ GIT_TIMEOUT = 120
 BUILD_TIMEOUT = 1800
 NATIVE_TEST_TIMEOUT = 1800
 WEB_TEST_TIMEOUT = 300
+# Memory ceiling for a test subprocess, the same shape as the timeout above and
+# there for the case the timeout structurally cannot catch.
+#
+# Measured 2026-09-11 (#344, #355): an unbounded loop in a worker's in-progress
+# data/shell.js grew one node process from 26.0 to 29.8 GB in about twelve
+# seconds and systemd-oomd killed the operator's whole terminal scope, 337
+# processes, three times over. --test-timeout=10000 never fired and could not
+# have: the loop re-entered through Promise.resolve().then(), and a microtask
+# chain starves timers by construction, so the deadline never gets a turn.
+# mutation_verify multiplies the exposure by running the whole suite once per
+# patch, and a worker mid-slice is exactly when such a loop is most likely.
+#
+# 2 GiB is ~24x the measured peak of a healthy run (85 MB, whole web suite,
+# 2026-09-12) and catches the runaway above in 0.1s instead of twelve seconds.
+# RLIMIT_AS rather than a heap flag: the allocation that ran away was external
+# to the JS heap, so --max-old-space-size (default ~4.1 GB) would not have seen
+# it. Applied per subprocess, so node's own per-file test children inherit it
+# and each file is capped individually.
+TEST_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_TIMEOUT = 600
 GATE_SCRIPT = "tools/slice_verify.py"
 MUTATION_SCRIPT = "tools/mutation_verify.py"
@@ -151,12 +171,29 @@ def _text(data: str | bytes | None) -> str:
     return data
 
 
+def _memory_capper(limit: int | None):
+    """preexec_fn capping the child's address space, or None for no cap.
+
+    Returns None rather than a no-op callable when uncapped: passing any
+    preexec_fn disables subprocess's fast-path fork, so an unlimited run should
+    not pay for a limit it is not setting.
+    """
+    if limit is None:
+        return None
+
+    def cap():
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+    return cap
+
+
 def run(
     cmd: list[str],
     cwd: Path = ROOT,
     timeout: int = DEFAULT_TIMEOUT,
     env: dict | None = None,
     lock: bool = False,
+    memory_limit: int | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a command under a timeout; `lock` holds the build lock across it.
 
@@ -171,7 +208,7 @@ def run(
         try:
             return subprocess.run(
                 cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-                env=env,
+                env=env, preexec_fn=_memory_capper(memory_limit),
             )
         except subprocess.TimeoutExpired as exc:
             stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
@@ -347,7 +384,8 @@ def run_web_tests(cwd: Path) -> tuple[int, dict[str, int] | None, str]:
     files = web_test_files(cwd)
     if not files:
         return 0, {"tests": 0, "pass": 0, "fail": 0, "cancelled": 0}, ""
-    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd, timeout=WEB_TEST_TIMEOUT)
+    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd, timeout=WEB_TEST_TIMEOUT,
+               memory_limit=TEST_MEMORY_LIMIT_BYTES)
     output = proc.stdout + proc.stderr
     return proc.returncode, parse_tap_counts(output), output
 
