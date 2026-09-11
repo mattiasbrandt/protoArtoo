@@ -125,12 +125,16 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 
     ledcPwmSetPulseWidth(channel, commandedUs);
 
+    // The commanded width, and only that. There was an armOpen[] bit beside it
+    // deriving "open" from `commandedUs > SERVO_PULSE_NEUTRAL_US`, which is
+    // wrong on any reversed Endpoint Pair -- past neutral does not mean open
+    // when open is the lower number (ADR 0041). It has gone; anything wanting
+    // to say which end this output is at compares the width against the pair on
+    // its row, where the direction is recorded.
     taskENTER_CRITICAL(&robotStateMux);
     if (armId == 0) {
-        robotState.armOpen[0] = (commandedUs > SERVO_PULSE_NEUTRAL_US);
         robotState.arm1TargetUs = commandedUs;
     } else if (armId == 1) {
-        robotState.armOpen[1] = (commandedUs > SERVO_PULSE_NEUTRAL_US);
         robotState.arm2TargetUs = commandedUs;
     }
     taskEXIT_CRITICAL(&robotStateMux);
