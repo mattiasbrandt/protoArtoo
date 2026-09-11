@@ -1,8 +1,12 @@
 # Partition table for protoArtoo P4 — 16MB ESP32-P4 flash, OTA + LittleFS + coredump
 #
 # Layout: NVS (20KB) + OTA data (8KB) + App0 (3MB) + App1 (3MB) + LittleFS (9.88MB) + Coredump (64KB).
-# LittleFS: 9.88MB (0x9E0000). Web UI assets are gzipped at build (tools/gzip_fsdata.py)
-# to ~151KB, so 9.88MB is ample headroom.
+# LittleFS: 9.88MB (0x9E0000). One data/ image is built for every environment, so
+# this partition holds what the 4MB board's 640KB one holds -- until each file
+# declares which environments carry it (#382, ADR 0065). Measured, not assumed:
+# tools/check_build_budgets.py images the filesystem and counts allocated blocks
+# on every build. littlefs.bin's own size is always the full partition and is
+# never the measurement.
 # Coredump: 64KB (0x10000, type data / subtype coredump).
 #
 # The arduino-esp32 framework enables CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH +

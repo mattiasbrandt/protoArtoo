@@ -7,8 +7,14 @@
 # framework pool state, so headroom is 57-141KB (3.5-9%), not the ~25% this line
 # claimed before 2026-09-07. Anything that adds code to the image -- a second
 # driver in a Component Family, say -- is measured against that, not assumed.
-# LittleFS reduced from 704KB to 640KB to carve a 64KB coredump partition. Web UI
-# assets are gzipped at build (tools/gzip_fsdata.py) to ~151KB, so 640KB is ample.
+# LittleFS reduced from 704KB to 640KB to carve a 64KB coredump partition. The
+# image costs far more than its files add up to: LittleFS rounds every file up to
+# a 4KB block, so on main at 0b55e00f its 40 files (299,320 B of content, of which
+# 242,546 B is gzipped text) allocate 97 blocks = 397,312 B, leaving 258,048 B.
+# The "~151KB" this line claimed until 2026-09-11 counted neither the rounding nor
+# the UI's growth. tools/check_build_budgets.py now measures it every build
+# (#382, ADR 0065); do not read littlefs.bin's own size, which is always the full
+# partition and says nothing about usage.
 # Total: exactly 4MB.
 #
 # coredump (64KB, type data / subtype coredump): the arduino-esp32 framework
