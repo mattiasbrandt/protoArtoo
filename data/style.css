@@ -1852,6 +1852,26 @@ textarea:disabled {
   text-align: center;
 }
 
+/* A surface that came back with its polling stopped (ADR 0048, #360).
+
+   Leaving a surface stops it asking, so the values it is showing when the
+   operator returns are from before they left. This line says so above them
+   until that surface has answered again - a live-looking value is worse than
+   one you can see is old.
+
+   Uncoloured on purpose. Red is stopped or refused and amber is something the
+   builder can act on (#327); this is neither, so it spends the dim text and a
+   quiet edge and no status colour at all. */
+.surface-resumed {
+  border-left: 3px solid var(--border);
+  background: color-mix(in srgb, var(--lift) 3%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
 body.sleep-mode-active {
   overflow: hidden;
 }

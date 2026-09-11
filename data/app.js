@@ -1323,7 +1323,11 @@
       });
     };
 
-    const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
+    // Owned by this surface: the shell stops it when the operator leaves the
+    // Dashboard and starts it again on the way back (ADR 0048, #360). The
+    // beforeunload teardown below stays -- it is the other end of the same
+    // poll's life, and a closing tab is not a navigation the shell sees.
+    const fallbackPoll = window.PASurface.poll(
       refreshFromFallback,
       {
         cadenceMs: 3000,

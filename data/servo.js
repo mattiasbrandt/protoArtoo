@@ -430,16 +430,13 @@
       refreshStatusOnce().catch(() => {});
     }
   } else {
-    // Fallback: poll every 1 s, suspended while the tab is hidden.
-    refreshStatusOnce().catch(() => {});
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshStatusOnce().catch(() => {});
-    }, 1000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshStatusOnce().catch(() => {});
-      }
-    });
+    // Fallback: poll every 1 s, suspended while the tab is hidden and while the
+    // operator is reading another surface -- the shell stops it on the way out
+    // and starts it again on the way back (ADR 0048, #360).
+    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
+      cadenceMs: 1000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 })();

@@ -453,6 +453,9 @@
     });
 
     if (!window.PAStatusStream?.isSupported()) {
+      // Chrome, so deliberately NOT a surface-owned poll (#360): the estop
+      // never unmounts and its liveness must not follow whatever screen
+      // happens to be open. window.PASurface.poll() is for surfaces only.
       window.PageBootstrap?.createBackgroundPoll(
         () =>
           readStatusOnce().then(
@@ -495,6 +498,18 @@
   // identity load above already takes.
   if (!window.PABootstrap?.mountResources) return;
 
+  // A surface whose polling stopped while the operator was elsewhere comes
+  // back showing what it last read. One node, shown above whichever surface
+  // that is, until that surface has answered again -- so a glance cannot take
+  // those values for live ones. Uncoloured on purpose: this is a Note, and
+  // colour is reserved for refusals and for what the builder can act on
+  // (#327, docs/ui-copy-voice.md rule 11).
+  const resumedNote = document.createElement("div");
+  resumedNote.className = "surface-resumed";
+  resumedNote.setAttribute("role", "status");
+  resumedNote.textContent =
+    "Showing what this screen last read - it stopped asking while you were on another screen, and is asking again now.";
+
   // Ids are not unique across surfaces -- Firmware and Setup both carry
   // #reboot-button, Dashboard and Setup both carry #reboot-feedback -- so
   // exactly one surface is in the document at a time. A surface's scripts find
@@ -532,6 +547,7 @@
   const attach = (surface, entry) => {
     currentSurface = surface;
     document.body.dataset.page = surface.page;
+    if (window.PASurface?.isStale(surface.page)) shellContent.appendChild(resumedNote);
     shellContent.appendChild(entry.content);
     if (topActions) entry.actionNodes.forEach((node) => topActions.appendChild(node));
     markActive(surface.page);
@@ -542,9 +558,11 @@
   const detach = (entry) => {
     // The nodes are kept, not discarded: a surface returned to paints what it
     // already had, and the handlers its scripts bound are still on these exact
-    // elements. Stopping what a left surface was polling is #360's.
+    // elements. What it was polling has already been stopped by the caller --
+    // the surface is left before it is taken off the screen.
     entry.content.remove();
     entry.actionNodes.forEach((node) => node.remove());
+    resumedNote.remove();
   };
 
   // Everything in a surface document's <body> except the frame the shell owns.
@@ -643,6 +661,20 @@
   const mount = (surface) => {
     if (currentSurface === surface) return;
 
+    // A surface may hold its own unmount open while it asks the operator
+    // something -- an unsaved edit, once #289/#299 has one to protect. Nothing
+    // registers a hold today; what exists here is the capability. The address
+    // already names where the operator was going, so releasing the hold and
+    // re-reading it is the whole resume path (see pa:surface-release below).
+    if (currentSurface && window.PASurface?.unmountHeld(currentSurface.page)) return;
+
+    // Stop asking before the screen changes, so the surface being left is not
+    // still competing for the controller's three-client budget while the one
+    // the operator is reading loads. Only what the browser asks for changes on
+    // this path: no sequence stops, no output releases, no drive frame is
+    // dropped and no latch clears (ADR 0048, #360).
+    window.PASurface?.showing(surface.page);
+
     const previous = currentSurface ? mounted.get(currentSurface.page) : null;
     if (previous) detach(previous);
 
@@ -707,6 +739,21 @@
   };
 
   window.addEventListener("hashchange", applyRoute);
+
+  // The surface on screen has answered again, so what it is showing is current
+  // and the note above it comes down. Keyed on which surface answered: a poll
+  // that lands just after the operator left must not clear the note the next
+  // surface is wearing.
+  window.addEventListener("pa:surface-fresh", (event) => {
+    if (event.detail?.surface !== currentSurface?.page) return;
+    resumedNote.remove();
+  });
+
+  // A surface that was holding its unmount has finished asking. Re-read the
+  // address rather than replaying the page that was refused: by then the
+  // operator may have moved on again, and the address is the one thing that
+  // always says where they are.
+  window.addEventListener("pa:surface-release", () => applyRoute());
 
   // A click on a link to a surface's own document is a route change, not a page
   // load. Capture phase, so a surface's own delegated handler cannot swallow it

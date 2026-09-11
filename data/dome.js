@@ -373,16 +373,16 @@
       refreshStatus().catch(() => {});
     }
   } else {
-    refreshStatus().catch(() => {});
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshStatus().catch(() => {});
-    }, 5000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshStatus().catch(() => {});
-      }
-    });
+    // Owned by this surface: the shell stops it when the operator leaves Dome
+    // and starts it again on the way back, so a screen nobody is reading is not
+    // competing for the controller's three-client budget (ADR 0048, #360). The
+    // hidden-tab pause and the refresh on returning to the tab are the poll's
+    // own, rather than three hand-rolled pieces at this site.
+    window.PASurface.poll(() => refreshStatus().catch(() => {}), {
+      cadenceMs: 5000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 
   // -------------------------------------------------------------------------

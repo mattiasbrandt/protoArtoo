@@ -223,7 +223,6 @@
   const catalogSelectAll = document.getElementById("catalog-select-all");
   const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
-  let moduleStatusRefreshTimer = null;
   let catalogSupported = false;
   let catalogReady = false;
   let catalogBanks = [];
@@ -285,18 +284,19 @@
     return SOUND_VIEW_MODE_ADVANCED;
   };
 
-  const resetModuleStatusAutoRefresh = (caps) => {
-    if (moduleStatusRefreshTimer !== null) {
-      window.clearInterval(moduleStatusRefreshTimer);
-      moduleStatusRefreshTimer = null;
-    }
+  // Owned by this surface: whether the module can be asked at all is the
+  // capability's answer below, and whether asking is wanted at all is the
+  // shell's -- it stops this when the operator leaves Sound and starts it again
+  // on the way back (ADR 0048, #360). Created here rather than inside the
+  // reset, because the surface a poll belongs to is decided when it is made.
+  const moduleStatusPoll = window.PASurface.poll(
+    () => updateModuleStatus().catch(() => {}),
+    { cadenceMs: 2000 }
+  );
 
-    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) {
-      moduleStatusRefreshTimer = window.setInterval(() => {
-        if (document.visibilityState === "hidden") return;
-        updateModuleStatus().catch(() => {});
-      }, 2000);
-    }
+  const resetModuleStatusAutoRefresh = (caps) => {
+    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) moduleStatusPoll.start();
+    else moduleStatusPoll.stop();
   };
 
   const applyCapabilityUI = (caps) => {
@@ -2071,23 +2071,15 @@
       });
     }
   } else {
-    const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // Retry next cycle.
-      });
-    };
-
-    refreshFromFallback();
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 2000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
-      }
-    });
+    // Owned by this surface: the shell stops it when the operator leaves Sound
+    // and starts it again on the way back (ADR 0048, #360).
+    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
+      // Retry next cycle.
+    }), {
+      cadenceMs: 2000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 
   namedSoundFilterInput?.addEventListener("input", () => {
