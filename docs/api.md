@@ -1221,6 +1221,14 @@ Updates supported config fields and persists to NVS.
 - system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus)`, `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`
+- components (Component Member): `soundMember` — a Component Registry part id
+  (`dy_sv5w`, `mp3_trigger`, `chirp`), from the `sound` category of
+  `GET /api/identity/components`. Only a `supported` sound part this image
+  carries a driver for is accepted; anything else is `400`
+  `{"ok":false,"error":"soundMember is not a sound module this firmware can drive"}`.
+  Independent of `enableAudio`: the toggle says a sound module is fitted, the
+  member says which product it is. Saved immediately, **takes effect at the next
+  reboot** like a component toggle.
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
@@ -1235,7 +1243,10 @@ Updates supported config fields and persists to NVS.
 - `aux_led_pin` (0..3)
 - `aux_led_count` (1..255)
 
-- Success: `200` returns full updated config JSON (same shape as GET /api/config)
+- Success: `200` returns full updated config JSON (same shape as GET /api/config).
+  `components.audio` carries `member` (the saved choice) and `activeMember` (the
+  module running since the last boot). The two differ exactly while a member
+  change is staged and the controller has not rebooted.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields
 - `500` failed persistence or response build/alloc failure

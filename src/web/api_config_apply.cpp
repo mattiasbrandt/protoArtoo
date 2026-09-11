@@ -328,8 +328,12 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     // by the number it is stored as: a picker offering the registry's rows sends
     // back what the registry gave it, and nothing outside the registry has to
     // know the numbering. A roadmap row and a member from another family are
-    // both refused, and the message names what was asked for so the refusal is
-    // readable without the registry in front of you.
+    // both refused, by the same rule the picker's lineup comes from.
+    //
+    // The refusal deliberately does NOT echo what was asked for. setError()
+    // takes a literal and the message lands in a JSON error body, so echoing an
+    // arbitrary request value would put unescaped operator input there; the
+    // registry id space is small enough that the sentence is diagnosis enough.
     if (configParamHas(params, "soundMember")) {
         const char* memberId = configParamGet(params, "soundMember");
         const ComponentPartEntry* member = componentPartById(memberId);

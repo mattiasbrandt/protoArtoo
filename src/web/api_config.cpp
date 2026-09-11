@@ -532,13 +532,14 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     // than the stored number, so a picker never carries its own copy of the
     // numbering. Absent when the stored value names nothing this image knows,
     // which is the one case where an id would have to be invented.
+    //
+    // This is the SAVED choice. What the droid is actually playing through until
+    // it reboots is "activeMember", which addAudioMemberFields() adds in
+    // sendConfigSnapshot() -- this builder is pure and cannot read the
+    // boot-latched value.
     if (const ComponentPartEntry* member = componentPartByValue(snap.system.sound_member)) {
         components["audio"]["member"] = member->id;
     }
-    // What the droid is actually playing through until it reboots -- which is
-    // not the line above whenever a member was saved and the reboot has not
-    // happened yet. addAudioMemberFields() fills it in sendConfigSnapshot();
-    // this builder is pure and cannot read the boot-latched value.
 
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
@@ -587,24 +588,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
 namespace {
 
-// -----------------------------------------------------------------------------
-// addServoOutputFields()
-// The five fixed field sets, answered from the rows that replaced them.
-//
-// data/servo.js and data/setup.js still read arm1OpenUs and its nine siblings,
-// and components.arm1.type beside them; the C1 wave is what rebuilds those
-// pages onto the Servo Output rows. Until then the names stay and the numbers
-// come from the row addressed to each set's channel, so a surface renders what
-// the droid will actually drive to (#345, ADR 0041).
-//
-// It sits here rather than in populateConfigJson() because the live table is
-// exactly the runtime state a pure snapshot serializer cannot see -- the same
-// reason "pendingApply" and "networkRecovery" are added out here.
-//
-// An Output Address with no live row is left out of the document rather than
-// given a stand-in number: a field that is absent is one data/servo.js falls
-// back on its own default for, where an invented 2000 would read as a
-// calibration nobody made.
 // The Sound family's active Component Member: the module AudioTask actually
 // bound at boot, as against the saved choice populateConfigJson() reports. The
 // two differ exactly while a member change is staged and the droid has not
@@ -623,6 +606,24 @@ void addAudioMemberFields(JsonDocument& doc) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// addServoOutputFields()
+// The five fixed field sets, answered from the rows that replaced them.
+//
+// data/servo.js and data/setup.js still read arm1OpenUs and its nine siblings,
+// and components.arm1.type beside them; the C1 wave is what rebuilds those
+// pages onto the Servo Output rows. Until then the names stay and the numbers
+// come from the row addressed to each set's channel, so a surface renders what
+// the droid will actually drive to (#345, ADR 0041).
+//
+// It sits here rather than in populateConfigJson() because the live table is
+// exactly the runtime state a pure snapshot serializer cannot see -- the same
+// reason "pendingApply" and "networkRecovery" are added out here.
+//
+// An Output Address with no live row is left out of the document rather than
+// given a stand-in number: a field that is absent is one data/servo.js falls
+// back on its own default for, where an invented 2000 would read as a
+// calibration nobody made.
 void addServoOutputFields(JsonDocument& doc) {
     JsonObject components = doc["components"];
     for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
