@@ -8,6 +8,7 @@
 #include "config_cache.h"
 
 #include "audio_dollar_parser.h"
+#include "component_registry.h"  // the Sound Component Member's only source of valid values
 #include "config.h"
 #include "config_serializer.h"
 #include "config_nvsio.h"
@@ -278,6 +279,10 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->system.enable_protor2link = false;
     snap->system.stationary = false;
     snap->system.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    // A controller that has never been asked which sound module it has starts
+    // on the one its build names (PA_AUDIO_DRIVER), which is all that flag
+    // still decides.
+    snap->system.sound_member = componentCategoryDefaultMember(COMPONENT_CATEGORY_SOUND);
 
     snap->system.rc_pwm_drive_speed = defaultPwmBinding(1);
     snap->system.rc_pwm_drive_steer = defaultPwmBinding(2);
@@ -343,6 +348,9 @@ bool activeAudioEnabled = false;
 // Packed bitmask, 2 B: bit i is kComponentToggleFields[i]'s value as booted.
 // See include/config_cache.h and include/console_config_fields.h.
 uint16_t activeComponentToggleMask = 0;
+// The Sound Component Member as booted. 0 is no row's `value`, so "setup() has
+// not run yet" is distinguishable from any real member.
+uint8_t activeSoundMember = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 // The addressed Servo Output rows, live (ADR 0041).
@@ -660,6 +668,22 @@ bool configCacheReadActiveComponentToggle(size_t bitIndex) {
     bool result;
     taskENTER_CRITICAL(&configCacheMux);
     result = (activeComponentToggleMask & (uint16_t)(1u << bitIndex)) != 0;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveSoundMember(uint8_t memberValue) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeSoundMember = memberValue;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadActiveSoundMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeSoundMember;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }
@@ -1155,6 +1179,22 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::RC_INPUT_MODE:
             return (value >= 0 && value <= RC_INPUT_DUAL_SBUS) ? ConfigValidationResult::OK
                                                                 : ConfigValidationResult::INVALID_VALUE;
+
+        // Component Member. Not a numeric range: the only valid values are the
+        // Sound rows this image can actually drive, so the registry answers and
+        // this switch does not carry a second copy of the lineup. A roadmap row
+        // and a member from another family are both rejected here, which is why
+        // the picker can offer the registry's rows and trust the reply.
+        case ConfigKey::SOUND_MEMBER: {
+            if (value < 0 || value > 255) {
+                return ConfigValidationResult::OUT_OF_RANGE;
+            }
+            const ComponentPartEntry* part = componentPartByValue((uint8_t)value);
+            return (part != nullptr && part->category == COMPONENT_CATEGORY_SOUND &&
+                    componentPartIsSelectable(*part))
+                       ? ConfigValidationResult::OK
+                       : ConfigValidationResult::INVALID_VALUE;
+        }
 
         // Booleans are handled separately in configValidateBool
         case ConfigKey::ENABLE_ARM1:

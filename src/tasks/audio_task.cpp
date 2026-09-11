@@ -656,11 +656,14 @@ void audioTask(void* pvParameters) {
 
     const bool audioEnabledAtBoot = configCacheReadActiveAudioEnabled();
 
-    // Bind the Component Member before anything reads `driver`. The task is the
-    // only writer and it does this once, before its first loop, so the Core 0
-    // web handlers that read `driver` are reading a pointer that never moves
-    // again -- the same staged-at-reboot contract audioEnabledAtBoot has.
-    bindSoundMember(componentCategoryDefaultMember(COMPONENT_CATEGORY_SOUND));
+    // Bind the Component Member before anything reads `driver`. The value comes
+    // from the boot-latched active member that setup() resolved, never from the
+    // live config cache: a member saved while the droid is running takes effect
+    // at the next boot, exactly as a Component Toggle does (ADR 0027, ADR 0042).
+    // The task is the only writer and it does this once, before its first loop,
+    // so the Core 0 web handlers that read `driver` are reading a pointer that
+    // never moves again -- the same contract audioEnabledAtBoot has.
+    bindSoundMember(configCacheReadActiveSoundMember());
 
     AudioStepState step{};
     AudioNamedTracks named{};

@@ -291,6 +291,11 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->enable_protor2link   = r.readBool("en_r2link",       def.enable_protor2link);
     out->stationary           = r.readBool("op_mode",          def.stationary);
     out->rc_input_mode        = (RcInputMode)r.readU8("rc_mode", (uint8_t)def.rc_input_mode);
+    // The Sound Component Member, as a Component Registry part `value`. Read
+    // raw: whether this image can still drive the stored product is
+    // componentResolveMember()'s question, not the serializer's, so a member
+    // cut from one image and restored in the next survives the round trip.
+    out->sound_member         = r.readU8  ("snd_member",      def.sound_member);
 
     out->rc_pwm_drive_speed  = loadRcBinding(r, "rcp_drv", def.rc_pwm_drive_speed);
     out->rc_pwm_drive_steer  = loadRcBinding(r, "rcp_str", def.rc_pwm_drive_steer);
@@ -545,6 +550,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("en_r2link", cfg.enable_protor2link) && ok;
     ok = w.writeBool("op_mode", cfg.stationary) && ok;
     ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
+    ok = w.writeU8("snd_member", cfg.sound_member) && ok;
 
     // RC bindings  --  format and write as strings
     char encoded[48] = {};

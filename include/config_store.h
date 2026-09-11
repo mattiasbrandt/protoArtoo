@@ -175,8 +175,15 @@ enum class ConfigKey : uint8_t {
     STATIONARY = 101,
     RC_INPUT_MODE = 102,
 
+    // The Sound family's Component Member, beside ENABLE_AUDIO rather than
+    // inside it: the toggle says a sound module is fitted, the member says
+    // which product it is, and the two are independent in both directions
+    // (ADR 0042). Validated against the Component Registry, not against a
+    // numeric range -- see configValidate().
+    SOUND_MEMBER = 103,
+
     // Total count for array bounds
-    _COUNT = 103,
+    _COUNT = 104,
 };
 
 struct DriveConfig {
@@ -375,6 +382,12 @@ struct SystemConfig {
     bool enable_protor2link;
     bool stationary;
     RcInputMode rc_input_mode;
+    // Which sound module is fitted: a Component Registry part `value`, resolved
+    // through componentResolveMember() rather than trusted, so a controller
+    // carried to an image that no longer carries that module falls back to one
+    // it can drive instead of going silent. Staged at reboot like a Component
+    // Toggle; include/component_registry.h holds the contract.
+    uint8_t sound_member;
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
