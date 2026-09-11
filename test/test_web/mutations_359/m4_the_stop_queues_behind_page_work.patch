@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 377525f4..80cd4c3a 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -422,7 +422,7 @@
+       if (!window.PAApi) return;
+       showEstopFeedback("Stopping the droid...");
+       try {
+-        await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
++        await window.PAApi.postForm("/api/estop", {}, { timeoutMs: 3000 });
+       } catch (error) {
+         // A stop that did not reach the droid has to say so in its own line:
+         // the state line still reports what the droid last told us, which is

@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index 377525f4..30c6324d 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -428,7 +428,6 @@
+         // the state line still reports what the droid last told us, which is
+         // not the same thing and must not be overwritten with a guess.
+         showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
+-        return;
+       }
+       showEstopFeedback("Stop sent", "success");
+       try {

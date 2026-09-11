@@ -1,0 +1,14 @@
+diff --git i/data/status_stream.js w/data/status_stream.js
+index 5b66abf5..639de3fc 100644
+--- i/data/status_stream.js
++++ w/data/status_stream.js
+@@ -131,8 +131,7 @@
+     // instead of one per consumer.
+     seed(status) {
+       if (!status || typeof status !== "object") return;
+-      lastStatus = status;
+-      emit("status", lastStatus);
++      emit("status", status);
+     },
+     isSupported() {
+       return typeof EventSource !== "undefined";

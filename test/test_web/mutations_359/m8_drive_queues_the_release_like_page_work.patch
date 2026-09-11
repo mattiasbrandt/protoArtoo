@@ -1,0 +1,13 @@
+diff --git i/data/drive.js w/data/drive.js
+index e5bb8bd1..bcbd5f7c 100644
+--- i/data/drive.js
++++ w/data/drive.js
+@@ -179,7 +179,7 @@
+       // same way latching it does from the shell: an operator command about
+       // drive safety must not wait behind page work, and must not be replayed
+       // (CONTEXT.md, Browser Request Priority).
+-      const isEstop = path === "/api/estop/clear";
++      const isEstop = false;
+       const apiMethod = isEstop ? window.PAApi.estopPostForm : window.PAApi.postForm;
+       await apiMethod(path, {}, { timeoutMs: 3000 });
+       window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
