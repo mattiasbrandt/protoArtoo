@@ -15,6 +15,18 @@
 //   - Frequency: Standard RC servo/ESC frequency
 //   - Pulse range: 500-2500us (servos), 1000-2000us (ESC +/-500us from neutral)
 //
+// ARM1 and ARM2 are Output Addresses and a board legend, not Part names. The
+// Droid Parts Catalog calls the two utility arms `utilUp` and `utilLo`
+// (docs/droid-parts.yaml, "one of the two MG996R utility arm servos protoArtoo
+// already drives"), and those are Parts: identity, not wiring. The two
+// vocabularies are not a duplicate to be reconciled -- ADR 0041 and ADR 0050
+// keep them apart deliberately, because which Part a lead moves is the
+// builder's own droid's answer, not this header's. What joins them is the Part
+// list on the Servo Output row addressed to a channel, and since #345 that list
+// can only hold an id the compiled catalog vocabulary models
+// (servoOutputPartIdIsValid). So: nothing here claims ARM1 drives `utilUp`, and
+// nothing should -- a row records it once a builder says so.
+//
 // Pure-math helpers (pulseUsToDuty, clampPulseWidth) are inline so they can
 // be exercised by native unit tests without pulling in ESP32 LEDC headers.
 //
