@@ -24,7 +24,7 @@ tools/check_action_registry_drift.py - a purely derived list generates, and then
 has nothing left to check (#301). What can still go stale is the committed
 artefact, and guarding that is #358's.
 
-Three things this generator refuses, each because the alternative is an entry
+Five things this generator refuses, each because the alternative is an entry
 nothing can resolve:
 
   - a `control:` token include/droid_part_control.inc does not declare. The
@@ -35,10 +35,16 @@ nothing can resolve:
   - `seeds:` that is neither a list of declared part ids nor the scalar `TBD`.
     `TBD` generates as `null` rather than as `[]`, so a consumer reaching for an
     unknown complement throws instead of quietly seeding an empty droid.
+  - a `kind:` outside PART_KINDS below. A Part Kind decides what a surface shows
+    for a Part, so a misspelled one reads as "no kind declared" and the Part
+    quietly gets the treatment of something it is not.
+  - a `sits_on:` naming no declared part, or one that sits on something itself.
+    A light sits where its panel sits and inherits the geometry from it, so an
+    unresolvable host would place the light nowhere at all.
 
-Neither refusal keeps its own copy of the firmware's list: both are read out of
-the firmware headers at generation time, because a list written down twice is a
-list that drifts.
+The first two refusals keep no copy of the firmware's lists: both are read out
+of the firmware headers at generation time, because a list written down twice is
+a list that drifts.
 """
 
 import argparse
@@ -101,6 +107,7 @@ Part a builder can see and not wire, or wire and not see."""
 PART_SECTIONS = (
     "dome_pies",
     "dome_panels",
+    "dome_lights",
     "holoprojectors",
     "dome_fixtures",
     "body_doors",
@@ -125,10 +132,26 @@ PART_KEYS = frozenset(
         "dome_link_panel",
         "unit",
         "axis",
-        "lit",
+        "kind",
+        "sits_on",
         "note",
     )
 )
+
+# The Part Kinds a row may declare: what a Part usually IS, as opposed to what
+# drives it (CONTEXT.md "Part Kind", ADR 0045). Successor to the `lit:` note the
+# six lit dome panels used to carry, and advisory in the same way that note was
+# - a Kind gives a Part its own treatment on a surface and lets one query a
+# surprising mapping. Nothing here ever refuses one.
+#
+# Unlike the control paths, this vocabulary is not read out of a firmware
+# manifest, because firmware has no use for it: a Kind decides what a browser
+# surface may show for a Part, and a flag declared where nothing consults it is
+# exactly the defect this field exists to avoid. So it lists what the catalog
+# actually declares today - CONTEXT.md names servo-driven and indicator as the
+# other two the model foresees, and each joins this set on the day a row needs
+# it rather than sitting here unused.
+PART_KINDS = frozenset(("light",))
 
 DESIGN_KEYS = frozenset(("id", "label", "short", "blurb", "note", "variants", "default_variant", "seeds"))
 VARIANT_KEYS = frozenset(("id", "label", "seeds"))
@@ -302,6 +325,13 @@ def read_parts(doc, control_paths, problems):
                     f"{sorted(control_paths)}"
                 )
                 continue
+            kind = row.get("kind")
+            if kind is not None and kind not in PART_KINDS:
+                problems.append(
+                    f"{where}: kind {kind!r} is not a Part Kind this catalog declares; "
+                    f"PART_KINDS is {sorted(PART_KINDS)}"
+                )
+                continue
             name = part_name(row)
             if name is None:
                 problems.append(f"{where}: no label and no alias, so nothing can name it")
@@ -326,7 +356,8 @@ def read_parts(doc, control_paths, problems):
                     "dome_link_panel": row.get("dome_link_panel"),
                     "unit": row.get("unit"),
                     "axis": row.get("axis"),
-                    "lit": row.get("lit"),
+                    "kind": kind,
+                    "sits_on": row.get("sits_on"),
                 }
             )
         section_parts.sort(key=lambda part: natural_key(part["id"]))
@@ -388,10 +419,56 @@ def read_other_slots(doc, control_paths, declared_ids, problems):
                 "dome_link_panel": None,
                 "unit": None,
                 "axis": None,
-                "lit": None,
+                # A slot is whatever the builder wired to it, so the catalog
+                # declares no Kind for one: the hatch exists precisely for the
+                # hardware we have no word for.
+                "kind": None,
+                "sits_on": None,
             }
         )
     return slots
+
+
+def resolve_hosts(parts, problems):
+    """Settle every `sits_on:` link, and place a part where its host stands.
+
+    A light sits where its panel sits - the Magic Panel is at P5 because it IS
+    what P5 carries - so the geometry is declared once, on the panel, and taken
+    from there rather than copied into the light's own row where the two would
+    drift the first time a bearing is corrected.
+
+    Resolution order, and it is deliberate: a field the row declares itself
+    always wins, and the host's value is taken only for a field the row leaves
+    out. A light mounted somewhere other than the panel it is named for can
+    still say so.
+
+    One level only. A host that sits on something itself is refused rather than
+    walked, because a chain would resolve to whichever end this single pass
+    happened to reach first - an order nobody could predict from reading the
+    catalog.
+    """
+    by_id = {part["id"]: part for part in parts}
+    for part in parts:
+        host_id = part["sits_on"]
+        if host_id is None:
+            continue
+        where = f"{part['section']}/{part['id']}"
+        host = by_id.get(host_id)
+        if host is None:
+            problems.append(f"{where}: sits_on {host_id!r}, which no part row declares")
+            continue
+        if host is part:
+            problems.append(f"{where}: sits_on itself")
+            continue
+        if host["sits_on"] is not None:
+            problems.append(
+                f"{where}: sits_on {host_id}, which sits on something itself; "
+                "a part sits on one that stands on its own"
+            )
+            continue
+        for field in ("bearing_deg", "position"):
+            if part[field] is None:
+                part[field] = host[field]
 
 
 def read_designs(doc, declared_ids, problems):
@@ -529,6 +606,7 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
     parts = read_parts(doc, control_paths, problems)
     declared_ids = {part["id"] for part in parts}
     parts.extend(read_other_slots(doc, control_paths, declared_ids, problems))
+    resolve_hosts(parts, problems)
     designs = read_designs(doc, declared_ids, problems)
 
     for part in parts:
@@ -735,8 +813,14 @@ def browser_part(part):
         record["unit"] = part["unit"]
     if part["axis"] is not None:
         record["axis"] = part["axis"]
-    if part["lit"] is not None:
-        record["lit"] = part["lit"]
+    # The Part Kind, and only where the catalog declares one. An absent `kind`
+    # says the catalog does not classify this Part, which is a different
+    # statement from classifying it as the ordinary moving kind - the escape
+    # hatch is the case that makes the difference real.
+    if part["kind"] is not None:
+        record["kind"] = part["kind"]
+    if part["sits_on"] is not None:
+        record["sitsOn"] = part["sits_on"]
     return record
 
 
@@ -781,6 +865,16 @@ def generate_browser_module(catalog, output_path=None):
  * A variant whose complement is unknown carries `seeds: null`, never `[]`, so
  * reaching for it throws instead of quietly seeding an empty droid. `own`
  * carries `seeds: []`, which is a real and deliberate empty complement.
+ *
+ * `kind` is the Part Kind - what a Part usually IS, as opposed to what drives
+ * it. Branch on this field, never on an id prefix or a name match. It is
+ * advisory: it earns a Part its own treatment and lets a surface query a
+ * surprising mapping, and it never refuses one. A Part with no `kind` is one
+ * the catalog does not classify.
+ *
+ * `sitsOn` names the Part this one is carried by - a light and the dome panel
+ * it lights. Such a Part takes its host's `position` and `bearingDeg` unless it
+ * declares its own, so the two can never disagree about where they both are.
  */
 
 (function () {{

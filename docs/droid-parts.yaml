@@ -123,6 +123,24 @@
 #   dome_link_panel: the :OPnn/:CLnn number our AstroPixelsPlus fork serves
 #               for this part. TBD until verified against the fork's panel
 #               table on hardware — do not guess.
+#   kind:       the Part Kind — what this part usually IS, as opposed to what
+#               drives it. `light` is the one kind declared today, and it is
+#               what makes a PSI, a logic display or the Magic Panel a part a
+#               builder names and choreographs for rather than a footnote on a
+#               panel row (#320, ADR 0045). A surface branches on this field,
+#               never on an id prefix or a name match, and it is ADVISORY: it
+#               earns a part its own treatment and lets a surface query a
+#               surprising mapping. It never refuses one. A row with no `kind:`
+#               is one this catalog does not classify — the escape-hatch slots
+#               are whatever the builder wired to them.
+#               The tokens are the generator's PART_KINDS, not this file's to
+#               invent: firmware has no use for a Kind, so unlike `control:`
+#               there is no manifest to read it from.
+#   sits_on:    the part this one is carried by — a light and the dome panel it
+#               lights. It must name a declared part, and that part must stand
+#               on its own. A part that sits on another takes its `position`
+#               and `bearing_deg` from it unless it declares its own, so the
+#               two can never disagree about where they both are.
 #
 # `TBD` is a declared unknown and never reaches a generated output as a value:
 # the generator omits the key instead, so a consumer sees "not known here"
@@ -130,9 +148,12 @@
 # that is explicitly null is a different statement — the part HAS no CAD name,
 # which is what marks a Common Addition (ADR 0047) — and does generate.
 #
-# Dome panel notes ("lit"): panels Printed Droid lists as carrying lights or
-# displays rather than a servo. A mapping onto one of these is unusual but
-# legal — query it, never refuse it.
+# Lit dome panels: the panels Printed Droid lists as carrying lights or
+# displays rather than a servo are the ones a `dome_lights` row sits on. What
+# each carries used to be a `lit:` note on the panel itself; it is a part of its
+# own now, so the light has a name of its own, a Part Kind, and a place in every
+# sequence and picker a door or an arm appears in. A servo mapping onto one of
+# those panels is unusual but legal — query it, never refuse it.
 
 designs:
   - id: mk4
@@ -164,6 +185,8 @@ designs:
         seeds: [pie1, pie2, pie3, pie4, pie5, pie6,                       # PP1..PP6
                 panel1, panel2, panel3, panel4, panel5, panel6, panel7,   # P1..P14
                 panel8, panel9, panel10, panel11, panel12, panel13, panel14,
+                magicPanel, upperPanel, psiRear,                          # dome lights
+                logicRear, logicFront, psiFront,
                 hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,        # HP1..HP3
                 domeBtn1, domeBtn2,                                       # dome fixtures
                 doorFL, doorFR, doorRL, doorRR,                           # body doors
@@ -195,22 +218,41 @@ dome_panels:
   - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 128,   position: rear-right,  control: dome-link, dome_link_panel: TBD }
   - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 114,   position: right,       control: dome-link, dome_link_panel: TBD }
   - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 94,    position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 75.5,  position: right,       control: none,
-      lit: Magic Panel }
-  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 62.5,  position: front-right, control: none,
-      lit: small upper panel }
+  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 75.5,  position: right,       control: none }
+  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 62.5,  position: front-right, control: none }
   - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 45,    position: front-right, control: dome-link, dome_link_panel: TBD }
-  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 24,    position: front,       control: none,
-      lit: Rear PSI }
-  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 300,   position: rear-left,   control: none,
-      lit: Rear Logic Display }
+  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 24,    position: front,       control: none }
+  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 300,   position: rear-left,   control: none }
   - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 242,   position: left,        control: dome-link, dome_link_panel: TBD }
   - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 217,   position: rear-left,   control: dome-link, dome_link_panel: TBD }
-  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 204,   position: rear,        control: none,
-      lit: Front Logic Displays }
+  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 204,   position: rear,        control: none }
   - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 194,   position: rear,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 184,   position: rear,        control: none,
-      lit: Front PSI }
+  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 184,   position: rear,        control: none }
+
+dome_lights:              # what a lit panel carries — a part, not a footnote
+  # Each of these is the lit device on the panel it sits on, and each is a part
+  # in its own right for the same reason a holoprojector's pan and tilt are:
+  # a part is one thing an Output drives, and a light is driven separately from
+  # the panel around it (ADR 0045). They carry `control: none` — present on the
+  # droid, nothing protoArtoo drives yet — so they reach the browser alone and
+  # the firmware id table is untouched by them. The raw MarcDuino families
+  # (`*MO99`, `@0T1`) keep forwarding to the dome uninterpreted regardless; a
+  # part here claims commanded intent, never device truth.
+  #
+  # No `shorthand:`, because these are not Printed Droid channels — the panel
+  # each sits on carries the P-number. The aliases are the tokens this project
+  # already answers to: FLD, RLD, FPSI and RPSI are DL:/DT: targets
+  # (src/protocol_check.cpp), and MP is how the vendored dome map labels the
+  # Magic Panel (data/dome_panel_model.js).
+  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"],                   kind: light, control: none, sits_on: panel5 }
+  # The one lit panel no reference gives a device name to. "Small upper panel"
+  # is this catalog's own wording for it, kept rather than replaced by a name
+  # no builder would recognise.
+  - { id: upperPanel, label: Small upper panel,    aliases: [],                       kind: light, control: none, sits_on: panel6 }
+  - { id: psiRear,    label: Rear PSI,             aliases: ["RPSI"],                 kind: light, control: none, sits_on: panel8 }
+  - { id: logicRear,  label: Rear Logic Display,   aliases: ["RLD", "Rear display"],  kind: light, control: none, sits_on: panel9 }
+  - { id: logicFront, label: Front Logic Displays, aliases: ["FLD", "Front display"], kind: light, control: none, sits_on: panel12 }
+  - { id: psiFront,   label: Front PSI,            aliases: ["FPSI"],                 kind: light, control: none, sits_on: panel14 }
 
 holoprojectors:
   - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 165, position: rear,  control: none }
