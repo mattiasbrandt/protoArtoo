@@ -297,8 +297,11 @@ void test_only_explicit_clear_estop_can_clear_the_latch() {
                         executeManualCommand("disable_web_control"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
-    // Mode commands should not clear it either
-    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#st"));
+    // Mode commands should not clear it either -- and since #379 they are
+    // refused outright rather than discarded by the Marcduino parser, which
+    // is a second way of not clearing the latch, not a first way of clearing
+    // it.
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#st"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Only explicit clear_estop clears it
@@ -572,7 +575,11 @@ void test_manual_command_rejects_an_empty_command() {
 }
 
 void test_manual_command_routes_marcduino_by_prefix_without_case_folding() {
-    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#SM"));
+    // A real uppercase body command, rather than the "#SM" this test carried
+    // before #379: that spelling is now refused ahead of the routing as a
+    // shadowed mode keyword (the test below pins it), so it can no longer
+    // stand for an ordinary '#' line.
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#APSL"));
     TEST_ASSERT_EQUAL_UINT(1, g_test_marcduino_calls);
     // A Marcduino line is handed over verbatim -- lowercasing it here is what
     // the keyword path does, and doing it to these would change the command.
@@ -582,10 +589,14 @@ void test_manual_command_routes_marcduino_by_prefix_without_case_folding() {
 // The other two saveConfigToNvs() call sites #376 names -- MC_STATIONARY_MODE
 // and MC_DRIVING_MODE -- cannot be reached, and this is where that is written
 // down. The ':'/'#' Marcduino branch claims every '#' line before the keyword
-// resolver runs, so "#st" lands in parseMarcduinoCommand()'s '#' case, matches
-// nothing there, and is logged as an unhandled body command. Nothing commands a
-// mode, nothing saves, and the route answers {"ok":true} to an operator whose
-// droid did not move.
+// resolver runs, so "#st" would land in parseMarcduinoCommand()'s '#' case,
+// match nothing there, and be logged as an unhandled body command: nothing
+// commands a mode, nothing saves, and until #379 the route answered
+// {"ok":true} to an operator whose droid did not move.
+//
+// #379 kept the shadowing and refused the two lines in front of it, so this
+// pin now carries both halves: the keywords still never reach their branches,
+// and the answer no longer claims they did.
 //
 // Pinned because the fix makes those two branches LOOK live: they consume the
 // save result exactly like POST /api/mode does. Only this test says they are
@@ -596,12 +607,23 @@ void test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing() 
     // successfully: the scheduled failure is still unspent afterwards.
     failTheNextConfigSave();
 
-    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#st"));
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#st"));
 
-    // Routed as a Marcduino line rather than resolved as a mode keyword...
-    TEST_ASSERT_EQUAL_UINT(1, g_test_marcduino_calls);
-    // ...so no mode was commanded.
+    // Refused ahead of the Marcduino routing, so the line ran as nothing at
+    // all: no mode was commanded...
     TEST_ASSERT_FALSE(g_test_commanded_stationary);
+    // ...and it was not handed to the body parser either, which is what used
+    // to swallow it and answer success.
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+
+    // Both keywords, in either case: resolveManualCommand() runs on a
+    // lowercased copy, so "#ST" would have resolved to MC_STATIONARY_MODE
+    // exactly as "#st" does, and a refusal that missed the uppercase spelling
+    // would answer ok to the same non-event.
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#ST"));
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#sm"));
+    assertManualCommand(ManualCommandResult::ShadowedModeKeyword, executeManualCommand("#SM"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
 
     // And no save was attempted: the failure this test scheduled is still
     // waiting, and the next save -- POST /api/mode's -- is the one that spends

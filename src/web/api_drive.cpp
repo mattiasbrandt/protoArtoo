@@ -90,6 +90,12 @@ ManualCommand resolveManualCommand(const char* command) {
     if (strcmp(command, "reboot") == 0) {
         return MC_REBOOT;
     }
+    // The two mode keywords. Nothing asks for them any more:
+    // executeManualCommand() refuses "#st"/"#sm" before the Marcduino routing
+    // that shadows them ever claims the line (isShadowedModeKeyword() below,
+    // #379). They stay here because that guard reads its definition of the
+    // keywords from this function rather than from a second copy of the two
+    // strings.
     if (strcmp(command, "#st") == 0) {
         return MC_STATIONARY_MODE;
     }
@@ -111,6 +117,28 @@ bool copyLowercase(const char* raw, char* out, size_t outSize) {
     }
     out[i] = '\0';
     return true;
+}
+
+// True when raw is one of the two mode keywords the Marcduino '#' routing
+// shadows, in any case: "#st" and "#sm" (#379).
+//
+// Case-insensitive because that is the question resolveManualCommand()
+// answers -- it runs on a lowercased copy, so "#ST" would have resolved to
+// MC_STATIONARY_MODE exactly as "#st" does, and a refusal that missed the
+// uppercase spelling would answer {"ok":true} to the same non-event. Asked of
+// that resolver rather than of a second copy of the two strings, so there is
+// one definition of what the keywords are and the refusal cannot drift from
+// it.
+//
+// The buffer clears both keywords with room to spare; a longer line cannot be
+// one of them, which is what copyLowercase() returning false means here.
+bool isShadowedModeKeyword(const char* raw) {
+    char lowered[8] = {};
+    if (!copyLowercase(raw, lowered, sizeof(lowered))) {
+        return false;
+    }
+    const ManualCommand cmd = resolveManualCommand(lowered);
+    return cmd == MC_STATIONARY_MODE || cmd == MC_DRIVING_MODE;
 }
 
 void lowercaseInPlace(char* text) {
@@ -222,6 +250,15 @@ ManualCommandResult executeManualCommand(const char* raw) {
                                                   : ManualCommandResult::Unsupported;
     }
 
+    // "#st"/"#sm" - refused, and asked BEFORE the branch below, which is the
+    // whole point: that branch claims every '#'-prefixed line, so these two
+    // never reached the keyword resolver and the route answered {"ok":true}
+    // for a mode change that never happened (#379). The caller names
+    // POST /api/mode when it answers this.
+    if (isShadowedModeKeyword(raw)) {
+        return ManualCommandResult::ShadowedModeKeyword;
+    }
+
     // : and # - body-processed Marcduino: servo sequences, panel cmds, config
     if (prefix == ':' || prefix == '#') {
         // Mood commands (:SE10/11/13/14) are not valid body sequences so
@@ -279,16 +316,25 @@ ManualCommandResult executeManualCommand(const char* raw) {
         // anything: saveCommandedMode() above carries the decision they and
         // handleModePost() take together.
         //
-        // NEITHER IS REACHABLE TODAY. The ':'/'#' Marcduino branch above claims
-        // every '#'-prefixed line before the keyword resolver ever runs, so
-        // "#st" and "#sm" go to parseMarcduinoCommand(), whose own '#' case
+        // NEITHER IS REACHABLE, AND THAT IS NOW A DECISION RATHER THAN A
+        // DEFECT. The ':'/'#' Marcduino branch above claims every
+        // '#'-prefixed line before the keyword resolver ever runs, so "#st"
+        // and "#sm" went to parseMarcduinoCommand(), whose own '#' case
         // matches neither and logs "unhandled body command"
-        // (src/drivers/dome_rx_parser.cpp). They have been shadowed since the
-        // Marcduino prefix routing landed the day after them (4f10228f,
-        // 2026-03-17). They are written to consume the save result anyway, so
-        // that whoever un-shadows them gets the same answer POST /api/mode
-        // gives rather than the discarded one this file used to have.
-        // test_api_motion_routes.cpp pins the shadowing.
+        // (src/drivers/dome_rx_parser.cpp) -- shadowed since the Marcduino
+        // prefix routing landed the day after them (4f10228f, 2026-03-17).
+        // #379 settled it by refusing the two lines ahead of that branch
+        // (isShadowedModeKeyword() above) rather than by moving them in front
+        // of it: POST /api/mode with mode=stationary|driving already does
+        // exactly this, so a second door into the same room is not worth the
+        // Marcduino namespace it would cost.
+        //
+        // So these arms are dead by construction, and they stay anyway: they
+        // are the definition the refusal reads (through resolveManualCommand())
+        // and the record of what it refuses. They consume the save result as
+        // POST /api/mode does, so a future un-shadowing inherits the right
+        // answer rather than the discarded one this file used to have.
+        // test_api_motion_routes.cpp pins both halves.
         case MC_STATIONARY_MODE:
             commandedSetStationary(true, SRC_WEB_API);
             return saveCommandedMode() ? ManualCommandResult::Applied

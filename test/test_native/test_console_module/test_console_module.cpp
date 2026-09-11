@@ -1795,6 +1795,27 @@ void test_action_send_command_unsupported_keyword_answers_out_of_range() {
     TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
 }
 
+// "#st"/"#sm" over the Console (#379). The '#' prefix sends the line to the
+// Marcduino body parser, which matches neither keyword, so no mode changes -
+// and this executor shares the dispatch core that decides that, so it must
+// answer the refusal rather than let it fall through to an ok record. The
+// REST route answers 400 and names POST /api/mode; a Console result record
+// carries no free text (ConsoleRecordSink), so this side answers the value
+// reason it already uses for a command the core will not run. The next move
+// on this transport is system.action.set-mode.
+void test_action_send_command_shadowed_mode_keyword_is_refused() {
+    g_test_commanded_stationary = false;
+
+    runQuery("dome.action.send-command command=#st");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("command", capturedValue("argument"));
+    TEST_ASSERT_FALSE_MESSAGE(g_test_commanded_stationary,
+                              "a refused line must not command a mode");
+}
+
 // The sleep-mode prefix block, reproduced verbatim from
 // handleManualCommandPost(): a dome-forwarding prefix ('*'/'@'/'%'/'&'/'!')
 // is held while sleeping - blocked-by-state, not dispatched.
@@ -5174,6 +5195,7 @@ int main(int, char**) {
     RUN_TEST(test_action_send_command_unknown_argument_is_rejected);
     RUN_TEST(test_action_send_command_missing_command_answers_missing_argument);
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);
+    RUN_TEST(test_action_send_command_shadowed_mode_keyword_is_refused);
     RUN_TEST(test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping);
     RUN_TEST(test_action_send_command_keyword_is_not_blocked_by_sleep);
     RUN_TEST(test_action_send_command_estop_keyword_dispatches_through_the_real_core);
