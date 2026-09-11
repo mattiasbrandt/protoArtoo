@@ -196,6 +196,11 @@ jobs:
         continue-on-error: true
         run: make check-action-drift
 
+      - name: 🧩 Component registry drift
+        id: component-drift
+        continue-on-error: true
+        run: make check-component-drift
+
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
@@ -221,6 +226,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -253,6 +259,7 @@ jobs:
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
+            row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
             echo ""
@@ -278,6 +285,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           CODE_CHANGED: ${{ steps.changes.outputs.code }}
@@ -300,6 +308,7 @@ jobs:
           check "$TESTS_OUTCOME"        "native-tests"
           check "$ANALYSIS_OUTCOME"     "static-analysis"
           check "$DRIFT_OUTCOME"        "action-drift"
+          check "$COMPONENT_DRIFT_OUTCOME" "component-drift"
           check "$WEB_OUTCOME"          "web-tests"
           check "$TOOLING_OUTCOME"      "tooling-tests"
 

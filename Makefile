@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-component-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -148,6 +148,9 @@ check: ## Static analysis with cppcheck
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
+
+check-component-drift: ## Check the Component Registry manifest against the firmware and the browser
+	python3 tools/check_component_registry_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py
