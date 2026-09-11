@@ -16,6 +16,19 @@ class Preferences {
 private:
     std::map<std::string, std::string> data;
     bool isOpen = false;
+    // How many more putString() calls must report a failed write. See
+    // failNextStringWrites() at the bottom for what this stands in for.
+    unsigned failStringWrites = 0;
+
+    // One scheduled failure, consumed. Nothing is stored when it fires: an
+    // nvs_set_str that returned an error wrote nothing either.
+    bool consumeStringWriteFailure() {
+        if (failStringWrites == 0) {
+            return false;
+        }
+        failStringWrites--;
+        return true;
+    }
 
 public:
     Preferences() = default;
@@ -181,12 +194,14 @@ public:
 
     size_t putString(const char* key, const char* value) {
         if (!isOpen) return 0;
+        if (consumeStringWriteFailure()) return 0;
         data[key] = value ? value : "";
         return data[key].length();
     }
 
     size_t putString(const char* key, const String& value) {
         if (!isOpen) return 0;
+        if (consumeStringWriteFailure()) return 0;
         data[key] = std::string(value.c_str());
         return data[key].length();
     }
@@ -206,4 +221,17 @@ public:
 
     // Test helpers
     const std::map<std::string, std::string>& getData() const { return data; }
+
+    // Make the next `count` string writes fail, the way a full or fragmented
+    // NVS partition does on the device: nvs_set_str() returns an error, the
+    // vendor's Preferences::putString() logs it and returns 0, and nothing is
+    // stored (framework-arduinoespressif32 libraries/Preferences/src/
+    // Preferences.cpp:264-279). Without this the stub can only ever succeed
+    // while it is open, which is why #375's guard had never been exercised in
+    // the one state it exists for.
+    //
+    // Strings only, deliberately. It is writeStr() that could not tell a
+    // failed write from an empty one, and a counter aimed at putString() lets
+    // a test fail one row of a multi-row save and leave the rest landing.
+    void failNextStringWrites(unsigned count) { failStringWrites = count; }
 };

@@ -1028,7 +1028,11 @@ bool configSaveServoOutputs(Preferences& prefs) {
     // Both guards are load-bearing, because this is the one irreversible step
     // in the whole migration. `ok` says every row write landed, so a failed
     // save leaves the old keys exactly where they were and the next attempt can
-    // still cross the bridge. `count` says the live table has rows at all: a
+    // still cross the bridge -- and that sentence is only true because
+    // PrefsWriter::writeStr() reports a putString() that returned 0 for a
+    // non-empty value as a failure (src/config_nvsio.cpp, #375). It used to
+    // return true unconditionally, and this removal ran on top of a row that
+    // had never reached flash. `count` says the live table has rows at all: a
     // save that ran before configLoadServoOutputs() would be writing an empty
     // table over a builder's calibration, and removing the keys on top of that
     // is how the calibration would be lost rather than merely unloaded.

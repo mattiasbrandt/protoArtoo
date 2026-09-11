@@ -11,6 +11,17 @@
 // id table whatever drives it, so nothing here decides membership of that table
 // (operator decision, 2026-09-11, #358).
 //
+// NOT COMPILED INTO THE FIRMWARE YET (#375). Nothing under src/ includes this
+// header; the only #include in the tree is its own unit test, and the
+// generator and tools/check_droid_parts_drift.py read the .inc beside it as
+// TEXT rather than through the enum below. So the enum and the two token
+// functions are staged, not shipped, and they are staged for exactly one
+// thing: C1a (#347), the first surface that draws a Part row and has to say
+// what drives each Part. Written down because a declaration nothing consults
+// reads as shipped otherwise, and this project has shipped a module nothing
+// referenced before. Delete this paragraph when the first production caller
+// arrives.
+//
 // Pure: no NVS, no FreeRTOS, no Arduino String. Header-only, so anything that
 // is handed a catalog spelling can resolve it without pulling in a driver.
 // =============================================================================

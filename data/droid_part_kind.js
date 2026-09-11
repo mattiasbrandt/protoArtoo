@@ -30,6 +30,15 @@
 // question (#318) rather than a behaviour this module implies, so nothing here
 // reports a light as stopped, held, or released.
 //
+// NO PAGE LOADS THIS MODULE YET (#375). It appears in no `data-scripts`
+// attribute and no other data/*.js calls `window.DroidPartKind`; what reads it
+// today is the web suite, and tools/check_droid_parts_drift.py, which names it
+// as the consumer that keeps the catalog's `light` Kind honest. It is staged
+// for C1a (#347), the first surface that draws a Part row - which is what the
+// rules below are written for. Said out loud because a module nothing loads
+// reads as shipped otherwise, and this project has shipped one before. Delete
+// this paragraph when #347 wires the first page to it.
+//
 // It is ADVISORY, and it never refuses anything. Plenty of builds move
 // something the reference drawing shows as a display, so a servo Output mapped
 // onto a lit panel saves exactly as any other mapping does; `lightOn()` is
