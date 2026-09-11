@@ -822,14 +822,12 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
 // the caller answers "not persisted" and the writer has touched nothing.
 // -----------------------------------------------------------------------------
 bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w) {
-    bool ok = w.writeStr(DROID_BUILD_DOME_DESIGN_KEY, cfg.dome.design);
-    ok = w.writeStr(DROID_BUILD_DOME_VARIANT_KEY, cfg.dome.variant) && ok;
-    ok = w.writeStr(DROID_BUILD_BODY_DESIGN_KEY, cfg.body.design) && ok;
-    ok = w.writeStr(DROID_BUILD_BODY_VARIANT_KEY, cfg.body.variant) && ok;
-
+    // The one step that can fail for a reason other than storage goes first, so
+    // a controller that could not allocate has not had half an answer written
+    // over the one it already held.
     char* fitted = (char*)malloc(DROID_FITTED_PARTS_STR_MAX + 1);
     if (fitted == nullptr) {
-        return false;  // the caller reports a failed persist; nothing is half-written
+        return false;  // the caller reports a failed persist; nothing was written
     }
     size_t used = 0;
     for (size_t i = droidFittedPartsNextIndex(cfg.fitted, 0); i < DROID_PART_COUNT;
@@ -847,6 +845,10 @@ bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w) {
     if (used == 0) {
         snprintf(fitted, DROID_FITTED_PARTS_STR_MAX + 1, "%s", DROID_FITTED_PARTS_NONE);
     }
+    bool ok = w.writeStr(DROID_BUILD_DOME_DESIGN_KEY, cfg.dome.design);
+    ok = w.writeStr(DROID_BUILD_DOME_VARIANT_KEY, cfg.dome.variant) && ok;
+    ok = w.writeStr(DROID_BUILD_BODY_DESIGN_KEY, cfg.body.design) && ok;
+    ok = w.writeStr(DROID_BUILD_BODY_VARIANT_KEY, cfg.body.variant) && ok;
     ok = w.writeStr(DROID_BUILD_FITTED_KEY, fitted) && ok;
     free(fitted);
     return ok;
