@@ -83,13 +83,30 @@ the same pass - never left open for one unobtainable number.
 `<base>` throughout this skill is the epic's integration branch - read it
 from the epic's coordination section (it changes at Phase 5 closure).
 
-- `gh issue develop <n> --base <base> --name <type>/<slug>`, then
-  `git worktree add ../wt-<n> <branch>`.
-- **Stale-base trap:** `gh issue develop` branches from ORIGIN's ref, which
-  can be many commits behind the local integration branch. After creating the
-  worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
-  `<base>` tip; if not, `reset --hard` it there before the worker
-  starts. Every worktree, every time.
+- **Make the branch and worktree with the tool, not by hand:**
+  `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug>`.
+  It creates the linked branch, adds `../wt-<n>`, puts it on the local
+  `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
+  branch so the issue's Development section names the real base, and prints
+  how far `origin/<base>` is behind. `--check <path> --base <base>` re-verifies
+  an existing worktree before a re-dispatch; `--dry-run` reports and creates
+  nothing.
+- **Why the tool exists, so nobody "simplifies" it away.** `gh issue develop`
+  creates the branch **server-side, from the remote ref** - its own help says
+  so. An epic's integration branch advances **locally**, because AGENTS.md
+  "Push and remote policy" makes pushing a shared integration branch an
+  operator-approved act. So `origin/<base>` runs N merges behind `<base>` and
+  every hand-made worktree starts at the wrong commit. This used to be a
+  sentence here telling the coordinator to `reset --hard` after every worktree,
+  every time; it was obeyed, and it was still the wrong shape, because a rule
+  that must be remembered on every repetition is a defect waiting for the
+  repetition where it is not.
+- **The gap itself is the operator's call, and not the tool's to close.**
+  Pushing `<base>` after each accepted merge would remove the divergence at
+  source and make `gh issue develop --base` correct by construction. That is an
+  approved act, not a coordinator convenience: ask for it once per epic rather
+  than assuming it, and until it is granted let the tool report the gap on
+  every run.
 - **Seed only the research this ticket cites.** From the repo root,
   `cp --parents <cited paths> ../wt-<n>/` - which reproduces each path exactly
   as the ticket and the epic write it, screenshots included. Copy the files
@@ -183,6 +200,24 @@ reporting passes that never ran. In the worker's worktree, personally:
    yourself; tick the remainder in the same pass as the evidence-bearing
    closing comment.
 
+7. **Route every finding onto the ticket that will act on it, in the same
+   pass.** A worker reports what it could not fix - a fenced file, a decision
+   above its pay grade, another target's problem. Those die in a closed
+   ticket, in your acceptance comment, or in a session summary unless they are
+   written where the work is: a comment on the open sub-issue that owns those
+   files, naming what was found, `file:line`, which ticket found it, and **what
+   this ticket has to do about it**; or an acceptance criterion on that
+   sub-issue where the work is definite; or a handover to the epic that owns
+   the target, never a ticket minted on yours. Only when none of those exist
+   does it go back to the operator to place. Naming a finding is not routing
+   it - "belongs to C3" in a closing comment is how it is lost. Doing this at
+   acceptance, while you still hold the context, is the difference between a
+   pointer and a cold start.
+
+   Routing happens BEFORE anything about the finding reaches the operator, and
+   for most findings it is the whole of the handling - see Reporting for what
+   is left to escalate and what is not.
+
 ## Rejection bookkeeping and escalation
 
 - On every rejection, update ONE pinned coordinator comment on the sub-issue:
@@ -205,6 +240,16 @@ first; later conflicting branches rebase onto the updated base before their
 review completes. After the final merge, re-run the merged-tree test suite
 and any epic-level acceptance sweeps - line numbers and stragglers move.
 Nothing is pushed to origin until the operator explicitly says so.
+
+**A slice is not finished until its pane is closed.** The sequence is one
+motion, in this order: accept -> tick the criteria -> merge -> close the
+ticket -> **close the worker's Herdr pane** (and its tab once that was its
+last pane). Before closing, check the worker is genuinely done rather than
+merely idle: `git status` clean in its worktree, its branch listed by
+`git branch --merged <base>`, its ticket closed. An idle pane left open reads
+as a worker still holding the slice, and the next wave's tab lands beside a
+ghost. Close only panes and tabs you created; another session may be in a
+neighbouring workspace.
 
 ## Device verification (serialized - coordinator + operator, never workers)
 
@@ -286,6 +331,41 @@ assume: clean-rebuild your base and symbol-check every merged slice.
 ## Reporting
 
 Keep one evolving status comment per epic with the frontier state (running /
-in review / rework / merged). Interrupt the operator only when: a ticket is
-rejected twice, the frontier stalls, an integration conflict is non-trivial,
-or a device session is needed. Otherwise work autonomously.
+in review / rework / merged).
+
+**Record first, escalate second, and escalate only the residue.** A finding is
+written onto the ticket that will act on it (critic protocol step 7) BEFORE
+anything about it reaches the operator - and most findings stop there. Telling
+the operator about a concern you have not recorded converts their attention
+into the only place it lives, which is the failure this rule exists to prevent.
+What reaches them is then the decision, in one line, with the record already
+linked.
+
+**Reaches the operator, batched, with a recommended default:**
+
+- a **decision that is theirs**: product scope, a term or vocabulary, what a
+  droid should do, which hardware is supported, priority between tickets;
+- an **error or a defect that blocks**: the frontier stalled, a ticket rejected
+  twice with the same signature, a non-trivial integration conflict, a
+  toolchain or bench fault nobody can work around, a safety invariant at risk;
+- an act that **needs their approval**: a device session, a shared build
+  configuration or budget change, pushing a shared integration branch, minting
+  a ticket on an epic that is not yours, anything outward-facing or expensive.
+
+**Does NOT reach the operator - route it and carry on:**
+
+- a worker's find you can place on an open sub-issue that owns those files;
+- a ticket defect of your own making: repair the body, say so on the ticket;
+- a criterion that is unreachable from the slice in hand because the files
+  belong to another ticket - move it, with the reason recorded;
+- an acceptance detail, a cut you are entitled to make, a fence you re-cut,
+  a rework you are sending back;
+- another target's or another epic's problem, once it is written on the ticket
+  that owns that target and named in your status comment.
+
+The test before typing a concern to the operator: **"if they say nothing, does
+the work still happen?"** If yes, it was routing, not escalation - the sub-issue
+carries it and the status comment mentions it. If no, ask, and make the ask a
+decision with options and a default rather than a description of a worry.
+
+Otherwise work autonomously.
