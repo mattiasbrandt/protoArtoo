@@ -293,8 +293,12 @@
                because a title carries no affordance on a bench tablet,
                docs/ui-copy-voice.md rule 12 / ADR 0059). -->
           <div class="shell-estop">
+            <!-- The accessible name opens with the word on the face of the
+                 button, so someone driving the page by voice can say what
+                 they can see (WCAG 2.5.3 Label in Name) - the one control
+                 where being unable to say "press STOP" would matter most. -->
             <button id="shell-estop-button" class="btn danger shell-estop-button" type="button"
-                    aria-label="Stop the droid now - latch the estop">
+                    aria-label="STOP - cut drive now. Clear it on Drive or Dashboard.">
               <span class="shell-estop-action">🛑 STOP</span>
               <span class="shell-estop-consequence">Cuts drive - clear it on Drive or Dashboard</span>
             </button>
