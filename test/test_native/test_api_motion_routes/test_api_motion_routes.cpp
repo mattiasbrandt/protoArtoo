@@ -21,6 +21,9 @@
 #include "api_estop.h"
 #include "api_servo.h"
 #include "config_cache.h"
+#include "config_save_test_hooks.h"  // g_test_config_prefs - the Preferences double
+                                     // saveConfigToNvs()'s native stand-in writes
+                                     // through (src/native_test_stubs.cpp)
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
@@ -80,6 +83,53 @@ void setDomeEnabled(bool enabled) {
     configCacheApply(snap);
 }
 
+// Unity has no enum-class comparison, and a bare 0/1/2 in a failure line says
+// nothing. Compare the underlying values behind one name instead.
+void assertManualCommand(ManualCommandResult expected, ManualCommandResult actual) {
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)expected, (uint8_t)actual);
+}
+
+// The dome peer IP is the first string the config save writes
+// (configSerializeDome(), src/config_serializer.cpp) and the only one this
+// group has a reason to set, so it is what the scheduled NVS failure below is
+// aimed at.
+void setDomeWifiPeer(const char* ip) {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    strncpy(snap.dome.dome_wifi_peer_ip, ip, sizeof(snap.dome.dome_wifi_peer_ip) - 1);
+    snap.dome.dome_wifi_peer_ip[sizeof(snap.dome.dome_wifi_peer_ip) - 1] = '\0';
+    configCacheApply(snap);
+}
+
+// The next config save does not reach flash (#376).
+//
+// One scheduled failure, aimed at the first string write the save performs,
+// and a deliberately NON-EMPTY value: PrefsWriter::writeStr() reports an empty
+// write that failed as success on purpose (src/config_nvsio.cpp), so an empty
+// peer IP would consume the scheduled failure and still answer true.
+const char* const kUnstorablePeerIp = "10.0.0.7";
+
+void failTheNextConfigSave() {
+    setDomeWifiPeer(kUnstorablePeerIp);
+    g_test_config_prefs.failNextStringWrites(1);
+}
+
+// What the NVS double holds for a key, or "" when nothing ever wrote it. The
+// map is the double's own, so the returned pointer stays valid.
+const char* storedValue(const char* key) {
+    const auto& data = g_test_config_prefs.getData();
+    const auto it = data.find(key);
+    return it == data.end() ? "" : it->second.c_str();
+}
+
+// The scheduled failure landed on the write it was aimed at. Without this an
+// earlier string write consuming it would leave the save succeeding, and a
+// test expecting the failure answer would go green for the wrong reason.
+void assertTheFailedWriteIsTheAimedOne() {
+    TEST_ASSERT_TRUE_MESSAGE(strcmp(storedValue("dome_wip"), kUnstorablePeerIp) != 0,
+                             "the dome peer IP the failed save carried must not be in NVS");
+}
+
 }  // namespace
 
 void setUp() {
@@ -106,6 +156,9 @@ void setUp() {
     g_test_dome_layout_status = {};
     g_test_dome_layout_payload = "";
     g_test_dome_layout_refresh_requests = 0;
+    // A failure scheduled by a test that never consumed it would otherwise fire
+    // in the next one.
+    g_test_config_prefs.failNextStringWrites(0);
 }
 
 void tearDown() {
@@ -186,9 +239,8 @@ void test_manual_command_clear_estop_clears_and_broadcasts() {
     TEST_ASSERT_TRUE(estopIsLatched());
     g_test_status_broadcast_count = 0;
 
-    bool success = executeManualCommand("clear_estop");
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("clear_estop"));
 
-    TEST_ASSERT_TRUE(success);
     TEST_ASSERT_FALSE(failsafeIsActive());
     TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
 }
@@ -229,9 +281,8 @@ void test_manual_command_clear_estop_is_case_insensitive() {
     handleEstopPost(latchReq);
     TEST_ASSERT_TRUE(estopIsLatched());
 
-    bool success = executeManualCommand("CLeAr_EsToP");
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("CLeAr_EsToP"));
 
-    TEST_ASSERT_TRUE(success);
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -242,18 +293,16 @@ void test_only_explicit_clear_estop_can_clear_the_latch() {
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Verify that other commands do not clear the latch
-    bool disableResult = executeManualCommand("disable_web_control");
-    TEST_ASSERT_TRUE(disableResult);
+    assertManualCommand(ManualCommandResult::Applied,
+                        executeManualCommand("disable_web_control"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Mode commands should not clear it either
-    bool stationaryResult = executeManualCommand("#st");
-    TEST_ASSERT_TRUE(stationaryResult);
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#st"));
     TEST_ASSERT_TRUE(estopIsLatched());
 
     // Only explicit clear_estop clears it
-    bool clearResult = executeManualCommand("clear_estop");
-    TEST_ASSERT_TRUE(clearResult);
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("clear_estop"));
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -411,6 +460,46 @@ void test_mode_post_rejects_an_unknown_mode() {
     TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
 }
 
+// A mode change is REPORTED when the save did not reach flash, never reverted
+// -- see saveCommandedMode() (src/web/api_drive.cpp) for why this endpoint
+// answers differently from POST /api/drive/speed-preset below.
+void test_mode_post_reports_a_stationary_save_that_did_not_reach_flash() {
+    failTheNextConfigSave();
+    const WebRequestTestParam params[] = {{"mode", "stationary"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleModePost(req);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "NVS save failed"));
+    assertTheFailedWriteIsTheAimedOne();
+    // Reported, not reverted: the droid is in the mode that was asked for and
+    // the status broadcast says so. Only the store is missing.
+    TEST_ASSERT_TRUE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_mode_post_reports_a_driving_save_that_did_not_reach_flash() {
+    g_test_commanded_stationary = true;
+    failTheNextConfigSave();
+    const WebRequestTestParam params[] = {{"mode", "driving"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleModePost(req);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "NVS save failed"));
+    assertTheFailedWriteIsTheAimedOne();
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
 void test_speed_preset_reports_the_applied_cap() {
     const WebRequestTestParam params[] = {{"preset", "TURBO"}};
     WebRequestTestBackend backend;
@@ -467,29 +556,68 @@ void test_web_control_disable_submits_a_zero_frame() {
 // -----------------------------------------------------------------------------
 
 void test_manual_command_keywords_are_case_insensitive() {
-    TEST_ASSERT_TRUE(executeManualCommand("EnAbLe_Web_Control"));
+    assertManualCommand(ManualCommandResult::Applied,
+                        executeManualCommand("EnAbLe_Web_Control"));
     TEST_ASSERT_TRUE(g_test_commanded_web_control);
 }
 
 void test_manual_command_rejects_an_unknown_keyword() {
-    TEST_ASSERT_FALSE(executeManualCommand("engage_hyperdrive"));
+    assertManualCommand(ManualCommandResult::Unsupported,
+                        executeManualCommand("engage_hyperdrive"));
     TEST_ASSERT_EQUAL_UINT(0, g_test_web_control_calls);
 }
 
 void test_manual_command_rejects_an_empty_command() {
-    TEST_ASSERT_FALSE(executeManualCommand(""));
+    assertManualCommand(ManualCommandResult::Unsupported, executeManualCommand(""));
 }
 
 void test_manual_command_routes_marcduino_by_prefix_without_case_folding() {
-    TEST_ASSERT_TRUE(executeManualCommand("#SM"));
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#SM"));
     TEST_ASSERT_EQUAL_UINT(1, g_test_marcduino_calls);
     // A Marcduino line is handed over verbatim -- lowercasing it here is what
     // the keyword path does, and doing it to these would change the command.
     TEST_ASSERT_EQUAL_UINT(0, g_test_web_control_calls);
 }
 
+// The other two saveConfigToNvs() call sites #376 names -- MC_STATIONARY_MODE
+// and MC_DRIVING_MODE -- cannot be reached, and this is where that is written
+// down. The ':'/'#' Marcduino branch claims every '#' line before the keyword
+// resolver runs, so "#st" lands in parseMarcduinoCommand()'s '#' case, matches
+// nothing there, and is logged as an unhandled body command. Nothing commands a
+// mode, nothing saves, and the route answers {"ok":true} to an operator whose
+// droid did not move.
+//
+// Pinned because the fix makes those two branches LOOK live: they consume the
+// save result exactly like POST /api/mode does. Only this test says they are
+// never asked to.
+void test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing() {
+    g_test_commanded_stationary = false;
+    // Rigged to fail, to show the path does not save at all rather than saving
+    // successfully: the scheduled failure is still unspent afterwards.
+    failTheNextConfigSave();
+
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("#st"));
+
+    // Routed as a Marcduino line rather than resolved as a mode keyword...
+    TEST_ASSERT_EQUAL_UINT(1, g_test_marcduino_calls);
+    // ...so no mode was commanded.
+    TEST_ASSERT_FALSE(g_test_commanded_stationary);
+
+    // And no save was attempted: the failure this test scheduled is still
+    // waiting, and the next save -- POST /api/mode's -- is the one that spends
+    // it.
+    const WebRequestTestParam params[] = {{"mode", "stationary"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+    handleModePost(req);
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    assertTheFailedWriteIsTheAimedOne();
+}
+
 void test_manual_command_intercepts_mood_commands() {
-    TEST_ASSERT_TRUE(executeManualCommand(":SE11"));
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand(":SE11"));
     TEST_ASSERT_NOT_EQUAL(0, g_test_applied_mood);
     // Intercepted before the Marcduino router, which would discard it.
     TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
@@ -498,7 +626,8 @@ void test_manual_command_intercepts_mood_commands() {
 void test_manual_command_longer_than_any_keyword_is_unknown_not_truncated() {
     // "estop" plus padding: a keyword buffer that truncated instead of
     // rejecting would latch the estop on a command nobody sent.
-    TEST_ASSERT_FALSE(executeManualCommand("estop_but_very_much_longer_than_the_buffer"));
+    assertManualCommand(ManualCommandResult::Unsupported,
+                        executeManualCommand("estop_but_very_much_longer_than_the_buffer"));
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -804,6 +933,8 @@ int main(int, char**) {
     RUN_TEST(test_drive_is_allowed_while_sbus_lost_but_web_control_enabled);
     RUN_TEST(test_mode_post_sets_stationary_and_broadcasts);
     RUN_TEST(test_mode_post_rejects_an_unknown_mode);
+    RUN_TEST(test_mode_post_reports_a_stationary_save_that_did_not_reach_flash);
+    RUN_TEST(test_mode_post_reports_a_driving_save_that_did_not_reach_flash);
     RUN_TEST(test_speed_preset_reports_the_applied_cap);
     RUN_TEST(test_speed_preset_reports_a_failed_persist);
     RUN_TEST(test_web_control_disable_submits_a_zero_frame);
@@ -812,6 +943,7 @@ int main(int, char**) {
     RUN_TEST(test_manual_command_rejects_an_unknown_keyword);
     RUN_TEST(test_manual_command_rejects_an_empty_command);
     RUN_TEST(test_manual_command_routes_marcduino_by_prefix_without_case_folding);
+    RUN_TEST(test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing);
     RUN_TEST(test_manual_command_intercepts_mood_commands);
     RUN_TEST(test_manual_command_longer_than_any_keyword_is_unknown_not_truncated);
 

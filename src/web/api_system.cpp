@@ -130,8 +130,18 @@ void handleManualCommandPost(WebRequest& req) {
         }
     }
 
-    if (!executeManualCommand(rawCommand)) {
+    const ManualCommandResult result = executeManualCommand(rawCommand);
+    if (result == ManualCommandResult::Unsupported) {
         webSendJsonError(req, 400, "unsupported command");
+        return;
+    }
+    if (result == ManualCommandResult::SaveFailed) {
+        // The command ran -- only its config save missed flash, so the droid is
+        // doing what was asked and will stop doing it at the next boot (#376).
+        // Same wording POST /api/mode and POST /api/audio's volume branch use
+        // for the same outcome.
+        PA_LOG_WARN(TAG, "[WEB] POST /api/manual-command - %s applied, not stored", rawCommand);
+        webSendJsonError(req, 500, "command applied but NVS save failed");
         return;
     }
 

@@ -106,9 +106,11 @@ static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operatio
     commandedSetStationary(stationary, consoleCommandSourceFor(source));
     // saveConfigToNvs() persists the whole cache (commandedSetStationary()
     // already synced robotState.stationary into it) - the same call
-    // handleModePost makes, its result unchecked there; the Console checks
-    // it so a failed write is an explicit error (criterion 3) rather than a
-    // silently discarded one.
+    // handleModePost makes. It checked the result here first and discarded it
+    // there; #376 settled the disagreement in this executor's favour, so the
+    // REST route now reports a failed write too (saveCommandedMode(),
+    // src/web/api_drive.cpp) and the two adapters for this one operation
+    // answer alike.
     const bool persisted = saveConfigToNvs();
     requestStatusBroadcastNow();
 
