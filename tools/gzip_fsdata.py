@@ -2,11 +2,15 @@
 """
 PlatformIO pre-build script: build the LittleFS image from GZIPPED web assets.
 
-The web UI is ~656 KB of mostly uncompressed text (JS/CSS/HTML) — 84% of the
-filesystem. PsychicHttp's static handler transparently serves `foo.js.gz`
-(with Content-Encoding: gzip + Content-Type from the original extension) when the
-raw file is absent, so shipping only the gzipped text shrinks the image to
-~180 KB and speeds page loads — and frees flash for a coredump partition (#8).
+The web UI is ~1 MB of mostly uncompressed text (JS/CSS/HTML). PsychicHttp's
+static handler transparently serves `foo.js.gz` (with Content-Encoding: gzip +
+Content-Type from the original extension) when the raw file is absent, so
+shipping only the gzipped text shrinks what is staged and speeds page loads — and
+frees flash for a coredump partition (#8). Measured on main at 0b55e00f: ~1012 KB
+of sources stage to ~325 KB, which LittleFS then rounds into 97 4KB blocks =
+397,312 B of the artoo-esp32's 655,360 B partition. The "~180 KB" this line
+claimed until 2026-09-11 predated years of UI growth and counted no rounding;
+tools/check_build_budgets.py now measures it on every build (#382, ADR 0065).
 
 Mechanism: gzip the text assets from $PROJECT_DATA_DIR into a per-build staging
 dir, copy binaries (images, etc.) as-is, and repoint $PROJECT_DATA_DIR at the
@@ -60,6 +64,17 @@ GZIP_EXTS = {".js", ".css", ".html", ".htm", ".svg", ".txt", ".map"}
 # gzipped. See docs/console-protocol.md section 3.4 and src/main.cpp for the
 # console_help.txt reader (ADR 0036, #219 D2).
 RAW_ASSET_NAMES = {"console_help.txt"}
+
+# Asset sets (ADR 0065). Every board runs the same surfaces, but a board with room
+# may carry richer pictures than one without, so a file declares which builds carry
+# it by which set directory it sits in -- the fact lives beside the file and cannot
+# drift out of step with a list kept somewhere else. Files directly under data/ are
+# common to every build; data/asset-sets/<name>/ is staged on top of them, flattened
+# to the same paths, for the one set this environment names in platformio.ini
+# (custom_asset_set, default "default"). This is the Build Feature Flag tier's answer
+# -- "is it in this image" -- asked of a file rather than of a function.
+ASSET_SETS_DIR = "asset-sets"
+DEFAULT_ASSET_SET = "default"
 
 
 def _should_gzip(filename):
@@ -142,44 +157,74 @@ def main():
         shutil.rmtree(stage)
     os.makedirs(stage, exist_ok=True)
 
+    set_name = env.GetProjectOption("custom_asset_set", DEFAULT_ASSET_SET)
+    sets_root = os.path.join(src, ASSET_SETS_DIR)
+    set_root = os.path.join(sets_root, set_name)
+    if os.path.isdir(sets_root) and not os.path.isdir(set_root):
+        # A typo here would ship an image quietly missing every picture, on a
+        # surface whose pictures are the thing an operator selects by.
+        available = sorted(
+            d for d in os.listdir(sets_root) if os.path.isdir(os.path.join(sets_root, d))
+        )
+        raise SystemExit(
+            "[gzip_fsdata] custom_asset_set is '%s', but %s does not exist. "
+            "Available sets: %s" % (set_name, set_root, ", ".join(available) or "none")
+        )
+
+    # The common tree first, then this environment's set flattened on top of it.
+    # A set file at <set>/a/b.webp lands at a/b.webp, so a page names one path
+    # whichever set it was built with.
+    roots = [(src, False)]
+    if os.path.isdir(set_root):
+        roots.append((set_root, True))
+
     gz_count = 0
     raw_count = 0
     partial_count = 0
+    set_count = 0
     src_bytes = 0
     out_bytes = 0
-    for root, _dirs, files in os.walk(src):
-        rel = os.path.relpath(root, src)
-        dst_root = stage if rel == "." else os.path.join(stage, rel)
-        os.makedirs(dst_root, exist_ok=True)
-        for name in files:
-            sp = os.path.join(root, name)
-            # Partials are inlined into the pages that include them; imaging
-            # them too would ship a duplicate nobody requests.
-            if _is_partial(name):
-                partial_count += 1
+    for walk_src, in_set in roots:
+        for root, _dirs, files in os.walk(walk_src):
+            rel = os.path.relpath(root, walk_src)
+            # The set directories are staged by their own pass, never as part of
+            # the common tree -- otherwise every build would carry every set.
+            if not in_set and (rel == ASSET_SETS_DIR or rel.startswith(ASSET_SETS_DIR + os.sep)):
                 continue
-            src_bytes += os.path.getsize(sp)
-            if _should_gzip(name):
-                dp = os.path.join(dst_root, name + ".gz")
-                if os.path.splitext(name)[1].lower() in HTML_EXTS:
-                    payload = _expand_includes(sp, src)
-                    with gzip.open(dp, "wb", compresslevel=9) as fo:
-                        fo.write(payload)
+            dst_root = stage if rel == "." else os.path.join(stage, rel)
+            os.makedirs(dst_root, exist_ok=True)
+            for name in files:
+                sp = os.path.join(root, name)
+                # Partials are inlined into the pages that include them; imaging
+                # them too would ship a duplicate nobody requests.
+                if _is_partial(name):
+                    partial_count += 1
+                    continue
+                src_bytes += os.path.getsize(sp)
+                if in_set:
+                    set_count += 1
+                if _should_gzip(name):
+                    dp = os.path.join(dst_root, name + ".gz")
+                    if os.path.splitext(name)[1].lower() in HTML_EXTS:
+                        payload = _expand_includes(sp, src)
+                        with gzip.open(dp, "wb", compresslevel=9) as fo:
+                            fo.write(payload)
+                    else:
+                        with open(sp, "rb") as fi, gzip.open(dp, "wb", compresslevel=9) as fo:
+                            shutil.copyfileobj(fi, fo)
+                    gz_count += 1
                 else:
-                    with open(sp, "rb") as fi, gzip.open(dp, "wb", compresslevel=9) as fo:
-                        shutil.copyfileobj(fi, fo)
-                gz_count += 1
-            else:
-                dp = os.path.join(dst_root, name)
-                shutil.copy2(sp, dp)
-                raw_count += 1
-            out_bytes += os.path.getsize(dp)
+                    dp = os.path.join(dst_root, name)
+                    shutil.copy2(sp, dp)
+                    raw_count += 1
+                out_bytes += os.path.getsize(dp)
 
     env.Replace(PROJECT_DATA_DIR=stage)
     print(
-        "[gzip_fsdata] staged %d gzipped + %d raw files (%d partials inlined, not imaged): "
-        "%d KB -> %d KB (image data dir: %s)"
-        % (gz_count, raw_count, partial_count, src_bytes // 1024, out_bytes // 1024, stage)
+        "[gzip_fsdata] staged %d gzipped + %d raw files (%d partials inlined, not imaged; "
+        "%d from asset set '%s'): %d KB -> %d KB (image data dir: %s)"
+        % (gz_count, raw_count, partial_count, set_count, set_name,
+           src_bytes // 1024, out_bytes // 1024, stage)
     )
 
 
