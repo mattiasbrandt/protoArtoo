@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 51a57929..95f11250 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1049,7 +1049,7 @@
+             // re-renders this picker through rerenderPanelIntentPickers() as soon as
+             // tier 3 does answer.
+             const layoutAnswered = Boolean(domeLayout);
+-            const showsBuiltIn = layoutAnswered && domeLayout.usesVendoredDrawing !== false;
++            const showsBuiltIn = !layoutAnswered || domeLayout.usesVendoredDrawing !== false;
+ 
+             // The container ships even when it holds no drawing: it is the hook
+             // rerenderPanelIntentPickers() finds this picker by, and a step rendered

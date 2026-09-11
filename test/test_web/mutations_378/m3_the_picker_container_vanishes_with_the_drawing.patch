@@ -1,0 +1,19 @@
+diff --git i/data/seq.js w/data/seq.js
+index 51a57929..83daff2d 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1054,11 +1054,11 @@
+             // The container ships even when it holds no drawing: it is the hook
+             // rerenderPanelIntentPickers() finds this picker by, and a step rendered
+             // without one would never pick up the live layout on a dome reconnect.
+-            svgPickerHtml = `
++            svgPickerHtml = showsBuiltIn ? `
+               <div class="dome-picker-container">
+-                ${showsBuiltIn ? window.DOME_PANEL_MAP_SVG : ""}
++                ${window.DOME_PANEL_MAP_SVG}
+               </div>
+-            `;
++            ` : "";
+ 
+             // Distinguish the cases: an unsupported-schema dome IS reachable (wrong
+             // version), so "not reachable" would send the operator chasing the wrong
