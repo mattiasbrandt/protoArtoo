@@ -133,7 +133,60 @@ void test_configApply_servoType_named_value_updates(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, snap.servo.arm1_type);
+    // Nothing lands on the snapshot: since #345 an endpoint and the component
+    // type beside it live on an addressed Servo Output row, and this core is
+    // pure, so what it produces is one addressed edit for the Commit Step.
+    TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, result.servoOutputs.edits[0].channel);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_COMPONENT, result.servoOutputs.edits[0].fields);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, result.servoOutputs.edits[0].component);
+}
+
+// One Output Address, one edit, however many of its three parameters the
+// request carried - the component type has to be settled against the pair it
+// will clamp, not by whichever parameter the form happened to send first.
+void test_configApply_servo_endpoints_and_type_become_one_addressed_edit(void) {
+    std::map<std::string, std::string> m = {
+        {"aux1OpenUs", "1800"}, {"aux1CloseUs", "1200"}, {"aux1Type", "mg90s"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
+
+    const ServoOutputEdit& edit = result.servoOutputs.edits[0];
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, edit.driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, edit.channel);
+    TEST_ASSERT_EQUAL_UINT16(
+        (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT), edit.fields);
+    TEST_ASSERT_EQUAL_UINT16(1800, edit.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1200, edit.close_us);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, edit.component);
+}
+
+// A request that names one end names one field, and the row keeps the other.
+// The mask is what says so, so an absent parameter cannot arrive as a zero.
+void test_configApply_one_endpoint_edits_only_that_field(void) {
+    std::map<std::string, std::string> m = {{"arm2OpenUs", "1750"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, result.servoOutputs.edits[0].channel);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_OPEN, result.servoOutputs.edits[0].fields);
+    TEST_ASSERT_EQUAL_UINT16(1750, result.servoOutputs.edits[0].open_us);
+}
+
+// A request that names no servo parameter produces no edit at all, so the
+// Commit Step has nothing to push over the rows it just loaded.
+void test_configApply_without_servo_params_records_no_edit(void) {
+    std::map<std::string, std::string> m = {{"logLevel", "3"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
 }
 
 // --- cross-field rules ---
@@ -258,6 +311,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);
+    RUN_TEST(test_configApply_servo_endpoints_and_type_become_one_addressed_edit);
+    RUN_TEST(test_configApply_one_endpoint_edits_only_that_field);
+    RUN_TEST(test_configApply_without_servo_params_records_no_edit);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
     RUN_TEST(test_configApply_speedLimitMax_derives_from_active_preset_when_omitted);
     RUN_TEST(test_configApply_speedLimitMax_resolves_matching_preset);

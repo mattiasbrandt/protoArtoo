@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "droid_parts.h"  // droidPartIdIsKnown() - the compiled Part vocabulary
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
 #include "robot_state.h"  // ServoComponentType (firmware and native alike)
 #include "servo_component_helpers.h"  // servoCompTypeToString, parseServoCompType
@@ -163,8 +164,9 @@ struct ServoOutputRow {
     // The Parts this output drives, by their Droid Parts Catalog ids, filled
     // slots first and empty slots after. An empty list is legal and means no
     // Part is assigned yet: the droid's own wiring decides what moves, not the
-    // catalog. The catalog does not reach firmware as a vocabulary until #301,
-    // so an id is checked for shape, not for membership.
+    // catalog. An id that is not in the catalog vocabulary this build compiled
+    // is refused at every door (servoOutputPartIdIsValid), so a stored slot
+    // always names a Part the firmware can resolve.
     //
     // The multiplicity is asymmetric and both halves matter (ADR 0050). An
     // Output may drive several Parts, so a ganged lead tells the truth about
@@ -368,9 +370,22 @@ inline bool servoOutputChannelIsValid(ServoOutputDriver driver, uint8_t channel)
 
 // -----------------------------------------------------------------------------
 // servoOutputPartIdIsValid()
-// Shape only: a catalog id is an unquoted identifier, and an empty part means
-// no Part is assigned. Membership of docs/droid-parts.yaml is checked once the
-// catalog reaches firmware as a compiled vocabulary (#301).
+// Shape, then membership: a catalog id is an unquoted identifier, and it has to
+// be one this build actually models. An empty part means no Part is assigned
+// and stays legal -- the droid's own wiring decides what moves, so an Output
+// with nothing on it is an ordinary answer rather than a damaged row.
+//
+// The membership half is droidPartIdIsKnown()'s, the compiled vocabulary
+// include/droid_parts.h generates from docs/droid-parts.yaml (#301, #356). An
+// id no build models is refused here rather than stored, so it is reported by
+// whichever door was asked -- servoOutputAddPart() returns false and
+// servoOutputRowNormalise() drops the slot and raises SERVO_FIELD_PARTS -- and
+// never reaches droidPartAvailabilityReason() to be answered as if it were
+// unwired hardware.
+//
+// Shape is checked first and it is not decoration: it bounds the string before
+// the vocabulary walk compares it, so an id with no terminator inside the row's
+// slot cannot be handed to strcmp().
 // -----------------------------------------------------------------------------
 inline bool servoOutputPartIdIsValid(const char* part) {
     if (part == nullptr) {
@@ -380,6 +395,9 @@ inline bool servoOutputPartIdIsValid(const char* part) {
     if (len > SERVO_OUTPUT_PART_ID_MAX) {
         return false;
     }
+    if (len == 0) {
+        return true;  // no Part assigned; nothing to look up
+    }
     for (size_t i = 0; i < len; ++i) {
         const char c = part[i];
         const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -388,7 +406,7 @@ inline bool servoOutputPartIdIsValid(const char* part) {
             return false;
         }
     }
-    return true;
+    return droidPartIdIsKnown(part);
 }
 
 // -----------------------------------------------------------------------------
@@ -768,10 +786,77 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 }
 
 // -----------------------------------------------------------------------------
+// ServoOutputEdit  --  what somebody asked of one addressed row
+//
+// An edit is addressed rather than indexed, and it carries only the fields the
+// request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
+// SERVO_FIELD_CLOSE and SERVO_FIELD_COMPONENT, and a field not in it keeps what
+// the row had. That is the partial-edit door servoOutputRowNormalise()
+// describes, given a shape a pure caller can fill.
+//
+// It exists because the Apply Core for POST /api/config is pure and cannot
+// reach the live table (ADR 0011): it validates a builder's numbers and records
+// them here, and the Commit Step applies them. Nothing stores an endpoint on
+// the way -- the row is the only place one lives (#345).
+// -----------------------------------------------------------------------------
+struct ServoOutputEdit {
+    ServoOutputDriver driver;      // Output Address, half one
+    uint8_t channel;               // Output Address, half two
+    uint16_t fields;               // which of the three below the request carried
+    uint16_t open_us;
+    uint16_t close_us;
+    ServoComponentType component;
+};
+
+// -----------------------------------------------------------------------------
+// servoOutputApplyEdit()
+// One edit, applied over the row as it stands, through the one validator.
+//
+// Two rules the mask does not express, and both are somebody's data:
+//
+//   - The component type is settled before the pair, because it decides the
+//     band the pulse widths are clamped into. An MG996R row cannot take 500 us
+//     however that number arrived, and reading the type late would clamp
+//     against the wrong band.
+//   - Centre follows the ends while the row is unmeasured, and only then. The
+//     surfaces that send an Endpoint Pair have never had a centre to send, so
+//     halfway between the builder's own two ends is the only honest guess. Once
+//     somebody has captured a position on this output the centre is theirs, and
+//     a later edit must not compute over it -- without that guard a measured
+//     centre would last exactly until the next form POST.
+//
+// Returns the repair mask, so a number the band moved is reported rather than
+// silently lost.
+// -----------------------------------------------------------------------------
+inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit& edit) {
+    if (row == nullptr) {
+        return 0;
+    }
+    const ServoOutputRow before = *row;
+    if ((edit.fields & SERVO_FIELD_COMPONENT) != 0) {
+        row->component = edit.component;
+    }
+    if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
+        row->open_us = edit.open_us;
+    }
+    if ((edit.fields & SERVO_FIELD_CLOSE) != 0) {
+        row->close_us = edit.close_us;
+    }
+    if (!row->calibrated && (edit.fields & (SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE)) != 0) {
+        row->centre_us =
+            (uint16_t)(((uint32_t)row->open_us + (uint32_t)row->close_us) / 2u);
+    }
+    return servoOutputRowNormalise(row, before);
+}
+
+// -----------------------------------------------------------------------------
 // servoOutputAdoptFixedPair()
 // The bridge a builder's existing calibration crosses (#286, ADR 0041): the two
-// numbers a fixed field set held  --  arm1_open_us and arm1_close_us, and the
-// same for arm2 and aux1..3  --  become this row's Endpoint Pair.
+// numbers a fixed key set still holds in NVS  --  arm1_op and arm1_cl, and the
+// same for arm2 and aux1..3  --  become this row's Endpoint Pair. The fields
+// those keys used to fill are gone (#345); the stored keys are read once, on a
+// row nothing has written, and the names live in
+// include/servo_legacy_field_sets.h.
 //
 // Three deliberate choices, and each of them is somebody's data:
 //
@@ -797,12 +882,8 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 //     calibration can leave one output moved and untrusted. False is the value
 //     that degrades overshoot and warns, so false is what an unmeasured bit is.
 //
-// The component type is settled before the pair, because it decides the band the
-// pair is clamped into -- an MG996R row cannot take 500 us however it arrived.
-// Normalising against the row as it stood is the partial-edit door
-// servoOutputRowNormalise() describes: this is one edit applied over a row that
-// already exists, so a field this bridge does not carry keeps its value rather
-// than taking a default.
+// An adoption is an edit that carries all three fields, so the resolution order
+// and the centre rule are servoOutputApplyEdit()'s rather than restated here.
 //
 // Returns the repair mask, so a number the band moved is reported rather than
 // silently lost.
@@ -812,14 +893,11 @@ inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, 
     if (row == nullptr) {
         return 0;
     }
-    const ServoOutputRow before = *row;
-    row->component = component;
-    row->open_us = openUs;
-    row->close_us = closeUs;
-    if (!row->calibrated) {
-        row->centre_us = (uint16_t)(((uint32_t)openUs + (uint32_t)closeUs) / 2u);
-    }
-    return servoOutputRowNormalise(row, before);
+    const ServoOutputEdit whole = {
+        row->driver, row->channel,
+        (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT),
+        openUs,      closeUs,      component};
+    return servoOutputApplyEdit(row, whole);
 }
 
 // -----------------------------------------------------------------------------

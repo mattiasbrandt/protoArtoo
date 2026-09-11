@@ -11,6 +11,7 @@
 #include "audio_dollar_parser.h"
 #include "config.h"
 #include "rc_mapping.h"
+#include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstring>
 
@@ -40,34 +41,41 @@ void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
 }
 
 // -----------------------------------------------------------------------------
-// The five fixed field sets, each beside the Output Address it has always meant.
+// adoptLegacyFixedServoKeys()
+// A builder's calibration, read once off the keys the five fixed field sets
+// left behind (#286, #345, ADR 0041).
 //
-// This table IS the bridge (#286, ADR 0041). Nowhere else in the firmware does
-// anything record that `arm1_open_us` was about LEDC channel 0 -- the five sets
-// carry the address in their names and nothing else, which is exactly why an
-// expander could never be another one of them. Stating it once here is what
-// lets a builder's existing calibration cross onto the rows, and it goes away
-// with the fields it names when the contract slice deletes them.
+// The fields are gone; the stored keys are not, on any controller that has not
+// saved a row yet, and dropping a builder's calibration on the floor is the one
+// thing #286 refuses. So this reads them and nothing writes them. Which Output
+// Address each set was about is include/servo_legacy_field_sets.h's to say --
+// the names carry it in their spelling and nowhere else.
+//
+// The row's own values are the read fallback, deliberately. A key that is not
+// there leaves the row exactly as it stood, so a fresh controller adopts
+// nothing and reports nothing, without that resting on two default tables
+// happening to agree.
+//
+// Returns the repair mask (0 when no set is addressed to this row, which is
+// what an expander's row gets -- untouched, and reported as nothing).
 // -----------------------------------------------------------------------------
-struct FixedServoFieldSet {
-    uint8_t channel;
-    uint16_t ServoConfig::*openUs;
-    uint16_t ServoConfig::*closeUs;
-    ServoComponentType ServoConfig::*component;
-};
-
-constexpr FixedServoFieldSet kFixedServoFieldSets[] = {
-    {LEDC_CH_ARM1, &ServoConfig::arm1_open_us, &ServoConfig::arm1_close_us,
-     &ServoConfig::arm1_type},
-    {LEDC_CH_ARM2, &ServoConfig::arm2_open_us, &ServoConfig::arm2_close_us,
-     &ServoConfig::arm2_type},
-    {LEDC_CH_AUX1, &ServoConfig::aux1_open_us, &ServoConfig::aux1_close_us,
-     &ServoConfig::aux1_type},
-    {LEDC_CH_AUX2, &ServoConfig::aux2_open_us, &ServoConfig::aux2_close_us,
-     &ServoConfig::aux2_type},
-    {LEDC_CH_AUX3, &ServoConfig::aux3_open_us, &ServoConfig::aux3_close_us,
-     &ServoConfig::aux3_type},
-};
+uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
+    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
+        return 0;
+    }
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        if (row->channel != set.channel) {
+            continue;
+        }
+        const uint16_t openUs = r.readU16(set.nvsOpenKey, row->open_us);
+        const uint16_t closeUs = r.readU16(set.nvsCloseKey, row->close_us);
+        const ServoComponentType component =
+            (ServoComponentType)r.readU8(set.nvsTypeKey, (uint8_t)row->component);
+        return servoOutputAdoptFixedPair(row, openUs, closeUs, component);
+    }
+    return 0;
+}
 
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
@@ -173,47 +181,10 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
 
 void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def) {
     *out = def;
-    out->arm1_open_us = r.readU16("arm1_op", def.arm1_open_us);
-    out->arm1_close_us = r.readU16("arm1_cl", def.arm1_close_us);
-    out->arm2_open_us = r.readU16("arm2_op", def.arm2_open_us);
-    out->arm2_close_us = r.readU16("arm2_cl", def.arm2_close_us);
-    out->arm1_type = (ServoComponentType)r.readU8("arm1_type", (uint8_t)def.arm1_type);
-    out->arm2_type = (ServoComponentType)r.readU8("arm2_type", (uint8_t)def.arm2_type);
-    out->aux1_open_us = r.readU16("aux1_op", def.aux1_open_us);
-    out->aux1_close_us = r.readU16("aux1_cl", def.aux1_close_us);
-    out->aux2_open_us = r.readU16("aux2_op", def.aux2_open_us);
-    out->aux2_close_us = r.readU16("aux2_cl", def.aux2_close_us);
-    out->aux3_open_us = r.readU16("aux3_op", def.aux3_open_us);
-    out->aux3_close_us = r.readU16("aux3_cl", def.aux3_close_us);
-    out->aux1_type = (ServoComponentType)r.readU8("aux1_type", (uint8_t)def.aux1_type);
-    out->aux2_type = (ServoComponentType)r.readU8("aux2_type", (uint8_t)def.aux2_type);
-    out->aux3_type = (ServoComponentType)r.readU8("aux3_type", (uint8_t)def.aux3_type);
     out->seq_open_ms = r.readU16("seq_op", def.seq_open_ms);
     out->seq_close_ms = r.readU16("seq_cl", def.seq_close_ms);
     out->aux_led_pin = r.readU8(NVS_KEY_AUX_LED_PIN, def.aux_led_pin);
     out->aux_led_count = r.readU8(NVS_KEY_AUX_LED_COUNT, def.aux_led_count);
-
-    out->arm1_open_us = constrain(out->arm1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->arm1_close_us = constrain(out->arm1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->arm2_open_us = constrain(out->arm2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->arm2_close_us = constrain(out->arm2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux1_open_us = constrain(out->aux1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux1_close_us = constrain(out->aux1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux2_open_us = constrain(out->aux2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux2_close_us = constrain(out->aux2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->aux3_open_us = constrain(out->aux3_open_us, (uint16_t)500, (uint16_t)2500);
-    out->aux3_close_us = constrain(out->aux3_close_us, (uint16_t)500, (uint16_t)2500);
-
-    if (out->arm1_type > SERVO_COMP_RGB)
-        out->arm1_type = SERVO_COMP_MG996R;
-    if (out->arm2_type > SERVO_COMP_RGB)
-        out->arm2_type = SERVO_COMP_MG996R;
-    if (out->aux1_type > SERVO_COMP_RGB)
-        out->aux1_type = SERVO_COMP_NONE;
-    if (out->aux2_type > SERVO_COMP_RGB)
-        out->aux2_type = SERVO_COMP_NONE;
-    if (out->aux3_type > SERVO_COMP_RGB)
-        out->aux3_type = SERVO_COMP_NONE;
 
     if (out->seq_open_ms < 100)
         out->seq_open_ms = 100;
@@ -515,21 +486,8 @@ bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
 
 bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w) {
     bool ok = true;
-    ok = w.writeU16("arm1_op", cfg.arm1_open_us) && ok;
-    ok = w.writeU16("arm1_cl", cfg.arm1_close_us) && ok;
-    ok = w.writeU16("arm2_op", cfg.arm2_open_us) && ok;
-    ok = w.writeU16("arm2_cl", cfg.arm2_close_us) && ok;
-    ok = w.writeU8("arm1_type", (uint8_t)cfg.arm1_type) && ok;
-    ok = w.writeU8("arm2_type", (uint8_t)cfg.arm2_type) && ok;
-    ok = w.writeU16("aux1_op", cfg.aux1_open_us) && ok;
-    ok = w.writeU16("aux1_cl", cfg.aux1_close_us) && ok;
-    ok = w.writeU16("aux2_op", cfg.aux2_open_us) && ok;
-    ok = w.writeU16("aux2_cl", cfg.aux2_close_us) && ok;
-    ok = w.writeU16("aux3_op", cfg.aux3_open_us) && ok;
-    ok = w.writeU16("aux3_cl", cfg.aux3_close_us) && ok;
-    ok = w.writeU8("aux1_type", (uint8_t)cfg.aux1_type) && ok;
-    ok = w.writeU8("aux2_type", (uint8_t)cfg.aux2_type) && ok;
-    ok = w.writeU8("aux3_type", (uint8_t)cfg.aux3_type) && ok;
+    // No endpoint and no component type: an addressed Servo Output row holds
+    // both and configSerializeServoOutputs() writes it (#345, ADR 0041).
     ok = w.writeU16("seq_op", cfg.seq_open_ms) && ok;
     ok = w.writeU16("seq_cl", cfg.seq_close_ms) && ok;
     ok = w.writeU8(NVS_KEY_AUX_LED_PIN, cfg.aux_led_pin) && ok;
@@ -709,37 +667,6 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
 // Addressed Servo Output rows  --  see include/config_serializer.h
 // =============================================================================
 
-uint16_t configAdoptFixedServoFields(ServoOutputRow* row, const ServoConfig& fixed) {
-    if (row == nullptr || row->driver != SERVO_DRIVER_LEDC) {
-        return 0;
-    }
-    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
-        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
-        if (row->channel != set.channel) {
-            continue;
-        }
-        return servoOutputAdoptFixedPair(row, fixed.*(set.openUs), fixed.*(set.closeUs),
-                                         fixed.*(set.component));
-    }
-    return 0;
-}
-
-void configProjectServoRowIntoFixedFields(const ServoOutputRow& row, ServoConfig* fixed) {
-    if (fixed == nullptr || row.driver != SERVO_DRIVER_LEDC) {
-        return;
-    }
-    for (size_t i = 0; i < sizeof(kFixedServoFieldSets) / sizeof(kFixedServoFieldSets[0]); ++i) {
-        const FixedServoFieldSet& set = kFixedServoFieldSets[i];
-        if (row.channel != set.channel) {
-            continue;
-        }
-        fixed->*(set.openUs) = row.open_us;
-        fixed->*(set.closeUs) = row.close_us;
-        fixed->*(set.component) = row.component;
-        return;
-    }
-}
-
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w) {
     return w.writeU8(SERVO_OUTPUT_COUNT_KEY, count);
 }
@@ -789,17 +716,15 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
     uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
 
     // The bridge, crossed on first read (#286): a controller upgrading from
-    // before ADR 0041 has five fixed field sets and no row records at all, so a
-    // row nothing has written adopts the set addressed to its channel. A stored
-    // row wins over it, because once a row exists the row IS the output -- which
-    // is also what makes this idempotent and marker-free: the bridge stops
-    // mattering for a row the moment that row is saved.
+    // before ADR 0041 has five fixed key sets in NVS and no row records at all,
+    // so a row nothing has written adopts whatever the set addressed to its
+    // channel still holds. A stored row wins over it, because once a row exists
+    // the row IS the output -- which is also what makes this idempotent and
+    // marker-free: the bridge stops mattering for a row the moment that row is
+    // saved, and configSaveServoOutputs() then removes the keys.
     //
     // Read through the same ConfigReader as everything else, so what crosses is
     // what is actually stored rather than what some caller happens to hold.
-    ServoConfig fixed = {};
-    deserializeServo(r, &fixed, getDefaults().servo);
-
     for (uint8_t i = 0; i < out->count; ++i) {
         char key[8] = {};
         servoOutputRowKey(i, key, sizeof(key));
@@ -812,7 +737,7 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         // pulse width the component band had to move, and a builder's own number
         // changing under them is exactly what this project says out loud.
         rowMask[i] = (stored.length() == 0)
-                         ? configAdoptFixedServoFields(&parsed, fixed)
+                         ? adoptLegacyFixedServoKeys(r, &parsed)
                          : servoOutputRowParse(stored.c_str(), fallback, &parsed);
         out->rows[i] = parsed;
     }

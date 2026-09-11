@@ -15,6 +15,7 @@
 #include "config_cache.h"
 #include "config_serializer.h"
 #include "robot_state.h"
+#include "servo_legacy_field_sets.h"
 
 #include "../../../test/stubs/config/map_config_io.h"
 
@@ -200,31 +201,71 @@ void test_configValidate_audio_volume() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
 }
 
-// Test: configValidate servo pulse widths
-void test_configValidate_servo_pulses() {
-    ConfigValidationResult result = configValidate(ConfigKey::ARM1_OPEN_US, 500);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
+// Test: a config save writes no fixed servo key at all (#345)
+//
+// The contract half of the refactor, asked of the thing that would betray it
+// first. An endpoint lives on a Servo Output row; if any of the fifteen keys
+// the five fixed field sets used came back, there would be two places one is
+// stored and the reader that lost the race would drive to the older number.
+void test_a_saved_config_writes_no_fixed_servo_key() {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
 
-    result = configValidate(ConfigKey::ARM1_OPEN_US, 2500);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(snap, writer));
 
-    result = configValidate(ConfigKey::ARM1_OPEN_US, 499);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-
-    result = configValidate(ConfigKey::ARM1_OPEN_US, 2501);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsOpenKey));
+        TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsCloseKey));
+        TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsTypeKey));
+    }
+    // The servo-domain fields that are not per-output still go down.
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("seq_op"));
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("seq_cl"));
 }
 
-// Test: configValidate servo types
-void test_configValidate_servo_types() {
-    ConfigValidationResult result = configValidate(ConfigKey::ARM1_TYPE, SERVO_COMP_NONE);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
+// Test: saving the rows removes the key set they replaced (#345)
+//
+// The other half: a controller upgrading from before ADR 0041 has its
+// calibration under the old keys, the loader adopts it, and the first
+// successful row save is what makes "no longer in NVS" true on the device
+// rather than only in the schema.
+void test_a_saved_row_removes_the_key_set_it_replaced() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    prefs.putUShort("arm1_op", 1850);
+    prefs.putUShort("arm1_cl", 1150);
+    prefs.putUChar("arm1_type", (uint8_t)SERVO_COMP_MG996R);
 
-    result = configValidate(ConfigKey::ARM1_TYPE, SERVO_COMP_RGB);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
 
-    result = configValidate(ConfigKey::ARM1_TYPE, SERVO_COMP_RGB + 1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE, (uint8_t)result);
+    // Adopted, so the builder's numbers are on the row before anything is
+    // removed - which is the whole reason the removal is safe.
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1850, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1150, closeUs);
+
+    TEST_ASSERT_TRUE(configSaveServoOutputs(prefs));
+
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_op"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_cl"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_type"));
+    TEST_ASSERT_TRUE(prefs.isKey("so00"));
+
+    // And the second read finds the same calibration, now on the row alone.
+    ServoOutputRepairReport again = {};
+    configLoadServoOutputs(prefs, &again);
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1850, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1150, closeUs);
+    prefs.end();
 }
 
 // Test: configValidate dome speed limits
@@ -333,15 +374,17 @@ void test_configLoad_save_audio_tracks() {
 }
 
 // Test: Save all servo fields
+//
+// Endpoints and component types are not among them any more - they are an
+// addressed Servo Output row's, saved by configSaveServoOutputs() and covered
+// by test_servo_output_row. What ServoConfig still carries is the sequence
+// dwell and the AUX LED selection.
 void test_configLoad_save_servo_config() {
     ConfigSnapshot snap1 = {};
-    snap1.servo.arm1_open_us = 2100;
-    snap1.servo.arm1_close_us = 900;
-    snap1.servo.arm2_open_us = 2200;
-    snap1.servo.arm2_close_us = 800;
-    snap1.servo.arm1_type = SERVO_COMP_MG996R;
-    snap1.servo.arm2_type = SERVO_COMP_MG90S;
-    snap1.servo.aux1_type = SERVO_COMP_RGB;
+    snap1.servo.seq_open_ms = 2100;
+    snap1.servo.seq_close_ms = 900;
+    snap1.servo.aux_led_pin = 2;
+    snap1.servo.aux_led_count = 8;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -353,10 +396,10 @@ void test_configLoad_save_servo_config() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT16(snap1.servo.arm1_open_us, snap2.servo.arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(snap1.servo.arm1_close_us, snap2.servo.arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.servo.arm1_type, (uint8_t)snap2.servo.arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.servo.aux1_type, (uint8_t)snap2.servo.aux1_type);
+    TEST_ASSERT_EQUAL_UINT16(snap1.servo.seq_open_ms, snap2.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT16(snap1.servo.seq_close_ms, snap2.servo.seq_close_ms);
+    TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_pin, snap2.servo.aux_led_pin);
+    TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_count, snap2.servo.aux_led_count);
 }
 
 // Test: Save all feature toggle fields
@@ -530,14 +573,6 @@ void test_configCacheRead_captures_all_categories() {
     seeded.audio.snd_cat_whis_lo    = 30;
     seeded.audio.snd_cat_whis_hi    = 40;
 
-    // Servo
-    seeded.servo.arm1_open_us       = 2100;
-    seeded.servo.arm1_close_us      = 900;
-    seeded.servo.arm1_type          = SERVO_COMP_MG996R;
-    seeded.servo.aux3_type          = SERVO_COMP_RGB;
-    seeded.servo.aux1_open_us       = 1800;
-    seeded.servo.aux1_close_us      = 1200;
-
     // Dome
     seeded.dome.dome_min_speed     = 0.1f;
     seeded.dome.dome_max_speed     = 0.9f;
@@ -613,14 +648,6 @@ void test_configCacheRead_captures_all_categories() {
     TEST_ASSERT_EQUAL_UINT16(20, snap.audio.snd_cat_gen_hi);
     TEST_ASSERT_EQUAL_UINT16(30, snap.audio.snd_cat_whis_lo);
     TEST_ASSERT_EQUAL_UINT16(40, snap.audio.snd_cat_whis_hi);
-
-    // Servo
-    TEST_ASSERT_EQUAL_UINT16(2100, snap.servo.arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(900,  snap.servo.arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)snap.servo.arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_RGB,    (uint8_t)snap.servo.aux3_type);
-    TEST_ASSERT_EQUAL_UINT16(1800, snap.servo.aux1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(1200, snap.servo.aux1_close_us);
 
     // Dome
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, snap.dome.dome_min_speed);
@@ -817,25 +844,6 @@ void test_configCacheApply_applies_all_categories() {
     snap.audio.snd_scream         = 250;
     snap.audio.snd_faint          = 251;
 
-    // Servo pulse widths
-    snap.servo.arm1_open_us       = 2050;
-    snap.servo.arm1_close_us      = 950;
-    snap.servo.arm2_open_us       = 2150;
-    snap.servo.arm2_close_us      = 850;
-    snap.servo.aux1_open_us       = 2000;
-    snap.servo.aux1_close_us      = 1000;
-    snap.servo.aux2_open_us       = 2100;
-    snap.servo.aux2_close_us      = 900;
-    snap.servo.aux3_open_us       = 2200;
-    snap.servo.aux3_close_us      = 800;
-
-    // Servo types
-    snap.servo.arm1_type          = SERVO_COMP_MG996R;
-    snap.servo.arm2_type          = SERVO_COMP_MG90S;
-    snap.servo.aux1_type          = SERVO_COMP_RGB;
-    snap.servo.aux2_type          = SERVO_COMP_NONE;
-    snap.servo.aux3_type          = SERVO_COMP_MG90S;
-
     // Dome
     snap.dome.dome_min_speed     = 0.2f;
     snap.dome.dome_max_speed     = 0.95f;
@@ -905,14 +913,6 @@ void test_configCacheApply_applies_all_categories() {
 
     TEST_ASSERT_EQUAL_UINT16(250, applied.audio.snd_scream);
     TEST_ASSERT_EQUAL_UINT16(251, applied.audio.snd_faint);
-
-    TEST_ASSERT_EQUAL_UINT16(2050, applied.servo.arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(950, applied.servo.arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT16(2150, applied.servo.arm2_open_us);
-    TEST_ASSERT_EQUAL_UINT16(850, applied.servo.arm2_close_us);
-
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)applied.servo.arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG90S, (uint8_t)applied.servo.arm2_type);
 
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, applied.dome.dome_min_speed);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.95f, applied.dome.dome_max_speed);
@@ -1012,7 +1012,7 @@ void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
     snap.audio.audioVolume = 12;
-    snap.servo.arm1_open_us = 1900;
+    snap.servo.seq_open_ms = 1900;
     snap.dome.dome_speed_limit_pct = 75;
     snap.system.enable_audio = true;
 
@@ -1034,7 +1034,7 @@ void test_config_domain_load_functions_are_independently_callable() {
 
     TEST_ASSERT_EQUAL_INT16(550, drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(12, audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT16(1900, servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, servo.seq_open_ms);
     TEST_ASSERT_EQUAL_UINT8(75, dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, system.enable_audio);
 }
@@ -1070,7 +1070,7 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
     TEST_ASSERT_TRUE(configLoad(prefs, &baseline));
     baseline.drive.speedLimitMax = 500;
     baseline.audio.audioVolume = 10;
-    baseline.servo.arm1_open_us = 1900;
+    baseline.servo.seq_open_ms = 1900;
     baseline.dome.dome_speed_limit_pct = 75;
     baseline.system.enable_audio = true;
     TEST_ASSERT_TRUE(configSave(prefs, baseline));
@@ -1079,7 +1079,7 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
 static void assert_domain_round_trip_baseline_preserved(const ConfigSnapshot& loaded) {
     TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(10, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT16(1900, loaded.servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, loaded.servo.seq_open_ms);
     TEST_ASSERT_EQUAL_UINT8(75, loaded.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_audio);
 }
@@ -1120,13 +1120,13 @@ void test_config_domain_round_trip_matrix() {
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     configCacheApply(loaded);
     configCacheRead(&fromState);
-    fromState.servo.arm1_open_us = 2100;
+    fromState.servo.seq_open_ms = 2100;
     configCacheApply(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveServo(prefs, fromState.servo));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    TEST_ASSERT_EQUAL_UINT16(2100, loaded.servo.arm1_open_us);
-    loaded.servo.arm1_open_us = 1900;
+    TEST_ASSERT_EQUAL_UINT16(2100, loaded.servo.seq_open_ms);
+    loaded.servo.seq_open_ms = 1900;
     assert_domain_round_trip_baseline_preserved(loaded);
 
     seed_domain_round_trip_baseline(prefs);
@@ -1357,67 +1357,89 @@ void test_configLoad_current_schema_does_not_remap_log_level() {
     prefs.end();
 }
 
-// --- the fixed servo fields are a view of the rows (#342) --------------------
+// --- the row is the only place an endpoint is stored (#345) ------------------
 
-// While two shapes coexist, an endpoint has to read the same whichever door
-// asks. The rows are where it lives, so the cache fills the ten fixed fields
-// from them on the way out and a stale field cannot reach a reader. Drop the
-// projection and this goes red with the two disagreeing.
-void test_the_fixed_servo_fields_come_from_the_rows() {
+// A ConfigSnapshot cannot carry an endpoint any more, so an edit is the only
+// way one reaches a row, and it is addressed. Applying one changes the row it
+// names and nothing else - a snapshot written over the cache beside it cannot
+// put a stale number back, because it has nowhere to keep one.
+void test_an_addressed_edit_is_the_only_way_an_endpoint_changes() {
     Preferences prefs;
     prefs.begin("proto", false);
+    prefs.clear();
     ServoOutputRepairReport report = {};
     configLoadServoOutputs(prefs, &report);
     prefs.end();
 
     ConfigSnapshot snap = {};
     configSnapshotDefaults(&snap);
-    // A fixed field carrying something no row agrees with - which is what a
-    // controller rolled back and forward again would have in NVS.
-    snap.servo.arm1_open_us = 1234;
     configCacheApply(snap);
 
-    ServoConfig servo = {};
-    configCacheReadServo(&servo);
-    TEST_ASSERT_EQUAL_UINT16(2000, servo.arm1_open_us);
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(2000, openUs);
 
-    ConfigSnapshot readBack = {};
-    configCacheRead(&readBack);
-    TEST_ASSERT_EQUAL_UINT16(2000, readBack.servo.arm1_open_us);
+    ServoOutputEdit edit = {};
+    edit.driver = SERVO_DRIVER_LEDC;
+    edit.channel = LEDC_CH_ARM1;
+    edit.fields = SERVO_FIELD_OPEN;
+    edit.open_us = 1750;
+    const ServoOutputRepairReport applied = configCacheApplyServoOutputEdits(&edit, 1);
+    TEST_ASSERT_EQUAL_UINT8(0, applied.rowsRepaired);  // inside the band, nothing to report
 
-    // And it follows the row rather than being pinned to a default.
-    ConfigSnapshot calibrated = {};
-    configSnapshotDefaults(&calibrated);
-    calibrated.servo.arm1_open_us = 1750;
-    configCacheApplyServoCalibration(calibrated.servo);
-    configCacheReadServo(&servo);
-    TEST_ASSERT_EQUAL_UINT16(1750, servo.arm1_open_us);
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1750, openUs);
+    TEST_ASSERT_EQUAL_UINT16(1000, closeUs);  // the end nobody named is untouched
+
+    // A whole-snapshot apply cannot undo it: the snapshot has no endpoint.
+    configCacheApply(snap);
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1750, openUs);
 }
 
-// The fixed field sets are the copy of what the rows replaced, and a copy is
-// only worth offering if it stays honest: a save writes the row's number into
-// the old form's keys, so a controller rolled back to firmware that only knows
-// the old form still finds the calibration a builder made.
-void test_a_save_carries_the_rows_number_into_the_old_forms_keys() {
+// An edit the fitted component cannot take is answered rather than applied
+// quietly, in the same report the loader fills - and an edit naming an Output
+// Address no live row has changes nothing and reports nothing.
+void test_an_edit_outside_the_component_band_is_reported() {
     Preferences prefs;
     prefs.begin("proto", false);
+    prefs.clear();
     ServoOutputRepairReport report = {};
     configLoadServoOutputs(prefs, &report);
     prefs.end();
 
-    ConfigSnapshot snap = {};
-    configSnapshotDefaults(&snap);
-    snap.servo.arm2_open_us = 1820;
-    snap.servo.arm2_close_us = 1180;
-    configCacheApplyServoCalibration(snap.servo);
+    ServoOutputEdit edit = {};
+    edit.driver = SERVO_DRIVER_LEDC;
+    edit.channel = LEDC_CH_ARM1;  // an MG996R by default: 1000..2000 us
+    edit.fields = SERVO_FIELD_OPEN;
+    edit.open_us = 500;           // legal to the old fixed validator, not to this part
+    const ServoOutputRepairReport applied = configCacheApplyServoOutputEdits(&edit, 1);
+    TEST_ASSERT_EQUAL_UINT8(1, applied.rowsRepaired);
+    // Open, and centre with it: the row is unmeasured, so its centre follows
+    // the ends the edit gave it and is held to the same band on the way.
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CENTRE),
+                             applied.firstRowMask);
+    TEST_ASSERT_EQUAL_UINT16(2, applied.fieldsRepaired);
 
-    ConfigSnapshot toStore = {};
-    configCacheRead(&toStore);
-    MapWriter writer;
-    TEST_ASSERT_TRUE(configSerialize(toStore, writer));
+    uint16_t openUs = 0;
+    uint16_t closeUs = 0;
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &openUs, &closeUs));
+    TEST_ASSERT_EQUAL_UINT16(1000, openUs);
 
-    TEST_ASSERT_EQUAL_STRING("1820", writer.data().at("arm2_op").c_str());
-    TEST_ASSERT_EQUAL_STRING("1180", writer.data().at("arm2_cl").c_str());
+    // LEDC_CH_DOME drives an ESC, not a servo, so no row is addressed there.
+    ServoOutputEdit unaddressed = {};
+    unaddressed.driver = SERVO_DRIVER_LEDC;
+    unaddressed.channel = LEDC_CH_DOME;
+    unaddressed.fields = SERVO_FIELD_OPEN;
+    unaddressed.open_us = 1234;
+    const ServoOutputRepairReport none = configCacheApplyServoOutputEdits(&unaddressed, 1);
+    TEST_ASSERT_EQUAL_UINT8(0, none.rowsRepaired);
+    TEST_ASSERT_EQUAL_UINT16(0, none.fieldsRepaired);
 }
 
 // The servo drive path's only two doors onto a row, and both answer with values
@@ -1446,11 +1468,13 @@ void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_NONE, component);
 
     // The pair comes back directional - a reversed linkage stays reversed.
-    ConfigSnapshot calibrated = {};
-    configSnapshotDefaults(&calibrated);
-    calibrated.servo.arm1_open_us = 1200;
-    calibrated.servo.arm1_close_us = 1900;
-    configCacheApplyServoCalibration(calibrated.servo);
+    ServoOutputEdit reversed = {};
+    reversed.driver = SERVO_DRIVER_LEDC;
+    reversed.channel = LEDC_CH_ARM1;
+    reversed.fields = SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE;
+    reversed.open_us = 1200;
+    reversed.close_us = 1900;
+    configCacheApplyServoOutputEdits(&reversed, 1);
 
     uint16_t openUs = 0;
     uint16_t closeUs = 0;
@@ -1481,8 +1505,8 @@ int main() {
     RUN_TEST(test_configValidate_sbus_timeout_out_of_range);
     RUN_TEST(test_configValidate_sbus_timeout_valid);
     RUN_TEST(test_configValidate_audio_volume);
-    RUN_TEST(test_configValidate_servo_pulses);
-    RUN_TEST(test_configValidate_servo_types);
+    RUN_TEST(test_a_saved_config_writes_no_fixed_servo_key);
+    RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
     RUN_TEST(test_configValidate_dome_speed);
     RUN_TEST(test_configValidate_booleans);
     RUN_TEST(test_configLoad_legacy_schema_v0);
@@ -1521,8 +1545,8 @@ int main() {
     RUN_TEST(test_wifiConfigsDiffer_true_when_mode_or_ssid_or_password_changes);
     RUN_TEST(test_configLoad_save_wifi_round_trip);
 
-    RUN_TEST(test_the_fixed_servo_fields_come_from_the_rows);
-    RUN_TEST(test_a_save_carries_the_rows_number_into_the_old_forms_keys);
+    RUN_TEST(test_an_addressed_edit_is_the_only_way_an_endpoint_changes);
+    RUN_TEST(test_an_edit_outside_the_component_band_is_reported);
     RUN_TEST(test_the_drive_path_asks_the_cache_for_values_not_a_row);
     return UNITY_END();
 }

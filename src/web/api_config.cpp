@@ -43,6 +43,7 @@
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
+#include "servo_legacy_field_sets.h"  // the field names /api/config still speaks
 #include "web_server.h"
 
 #include <Preferences.h>
@@ -484,23 +485,18 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
     JsonObject components = doc["components"].to<JsonObject>();
     components["arm1"]["enabled"] = snap.system.enable_arm1;
-    components["arm1"]["type"] = servoCompTypeToString(snap.servo.arm1_type);
     if (const char* label = getComponentLabel("enable_arm1")) components["arm1"]["label"] = label;
 
     components["arm2"]["enabled"] = snap.system.enable_arm2;
-    components["arm2"]["type"] = servoCompTypeToString(snap.servo.arm2_type);
     if (const char* label = getComponentLabel("enable_arm2")) components["arm2"]["label"] = label;
 
     components["aux1"]["enabled"] = snap.system.enable_aux1;
-    components["aux1"]["type"] = servoCompTypeToString(snap.servo.aux1_type);
     if (const char* label = getComponentLabel("enable_aux1")) components["aux1"]["label"] = label;
 
     components["aux2"]["enabled"] = snap.system.enable_aux2;
-    components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
     if (const char* label = getComponentLabel("enable_aux2")) components["aux2"]["label"] = label;
 
     components["aux3"]["enabled"] = snap.system.enable_aux3;
-    components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
     if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
 
     components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
@@ -533,21 +529,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
-    // Legacy top-level calibration fields consumed by data/servo.js. The
-    // numbers are the addressed Servo Output rows' (ADR 0041): the config cache
-    // fills these ten fields from the rows on the way out, so what a surface
-    // renders is what the droid will drive to, without this pure builder having
-    // to reach a table it cannot see. The names go when the fields do.
-    doc["arm1OpenUs"] = snap.servo.arm1_open_us;
-    doc["arm1CloseUs"] = snap.servo.arm1_close_us;
-    doc["arm2OpenUs"] = snap.servo.arm2_open_us;
-    doc["arm2CloseUs"] = snap.servo.arm2_close_us;
-    doc["aux1OpenUs"] = snap.servo.aux1_open_us;
-    doc["aux1CloseUs"] = snap.servo.aux1_close_us;
-    doc["aux2OpenUs"] = snap.servo.aux2_open_us;
-    doc["aux2CloseUs"] = snap.servo.aux2_close_us;
-    doc["aux3OpenUs"] = snap.servo.aux3_open_us;
-    doc["aux3CloseUs"] = snap.servo.aux3_close_us;
+    // The ten calibration fields and the five component types data/servo.js
+    // reads are NOT built here. Since #345 an endpoint lives on an addressed
+    // Servo Output row and nowhere else, and this builder is pure -- it cannot
+    // reach the live table. addServoOutputFields() adds them in
+    // sendConfigSnapshot(), the same seam "pendingApply" uses.
     doc["aux_led_pin"] = snap.servo.aux_led_pin;
     doc["aux_led_count"] = snap.servo.aux_led_count;
 
@@ -587,20 +573,61 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
 namespace {
 
+// -----------------------------------------------------------------------------
+// addServoOutputFields()
+// The five fixed field sets, answered from the rows that replaced them.
+//
+// data/servo.js and data/setup.js still read arm1OpenUs and its nine siblings,
+// and components.arm1.type beside them; the C1 wave is what rebuilds those
+// pages onto the Servo Output rows. Until then the names stay and the numbers
+// come from the row addressed to each set's channel, so a surface renders what
+// the droid will actually drive to (#345, ADR 0041).
+//
+// It sits here rather than in populateConfigJson() because the live table is
+// exactly the runtime state a pure snapshot serializer cannot see -- the same
+// reason "pendingApply" and "networkRecovery" are added out here.
+//
+// An Output Address with no live row is left out of the document rather than
+// given a stand-in number: a field that is absent is one data/servo.js falls
+// back on its own default for, where an invented 2000 would read as a
+// calibration nobody made.
+void addServoOutputFields(JsonDocument& doc) {
+    JsonObject components = doc["components"];
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        uint16_t openUs = 0;
+        uint16_t closeUs = 0;
+        if (!configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, set.channel, &openUs,
+                                                 &closeUs)) {
+            continue;
+        }
+        doc[set.openField] = openUs;
+        doc[set.closeField] = closeUs;
+
+        if (!components.isNull()) {
+            const ServoComponentType component =
+                configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, set.channel);
+            components[set.componentKey]["type"] = servoCompTypeToString(component);
+        }
+    }
+}
+
 // The config snapshot response, shared by the read route and the write route's
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
 //
-// pendingApply and networkRecovery are added on top of populateConfigJson():
-// they are runtime state (is a Staged Network Switch outstanding, was Network
-// Recovery Mode the posture actually entered at boot) that a pure snapshot
-// serializer cannot see.
+// pendingApply, networkRecovery and the servo output fields are added on top of
+// populateConfigJson(): they are runtime state (is a Staged Network Switch
+// outstanding, was Network Recovery Mode the posture actually entered at boot,
+// what do the addressed Servo Output rows hold) that a pure snapshot serializer
+// cannot see.
 void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     JsonDocument doc;
     if (!populateConfigJson(doc, snap)) {
         webSendJsonError(req, 500, "config json build failed");
         return;
     }
+    addServoOutputFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
@@ -703,14 +730,15 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // A pulse width the component band moved is said out loud rather than
     // quietly applied -- an MG996R output cannot take the old form's legal
     // 500 us, and a builder who typed it is owed the reason.
-    const ServoOutputRepairReport servoOutputRepair =
-        configCacheApplyServoCalibration(working->servo);
+    const ServoOutputRepairReport servoOutputRepair = configCacheApplyServoOutputEdits(
+        result.servoOutputs.edits, result.servoOutputs.count);
     if (servoOutputRepair.rowsRepaired > 0) {
         // 64 B rather than the boot path's 96: this frame is on the Console
-        // config-write chain include/config.h measures, and an adoption can
-        // only ever report the three pulse widths plus the component and the
-        // channel -- "channel, open, centre, close, component took the safe
-        // default" is 52. The note truncates safely if that ever grows.
+        // config-write chain include/config.h measures, and an edit can only
+        // ever report the three pulse widths plus the component -- the row it
+        // lands on was normalised when it was loaded, so nothing else on it can
+        // newly fail. "open, centre, close, component took the safe default" is
+        // 44. The note truncates safely if that ever grows.
         char note[64] = {};
         servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
         PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",

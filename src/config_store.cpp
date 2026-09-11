@@ -14,6 +14,7 @@
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
 #include "rc_mapping.h"
+#include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstring>
 
@@ -226,21 +227,9 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->audio.snd_cat_whis_lo = 0;
     snap->audio.snd_cat_whis_hi = 0;
 
-    snap->servo.arm1_open_us = 2000;
-    snap->servo.arm1_close_us = 1000;
-    snap->servo.arm2_open_us = 2000;
-    snap->servo.arm2_close_us = 1000;
-    snap->servo.arm1_type = SERVO_COMP_MG996R;
-    snap->servo.arm2_type = SERVO_COMP_MG996R;
-    snap->servo.aux1_open_us = 2000;
-    snap->servo.aux1_close_us = 1000;
-    snap->servo.aux2_open_us = 2000;
-    snap->servo.aux2_close_us = 1000;
-    snap->servo.aux3_open_us = 2000;
-    snap->servo.aux3_close_us = 1000;
-    snap->servo.aux1_type = SERVO_COMP_NONE;
-    snap->servo.aux2_type = SERVO_COMP_NONE;
-    snap->servo.aux3_type = SERVO_COMP_NONE;
+    // No servo endpoints or component types here: a defaulted Servo Output row
+    // carries both, and servoOutputTableDefaults() is where they are stated
+    // (#345, ADR 0041).
 
     snap->dome.dome_min_speed = 0.0f;
     snap->dome.dome_max_speed = 1.0f;
@@ -356,9 +345,7 @@ bool activeAudioEnabled = false;
 uint16_t activeComponentToggleMask = 0;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
-// The addressed Servo Output rows, live (ADR 0041). Declared here rather than
-// beside the accessors below because the two cache reads project it into the
-// fixed servo fields on their way out -- see projectServoOutputRows().
+// The addressed Servo Output rows, live (ADR 0041).
 //
 // Zero-initialised like configCache above, and filled by configLoadServoOutputs()
 // from main's boot path before any task starts -- the same boot-order contract
@@ -367,37 +354,12 @@ portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 // guessed row.
 static ServoOutputTable servoOutputCache = {};
 
-// -----------------------------------------------------------------------------
-// projectServoOutputRows()  --  called with configCacheMux held.
-//
-// The migrate phase's read direction (#286). The rows are where an endpoint
-// lives now, and the ten fixed fields are a view of them: a surface still
-// asking for arm1OpenUs, and the serializer that writes the old form back to
-// NVS, both see the number the droid will actually drive to. That is what makes
-// "a calibration cannot disagree with itself depending on which path read it"
-// true while two shapes coexist, rather than true only as long as every writer
-// remembers to touch both.
-//
-// A row is the only source: with no rows loaded yet the fields stand as they
-// are, which is the boot window before configLoadServoOutputs() has run.
-// Deleted with the fields it fills.
-// -----------------------------------------------------------------------------
-static void projectServoOutputRows(ServoConfig* servo) {
-    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
-                              ? servoOutputCache.count
-                              : SERVO_OUTPUT_ROW_MAX;
-    for (uint8_t i = 0; i < count; ++i) {
-        configProjectServoRowIntoFixedFields(servoOutputCache.rows[i], servo);
-    }
-}
-
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache;
-    projectServoOutputRows(&out->servo);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
@@ -443,39 +405,46 @@ bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
     return live;
 }
 
-// The write direction of the migrate-phase bridge (#286, ADR 0041).
+// The one runtime write onto the rows (ADR 0041).
 //
-// POST /api/config still carries a builder's endpoints as arm1OpenUs and its
-// nine siblings, and the Apply Core that validates them is pure -- it mutates a
-// ConfigSnapshot and cannot reach this table. So the Commit Step calls this
-// with the snapshot it just applied, and the numbers land on the rows the whole
-// firmware now reads. Without it a builder would calibrate an arm, get the old
-// value back on the next read, and watch the droid drive to it.
+// The Apply Core that validates a builder's numbers is pure -- it cannot reach
+// this table (ADR 0011) -- so it records what the request asked for as a list
+// of addressed edits and the Commit Step hands them here. Without this a
+// builder would calibrate an arm, get the old value back on the next read, and
+// watch the droid drive to it.
 //
-// One direction only, and only from the Commit Step. Nothing on the boot path
-// may call it: configLoadServoOutputs() has already crossed the bridge in the
-// other direction there, with a stored row winning over the old form, and
-// pushing the fields back over the top would undo exactly that. It is deleted
-// with the fields it reads.
+// Only from the Commit Step. Nothing on the boot path may call it:
+// configLoadServoOutputs() has already read the stored rows there, and pushing
+// an edit over the top would undo exactly that.
+//
+// An edit naming an Output Address no live row has is a no-op rather than a
+// repair, which is what an expander's unfitted channel should be: nothing to
+// change, and nothing to report.
 //
 // Returns what the component band moved, in the same report the loader fills,
 // so a value changing under a builder is said in one voice wherever it happens.
-ServoOutputRepairReport configCacheApplyServoCalibration(const ServoConfig& servo) {
+ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
+                                                         size_t count) {
     ServoOutputRepairReport report = {};
-    // The whole pass is inside one critical section: it is bounded by the row
+    if (edits == nullptr) {
+        return report;
+    }
+    // The whole pass is inside one critical section: it is bounded by the edit
     // count, does no allocation and no I/O, and a half-applied table is a table
     // a reader could catch mid-edit.
     taskENTER_CRITICAL(&configCacheMux);
-    const uint8_t count = (servoOutputCache.count <= SERVO_OUTPUT_ROW_MAX)
-                              ? servoOutputCache.count
-                              : SERVO_OUTPUT_ROW_MAX;
-    for (uint8_t i = 0; i < count; ++i) {
-        const uint16_t repaired = configAdoptFixedServoFields(&servoOutputCache.rows[i], servo);
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t index =
+            servoOutputTableFindByAddress(servoOutputCache, edits[i].driver, edits[i].channel);
+        if (index >= SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        const uint16_t repaired = servoOutputApplyEdit(&servoOutputCache.rows[index], edits[i]);
         if (repaired == 0) {
             continue;
         }
         if (report.rowsRepaired == 0) {
-            report.firstRow = i;
+            report.firstRow = index;
             report.firstRowMask = repaired;
         }
         report.rowsRepaired++;
@@ -555,13 +524,23 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     return found;
 }
 
+ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel) {
+    ServoComponentType component = SERVO_COMP_NONE;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        component = servoOutputCache.rows[index].component;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return component;
+}
+
 void configCacheReadServo(ServoConfig* out) {
     if (out == nullptr) {
         return;
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache.servo;
-    projectServoOutputRows(out);
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
@@ -971,6 +950,28 @@ bool configSaveServoOutputs(Preferences& prefs) {
         }
         ok = configSerializeServoOutputRow(i, row, writer) && ok;
     }
+
+    // The contract half of #345: once the rows are safely down, the five fixed
+    // key sets they replaced stop existing in NVS as well as in the schema.
+    //
+    // Both guards are load-bearing, because this is the one irreversible step
+    // in the whole migration. `ok` says every row write landed, so a failed
+    // save leaves the old keys exactly where they were and the next attempt can
+    // still cross the bridge. `count` says the live table has rows at all: a
+    // save that ran before configLoadServoOutputs() would be writing an empty
+    // table over a builder's calibration, and removing the keys on top of that
+    // is how the calibration would be lost rather than merely unloaded.
+    if (ok && count > 0) {
+        for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+            const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+            const char* const keys[] = {set.nvsOpenKey, set.nvsCloseKey, set.nvsTypeKey};
+            for (size_t k = 0; k < sizeof(keys) / sizeof(keys[0]); ++k) {
+                if (prefs.isKey(keys[k])) {
+                    prefs.remove(keys[k]);
+                }
+            }
+        }
+    }
     return ok;
 }
 
@@ -1113,27 +1114,10 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::SND_CAT_WHIS_HI:
             return (value >= 0 && value <= 0xFFFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
-        // Servo pulse widths
-        case ConfigKey::ARM1_OPEN_US:
-        case ConfigKey::ARM1_CLOSE_US:
-        case ConfigKey::ARM2_OPEN_US:
-        case ConfigKey::ARM2_CLOSE_US:
-        case ConfigKey::AUX1_OPEN_US:
-        case ConfigKey::AUX1_CLOSE_US:
-        case ConfigKey::AUX2_OPEN_US:
-        case ConfigKey::AUX2_CLOSE_US:
-        case ConfigKey::AUX3_OPEN_US:
-        case ConfigKey::AUX3_CLOSE_US:
-            return (value >= 500 && value <= 2500) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Servo types (0..3)
-        case ConfigKey::ARM1_TYPE:
-        case ConfigKey::ARM2_TYPE:
-        case ConfigKey::AUX1_TYPE:
-        case ConfigKey::AUX2_TYPE:
-        case ConfigKey::AUX3_TYPE:
-            return (value >= 0 && value <= SERVO_COMP_RGB) ? ConfigValidationResult::OK
-                                                            : ConfigValidationResult::INVALID_VALUE;
+        // Servo pulse widths and component types are not here. They are a Servo
+        // Output row's, and servoOutputRowNormalise() is their validator: it
+        // bounds a pulse by the band the fitted component takes rather than by
+        // one pair of numbers for every part (#345, ADR 0041).
 
         // Dome ESC pulse widths
         case ConfigKey::DOME_NEUTRAL_US:

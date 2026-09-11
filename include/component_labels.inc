@@ -10,6 +10,12 @@
 //   enable_drive, enable_audio, enable_dome_esc, enable_protor2link,
 //   enable_arm1, enable_arm2, enable_aux1, enable_aux2, enable_aux3,
 //   enable_rc_ch1, enable_rc_ch2, enable_rc_ch3, enable_rc_ch4, enable_rc_ch5, enable_rc_ch6
+//
+// enable_arm1 / enable_arm2 name Outputs, not Parts: whether this controller
+// drives the lead plugged into ARM1, never which piece of the droid that lead
+// moves. The Droid Parts Catalog's `utilUp` / `utilLo` are the Part names, and
+// what joins the two is the Part list on the Servo Output row addressed to that
+// channel (ADR 0041, ADR 0050, #345). See include/ledc_pwm.h.
 
 #ifndef PA_COMPONENT_LABEL
   #error "Define PA_COMPONENT_LABEL before including this inventory"
