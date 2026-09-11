@@ -1205,16 +1205,29 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
 // item names its own kind, so "sound" the category and a part in it can never
 // be read as the same row. `-` is the absent value throughout: no member
 // setting, no active member, no Board Capability Gate.
+//
+// Sound is named explicitly rather than keyed off memberKey because the
+// boot-latched accessor is Sound's own. A second family that grows a member
+// setting brings its own accessor, and reusing this one for it would report
+// Sound's module under another family's name.
+//
+// One buffer for both loops: this runs on the Console task, whose worst-case
+// static chain is a measured constant ADR 0040's checker re-derives from the
+// linked image, so two buffers in two scopes is a frame this row does not need
+// to cost. 256 B against a longest row of 188 today (`hoverboard`, the one part
+// carrying a Board Capability Gate name); snprintf truncates in silence, so the
+// margin is the guard.
 static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
                                                  const ConsoleRecordSink* sink) {
     if (sink->onRecordItem) {
+        char itemBuf[256];
+
         for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
             const ComponentCategoryEntry& cat = COMPONENT_CATEGORIES[i];
             const ComponentPartEntry* active =
                 cat.id == COMPONENT_CATEGORY_SOUND
                     ? componentPartByValue(configCacheReadActiveSoundMember())
                     : nullptr;
-            char itemBuf[160];
             snprintf(itemBuf, sizeof(itemBuf),
                      "category:%s name:%s selectable:%u memberKey:%s activeMember:%s", cat.token,
                      cat.name, (unsigned)componentCategorySelectableCount(cat.id),
@@ -1225,7 +1238,6 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 
         for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
             const ComponentPartEntry& part = COMPONENT_PARTS[i];
-            char itemBuf[192];
             snprintf(itemBuf, sizeof(itemBuf),
                      "part:%s name:%s category:%s protocol:%s status:%s capabilities:%u "
                      "included:%s boardCapability:%s",
