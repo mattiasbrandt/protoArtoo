@@ -20,7 +20,21 @@
  * The primary path is the runtime `GET /api/dome/layout` fetch (data/dome_layout.js
  * + data/dome_layout_render.js, per ADR 0009); this module is only the fallback
  * used when that fetch is unavailable or the dome reports an unsupported schema.
+ *
+ * WHICH DROID DESIGN THIS DRAWING IS OF is declared below rather than assumed.
+ * A Dome Design is a builder's statement about the droid they built (ADR 0047),
+ * and tier 3 of the Layout Fallback Hierarchy consults it before showing this
+ * picture: an MK4 complex dome is what these fourteen ring panels and six pies
+ * ARE, so showing them to a builder who stated anything else would be a drawing
+ * of somebody else's droid presented as theirs. The variant is named too - a
+ * simple MK4 dome cannot grow the complex pies, so this drawing promises parts
+ * that builder can never fit.
  */
+
+// The design and variant this SVG draws, read by data/dome_layout.js. It is
+// here rather than there because it is a fact about this picture.
+window.DOME_PANEL_MAP_DESIGN = 'mk4';
+window.DOME_PANEL_MAP_VARIANT = 'complex';
 
 // Full AstroPixelsPlus dome SVG — ported verbatim from AstroPixelsPlus/data/panels.html lines 63-202
 // Selectable elements (ring, pie, callouts) already carry data-target in this
