@@ -42,7 +42,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Boots a real shell: index.html's frame in the document, index.html's own
 // chain driven by the bootstrap host, shell.js executed for real when the host
 // reaches it, and every other script answered as a load so the chain advances.
-const boot = async ({ hash = "", stored = null } = {}) => {
+const boot = async ({ hash = "", stored = null, brokenDoc = null, docDelayMs = 0 } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -60,6 +60,10 @@ const boot = async ({ hash = "", stored = null } = {}) => {
     events: [],
     scriptsLoaded: [],
     store: new Map(stored ? [["pa.shell.v1", stored]] : []),
+    // Settable mid-session, so a test can break one surface after the shell
+    // has already booted on another.
+    brokenDoc,
+    docDelayMs,
   };
 
   const windowListeners = new Map();
@@ -119,7 +123,13 @@ const boot = async ({ hash = "", stored = null } = {}) => {
       get: async (path) => {
         env.requests.push(path);
         if (path === "/api/identity") return { data: IDENTITY };
-        if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
+        if (path.endsWith(".html")) {
+          if (env.docDelayMs > 0) await sleep(env.docDelayMs);
+          // A 200 whose content is not a surface: the terminal case, which the
+          // shell must refuse rather than retry forever.
+          if (path === env.brokenDoc) return { data: "<!doctype html><html><head></head><body></body></html>" };
+          return { data: readData(path.slice(1)) };
+        }
         throw new Error(`unexpected request ${path}`);
       },
     },
@@ -512,4 +522,24 @@ test("every surface document hands a direct visit to the shell at its own route"
       `${file}: the delegate must come before the kernel`,
     );
   });
+});
+
+test("a surface that can never load does not strand the operator, nor the route they asked for next", async () => {
+  const env = await boot();
+  assert.equal(env.mountedSurface(), "home");
+
+  // Dome answers 200 with a document that carries no surface, slowly enough
+  // that the operator gives up and asks for somewhere else meanwhile.
+  env.brokenDoc = "/dome.html";
+  env.docDelayMs = 80;
+  env.navigate("#dome");
+  await sleep(20);
+  env.navigate("#rc");
+
+  await sleep(400);
+  assert.equal(
+    env.mountedSurface(),
+    "rc",
+    "the route asked for during a mount that failed terminally is still honoured",
+  );
 });

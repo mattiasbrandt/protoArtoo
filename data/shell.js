@@ -450,14 +450,16 @@
         done(null);
       })
       .catch((error) => {
-        // A terminal failure is never retried, so the mount is over: release
-        // the route rather than leaving the operator unable to navigate away
-        // from a surface that can never load. A retryable one keeps the wave
-        // in flight, which is what the Page Recovery View is reporting.
-        if (error?.kind === "incompatible" || error?.kind === "device-error") {
-          mountInFlight = null;
-        }
         done(error);
+        // A retryable failure keeps the wave in flight, which is what the Page
+        // Recovery View is reporting. A terminal one is never retried, so the
+        // mount is over: release the route, or the operator is stuck on a
+        // surface that can never load -- and apply any route change that
+        // arrived while it was loading, because the handover step that would
+        // otherwise have applied it was never declared.
+        if (error?.kind !== "incompatible" && error?.kind !== "device-error") return;
+        mountInFlight = null;
+        Promise.resolve().then(applyPendingPage);
       });
   };
 
