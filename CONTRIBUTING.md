@@ -230,14 +230,16 @@ Pushing a branch you own (`feature/`, `fix/`, `refactor/`, `chore/`, `docs/`,
 `test/`, `exp/`, or a `gh issue develop` branch) needs no approval, and is
 encouraged: commits that exist only in one local worktree have no backup, and
 origin is the backup. No workflow triggers on a branch push — `verification` and
-`dependency-review` run on pull requests into `main`, `verification` and
-`version-sync` additionally on pushes to `main`, `release` on `v*.*.*` tags — so
-a branch push consumes no CI and publishes no project state. Pushing to a shared
-integration branch, opening or merging a PR, and pushing a tag each need explicit
-operator approval; pushing to `main` or self-merging a PR never happens. (An
-earlier blanket "nothing is pushed until the operator says so" broke on the
-workflow's own first step, `gh issue develop`, which is itself a remote write —
-a rule the prescribed workflow breaks gets read loosely.) The repo is public:
+`dependency-review` run on pull requests into `main`, `verification`,
+`version-sync` and `auto-release` additionally on pushes to `main`, `release` on
+`v*.*.*` tags — so a branch push consumes no CI and publishes no project state.
+Pushing to a shared integration branch, opening or merging a PR, and pushing a
+tag by hand each need explicit operator approval; pushing to `main` or
+self-merging a PR never happens. CI tagging `main` after an approved merge is
+not a person pushing a tag — see "Versioning and releases". (An earlier blanket
+"nothing is pushed until the operator says so" broke on the workflow's own first
+step, `gh issue develop`, which is itself a remote write — a rule the prescribed
+workflow breaks gets read loosely.) The repo is public:
 pushed work is world-visible before review, an accepted trade against losing it.
 
 ### Commit scope
@@ -324,7 +326,11 @@ SBUS/RMT spec compliance gate:
 - [ ] Commit messages follow Conventional Commits format
 - [ ] No credentials in any file
 - [ ] No `config.h` TBD placeholder values replaced with guesses
-- [ ] `CHANGELOG.md` updated in the `[Unreleased]` section
+- [ ] If the branch carries any `feat` (or a breaking change): `CHANGELOG.md`
+  updated in the `[Unreleased]` section. This is load-bearing, not tidiness —
+  merging it releases a minor or major version, and an empty `[Unreleased]`
+  fails that release (see "Versioning and releases"). A `fix`-only branch needs
+  no entry: its release notes are generated from the commit subjects
 
 **Breaking changes**
 - [ ] If this is a breaking change: `BREAKING CHANGE:` footer in commit body
@@ -374,23 +380,68 @@ logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
 
 protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
 
-A release is cut by tagging the target commit on `main`:
+**A merge to `main` releases itself.** Nobody tags by hand.
+`.github/workflows/auto-release.yml` runs on every push to `main`, reads the
+Conventional Commits since the last release tag, and applies the "Version
+effect" column of the type table above:
 
-```bash
-git tag -a v1.1.0 -m "v1.1.0 — short summary"
-git push origin v1.1.0
-```
+| What landed | What happens |
+|---|---|
+| Any `feat!`/`fix!`, or a `BREAKING CHANGE:` footer | MAJOR release |
+| Any `feat` | MINOR release |
+| Any `fix` | PATCH release |
+| Only `docs`, `chore`, `refactor`, `test`, `style`, `perf` | No release — and no failed run |
 
-Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which builds
-firmware and filesystem images for every flashable sound-backend env, generates
-SHA256 checksums, and publishes a GitHub Release with the matching
-`CHANGELOG.md` section as the release notes. Nothing is hand-written at tag
-time — if `CHANGELOG.md` has no entry for the version, the workflow fails
-instead of publishing empty notes, so add a dated `[X.Y.Z]` entry before
-tagging.
+A merge that is not a release is a normal outcome, not an error. The strongest
+effect in the range wins, and the range runs from the last release tag rather
+than from the last push, so a `docs`-only merge followed by a `fix` releases
+both together.
+
+This exists because the practice had drifted from the policy: every tag in the
+repository was `x.y.0` and three releases in 17 days were all epic-sized, while
+193 `fix:` commits since `v1.0.0` — defects that were live on shipped images —
+reached `main` and stopped there (#285).
+
+### The two tiers
+
+| Tier | Tag shape | Release notes | Artifacts |
+|---|---|---|---|
+| **Patch** | `vX.Y.Z` with `Z > 0` | Generated from the commit subjects in the range. Terse and clearly machine-written. | None. The source tag only. |
+| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | All eight firmware and filesystem images plus `SHA256SUMS.txt`. |
+
+A fix should reach people quickly, and rebuilding four environments for a
+one-line change should not gate that. A patch release therefore carries no
+binaries, and its notes say so in as many words — an empty release otherwise
+reads as a broken one. The tier is decided by the tag alone: semver says a
+patch release is the only kind with a non-zero `Z`.
+
+### Writing the release notes
+
+For a **patch**, write a good commit subject. That is the release note; there is
+no `CHANGELOG.md` entry, and `version-sync.yml`'s bot commits are filtered out.
+
+For a **minor or major**, write the operator-facing prose under
+`## [Unreleased]` in `CHANGELOG.md` as you work, in the maker voice of
+`docs/ui-copy-voice.md`. At release time CI renames that heading to
+`## [X.Y.Z] - <date>`, commits it, and tags that commit — so you never have to
+predict the version number. **An empty `[Unreleased]` fails the release** rather
+than publishing a bare heading: a feature reached `main` with nothing written
+about it, and stopping is the better outcome.
 
 A hyphenated tag (for example `v1.1.0-rc.1`) is published as a prerelease and
-never becomes the repository's "Latest" release.
+never becomes the repository's "Latest" release. Prereleases are still cut by
+hand, with operator approval, as is any other tag pushed by a person:
+
+```bash
+git tag -a v1.3.0-rc.1 -m "v1.3.0-rc.1 — short summary"
+git push origin v1.3.0-rc.1
+```
+
+### Release noise
+
+One release per merge means several a day during an epic. That is the intended
+trade. If it gets too loud, the lever is batching commits into one pull request
+— not a manual gate, which is what created the problem in the first place.
 
 ---
 
