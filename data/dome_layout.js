@@ -27,7 +27,7 @@
 //   - onChange(cb): register callback fired after each resolve
 //   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
 //     'vendored' and 'stated-design' are both tier 3: the first says the
-//     built-in drawing is this builder's dome, the second that it is not.'
+//     built-in drawing is this builder's dome, the second that it is not.
 // =============================================================================
 
 (() => {
@@ -312,7 +312,6 @@
         );
       } else {
         // Tier 4: Schema not supported
-        // Emit warning and fall back to vendored
         warning = `Layout schema ${schemaRev} not supported (supported: ${Array.from(SUPPORTED_DOME_LAYOUT_SCHEMAS).join(', ')})`;
         // Tier 4 is tier 3 plus this warning: an unsupported schema's geometry
         // is not trusted, so what can be shown is what the stated Dome Design
