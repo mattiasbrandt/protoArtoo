@@ -121,6 +121,19 @@
       connect();
       return () => listeners.delete(listener);
     },
+    // A status that arrived some other way than on the stream -- the one
+    // /api/status read the Operator Shell does at boot. The device pushes an
+    // event on a change and on nothing else, so a client that connects to a
+    // quiet droid is told nothing until something moves; whoever closes that
+    // gap hands the answer here rather than keeping it, so the session's last
+    // status has one home. Every subscriber is told, including one that
+    // subscribes later, so the cold start costs one request for the session
+    // instead of one per consumer.
+    seed(status) {
+      if (!status || typeof status !== "object") return;
+      lastStatus = status;
+      emit("status", lastStatus);
+    },
     isSupported() {
       return typeof EventSource !== "undefined";
     },

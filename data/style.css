@@ -1779,6 +1779,70 @@ textarea:disabled {
   justify-content: flex-start;
 }
 
+/* The Latching Estop on the Operator Shell (ADR 0048).
+
+   Chrome, not a surface's control: data/shell.js writes it once and every
+   screen is shown beneath the same one. Two things here are deliberate.
+
+   The target has a floor the narrow breakpoint at the end of this file does
+   not lower - a floor on this one control rather than a constraint on any
+   layout (#327).
+
+   The button's face is red at all times. That is the control's identity, not
+   a state readout: what the droid is actually doing is .shell-estop-state's
+   job, and a button that changed colour to say "not stopping anything" would
+   be colouring for state, which #327 reserves for a latch that is set. */
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.shell-estop {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2xs);
+}
+
+.shell-estop-button {
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 132px;
+  min-height: 56px;
+  padding: var(--space-sm) var(--space-lg);
+  line-height: 1.15;
+}
+
+.shell-estop-action {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.shell-estop-consequence {
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  max-width: 22ch;
+}
+
+.shell-estop-state {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.shell-estop-state.is-latched {
+  color: var(--danger);
+}
+
+.shell-estop-feedback {
+  max-width: none;
+  text-align: center;
+}
+
 body.sleep-mode-active {
   overflow: hidden;
 }

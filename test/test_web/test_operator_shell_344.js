@@ -386,25 +386,28 @@ test("a modified click on a legacy link is left to the browser", async () => {
   assert.equal(env.mountedSurface(), "home");
 });
 
+// The Dashboard's sleep toggle stands for a surface-owned topbar action here.
+// The estop used to, and is no longer one: it is the shell's own chrome and
+// never leaves (#359, test_shell_estop_359.js).
 test("a surface's topbar actions ride the topbar, and are the same nodes when it is returned to", async () => {
   const env = await boot();
-  const estop = env.document.getElementById("estop-toggle");
-  assert.ok(estop, "the Dashboard's topbar actions are mounted beside the nav");
+  const sleep_ = env.document.getElementById("sleep-toggle");
+  assert.ok(sleep_, "the Dashboard's topbar actions are mounted beside the nav");
   assert.strictEqual(
-    estop.closest("#shell-top-actions"),
+    sleep_.closest("#shell-top-actions"),
     env.document.getElementById("shell-top-actions"),
     "beside the nav, not in the content region",
   );
 
   env.navigate("#dome");
   await sleep(140);
-  assert.equal(env.document.getElementById("estop-toggle"), null, "they leave with the surface that owns them");
+  assert.equal(env.document.getElementById("sleep-toggle"), null, "they leave with the surface that owns them");
 
   env.navigate("#home");
   await sleep(60);
   assert.strictEqual(
-    env.document.getElementById("estop-toggle"),
-    estop,
+    env.document.getElementById("sleep-toggle"),
+    sleep_,
     "and the same node comes back, so the handlers bound to it are still the ones on screen",
   );
 });

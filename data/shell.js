@@ -248,6 +248,21 @@
   }
 
   // ---------------------------------------------------------------------------
+  // The Latching Estop: what its label says, in every state
+  //
+  // Every state produces text, including the one before any status has arrived.
+  // An estop that renders nothing while it is not engaged cannot be told from
+  // one that has stopped updating, which is the whole reason the reference's
+  // paint function has no blank branch (r2d2-astromech-simulator v1.79.0,
+  // src/js/app/hud.js:188).
+  // ---------------------------------------------------------------------------
+  const ESTOP_STATE_TEXT = {
+    unknown: "Estop: finding out",
+    clear: "Estop: clear",
+    latched: "Estop: latched",
+  };
+
+  // ---------------------------------------------------------------------------
   // Chrome: rendered once, and never again. Everything a navigation changes is
   // an attribute on what is already there, so nothing the shell owns is rebuilt
   // out from under a handler bound to it.
@@ -268,7 +283,26 @@
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>
-        <div class="topbar-actions" id="shell-top-actions"></div>
+        <div class="topbar-right">
+          <!-- The estop is chrome, not a surface's control: it is written here,
+               once, so every screen is shown beneath the same one. The action
+               line and the line under it are FIXED - they say what a press
+               does, which the state line cannot, because the state line says
+               what the droid is doing (the reference's fixed-title discipline,
+               src/js/maestro/hw-ui.js:227, as visible text rather than a title
+               because a title carries no affordance on a bench tablet,
+               docs/ui-copy-voice.md rule 12 / ADR 0059). -->
+          <div class="shell-estop">
+            <button id="shell-estop-button" class="btn danger shell-estop-button" type="button"
+                    aria-label="Stop the droid now - latch the estop">
+              <span class="shell-estop-action">🛑 STOP</span>
+              <span class="shell-estop-consequence">Cuts drive - clear it on Drive or Dashboard</span>
+            </button>
+            <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">${ESTOP_STATE_TEXT.unknown}</div>
+            <div class="shell-estop-feedback feedback compact-feedback" id="shell-estop-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+          </div>
+          <div class="topbar-actions" id="shell-top-actions"></div>
+        </div>
       </div>
       <nav>
         ${navHtml}
@@ -296,6 +330,145 @@
     });
   } else {
     loadIdentity();
+  }
+
+  // ---------------------------------------------------------------------------
+  // The Latching Estop
+  //
+  // The shell renders it once and never again (above), so changing screen
+  // cannot take it away, cannot re-mount it and cannot clear a latch: the only
+  // thing a navigation touches is what is inside #shell-content. What it shows
+  // is read from the status the session already holds, never from the surface
+  // that happens to be mounted -- the reference's own discipline, where the
+  // bench clock follows the board being connected rather than which workspace
+  // is open (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-host.js:341).
+  //
+  // Latching only. Releasing a latched estop stays on Drive and Dashboard,
+  // where an operator went on purpose, because the direction that lets a droid
+  // move again must not be one press from every screen (ADR 0048).
+  // ---------------------------------------------------------------------------
+
+  // Fallback cadence when the browser has no EventSource. The mounted surface's
+  // own poll cannot serve this control: the point of it is that it outlives the
+  // surface. Matches the Dashboard's fallback cadence so a no-stream session
+  // asks at one rate rather than two.
+  const ESTOP_POLL_MS = 3000;
+
+  const estopButton = document.getElementById("shell-estop-button");
+  const estopStateLine = document.getElementById("shell-estop-state");
+  const estopFeedback = document.getElementById("shell-estop-feedback");
+
+  // null until the droid has said something. Three answers, three texts: see
+  // ESTOP_STATE_TEXT above for why there is no blank one.
+  let estopLatched = null;
+
+  const renderEstopState = () => {
+    if (!estopStateLine) return;
+    const key = estopLatched === null ? "unknown" : estopLatched ? "latched" : "clear";
+    estopStateLine.textContent = ESTOP_STATE_TEXT[key];
+    // Red is "something is stopped or refused" and nothing else colours for
+    // state (#327), so the state line takes it only while the latch is set.
+    // The button's own face is red at all times: that is the control's
+    // identity, not a readout.
+    estopStateLine.classList.toggle("is-latched", estopLatched === true);
+  };
+
+  const showEstopFeedback = (message, level = "") => {
+    if (!estopFeedback) return;
+    estopFeedback.textContent = message;
+    estopFeedback.className = level
+      ? `shell-estop-feedback feedback compact-feedback ${level}`
+      : "shell-estop-feedback feedback compact-feedback";
+  };
+
+  const applyEstopStatus = (payload) => {
+    if (!payload || typeof payload !== "object") return;
+    estopLatched = !!payload.estop;
+    renderEstopState();
+  };
+
+  // The one status read the shell owns. It hands what came back to
+  // PAStatusStream rather than keeping it, so the session's last status has one
+  // home and a consumer that asks later is answered from it instead of
+  // fetching again.
+  const readStatusOnce = async ({ handle = null } = {}) => {
+    const api = handle || window.PAApi;
+    if (!api) return;
+    const result = await api.get("/api/status", { cache: "no-store" });
+    if (window.PAStatusStream?.seed) window.PAStatusStream.seed(result.data);
+    else applyEstopStatus(result.data);
+  };
+
+  // The device pushes a status event on a change and on nothing else, so a
+  // client that connects to a quiet droid is told nothing at all. This is the
+  // read that closes that gap; every later change arrives on the stream.
+  const loadInitialStatus = async ({ handle = null } = {}) => {
+    if (window.PAStatusStream?.getLastStatus?.()) {
+      applyEstopStatus(window.PAStatusStream.getLastStatus());
+      return;
+    }
+    await readStatusOnce({ handle });
+  };
+
+  if (estopButton) {
+    // Deliberately unguarded against a second press while the first is in
+    // flight. POST /api/estop is idempotent in the firmware -- failsafeTrigger()
+    // sets a bit it may already hold (src/failsafe_gate.cpp) -- and
+    // estopPostForm bypasses the request slot and never retries, so a second
+    // press cannot queue behind the first. A pending guard here would swallow
+    // exactly the press an operator makes because the first looked like it did
+    // nothing.
+    estopButton.addEventListener("click", async () => {
+      if (!window.PAApi) return;
+      showEstopFeedback("Stopping the droid...");
+      try {
+        await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
+      } catch (error) {
+        // A stop that did not reach the droid has to say so in its own line:
+        // the state line still reports what the droid last told us, which is
+        // not the same thing and must not be overwritten with a guess.
+        showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
+        return;
+      }
+      showEstopFeedback("Stop sent", "success");
+      try {
+        await readStatusOnce();
+      } catch (error) {
+        // The stop already succeeded; only the confirmation read failed. The
+        // firmware broadcasts the new status itself, so the state line catches
+        // up on the stream a moment later.
+        console.warn("[shell] status read after stop failed:", error);
+      }
+    });
+
+    // Subscribed in both modes: the stream is where a change arrives, and it
+    // is also what readStatusOnce() hands its answer to, so this is the one
+    // path into the control whether the status was pushed or fetched.
+    window.PAStatusStream?.subscribe((eventType, payload) => {
+      if (eventType === "status") applyEstopStatus(payload);
+    });
+
+    if (!window.PAStatusStream?.isSupported()) {
+      window.PageBootstrap?.createBackgroundPoll(
+        () =>
+          readStatusOnce().then(
+            () => true,
+            (error) => {
+              console.warn("[shell] estop status poll failed:", error);
+              return false;
+            }
+          ),
+        { cadenceMs: ESTOP_POLL_MS, refreshOnReturn: true }
+      ).start();
+    }
+
+    if (window.PABootstrap) {
+      window.PABootstrap.registerSection("shell-status", loadInitialStatus, {
+        label: "droid status",
+      });
+    } else {
+      loadInitialStatus();
+    }
   }
 
   // ---------------------------------------------------------------------------

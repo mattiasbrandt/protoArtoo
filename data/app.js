@@ -20,7 +20,7 @@
 
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const estopToggle = document.getElementById("estop-toggle");
+  const estopClear = document.getElementById("estop-clear");
   const estopFeedback = document.getElementById("estop-feedback");
   const sleepToggle = document.getElementById("sleep-toggle");
   const sleepOverlay = document.getElementById("sleep-overlay");
@@ -45,11 +45,10 @@
   let modePending = false;
   let moodPending = false;
   let pollFailCount = 0;
-  let estopPending = false;
+  let estopClearPending = false;
   let sleepPending = false;
   let isSleeping = false;
   let isEstopLatched = false;
-  let estopStateKnown = false;
   let rebootPending = false;
 
   const INDICATOR_TEXT = {
@@ -111,24 +110,21 @@
     el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
   };
 
-  const setEstopPending = (pending) => {
-    estopPending = pending;
-    if (!estopToggle) return;
-    estopToggle.disabled = pending;
-    estopToggle.classList.toggle("is-pending", pending);
-    estopToggle.setAttribute("aria-disabled", pending ? "true" : "false");
+  // Clearing the latch, and only that: stopping the droid is the Operator
+  // Shell's control and is on every surface (ADR 0048). The button is live
+  // only while the latch is actually set, so pressing it always does
+  // something -- the same shape the Drive surface's recovery row already has.
+  const renderEstopClear = () => {
+    if (!estopClear) return;
+    const enabled = isEstopLatched && !estopClearPending;
+    estopClear.disabled = !enabled;
+    estopClear.classList.toggle("is-pending", estopClearPending);
+    estopClear.setAttribute("aria-disabled", enabled ? "false" : "true");
   };
 
   const setEstopUi = (latched) => {
     isEstopLatched = !!latched;
-    if (!estopToggle) return;
-    estopToggle.classList.toggle("danger", isEstopLatched);
-    estopToggle.title = isEstopLatched ? "Clear E-Stop" : "Latch E-Stop";
-    estopToggle.setAttribute("aria-pressed", isEstopLatched.toString());
-    if (!estopStateKnown) {
-      estopStateKnown = true;
-      estopToggle.disabled = false;
-    }
+    renderEstopClear();
   };
 
   const setSleepPending = (pending) => {
@@ -310,7 +306,7 @@
     );
     setStatusPill(
       snapshotEstop,
-      payload.estop ? "🛑 E-Stop: Latched" : "🛑 E-Stop: Clear",
+      payload.estop ? "🛑 Estop: latched" : "🛑 Estop: clear",
       payload.estop ? "error" : "ok",
     );
     setStatusPill(snapshotMood, `🎬 Mood: ${moodText}`, "info");
@@ -361,21 +357,26 @@
     }
   };
 
-  const toggleEstop = async () => {
-    if (!window.PAApi || estopPending) return;
-    const targetLatched = !isEstopLatched;
-    setEstopPending(true);
-    showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
+  const clearEstop = async () => {
+    if (!window.PAApi || estopClearPending || !isEstopLatched) return;
+    estopClearPending = true;
+    renderEstopClear();
+    showFeedback(estopFeedback, "Clearing estop...");
 
     try {
-      await window.PAApi.estopPostForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
+      // Clearing skips the request slot and is never retried for the same
+      // reason latching does: an operator command about drive safety must not
+      // wait behind page work, and must not be replayed (CONTEXT.md, Browser
+      // Request Priority).
+      await window.PAApi.estopPostForm("/api/estop/clear", {}, { timeoutMs: 3000 });
       await refreshStatusOnce();
-      showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
+      showFeedback(estopFeedback, "Estop clear", "success");
     } catch (error) {
-      showFeedback(estopFeedback, `E-Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+      showFeedback(estopFeedback, `Clearing estop failed: ${window.PAApi.messageFor(error)}`, "error");
       if (lastStatus) setEstopUi(!!lastStatus.estop);
     } finally {
-      setEstopPending(false);
+      estopClearPending = false;
+      renderEstopClear();
     }
   };
 
@@ -1240,7 +1241,7 @@
     });
   });
 
-  estopToggle?.addEventListener("click", toggleEstop);
+  estopClear?.addEventListener("click", clearEstop);
   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
   topbarReboot?.addEventListener("click", rebootController);
