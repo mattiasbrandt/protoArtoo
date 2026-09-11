@@ -480,8 +480,8 @@ arguments, no Web control needed, and it restarts the firmware straight
 away.
 
 `system.action.estop` always answers `blocked` this way, on purpose — this
-interface never triggers an estop; use the dashboard's E-Stop control or
-`POST /api/estop` for that.
+interface never triggers an estop; use the STOP button on the top bar, which
+is on every screen, or `POST /api/estop` for that.
 
 ## WiFi settings, as one command
 

@@ -599,7 +599,8 @@ Retype the command in the dashboard's Live Logs command box, where the limit is
   or the Console command `system.action.enable-web-control` (works from
   serial, needs no network, and needs no Web control of its own), then
   retry. `system.action.estop` always answers this way, on purpose; use the
-  dashboard's E-Stop control or `POST /api/estop` instead.
+  STOP button on the top bar, which is on every screen, or `POST /api/estop`
+  instead.
 - `outcome=queue-full` means the part of the firmware that would run the
   command is busy right now (its queue is momentarily full) — the command
   was not accepted; wait a moment and try again.
