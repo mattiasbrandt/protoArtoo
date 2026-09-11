@@ -322,12 +322,17 @@ void test_one_unreadable_part_costs_only_its_own_slot() {
 
 void test_a_part_no_build_models_is_refused_rather_than_stored() {
     ServoOutputRow row = mg996rRow();
-    // "doorFL" is a real Droid Parts Catalog id, and the catalog gives it
-    // `control: none` -- so this build compiles no Part vocabulary entry for it
-    // and cannot resolve it to an Output. An id nothing models is reported
-    // here, not accepted and answered later as unwired hardware.
-    TEST_ASSERT_FALSE(droidPartIdIsKnown("doorFL"));
-    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "doorFL"));
+    // "domeEye" is a well-formed id that no catalog row declares, so this build
+    // compiles no Part vocabulary entry for it. An id nothing models is
+    // reported here, not accepted and answered later as unwired hardware.
+    //
+    // Deliberately NOT a real catalog id: since #358 every Part the catalog
+    // declares is in the vocabulary whatever drives it, so a breadpan door is
+    // exactly the wrong example - it is a Part this build models and no Output
+    // claims, which is a different answer (part-not-assigned) and one the row
+    // must store rather than refuse.
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("domeEye"));
+    TEST_ASSERT_FALSE(servoOutputAddPart(&row, "domeEye"));
     TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(row));
 
     // Shape alone was never the question: this one is a perfectly formed
@@ -340,11 +345,11 @@ void test_a_part_no_build_models_is_refused_rather_than_stored() {
 
 void test_a_stored_part_outside_the_vocabulary_drops_and_is_reported() {
     const ServoOutputRow defaults = mg996rRow();
-    // A row saved against a build whose catalog named the breadpan doors, read
-    // back by one whose catalog does not. The slot goes and says so; the
-    // twelve fields beside it are untouched.
+    // A row saved against a build whose catalog named a part, read back by one
+    // whose catalog does not - a step that outlived its catalog. The slot goes
+    // and says so; the twelve fields beside it are untouched.
     const char* record =
-        "ledc:0:utilUp,doorFL:1900:1500:1100:750:200:0:none:limp:mg996r:1";
+        "ledc:0:utilUp,domeEye:1900:1500:1100:750:200:0:none:limp:mg996r:1";
     ServoOutputRow parsed = {};
     const uint16_t repaired = servoOutputRowParse(record, defaults, &parsed);
 
