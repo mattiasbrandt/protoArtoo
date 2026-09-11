@@ -148,6 +148,37 @@ merged). The shape to implement for real:
   separate fix, not something this bootstrap rollout should paper over or wait on
   before generalizing the *gating* logic (see Stop and rollback rules).
 
+### Mounting a surface (ADR 0048, #344)
+
+Under the **Operator Shell** resources no longer arrive once. The shell's own
+chain loads at boot; each surface a builder opens then adds a **wave** through
+`PABootstrap.mountResources(entries)`:
+
+- A wave is appended to the same single Resource Step Recovery cursor, in
+  declared order, behind whatever is already loading. A name already in the
+  chain is skipped, so a script shared with an earlier surface loads once for
+  the session and its module state is never re-created.
+- An entry is a script URL, or `{ name, load }` for a resource the host cannot
+  load by itself. The surface's **markup** is the second kind: it must arrive
+  before the scripts that bind to it, and a shed connection must be retried
+  rather than abandoned, so it is a resource step rather than a second retry
+  mechanism beside one -- the mistake ADR 0019 records `page_loader.js` making.
+- The surface's scripts are read from the document that has just arrived, not
+  restated by the shell, and are declared by the markup step itself once it
+  lands. Its sections are declared as those scripts execute, exactly as they
+  were when the surface was a page: `DECLARE_SECTIONS` is additive at any time,
+  and a name already known is left alone, so no in-progress or completed
+  section state can be discarded.
+- **Page Startup Order is a session-level fact, not a per-mount one.**
+  `liveUpdatesStarted` is sticky, so `pa:assets-ready` is announced once and
+  `/api/events` is opened once for the session however many surfaces are
+  visited. A surface that mounts afterwards is handed the session's settled
+  facts by the shell instead (`data/shell.js`, `replaySessionFacts`), because a
+  once-per-session event it registered for after the fact would never reach it.
+  A page module that keys off `pa:assets-ready` must therefore guard on
+  `window.PAAssetsReady` for the already-ready case, or read its own state from
+  `pa:bootstrap-change` (`data/wifi.js` does the latter).
+
 ## Section Loader Outcomes
 
 A section loader concludes with one of three outcome kinds:
@@ -188,13 +219,17 @@ live-hardware iteration. Each page slice requires coverage of:
 
 ## Page, resource, and section inventory
 
-All 10 controller pages declare their script chain via `data-scripts` on `<html>`,
-consumed by the inline recovery kernel (`data/_recovery_kernel.html`), which fetches
-`page_bootstrap.js` with retry and hands it that chain. Every page shares the same base chain
-(`web_api.js`, `status_stream.js`, `shell.js`, then page-specific script(s), then
-`footer.js`); `index.html` and `setup.html` additionally load `diagnostics.js`.
+Every surface declares its script chain via `data-scripts` on `<html>`. Since
+ADR 0048 the browser loads exactly one document -- `index.html`, the Operator
+Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
+`page_bootstrap.js` with retry and hands it the shell's own chain
+(`web_api.js`, `status_stream.js`, `shell.js`, `footer.js`). Each surface's
+chain is then handed over as a wave when that surface is first opened, and the
+shared prefix in it is skipped as already loaded. Every surface shares that
+prefix, then its own script(s), then `footer.js`; `dashboard.html` and
+`setup.html` additionally load `diagnostics.js`.
 
-| Page | Script count | Notes |
+| Surface | Script count | Notes |
 |---|---|---|
 | `wifi.html` | 5 | Tracer -- fixed first by #52 |
 | `firmware.html` | 5 | OTA/filesystem upload flow exempt from Operation Deadline (see below) |
@@ -205,7 +240,11 @@ consumed by the inline recovery kernel (`data/_recovery_kernel.html`), which fet
 | `rc.html` | 5 | Safety-adjacent (RC mapping) |
 | `drive.html` | 5 | Safety-adjacent (live vehicle control) |
 | `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |
-| `index.html` | 11 | Heaviest, highest-traffic dashboard |
+| `dashboard.html` | 11 | Heaviest; the landing surface, split out of `index.html` when that file became the shell |
+
+Each of these files also carries a thin delegate that hands a direct visit to
+the shell at that surface's hash route, so every address that worked before
+ADR 0048 still opens what it names.
 
 ## Page rollout order
 
