@@ -123,6 +123,11 @@ const boot = async ({ hash = "", stored = null, brokenDoc = null, docDelayMs = 0
       get: async (path) => {
         env.requests.push(path);
         if (path === "/api/identity") return { data: IDENTITY };
+        // The shell reads status once at boot for its estop (#359). Answering
+        // it here keeps these tests running against a settled shell rather
+        // than one whose section is retrying forever; what that read is for is
+        // asserted in test_shell_estop_359.js.
+        if (path === "/api/status") return { data: { estop: false } };
         if (path.endsWith(".html")) {
           if (env.docDelayMs > 0) await sleep(env.docDelayMs);
           // A 200 whose content is not a surface: the terminal case, which the
