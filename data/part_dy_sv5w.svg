@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="DY-SV5W sound module: a small board with six pins along each long edge, a microSD card slot across the top face, and three square CON mode-select pads that choose how it is driven">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="85.6" y="46.0" width="228.8" height="208.0" rx="4" stroke-width="2.4"/>
+    <rect x="101.6" y="60.0" width="196.8" height="91.5" rx="3" stroke-width="1.6"/>
+    <rect x="115.4" y="71.9" width="169.2" height="67.7" rx="2" stroke-width="1.15" opacity="0.85"/>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="96.3" y="36.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="136.5" y="36.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="176.6" y="36.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="216.8" y="36.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="256.9" y="36.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="297.1" y="36.7" width="6.6" height="6.6" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="96.3" y="256.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="136.5" y="256.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="176.6" y="256.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="216.8" y="256.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="256.9" y="256.7" width="6.6" height="6.6" rx="1"/>
+      <rect x="297.1" y="256.7" width="6.6" height="6.6" rx="1"/>
+    </g>
+    <g stroke-width="1.15">
+      <rect x="103.6" y="220.0" width="13" height="13" rx="1.5"/>
+      <rect x="120.6" y="220.0" width="13" height="13" rx="1.5"/>
+      <rect x="137.6" y="220.0" width="13" height="13" rx="1.5"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9" opacity="0.62">
+      <text x="103.6" y="214.0" text-anchor="start">CON1 2 3</text>
+    </g>
+    <rect x="252.4" y="218.0" width="44.0" height="18.0" rx="2" stroke-width="1.4"/>
+  </g>
+</svg>

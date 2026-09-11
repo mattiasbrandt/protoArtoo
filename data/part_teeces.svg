@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Teeces rear logic display: a long narrow board whose upper half is a grid of five by twenty-seven LEDs, with three socketed driver chips below it, a five-pin chain header at each end, and the Arduino that mounts on the back shown dashed">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="34.0" y="93.5" width="332.0" height="112.9" rx="4" stroke-width="2.4"/>
+    <rect x="41.0" y="99.5" width="318.0" height="49.7" rx="2" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" opacity="0.85">
+      <circle cx="48.8" cy="107.7" r="1.9"/>
+      <circle cx="48.8" cy="116.0" r="1.9"/>
+      <circle cx="48.8" cy="124.4" r="1.9"/>
+      <circle cx="48.8" cy="132.7" r="1.9"/>
+      <circle cx="48.8" cy="141.1" r="1.9"/>
+      <circle cx="60.4" cy="107.7" r="1.9"/>
+      <circle cx="60.4" cy="116.0" r="1.9"/>
+      <circle cx="60.4" cy="124.4" r="1.9"/>
+      <circle cx="60.4" cy="132.7" r="1.9"/>
+      <circle cx="60.4" cy="141.1" r="1.9"/>
+      <circle cx="72.1" cy="107.7" r="1.9"/>
+      <circle cx="72.1" cy="116.0" r="1.9"/>
+      <circle cx="72.1" cy="124.4" r="1.9"/>
+      <circle cx="72.1" cy="132.7" r="1.9"/>
+      <circle cx="72.1" cy="141.1" r="1.9"/>
+      <circle cx="83.7" cy="107.7" r="1.9"/>
+      <circle cx="83.7" cy="116.0" r="1.9"/>
+      <circle cx="83.7" cy="124.4" r="1.9"/>
+      <circle cx="83.7" cy="132.7" r="1.9"/>
+      <circle cx="83.7" cy="141.1" r="1.9"/>
+      <circle cx="95.3" cy="107.7" r="1.9"/>
+      <circle cx="95.3" cy="116.0" r="1.9"/>
+      <circle cx="95.3" cy="124.4" r="1.9"/>
+      <circle cx="95.3" cy="132.7" r="1.9"/>
+      <circle cx="95.3" cy="141.1" r="1.9"/>
+      <circle cx="107.0" cy="107.7" r="1.9"/>
+      <circle cx="107.0" cy="116.0" r="1.9"/>
+      <circle cx="107.0" cy="124.4" r="1.9"/>
+      <circle cx="107.0" cy="132.7" r="1.9"/>
+      <circle cx="107.0" cy="141.1" r="1.9"/>
+      <circle cx="118.6" cy="107.7" r="1.9"/>
+      <circle cx="118.6" cy="116.0" r="1.9"/>
+      <circle cx="118.6" cy="124.4" r="1.9"/>
+      <circle cx="118.6" cy="132.7" r="1.9"/>
+      <circle cx="118.6" cy="141.1" r="1.9"/>
+      <circle cx="130.2" cy="107.7" r="1.9"/>
+      <circle cx="130.2" cy="116.0" r="1.9"/>
+      <circle cx="130.2" cy="124.4" r="1.9"/>
+      <circle cx="130.2" cy="132.7" r="1.9"/>
+      <circle cx="130.2" cy="141.1" r="1.9"/>
+      <circle cx="141.9" cy="107.7" r="1.9"/>
+      <circle cx="141.9" cy="116.0" r="1.9"/>
+      <circle cx="141.9" cy="124.4" r="1.9"/>
+      <circle cx="141.9" cy="132.7" r="1.9"/>
+      <circle cx="141.9" cy="141.1" r="1.9"/>
+      <circle cx="153.5" cy="107.7" r="1.9"/>
+      <circle cx="153.5" cy="116.0" r="1.9"/>
+      <circle cx="153.5" cy="124.4" r="1.9"/>
+      <circle cx="153.5" cy="132.7" r="1.9"/>
+      <circle cx="153.5" cy="141.1" r="1.9"/>
+      <circle cx="165.1" cy="107.7" r="1.9"/>
+      <circle cx="165.1" cy="116.0" r="1.9"/>
+      <circle cx="165.1" cy="124.4" r="1.9"/>
+      <circle cx="165.1" cy="132.7" r="1.9"/>
+      <circle cx="165.1" cy="141.1" r="1.9"/>
+      <circle cx="176.7" cy="107.7" r="1.9"/>
+      <circle cx="176.7" cy="116.0" r="1.9"/>
+      <circle cx="176.7" cy="124.4" r="1.9"/>
+      <circle cx="176.7" cy="132.7" r="1.9"/>
+      <circle cx="176.7" cy="141.1" r="1.9"/>
+      <circle cx="188.4" cy="107.7" r="1.9"/>
+      <circle cx="188.4" cy="116.0" r="1.9"/>
+      <circle cx="188.4" cy="124.4" r="1.9"/>
+      <circle cx="188.4" cy="132.7" r="1.9"/>
+      <circle cx="188.4" cy="141.1" r="1.9"/>
+      <circle cx="200.0" cy="107.7" r="1.9"/>
+      <circle cx="200.0" cy="116.0" r="1.9"/>
+      <circle cx="200.0" cy="124.4" r="1.9"/>
+      <circle cx="200.0" cy="132.7" r="1.9"/>
+      <circle cx="200.0" cy="141.1" r="1.9"/>
+      <circle cx="211.6" cy="107.7" r="1.9"/>
+      <circle cx="211.6" cy="116.0" r="1.9"/>
+      <circle cx="211.6" cy="124.4" r="1.9"/>
+      <circle cx="211.6" cy="132.7" r="1.9"/>
+      <circle cx="211.6" cy="141.1" r="1.9"/>
+      <circle cx="223.3" cy="107.7" r="1.9"/>
+      <circle cx="223.3" cy="116.0" r="1.9"/>
+      <circle cx="223.3" cy="124.4" r="1.9"/>
+      <circle cx="223.3" cy="132.7" r="1.9"/>
+      <circle cx="223.3" cy="141.1" r="1.9"/>
+      <circle cx="234.9" cy="107.7" r="1.9"/>
+      <circle cx="234.9" cy="116.0" r="1.9"/>
+      <circle cx="234.9" cy="124.4" r="1.9"/>
+      <circle cx="234.9" cy="132.7" r="1.9"/>
+      <circle cx="234.9" cy="141.1" r="1.9"/>
+      <circle cx="246.5" cy="107.7" r="1.9"/>
+      <circle cx="246.5" cy="116.0" r="1.9"/>
+      <circle cx="246.5" cy="124.4" r="1.9"/>
+      <circle cx="246.5" cy="132.7" r="1.9"/>
+      <circle cx="246.5" cy="141.1" r="1.9"/>
+      <circle cx="258.1" cy="107.7" r="1.9"/>
+      <circle cx="258.1" cy="116.0" r="1.9"/>
+      <circle cx="258.1" cy="124.4" r="1.9"/>
+      <circle cx="258.1" cy="132.7" r="1.9"/>
+      <circle cx="258.1" cy="141.1" r="1.9"/>
+      <circle cx="269.8" cy="107.7" r="1.9"/>
+      <circle cx="269.8" cy="116.0" r="1.9"/>
+      <circle cx="269.8" cy="124.4" r="1.9"/>
+      <circle cx="269.8" cy="132.7" r="1.9"/>
+      <circle cx="269.8" cy="141.1" r="1.9"/>
+      <circle cx="281.4" cy="107.7" r="1.9"/>
+      <circle cx="281.4" cy="116.0" r="1.9"/>
+      <circle cx="281.4" cy="124.4" r="1.9"/>
+      <circle cx="281.4" cy="132.7" r="1.9"/>
+      <circle cx="281.4" cy="141.1" r="1.9"/>
+      <circle cx="293.0" cy="107.7" r="1.9"/>
+      <circle cx="293.0" cy="116.0" r="1.9"/>
+      <circle cx="293.0" cy="124.4" r="1.9"/>
+      <circle cx="293.0" cy="132.7" r="1.9"/>
+      <circle cx="293.0" cy="141.1" r="1.9"/>
+      <circle cx="304.7" cy="107.7" r="1.9"/>
+      <circle cx="304.7" cy="116.0" r="1.9"/>
+      <circle cx="304.7" cy="124.4" r="1.9"/>
+      <circle cx="304.7" cy="132.7" r="1.9"/>
+      <circle cx="304.7" cy="141.1" r="1.9"/>
+      <circle cx="316.3" cy="107.7" r="1.9"/>
+      <circle cx="316.3" cy="116.0" r="1.9"/>
+      <circle cx="316.3" cy="124.4" r="1.9"/>
+      <circle cx="316.3" cy="132.7" r="1.9"/>
+      <circle cx="316.3" cy="141.1" r="1.9"/>
+      <circle cx="327.9" cy="107.7" r="1.9"/>
+      <circle cx="327.9" cy="116.0" r="1.9"/>
+      <circle cx="327.9" cy="124.4" r="1.9"/>
+      <circle cx="327.9" cy="132.7" r="1.9"/>
+      <circle cx="327.9" cy="141.1" r="1.9"/>
+      <circle cx="339.6" cy="107.7" r="1.9"/>
+      <circle cx="339.6" cy="116.0" r="1.9"/>
+      <circle cx="339.6" cy="124.4" r="1.9"/>
+      <circle cx="339.6" cy="132.7" r="1.9"/>
+      <circle cx="339.6" cy="141.1" r="1.9"/>
+      <circle cx="351.2" cy="107.7" r="1.9"/>
+      <circle cx="351.2" cy="116.0" r="1.9"/>
+      <circle cx="351.2" cy="124.4" r="1.9"/>
+      <circle cx="351.2" cy="132.7" r="1.9"/>
+      <circle cx="351.2" cy="141.1" r="1.9"/>
+    </g>
+    <rect x="52.0" y="156.8" width="85.3" height="22.6" rx="2" stroke-width="1.4"/>
+    <rect x="147.3" y="156.8" width="85.3" height="22.6" rx="2" stroke-width="1.4"/>
+    <rect x="242.7" y="156.8" width="85.3" height="22.6" rx="2" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="333.8" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="339.4" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="345.0" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="350.6" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="356.2" y="192.3" width="4.4" height="4.4" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="45.8" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="51.4" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="57.0" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="62.6" y="192.3" width="4.4" height="4.4" rx="1"/>
+      <rect x="68.2" y="192.3" width="4.4" height="4.4" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.6">
+      <text x="48.0" y="189.5" text-anchor="start">OUT1</text>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity="0.6">
+      <text x="336.0" y="189.5" text-anchor="start">OUT2</text>
+    </g>
+    <rect x="180.1" y="191.5" width="26" height="11" rx="2" stroke-width="1.15"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity="0.58">
+      <text x="180.1" y="187.5" text-anchor="start">+5V GND</text>
+    </g>
+    <g stroke-width="1.15" stroke-dasharray="4 3" opacity="0.55">
+      <rect x="133.6" y="154.5" width="73.0" height="29.4" rx="2"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8.5" opacity="0.55">
+      <text x="358.0" y="152.3" text-anchor="end">RLD v3.1</text>
+    </g>
+  </g>
+</svg>

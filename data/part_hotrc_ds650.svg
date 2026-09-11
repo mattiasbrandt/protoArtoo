@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="HotRC DS-650 transmitter: a one-handed handset with a screen showing a pulse value in microseconds, a steering wheel on the left, a trigger throttle on the right and a row of four assignable switches">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 96 h108 q20 0 20 20 v58 q0 18 -16 22 l-30 8 q-12 3 -14 15 l-8 44 q-3 16 -20 16 h-20 q-17 0 -20 -16 l-8 -44 q-2 -12 -14 -15 l-30 -8 q-16 -4 -16 -22 v-58 q0 -20 20 -20 z" stroke-width="2.4"/>
+    <rect x="168" y="110" width="72" height="38" rx="3" stroke-width="1.4"/>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="11" opacity="0.6">
+      <text x="204" y="134" text-anchor="middle">1500</text>
+    </g>
+    <path d="M124 172 a30 30 0 1 0 0 0.1" stroke-width="1.4"/>
+    <circle cx="124" cy="172" r="30" stroke-width="1.4"/>
+    <circle cx="124" cy="172" r="11" stroke-width="1.15"/>
+    <path d="M268 164 q22 6 20 30 q-2 20 -20 24" stroke-width="1.4"/>
+    <rect x="172" y="156" width="9" height="15" rx="2" stroke-width="1.15"/>
+    <rect x="192" y="156" width="9" height="15" rx="2" stroke-width="1.15"/>
+    <rect x="212" y="156" width="9" height="15" rx="2" stroke-width="1.15"/>
+    <rect x="232" y="156" width="9" height="15" rx="2" stroke-width="1.15"/>
+  </g>
+</svg>

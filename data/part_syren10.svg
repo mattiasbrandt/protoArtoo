@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="SyRen 10 motor driver: a small upright board with four screw terminals along the bottom edge, a six-switch DIP bank at the top and a finned heatsink">
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="136.1" y="46.0" width="127.7" height="208.0" rx="4" stroke-width="2.4"/>
+    <circle cx="148.1" cy="58.0" r="4.5" stroke-width="1.15"/>
+    <circle cx="148.1" cy="242.0" r="4.5" stroke-width="1.15"/>
+    <circle cx="251.9" cy="58.0" r="4.5" stroke-width="1.15"/>
+    <circle cx="251.9" cy="242.0" r="4.5" stroke-width="1.15"/>
+    <g stroke-width="1.4">
+      <rect x="147.6" y="211.5" width="23.9" height="31.0" rx="2"/>
+      <circle cx="159.6" cy="227.0" r="7.9" stroke-width="1.15"/>
+      <line x1="153.5" y1="227.0" x2="165.7" y2="227.0" stroke-width="1.15"/>
+      <rect x="174.6" y="211.5" width="23.9" height="31.0" rx="2"/>
+      <circle cx="186.5" cy="227.0" r="7.9" stroke-width="1.15"/>
+      <line x1="180.4" y1="227.0" x2="192.7" y2="227.0" stroke-width="1.15"/>
+      <rect x="201.5" y="211.5" width="23.9" height="31.0" rx="2"/>
+      <circle cx="213.5" cy="227.0" r="7.9" stroke-width="1.15"/>
+      <line x1="207.3" y1="227.0" x2="219.6" y2="227.0" stroke-width="1.15"/>
+      <rect x="228.4" y="211.5" width="23.9" height="31.0" rx="2"/>
+      <circle cx="240.4" cy="227.0" r="7.9" stroke-width="1.15"/>
+      <line x1="234.3" y1="227.0" x2="246.5" y2="227.0" stroke-width="1.15"/>
+    </g>
+    <rect x="152.1" y="66.0" width="95.7" height="22.0" rx="2" stroke-width="1.4"/>
+    <g stroke-width="1.15">
+      <rect x="155.7" y="70.4" width="8.9" height="13.2" rx="1"/>
+      <rect x="171.6" y="70.4" width="8.9" height="13.2" rx="1"/>
+      <rect x="187.6" y="70.4" width="8.9" height="13.2" rx="1"/>
+      <rect x="203.5" y="70.4" width="8.9" height="13.2" rx="1"/>
+      <rect x="219.5" y="70.4" width="8.9" height="13.2" rx="1"/>
+      <rect x="235.4" y="70.4" width="8.9" height="13.2" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9.5" opacity="0.72">
+      <text x="152.1" y="62.0" text-anchor="start">1 2 3 4 5 6</text>
+    </g>
+    <rect x="148.1" y="100.0" width="103.7" height="58.0" rx="3" stroke-width="1.4"/>
+    <g stroke-width="1.15" opacity="0.9">
+      <line x1="153.1" y1="108.3" x2="246.9" y2="108.3"/>
+      <line x1="153.1" y1="116.6" x2="246.9" y2="116.6"/>
+      <line x1="153.1" y1="124.9" x2="246.9" y2="124.9"/>
+      <line x1="153.1" y1="133.1" x2="246.9" y2="133.1"/>
+      <line x1="153.1" y1="141.4" x2="246.9" y2="141.4"/>
+      <line x1="153.1" y1="149.7" x2="246.9" y2="149.7"/>
+    </g>
+    <g fill="currentColor" stroke="none" opacity="0.9">
+      <rect x="142.3" y="167.2" width="5.6" height="5.6" rx="1"/>
+      <rect x="142.3" y="178.2" width="5.6" height="5.6" rx="1"/>
+      <rect x="142.3" y="189.2" width="5.6" height="5.6" rx="1"/>
+    </g>
+    <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9.5" opacity="0.6">
+      <text x="251.9" y="202.0" text-anchor="end">SyRen 10</text>
+    </g>
+  </g>
+</svg>
