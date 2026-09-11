@@ -494,7 +494,7 @@ The browser-editor rule that the connected dome layout gates new authoring but n
 _Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
 
 **Part Kind**:
-What a **Part** usually is — servo-driven, a light or display, an indicator. Successor to the catalog's `lit:` annotation, and **advisory in principle, never a constraint**: it gives a Part its own treatment on a surface and lets one query a surprising mapping, and it never refuses one, because plenty of builds move something the reference drawing shows as a display (#320).
+What a **Part** usually is — servo-driven, a light or display, an indicator. Successor to the catalog's `lit:` annotation, and it has replaced it: the notes on six lit dome panels are six light Parts declaring `kind: light`, each linked by `sits_on:` to the panel that carries it (#357). It is **advisory in principle, never a constraint**: it gives a Part its own treatment on a surface and lets one query a surprising mapping, and it never refuses one, because plenty of builds move something the reference drawing shows as a display (#320). A Part with no declared Kind is one the catalog does not classify — the escape-hatch slots are whatever the builder wired to them — which is not the same statement as classifying it as something that moves. The treatment **removes** what the Kind cannot promise: a light has no travel, throw, position or **Output Release**, so a surface omits them rather than showing them as zero, since a zero still reads as a promise about movement.
 _Avoid_: part type, part class, component type (that one names what is fitted to an **Output**, not what the Part is)
 
 **Output**:

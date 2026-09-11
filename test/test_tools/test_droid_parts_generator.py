@@ -1,12 +1,13 @@
-"""What the parts catalog generator refuses, and what it promises (#356).
+"""What the parts catalog generator refuses, and what it promises (#356, #357).
 
 The generator is the only thing standing between a typo in docs/droid-parts.yaml
 and an entry nothing can resolve - a Part id firmware cannot store against an
-output, a control path the firmware does not drive, a complement that quietly
+output, a control path the firmware does not drive, a Part Kind no surface
+knows, a light sitting on a panel that does not exist, a complement that quietly
 seeds an empty droid. Those refusals are asserted here against a scratch copy of
 the real catalog, one broken field at a time.
 
-Two promises are asserted beside them, because they are what downstream work
+The promises are asserted beside them. Two of them are what downstream work
 rests on: reordering rows in the catalog changes nothing in either output, and
 generating into a scratch tree produces exactly the bytes that are committed -
 which is what makes #358's byte-compare a check rather than a coin toss.
@@ -180,6 +181,24 @@ class GeneratorRefusals(unittest.TestCase):
         )
         self.assertRefused("no Part reaches firmware")
 
+    def test_a_part_kind_the_catalog_does_not_declare(self):
+        """A misspelled Kind reads as "no Kind", and the part is treated as
+        something it is not - which is worse than a loud refusal."""
+        self.scratch.edit("kind: light, control: none, sits_on: panel5",
+                          "kind: glowy, control: none, sits_on: panel5")
+        self.assertRefused("is not a Part Kind this catalog declares")
+
+    def test_a_part_sitting_on_one_no_row_declares(self):
+        """A light whose panel does not exist is a light placed nowhere."""
+        self.scratch.edit("sits_on: panel5 }", "sits_on: panel99 }")
+        self.assertRefused("which no part row declares")
+
+    def test_a_part_sitting_on_one_that_sits_on_something_itself(self):
+        """One level only: a chain would resolve in whichever order this pass
+        happened to reach it."""
+        self.scratch.edit("sits_on: panel5 }", "sits_on: psiRear }")
+        self.assertRefused("a part sits on one that stands on its own")
+
     def test_a_control_manifest_row_it_cannot_read(self):
         """The firmware's own declaration is parsed, never guessed around."""
         text = self.scratch.control.read_text(encoding="utf-8")
@@ -255,6 +274,42 @@ class GeneratorPromises(unittest.TestCase):
         self.assertIn('"utilUp"', table)
         for browser_only in ("Upper utility arm", "PP1", "rear-right", "Other part"):
             self.assertNotIn(browser_only, table)
+
+    def test_a_light_stands_where_its_panel_stands(self):
+        """Geometry is declared once, on the panel, and taken from there.
+
+        The Magic Panel is at P5 because it IS what P5 carries, so its row
+        declares no bearing of its own - and the two can therefore never
+        disagree about where they both are.
+        """
+        self.assertNotIn(
+            "bearing_deg", self.scratch.catalog.read_text(encoding="utf-8")
+            .split("dome_lights:", 1)[1].split("holoprojectors:", 1)[0],
+            "a dome light declares geometry of its own; this test covers the inherited case",
+        )
+        _, browser = self.scratch.generate()
+        parts = {part["id"]: part for part in browser_payload(browser)["parts"]}
+        # .get() rather than [], so a light that inherited nothing fails the
+        # comparison instead of raising past it.
+        self.assertEqual(parts["magicPanel"].get("bearingDeg"), parts["panel5"]["bearingDeg"])
+        self.assertEqual(parts["magicPanel"].get("position"), parts["panel5"]["position"])
+        self.assertEqual(parts["magicPanel"]["sitsOn"], "panel5")
+
+    def test_a_light_is_named_in_the_browser_and_nowhere_in_firmware(self):
+        """A light drives nothing from the body, so it reaches the browser
+        alone - the same rule a dome panel follows, for the same reason."""
+        firmware, browser = self.scratch.generate()
+        lights = [
+            part for part in browser_payload(browser)["parts"]
+            if part.get("kind") == "light"
+        ]
+        self.assertEqual(
+            [part["id"] for part in lights],
+            ["logicFront", "logicRear", "magicPanel", "psiFront", "psiRear", "upperPanel"],
+        )
+        for part in lights:
+            self.assertEqual(part["control"], "none")
+            self.assertNotIn(f'"{part["id"]}"', firmware)
 
     def test_the_regeneration_note_names_both_outputs(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:

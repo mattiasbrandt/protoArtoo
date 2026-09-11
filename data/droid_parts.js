@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 b7ef78b5ec66150a022d327af3438d2b8591bc2dd80e0ce6c82c1bb58afdbefa
+ * Source digest: sha256 5f90098e371e7136f426fbf27180d47a2aa1b6a03899538f0f5f33c270212935
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -21,6 +21,16 @@
  * A variant whose complement is unknown carries `seeds: null`, never `[]`, so
  * reaching for it throws instead of quietly seeding an empty droid. `own`
  * carries `seeds: []`, which is a real and deliberate empty complement.
+ *
+ * `kind` is the Part Kind - what a Part usually IS, as opposed to what drives
+ * it. Branch on this field, never on an id prefix or a name match. It is
+ * advisory: it earns a Part its own treatment and lets a surface query a
+ * surprising mapping, and it never refuses one. A Part with no `kind` is one
+ * the catalog does not classify.
+ *
+ * `sitsOn` names the Part this one is carried by - a light and the dome panel
+ * it lights. Such a Part takes its host's `position` and `bearingDeg` unless it
+ * declares its own, so the two can never disagree about where they both are.
  */
 
 (function () {
@@ -29,7 +39,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "b7ef78b5ec66150a022d327af3438d2b8591bc2dd80e0ce6c82c1bb58afdbefa",
+    "sourceSha256": "5f90098e371e7136f426fbf27180d47a2aa1b6a03899538f0f5f33c270212935",
     "designs": [
       {
         "id": "mk4",
@@ -67,6 +77,12 @@
               "panel12",
               "panel13",
               "panel14",
+              "magicPanel",
+              "upperPanel",
+              "psiRear",
+              "logicRear",
+              "logicFront",
+              "psiFront",
               "hp1Pan",
               "hp1Tilt",
               "hp2Pan",
@@ -250,8 +266,7 @@
         ],
         "position": "right",
         "bearingDeg": 75.5,
-        "control": "none",
-        "lit": "Magic Panel"
+        "control": "none"
       },
       {
         "index": 11,
@@ -265,8 +280,7 @@
         ],
         "position": "front-right",
         "bearingDeg": 62.5,
-        "control": "none",
-        "lit": "small upper panel"
+        "control": "none"
       },
       {
         "index": 12,
@@ -294,8 +308,7 @@
         ],
         "position": "front",
         "bearingDeg": 24,
-        "control": "none",
-        "lit": "Rear PSI"
+        "control": "none"
       },
       {
         "index": 14,
@@ -309,8 +322,7 @@
         ],
         "position": "rear-left",
         "bearingDeg": 300,
-        "control": "none",
-        "lit": "Rear Logic Display"
+        "control": "none"
       },
       {
         "index": 15,
@@ -352,8 +364,7 @@
         ],
         "position": "rear",
         "bearingDeg": 204,
-        "control": "none",
-        "lit": "Front Logic Displays"
+        "control": "none"
       },
       {
         "index": 18,
@@ -381,11 +392,94 @@
         ],
         "position": "rear",
         "bearingDeg": 184,
-        "control": "none",
-        "lit": "Front PSI"
+        "control": "none"
       },
       {
         "index": 20,
+        "id": "logicFront",
+        "section": "dome_lights",
+        "name": "Front Logic Displays",
+        "aliases": [
+          "FLD",
+          "Front display"
+        ],
+        "position": "rear",
+        "bearingDeg": 204,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel12"
+      },
+      {
+        "index": 21,
+        "id": "logicRear",
+        "section": "dome_lights",
+        "name": "Rear Logic Display",
+        "aliases": [
+          "RLD",
+          "Rear display"
+        ],
+        "position": "rear-left",
+        "bearingDeg": 300,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel9"
+      },
+      {
+        "index": 22,
+        "id": "magicPanel",
+        "section": "dome_lights",
+        "name": "Magic Panel",
+        "aliases": [
+          "MP"
+        ],
+        "position": "right",
+        "bearingDeg": 75.5,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel5"
+      },
+      {
+        "index": 23,
+        "id": "psiFront",
+        "section": "dome_lights",
+        "name": "Front PSI",
+        "aliases": [
+          "FPSI"
+        ],
+        "position": "rear",
+        "bearingDeg": 184,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel14"
+      },
+      {
+        "index": 24,
+        "id": "psiRear",
+        "section": "dome_lights",
+        "name": "Rear PSI",
+        "aliases": [
+          "RPSI"
+        ],
+        "position": "front",
+        "bearingDeg": 24,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel8"
+      },
+      {
+        "index": 25,
+        "id": "upperPanel",
+        "section": "dome_lights",
+        "name": "Small upper panel",
+        "aliases": [],
+        "position": "front-right",
+        "bearingDeg": 62.5,
+        "control": "none",
+        "kind": "light",
+        "sitsOn": "panel6"
+      },
+      {
+        "index": 26,
         "id": "hp1Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 1 pan",
@@ -401,7 +495,7 @@
         "axis": "pan"
       },
       {
-        "index": 21,
+        "index": 27,
         "id": "hp1Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 1 tilt",
@@ -417,7 +511,7 @@
         "axis": "tilt"
       },
       {
-        "index": 22,
+        "index": 28,
         "id": "hp2Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 2 pan",
@@ -433,7 +527,7 @@
         "axis": "pan"
       },
       {
-        "index": 23,
+        "index": 29,
         "id": "hp2Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 2 tilt",
@@ -449,7 +543,7 @@
         "axis": "tilt"
       },
       {
-        "index": 24,
+        "index": 30,
         "id": "hp3Pan",
         "section": "holoprojectors",
         "name": "Holoprojector 3 pan",
@@ -465,7 +559,7 @@
         "axis": "pan"
       },
       {
-        "index": 25,
+        "index": 31,
         "id": "hp3Tilt",
         "section": "holoprojectors",
         "name": "Holoprojector 3 tilt",
@@ -481,7 +575,7 @@
         "axis": "tilt"
       },
       {
-        "index": 26,
+        "index": 32,
         "id": "domeBtn1",
         "section": "dome_fixtures",
         "name": "Dome button 1",
@@ -491,7 +585,7 @@
         "control": null
       },
       {
-        "index": 27,
+        "index": 33,
         "id": "domeBtn2",
         "section": "dome_fixtures",
         "name": "Dome button 2",
@@ -501,7 +595,7 @@
         "control": null
       },
       {
-        "index": 28,
+        "index": 34,
         "id": "chargebay",
         "section": "body_doors",
         "name": "Chargebay door",
@@ -514,7 +608,7 @@
         "cadName": "ChargingBayDoor"
       },
       {
-        "index": 29,
+        "index": 35,
         "id": "dataport",
         "section": "body_doors",
         "name": "Dataport door",
@@ -527,7 +621,7 @@
         "cadName": "DataPortDoor"
       },
       {
-        "index": 30,
+        "index": 36,
         "id": "doorFL",
         "section": "body_doors",
         "name": "Left body door",
@@ -540,7 +634,7 @@
         "cadName": "FLBreadpanDoor"
       },
       {
-        "index": 31,
+        "index": 37,
         "id": "doorFR",
         "section": "body_doors",
         "name": "Right body door",
@@ -553,7 +647,7 @@
         "cadName": "FRBreadpandoor"
       },
       {
-        "index": 32,
+        "index": 38,
         "id": "doorRL",
         "section": "body_doors",
         "name": "Rear-left body door",
@@ -566,7 +660,7 @@
         "cadName": "RLBreadpanDoor"
       },
       {
-        "index": 33,
+        "index": 39,
         "id": "doorRR",
         "section": "body_doors",
         "name": "Rear-right body door",
@@ -579,7 +673,7 @@
         "cadName": "RRBreadpandoor"
       },
       {
-        "index": 34,
+        "index": 40,
         "id": "drawer",
         "section": "body_doors",
         "name": "Drawer",
@@ -591,7 +685,7 @@
         "cadName": "Drawer"
       },
       {
-        "index": 35,
+        "index": 41,
         "id": "smallDoor",
         "section": "body_doors",
         "name": "Small long door",
@@ -603,7 +697,7 @@
         "cadName": "SmallLongDoor"
       },
       {
-        "index": 36,
+        "index": 42,
         "id": "gripArm",
         "section": "body_arms",
         "name": "Gripper arm",
@@ -615,7 +709,7 @@
         "cadName": null
       },
       {
-        "index": 37,
+        "index": 43,
         "id": "gripClaw",
         "section": "body_arms",
         "name": "Gripper claw",
@@ -627,7 +721,7 @@
         "cadName": null
       },
       {
-        "index": 38,
+        "index": 44,
         "id": "interArm",
         "section": "body_arms",
         "name": "Interface arm",
@@ -639,7 +733,7 @@
         "cadName": null
       },
       {
-        "index": 39,
+        "index": 45,
         "id": "interTool",
         "section": "body_arms",
         "name": "Interface tool",
@@ -651,7 +745,7 @@
         "cadName": null
       },
       {
-        "index": 40,
+        "index": 46,
         "id": "utilLo",
         "section": "body_arms",
         "name": "Lower utility arm",
@@ -663,7 +757,7 @@
         "cadName": "LowerUtilityArm"
       },
       {
-        "index": 41,
+        "index": 47,
         "id": "utilUp",
         "section": "body_arms",
         "name": "Upper utility arm",
@@ -675,7 +769,7 @@
         "cadName": "UpperUtilityArm"
       },
       {
-        "index": 42,
+        "index": 48,
         "id": "other1",
         "section": "other_slots",
         "name": "Other part 1",
@@ -683,7 +777,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 43,
+        "index": 49,
         "id": "other2",
         "section": "other_slots",
         "name": "Other part 2",
@@ -691,7 +785,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 44,
+        "index": 50,
         "id": "other3",
         "section": "other_slots",
         "name": "Other part 3",
@@ -699,7 +793,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 45,
+        "index": 51,
         "id": "other4",
         "section": "other_slots",
         "name": "Other part 4",
@@ -707,7 +801,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 46,
+        "index": 52,
         "id": "other5",
         "section": "other_slots",
         "name": "Other part 5",
@@ -715,7 +809,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 47,
+        "index": 53,
         "id": "other6",
         "section": "other_slots",
         "name": "Other part 6",
@@ -723,7 +817,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 48,
+        "index": 54,
         "id": "other7",
         "section": "other_slots",
         "name": "Other part 7",
@@ -731,7 +825,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 49,
+        "index": 55,
         "id": "other8",
         "section": "other_slots",
         "name": "Other part 8",
@@ -739,7 +833,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 50,
+        "index": 56,
         "id": "other9",
         "section": "other_slots",
         "name": "Other part 9",
@@ -747,7 +841,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 51,
+        "index": 57,
         "id": "other10",
         "section": "other_slots",
         "name": "Other part 10",

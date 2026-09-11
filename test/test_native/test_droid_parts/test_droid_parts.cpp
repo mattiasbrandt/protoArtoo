@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_native/test_droid_parts/test_droid_parts.cpp
 //
-// The Droid Parts Catalog as firmware sees it (#301, #356).
+// The Droid Parts Catalog as firmware sees it (#301, #356, #357).
 //
 // Two behaviours, and both are about the line between them. The generated table
 // is the vocabulary: which Part ids this build models at all, and it is
@@ -60,6 +60,26 @@ void test_a_dome_part_is_not_a_part_firmware_resolves() {
     TEST_ASSERT_FALSE(droidPartIdIsKnown("panel14"));
     TEST_ASSERT_FALSE(droidPartIdIsKnown("hp1Pan"));
     TEST_ASSERT_FALSE(droidPartIdIsKnown("doorFL"));
+}
+
+void test_a_light_is_named_in_the_browser_and_nowhere_here() {
+    // A PSI, a logic display and the Magic Panel are Parts exactly as a pie
+    // panel is one (#320, ADR 0045), and nothing on the body drives any of
+    // them: the dome renders light intent, and the raw MarcDuino families
+    // reach it uninterpreted. So they travel as far as the browser and stop,
+    // the same distance a dome panel travels and for the same reason.
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("magicPanel"));
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("psiFront"));
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("psiRear"));
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("logicFront"));
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("logicRear"));
+    TEST_ASSERT_FALSE(droidPartIdIsKnown("upperPanel"));
+
+    // The whole table, so "the lights did not reach firmware" is checked from
+    // both ends: the two utility arms plus the ten escape-hatch slots, which
+    // is what a body-driven complement is today. This number moves when a Part
+    // the BODY drives is declared - never when a dome Part is.
+    TEST_ASSERT_EQUAL_size_t(12, DROID_PART_COUNT);
 }
 
 void test_the_vocabulary_refuses_what_is_not_an_id() {
@@ -146,6 +166,10 @@ void test_an_id_this_build_does_not_model_is_not_reported_as_unwired() {
                           droidPartAvailabilityReason(table, "pie1"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
                           droidPartAvailabilityReason(table, "armOfTheFuture"));
+    // A light included: a PSI nobody wired to a body output is not a wiring
+    // fault a builder can go and fix at the bench.
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
+                          droidPartAvailabilityReason(table, "psiFront"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
                           droidPartAvailabilityReason(table, nullptr));
 }
@@ -166,6 +190,7 @@ int main(int, char**) {
     RUN_TEST(test_the_body_driven_parts_are_the_ones_firmware_knows);
     RUN_TEST(test_the_escape_hatch_is_nameable_in_firmware);
     RUN_TEST(test_a_dome_part_is_not_a_part_firmware_resolves);
+    RUN_TEST(test_a_light_is_named_in_the_browser_and_nowhere_here);
     RUN_TEST(test_the_vocabulary_refuses_what_is_not_an_id);
     RUN_TEST(test_every_id_in_the_table_is_reachable_by_index);
 

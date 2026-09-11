@@ -1,0 +1,13 @@
+diff --git i/data/droid_part_kind.js w/data/droid_part_kind.js
+index 858f1ba1..72d08000 100644
+--- i/data/droid_part_kind.js
++++ w/data/droid_part_kind.js
+@@ -35,7 +35,7 @@
+   // Part with no `kind` is one the catalog does not classify - the escape-hatch
+   // slots are whatever the builder wired to them - which is a different fact
+   // from being classified as something that moves.
+-  const LIGHT = "light";
++  const LIGHT = "lights";
+ 
+   // What a surface may offer for a Part, by Kind. These are names of
+   // affordances rather than field names: the row decides how to draw one, and

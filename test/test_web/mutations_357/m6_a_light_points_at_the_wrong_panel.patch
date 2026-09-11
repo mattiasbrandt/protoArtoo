@@ -1,0 +1,13 @@
+diff --git i/data/droid_parts.js w/data/droid_parts.js
+index 0a5eedeb..7665cd4d 100644
+--- i/data/droid_parts.js
++++ w/data/droid_parts.js
+@@ -464,7 +464,7 @@
+         "bearingDeg": 24,
+         "control": "none",
+         "kind": "light",
+-        "sitsOn": "panel8"
++        "sitsOn": "panel7"
+       },
+       {
+         "index": 25,

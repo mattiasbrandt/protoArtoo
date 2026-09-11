@@ -1,12 +1,12 @@
 """The `designs:` block in docs/droid-parts.yaml stays consistent with the parts (#337).
 
 ADR 0047 put one rule in this file: a design SEEDS a complement and never
-fences it. Two things follow that a reader cannot check by eye across 42 part
-rows and a 38-id seed list - every seeded id must resolve to a part declared
+fences it. Two things follow that a reader cannot check by eye across 48 part
+rows and a 44-id seed list - every seeded id must resolve to a part declared
 once below, and the parts that belong to no design (the four Common Additions
 with `cad_name: null`, and the `other1`..`other10` escape hatch) must stay
 unclaimed. Both are asserted here, against the real file, because the catalog
-is the source A1b generates from: a typo in a seed list would otherwise reach
+is the source the generator reads: a typo in a seed list would otherwise reach
 firmware as a missing part rather than as a failure here.
 
 `seeds: TBD` is a declared unknown, not a hole to fill in - the split between
@@ -23,20 +23,15 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
 import registry_yaml  # noqa: E402
+# The sections that declare parts, read from the generator rather than restated
+# here: a list written down twice is a list that drifts, and the copy that used
+# to live in this file silently stopped covering a whole section the day one was
+# added - every row in it then read as "seeded but not declared".  Dome and body
+# halves are told apart by the section a part sits in, which is why no part row
+# repeats that fact.
+from generate_droid_parts_catalog import PART_SECTIONS  # noqa: E402
 
 CATALOG = ROOT / "docs" / "droid-parts.yaml"
-
-# Sections that declare parts, in the order the file carries them. Dome and
-# body halves are told apart by the section a part sits in, which is why no
-# part row repeats that fact.
-PART_SECTIONS = (
-    "dome_pies",
-    "dome_panels",
-    "holoprojectors",
-    "dome_fixtures",
-    "body_doors",
-    "body_arms",
-)
 
 DESIGN_FIELDS = ("id", "label", "short", "blurb")
 
