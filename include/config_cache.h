@@ -196,6 +196,20 @@ void configCacheSetActiveComponentToggles(const SystemConfig& system);
 bool configCacheReadActiveComponentToggle(size_t bitIndex);
 
 // =============================================================================
+// Active Component Members (staged at reboot, ADR 0042)
+// =============================================================================
+
+// configCacheSetActiveSoundMember / configCacheReadActiveSoundMember: which
+// sound module is actually running since the last boot, as a Component Registry
+// part `value`. The pair exists for the same reason the Component Toggle pair
+// above does: configCacheRead()'s SystemConfig.sound_member is the latest saved
+// choice, which is not what the droid is playing through until it reboots, and
+// an operator surface has to be able to show both without guessing which it
+// has. Set once by setup() from the boot config snapshot.
+void configCacheSetActiveSoundMember(uint8_t memberValue);
+uint8_t configCacheReadActiveSoundMember();
+
+// =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================
 

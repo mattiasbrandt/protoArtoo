@@ -36,6 +36,7 @@
 #include "drive_speed_preset.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
@@ -525,6 +526,20 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
     components["audio"]["enabled"] = snap.system.enable_audio;
     if (const char* label = getComponentLabel("enable_audio")) components["audio"]["label"] = label;
+    // The Component Member sits beside the Component Toggle and answers a
+    // different question: the toggle says a sound module is fitted, the member
+    // says which product it is (ADR 0042). Reported as the registry id rather
+    // than the stored number, so a picker never carries its own copy of the
+    // numbering. Absent when the stored value names nothing this image knows,
+    // which is the one case where an id would have to be invented.
+    //
+    // This is the SAVED choice. What the droid is actually playing through until
+    // it reboots is "activeMember", which addAudioMemberFields() adds in
+    // sendConfigSnapshot() -- this builder is pure and cannot read the
+    // boot-latched value.
+    if (const ComponentPartEntry* member = componentPartByValue(snap.system.sound_member)) {
+        components["audio"]["member"] = member->id;
+    }
 
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
@@ -572,6 +587,24 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 }
 
 namespace {
+
+// The Sound family's active Component Member: the module AudioTask actually
+// bound at boot, as against the saved choice populateConfigJson() reports. The
+// two differ exactly while a member change is staged and the droid has not
+// rebooted, which is the state an operator surface has to be able to show.
+//
+// Out here for the same reason addServoOutputFields() is: the boot-latched
+// value is runtime state a pure snapshot serializer cannot see.
+void addAudioMemberFields(JsonDocument& doc) {
+    JsonObject components = doc["components"];
+    if (components.isNull()) {
+        return;
+    }
+    const ComponentPartEntry* active = componentPartByValue(configCacheReadActiveSoundMember());
+    if (active != nullptr) {
+        components["audio"]["activeMember"] = active->id;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // addServoOutputFields()
@@ -628,6 +661,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
         return;
     }
     addServoOutputFields(doc);
+    addAudioMemberFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);

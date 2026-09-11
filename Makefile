@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -155,6 +155,11 @@ check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metad
 # rather than being quietly repaired by the first run.
 check-parts-drift: ## Ad hoc check that the parts catalog and its generated outputs align
 	python3 tools/check_droid_parts_drift.py
+
+# The registry's own report-never-rewrite check, beside the two above so an
+# operator reads all three the same way (#340).
+check-component-drift: ## Check the Component Registry manifest against the firmware and the browser
+	python3 tools/check_component_registry_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py

@@ -18,6 +18,7 @@
 #include "audio_task.h"
 #include "aux_led.h"
 #include "config_store.h"
+#include "component_registry.h"
 #include "config_cache.h"
 #include "console_module.h"
 #include "console_serial_output.h"
@@ -428,6 +429,16 @@ void setup() {
     configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
     configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
     configCacheSetActiveComponentToggles(bootCfg.system);
+    // Resolve, do not copy: a saved member this image no longer carries a
+    // driver for becomes the one it does, so the active value is always a
+    // module AudioTask can actually bind to. nullptr means this image has no
+    // selectable sound module at all, which a static_assert in
+    // src/tasks/audio_task.cpp already makes unbuildable -- the check is here
+    // so that assert being relaxed one day is a quiet 0 rather than a boot
+    // crash in setup().
+    const ComponentPartEntry* bootSoundMember =
+        componentResolveMember(COMPONENT_CATEGORY_SOUND, bootCfg.system.sound_member);
+    configCacheSetActiveSoundMember(bootSoundMember != nullptr ? bootSoundMember->value : 0);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Task Watchdog Timer.

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "component_registry.h"
 #include "config.h"
 #include "drive_speed_preset.h"
 #include "servo_component_helpers.h"
@@ -320,6 +321,30 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         }
         working->system.rc_input_mode = mode;
         appendApplied(&result->applied, "[CFG] rcInputMode updated to %s", rcModeToString(mode));
+        result->changed = true;
+    }
+
+    // The Sound Component Member, named by its Component Registry id rather than
+    // by the number it is stored as: a picker offering the registry's rows sends
+    // back what the registry gave it, and nothing outside the registry has to
+    // know the numbering. A roadmap row and a member from another family are
+    // both refused, by the same rule the picker's lineup comes from.
+    //
+    // The refusal deliberately does NOT echo what was asked for. setError()
+    // takes a literal and the message lands in a JSON error body, so echoing an
+    // arbitrary request value would put unescaped operator input there; the
+    // registry id space is small enough that the sentence is diagnosis enough.
+    if (configParamHas(params, "soundMember")) {
+        const char* memberId = configParamGet(params, "soundMember");
+        const ComponentPartEntry* member = componentPartById(memberId);
+        if (member == nullptr || member->category != COMPONENT_CATEGORY_SOUND ||
+            !componentPartIsSelectable(*member)) {
+            setError(result, "soundMember is not a sound module this firmware can drive");
+            return;
+        }
+        working->system.sound_member = member->value;
+        appendApplied(&result->applied, "[CFG] soundMember updated to %s (takes effect at reboot)",
+                      member->name);
         result->changed = true;
     }
 

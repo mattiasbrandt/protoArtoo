@@ -20,7 +20,9 @@
 // For compatibility with DY-SV5W firmware variants, this driver sends the
 // checksum-frame dialect used by DYPlayer/BetterDuino.
 //
-// Only compiled when PA_AUDIO_DRIVER == AUDIO_SOFT_UART (platformio.ini).
+// Every image carries this driver: sound is a Component Family whose member is
+// chosen at runtime and staged at reboot (ADR 0042), so PA_AUDIO_DRIVER now
+// only names which module a controller that has never been told starts with.
 // =============================================================================
 #pragma once
 
@@ -28,6 +30,7 @@
 
 #include "audio_driver.h"
 #include "audio_serial_io.h"
+#include "component_registry.h"
 
 class AudioDriverDySv5w : public AudioDriver {
    public:
@@ -43,10 +46,15 @@ class AudioDriverDySv5w : public AudioDriver {
         return "DY-SV5W";
     }
 
-    // DY-SV5W: supports query, device type, track count, current track; not safe to poll during playback
+    // DY-SV5W: supports query, device type, track count, current track; not safe
+    // to poll during playback. The bits themselves are declared on this
+    // product's Component Registry row and read from there rather than restated
+    // here, so the row and the driver cannot drift apart (ADR 0042).
     uint8_t capabilities() const override {
-        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT | AUDIO_CAP_CURRENT_TRACK;
+        return componentPartCapabilities("dy_sv5w");
     }
+    static_assert(componentPartExists("dy_sv5w"),
+                  "AudioDriverDySv5w cites a product id no Component Registry row declares; a typo here would otherwise read as a module that can be asked nothing");
 
     // Query live module state via UART RX: device, play state, current track.
     // Sends three query frames and waits up to 300 ms each for a response.

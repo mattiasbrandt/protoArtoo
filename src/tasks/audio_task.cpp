@@ -25,7 +25,10 @@
 // (src/drivers/audio_soft_uart_tx.h). Keeping AudioTask on Core 0 prevents any
 // interaction with DriveTask / ServoTask timing on Core 1 either way.
 //
-// Driver selection: PA_AUDIO_DRIVER build flag in platformio.ini.
+// Driver selection: the Sound Component Member, a runtime setting staged at
+// reboot (ADR 0042). Every image carries a driver for every supported sound
+// module; PA_AUDIO_DRIVER now only names the one a controller that has never
+// been told starts with.
 // =============================================================================
 
 #include "audio_task.h"
@@ -35,10 +38,15 @@
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <string.h>
+#include "audio_chirp.h"
 #include "audio_config_map.h"
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
+#include "audio_dy_sv5w.h"
+#include "audio_mp3trigger.h"
 #include "audio_task_step.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_nvsio.h"
 #include "config_cache.h"
@@ -48,25 +56,77 @@
 #include "robot_state.h"
 #include "web_server.h"
 
-// -----------------------------------------------------------------------------
-// Driver instantiation  --  one concrete driver per build
-// -----------------------------------------------------------------------------
-#if PA_AUDIO_DRIVER == AUDIO_SOFT_UART
-#include "audio_dy_sv5w.h"
-static AudioDriverDySv5w s_driver;
-#elif PA_AUDIO_DRIVER == AUDIO_CHIRP
-#include "audio_chirp.h"
-static AudioDriverChirp s_driver;
-#elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
-#error "AUDIO_DFPLAYER driver not yet implemented - see T15 / T16"
-#elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
-#include "audio_mp3trigger.h"
-static AudioDriverMp3Trigger s_driver;
-#else
-#error "PA_AUDIO_DRIVER build flag is not set or has an unknown value"
-#endif
+static const char* TAG = "AudioTask";
 
-static AudioDriver* const driver = &s_driver;
+// -----------------------------------------------------------------------------
+// Sound is a Component Family, and the image carries every selectable member
+// -----------------------------------------------------------------------------
+// Each supported sound module has a driver instance here, and which one runs is
+// the Component Member -- a runtime setting, staged at reboot like a Component
+// Toggle (ADR 0042). The old #if chain picked one at compile time, which made
+// the Configuration page's picker a display rather than a control for anyone
+// running a prebuilt release image.
+//
+// Instance cost, not code cost, is what made this affordable: a driver object is
+// its AudioSerialIO seam and a handful of scalars, and CHIRP's ~16 KB catalog is
+// heap-allocated on first discovery rather than held statically
+// (include/audio_chirp.h).
+//
+// All three share one soft-UART TX mux (src/drivers/audio_soft_uart_tx.h), and
+// they always needed to: every env compiles all of src/, so that header's
+// per-translation-unit copies were never the one-driver-per-build case its
+// comment claimed. Only one member is active per boot in any case, and
+// AudioTask is the sole writer to PIN_AUDIO_TX.
+static AudioDriverDySv5w s_dySv5w;
+static AudioDriverMp3Trigger s_mp3Trigger;
+static AudioDriverChirp s_chirp;
+
+// The one place left in the firmware that maps a product id to code. Everything
+// downstream asks the driver what it supports, never which one it is.
+struct SoundMemberDriver {
+    const char* id;        // Component Registry row id
+    AudioDriver* driver;
+};
+static const SoundMemberDriver kSoundMemberDrivers[] = {
+    {"dy_sv5w", &s_dySv5w},
+    {"mp3_trigger", &s_mp3Trigger},
+    {"chirp", &s_chirp},
+};
+
+// Add a selectable Sound row to include/component_registry.inc without giving it
+// an instance above and the build stops here, rather than the row quietly
+// becoming a member nothing can run.
+static_assert(sizeof(kSoundMemberDrivers) / sizeof(kSoundMemberDrivers[0]) ==
+                  componentCategorySelectableCount(COMPONENT_CATEGORY_SOUND),
+              "a selectable Sound member has no driver instance in kSoundMemberDrivers");
+
+// Resolved once, before the task's first begin(), and never reassigned while the
+// task runs -- which is what makes it safe for the Core 0 web handlers below to
+// read it without a lock. A member change is saved immediately and takes effect
+// at the next boot, exactly as a Component Toggle does.
+static AudioDriver* driver = &s_dySv5w;
+static const ComponentPartEntry* s_soundMember = nullptr;
+
+// Bind `driver` to the member the registry resolved. componentResolveMember()
+// has already substituted the build default for a stored value this image
+// cannot drive, so the only way to reach the final return is a registry row
+// with no instance -- which the static_assert above makes unbuildable.
+static void bindSoundMember(uint8_t storedMemberValue) {
+    s_soundMember = componentResolveMember(COMPONENT_CATEGORY_SOUND, storedMemberValue);
+    if (s_soundMember != nullptr) {
+        for (size_t i = 0; i < sizeof(kSoundMemberDrivers) / sizeof(kSoundMemberDrivers[0]); ++i) {
+            if (strcmp(kSoundMemberDrivers[i].id, s_soundMember->id) == 0) {
+                driver = kSoundMemberDrivers[i].driver;
+                return;
+            }
+        }
+    }
+    // Unreachable while the static_assert above holds. Said out loud rather than
+    // left as a silent fallthrough, because the symptom would otherwise be a
+    // droid playing through the wrong module with nothing in the log.
+    PA_LOG_ERROR(TAG, "sound member %u has no driver instance - falling back to %s",
+                 (unsigned)storedMemberValue, driver->driverName());
+}
 
 const char* audioGetDriverName() {
     return driver->driverName();
@@ -127,8 +187,6 @@ const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
 bool audioIsCatalogReady() {
     return driver->isCatalogReady();
 }
-
-static const char* TAG = "AudioTask";
 
 // Audio output is staged at reboot (ADR 0027); when inactive, commands are
 // accepted and discarded so callers (sequence engine, web routes) see the same
@@ -598,6 +656,15 @@ void audioTask(void* pvParameters) {
 
     const bool audioEnabledAtBoot = configCacheReadActiveAudioEnabled();
 
+    // Bind the Component Member before anything reads `driver`. The value comes
+    // from the boot-latched active member that setup() resolved, never from the
+    // live config cache: a member saved while the droid is running takes effect
+    // at the next boot, exactly as a Component Toggle does (ADR 0027, ADR 0042).
+    // The task is the only writer and it does this once, before its first loop,
+    // so the Core 0 web handlers that read `driver` are reading a pointer that
+    // never moves again -- the same contract audioEnabledAtBoot has.
+    bindSoundMember(configCacheReadActiveSoundMember());
+
     AudioStepState step{};
     AudioNamedTracks named{};
     AudioPlaybackConfig playback{};
@@ -682,7 +749,8 @@ void audioTask(void* pvParameters) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
             }
-            PA_LOG_INFO(TAG, "audio driver init - PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
+            PA_LOG_INFO(TAG, "audio driver init - member=%s driver=%s vol=%u",
+                        s_soundMember != nullptr ? s_soundMember->id : "?", driver->driverName(),
                         (unsigned)step.currentVol);
             if (ir.seedModuleState) {
                 // Seed RobotState from getCachedState()  --  begin() runs pre-init

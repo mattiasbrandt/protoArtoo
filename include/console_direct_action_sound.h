@@ -611,16 +611,24 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
     }
 }
 
-// A backend with no CHIRP catalog can never serve one: the driver is chosen at
-// compile time by PA_AUDIO_DRIVER (src/tasks/audio_task.cpp:54-66), so
-// AUDIO_CAP_CATALOG is a property of the built image read back at runtime, not
-// something an operator can turn on. handleAudioCatalogGet()/
-// handleAudioCatalogRefreshPost()/handleAudioPlayBankedPost() all answer 404
-// "catalog unsupported by active backend" for it; the Console's equivalent is
-// `unavailable reason=not-in-this-build` - "the feature was built out of this
-// image" (docs/console-protocol.md s.3.3), which is what this is. Deliberately
-// not a new reason token: the protocol says the Console never invents a synonym
-// for an availability answer it already has a word for.
+// A sound module with no catalog can never serve one. AUDIO_CAP_CATALOG is the
+// fitted module's own word about itself, read back at runtime, and it is not
+// something an operator can turn on for a module that does not have it.
+// handleAudioCatalogGet()/handleAudioCatalogRefreshPost()/
+// handleAudioPlayBankedPost() all answer 404 "catalog unsupported by active
+// backend" for it; the Console's equivalent is
+// `unavailable reason=not-in-this-build`.
+//
+// That token is now the weaker half of this answer and is deliberately left
+// alone here. It was exact while the driver was chosen at compile time: the
+// feature really had been built out of the image. Since #340 the image carries
+// every sound module and the Component Member picks one at reboot, so the
+// honest sentence is closer to "the module you have fitted cannot be asked for
+// a catalog" - a fitted-hardware fact rather than a build fact. Changing it
+// means either a new Availability Reason or re-pointing an existing one, which
+// is a protocol decision and not this file's to take; the protocol's own rule
+// is that the Console never invents a synonym for an answer it already has a
+// word for (docs/console-protocol.md s.3.3).
 static void consoleAnswerCatalogUnsupported(uint32_t requestId, const ConsoleRecordSink* sink) {
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,

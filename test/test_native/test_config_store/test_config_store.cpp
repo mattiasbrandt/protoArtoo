@@ -11,6 +11,7 @@
 
 #include <unity.h>
 
+#include "component_registry.h"
 #include "config_store.h"
 #include "config_cache.h"
 #include "config_serializer.h"
@@ -479,6 +480,55 @@ void test_configValidate_rc_input_mode() {
 
     result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_DUAL_SBUS + 1);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE, (uint8_t)result);
+}
+
+// Test: the Sound Component Member is validated against the Component Registry,
+// not against a numeric range. The picker offers the registry's rows, so the
+// door has to refuse exactly the rows it does not offer: a roadmap part, and a
+// selectable part belonging to another family.
+void test_configValidate_sound_member_asks_the_registry() {
+    const ComponentPartEntry* chirp = componentPartById("chirp");
+    TEST_ASSERT_NOT_NULL(chirp);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK,
+                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, chirp->value));
+
+    const ComponentPartEntry* dfplayer = componentPartById("dfplayer_mini");
+    TEST_ASSERT_NOT_NULL(dfplayer);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
+                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, dfplayer->value));
+
+    const ComponentPartEntry* hoverboard = componentPartById("hoverboard");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
+                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, hoverboard->value));
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
+                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, 250));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE,
+                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, 256));
+}
+
+// Test: a Component Member survives a reboot -- the acceptance criterion in one
+// assertion, at the NVS layer where "survives" actually means something.
+void test_sound_member_survives_a_save_and_load() {
+    const ComponentPartEntry* mp3 = componentPartById("mp3_trigger");
+    TEST_ASSERT_NOT_NULL(mp3);
+
+    ConfigSnapshot saved = {};
+    configSnapshotDefaults(&saved);
+    saved.system.sound_member = mp3->value;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSaveSystem(prefs, saved.system));
+
+    SystemConfig loaded = {};
+    configLoadSystem(prefs, &loaded);
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_UINT8(mp3->value, loaded.sound_member);
+    // And it is independent of the toggle: nothing above touched enable_audio.
+    TEST_ASSERT_EQUAL(saved.system.enable_audio, loaded.enable_audio);
 }
 
 // Test: Save dome wifi peer IP
@@ -1522,6 +1572,8 @@ int main() {
     RUN_TEST(test_configValidate_aux_led_pin);
     RUN_TEST(test_configValidate_sequence_timing);
     RUN_TEST(test_configValidate_rc_input_mode);
+    RUN_TEST(test_configValidate_sound_member_asks_the_registry);
+    RUN_TEST(test_sound_member_survives_a_save_and_load);
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip);
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip_empty);
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);

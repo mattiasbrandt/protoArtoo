@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "api_identity.h"
+#include "component_registry.h"
 #include "config.h"
 #include "config_cache.h"
 #include "web_request_test_backend.h"
@@ -191,6 +192,83 @@ void test_identity_reports_the_drive_lane_from_the_pin_map() {
     TEST_ASSERT_NOT_NULL(strstr(body, lane));
 }
 
+// -----------------------------------------------------------------------------
+// GET /api/identity/components -- the Component Registry lineup
+// -----------------------------------------------------------------------------
+
+// Every row reaches the browser, including the parts nothing drives. That is
+// what makes a product we have not written a driver for visible as planned
+// rather than silently absent (ADR 0042 amended 2026-09-09).
+void test_components_payload_carries_every_row_with_its_name() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleComponentsGet(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
+    TEST_ASSERT_TRUE(backend.sentChunked);
+
+    for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_PARTS[i].id),
+                                     COMPONENT_PARTS[i].id);
+        // The operator-visible name travels too: firmware and web assets are
+        // uploaded separately, so a bare id would reach a builder as a bare id.
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_PARTS[i].name),
+                                     COMPONENT_PARTS[i].name);
+    }
+    for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, COMPONENT_CATEGORIES[i].name),
+                                     COMPONENT_CATEGORIES[i].name);
+    }
+}
+
+// A roadmap row travels with no driver; a supported one this image carries
+// travels with one. Both are asserted on the wire, because "included" is the
+// field a picker decides selectability from.
+void test_components_payload_separates_status_from_what_the_image_carries() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleComponentsGet(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"dfplayer_mini\",\"value\":21,\"name\":\"DFPlayer Mini\","
+                                "\"category\":\"sound\",\"protocol\":\"dfplayer_serial\","
+                                "\"status\":\"roadmap\",\"capabilities\":0,\"included\":false,"
+                                "\"board_capability\":null}"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"chirp\",\"value\":20,\"name\":\"CHIRP Audio Trigger\","
+                                "\"category\":\"sound\",\"protocol\":\"chirp_ascii_uart\","
+                                "\"status\":\"supported\",\"capabilities\":63,\"included\":true,"
+                                "\"board_capability\":null}"));
+    // The one row that names a Board Capability Gate reports it, so a builder
+    // is told which board fact a missing part turns on rather than only that it
+    // is missing.
+    TEST_ASSERT_NOT_NULL(
+        strstr(backend.sentBody, "\"board_capability\":\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\""));
+}
+
+// The member half: which families offer a choice, and what is running.
+void test_components_payload_reports_the_member_setting_and_active_member() {
+    const ComponentPartEntry* mp3 = componentPartById("mp3_trigger");
+    TEST_ASSERT_NOT_NULL(mp3);
+    configCacheSetActiveSoundMember(mp3->value);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleComponentsGet(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"sound\",\"name\":\"Sound\",\"selectable\":3,"
+                                "\"member_key\":\"snd_member\",\"active_member\":\"mp3_trigger\"}"));
+    // A family with one member offers no choice and says so, rather than
+    // reporting a member setting nobody can act on.
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "\"id\":\"foot_drive\",\"name\":\"Foot Drive\",\"selectable\":1,"
+                                "\"member_key\":null,\"active_member\":null}"));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_get_returns_identity_json);
@@ -201,5 +279,8 @@ int main() {
     RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     RUN_TEST(test_identity_manifest_fits_with_longest_droid_name);
     RUN_TEST(test_identity_reports_the_drive_lane_from_the_pin_map);
+    RUN_TEST(test_components_payload_carries_every_row_with_its_name);
+    RUN_TEST(test_components_payload_separates_status_from_what_the_image_carries);
+    RUN_TEST(test_components_payload_reports_the_member_setting_and_active_member);
     return UNITY_END();
 }

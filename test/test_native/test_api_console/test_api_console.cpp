@@ -441,14 +441,15 @@ void test_operations_delivers_the_full_catalog_terminated_by_end() {
 // console_module.cpp), 17 before #224 reclassified system.api.get-profiler
 // the same way and for the same reason, and 18 before #221 moved
 // sound.api.get-catalog/-get-mood-map, system.api.get-identity/-get-validation
-// and rc.api.get-bindable-actions across for the same reason again.
+// and rc.api.get-bindable-actions across for the same reason again, and 23
+// before #340 added system.api.get-components, the Component Registry lineup.
 void test_operations_type_filter_lists_only_that_type() {
     WebRequestTestBackend backend;
     runCommand(backend, "operations type=status");
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "begin"));
     TEST_ASSERT_EQUAL_UINT(1, countRecordsOfType(backend.sentBody, "end"));
-    TEST_ASSERT_EQUAL_UINT_MESSAGE(23, countRecordsOfType(backend.sentBody, "item"),
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(24, countRecordsOfType(backend.sentBody, "item"),
         "operations type=status must list every status entry, no more, no less");
 
     JsonDocument doc;

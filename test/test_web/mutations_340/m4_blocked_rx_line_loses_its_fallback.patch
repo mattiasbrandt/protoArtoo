@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 2a706674..7a5321cb 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -233,7 +233,7 @@
+           // Name the module that is actually fitted. This line said "CHIRP"
+           // unconditionally, which was wrong on a DY-SV5W or MP3 Trigger droid
+           // even before the sound module became a runtime choice.
+-          const moduleName = entry?.driver || "Sound module";
++          const moduleName = entry?.driver;
+           transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml(moduleName + " RX unavailable while protoR2link owns UART2")}</div>`;
+         }
+         return `
