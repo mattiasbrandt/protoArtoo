@@ -1,48 +1,136 @@
 // =============================================================================
 // data/shell.js
 //
-// Shared topbar/nav/status shell renderer for all web pages.
-// Page selects shell configuration via <body data-page="...">.
-// The status bar carries firmware/filesystem versions only; footer.js fills it.
+// The Operator Shell (ADR 0048): the persistent frame every surface is shown
+// inside. It owns the topbar, the nav, the identity and the status bar, and it
+// survives every navigation -- content swaps beneath it in #shell-content while
+// the /api/events stream opened at boot is never torn down.
+//
+// Addresses are hash routes (/#drive). The browser only ever asks the device
+// for /, the static handler's default file answers with the shell, and the
+// fragment never reaches the ESP32 -- so nothing here needs a firmware change.
+//
+// The ten .html files stay addressable: each is still the single copy of its
+// surface's markup, which this file fetches and mounts, and each carries a thin
+// delegate that hands a direct visit over to the shell. Nothing that links to
+// one has to be rewritten.
 // =============================================================================
 (() => {
-  const page = document.body?.dataset?.page || "home";
-
-  const PAGE_CONFIG = {
-    home: { title: "{name} - Dashboard" },
-    drive: { title: "Drive - {name}" },
-    dome: { title: "Dome - {name}" },
-    sound: { title: "{name} - Sound" },
-    servo: { title: "Servos - {name}" },
-    rc: { title: "RC Control - {name}" },
-    setup: { title: "Setup - {name}" },
-    wifi: { title: "WiFi - {name}" },
-    firmware: { title: "Firmware - {name}" },
-    seq: { title: "Sequences - {name}" },
-  };
-
-  const NAV = [
-    { key: "home", href: "/", label: "🏠 Home" },
-    { key: "drive", href: "/drive.html", label: "🏎️ Drive" },
-    { key: "dome", href: "/dome.html", label: "🔄 Dome" },
-    { key: "sound", href: "/sound.html", label: "🔊 Sound" },
-    { key: "servo", href: "/servo.html", label: "🦾 Servos" },
-    { key: "seq", href: "/seq.html", label: "🎬 Sequences" },
-    { key: "rc", href: "/rc.html", label: "🕹️ RC" },
-    { key: "setup", href: "/setup.html", label: "⚙️ Setup" },
-    { key: "wifi", href: "/wifi.html", label: "📶 WiFi" },
-    { key: "firmware", href: "/firmware.html", label: "💾 Firmware" },
+  // ---------------------------------------------------------------------------
+  // The surfaces
+  //
+  // `page` is the data-page identifier and is the route: it is what the shell,
+  // the CSS (body[data-page="..."]) and every surface script key on, and it is
+  // deliberately NOT the operator-facing name. Renaming a surface changes
+  // `name`, and adds the old spelling to `aliases` so links that were already
+  // written keep opening what they name; it never touches `page` (#288).
+  //
+  // `name` is the one place a surface is named: the nav, the browser title and
+  // the Page Recovery View's "Loading: ..." all read it, so they cannot say
+  // three different things about the same screen.
+  // ---------------------------------------------------------------------------
+  const SURFACES = [
+    { page: "home", doc: "/dashboard.html", icon: "🏠", name: "Dashboard", aliases: ["dashboard"] },
+    { page: "drive", doc: "/drive.html", icon: "🏎️", name: "Drive", aliases: [] },
+    { page: "dome", doc: "/dome.html", icon: "🔄", name: "Dome", aliases: [] },
+    { page: "sound", doc: "/sound.html", icon: "🔊", name: "Sound", aliases: [] },
+    { page: "servo", doc: "/servo.html", icon: "🦾", name: "Servos", aliases: ["servos"] },
+    { page: "seq", doc: "/seq.html", icon: "🎬", name: "Sequences", aliases: ["sequences"] },
+    { page: "rc", doc: "/rc.html", icon: "🕹️", name: "RC Control", aliases: [] },
+    { page: "setup", doc: "/setup.html", icon: "⚙️", name: "Setup", aliases: [] },
+    { page: "wifi", doc: "/wifi.html", icon: "📶", name: "WiFi", aliases: [] },
+    { page: "firmware", doc: "/firmware.html", icon: "💾", name: "Firmware", aliases: [] },
   ];
 
-  const cfg = PAGE_CONFIG[page] || PAGE_CONFIG.home;
+  const DEFAULT_PAGE = "home";
+
+  // Setup is the guided first-run takeover, not a place to come back to, so a
+  // cold boot must never land there. The reference solves this by never writing
+  // the authoring desk to the durable value at all, rather than by filtering it
+  // on the way out (r2d2-astromech-simulator src/js/config/workspaces.js:208),
+  // and that asymmetry is the point: the runtime answer CAN be Setup -- a
+  // reload of /#setup honours its address -- while the remembered answer
+  // structurally cannot be.
+  const NEVER_REMEMBERED = new Set(["setup"]);
+
+  const surfaceFor = new Map();
+  SURFACES.forEach((surface) => {
+    surfaceFor.set(surface.page, surface);
+    surface.aliases.forEach((alias) => surfaceFor.set(alias, surface));
+  });
+
+  // The legacy address of each surface, plus the two spellings of the shell's
+  // own document, so a link written before hash routes still opens what it
+  // names.
+  const surfaceForPath = new Map([
+    ["/", surfaceFor.get(DEFAULT_PAGE)],
+    ["/index.html", surfaceFor.get(DEFAULT_PAGE)],
+  ]);
+  SURFACES.forEach((surface) => surfaceForPath.set(surface.doc, surface));
+
+  // ---------------------------------------------------------------------------
+  // The remembered surface
+  //
+  // One serialised object, so a reader can assert against what was actually
+  // stored rather than against the in-memory answer -- a regression that only
+  // shows on the next cold boot has to be able to fail now.
+  // ---------------------------------------------------------------------------
+  const STORAGE_KEY = "pa.shell.v1";
+
+  const readStored = () => {
+    try {
+      const raw = window.localStorage?.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_error) {
+      // Storage unavailable or holding something this version cannot read:
+      // start from nothing rather than failing the boot over a preference.
+      return {};
+    }
+  };
+
+  const writeStored = (patch) => {
+    try {
+      window.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...readStored(), ...patch }));
+    } catch (_error) {
+      // A browser refusing storage costs the operator the memory of where they
+      // were, and nothing else.
+    }
+  };
+
+  const rememberSurface = (page) => {
+    if (NEVER_REMEMBERED.has(page)) return;
+    writeStored({ surface: page });
+  };
+
+  // The stored value is also corrected on the way in, and the correction is
+  // written back: a store that says Setup -- from a hand edit, or from a
+  // version that wrote it -- must stop saying Setup rather than be re-filtered
+  // on every boot.
+  const rememberedSurface = () => {
+    const stored = readStored().surface;
+    if (surfaceFor.has(stored) && !NEVER_REMEMBERED.has(stored)) return surfaceFor.get(stored);
+    if (stored !== undefined) writeStored({ surface: DEFAULT_PAGE });
+    return surfaceFor.get(DEFAULT_PAGE);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Identity
+  // ---------------------------------------------------------------------------
+  let identityName = "protoartoo";
+  let currentSurface = null;
+
   const applyIdentityName = (name) => {
-    const droidName = String(name || "protoartoo");
-    document.title = cfg.title.replace("{name}", droidName);
+    identityName = String(name || "protoartoo");
+    // "<surface> - <droid>", the same way round on every surface. Dashboard and
+    // Sound used to put the droid first, which read as a different page rather
+    // than as the same page named differently.
+    const surface = currentSurface || surfaceFor.get(DEFAULT_PAGE);
+    document.title = `${surface.name} - ${identityName}`;
     document.querySelectorAll("[data-identity-name]").forEach((el) => {
-      el.textContent = droidName;
+      el.textContent = identityName;
     });
   };
-  applyIdentityName("protoartoo");
 
   // Layer 1 validation: ensure the identity manifest conforms to the expected shape
   // before it reaches feature availability resolvers. Protects against null, non-objects,
@@ -78,8 +166,19 @@
     return identity;
   };
 
-  // Publish the shell's once-per-page identity result for feature consumers.
-  // Identity is fetched once at page load and cached in window.PAIdentity.
+  // Dispatches an identity outcome and keeps what it said, so a surface that
+  // mounts after it happened can still be told. See replaySessionFacts().
+  let lastIdentityEvent = null;
+
+  const announceIdentity = (event) => {
+    lastIdentityEvent = { type: event.type, detail: event.detail };
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(event);
+    }
+  };
+
+  // Publish the shell's once-per-session identity result for feature consumers.
+  // Identity is fetched once at boot and cached in window.PAIdentity.
   // Feature availability resolution reads this cache only and never probes endpoints
   // to discover capabilities — the manifest is authoritative and must not be rediscovered.
   // Setup listens to the event, while the cache closes late-load ordering gaps.
@@ -88,17 +187,57 @@
   const publishIdentity = (identity) => {
     const validatedIdentity = validateIdentityShape(identity);
     window.PAIdentity = validatedIdentity;
-    if (typeof window.dispatchEvent === "function") {
-      if (validatedIdentity) {
-        window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
-      } else {
-        // Invalid manifest shape is treated as unavailable
-        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest", reason: "incompatible" } }));
-      }
+    if (validatedIdentity) {
+      announceIdentity(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
+    } else {
+      // Invalid manifest shape is treated as unavailable
+      announceIdentity(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest", reason: "incompatible" } }));
     }
     return validatedIdentity;
   };
 
+  const loadIdentity = async ({ handle = null } = {}) => {
+    let result;
+    try {
+      const api = handle || window.PAApi;
+      result = api
+        ? await api.get("/api/identity")
+        : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
+    } catch (error) {
+      // Transport failure: retryable. Unchanged behaviour.
+      console.warn("[shell] identity unavailable:", error);
+      announceIdentity(new CustomEvent("pa:identity-unavailable", { detail: { error, reason: "no-response" } }));
+      throw error;
+    }
+
+    applyIdentityName(result.data?.droidName);
+
+    // publishIdentity is the single validation boundary and has already
+    // dispatched pa:identity-unavailable if the manifest is unusable.
+    if (!publishIdentity(result.data)) {
+      const error = new Error("identity manifest failed validation");
+      error.kind = "incompatible";
+      error.status = 200;   // the response was a valid 2xx; its content was not
+      throw error;          // terminal: the bootstrap maps this to failed-terminal
+    }
+  };
+
+  // Facts the session settled before this surface existed. A surface mounted
+  // into the shell runs its scripts long after boot, so an event it would have
+  // heard as part of a page load has already fired; the identity outcome is
+  // replayed to it here, the same way PAStatusStream hands a new subscriber the
+  // last status it saw. Consumers render the outcome rather than counting it,
+  // so hearing it again is a repaint.
+  const replaySessionFacts = () => {
+    if (!lastIdentityEvent) return;
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent(lastIdentityEvent.type, { detail: lastIdentityEvent.detail }));
+  };
+
+  window.addEventListener("pa:identity-updated", (event) => {
+    applyIdentityName(event.detail?.droidName);
+    publishIdentity(event.detail);
+  });
 
   window.PAUi = window.PAUi || {};
   if (typeof window.PAUi.setupActionText !== "function") {
@@ -107,24 +246,29 @@
   if (typeof window.PAUi.setupActionHtml !== "function") {
     window.PAUi.setupActionHtml = (action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`;
   }
+
+  // ---------------------------------------------------------------------------
+  // Chrome: rendered once, and never again. Everything a navigation changes is
+  // an attribute on what is already there, so nothing the shell owns is rebuilt
+  // out from under a handler bound to it.
+  // ---------------------------------------------------------------------------
   const shellTop = document.getElementById("shell-top");
   if (shellTop) {
-    const navHtml = NAV.map((item) =>
-      `<a href="${item.href}"${item.key === page ? ' class="active"' : ""}>${item.label}</a>`
+    const navHtml = SURFACES.map(
+      (surface) =>
+        `<a href="#${surface.page}" data-surface-link="${surface.page}">${surface.icon} ${surface.name}</a>`
     ).join("");
-    const topbarActionsTemplate = document.getElementById("topbar-actions-template");
-    const topbarActionsHtml = topbarActionsTemplate?.innerHTML?.trim() || "";
 
     shellTop.innerHTML = `
       <div class="topbar">
-        <a href="/" class="topbar-brand">
+        <a href="#${DEFAULT_PAGE}" class="topbar-brand">
           <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
           <div>
             <h1 data-identity-name>protoartoo</h1>
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>
-        <div class="topbar-actions" id="shell-top-actions">${topbarActionsHtml}</div>
+        <div class="topbar-actions" id="shell-top-actions"></div>
       </div>
       <nav>
         ${navHtml}
@@ -141,38 +285,7 @@
     `;
   }
 
-  const loadIdentity = async ({ handle = null } = {}) => {
-    let result;
-    try {
-      const api = handle || window.PAApi;
-      result = api
-        ? await api.get("/api/identity")
-        : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
-    } catch (error) {
-      // Transport failure: retryable. Unchanged behaviour.
-      console.warn("[shell] identity unavailable:", error);
-      if (typeof window.dispatchEvent === "function") {
-        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error, reason: "no-response" } }));
-      }
-      throw error;
-    }
-
-    applyIdentityName(result.data?.droidName);
-
-    // publishIdentity is the single validation boundary and has already
-    // dispatched pa:identity-unavailable if the manifest is unusable.
-    if (!publishIdentity(result.data)) {
-      const error = new Error("identity manifest failed validation");
-      error.kind = "incompatible";
-      error.status = 200;   // the response was a valid 2xx; its content was not
-      throw error;          // terminal: the bootstrap maps this to failed-terminal
-    }
-  };
-
-  window.addEventListener("pa:identity-updated", (event) => {
-    applyIdentityName(event.detail?.droidName);
-    publishIdentity(event.detail);
-  });
+  applyIdentityName(identityName);
 
   // Register identity load with the bootstrap if available; otherwise run it directly.
   // This ensures the identity request is routed through the bootstrap's single-slot
@@ -184,4 +297,258 @@
   } else {
     loadIdentity();
   }
+
+  // ---------------------------------------------------------------------------
+  // Mounting a surface
+  // ---------------------------------------------------------------------------
+  const shellContent = document.getElementById("shell-content");
+  const topActions = document.getElementById("shell-top-actions");
+
+  if (!shellContent) {
+    // The shell document is the only one that carries a content region, and a
+    // build that drops it leaves a frame with nowhere to put a surface. Say so
+    // rather than leaving a page that silently shows nothing; the markup suite
+    // is what stops this reaching a device.
+    console.error("[shell] #shell-content is missing; no surface can be mounted");
+    return;
+  }
+
+  // Mounting is the bootstrap's Resource Step Recovery doing the work, so
+  // without it there is no router -- the same documented degraded path the
+  // identity load above already takes.
+  if (!window.PABootstrap?.mountResources) return;
+
+  // Ids are not unique across surfaces -- Firmware and Setup both carry
+  // #reboot-button, Dashboard and Setup both carry #reboot-feedback -- so
+  // exactly one surface is in the document at a time. A surface's scripts find
+  // their own elements by id and nothing else's, which is the same guarantee
+  // they had as separate documents.
+  const mounted = new Map();
+
+  // The wave of resources for a surface being mounted for the first time is in
+  // flight until its scripts have run. A second route change during that window
+  // waits: attaching the next surface would put two in the document at once,
+  // and detaching the one still loading would run its scripts against DOM that
+  // is no longer there, breaking it for the rest of the session.
+  let mountInFlight = null;
+  let pendingPage = null;
+
+  const surfaceFromHash = () => {
+    const raw = String(window.location.hash || "").replace(/^#/, "").trim().toLowerCase();
+    return raw ? surfaceFor.get(raw) || null : null;
+  };
+
+  const setAddress = (page) => {
+    if (window.history?.replaceState) {
+      window.history.replaceState(null, "", `#${page}`);
+    } else {
+      window.location.hash = page;
+    }
+  };
+
+  const markActive = (page) => {
+    document.querySelectorAll("[data-surface-link]").forEach((link) => {
+      link.classList.toggle("active", link.dataset.surfaceLink === page);
+    });
+  };
+
+  const attach = (surface, entry) => {
+    currentSurface = surface;
+    document.body.dataset.page = surface.page;
+    shellContent.appendChild(entry.content);
+    if (topActions) entry.actionNodes.forEach((node) => topActions.appendChild(node));
+    markActive(surface.page);
+    applyIdentityName(identityName);
+    rememberSurface(surface.page);
+  };
+
+  const detach = (entry) => {
+    // The nodes are kept, not discarded: a surface returned to paints what it
+    // already had, and the handlers its scripts bound are still on these exact
+    // elements. Stopping what a left surface was polling is #360's.
+    entry.content.remove();
+    entry.actionNodes.forEach((node) => node.remove());
+  };
+
+  // Everything in a surface document's <body> except the frame the shell owns.
+  // The frame elements stay in each file so it still reads as a page; they are
+  // simply not the surface.
+  const SHELL_OWNED_IDS = new Set(["shell-top", "shell-status", "shell-content"]);
+  const TOPBAR_ACTIONS_ID = "topbar-actions-template";
+
+  const parseSurfaceDocument = (html) => {
+    const parsed = new DOMParser().parseFromString(String(html || ""), "text/html");
+    const scripts = (parsed.documentElement?.getAttribute("data-scripts") || "")
+      .split(",")
+      .map((source) => source.trim())
+      .filter(Boolean);
+
+    const nodes = [];
+    let actionNodes = [];
+    Array.from(parsed.body?.children || []).forEach((child) => {
+      if (child.id === TOPBAR_ACTIONS_ID) {
+        // A surface's topbar actions belong beside the nav, not in the content
+        // region. They are moved rather than copied, so the handlers the
+        // surface's scripts bind to them survive an unmount. Moving the estop
+        // itself onto the shell is #359's.
+        actionNodes = Array.from(document.importNode(child.content, true).children);
+        return;
+      }
+      if (SHELL_OWNED_IDS.has(child.id)) return;
+      nodes.push(document.importNode(child, true));
+    });
+
+    return { scripts, nodes, actionNodes };
+  };
+
+  const terminalError = (message) => {
+    const error = new Error(message);
+    // A document that parsed but carries no surface is not going to get better
+    // by being asked for again, so the bootstrap must stop retrying it.
+    error.kind = "incompatible";
+    error.status = 200;
+    return error;
+  };
+
+  // Loads a surface's markup as a bootstrap resource, then declares the rest of
+  // its wave: its own scripts, read from the document that just arrived rather
+  // than restated here, and a final step that hands the session's settled facts
+  // to the scripts that have just run.
+  const loadSurfaceDocument = (surface, entry) => (done) => {
+    const fetchDocument = window.PAApi
+      ? window.PAApi.get(surface.doc).then((result) => result.data)
+      : fetch(surface.doc).then((response) => response.text());
+
+    fetchDocument
+      .then((html) => {
+        const { scripts, nodes, actionNodes } = parseSurfaceDocument(html);
+        if (nodes.length === 0 || scripts.length === 0) {
+          throw terminalError(`${surface.doc} carries no surface`);
+        }
+        entry.content.replaceChildren(...nodes);
+        entry.actionNodes = actionNodes;
+        if (topActions && currentSurface === surface) {
+          actionNodes.forEach((node) => topActions.appendChild(node));
+        }
+        window.PABootstrap.mountResources([
+          ...scripts,
+          {
+            name: `shell:handover:${surface.page}`,
+            // Settled off the reducer's own stack, the way every other
+            // resource settles, so the mount that follows a deferred route
+            // change starts from a state the reducer has finished applying.
+            load: (handoverDone) => {
+              Promise.resolve().then(() => {
+                mountInFlight = null;
+                replaySessionFacts();
+                handoverDone(null);
+                applyPendingPage();
+              });
+            },
+          },
+        ]);
+        done(null);
+      })
+      .catch((error) => {
+        // A terminal failure is never retried, so the mount is over: release
+        // the route rather than leaving the operator unable to navigate away
+        // from a surface that can never load. A retryable one keeps the wave
+        // in flight, which is what the Page Recovery View is reporting.
+        if (error?.kind === "incompatible" || error?.kind === "device-error") {
+          mountInFlight = null;
+        }
+        done(error);
+      });
+  };
+
+  const mount = (surface) => {
+    if (currentSurface === surface) return;
+
+    const previous = currentSurface ? mounted.get(currentSurface.page) : null;
+    if (previous) detach(previous);
+
+    const existing = mounted.get(surface.page);
+    if (existing) {
+      attach(surface, existing);
+      return;
+    }
+
+    const entry = { content: document.createElement("div"), actionNodes: [] };
+    entry.content.className = "surface";
+    entry.content.dataset.surface = surface.page;
+    mounted.set(surface.page, entry);
+
+    // Attached before its markup arrives on purpose: the scripts behind the
+    // markup bind to elements by id, and an element only has an id the document
+    // can find while it is in the document.
+    attach(surface, entry);
+
+    mountInFlight = surface.page;
+    window.PABootstrap.setResourceLabels?.({ [surface.doc]: surface.name });
+    window.PABootstrap.mountResources([
+      { name: surface.doc, load: loadSurfaceDocument(surface, entry) },
+    ]);
+  };
+
+  // A route change that arrived while a mount was in flight is applied by
+  // re-reading the address rather than by replaying the page that was asked
+  // for: by the time the mount finishes the operator may have moved on again,
+  // and the address is the one thing that always says where they are.
+  const applyPendingPage = () => {
+    if (pendingPage === null) return;
+    pendingPage = null;
+    applyRoute();
+  };
+
+  // The address decides what is shown; the remembered surface only answers when
+  // the address says nothing. An address this build does not know pulls over to
+  // the default rather than erroring -- a link that names a surface should open
+  // something, and the one thing it must never do is leave the operator on a
+  // screen that says nothing at all.
+  const applyRoute = () => {
+    const surface = surfaceFromHash() || rememberedSurface();
+    if (mountInFlight) {
+      pendingPage = surface.page;
+      return;
+    }
+    if (surface !== currentSurface) mount(surface);
+    setAddress(surface.page);
+  };
+
+  const navigateTo = (page) => {
+    if (window.location.hash === `#${page}`) {
+      applyRoute();
+      return;
+    }
+    // Setting the hash is the whole navigation: it lands a history entry, so
+    // back and forward work, and the hashchange below does the mounting. One
+    // path in, whether the operator clicked the nav, followed a legacy link, or
+    // typed the address.
+    window.location.hash = page;
+  };
+
+  window.addEventListener("hashchange", applyRoute);
+
+  // A click on a link to a surface's own document is a route change, not a page
+  // load. Capture phase, so a surface's own delegated handler cannot swallow it
+  // first; the click still reaches that handler, it just does not reach the
+  // browser's navigation. This is what lets the ten .html addresses, and every
+  // caller that writes one (window.PAUi.setupActionHtml, servo.js, the
+  // disabled-reason lines in six pages), keep working unchanged.
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target?.closest?.("a[href]");
+      if (!anchor || (anchor.target && anchor.target !== "_self")) return;
+      const surface = surfaceForPath.get(anchor.getAttribute("href"));
+      if (!surface) return;
+      event.preventDefault();
+      navigateTo(surface.page);
+    },
+    true
+  );
+
+  applyRoute();
 })();
