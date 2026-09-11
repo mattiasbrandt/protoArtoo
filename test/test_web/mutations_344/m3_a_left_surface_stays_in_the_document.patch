@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..227ad843 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -366,7 +366,6 @@
+     // The nodes are kept, not discarded: a surface returned to paints what it
+     // already had, and the handlers its scripts bound are still on these exact
+     // elements. Stopping what a left surface was polling is #360's.
+-    entry.content.remove();
+     entry.actionNodes.forEach((node) => node.remove());
+   };
+ 

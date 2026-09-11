@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..22135f42 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -125,7 +125,7 @@
+     // "<surface> - <droid>", the same way round on every surface. Dashboard and
+     // Sound used to put the droid first, which read as a different page rather
+     // than as the same page named differently.
+-    const surface = currentSurface || surfaceFor.get(DEFAULT_PAGE);
++    const surface = surfaceFor.get(DEFAULT_PAGE);
+     document.title = `${surface.name} - ${identityName}`;
+     document.querySelectorAll("[data-identity-name]").forEach((el) => {
+       el.textContent = identityName;

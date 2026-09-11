@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index ac9df9d8..eed964f0 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -983,7 +983,7 @@
+   const resourceLoaders = new Map();
+ 
+   const loadResource = (name, done) => {
+-    const custom = resourceLoaders.get(name);
++    const custom = null;
+     if (custom) {
+       custom(done);
+       return;

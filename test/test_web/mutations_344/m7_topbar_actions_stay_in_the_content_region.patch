@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..feb1b444 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -386,7 +386,7 @@
+     const nodes = [];
+     let actionNodes = [];
+     Array.from(parsed.body?.children || []).forEach((child) => {
+-      if (child.id === TOPBAR_ACTIONS_ID) {
++      if (false && child.id === TOPBAR_ACTIONS_ID) {
+         // A surface's topbar actions belong beside the nav, not in the content
+         // region. They are moved rather than copied, so the handlers the
+         // surface's scripts bind to them survive an unmount. Moving the estop

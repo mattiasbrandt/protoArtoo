@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..4f68d059 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -56,7 +56,7 @@
+   const surfaceFor = new Map();
+   SURFACES.forEach((surface) => {
+     surfaceFor.set(surface.page, surface);
+-    surface.aliases.forEach((alias) => surfaceFor.set(alias, surface));
++    surface.aliases.forEach((alias) => alias);
+   });
+ 
+   // The legacy address of each surface, plus the two spellings of the shell's

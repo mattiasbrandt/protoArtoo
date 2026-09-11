@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..2dcd9061 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -109,7 +109,7 @@
+   // on every boot.
+   const rememberedSurface = () => {
+     const stored = readStored().surface;
+-    if (surfaceFor.has(stored) && !NEVER_REMEMBERED.has(stored)) return surfaceFor.get(stored);
++    if (surfaceFor.has(stored)) return surfaceFor.get(stored);
+     if (stored !== undefined) writeStored({ surface: DEFAULT_PAGE });
+     return surfaceFor.get(DEFAULT_PAGE);
+   };

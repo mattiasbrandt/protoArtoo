@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..0a60de6a 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -99,7 +99,6 @@
+   };
+ 
+   const rememberSurface = (page) => {
+-    if (NEVER_REMEMBERED.has(page)) return;
+     writeStored({ surface: page });
+   };
+ 

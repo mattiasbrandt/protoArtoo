@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index d1f77450..2bbb41b5 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -544,7 +544,6 @@
+       if (!anchor || (anchor.target && anchor.target !== "_self")) return;
+       const surface = surfaceForPath.get(anchor.getAttribute("href"));
+       if (!surface) return;
+-      event.preventDefault();
+       navigateTo(surface.page);
+     },
+     true

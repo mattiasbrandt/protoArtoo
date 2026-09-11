@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index ac9df9d8..94ce1b9a 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -321,7 +321,7 @@
+         return pump({
+           ...prev,
+           resources,
+-          resourcesReady: prev.resourceCursor >= resources.length,
++          resourcesReady: true,
+         });
+       }
+ 
