@@ -102,13 +102,14 @@ bool PrefsWriter::writeStr(const char* key, const char* value) {
     //
     // The one case the two zeros still cannot be told apart is an EMPTY value
     // whose write failed; that reports success. Distinguishing it would cost an
-    // isKey() probe -- up to ten nvs_get_* calls in the vendor's getType() --
-    // on every empty write, and nothing irreversible rests on an empty value:
-    // a Servo Output row always encodes to a non-empty record, and the
-    // deliberate empty (dome_wip) is read back as "no peer set" either way.
+    // isKey() probe on every empty write -- getType() tries ten nvs_get_* calls
+    // in turn and reaches the string case on the ninth -- and nothing
+    // irreversible rests on an empty value: a Servo Output row always encodes
+    // to a non-empty record, and the deliberate empty (dome_wip) reads back as
+    // "no peer set" either way.
     //
-    // > 0 is what writeBool, writeF32 and writeSchemaVersion above already do;
-    // this was the outlier.
+    // Testing > 0 is what writeBool, writeF32 and writeSchemaVersion all do
+    // already; writeStr was the outlier.
     return prefs_.putString(key, value) > 0 || value[0] == '\0';
 }
 
