@@ -1,7 +1,11 @@
 # Only what is shown may differ between boards, and the artoo-esp32 shows drawings
 
-Status: accepted (2026-09-11, issue #382). Describes the **target** model; none of
-it is implemented yet.
+Status: accepted (2026-09-11, issue #382). **Partly implemented.** The filesystem
+budget, the per-environment asset-set staging and the register landed on 2026-09-11
+(`88821e2d`, `7bc768d5`, `d21abbb6`, `c2c7c2a6`). What remains unbuilt is the only
+thing that is not code: the sixteen line drawings the legacy set carries, which gate
+guided Setup on every board. Both set directories are therefore still absent, and
+staging is a measured no-op until they exist.
 
 ## Context
 
