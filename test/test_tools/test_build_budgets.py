@@ -131,7 +131,14 @@ class PlatformRegistryCoversPlatformioIni(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from platformio.project.config import ProjectConfig
+        try:
+            from platformio.project.config import ProjectConfig
+        except ImportError:  # pragma: no cover - depends on the runner, not the tree
+            # The verification workflow installs PlatformIO only when code
+            # changed, while the tooling tests run on every change including a
+            # documentation-only one. Without this, an unguarded import turns
+            # into a setUpClass ERROR and fails the gate on every docs-only PR.
+            raise unittest.SkipTest("platformio is not installed; this check needs its config parser")
 
         ini = Path(__file__).resolve().parents[2] / "platformio.ini"
         cls.config = ProjectConfig(str(ini))
