@@ -216,3 +216,68 @@ listen 40
 send system.status.health
 pause Watch the link drop and come back. The board must stay up throughout: uptimeMs keeps climbing and resetReason does not change - it is the module that restarted, not the controller. Press Enter when the link is back.
 send system.status.health
+
+# =============================================================================
+# Epic #175 Wave 0 -- the capability lines on the second Board Variant
+#
+# Added 2026-09-11, operator direction, as the P4 half of the block in
+# tools/bench_rows/artoo_esp32.txt:137+. Same rule as that block and as this
+# sheet: what a row must answer stays on the Closing Ticket (#355), never here.
+#
+# Board 1 has no WiFi and no HTTP -- its C6 is permanently unflashable -- so a
+# Wave 0 capability whose ACTION arrives on POST /api/config is unavailable on
+# this board rather than merely awkward. Three of artoo's four rows are cut for
+# that reason, and the cuts are named on #355's "Cut on purpose" table:
+#
+#   - A7's sound member (#340): a Component Member is SET on POST /api/config
+#     and no console operation writes one (src/console/console_catalog.cpp has
+#     sound.action.* and sound.config.volume, nothing that selects a member).
+#     The READ half is folded into the vocabulary row below; the change half,
+#     which is the capability, cannot be performed here at all.
+#   - A2/A3/A4's calibration crossing (#338 #342 #345): the distinctive
+#     pre-migration endpoints are written on POST /api/config too -- the catalog
+#     carries servo.action.* but no servo.config.* -- so the one-shot cannot be
+#     aimed on this board. What IS reachable from the console is the migration
+#     PATH; that is the second row below, and it claims less.
+#   - A6's Board Lanes (#339): board_lanes is emitted only by GET /api/identity
+#     (src/web/api_identity_serializers.cpp). The console's
+#     system.api.get-identity deliberately answers with the two ConfigSnapshot
+#     fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
+#     src/console/console_module.cpp), so there is nothing here to read.
+#
+# Ceiling for this block, as for artoo's: Controller Upload Verified. The bench
+# is unseated; a row wanting a moving arm is Not Assessed and says so.
+# =============================================================================
+
+# A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
+# firmware and the browser both know", and since #358 a Part is nameable whether
+# or not this body drives it. This is the one Wave 0 row a SECOND board can
+# falsify: the P4's Board Capability Gates are not artoo's, so if the catalog
+# were ever the drivable subset rather than the whole vocabulary, this is where
+# the list comes back short. get-components names every Part with its own gate
+# and included flag, so the gate VALUES are what may differ between the two
+# boards and the Part LIST is what must not. sound.status.current is the A7 read
+# half: which member this board reports fitted, on a board whose audio lane is
+# shared with protor2link.
+@row 358 the-part-vocabulary-on-the-second-board
+send system.api.get-components
+send sound.status.current
+
+# A2/A3/A4 (#338 #342 #345) with A8 (#375) and A9 (#376) - the migration PATH on
+# a second board's real NVS. system.action.set-mode calls saveConfigToNvs()
+# (include/console_direct_action_system.h), which runs configSaveServoOutputs()
+# before configSave() (src/main.cpp) -- so an ordinary mode change IS a full
+# config save and performs the migration, which is why "don't touch servo
+# settings" is not sufficient guidance to a bench operator. Native tests reach
+# this sequence against a stubbed Preferences; what they cannot reach is flash,
+# and this board's NVS partition is not artoo's. Since A8 a write that did not
+# reach flash reports err rather than ok, so the record this row returns is
+# itself the evidence. It does NOT prove a builder's calibration crossed: that
+# needs distinctive pre-migration values this board cannot be given.
+@row 345 the-first-save-migrates-on-this-board
+send servo.status.current
+send system.action.set-mode mode=stationary
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send servo.status.current
