@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 51a57929..e565b8f2 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1076,7 +1076,7 @@
+               // is "we have no picture of your dome", the other "we do not know what
+               // your dome carries at all", and only the second sends somebody to the
+               // design files.
+-              sourceNotice = domeLayout.complementKnown === false
++              sourceNotice = false
+                 ? `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — this build does not know which panels that dome design carries</div>`
+                 : `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — no built-in map for the dome design you stated</div>`;
+             } else {

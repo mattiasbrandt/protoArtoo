@@ -992,7 +992,9 @@
           // Store hidden cmd field for serialization
           behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
         } else if (domeMode === "panel") {
-          // Render the live picker from DomeLayout if available, fall back to vendored.
+          // Render the live picker from DomeLayout when the dome is answering; the
+          // offline tiers fall back to the built-in drawing, and only where that
+          // drawing is the dome this builder stated (see the else branch below).
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
           let action = "";
           let target = "";
@@ -1026,19 +1028,57 @@
               sourceNotice = `<div class="dome-layout-notice dome-layout-cached">Showing last known dome layout — runtime availability unverified</div>`;
             }
           } else {
-            // Fallback to the vendored MK4 SVG when no live/cached elements exist:
-            // either the dome is unreachable, or it is reachable but on an unsupported
-            // schema (whose geometry we deliberately do not trust, so elements is empty).
+            // No live or cached elements: either the dome is unreachable, or it is
+            // reachable but on an unsupported schema (whose geometry we deliberately
+            // do not trust, so elements is empty). Both land on the same question.
+            //
+            // The built-in drawing is a drawing of ONE design and declares which
+            // (data/dome_panel_model.js). Tier 3 of the Layout Fallback Hierarchy has
+            // already asked the Droid Build seam whether that design is the one this
+            // builder stated (ADR 0047, #343) - DomeLayout.load() above awaits
+            // DroidBuild.load() before it resolves - and `usesVendoredDrawing` is its
+            // answer. This reads that answer rather than working out a second one. A
+            // model from before tier 3 consulted the design does not carry the field,
+            // and keeps the behaviour it had.
+            //
+            // A null model is the hierarchy not having answered YET: the first editor
+            // open of a page session, while /api/dome/layout is still outstanding.
+            // That is not a statement that the drawing is theirs, so it is not drawn
+            // as one - a builder on their own design would otherwise spend the whole
+            // fetch timeout looking at somebody else's dome. DomeLayout.onChange()
+            // re-renders this picker through rerenderPanelIntentPickers() as soon as
+            // tier 3 does answer.
+            const layoutAnswered = Boolean(domeLayout);
+            const showsBuiltIn = layoutAnswered && domeLayout.usesVendoredDrawing !== false;
+
+            // The container ships even when it holds no drawing: it is the hook
+            // rerenderPanelIntentPickers() finds this picker by, and a step rendered
+            // without one would never pick up the live layout on a dome reconnect.
             svgPickerHtml = `
               <div class="dome-picker-container">
-                ${window.DOME_PANEL_MAP_SVG}
+                ${showsBuiltIn ? window.DOME_PANEL_MAP_SVG : ""}
               </div>
             `;
-            // Distinguish the two: an unsupported-schema dome IS reachable (wrong
+
+            // Distinguish the cases: an unsupported-schema dome IS reachable (wrong
             // version), so "not reachable" would send the operator chasing the wrong
             // problem. Show the schema warning for that case.
-            if (layoutSource === 'unsupported') {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported")} — showing built-in MK4 layout</div>`;
+            if (!layoutAnswered) {
+              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built — the panel map follows</div>`;
+            } else if (layoutSource === 'unsupported') {
+              const schemaWarning = window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported");
+              sourceNotice = showsBuiltIn
+                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — showing built-in MK4 layout</div>`
+                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — and no built-in map for the dome design you stated</div>`;
+            } else if (!showsBuiltIn) {
+              // Two different jobs for the builder, so two different sentences - the
+              // same two the dashboard's dome card gives (data/dome_control.js): one
+              // is "we have no picture of your dome", the other "we do not know what
+              // your dome carries at all", and only the second sends somebody to the
+              // design files.
+              sourceNotice = domeLayout.complementKnown === false
+                ? `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — this build does not know which panels that dome design carries</div>`
+                : `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — no built-in map for the dome design you stated</div>`;
             } else {
               sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
             }
