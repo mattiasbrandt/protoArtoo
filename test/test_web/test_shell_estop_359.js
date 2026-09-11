@@ -436,6 +436,40 @@ test("the Dashboard keeps the release, and its button is dead while there is no 
   );
 });
 
+// ---------------------------------------------------------------------------
+// Part 3: what may paint over it
+// ---------------------------------------------------------------------------
+
+// The stylesheet read the way a browser stacks it: rules flattened, the last
+// declaration for a property winning, so this asserts the painted order rather
+// than the presence of a string.
+const zIndexOf = (selector) => {
+  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  let value = null;
+  const rule = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rule.exec(css)) !== null) {
+    const selectors = match[1].split(",").map((part) => part.trim());
+    if (!selectors.includes(selector)) continue;
+    const declared = /(?:^|;)\s*z-index\s*:\s*([^;]+)/.exec(match[2]);
+    if (declared) value = Number(declared[1].trim());
+  }
+  return value;
+};
+
+test("the sleep overlay does not paint over the one control it says stays active", () => {
+  const estop = zIndexOf(".shell-estop");
+  const overlay = zIndexOf(".sleep-overlay");
+
+  assert.ok(Number.isFinite(overlay), "the sleep overlay stacks explicitly");
+  assert.ok(Number.isFinite(estop), "and so does the estop, or it is painted over by whatever comes last");
+  assert.ok(
+    estop > overlay,
+    `the estop (${estop}) must stack above the sleep overlay (${overlay}) -- the overlay is a full-viewport`
+      + " scrim that takes pointer events, and its own panel says drive and safety controls remain active",
+  );
+});
+
 test("Drive keeps the release, sends it off the request queue, and no longer latches", async () => {
   const calls = [];
   const env = loadPageModule("drive.js", { overrides: { PAApi: apiFor(calls, { estop: true }) } });

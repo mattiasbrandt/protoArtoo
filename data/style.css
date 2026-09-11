@@ -1804,6 +1804,15 @@ textarea:disabled {
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-2xs);
+  /* Above the Dashboard's sleep overlay, which is a full-viewport scrim that
+     takes pointer events and whose own panel says "Drive and safety controls
+     remain active" - true of the droid, and it must be true of the screen
+     too. This is a posture the droid is in, not a dialog: hiding the chrome
+     never hides the estop (#330). The Page Recovery View and the Sequences
+     modal sit higher still and do cover it; both are modal dialogs, and
+     changing that is not this control's decision to take. */
+  position: relative;
+  z-index: 1300;
 }
 
 .shell-estop-button {
