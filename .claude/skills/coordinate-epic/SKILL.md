@@ -241,6 +241,16 @@ review completes. After the final merge, re-run the merged-tree test suite
 and any epic-level acceptance sweeps - line numbers and stragglers move.
 Nothing is pushed to origin until the operator explicitly says so.
 
+**A slice is not finished until its pane is closed.** The sequence is one
+motion, in this order: accept -> tick the criteria -> merge -> close the
+ticket -> **close the worker's Herdr pane** (and its tab once that was its
+last pane). Before closing, check the worker is genuinely done rather than
+merely idle: `git status` clean in its worktree, its branch listed by
+`git branch --merged <base>`, its ticket closed. An idle pane left open reads
+as a worker still holding the slice, and the next wave's tab lands beside a
+ghost. Close only panes and tabs you created; another session may be in a
+neighbouring workspace.
+
 ## Device verification (serialized - coordinator + operator, never workers)
 
 The device is a single shared resource and may be bench-mode (controller
