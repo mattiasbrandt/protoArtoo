@@ -1,0 +1,13 @@
+diff --git i/data/droid_part_kind.js w/data/droid_part_kind.js
+index 858f1ba1..dd10a872 100644
+--- i/data/droid_part_kind.js
++++ w/data/droid_part_kind.js
+@@ -76,7 +76,7 @@
+   const shows = (part, affordance) => affordances(part).indexOf(affordance) !== -1;
+ 
+   /** The state class for this Part's Kind - never a colour, and "" for no Kind. */
+-  const treatmentClass = (part) => (isLight(part) ? LIGHT_CLASS : "");
++  const treatmentClass = (part) => "";
+ 
+   /**
+    * The light Part a given Part carries, or null.

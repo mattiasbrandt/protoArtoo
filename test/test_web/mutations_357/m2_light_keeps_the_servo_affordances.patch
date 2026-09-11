@@ -1,0 +1,13 @@
+diff --git i/data/droid_part_kind.js w/data/droid_part_kind.js
+index 858f1ba1..05391331 100644
+--- i/data/droid_part_kind.js
++++ w/data/droid_part_kind.js
+@@ -70,7 +70,7 @@
+    * That default is the honest one and it is deliberately not a Kind: nothing
+    * here ever reports an unclassified Part AS a servo Part.
+    */
+-  const affordances = (part) => (isLight(part) ? LIGHT_AFFORDANCES : SERVO_AFFORDANCES);
++  const affordances = (part) => SERVO_AFFORDANCES;
+ 
+   /** Whether a surface may show one named affordance for this Part. */
+   const shows = (part, affordance) => affordances(part).indexOf(affordance) !== -1;

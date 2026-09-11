@@ -1,0 +1,13 @@
+diff --git i/data/droid_part_kind.js w/data/droid_part_kind.js
+index 858f1ba1..bc6be479 100644
+--- i/data/droid_part_kind.js
++++ w/data/droid_part_kind.js
+@@ -91,7 +91,7 @@
+       return null;
+     }
+     for (const part of parts) {
+-      if (part && part.sitsOn === partId && isLight(part)) {
++      if (part && part.id === partId && isLight(part)) {
+         return part;
+       }
+     }
