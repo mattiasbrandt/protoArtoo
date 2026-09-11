@@ -135,6 +135,22 @@ void handleManualCommandPost(WebRequest& req) {
         webSendJsonError(req, 400, "unsupported command");
         return;
     }
+    if (result == ManualCommandResult::ShadowedModeKeyword) {
+        // "#st"/"#sm" read like mode keywords, but a '#' line goes to the
+        // Marcduino body parser, which has a case for neither -- so the mode
+        // never changed, and until #379 this route said {"ok":true} anyway.
+        // A refusal of its own rather than the generic "unsupported command"
+        // above, because the two answers send a builder to different places:
+        // this one is a working capability behind the wrong door, and naming
+        // the door that opens is what every no owes (#348 D1).
+        PA_LOG_INFO(TAG, "[WEB] POST /api/manual-command - refused %s (Marcduino routing)",
+                    rawCommand);
+        webSendJsonError(
+            req, 400,
+            "a # line goes to the Marcduino body parser, so #st and #sm never change mode",
+            "POST /api/mode with mode=stationary or mode=driving", "command");
+        return;
+    }
     if (result == ManualCommandResult::SaveFailed) {
         // The command ran -- only its config save missed flash, so the droid is
         // doing what was asked and will stop doing it at the next boot (#376).

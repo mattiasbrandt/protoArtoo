@@ -53,8 +53,15 @@ Exact supported keyword commands (case-insensitive):
 - `enable_web_control`
 - `disable_web_control`
 - `reboot`
-- `#st` (stationary mode)
-- `#sm` (driving mode)
+
+Refused (case-insensitive):
+
+- `#st`, `#sm` -- these resolve to stationary/driving mode in the keyword
+  table, but the prefix routing below claims every `#` line first, so they
+  reach the Marcduino body parser, which has a case for neither, and no mode
+  ever changes. The route answers `400` and points at `POST /api/mode`
+  (`docs/api.md`). Set the mode there, or with `system.action.set-mode` over
+  the Console.
 
 Prefix routing (case-sensitive):
 

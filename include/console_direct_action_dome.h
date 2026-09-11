@@ -146,6 +146,23 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
+    if (result == ManualCommandResult::ShadowedModeKeyword) {
+        // "#st"/"#sm" (#379): the '#' prefix hands the line to the Marcduino
+        // body parser, which matches neither, so no mode ever changed -- the
+        // same refusal POST /api/manual-command answers as a 400, reached
+        // through the same dispatch core and therefore answered here too
+        // rather than falling through to the ok record below.
+        //
+        // A result record carries no free text (ConsoleRecordSink,
+        // include/console_module.h) and the Reason set is fixed (ADR 0036),
+        // so the reason is the value one: OUT_OF_RANGE, exactly what this
+        // executor already answers for a command value the core will not run.
+        // The next move on this transport is system.action.set-mode, which is
+        // the same capability POST /api/mode exposes.
+        consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
     if (result == ManualCommandResult::SaveFailed) {
         // A command that applied but whose config save did not reach flash
         // (#376). Read from consoleExecuteDirectSetMode()
