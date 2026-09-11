@@ -1,0 +1,13 @@
+diff --git i/data/droid_build.js w/data/droid_build.js
+index f1695e70..e6578607 100644
+--- i/data/droid_build.js
++++ w/data/droid_build.js
+@@ -164,7 +164,7 @@
+     if (Array.isArray(request.fitted)) {
+       build.fitted = Array.from(request.fitted);
+     }
+-    const fitted = new Set(build.fitted);
++    const fitted = new Set();
+ 
+     const changedHalves = [];
+     Object.keys(HALVES).forEach((half) => {

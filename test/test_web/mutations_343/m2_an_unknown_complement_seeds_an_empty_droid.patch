@@ -1,0 +1,13 @@
+diff --git i/data/droid_build.js w/data/droid_build.js
+index f1695e70..74703112 100644
+--- i/data/droid_build.js
++++ w/data/droid_build.js
+@@ -187,7 +187,7 @@
+     if (seed) {
+       changedHalves.forEach((half) => {
+         const complement = complementFor(build[half].design, build[half].variant, half);
+-        if (!complement.known) {
++        if (false) {
+           // Reported, never drawn as empty: this catalog does not record what
+           // that design and variant carry, and seeding nothing silently is the
+           // one outcome the decision behind this file rules out.

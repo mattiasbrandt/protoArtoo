@@ -1,0 +1,14 @@
+diff --git i/data/dome_control.js w/data/dome_control.js
+index 8245f9e8..d4aeaa57 100644
+--- i/data/dome_control.js
++++ w/data/dome_control.js
+@@ -82,9 +82,6 @@
+       if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
+         return window.DomeLayoutRender.renderPicker(model);
+       }
+-      if (model?.usesVendoredDrawing === false) {
+-        return '';
+-      }
+       return window.DOME_PANEL_MAP_SVG || '';
+     }
+ 

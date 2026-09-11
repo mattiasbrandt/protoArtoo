@@ -1,0 +1,16 @@
+diff --git i/data/dome_layout.js w/data/dome_layout.js
+index 3ff9d350..003d8b92 100644
+--- i/data/dome_layout.js
++++ w/data/dome_layout.js
+@@ -230,10 +230,7 @@
+       ? window.DroidBuild.complementFor(designId, variantId, 'dome')
+       : { ids: [], known: false };
+ 
+-    const drawingIsTheirs =
+-      designId === '' ||
+-      (designId === window.DOME_PANEL_MAP_DESIGN &&
+-       variantId === window.DOME_PANEL_MAP_VARIANT);
++    const drawingIsTheirs = true;
+ 
+     let warning = null;
+     if (designId !== '' && !complement.known) {

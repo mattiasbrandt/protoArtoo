@@ -1,0 +1,13 @@
+diff --git i/data/droid_parts.js w/data/droid_parts.js
+index c64c5c73..1bc416d9 100644
+--- i/data/droid_parts.js
++++ w/data/droid_parts.js
+@@ -120,7 +120,7 @@
+         "id": "pie1",
+         "section": "dome_pies",
+         "name": "Dome pie 1",
+-        "half": "dome",
++        "half": "body",
+         "shorthand": "PP1",
+         "aliases": [
+           "PP1",
