@@ -154,8 +154,8 @@ which is a different part with a different protocol.
 
 This is the fork that matters most, and it is **vendor-documented, not a hack**.
 The Flyron FN-M16P datasheet -- same silicon family, and the document whose
-checksums are *correct* (Section 6.2) -- prints a **two-column table**, verified in
-its own text this session:
+**tabulated** checksums are correct (Section 6.2) -- prints a **two-column
+table**, verified in its own text this session:
 
 ```
       Commands                   Serial Commands                 Serial Commands
@@ -321,7 +321,7 @@ connection and the on-board amp goes unused. For a droid with a bare speaker,
 SPK1/SPK2 is a complete solution at low volume and is a meaningful part of why
 this module costs what it does.
 
-### 5.3 `BUSY`: the datasheet contradicts itself, on the pin we most want
+### 5.3 `BUSY`: the datasheet contradicts itself, and a second vendor settles it
 
 > [!CAUTION]
 > **The official datasheet states both polarities, ten pages apart.**
@@ -334,12 +334,27 @@ this module costs what it does.
 > > 16, Busy. 1). Output high level at playback status; 2). Output low level at
 > > pause status and module sleep"*
 >
-> These are exact opposites. Hobby practice overwhelmingly treats `BUSY` as
-> **active-low while playing**, which agrees with the pin table, but this sheet
-> will not assert a polarity DFRobot's own document contradicts.
->
-> **Bench test, five minutes:** wire `BUSY` to a GPIO, play a track, log the
-> level. Settle it before any code depends on it (Open Item 1).
+> These are exact opposites.
+
+**Resolved: `BUSY` is LOW while playing.** A second vendor's datasheet for the
+same silicon settles it without a bench run. Flyron's FN-M16P, pin 16, read
+directly this session:
+
+> "Low level when working, and high level when standby"
+
+Two independent vendor documents -- DFRobot's own pin table and Flyron's -- against
+one self-contradicting section, and hobby practice agrees with both. **Section
+3.3.2 of the DFRobot manual is simply wrong**, and it is worth naming because the
+error has been copied downstream into at least one widely-circulated third-party
+rewrite.
+
+> [!NOTE]
+> **Assertion latency is the part that still needs measuring**, and it is chip
+> dependent: some clones need a settling time of roughly 350 ms after a play
+> command before `BUSY` reflects reality, and on `MH2024K-16SS` it is reported not
+> to track play state reliably at all. **Do not use `BUSY` as a play-started
+> edge.** Gate it behind a fixed hold after each command and use it only as a
+> play-finished indication (Open Item 1).
 
 The polarity matters more than it looks. `BUSY` gives **playback state on one
 GPIO with no serial traffic at all**, which is exactly what protoArtoo's
@@ -421,6 +436,18 @@ query status        7E FF 06 42 00 00 00 FE B9 EF
 > checksum at all (Section 2). Code derived from these examples works until it
 > meets a module that does -- which is the `0x40 / 0x02` *"Verification error"*
 > return in Section 8.3.
+>
+> **The pattern is sharper than "DFRobot's document is wrong", and it generalises.**
+> Checked against Flyron's FN-M16P for the same silicon: its **command tables are
+> correct** (`7E FF 06 01 00 00 00 FE FA EF` and the rest verify exactly), while
+> its **prose example is wrong** in the same way DFRobot's are -- section 3.3.2
+> gives volume 15 as `7E FF 06 06 00 00 0F FF D5 EF`, where the correct checksum is
+> `FE E6`.
+>
+> So across **two independent vendors**, the tabulated frames are right and the
+> hand-written prose examples are wrong. The tables were evidently generated; the
+> prose was typed. **Trust a vendor's table over a vendor's sentence, and compute
+> either way.**
 >
 > **This project has been burned by exactly this shape before.** The DY-SV5W
 > driver originally implemented an end-marker dialect, and
@@ -606,6 +633,35 @@ automatically after being specified playing"* -- a specified track plays once an
 stops, rather than rolling into the next file. That is the behaviour a droid wants
 and it needs no configuration.
 
+> [!CAUTION]
+> **Power-on volume is maximum, and it is a vendor statement.** Flyron's FN-M16P
+> section 3.3.2: *"Our system power-on default volume is level 30, if you want to
+> set the volume, then directly send the corresponding commands."* Level 30 is the
+> top of the scale.
+>
+> **A droid that powers up and plays a startup sound before setting volume plays it
+> at full volume**, through an amplifier, next to whoever is standing at the droid.
+> protoArtoo is already shaped to avoid this -- `AudioDriver::begin(uint8_t vol)`
+> takes *"the NVS-configured volume"* as its argument -- but the ordering is now a
+> requirement rather than a convention: **send `0x06` before the first `0x12`**, and
+> never rely on the module's own default.
+
+**Two audible artefacts worth designing around**, both reported consistently and
+neither in the datasheet:
+
+- **A reset thump.** `0x0C` (reset) produces an audible pop. DFRobot's library
+  issues one inside `begin()` by default, which is one more reason Section 12.1
+  says not to use it. A driver that needs a reset should do it once, before
+  unmuting, not on every init retry.
+- **Continuous idle hiss.** The on-board amplifier's shutdown pin is hard-grounded
+  on the usual boards, so the amp is always on and the speaker hisses whenever
+  nothing is playing. The boards carry a **solder bridge** that reroutes that pin
+  to follow `BUSY`, which silences the idle at the cost of a click at the start and
+  end of every file (the amplifier's wake-up time is about 100 ms). **Which
+  trade-off is right is an operator decision, not a firmware one** -- but a droid
+  that sits quietly for hours mostly wants the bridge moved. Record it in builder
+  documentation rather than discovering it on a quiet set.
+
 ## 9. The SD card contract, which is where this module actually bites
 
 ### 9.1 Three addressing modes, and only two of them are stable
@@ -656,7 +712,25 @@ here: *"avoid hidden files (macOS `._` files cause issues)"*. A card prepared on
 Mac carries a `._0001.mp3` resource fork beside every track and a
 `.Spotlight-V100` directory; under `0x03` each of those is **a file in the index**.
 
-### 9.3 Practical rules for a protoArtoo card
+### 9.3 The card itself: FAT32, and nothing above 32 GB
+
+Vendor-stated for the original silicon (FN-M16P section 1.2): *"Supports FAT16 and
+FAT32 file system"* and *"Supports maximum 32GB micro SD card and 32GB USB flash
+drive."*
+
+> [!WARNING]
+> **A card bought today will very likely arrive formatted exFAT, which this module
+> cannot read.** Anything above 32 GB is exFAT by default under both Windows and
+> macOS, and a 64 GB card is now the cheapest thing on the shelf. The failure is
+> silent in the worst way: the module simply reports no device online, emits no
+> `0x3F`, and a driver correctly concludes there is no card.
+>
+> Only one clone family -- `TD5580A` -- supports exFAT and 64 GB (Section 2), which
+> means **a card that works on one builder's droid can be unreadable on another's
+> with the same firmware**. Specify FAT32 and 32 GB or under, and have the driver
+> say *"no card"* rather than *"module missing"* when `0x3F` never arrives.
+
+### 9.4 Practical rules for a protoArtoo card
 
 1. Use `/mp3/NNNN.mp3`, four digits, zero-padded, and address with `0x12`.
 2. Prepare the card on Linux or Windows, or clean it afterwards
@@ -1079,6 +1153,51 @@ unconditionally when ACK is disabled (`|| !isACK` at `:118`); the
 `DFPlayerCardUSBOnline` branch at `:172` is unreachable, because any value with
 bit 0 or bit 1 set is caught earlier; and replies are never correlated to
 requests, so a track-finished notification is readily consumed as a query answer.
+
+### 12.2 `delay(0)` is not a yield to the idle task, and that reaches a safety invariant
+
+The library's spin loops are built on `delay(0)` -- at `:36`, `:93` and `:230`. On
+an ESP32 that is not the harmless yield it looks like, and the consequence lands
+on one of this project's safety rules rather than merely on responsiveness.
+
+Verified from the sources installed on this machine:
+
+```c
+// framework-arduinoespressif32/cores/esp32/esp32-hal-misc.c:212
+void delay(uint32_t ms) {
+  vTaskDelay(ms / portTICK_PERIOD_MS);
+}
+```
+
+```c
+// framework-espidf/components/freertos/FreeRTOS-Kernel/tasks.c:1583
+/* A delay time of zero just forces a reschedule. */
+if( xTicksToDelay > ( TickType_t ) 0U ) { ... }
+```
+
+So `vTaskDelay(0)` takes the else branch: it **reschedules without blocking**. The
+calling task is never moved to the blocked list, so the scheduler only ever picks
+among tasks of **equal or higher** priority. The **idle task is the lowest
+priority on the core** and therefore never runs.
+
+> [!CAUTION]
+> **The idle task is what feeds the Task Watchdog.** `AGENTS.md` carries
+> *"TWDT reset -> estop on boot"* as a safety-critical invariant, so a spin that
+> starves the idle task on Core 0 does not merely stall audio -- it can reset the
+> controller and bring the droid up latched into estop.
+>
+> Combined with Section 12.1's unbounded `while (_isSending)` loop, the failure
+> mode is complete: a track finishes, the notification is never drained, the next
+> command spins on `delay(0)` forever, the idle task never runs, the watchdog
+> fires, and the droid reboots into estop **because a sound ended**.
+>
+> A protoArtoo driver must use `vTaskDelay(1)` or the `delayMs` hook in
+> `AudioSerialIO` -- which is exactly why that hook exists, and why the seam's
+> own header describes it as *"blocking delay (yield-safe in production)"*.
+
+This is the sharpest argument in the sheet for writing ~300 lines rather than
+adopting a library: the transport seam protoArtoo already has was designed with
+this hazard in mind, and `audio_dy_sv5w.cpp` already respects it.
 ## 13. How the four Sound members differ
 
 | | DY-SV5W | MP3 Trigger | CHIRP | **DFPlayer Mini** |
@@ -1281,7 +1400,9 @@ the build matrix argues for a runtime member.
 - Field: Card-insert behaviour. Required value: **auto-plays root track 1**; suppress with a pause ~100 ms after `0x3A`.
 - Field: Track range. Required value: 0-2999 for `0x03`; 1-9999 for `0x12`.
 - Field: VCC. Required value: **3.2-5.0 V, typical 4.2 V** -- 3.3 V is in specification.
-- Field: BUSY polarity. Required value: **`UNKNOWN`** -- the datasheet states both. Measure before use.
+- Field: BUSY polarity. Required value: **LOW while playing** (DFRobot's pin table and Flyron agree; DFRobot section 3.3.2 is wrong). Latency to assert is chip-dependent -- do not use it as a play-started edge.
+- Field: Power-on volume. Required value: **30, maximum.** Send `0x06` before the first play, always.
+- Field: Filesystem. Required value: **FAT16 or FAT32 only, 32 GB maximum.** exFAT is unreadable on the original silicon.
 - Field: Speaker output. Required value: SPK1/SPK2, **bridge-tied, under 3 W**, never into an amplifier input. Use DAC_L/DAC_R for line level.
 - Field: protoArtoo driver constant. Required value: `AUDIO_DFPLAYER = 2` (`include/audio_driver.h:36`).
 
@@ -1289,21 +1410,22 @@ the build matrix argues for a runtime member.
 
 | # | Item | How to settle it |
 | --- | --- | --- |
-| 1 | **`BUSY` polarity** -- the datasheet states both | Wire it to a GPIO, play a track, log the level. Five minutes (Section 5.3) |
+| 1 | **`BUSY` assertion latency** (polarity itself is now **resolved** -- Section 5.3) | Scope or log the pin against a known track length; some clones need ~350 ms to settle and one is reported not to track state at all |
 | 2 | **`0x47` vs `0x48`** for the SD file count, and `0x4B` vs `0x4C` for current track | With only an SD card present, send both and see which returns a plausible value (Section 7.2) |
 | 3 | **`0x09` device code for TF** | Send `0x09` with `1` and with `2`; see which makes an SD-only module play (Section 7.1) |
 | 4 | **Which chipset is in the module we buy** | Read the chip marking; log `0x46` (software version) at `begin()` (Section 2) |
 | 5 | **Does this module accept queries during playback** | Set `AUDIO_CAP_QUERY_SAFE_PLAYING` only after testing. CHIRP does (`0x1F`), DY-SV5W does not |
 | 6 | **The 1 kohm series resistor on RX** | Community practice, not in the datasheet. Determine whether it is needed at 3.3 V |
 | 7 | **Does the module we get validate checksums** | Send a deliberately wrong checksum and watch for `0x40 / 0x02` |
-| 8 | **Audible verification** | Genuinely droid-gate: a speaker, a card, and a listener. The protocol half is native (Section 14.2) |
+| 8 | **Does the idle-hiss solder bridge exist on the board we buy** | Inspect; decide hiss-versus-click with the operator (Section 8.4) |
+| 9 | **Audible verification** | Genuinely droid-gate: a speaker, a card, and a listener. The protocol half is native (Section 14.2) |
 
 ## 17. Sources
 
 **Primary -- vendor**
 
 - **DFR0299 datasheet V1.0**, DFRobot -- https://dfimg.dfrobot.com/wiki/20532/DFR0299_mp3-player-module_datasheet_V1.0.pdf. A **scanned PDF with no text layer**; rendered with `pdftoppm` and read as images.
-- **FN-M16P Embedded MP3 Audio Module Datasheet**, Flyron -- same silicon family, **correct checksums**, and the two-column with/without-checksum command table.
+- **FN-M16P Embedded MP3 Audio Module Datasheet**, Flyron -- same silicon family, **correct checksums in its command tables** (its prose examples are wrong, like DFRobot's -- Section 6.2), the two-column with/without-checksum table, the power-on volume statement, and the filesystem limits.
 - DFRobot product page DFR0299 -- https://www.dfrobot.com/product-1121.html (price, stock, and the `stockText` / `stockTextSeo` discrepancy).
 - DFRobot wiki -- https://wiki.dfrobot.com/DFPlayer_Mini_SKU_DFR0299.
 - GD3200A/B + MH2024K datasheet (GuoDian); TD5580A User Manual V1.3; YX5200-24SS Chip Manual V1.6 -- the clone families in Section 2.
