@@ -1,0 +1,13 @@
+diff --git i/data/dome.js w/data/dome.js
+index 8339ee8d..b937594f 100644
+--- i/data/dome.js
++++ w/data/dome.js
+@@ -378,7 +378,7 @@
+     // competing for the controller's three-client budget (ADR 0048, #360). The
+     // hidden-tab pause and the refresh on returning to the tab are the poll's
+     // own, rather than three hand-rolled pieces at this site.
+-    window.PASurface.poll(() => refreshStatus().catch(() => {}), {
++    window.PageBootstrap.createBackgroundPoll(() => refreshStatus().catch(() => {}), {
+       cadenceMs: 5000,
+       runOnStart: true,
+       refreshOnReturn: true,

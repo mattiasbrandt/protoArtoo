@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index aa6dbd93..10fa30fb 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -604,7 +604,7 @@
+     surfacePolls.forEach((entry) => {
+       const wasRunning = entry.running;
+       syncSurfacePoll(entry);
+-      if (wasRunning && !entry.running) entry.stale = true;
++      if (wasRunning && !entry.running) entry.stale = false;
+     });
+   };
+ 

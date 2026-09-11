@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index cd932ee3..9c191c1a 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -673,7 +673,6 @@
+     // the operator is reading loads. Only what the browser asks for changes on
+     // this path: no sequence stops, no output releases, no drive frame is
+     // dropped and no latch clears (ADR 0048, #360).
+-    window.PASurface?.showing(surface.page);
+ 
+     const previous = currentSurface ? mounted.get(currentSurface.page) : null;
+     if (previous) detach(previous);

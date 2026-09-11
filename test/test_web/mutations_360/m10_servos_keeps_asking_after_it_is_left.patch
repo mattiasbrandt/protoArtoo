@@ -1,0 +1,13 @@
+diff --git i/data/servo.js w/data/servo.js
+index b0cbc9f7..43573156 100644
+--- i/data/servo.js
++++ w/data/servo.js
+@@ -433,7 +433,7 @@
+     // Fallback: poll every 1 s, suspended while the tab is hidden and while the
+     // operator is reading another surface -- the shell stops it on the way out
+     // and starts it again on the way back (ADR 0048, #360).
+-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
++    window.PageBootstrap.createBackgroundPoll(() => refreshStatusOnce().catch(() => {}), {
+       cadenceMs: 1000,
+       runOnStart: true,
+       refreshOnReturn: true,

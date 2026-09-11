@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 7dd88f0c..c60c4b63 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -2073,7 +2073,7 @@
+   } else {
+     // Owned by this surface: the shell stops it when the operator leaves Sound
+     // and starts it again on the way back (ADR 0048, #360).
+-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
++    window.PageBootstrap.createBackgroundPoll(() => refreshStatusOnce().catch(() => {
+       // Retry next cycle.
+     }), {
+       cadenceMs: 2000,

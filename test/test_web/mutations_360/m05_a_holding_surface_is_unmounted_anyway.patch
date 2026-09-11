@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index cd932ee3..cc4f7534 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -666,7 +666,6 @@
+     // registers a hold today; what exists here is the capability. The address
+     // already names where the operator was going, so releasing the hold and
+     // re-reading it is the whole resume path (see pa:surface-release below).
+-    if (currentSurface && window.PASurface?.unmountHeld(currentSurface.page)) return;
+ 
+     // Stop asking before the screen changes, so the surface being left is not
+     // still competing for the controller's three-client budget while the one
