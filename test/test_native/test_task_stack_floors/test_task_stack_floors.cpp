@@ -68,7 +68,7 @@ struct TaskStackArm {
 // test/test_tools/test_task_stack_recipes.py asserts the two agree.
 static const TaskStackArm kArms[] = {
     {"DriveTask", 4080U, 5632U, RULE_ABOVE},
-    {"RCInputTask", 5248U, 7168U, RULE_ABOVE},
+    {"RCInputTask", 5616U, 7168U, RULE_APPLIED},
     {"ServoTask", 3216U, 4096U, RULE_APPLIED},
     {"DomeTask", 2992U, 3072U, RULE_DECLINED},
     {"AudioTask", 5280U, 6144U, RULE_DECLINED},
@@ -87,7 +87,7 @@ static const size_t kArmCount = sizeof(kArms) / sizeof(kArms[0]);
 // this is what config.h actually declares, and the tests compare the two.
 static const TaskStackArm kDeclared[] = {
     {"DriveTask", DRIVE_TASK_MEASURED_CHAIN_BYTES, DRIVE_TASK_STACK_BYTES, RULE_ABOVE},
-    {"RCInputTask", RC_INPUT_TASK_MEASURED_CHAIN_BYTES, RC_INPUT_TASK_STACK_BYTES, RULE_ABOVE},
+    {"RCInputTask", RC_INPUT_TASK_MEASURED_CHAIN_BYTES, RC_INPUT_TASK_STACK_BYTES, RULE_APPLIED},
     {"ServoTask", SERVO_TASK_MEASURED_CHAIN_BYTES, SERVO_TASK_STACK_BYTES, RULE_APPLIED},
     {"DomeTask", DOME_TASK_MEASURED_CHAIN_BYTES, DOME_TASK_STACK_BYTES, RULE_DECLINED},
     {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_DECLINED},

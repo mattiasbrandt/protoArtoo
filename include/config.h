@@ -771,10 +771,16 @@ constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
 // only where an overrun is provable, because this figure is the floor of an
 // unknown. Not lowered to the rule here -- that would undo that decision.
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5248;
-// above rule (6656): the pre-#256 literal, kept rather than lowered onto a
-// Xtensa figure that can prove an overrun and cannot prove a margin.
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
+// Re-derived 2026-09-12 (#354): 5248 -> 5616. The RC path now starts the
+// :SE30..:SE36 body routines through sequenceStart() -- directly from
+// rcDispatchSingleAction(), and through the dome RX parser for a :SE command
+// binding -- where it used to queue a ServoCommand, so the walk reaches the
+// Sequence Coordinator's lookup and request send. At this chain the rule lands
+// exactly on the 7168 this arm already held above the old rule (the pre-#256
+// literal), so the arm moves from "above rule" to the rule itself; the stack
+// does not change.
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5616;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5616 -> 7020 -> 7168
 // Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
 // setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
 // stops servo.action.set-position driving a fitted part past what its component

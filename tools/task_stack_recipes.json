@@ -68,11 +68,10 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5248,
-          "product_bytes": 5248,
-          "profiler_bytes": 5248,
-          "rule": "above",
-          "reason": "The pre-#256 literal, kept rather than lowered onto a Xtensa figure that can prove an overrun and cannot prove a margin."
+          "chain_bytes": 5616,
+          "product_bytes": 5616,
+          "profiler_bytes": 5616,
+          "rule": "applied"
         },
         "esp32p4": {
           "env": "firebeetle2",
