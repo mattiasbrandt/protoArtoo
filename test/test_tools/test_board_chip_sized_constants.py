@@ -71,8 +71,10 @@ EXPECTED_BY_BOARD = {
         # reproduced device fault rather than a walk - then re-derived by #269
         # once the config-write path stopped carrying three ConfigSnapshot
         # copies, and again at #271 from a walk on the merged tree:
-        # 7360 * 1.25 = 9200 -> 9216.
-        "console_stack": 9216,
+        # 7360 * 1.25 = 9200 -> 9216. Re-derived once more by #354, whose body
+        # routines put sequenceStart() on the Console's RC-action-test branch:
+        # 7376 * 1.25 = 9220 -> 9728.
+        "console_stack": 9728,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
