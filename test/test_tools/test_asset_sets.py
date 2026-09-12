@@ -242,5 +242,53 @@ class PartialIncludeResolution(unittest.TestCase):
         self.assertIn(str(self.src), message)
 
 
+class _StagingCase(unittest.TestCase):
+    """A throwaway data root with the kernel partial in it, staged on demand."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "data"
+        self.build = Path(self.tmp.name) / "build"
+        self.src.mkdir()
+        self.build.mkdir()
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _build(self):
+        _run_gzip_fsdata(_FakeSConsEnv(self.src, self.build))
+
+    def _staged(self, name):
+        with gzip.open(self.build / "fsdata_gz" / (name + ".gz"), "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+
+class ShellDelegateKernel(_StagingCase):
+    """A shell delegate carries no recovery kernel, and the build refuses one
+    that does (#382, ADR 0048 amendment)."""
+
+    DELEGATE = '<script>window.PAShellDelegate = true; location.replace("/#x");</script>'
+
+    def test_a_delegate_carrying_the_kernel_is_refused(self):
+        (self.src / "page.html").write_text(
+            self.DELEGATE + "<!-- PA:INCLUDE _recovery_kernel.html -->", encoding="utf-8"
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("shell delegate", str(ctx.exception))
+
+    def test_a_delegate_without_the_kernel_is_staged_without_it(self):
+        (self.src / "page.html").write_text(self.DELEGATE + "<body>surface</body>", encoding="utf-8")
+        self._build()
+        staged = self._staged("page.html")
+        self.assertIn("surface", staged)
+        self.assertNotIn("KERNEL", staged)
+
+    def test_a_rendered_page_without_the_kernel_is_still_refused(self):
+        (self.src / "index.html").write_text("<body>shell</body>", encoding="utf-8")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("does not include '_recovery_kernel.html'", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

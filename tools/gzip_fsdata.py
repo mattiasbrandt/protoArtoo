@@ -32,13 +32,21 @@ Excluded from gzip:
 HTML includes: a page may carry `<!-- PA:INCLUDE _partial.html -->`, which is
 replaced with the contents of that file before gzipping. Partials are named with
 a leading underscore and are NOT themselves imaged. This exists for the Page
-Recovery View kernel, which must be inline on every page — it is the one part of
-the UI that has to survive a failure that sheds external assets, so it cannot be
-an external file — while still living in exactly one editable source rather than
-ten hand-maintained copies that would drift apart. A missing or unexpanded
-include is a hard build failure, never a silently shipped page without recovery
-— and so is a served page that carries no kernel directive at all, since a page
-without one fails silently in exactly the situation recovery exists for.
+Recovery View kernel, which must be inline on every page the browser renders —
+it is the one part of the UI that has to survive a failure that sheds external
+assets, so it cannot be an external file — while still living in exactly one
+editable source. A missing or unexpanded include is a hard build failure, never
+a silently shipped page without recovery — and so is a rendered page that
+carries no kernel directive at all, since a page without one fails silently in
+exactly the situation recovery exists for.
+
+Since the Operator Shell (ADR 0048) the browser renders one document,
+index.html. Every other page is a shell delegate: the shell fetches it and
+imports only its <body>, and a direct visit is replaced by the shell before
+anything else loads, so a delegate's <head> never runs. A delegate therefore
+must NOT carry the kernel — eleven copies cost ten filesystem blocks and could
+never execute (#382) — and one that does is refused, so the copies cannot
+creep back.
 
 A partial resolves in the same order the file staging below does: this
 environment's asset set first, then the common data root. This lets a set
@@ -95,10 +103,15 @@ PARTIAL_PREFIX = "_"
 INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
 HTML_EXTS = {".html", ".htm"}
 
-# The one partial every served page is required to inline. It is checked by
+# The one partial every rendered page is required to inline. It is checked by
 # name rather than by "has some directive" so a page cannot satisfy the guard
 # by including something else.
 RECOVERY_KERNEL = "_recovery_kernel.html"
+
+# What makes a page a shell delegate (ADR 0048): the line in its <head> that
+# hands a direct visit to the Operator Shell. Its <head> never runs otherwise,
+# so a delegate must not carry the kernel (see the module docstring).
+SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
 
 
 def _is_partial(filename):
@@ -124,9 +137,18 @@ def _expand_includes(path, include_roots):
 
     # Match the directive, never the bare token -- documentation and comments
     # legitimately mention PA:INCLUDE without being one.
-    if RECOVERY_KERNEL not in INCLUDE_RE.findall(text):
+    carries_kernel = RECOVERY_KERNEL in INCLUDE_RE.findall(text)
+    if SHELL_DELEGATE_MARKER in text:
+        if carries_kernel:
+            raise SystemExit(
+                "[gzip_fsdata] %s is a shell delegate and includes '%s'. Its <head> "
+                "never runs -- the Operator Shell imports only its <body> -- so the "
+                "kernel would be imaged and never executed. Remove the directive."
+                % (path, RECOVERY_KERNEL)
+            )
+    elif not carries_kernel:
         raise SystemExit(
-            "[gzip_fsdata] %s does not include '%s'. Every served page inlines the "
+            "[gzip_fsdata] %s does not include '%s'. Every rendered page inlines the "
             "Page Recovery View kernel; add '<!-- PA:INCLUDE %s -->' to its <head>."
             % (path, RECOVERY_KERNEL, RECOVERY_KERNEL)
         )

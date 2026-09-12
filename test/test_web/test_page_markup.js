@@ -71,14 +71,27 @@ test("every served page exists to be checked", () => {
   assert.ok(assetSets.length > 0, "no asset sets found in data/asset-sets/");
 });
 
+// A shell delegate (ADR 0048) never runs its own <head>: the Operator Shell
+// fetches it and imports only its <body>, and a direct visit is replaced by the
+// shell before anything else loads. The kernel therefore lives only in the
+// document the browser renders, and a delegate carrying one is imaged waste.
+const SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true";
+
 for (const name of servedPages) {
-  test(`${name} inlines the Page Recovery View kernel`, () => {
+  test(`${name} carries the Page Recovery View kernel only if it is rendered`, () => {
     const html = read(name);
     const includes = [...html.matchAll(INCLUDE_RE)].map((match) => match[1]);
-    assert.ok(
-      includes.includes(RECOVERY_KERNEL),
-      `${name} must carry <!-- PA:INCLUDE ${RECOVERY_KERNEL} --> in its <head>`,
-    );
+    if (html.includes(SHELL_DELEGATE_MARKER)) {
+      assert.ok(
+        !includes.includes(RECOVERY_KERNEL),
+        `${name} is a shell delegate and must not inline ${RECOVERY_KERNEL}: its <head> never runs`,
+      );
+    } else {
+      assert.ok(
+        includes.includes(RECOVERY_KERNEL),
+        `${name} must carry <!-- PA:INCLUDE ${RECOVERY_KERNEL} --> in its <head>`,
+      );
+    }
     for (const target of includes) {
       for (const set of assetSets) {
         assert.ok(resolveInclude(set, target), `${name} includes ${target}, which the ${set} set's build cannot find`);

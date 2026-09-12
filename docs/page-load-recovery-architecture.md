@@ -244,7 +244,9 @@ prefix, then its own script(s), then `footer.js`; `dashboard.html` and
 
 Each of these files also carries a thin delegate that hands a direct visit to
 the shell at that surface's hash route, so every address that worked before
-ADR 0048 still opens what it names.
+ADR 0048 still opens what it names. A delegate carries **no** recovery kernel:
+its `<head>` never runs, so only `index.html` inlines it (ADR 0048 amendment,
+2026-09-13, #382).
 
 ## Page rollout order
 
