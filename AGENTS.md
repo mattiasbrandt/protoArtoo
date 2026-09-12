@@ -42,15 +42,23 @@ epic issue. Material an agent needs only on some paths lives under
   `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
-- HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
+- HotRC DS-650 product and HOTRC profile truth: `docs/spec-sheets/hotrc-ds650-radio.md`
+  (supersedes `docs/spec-sheets/hotrc-sbus-spec.md`, kept as the older summary)
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
 - Sabertooth / SyRen packet serial truth: `docs/spec-sheets/sabertooth-syren-packet-serial.md`
 - Flipsky VESC / VESC UART truth: `docs/spec-sheets/flipsky-vesc-foot-drive.md`
+- Hoverboard hacked-firmware truth (EFeru FOC and RoboDurden Gen2.x): `docs/spec-sheets/hoverboard-hacked-firmware-foot-drive.md`
 - Xbox controller / XInput, GIP and Bluetooth HID truth: `docs/spec-sheets/xbox-controller-input.md`
 - ExpressLRS / CRSF truth: `docs/spec-sheets/elrs-crsf-radio.md`
 - Pololu Maestro / Maestro serial truth: `docs/spec-sheets/pololu-maestro-servo-controller.md`
 - DFPlayer Mini / DFPlayer serial truth: `docs/spec-sheets/dfplayer-mini-sound.md`
+- DY-SV5W / DY UART truth: `docs/spec-sheets/dy-sv5w-sound.md`
+- ISDT ESC70 / dome ESC RC PWM truth: `docs/spec-sheets/isdt-esc70-dome-esc.md`
+- SparkFun MP3 Trigger / MP3 Trigger serial truth: `docs/spec-sheets/mp3-trigger-sound.md`
+- CHIRP Audio Trigger / `chirp_ascii_uart` truth: `docs/spec-sheets/chirp-audio-trigger-sound.md`
+- AstroPixels product, AstroPixelsPlus firmware and protoR2link truth:
+  `docs/spec-sheets/astropixels-dome-controller.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`

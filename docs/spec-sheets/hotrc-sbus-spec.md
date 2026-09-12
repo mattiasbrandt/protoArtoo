@@ -1,5 +1,14 @@
 # HOTRC SBUS-A Receiver and DS-650 Transmitter
 
+> [!IMPORTANT]
+> **Superseded by [`hotrc-ds650-radio.md`](hotrc-ds650-radio.md)** (2026-09-12,
+> [#389](https://github.com/mattiasbrandt/protoArtoo/issues/389)). That sheet is
+> the product and profile authority; `AGENTS.md` and `CONTRIBUTING.md` now point
+> at it. Three claims below were contradicted by the T19 bench work and are kept
+> only as a record of what was believed before it: the wire is **~115 kbaud**,
+> not 100; the footer is **`0x04`**, not `0x00`; and CH2 is a trigger that rests
+> at an **endpoint**, not a centring axis.
+
 ## Purpose
 
 This document captures factual protocol and product behavior for the HOTRC SBUS-A receiver when used with HOTRC DS-series transmitters (with DS-650 focus).
