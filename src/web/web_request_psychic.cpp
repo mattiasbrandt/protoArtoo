@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../include/api_not_found.h"
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
@@ -36,6 +37,7 @@
 #include "../../include/web_response_deadline.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
+#include "../../include/web_webp.h"
 
 static const char* TAG = "WebServer";
 
@@ -647,6 +649,23 @@ void initPsychicWebServer() {
     // async stack did. Default file and cache-control are the async settings
     // from web_server.cpp verbatim.
     if (webLittleFsMounted()) {
+        // PsychicHttp's MIME table has no .webp and falls back to text/plain
+        // (PsychicFileResponse.cpp:107-133). The picker photographs live at
+        // /part_<id>.webp; this endpoint claims that shape before serveStatic()
+        // can, and answers image/webp (#316, ADR 0065).
+        s_server.on("/part_*", HTTP_GET,
+                    [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
+                        const String path = vendorReq->path();
+                        if (!webPathIsPartPhoto(path.c_str()) || !LittleFS.exists(path)) {
+                            WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+                            WebRequest req(&ctx);
+                            handleNotFound(req);
+                            return ctx.result;
+                        }
+                        PsychicFileResponse file(vendorResp, LittleFS, path,
+                                                 String(webWebpContentType()));
+                        return file.send();
+                    });
         s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
     } else {
         PA_LOG_WARN(TAG, "LittleFS not mounted; static serving unavailable");

@@ -25,6 +25,14 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ## [Unreleased]
 
+### Added
+- **The picker cards can show the part in your hand.** Every product in the
+  lineup now has a photograph on the FireBeetle 2 — the same dark ground as
+  the rest of the UI, sized to a card, so matching a card to the hardware on
+  the bench is looking at the thing rather than reading a name. Those
+  photographs ride the default asset set only; the Artoo board does not
+  carry them (ADR 0065).
+
 ### Changed
 - **A fix that lands now ships.** Merging to `main` publishes a release on its
   own, instead of waiting for the end of an epic. A bug fix becomes a patch

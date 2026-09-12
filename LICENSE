@@ -41,6 +41,13 @@ over what its author owns, so for the avoidance of doubt:
      repository contains no print files, geometry or other derivatives of
      his work; if you want the droid, support him and get it from him.
 
+  4. PRODUCT PHOTOGRAPHS of third-party hardware (the Component Picker
+     cards under data/asset-sets/default/) are used to identify those
+     products on the operator UI. They remain the copyright of their
+     respective owners or photographers and are not covered by the MIT
+     grant above. Provenance per image is recorded in
+     docs/product-image-provenance.md.
+
 Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This
 is a non-commercial fan project by a hobbyist droid builder, with no
 affiliation with, connection to, or endorsement from Lucasfilm or The Walt

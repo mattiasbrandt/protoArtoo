@@ -3,9 +3,8 @@
 
 ADR 0065 -- only what is SHOWN may differ between boards. A file declares which
 builds carry it by which set directory it sits in, so the fact lives beside the
-file instead of in a list that goes stale. These tests cover the staging rule and
-the declarations, not the pictures: there are none yet, and the mechanism has to
-be a no-op until there are.
+file instead of in a list that goes stale. These tests cover the staging rule, the declarations, and the
+8 KiB per-photograph cap now that the default set carries pictures (#316).
 """
 
 import unittest
@@ -80,19 +79,31 @@ class AssetSetStaging(unittest.TestCase):
         self.assertIn("raise SystemExit", source)
         self.assertIn("custom_asset_set is", source)
 
-    def test_no_set_directory_yet_is_a_no_op(self):
-        """Until the drawings and photographs exist, data/asset-sets/ is absent and
-        the mechanism must change nothing. If this fails because the directory now
-        exists, the assertion below is the one to keep."""
+    def test_both_sets_exist_together(self):
+        """An environment naming a missing set fails the build, so both
+        directories have to be present once either is. Photographs live in
+        default (#316); drawings in legacy are #382's."""
         sets_root = DATA / "asset-sets"
-        if not sets_root.is_dir():
-            self.skipTest("data/asset-sets/ does not exist yet; staging is a no-op")
+        self.assertTrue(sets_root.is_dir(), "data/asset-sets/ must exist")
         present = sorted(d.name for d in sets_root.iterdir() if d.is_dir())
         self.assertEqual(
             present,
             ["default", "legacy"],
             "both sets must exist together: an environment naming a missing set fails the build",
         )
+
+    def test_default_photographs_fit_two_littlefs_blocks(self):
+        """8 KiB is two 4 KiB blocks. 9 KiB would be three (#316, ADR 0065)."""
+        default = DATA / "asset-sets" / "default"
+        photos = sorted(default.glob("part_*.webp"))
+        self.assertGreaterEqual(len(photos), 1)
+        for path in photos:
+            size = path.stat().st_size
+            self.assertLessEqual(
+                size,
+                8192,
+                f"{path.name} is {size} B, over the 8 KiB block-boundary cap",
+            )
 
 
 if __name__ == "__main__":

@@ -457,6 +457,15 @@ the similarities.
 
 ---
 
+### Product photographs
+
+The Component Picker cards on the FireBeetle 2 show a photograph of each
+product in the lineup. Those pictures identify the hardware; they do not
+grant rights in it. Third-party photographs stay with their owners.
+Provenance and licence per image: [`docs/product-image-provenance.md`](docs/product-image-provenance.md).
+
+---
+
 ### Firmware
 
 **Hoverboard Firmware**
