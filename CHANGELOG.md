@@ -66,9 +66,10 @@ the patch releases, whose notes live on their own GitHub Release.
 ### Changed
 - **Your droid keeps ten sequences of your own, not sixteen.** Sixteen
   full-size sequences never fitted on an artoo-esp32: your saved sequences and
-  the web pages share the same flash, and it ran out before the fifteenth. Ten
-  always fit, with room left for the pages to grow, and the FireBeetle keeps the
-  same ten so a droid can do the same things on either board. If you have saved
+  the web pages share the same flash, and the pages had grown until only ten
+  full-size ones fit. The pages now take a third less room, so ten always fit
+  with space to spare, and the FireBeetle keeps the same ten so a droid can do
+  the same things on either board. If you have saved
   more than ten, the controller lists the first ten it finds, so export the
   ones you want to keep before you update.
 
