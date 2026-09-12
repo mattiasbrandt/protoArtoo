@@ -22,7 +22,7 @@
 base_commit: f0b0dbc
 ticket: 211
 domains: [drive, servo, aux, rc]
-row_count: 32
+row_count: 33
 rows:
 - name: aux.action.led-color
   type: action
@@ -752,3 +752,24 @@ rows:
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status. Servo open/close state.
+- name: servo.api.get-outputs
+  type: action
+  registry_api_path: /api/servo/outputs
+  registry_cpp_enum: null
+  registry_cpp_file: src/web/api_config.cpp
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:105 - webRegisterRoute("/api/servo/outputs", kGet, handleServoOutputsGet)
+  - include/api_config.h:127 - void handleServoOutputsGet(WebRequest& req)
+  - src/web/api_config.cpp:1098 - void handleServoOutputsGet(WebRequest& req) {
+  - src/web/api_config.cpp:1104 - configCacheReadServoOutput(i, &row) reads each live row
+  executor_or_core: configCacheReadServoOutput
+  missing_metadata: []
+  notes: "Web-API only, added by #347 for the Parts destination. No Console read path for the rows
+    exists; whether the bench-side view needs one is routed to C1b (#362)."

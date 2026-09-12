@@ -418,10 +418,59 @@ void test_configApply_without_droid_build_params_records_no_edit(void) {
     TEST_ASSERT_FALSE(result.droidBuild.fittedChanged);
 }
 
+// --- Part moves (ADR 0050, #347) ---
+
+// The core records a move for the Commit Step and applies nothing itself: it
+// cannot see where the Part is, so it cannot decide whether the move lands.
+void test_configApply_a_part_move_is_recorded_for_the_commit_step(void) {
+    std::map<std::string, std::string> m = {
+        {"movePart", "doorFL"}, {"movePartFrom", "none"}, {"movePartTo", "ledc:3"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_TRUE(result.changed);
+    TEST_ASSERT_TRUE(result.partMove.requested);
+    TEST_ASSERT_EQUAL_STRING("doorFL", result.partMove.move.part);
+    TEST_ASSERT_FALSE(result.partMove.move.fromOutput);
+    TEST_ASSERT_TRUE(result.partMove.move.toOutput);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, result.partMove.move.toDriver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, result.partMove.move.toChannel);
+    TEST_ASSERT_EQUAL_STRING("[CFG] movePart doorFL to ledc:3", result.applied.lines[0]);
+}
+
+// Without its origin a move cannot say what it takes a Part away from, and an
+// end that is not an Output this driver has is not an end.
+void test_configApply_a_part_move_missing_or_misspelling_an_end_is_refused(void) {
+    const std::map<std::string, std::string> kRefused[] = {
+        {{"movePart", "doorFL"}, {"movePartTo", "ledc:3"}},
+        {{"movePart", "doorFL"}, {"movePartFrom", "none"}},
+        {{"movePartFrom", "none"}, {"movePartTo", "ledc:3"}},
+        {{"movePart", "doorFL"}, {"movePartFrom", "none"}, {"movePartTo", "ledc:2"}},
+        {{"movePart", "doorFL"}, {"movePartFrom", "AUX1"}, {"movePartTo", "none"}},
+        {{"movePart", "banana"}, {"movePartFrom", "none"}, {"movePartTo", "ledc:3"}},
+        {{"movePart", ""}, {"movePartFrom", "none"}, {"movePartTo", "ledc:3"}},
+    };
+    for (const auto& fields : kRefused) {
+        std::map<std::string, std::string> m = fields;
+        ConfigSnapshot snap = makeDefaultSnap();
+        ConfigApplyResult result;
+        configApply(makeSource(&m), &snap, false, &result);
+        TEST_ASSERT_TRUE(result.error.hasError);
+        TEST_ASSERT_FALSE(result.partMove.requested);
+        TEST_ASSERT_EQUAL_STRING("movePart, movePartFrom and movePartTo must be sent together: a "
+                                 "Part this build models, and each end an Output Address or none",
+                                 result.error.message);
+    }
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
+    RUN_TEST(test_configApply_a_part_move_is_recorded_for_the_commit_step);
+    RUN_TEST(test_configApply_a_part_move_missing_or_misspelling_an_end_is_refused);
     RUN_TEST(test_configApply_no_fields_supplied_returns_error);
     RUN_TEST(test_configApply_speedLimitMax_updates_and_logs);
     RUN_TEST(test_configApply_speedLimitMax_out_of_range_rejected);

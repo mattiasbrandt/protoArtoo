@@ -2482,6 +2482,25 @@ entries:
   nvs_key: null
   executor: buildStatusJson
   is_query: false
+- name: servo.api.get-outputs
+  display_name: Get Servo Outputs
+  description: 'Every live Servo Output row and the Parts each one drives (ADR 0041, ADR 0050), as the Output Address token a Part move names. Both projections of the Parts destination read this one answer.
+    Read-only; a Part moves through POST /api/config movePart.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo/outputs
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_config.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+  executor: configCacheReadServoOutput
 - name: aux.action.led-color
   display_name: LED Color
   description: Set AUX LED strip RGB color

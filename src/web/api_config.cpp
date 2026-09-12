@@ -646,6 +646,31 @@ void addServoOutputFields(JsonDocument& doc) {
 }
 
 // -----------------------------------------------------------------------------
+// partMoveRefusal()
+// What a refused Part move says, or nullptr for a move that landed or had
+// nothing to do. Each sentence names the next move: the caller that meets one is
+// a surface whose table has changed since it read it, or one sending an address
+// it did not read.
+// -----------------------------------------------------------------------------
+const char* partMoveRefusal(ServoPartMoveOutcome outcome) {
+    switch (outcome) {
+        case SERVO_PART_MOVED:
+        case SERVO_PART_ALREADY_THERE:
+            return nullptr;
+        case SERVO_PART_NOT_WHERE_STATED:
+            return "that Part is not on the Output movePartFrom names - read the outputs again, "
+                   "then move it";
+        case SERVO_PART_OUTPUT_FULL:
+            return "that Output already drives as many Parts as it can - move one off it first";
+        case SERVO_PART_NO_SUCH_OUTPUT:
+            return "no Output is addressed at movePartTo";
+        case SERVO_PART_NOT_A_PART:
+        default:
+            return "movePart names a Part this build does not model";
+    }
+}
+
+// -----------------------------------------------------------------------------
 // addDroidBuildFields()
 // The Droid Build: which droid a builder says they built, and which Parts are
 // on it (ADR 0047).
@@ -786,6 +811,22 @@ ConfigWriteLock::~ConfigWriteLock() {
 ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
                                          CommandSource source) {
     ConfigCommitOutcome outcome;
+
+    // A Part move goes first, and decides whether anything happens at all.
+    // Whether the Part is where the request says can only be answered against
+    // the live table, and a request that would take a Part off an Output its
+    // sender never read it on must change nothing - not the move, and not the
+    // fields riding beside it (#347). Both callers hold the config write lock
+    // across this call, so no other writer can move the Part between this answer
+    // and the write.
+    if (result.partMove.requested) {
+        outcome.refusal = partMoveRefusal(configCacheMoveServoOutputPart(result.partMove.move));
+        if (outcome.refusal != nullptr) {
+            PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
+                        outcome.refusal);
+            return outcome;
+        }
+    }
 
     for (size_t i = 0; i < result.applied.count; ++i) {
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
@@ -1025,12 +1066,59 @@ void handleConfigPost(WebRequest& req) {
         webSendJsonError(req, 400, result.error.message);
         return;
     }
+    if (commit.refusal != nullptr) {
+        webSendJsonError(req, 409, commit.refusal);
+        return;
+    }
     if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist config");
         return;
     }
 
     sendConfigSnapshot(req, working);
+}
+
+// GET /api/servo/outputs - every live Servo Output row, and the Parts each drives.
+//
+// Both projections of the Parts destination read this one answer, so the
+// part-first table and the output-first table cannot disagree about which
+// Output moves which Part (ADR 0050, #347).
+//
+// Its own route rather than more keys on /api/config, for three reasons: that
+// response is a fixed 3072 B static buffer already sized to its own worst case,
+// and a table of twenty-four rows does not fit beside it; the Parts surface asks
+// for this far more often than a page asks for the whole config; and the
+// output-first table will add columns to every row. A per-request document
+// spends no BSS, which is the scarcest budget on this target
+// (include/api_json_response.h).
+//
+// A row is copied out one at a time. That is 70 B on the web server task's frame
+// per iteration, on Core 0, which is exactly the caller configCacheReadServoOutput()
+// is shaped for; the real-time path asks for values instead.
+void handleServoOutputsGet(WebRequest& req) {
+    JsonDocument doc;
+    JsonArray outputs = doc["outputs"].to<JsonArray>();
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row)) {
+            break;
+        }
+        JsonObject output = outputs.add<JsonObject>();
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+        output["address"] = address;
+        output["name"] = servoOutputAddressName(row.driver, row.channel);
+        JsonArray parts = output["parts"].to<JsonArray>();
+        const uint8_t partCount = servoOutputPartCount(row);
+        for (uint8_t slot = 0; slot < partCount; ++slot) {
+            parts.add(servoOutputPartAt(row, slot));
+        }
+    }
+    // A sanity ceiling, not a buffer. The largest answer the table can give -
+    // twenty-four rows at their longest address holding every Part the catalog
+    // declares between them - is held under it by test_api_config_get.
+    webSendJsonDocument(req, doc, 2560, TAG);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).
