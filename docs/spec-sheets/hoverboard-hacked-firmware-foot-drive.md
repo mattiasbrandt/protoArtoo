@@ -1383,7 +1383,7 @@ distance, and every ROS integration guide turns it on.
 `parseHoverboardFeedbackFrame()` accepts only 18 and 26. A 22-byte frame fails
 the 18-byte check, keeps accumulating into the next frame's bytes, fails the
 26-byte check, resets, and repeats forever. The result is not an error: it is
-`hb_feedbackValid` never becoming true and the Drive page showing "Waiting for
+`driveFeedbackValid` never becoming true and the Drive page showing "Waiting for
 complete drive telemetry..." indefinitely, with a board that is driving
 perfectly.
 
@@ -1462,16 +1462,21 @@ cannot prevent it, since the trigger is the board's own PWM output and the droid
 is deliberately sending zeros. Worth a line in troubleshooting and a sentence in
 whatever builder-facing hoverboard setup guide this sheet eventually feeds.
 
-### 14.8 REPORTED -- `hb_` prefix outlives its subject
+### 14.8 RESOLVED -- `hb_` prefix outlived its subject
 
-`include/robot_state.h:170-180` carries `hb_batteryRaw`, `hb_speedR` and friends,
-and the comment already says the prefix *"is the hoverboard's and outlives it
-here only because..."*. With a backend seam now in place (#339) and two more
-Foot Drive members on the roadmap, `DriveFeedback` is the generic type and these
-fields are its storage. Renaming them is a mechanical change with an API
-consequence (the JSON object is also called `hoverboard`), so it belongs to
-whichever ticket lands the second Foot Drive backend rather than to this one.
-Recorded so that ticket does not have to rediscover it.
+The `hb_batteryRaw`, `hb_speedR` family is renamed to `driveFeedback*`
+(`include/robot_state.h:168-185`), named for the direction rather than for a
+controller, beside the `driveOutput*` fields that carry the other direction.
+It landed with the Status Plate (#346) rather than with the second Foot Drive
+backend this section expected, because that slice needed a staleness rule for
+the mirror (`driveFeedbackIsStale()`) and could not write one against a name
+it was about to change.
+
+**Half of it is still open, on purpose.** The published `/api/status` key is
+still `hoverboard`: it has a consumer (`data/drive.js` `renderHoverboard`) and a
+documented contract (`docs/api.md`), so renaming it is an API change with
+callers to move, not a field rename. That half belongs to whichever ticket lands
+the second Foot Drive backend.
 
 ## 15. Agent Lookup Quick Reference
 
