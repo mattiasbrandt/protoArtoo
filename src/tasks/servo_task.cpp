@@ -45,7 +45,7 @@ static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
 // `seqMoved` marks an output a sequence was the last thing to command, which is
 // what the park below acts on. Any other source commanding the output clears it.
 // -----------------------------------------------------------------------------
-static constexpr uint8_t kArmCount = 5;  // ARM1, ARM2, AUX1-3
+static constexpr uint8_t kArmCount = SERVO_ARM_COUNT;  // ARM1, ARM2, AUX1-3
 
 static struct {
     uint16_t commandedUs;
@@ -133,13 +133,40 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 }
 
 // -----------------------------------------------------------------------------
+// publishCommanded()
+// Tell every surface where this output has been told to be (#362).
+//
+// `nowUs` is the width on the pin. `targetUs` is where the move in progress
+// ends, or `nowUs` again when nothing is moving, so the two marks a surface
+// draws close up exactly when the move does. `pulsing` is `known`: an output
+// only becomes known by this task putting a pulse on it -- the neutral pulse at
+// init, or a write -- and nothing in this firmware takes a pulse away once it
+// has started. Whoever brings Output Release or pulses-off (ADR 0043, ADR 0064)
+// clears it there.
+//
+// Called at every place one of the three changes: a write, a ramp planned, a
+// move abandoned, and init. It is a copy into robotState under robotStateMux,
+// like every robotState write, and allocates nothing.
+// -----------------------------------------------------------------------------
+static void publishCommanded(uint8_t armId) {
+    const ServoCommandedPosition commanded = {
+        s_arm[armId].commandedUs,
+        s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs,
+        s_arm[armId].known,
+    };
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.servoCommanded[armId] = commanded;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// -----------------------------------------------------------------------------
 // writeArmPulse()
 // Put one width on the pin and say so. The width has already been through
 // resolveArmPulse(); this is the write and nothing else.
 //
-// What is written is what robotState then reports, because the target a status
-// reader sees has to be the pulse the pin is actually holding -- part way
-// through a ramp too.
+// What is written is what robotState then reports, because the position a
+// status reader sees has to be the pulse the pin is actually holding -- part
+// way through a ramp too.
 // -----------------------------------------------------------------------------
 static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
     ledcPwmSetPulseWidth(channel, pulseUs);
@@ -152,13 +179,7 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
     // when open is the lower number (ADR 0041). It has gone; anything wanting
     // to say which end this output is at compares the width against the pair on
     // its row, where the direction is recorded.
-    taskENTER_CRITICAL(&robotStateMux);
-    if (armId == 0) {
-        robotState.arm1TargetUs = pulseUs;
-    } else if (armId == 1) {
-        robotState.arm2TargetUs = pulseUs;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
+    publishCommanded(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -223,6 +244,9 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     }
     s_arm[armId].ramp = ramp;
     s_arm[armId].moving = true;
+    // Nothing is written until the next frame, but the move already has a
+    // target, and that is what a surface shows beside where the output stands.
+    publishCommanded(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -257,8 +281,14 @@ static void updateMotion() {
 static void stopAllMoves(const char* reason) {
     bool stopped = false;
     for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        stopped = stopped || s_arm[armId].moving;
+        if (!s_arm[armId].moving) {
+            continue;
+        }
         s_arm[armId].moving = false;
+        stopped = true;
+        // The move is over where it got to, so its target is too: no surface
+        // may go on showing a destination the output will never reach.
+        publishCommanded(armId);
     }
     if (stopped) {
         PA_LOG_INFO(TAG, "Moves stopped where they were - %s", reason);
@@ -471,6 +501,7 @@ void servoTaskInit() {
             if (isArmEnabled(armId)) {
                 s_arm[armId].commandedUs = SERVO_PULSE_NEUTRAL_US;
                 s_arm[armId].known = true;
+                publishCommanded(armId);
             }
         }
 

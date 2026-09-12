@@ -325,8 +325,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     speedLimitMax = cfg.drive.speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     stationary = robotState.stationary;
-    arm1TargetUs = robotState.arm1TargetUs;
-    arm2TargetUs = robotState.arm2TargetUs;
+    // The width on the pin, which is what the "Target" detail below has always
+    // reported; the commanded target of a move in progress is the Parts
+    // table's to show (captureServoOutputCommanded(), #362).
+    arm1TargetUs = robotState.servoCommanded[0].nowUs;
+    arm2TargetUs = robotState.servoCommanded[1].nowUs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
     sbus1LostFrameCount = robotState.sbus1LostFrameCount;

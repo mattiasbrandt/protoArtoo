@@ -513,10 +513,16 @@ curl -s -X POST http://artoo.local/api/servo \
 
 ### GET /api/servo/outputs
 
-Every live Servo Output row, and the Parts each one drives (ADR 0041, ADR 0050).
-Both projections of the Parts destination read this one answer — which Output
-moves a Part, and what an Output moves — so they cannot disagree. Read-only: a
-Part is moved with `movePart` on `POST /api/config`.
+Every live Servo Output row, the Parts each one drives, and where each has been
+told to be (ADR 0041, ADR 0050). Both projections of the Parts destination read
+this one answer — which Output moves a Part, and what an Output moves — so they
+cannot disagree. Read-only: a Part is moved with `movePart` on
+`POST /api/config`.
+
+It is also the Parts page's bench feed: the page reads it once a second while
+Parts is on screen and stops when you leave, so a commanded position reaches the
+output-first table without riding `/api/events`, which carries the estop (#318).
+The Controller Console answers the same rows as `servo.api.get-outputs`.
 
 - Success: `200` JSON:
 - `outputs`: one entry per live row, in table order:
@@ -529,6 +535,17 @@ Part is moved with `movePart` on `POST /api/config`.
   - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
     when it drives nothing. More than one is a ganged lead: every Part listed
     moves when the Output does. A Part appears on at most one Output.
+  - `bandLoUs`, `bandHiUs`: the pulse widths this Output can be driven between,
+    set by the component fitted to it (`1000`..`2000` unless a part that takes
+    more is named). Every commanded width is clamped into this band, so it is
+    the span a position is drawn against.
+  - `commandedUs`: the width the controller has put on the pin right now, part
+    way through a move too. `null` when there is no pulse on the Output at all.
+  - `targetUs`: where the move in progress ends, or the same as `commandedUs`
+    when nothing is moving. `null` with `commandedUs`.
+  - Both widths are **commanded**. Nothing on this droid reads a servo back, so
+    neither is where the horn actually is: a jammed or unpowered servo reports
+    exactly what a free one does.
 - Errors: `500` if the answer could not be built.
 
 #### Example request
@@ -537,14 +554,14 @@ Part is moved with `movePart` on `POST /api/config`.
 curl -s http://artoo.local/api/servo/outputs
 ```
 
-#### Example response (a fresh controller, then one door ganged with an arm)
+#### Example response (a fresh controller with ARM1 and ARM2 switched on, then one door ganged with an arm, part way through opening)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[]},{"address":"ledc:1","name":"ARM2","parts":[]},{"address":"ledc:3","name":"AUX1","parts":[]},{"address":"ledc:4","name":"AUX2","parts":[]},{"address":"ledc:5","name":"AUX3","parts":[]}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"]},{"address":"ledc:1","name":"ARM2","parts":[]},{"address":"ledc:3","name":"AUX1","parts":[]},{"address":"ledc:4","name":"AUX2","parts":[]},{"address":"ledc:5","name":"AUX3","parts":[]}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1620,"targetUs":2000},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null}]}
 ```
 
 ### POST /api/aux-led/color
