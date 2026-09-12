@@ -41,16 +41,17 @@ static const SeqStep kVaderSteps[] = {
 };
 
 // DM:HELLO  --  "Hello There" greeting (4 s).
-// Front and rear logic text, then a six-pulse P1 panel wave.
+// Front and rear logic text, then P1 opens and closes.
+//
+// It used to send :OP01 five times 160 ms apart, commented open / half / open /
+// half / open. :OP is an open, not a pulse, and a panel already opening ignores
+// a second one, so the five made ONE open and never the six-pulse wave this
+// header promised (#287). One open is what it does, so one open is what it says.
 static const SeqStep kHelloSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // happy/greeting clip
     SEQ_DOME(0, FX_NONE, "@1MHello There"),      // front logic text
     SEQ_DOME(0, FX_NONE, "@3MGeneral Kenobi"),
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
-    SEQ_DOME(160, FX_NONE, ":OP01"),     // P1 half
-    SEQ_DOME(320, FX_NONE, ":OP01"),     // P1 open
-    SEQ_DOME(480, FX_NONE, ":OP01"),     // P1 half
-    SEQ_DOME(640, FX_NONE, ":OP01"),     // P1 open
     SEQ_DOME(800, FX_NONE, ":CL01"),      // P1 close
     SEQ_TERM(950),                               // auto :CL00 (close + release)
 };
@@ -611,7 +612,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:VADER",   kVaderSteps,   SEQ_STEPCOUNT(kVaderSteps),   47000, TOGGLE_NONE, nullptr, 0,
       "Imperial March with red MARCH-mode holos, logics, and PSI; auto-resets at the end (47 s)." },
     { "DM:HELLO",   kHelloSteps,   SEQ_STEPCOUNT(kHelloSteps),   4000,  TOGGLE_NONE, nullptr, 0,
-      "\"Hello There\" greeting: front and rear logic text, then a six-pulse P1 panel wave (4 s)." },
+      "\"Hello There\" greeting: front and rear logic text, then P1 opens and closes (4 s)." },
     { "DM:NOD",     kNodSteps,     SEQ_STEPCOUNT(kNodSteps),     3000,  TOGGLE_NONE, nullptr, 0,
       "Short acknowledgment: a sound, logic text, and a P1 panel wave (3 s)." },
     { "DM:FLUTTER", kFlutterSteps, SEQ_STEPCOUNT(kFlutterSteps), 10000, TOGGLE_NONE, nullptr, 0,

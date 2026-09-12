@@ -177,7 +177,7 @@ rc.action.set-map|Set RC Map|Set the RC channel-to-action binding map. Accepts t
 rc.action.test-bindable|Test Bindable Action|Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing|dispatchRcTriggerActionTest|token:string:1
 rc.config.mode|RC Mode|Active RC input mode: standard_pwm, single_sbus, or dual_sbus|configApply|
 dome.seq.vader|DM:VADER — Imperial March|47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.|sequenceStart|
-dome.seq.hello|DM:HELLO — Hello There|4-second greeting: logic text + P1 panel wave. Body-owned flat sequence.|sequenceStart|
+dome.seq.hello|DM:HELLO — Hello There|4-second greeting: logic text, then P1 opens and closes. Body-owned flat sequence.|sequenceStart|
 dome.seq.nod|DM:NOD — Acknowledgment nod|3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence.|sequenceStart|
 dome.seq.flutter|DM:FLUTTER — Panel flutter|4-second ring and pie sweep to 75 percent, then close. Body-owned flat sequence.|sequenceStart|
 dome.seq.bloom|DM:BLOOM — Pie bloom|6-second pie bloom: slow open together, triple wiggle, close. Body-owned flat sequence (linear easing).|sequenceStart|

@@ -552,6 +552,27 @@ void test_real_reset_entry_clears_latches_and_resets() {
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
+// DM:HELLO opens P1 once. It used to send five identical :OP01 160 ms apart,
+// which the dome performs as one open, so the routine claimed a wave it never
+// made (#287, #354).
+void test_real_hello_entry_opens_p1_once() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:HELLO");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+
+    char log[256] = "";
+    drainAt(st, 5000, log, sizeof(log));
+
+    const char* first = strstr(log, ":OP01");
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NULL(strstr(first + 1, ":OP01"));
+    TEST_ASSERT_NOT_NULL(strstr(first, ":CL01"));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
 // -----------------------------------------------------------------------------
 // STEP_LOOP scheduling
 // -----------------------------------------------------------------------------
@@ -1325,6 +1346,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);
+    RUN_TEST(test_real_hello_entry_opens_p1_once);
 
     return UNITY_END();
 }

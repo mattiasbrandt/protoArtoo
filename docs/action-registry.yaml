@@ -3877,7 +3877,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.hello
   display_name: "DM:HELLO \u2014 Hello There"
-  description: '4-second greeting: logic text + P1 panel wave. Body-owned flat sequence.'
+  description: '4-second greeting: logic text, then P1 opens and closes. Body-owned flat sequence.'
   domain: dome
   type: action
   marcduino_cmd: DM:HELLO
