@@ -139,8 +139,12 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     char rep[SEQ_EVID_CMD_LEN];
     actionToString(act, rep, sizeof(rep));
-    const bool isDome = (act.kind == SEQ_ACT_DOME_CMD ||
-                         act.kind == SEQ_ACT_DOME_ROTATE);
+    // Named by what they ARE, not by what they are not: the audio scope used to
+    // be inferred as "anything that is not dome", which made every future
+    // non-dome action kind an audio effect by default.
+    const bool isAudio = (act.kind == SEQ_ACT_AUDIO_DOLLAR ||
+                          act.kind == SEQ_ACT_AUDIO_CATEGORY ||
+                          act.kind == SEQ_ACT_AUDIO_STOP);
 
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
@@ -165,10 +169,14 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
         if (act.kind == SEQ_ACT_DOME_CMD) {
             applyScope(g, rep);
             applyRing(g, rep);
-        } else if (!isDome) {
-            // SEQ_ACT_DOME_ROTATE has no Marcduino payload, no scope/ring tracking.
+        } else if (isAudio) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
+        // SEQ_ACT_DOME_ROTATE has no Marcduino payload, so no scope or ring
+        // tracking. SEQ_ACT_BODY_MOVE sets no scope bit either, and that is the
+        // model rather than a gap: a body step stamps no effect class, so there
+        // is no terminal cleanup for a scope bit to be diffed against
+        // (ADR 0049).
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
 }
