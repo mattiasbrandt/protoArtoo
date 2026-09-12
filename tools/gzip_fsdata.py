@@ -48,6 +48,11 @@ must NOT carry the kernel — eleven copies cost ten filesystem blocks and could
 never execute (#382) — and one that does is refused, so the copies cannot
 creep back.
 
+Minification: .js and .css are minified by esbuild (whitespace and comments
+only, names kept) before gzipping, so the repo keeps its comments and the image
+does not pay for them (#382). A missing esbuild is a hard failure rather than a
+quietly larger image. See MINIFY_LOADERS for why it is esbuild.
+
 A partial resolves in the same order the file staging below does: this
 environment's asset set first, then the common data root. This lets a set
 carry its own partial, and it is why _recovery_kernel.html -- which no set has
@@ -61,6 +66,7 @@ import gzip
 import os
 import re
 import shutil
+import subprocess
 
 Import("env")  # noqa: F821  (PlatformIO injects this)
 
@@ -112,6 +118,42 @@ RECOVERY_KERNEL = "_recovery_kernel.html"
 # hands a direct visit to the Operator Shell. Its <head> never runs otherwise,
 # so a delegate must not carry the kernel (see the module docstring).
 SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
+
+# Minified before gzipping, by esbuild; everything else is staged as written.
+# esbuild parses the source, so it removes whitespace and comments without
+# touching a string. rjsmin, the regex minifier tried first, rewrote the
+# whitespace inside nested template literals in six files -- class="parts-row${`
+# ${x}`}" lost its space and joined two class names -- and every file still
+# passed `node --check`, so a syntax check is not evidence a minifier is safe.
+# Identifiers are never renamed: these are classic scripts sharing globals.
+MINIFY_LOADERS = {".js": "js", ".css": "css"}
+
+
+def _minify(path, text):
+    """Return the file's text minified by esbuild. A missing or failing
+    esbuild fails the build rather than quietly staging a larger image."""
+    esbuild = shutil.which("esbuild")
+    if esbuild is None:
+        raise SystemExit(
+            "[gzip_fsdata] cannot minify %s: esbuild is not on PATH. Install the "
+            "esbuild package (pacman -S esbuild), or run `npm ci` and put "
+            "node_modules/.bin on PATH." % path
+        )
+    loader = MINIFY_LOADERS[os.path.splitext(path)[1].lower()]
+    result = subprocess.run(
+        [esbuild, "--minify-whitespace", "--charset=utf8", "--log-level=warning",
+         "--loader=%s" % loader],
+        input=text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "[gzip_fsdata] esbuild failed on %s (exit %d): %s"
+            % (path, result.returncode, result.stderr.strip())
+        )
+    return result.stdout
 
 
 def _is_partial(filename):
@@ -224,6 +266,7 @@ def main():
     include_roots = [root for root, in_set in roots if in_set] + [src]
 
     gz_count = 0
+    minified_count = 0
     raw_count = 0
     partial_count = 0
     set_count = 0
@@ -250,10 +293,17 @@ def main():
                     set_count += 1
                 if _should_gzip(name):
                     dp = os.path.join(dst_root, name + ".gz")
-                    if os.path.splitext(name)[1].lower() in HTML_EXTS:
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in HTML_EXTS:
                         payload = _expand_includes(sp, include_roots)
                         with gzip.open(dp, "wb", compresslevel=9) as fo:
                             fo.write(payload)
+                    elif ext in MINIFY_LOADERS:
+                        with open(sp, "r", encoding="utf-8") as fi:
+                            payload = _minify(sp, fi.read()).encode("utf-8")
+                        with gzip.open(dp, "wb", compresslevel=9) as fo:
+                            fo.write(payload)
+                        minified_count += 1
                     else:
                         with open(sp, "rb") as fi, gzip.open(dp, "wb", compresslevel=9) as fo:
                             shutil.copyfileobj(fi, fo)
@@ -266,9 +316,9 @@ def main():
 
     env.Replace(PROJECT_DATA_DIR=stage)
     print(
-        "[gzip_fsdata] staged %d gzipped + %d raw files (%d partials inlined, not imaged; "
-        "%d from asset set '%s'): %d KB -> %d KB (image data dir: %s)"
-        % (gz_count, raw_count, partial_count, set_count, set_name,
+        "[gzip_fsdata] staged %d gzipped (%d minified) + %d raw files (%d partials inlined, "
+        "not imaged; %d from asset set '%s'): %d KB -> %d KB (image data dir: %s)"
+        % (gz_count, minified_count, raw_count, partial_count, set_count, set_name,
            src_bytes // 1024, out_bytes // 1024, stage)
     )
 

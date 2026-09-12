@@ -290,5 +290,44 @@ class ShellDelegateKernel(_StagingCase):
         self.assertIn("does not include '_recovery_kernel.html'", str(ctx.exception))
 
 
+class Minification(_StagingCase):
+    """JS and CSS are minified by esbuild without a string changing (#382)."""
+
+    def test_js_is_minified_and_a_nested_template_keeps_its_whitespace(self):
+        # The exact shape rjsmin broke in data/parts.js: whitespace inside a
+        # template literal nested in another one's ${...}.
+        nested = 'const row = (cls) => `<tr class="parts-row${cls ? ` ${cls}` : ""}">`;'
+        (self.src / "a.js").write_text(
+            "// a comment that must not be imaged\n"
+            "/* and a block comment */\n" + nested + "\n",
+            encoding="utf-8",
+        )
+        self._build()
+        staged = self._staged("a.js")
+        self.assertNotIn("comment", staged)
+        self.assertIn("` ${cls}`", staged)
+        self.assertIn('<tr class="parts-row${', staged)
+
+    def test_css_is_minified(self):
+        (self.src / "s.css").write_text(
+            "/* a comment that must not be imaged */\n.a  {\n  color :  red ;\n}\n",
+            encoding="utf-8",
+        )
+        self._build()
+        staged = self._staged("s.css")
+        self.assertNotIn("comment", staged)
+        self.assertIn(".a{color:red}", staged)
+
+    def test_a_missing_esbuild_fails_the_build(self):
+        import os
+        from unittest import mock
+
+        (self.src / "a.js").write_text("var a = 1;\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": self.tmp.name}):
+            with self.assertRaises(SystemExit) as ctx:
+                self._build()
+        self.assertIn("esbuild is not on PATH", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
