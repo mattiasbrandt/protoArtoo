@@ -182,40 +182,6 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
-// readMotionProfile()
-// The part of the Output row behind this channel that a move needs: how far a
-// full throw is, the two profile times, and whether anybody measured the ends.
-// False when no live row is addressed there.
-//
-// This is the one read in ServoTask that holds a whole ServoOutputRow. The cache
-// answers the clamp and the Endpoint Pair by address, as values, but has no
-// such accessor for the Motion Profile, and that accessor would live in the
-// config store this ticket may not touch (#354's fence). So the row is read
-// through configCacheReadServoOutput() -- the existing door -- once per command
-// rather than once per frame, in a frame of its own so the 70 B is gone again
-// before the move is planned.
-// -----------------------------------------------------------------------------
-static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throwMs,
-                              uint16_t* accelMs, bool* calibrated) __attribute__((noinline));
-static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throwMs,
-                              uint16_t* accelMs, bool* calibrated) {
-    const uint8_t count = configCacheServoOutputCount();
-    ServoOutputRow row = {};
-    for (uint8_t i = 0; i < count; ++i) {
-        if (!configCacheReadServoOutput(i, &row) || row.driver != SERVO_DRIVER_LEDC ||
-            row.channel != channel) {
-            continue;
-        }
-        *spanUs = (uint16_t)(servoOutputHighUs(row) - servoOutputLowUs(row));
-        *throwMs = row.throw_ms;
-        *accelMs = row.accel_ms;
-        *calibrated = row.calibrated;
-        return true;
-    }
-    return false;
-}
-
-// -----------------------------------------------------------------------------
 // driveArmTo()
 // Send an arm to a pulse width at the pace its Output's Motion Profile sets.
 //
@@ -224,6 +190,10 @@ static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throw
 // about how long a door takes (ADR 0049, ADR 0052). Where the profile cannot
 // plan a move -- no row, an unmeasured output, no known starting point -- the
 // arm snaps, which is exactly what every move did before the profile existed.
+//
+// The profile arrives as four values, not as the row they sit in: like the
+// clamp and the Endpoint Pair, it is answered by address out of the live table,
+// so no 70 B ServoOutputRow is put on ServoTask's measured chain (ADR 0040).
 // -----------------------------------------------------------------------------
 static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     uint8_t channel = LEDC_CH_MAX;
@@ -237,7 +207,8 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     uint16_t accelMs = 0;
     bool calibrated = false;
     if (!s_arm[armId].known ||
-        !readMotionProfile(channel, &spanUs, &throwMs, &accelMs, &calibrated)) {
+        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
+                                                 &accelMs, &calibrated)) {
         s_arm[armId].moving = false;
         writeArmPulse(armId, channel, targetUs);
         return;

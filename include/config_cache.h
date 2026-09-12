@@ -52,7 +52,7 @@ void configCacheReadWifi(WifiConfig* out);
 bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out);
 uint8_t configCacheServoOutputCount();
 
-// The two questions the servo drive path asks, answered as values rather than
+// The three questions the servo drive path asks, answered as values rather than
 // as a row. There is deliberately no find-me-the-row-by-address accessor: the
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // ADR 0040's checker re-derives from the linked image on every slice, and a
@@ -76,6 +76,15 @@ uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t chan
 // fallback stands.
 bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
                                          uint16_t* openUs, uint16_t* closeUs);
+
+// The part of the Motion Profile a move is planned from (ADR 0052): how far a
+// full throw is -- the span of the Endpoint Pair, whichever way round it was
+// recorded -- how long that throw takes, how long the move spends getting up to
+// speed, and whether anybody measured the ends. False when no live row is
+// addressed there, with the out-params untouched.
+bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
+                                             uint16_t* spanUs, uint16_t* throwMs,
+                                             uint16_t* accelMs, bool* calibrated);
 
 // What is fitted to the output addressed there, and SERVO_COMP_NONE when no
 // live row is addressed there -- "nothing is recorded as fitted here" and "this
