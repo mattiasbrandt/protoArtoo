@@ -825,8 +825,15 @@ constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
 constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7360;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
+// Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
+// consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
+// handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
+// testing an RC :SE binding from the Console starts the body routine through the
+// Sequence Coordinator where it used to queue a ServoCommand. The rule moves the
+// stack one step, 9216 -> 9728, which is heap on this board; declining it on
+// #248's reason (keep 9216, which still covers the chain) is the alternative.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7376;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // rule: 7376 -> 9220 -> 9728
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
 // holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
