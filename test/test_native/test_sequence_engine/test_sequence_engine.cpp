@@ -620,6 +620,29 @@ void test_body_step_defaults_resolve_to_open_over_the_whole_throw() {
     TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_DEFAULT, act.bodyHowFar);
 }
 
+// A Factory-authored body step carries no effect class, and that is the decision
+// rather than an omission (ADR 0049): the engine undoes nothing a body step did,
+// so there is nothing for activeFx to carry into terminal cleanup.
+void test_body_step_carries_no_effect_class() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 100, 0),
+        SEQ_TERM(500),
+    };
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, steps[0].effectClass);
+}
+
+// The accessor is total: a stored shape this build does not model resolves to
+// the default rather than reaching the drive path as a number nobody meant.
+void test_body_step_unmodelled_shape_resolves_to_the_default() {
+    SeqStepParams p = {};
+    p.shape = (uint8_t)BODY_SHAPE_COUNT;  // one past the vocabulary
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    p.shape = 200;
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    // And the default is open: a step that says nothing about its shape opens.
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, (uint8_t)SEQ_BODY_SHAPE_DEFAULT);
+}
+
 // The floor is what stops a how-far meaning "does not move"; it floors rather
 // than refusing, because refusing would be a judgement about intent.
 void test_body_step_how_far_is_floored_not_refused() {
@@ -1265,6 +1288,8 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_body_step_emits_part_shape_and_how_far);
     RUN_TEST(test_body_step_defaults_resolve_to_open_over_the_whole_throw);
+    RUN_TEST(test_body_step_carries_no_effect_class);
+    RUN_TEST(test_body_step_unmodelled_shape_resolves_to_the_default);
     RUN_TEST(test_body_step_how_far_is_floored_not_refused);
     RUN_TEST(test_body_step_flutter_carries_its_duration);
     RUN_TEST(test_body_step_schedules_no_release_on_normal_termination);
