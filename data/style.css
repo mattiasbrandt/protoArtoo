@@ -5411,3 +5411,96 @@ label.sound-search-field {
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+/* ========================================================================
+   Sequence editor: the Rehearsal (#354)
+   Its counts under Protocol Check's verdict, the full list at save and at a
+   clone, and a folded badge beside a run. Amber marks a Rehearsal Warning and a
+   note stays uncoloured; nothing here is red, because nothing here refuses
+   (ADR 0044, #327).
+   ======================================================================== */
+
+.seq-editor-rehearsal {
+  margin: -8px 0 20px;
+}
+
+.seq-rehearsal-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-md);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.seq-rehearsal-count-warning {
+  color: var(--warning);
+}
+
+.seq-rehearsal-report {
+  margin-top: var(--space-sm);
+}
+
+.seq-rehearsal-lead,
+.seq-rehearsal-clear {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.seq-rehearsal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.seq-rehearsal-finding,
+.seq-rehearsal-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-left: 3px solid var(--border);
+  background: var(--surface-alt);
+  font-size: var(--fs-sm);
+}
+
+.seq-rehearsal-finding.seq-rehearsal-warning {
+  border-left-color: var(--warning);
+}
+
+.seq-rehearsal-msg {
+  flex: 1 1 100%;
+  color: var(--text);
+}
+
+.seq-rehearsal-gap .seq-rehearsal-msg,
+.seq-rehearsal-fix {
+  color: var(--text-dim);
+}
+
+.seq-rehearsal-fix {
+  flex: 1 1 auto;
+}
+
+.seq-rehearsal-code {
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+
+.seq-rehearsal-badge {
+  margin-top: var(--space-sm);
+  font-size: var(--fs-sm);
+}
+
+.seq-rehearsal-badge > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.seq-rehearsal-badge-warning > summary {
+  color: var(--warning);
+}

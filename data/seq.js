@@ -329,6 +329,7 @@
           ${shareBtn}
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
+        <div class="seq-card-rehearsal"></div>
       </div>
     `;
   };
@@ -404,6 +405,15 @@
 
     // Render editor with this builtin
     renderEditorView(currentEditingSeq);
+
+    // The clone is where a factory routine's defects pass into a builder's own
+    // work, so the Rehearsal reads the Factory sequence here, as it ships (#287).
+    showRehearsalReport(
+      `What the Rehearsal found in ${full.name} as it ships:`,
+      "info",
+      full,
+      "list"
+    );
   };
 
   // =========================================================================
@@ -1367,6 +1377,10 @@
           <!-- Populated by updateValidationSummary() -->
         </div>
 
+        <div class="seq-editor-rehearsal" id="seq-editor-rehearsal" aria-live="polite" aria-label="Rehearsal">
+          <!-- Populated by updateValidationSummary() -->
+        </div>
+
         <div class="seq-editor-steps">
           <h4>Sequence Behavior (${seq.steps.length} Steps)</h4>
           <p class="seq-editor-steps-helper">All steps are collapsed. Click to expand for editing.</p>
@@ -1421,6 +1435,15 @@
     // Disable save button if invalid
     const saveBtn = document.getElementById("seq-editor-save");
     if (saveBtn) saveBtn.disabled = !validation.ok;
+
+    // The Rehearsal's counts sit beside Protocol Check's verdict and never feed
+    // it: the save button above answers to Protocol Check alone (ADR 0044).
+    const rehearsalEl = document.getElementById("seq-editor-rehearsal");
+    if (rehearsalEl && window.SeqRehearsal) {
+      rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(
+        window.SeqRehearsal.rehearse(editorState.current)
+      );
+    }
   };
 
   const validateAndUpdateStep = (stepIdx) => {
@@ -2387,6 +2410,20 @@
     feedbackEl.classList.remove("hidden");
   };
 
+  // A line of feedback with the Rehearsal's report under it: the full list, or
+  // the folded badge a run gets. It is only ever shown after the thing it reports
+  // on has happened -- a save, a clone, a run -- so nothing it finds can stand in
+  // that thing's way (#287 specific 6).
+  const showRehearsalReport = (message, kind, seq, form) => {
+    const feedbackEl = document.getElementById("seq-editor-feedback");
+    if (!feedbackEl) return;
+    const rehearsal = window.SeqRehearsal;
+    const report = rehearsal ? rehearsal.rehearse(seq) : null;
+    const body = !report ? "" : form === "badge" ? rehearsal.badgeHtml(report) : rehearsal.listHtml(report);
+    feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>${body}`;
+    feedbackEl.classList.remove("hidden");
+  };
+
   const handleSave = async () => {
     const validation = SeqProtocolCheck.validateSequence(editorState.current);
     if (!validation.ok) {
@@ -2402,7 +2439,7 @@
     showEditorFeedback("Saving...", "info");
     try {
       await PAApi.postJson("/api/seq", editorState.current);
-      showEditorFeedback("Saved.", "ok");
+      showRehearsalReport("Saved.", "ok", editorState.current, "list");
       editorState.isNew = false;
       editorState.tuningFactory = null;
       editorState.original = JSON.parse(JSON.stringify(editorState.current));
@@ -2422,7 +2459,9 @@
     showEditorFeedback(`Sending ${window.PAUtils.escapeHtml(seqName)} to droid...`, "info");
     try {
       await PAApi.postJson("/api/seq/test", { name: seqName });
-      showEditorFeedback(`${window.PAUtils.escapeHtml(seqName)} dispatched.`, "ok");
+      // The droid ran what is saved under that name, not the edits on screen,
+      // so the badge rehearses the last saved or cloned copy.
+      showRehearsalReport(`${seqName} dispatched.`, "ok", editorState.original, "badge");
     } catch (error) {
       showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
     } finally {
@@ -2492,6 +2531,23 @@
         feedbackEl.textContent = PAApi.messageFor(error);
         feedbackEl.className = "seq-card-test-feedback feedback error";
       }
+      return;
+    }
+    await showCardRehearsal(seqName, cardEl);
+  };
+
+  // The badge beside a run from the list. The card holds no steps, so the
+  // sequence is read back once the run is already on its way; a read that fails
+  // says so on the card rather than leaving an empty space that looks like an
+  // all-clear.
+  const showCardRehearsal = async (seqName, cardEl) => {
+    const badgeEl = cardEl?.querySelector(".seq-card-rehearsal");
+    if (!badgeEl || !window.SeqRehearsal) return;
+    try {
+      const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
+      badgeEl.innerHTML = window.SeqRehearsal.badgeHtml(window.SeqRehearsal.rehearse(result.data));
+    } catch (error) {
+      badgeEl.textContent = `Could not read ${seqName} back to rehearse it: ${PAApi.messageFor(error)}`;
     }
   };
 
@@ -2814,6 +2870,7 @@
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/seq_protocol_check.js": "sequence protocol",
+      "/seq_rehearsal.js": "sequence rehearsal",
       "/seq.js": "sequence editor",
       "/footer.js": "page footer",
     });
