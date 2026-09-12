@@ -533,8 +533,11 @@ void test_real_reset_entry_clears_latches_and_resets() {
     // no action, so it is absent from the log but still clears the latches.
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(11, drainAt(st, 5000, log, sizeof(log)));
+    // The sound ends with a Track Stop, never `$s`, which would also turn idle
+    // chatter off until reboot (ADR 0010, #354).
     TEST_ASSERT_EQUAL_STRING(
-        "$s|:CL01|:CL02|:CL03|:CL04|:CL07|:CL11|:CL13|*ST00|@0T1|@0P1", log);
+        "<stop>|:CL01|:CL02|:CL03|:CL04|:CL07|:CL11|:CL13|*ST00|@0T1|@0P1", log);
+    TEST_ASSERT_NULL(strstr(log, "$s"));
 
     // Safety invariant: no group close and no pie command anywhere in the stream.
     TEST_ASSERT_NULL(strstr(log, ":CL00"));

@@ -213,8 +213,13 @@ static const SeqStep kHeartSteps[] = {
 // The closes are unconditional physical assurance: DM:RESET seats the ring
 // regardless of what this sequence opened, so the closes set the per-run net-open
 // mask to 0 and the terminal cleanup emits no further panel commands.
+//
+// The sound is ended with a Track Stop, not `$s`. `$s` is the mood system's
+// Quiet: it stops playback AND turns idle chatter off until the droid reboots,
+// so a reset that sent it left the droid permanently muted -- the defect
+// DM:ROCKMARCH shipped and ADR 0010 fixed there (#287, #354).
 static const SeqStep kResetSteps[] = {
-    SEQ_AUDIO(0, "$s"),                          // stop playback
+    SEQ_AUDIO_STOP(0),                           // stop playback, keep idle chatter
     SEQ_DOME(0,    FX_NONE, ":CL01"),            // staggered ring closes, ~450 ms
     SEQ_DOME(450,  FX_NONE, ":CL02"),            // apart (brownout-safe; never a
     SEQ_DOME(900,  FX_NONE, ":CL03"),            // group close, never a pie close)
