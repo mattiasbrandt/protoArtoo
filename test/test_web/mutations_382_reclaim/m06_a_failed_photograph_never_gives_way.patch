@@ -1,0 +1,11 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -472,7 +472,6 @@
+ 
+     boardImage.onerror = () => {
+       // Board has no photo yet; show placeholder with board name
+-      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
+     };
+ 
+     // Set alt and title before setting src

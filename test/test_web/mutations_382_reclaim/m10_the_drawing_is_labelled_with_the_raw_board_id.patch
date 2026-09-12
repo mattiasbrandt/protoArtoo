@@ -1,0 +1,12 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -458,7 +458,7 @@
+       // Drawn from the page's own sprite: nothing is fetched, so the
+       // deferred-asset gate below has nothing to hold back.
+       boardArtUse.setAttribute("href", `#art-${productId}`);
+-      boardArt.setAttribute("aria-label", `${boardLabel} PCB`);
++      boardArt.setAttribute("aria-label", `${boardId} PCB`);
+       showBoardArt();
+       return;
+     }
