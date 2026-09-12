@@ -198,7 +198,6 @@ const groupsIn = (document) =>
     label: el.querySelector(".nav-group-label")?.textContent.trim(),
     hint: el.querySelector(".nav-group-hint")?.textContent.trim(),
     members: el.querySelectorAll("[data-surface-link]").map((link) => link.dataset.surfaceLink),
-    names: el.querySelectorAll("[data-surface-link]").map((link) => link.textContent.trim()),
     current: el.classList.contains("is-current"),
   }));
 
@@ -252,9 +251,9 @@ test("a member row naming a surface this build does not have draws nothing at al
 });
 
 test("a group with nothing left to offer draws nothing, rather than an empty heading", async () => {
-  // What Configure looked like before this build had Setup and Servos, and
-  // what Maintain looks like with WiFi and Firmware taken away: every member
-  // row dormant.
+  // Maintain with WiFi and Firmware struck out: every one of its member rows
+  // dormant, which is the state Configure would be in today were Setup and
+  // Servos not in it.
   const env = await boot({ shellSource: shellWithout(["wifi", "firmware"]) });
   assert.deepEqual(
     groupsIn(env.document).map((group) => group.id),
