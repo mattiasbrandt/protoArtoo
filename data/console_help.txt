@@ -111,7 +111,7 @@ servo.action.toggle-aux1|AUX1 Toggle|Toggle the aux 1 servo between open and clo
 servo.action.toggle-aux2|AUX2 Toggle|Toggle the aux 2 servo between open and closed|servoCmdQueue|
 servo.action.toggle-aux3|AUX3 Toggle|Toggle the aux 3 servo between open and closed|servoCmdQueue|
 servo.status.current|Servo Status|Current position and state of all servo channels|buildStatusJson|
-servo.api.get-outputs|Get Servo Outputs|Every live Servo Output row and the Parts each one drives (ADR 0041, ADR 0050), as the Output Address token a Part move names. Both projections of the Parts destination read this one answer. Read-only; a Part moves through POST /api/config movePart.\n|configCacheReadServoOutput|
+servo.api.get-outputs|Get Servo Outputs|Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, and the commanded width now and at the end of the move in progress. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer. Read-only; a Part moves through POST /api/config movePart.\n|configCacheReadServoOutput|
 aux.action.led-color|LED Color|Set AUX LED strip RGB color|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
 aux.action.led-effect|LED Effect|Set AUX LED strip effect mode|auxLedQueue|effect:string:1
 aux.status.led-state|AUX LED State|Current AUX LED pin selection, color, and effect|buildStatusJson|

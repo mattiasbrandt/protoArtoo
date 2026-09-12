@@ -2484,12 +2484,12 @@ entries:
   is_query: false
 - name: servo.api.get-outputs
   display_name: Get Servo Outputs
-  description: 'Every live Servo Output row and the Parts each one drives (ADR 0041, ADR 0050), as the Output Address token a Part move names. Both projections of the Parts destination read this one answer.
+  description: 'Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, and the commanded width now and at the end of the move in progress. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer.
     Read-only; a Part moves through POST /api/config movePart.
 
     '
   domain: servo
-  type: action
+  type: status
   marcduino_cmd: null
   api_path: /api/servo/outputs
   sse_event: null
@@ -2499,15 +2499,20 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
-  # Answers executor-not-ready on the Console, on purpose (#347): the rows have
-  # no Console record shape yet, and REST is the one way to read them. Whether
-  # the bench side needs a Console read path - the Wave 0 checkpoint found no
-  # route to an endpoint value at all - is routed to C1b (#362), which owns the
-  # output-first view. Recorded in consoleExecuteCommand()'s dispatch-site
-  # comment and pinned by test_the_executor_not_ready_set_is_exactly_the_
-  # recorded_rows.
   nvs_key: null
+  # #362: item-indexed over the live Servo Output rows - one item per row, keyed
+  # by the REST answer's own JSON names, `-` for an absent value - the same
+  # no-fields:/is_query:-true shape system.api.get-components uses for an answer
+  # that is a sequence of item records. SERVO_OUTPUT_ROW_MAX bounds it by
+  # construction, so no paging protocol is needed. It answered
+  # executor-not-ready until #362 (#347 left the record shape open): the bench
+  # side needs it, because on a FireBeetle 2 with no WiFi the Console is the
+  # only route to what each output drives and where it stands. The Console
+  # executor, consoleExecuteServoApiGetOutputs(), reads the rows and the
+  # commanded position through the same two functions handleServoOutputsGet()
+  # does, so the adapters cannot disagree.
   executor: configCacheReadServoOutput
+  is_query: true
 - name: aux.action.led-color
   display_name: LED Color
   description: Set AUX LED strip RGB color

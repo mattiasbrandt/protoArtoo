@@ -168,8 +168,8 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-196 count): action 121, config 36,
-// event 15, status 24. Config was 35 before #225 added
+// test_console_catalog.cpp's exact-196 count): action 120, config 36,
+// event 15, status 25. Config was 35 before #225 added
 // system.config.log-level, and 34 before #227 added wifi.config.settings.
 // Action was 128 and status 14 before #221's remainder reclassified
 // dome.api.get-sequence-last-run/-list-sequences/-list-builtin-sequences
@@ -181,7 +181,9 @@ void tearDown() {}
 // rc.api.get-bindable-actions across for the same reason, taking action to
 // 119 and status to 23; #243 added system.action.reboot-wifi-module,
 // taking action to 120; #340 added system.api.get-components, taking status
-// to 24; #347 added servo.api.get-outputs, taking action to 121.
+// to 24; #347 added servo.api.get-outputs, taking action to 121; #362 moved
+// servo.api.get-outputs across to status when it gained a Console record
+// shape, taking action back to 120 and status to 25.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -190,8 +192,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(121, g_itemCount,
-        "operations type=action must list exactly the 121 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(120, g_itemCount,
+        "operations type=action must list exactly the 120 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");

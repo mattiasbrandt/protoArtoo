@@ -1255,6 +1255,80 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
     }
 }
 
+// servo.api.get-outputs (#362): the rows GET /api/servo/outputs answers, one
+// item per live Servo Output - what it drives, the band its widths are clamped
+// into, and where it has been told to be. This is the bench side's read: on a
+// FireBeetle 2 whose WiFi is not up the Console is the only route to the rows,
+// and before it existed a builder there could not see their wiring at all.
+//
+// Read through the two functions the REST handler reads through -
+// configCacheReadServoOutput() for the row, captureServoOutputCommanded() for
+// the position - so the adapters cannot disagree about an Output (ADR 0036).
+// The keys are the REST answer's JSON names, and `-` is the absent value, as in
+// system.api.get-components: no name, no Part, no pulse. Both widths are
+// commanded; nothing on the droid reads a servo back.
+//
+// A row (70 B) and one line on the Console task's measured chain. The longest
+// line is 139 B - an expander's address, four Parts at the longest id and four
+// four-digit widths - against 192, and snprintf truncates in silence, so the
+// margin is the guard.
+static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRecordSink* sink) {
+    if (sink->onRecordItem) {
+        char itemBuf[192];
+        const uint8_t count = configCacheServoOutputCount();
+        for (uint8_t i = 0; i < count; ++i) {
+            ServoOutputRow row = {};
+            if (!configCacheReadServoOutput(i, &row)) {
+                break;
+            }
+
+            char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+            servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+            const char* name = servoOutputAddressName(row.driver, row.channel);
+
+            // Every Part the Output drives, not the first: a ganged lead names
+            // all of them (ADR 0050).
+            char parts[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1) + 1] = {};
+            size_t used = 0;
+            const uint8_t partCount = servoOutputPartCount(row);
+            for (uint8_t slot = 0; slot < partCount; ++slot) {
+                const int wrote = snprintf(parts + used, sizeof(parts) - used, "%s%s",
+                                           slot == 0 ? "" : ",", servoOutputPartAt(row, slot));
+                if (wrote < 0 || (size_t)wrote >= sizeof(parts) - used) {
+                    break;
+                }
+                used += (size_t)wrote;
+            }
+
+            const ServoPulseBand band = servoComponentBand(row.component);
+            ServoOutputCommandedSnapshot commanded = {};
+            captureServoOutputCommanded(row.driver, row.channel, &commanded);
+
+            const int head = snprintf(itemBuf, sizeof(itemBuf),
+                                      "address:%s name:%s parts:%s bandLoUs:%u bandHiUs:%u ",
+                                      address, name[0] != '\0' ? name : "-",
+                                      used > 0 ? parts : "-", (unsigned)band.lo,
+                                      (unsigned)band.hi);
+            if (head > 0 && (size_t)head < sizeof(itemBuf)) {
+                if (commanded.pulsing) {
+                    snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
+                             "commandedUs:%u targetUs:%u", (unsigned)commanded.nowUs,
+                             (unsigned)commanded.targetUs);
+                } else {
+                    snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
+                             "commandedUs:- targetUs:-");
+                }
+            }
+            sink->onRecordItem(requestId, itemBuf);
+        }
+    }
+
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
+                          CONSOLE_REASON_NONE);
+    }
+}
+
 // =============================================================================
 // Status executor dispatch table (#223)
 //
@@ -1289,6 +1363,7 @@ static const ConsoleStatusExecutorEntry g_statusExecutors[] = {
     {"system.api.get-components", consoleExecuteSystemApiGetComponents},
     {"system.api.get-validation", consoleExecuteSystemApiGetValidation},
     {"rc.api.get-bindable-actions", consoleExecuteRcApiGetBindableActions},
+    {"servo.api.get-outputs", consoleExecuteServoApiGetOutputs},
 #if PA_HEAP_PROFILE
     {"system.api.get-profiler", consoleExecuteSystemApiGetProfiler},
 #endif
@@ -3480,14 +3555,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a motion
-            // target #222 owns, or one of the thirteen rows below.
+            // target #222 owns, or one of the twelve rows below.
             //
             // EVERY action row that still answers EXECUTOR_NOT_READY lands
             // here on purpose, and each one has a recorded reason on its own
-            // docs/action-registry.yaml entry (#221). They are thirteen, in
-            // four groups; test_the_executor_not_ready_set_is_exactly_the_
+            // docs/action-registry.yaml entry (#221). They are twelve, in
+            // three groups; test_the_executor_not_ready_set_is_exactly_the_
             // recorded_rows (test/test_native/test_console_module) names them
-            // and fails if a fourteenth appears, so a new unwired row cannot
+            // and fails if a thirteenth appears, so a new unwired row cannot
             // join this set silently.
             //
             // 1. #206's document/bulk-transfer exclusion - the transfer IS the
@@ -3509,12 +3584,12 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // 3. Not an operation at all:
             //      system.console  is the browser Console Adapter itself
             //                      (POST /api/console, ADR 0036)
-            // 4. A read with no Console record shape yet, decided elsewhere:
-            //      servo.api.get-outputs  configCacheReadServoOutput() - every
-            //                             Servo Output row and the Parts it
-            //                             drives, for the Parts page (#347).
-            //                             Whether the bench side needs it on
-            //                             the Console is C1b's (#362).
+            //
+            // servo.api.get-outputs was a fourth group - a read with no Console
+            // record shape yet (#347) - until #362 gave it one: it is a status
+            // row now, answered by consoleExecuteServoApiGetOutputs() through
+            // g_statusExecutors[], because the bench side needs the rows where
+            // there is no WiFi.
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion
