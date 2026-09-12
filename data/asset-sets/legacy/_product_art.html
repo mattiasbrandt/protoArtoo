@@ -26,7 +26,11 @@
   by test/test_tools/test_product_art.py, which fails when a product has no
   drawing or a drawing names no product.
 -->
-<svg class="product-art-sprite" xmlns="http://www.w3.org/2000/svg" hidden aria-hidden="true">
+<!-- Sized to nothing rather than marked hidden: `hidden` is an HTML attribute
+     and the user-agent rule behind it does not reach an SVG element, which
+     would otherwise take its default 300x150 of the page. display:none is
+     avoided too, since it can stop referenced content rendering through <use>. -->
+<svg class="product-art-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
   <defs>
     <!-- Shared marks. A drawing is stroke-only on currentColor; the few solid
          marks (pins, LEDs, sockets) are the same currentColor at low opacity,
