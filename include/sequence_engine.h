@@ -129,6 +129,19 @@ enum SeqBodyShape : uint8_t {
 
 constexpr SeqBodyShape SEQ_BODY_SHAPE_DEFAULT = BODY_SHAPE_OPEN;
 
+// The stored token's spelling, beside the enum it spells, so the wire codec and
+// the run record read the same three words instead of each keeping a table.
+// The wire direction loops over this one rather than repeating the words
+// (seq_json.cpp), the way the audio category labels already do.
+inline const char* seqBodyShapeToString(uint8_t shape) {
+    switch (shape) {
+        case BODY_SHAPE_CLOSE:   return "close";
+        case BODY_SHAPE_FLUTTER: return "flutter";
+        case BODY_SHAPE_OPEN:
+        default:                 return "open";
+    }
+}
+
 // How far a Body Step moves its Part, as a percentage of that Part's OWN throw
 // (the Endpoint Pair recorded on the Output that drives it), so the same step
 // means the same gesture on a different linkage and a recalibration changes the
@@ -171,9 +184,14 @@ struct SeqStepParams {
                                  // init zero-fills trailing members).
     // BODY (STEP_BODY), appended last for the same reason audioBounded was, and
     // the rule is the same for whoever comes next: a new member goes on the END
-    // of this struct. A sequence saved by a prior build carries no body step at
-    // all, so it loads unchanged; a Factory catalog macro that stops short of
-    // these three zero-fills them, which is exactly the default each one means.
+    // of this struct, so every positional initializer that already exists keeps
+    // meaning what it meant. A sequence saved by a prior build carries no body
+    // step at all, so it loads unchanged.
+    //
+    // Appending is two edits, not one: the catalog macros below name every
+    // member explicitly because the firmware targets build with
+    // -Werror=missing-field-initializers, so a list that stops short is a build
+    // failure rather than a trailing zero-fill.
     uint8_t  shape;             // BODY: SeqBodyShape. Read through seqBodyShape()
     uint8_t  howFar;            // BODY: 0..100 pct of that Part's own throw,
                                  // SEQ_BODY_HOWFAR_UNSET when the wire said nothing.
@@ -228,29 +246,35 @@ struct SeqStep {
 // -----------------------------------------------------------------------------
 // Catalog authoring macros  --  keep the positional SeqStepParams ordering in one
 // place. The firmware toolchain cannot rely on C++20 designated initializers.
-// The non-body lists stop at audioBounded (ADR 0010) and let aggregate init
-// zero-fill the body members after it; SEQ_BODY is the one that names them, and
-// it stops at flutterMs the same way. Factory catalog entries ignore
-// audioBounded and set effectClass directly via SEQ_AUDIO_FX.
+//
+// Every explicit initializer list below names EVERY member, trailing ones as 0.
+// That is not belt-and-braces: the firmware targets build with
+// -Werror=missing-field-initializers, so a list that stops short of the last
+// member is a build failure rather than a zero-fill. Appending a member is
+// therefore two edits -- the struct, and one 0 on each of these lists.
+// Factory catalog entries ignore audioBounded and set effectClass directly via
+// SEQ_AUDIO_FX.
 // -----------------------------------------------------------------------------
 #define SEQ_DOME(t, fx, cmd)  { (t), STEP_DOME_CMD, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO(t, cmd)     { (t), STEP_AUDIO, FX_NONE, cmd, {} }
 #define SEQ_AUDIO_FX(t, fx, cmd) { (t), STEP_AUDIO, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
-      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0 } }
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0, 0, 0, 0 } }
 #define SEQ_DOME_ROTATE(t, speed, dur) \
     { (t), STEP_DOME_ROTATE, FX_NONE, "", \
-      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0 } }
+      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0, 0, 0, 0 } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
-      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
+      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 #define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
-      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0 } }
+      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0, \
+        0, 0, 0 } }
 // A Body Step. `part` is a Droid Parts Catalog id ("doorFL"), `shape` a
 // SeqBodyShape, `howFar` a percentage of that Part's own throw (0 for the whole
 // throw), `flutter` how long a flutter goes on (0 on every other shape).
+// The thirteen leading zeros are the members every other step type uses.
 // FX_NONE is the decision, not an omission: the engine undoes nothing a body
 // step did, so there is no effect class for terminal cleanup to act on
 // (ADR 0049).
