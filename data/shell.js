@@ -1078,6 +1078,46 @@
     });
   };
 
+  // Which refused control a press landed on -- and it takes two tries, because
+  // a refused button is not merely inert to clicks, it is invisible to hit
+  // testing: data/style.css puts `pointer-events: none` on `.btn:disabled` and
+  // `.btn[aria-disabled="true"]`, so the press lands on whatever is behind the
+  // control and event.target names the container instead of the button.
+  //
+  // Measured in a browser on the shipped stylesheet, which is the only place
+  // it is visible: a bare disabled button in a page with no CSS does receive
+  // pointerdown on itself, so a probe without this stylesheet says the first
+  // branch below is all that is needed, and it is not.
+  //
+  // First branch: the target itself, for a refused thing that is still
+  // hit-testable -- an aria-disabled row is an ordinary element and keeps its
+  // pointer events (data/rc.js's action list is one).
+  //
+  // Second branch: the refused control whose box holds the pointer, searched
+  // inside the element the press did land on. That element is the nearest
+  // hit-testable ancestor, so the control is one of its descendants.
+  const refusedAt = (event) => {
+    const target = event.target;
+    if (!target?.closest) return null;
+    const hit = target.closest('[aria-disabled="true"]');
+    if (hit) return hit;
+    const { clientX, clientY } = event;
+    if (typeof clientX !== "number" || typeof clientY !== "number") return null;
+    const candidates = target.querySelectorAll?.('[aria-disabled="true"]') || [];
+    return (
+      Array.from(candidates).find((candidate) => {
+        const box = candidate.getBoundingClientRect?.();
+        return (
+          box &&
+          clientX >= box.left &&
+          clientX <= box.right &&
+          clientY >= box.top &&
+          clientY <= box.bottom
+        );
+      }) || null
+    );
+  };
+
   if (noticeNode) {
     document.addEventListener(
       "pointerdown",
@@ -1088,7 +1128,7 @@
         // aria-disabled rather than the `disabled` property: gateControls()
         // sets both, and the attribute is the one a container can carry for a
         // control that is not a form element.
-        const refused = event.target?.closest?.('[aria-disabled="true"]');
+        const refused = refusedAt(event);
         if (!refused) return;
         // Except when it means BUSY rather than off. The Dashboard marks a
         // control aria-disabled while its request is in flight -- the sleep

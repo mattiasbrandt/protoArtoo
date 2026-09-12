@@ -2489,6 +2489,17 @@ body[data-page="servo"] .input-narrow {
    reconnect is already running. */
 .status-plate-region {
   margin-top: var(--space-lg);
+  /* Above the Dashboard's sleep overlay, for the same reason the estop is
+     (#330): the overlay is a full-viewport fixed scrim that takes pointer
+     events, and a posture the droid is in must not hide the chrome that
+     reports it. Measured in a browser before this rule existed --
+     elementFromPoint over the first chip returned the overlay, so an operator
+     looking at a sleeping droid could neither read the SLEEP chip that says
+     why nor press the ESTOP cell. The Page Recovery View and the Sequences
+     modal still sit higher and do cover it; both are modal dialogs, and that
+     is not this plate's decision to take. */
+  position: relative;
+  z-index: 1300;
 }
 
 .status-plate {
@@ -2505,9 +2516,6 @@ body[data-page="servo"] .input-narrow {
     inset 0 -1px 0 color-mix(in srgb, var(--lift) 4%, transparent);
 }
 
-.status-plate > * + * {
-  border-left: 1px solid var(--border);
-}
 
 .status-chip {
   display: flex;
@@ -2554,6 +2562,25 @@ body[data-page="servo"] .input-narrow {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The separator, on the LEFT edge of every cell after the first, so a cell
+   that is ever hidden takes its rule with it and no JavaScript ever touches a
+   separator. Two things about how it is written:
+
+   The region class is in front of it to outrank .status-chip's own
+   `border: none` reset, which sits at the same specificity further down this
+   file. The reference writes the same rule as `#hdrBezel > * + *` and outranks
+   its `.chip` rule on an id; ours has no id to spend, and written the
+   reference's way the rule loses and the plate draws as one undivided strip --
+   measured in a browser, because a cascade loss is invisible to a test with no
+   CSS engine.
+
+   `* + *` rather than `.status-chip + .status-chip` on purpose: the rule is
+   about being a cell of this plate, so a cell that is one day not a chip is
+   still divided from its neighbour. */
+.status-plate-region .status-plate > * + * {
+  border-left: 1px solid var(--border);
 }
 
 /* Doing its job. */

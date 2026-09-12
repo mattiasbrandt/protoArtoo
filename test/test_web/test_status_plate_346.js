@@ -899,3 +899,94 @@ test("a control that is merely waiting for the droid is not a control that is of
   pointer(env, pending).down();
   assert.equal(noticeShown(env), false, "busy is not off");
 });
+
+// The stylesheet read the way a browser stacks it: rules flattened, the last
+// declaration for a property winning, so this asserts the painted order rather
+// than the presence of a string. Same shape as the estop's own stacking test.
+const zIndexOf = (selector) => {
+  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  let value = null;
+  const rule = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rule.exec(css)) !== null) {
+    if (!match[1].split(",").map((part) => part.trim()).includes(selector)) continue;
+    const declared = /(?:^|;)\s*z-index\s*:\s*([^;]+)/.exec(match[2]);
+    if (declared) value = Number(declared[1].trim());
+  }
+  return value;
+};
+
+test("the sleep overlay does not paint over the plate that says the droid is asleep", () => {
+  // Measured in a browser before the rule existed: elementFromPoint over the
+  // first chip returned the overlay, so an operator looking at a sleeping
+  // droid could neither read the SLEEP chip that says why nor press ESTOP.
+  const plate = zIndexOf(".status-plate-region");
+  const overlay = zIndexOf(".sleep-overlay");
+
+  assert.ok(Number.isFinite(overlay), "the sleep overlay stacks explicitly");
+  assert.ok(Number.isFinite(plate), "and so must the plate, or the overlay covers it");
+  assert.ok(
+    plate >= overlay,
+    `the plate (${plate}) must stack at or above the sleep overlay (${overlay}) -- a posture the`
+      + " droid is in must not hide the chrome that reports it (#330)",
+  );
+});
+
+test("the plate's separators survive the chip's own border reset", () => {
+  // A cascade loss is invisible to a test with no CSS engine, and this one
+  // happened: written the reference's way the separator rule sits at the same
+  // specificity as .status-chip's `border: none` and further up the file, so
+  // the plate drew as one undivided strip. Measured at 1px per cell in a
+  // browser after the fix; asserted here on the two things that made it lose.
+  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const specificity = (selector) => (selector.match(/[.#[]/g) || []).length;
+
+  const rule = /([^{}]+)\{([^{}]*)\}/g;
+  let separator = null;
+  let reset = null;
+  let order = 0;
+  let match;
+  while ((match = rule.exec(css)) !== null) {
+    const selector = match[1].trim().replace(/\s+/g, " ");
+    order += 1;
+    if (/\+ \*$/.test(selector) && /border-left/.test(match[2])) separator = { selector, order };
+    if (selector === ".status-chip" && /(?:^|;)\s*border\s*:/.test(match[2])) reset = { selector, order };
+  }
+
+  assert.ok(separator, "the plate declares a separator on every cell after the first");
+  assert.ok(reset, "and the chip resets its border, which is what the separator has to survive");
+  assert.ok(
+    specificity(separator.selector) > specificity(reset.selector) || separator.order > reset.order,
+    `the separator (${separator.selector}, rule ${separator.order}) must outrank or follow`
+      + ` ${reset.selector} (rule ${reset.order}), or no separator is drawn`,
+  );
+});
+
+test("a press on a refused control the browser hides from hit testing is still heard", async () => {
+  // data/style.css puts `pointer-events: none` on a disabled .btn, so the
+  // browser delivers the press to the CONTAINER and event.target never names
+  // the control. Measured on the shipped stylesheet: pressing the Dashboard's
+  // disabled estop-clear button landed on its .top-action wrapper. This is
+  // that delivery shape, with the geometry the browser supplies.
+  const env = await boot({ status: { ...HEALTHY, webControlEnabled: false } });
+  await sleep(5);
+
+  const container = env.document.createElement("div");
+  const button = env.document.createElement("button");
+  button.setAttribute("aria-disabled", "true");
+  button.disabled = true;
+  button.getBoundingClientRect = () => ({ left: 100, right: 200, top: 20, bottom: 60 });
+  container.appendChild(button);
+  env.document.getElementById("shell-content").appendChild(container);
+
+  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 150, clientY: 40 });
+  assert.equal(noticeShown(env), true, "the control under the pointer is the one that was refused");
+  assert.match(noticeText(env), /has not consented to browser control/);
+
+  // And a press on the same container away from that control is not a press on
+  // it: the box is the whole test, so it has to actually be consulted.
+  env.document.getElementById("ignored-input-notice").classList.add("hidden");
+  env.document.dispatch("pointerup", { type: "pointerup", target: container });
+  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 400, clientY: 400 });
+  assert.equal(noticeShown(env), false, "nothing refused was pressed");
+});
