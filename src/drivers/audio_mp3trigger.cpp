@@ -26,7 +26,7 @@
 //     'S'+'0'   --  query firmware version string
 //     'S'+'1'   --  query SD track count
 //     't'+N     --  play track N by filename prefix NNNxxxx.MP3 (N = uint8_t 1-255)
-//     'v'+V     --  set volume: 0=loudest, 255=silent (VS1053 inverted register)
+//     'v'+V     --  set volume: 0=loudest, 255=silent (VS1063 inverted register)
 //     'O'       --  toggle play/pause (not used directly  --  see stop() below)
 //
 //   Receive (module -> ESP32):
@@ -34,14 +34,14 @@
 //     "=NNN\r\n"                  --  S1 track-count response (strip '=' before parsing)
 //     'X'                         --  track finished naturally
 //     'x'                         --  playback cancelled
-//     'E'                         --  hardware error
+//     'E'                         --  the requested track does not exist
 //
 // stop() plays track 254 (community standard blank track). This is the approach
 // used by BetterDuino and SHADOW_MD and is more reliable than 'O' toggle
 // because it works regardless of current module play state. Operator SD root
 // must contain 254XXXX.MP3 (all R2 community packs include it).
 //
-// Volume mapping: VS1053 register is inverted.
+// Volume mapping: VS1063 register is inverted.
 //   nativeVol = (30 - vol) * 255 / 30
 //   vol=0 -> 255 (silent), vol=30 -> 0 (maximum), vol=15 -> 127.
 //
@@ -168,7 +168,7 @@ bool AudioDriverMp3Trigger::begin(uint8_t vol) {
 // Send 't' + uint8_t(track) to play by filename prefix (NNNxxxx.MP3).
 //
 // Track 0: silently ignored  --  audio_driver.h interface contract.
-// Track > 255: logged and dropped. The VS1053 't' command is a single byte;
+// Track > 255: logged and dropped. The VS1063 't' command is a single byte;
 //   casting 256 -> uint8_t(0x00) would silently play the wrong track. AudioTask
 //   may also supply a uint16_t track number from user input; guard it here.
 // -----------------------------------------------------------------------------
@@ -200,13 +200,13 @@ void AudioDriverMp3Trigger::stop() {
 
 // -----------------------------------------------------------------------------
 // setVolume()
-// vol is 0-30 (clamped by AudioTask before this call). Scaled to VS1053
+// vol is 0-30 (clamped by AudioTask before this call). Scaled to VS1063
 // inverted register: nativeVol = (30 - vol) * MP3TRIGGER_VOL_MAX / 30.
 //   vol=0  -> 255 (silent)
 //   vol=30 -> 0   (maximum)
 //   vol=15 -> 127
 // Following BetterDuino: practical audible range is 0-100 on the native scale;
-// values above ~100 are near-inaudible but technically valid per VS1053 spec.
+// values above ~100 are near-inaudible but technically valid per VS1063 spec.
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
     uint8_t nativeVol =

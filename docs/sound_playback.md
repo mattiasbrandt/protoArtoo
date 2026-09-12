@@ -218,14 +218,23 @@ Entries are omitted when no valid binding is saved.
 
 **File:** `src/drivers/audio_mp3trigger.cpp`
 
-The SparkFun MP3 Trigger (DEV-13720) is the most widely used R2-D2 sound module
+The SparkFun MP3 Trigger (WIG-13720) is the most widely used R2-D2 sound module
 in the community. BetterDuino, SHADOW_MD, and Padawan360 all treat it as their
-default. It uses a VS1053 audio codec with a simple 2-byte binary serial protocol.
+default. It uses a VS1063 audio codec with a simple 2-byte binary serial protocol.
 
-**Baud rate:** 9600 (community standard). Factory default is 38400. Configure
-to 9600 by placing a baud rate init file in the SD root; refer to the SparkFun
-MP3 Trigger v2.4 Hookup Guide for the exact filename and format. No firmware
-changes are required — the existing 9600-baud soft-UART path is compatible.
+**Baud rate:** 9600 (community standard). Factory default is 38400, so a board
+out of the box will not answer protoArtoo. Configure it by putting a file named
+`MP3TRIGR.INI` in the SD card root containing one line:
+
+```
+#BAUD 9600
+```
+
+Only 2400, 9600, 19200, 31250 and 38400 are accepted. The command must start
+with `#` followed by a space; only the first 512 bytes of the file are parsed,
+and the first `*` character ends the command section. No firmware changes are
+required — the existing 9600-baud soft-UART path is compatible. Full detail in
+[`spec-sheets/mp3-trigger-sound.md`](spec-sheets/mp3-trigger-sound.md).
 
 #### SD card layout
 
@@ -255,7 +264,7 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 | Wire command | Action | Notes |
 |---|---|---|
 | `'t'` + `uint8_t(N)` | Play track N by filename prefix | N = 1–255 |
-| `'v'` + `uint8_t(V)` | Set volume | V: 0=loudest, 255=silent (inverted VS1053 register) |
+| `'v'` + `uint8_t(V)` | Set volume | V: 0=loudest, 255=silent (inverted VS1063 register) |
 | `'S'+'0'` | Query firmware version | Response: `=MP3 Trigger v2.NN\r\n` |
 | `'S'+'1'` | Query SD track count | Response: `=NNN\r\n` (strip `=` before parsing) |
 | `'O'` | Toggle play/pause | Not used directly by driver |
@@ -273,7 +282,7 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 > (used identically by BetterDuino and SHADOW_MD). Ensure `254XXXX.MP3`
 > exists in the SD root — all R2 community packs include it.
 
-#### Volume scaling (VS1053 register is inverted)
+#### Volume scaling (VS1063 register is inverted)
 
 - vol=0 \u2192 nativeVol=255 (silent)
 - vol=15 \u2192 nativeVol=127 (mid)

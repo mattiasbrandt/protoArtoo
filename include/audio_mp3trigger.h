@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_mp3trigger.h
 //
-// Concrete AudioDriver for the SparkFun MP3 Trigger v2.x (DEV-13720).
+// Concrete AudioDriver for the SparkFun MP3 Trigger v2.x (WIG-13720).
 //
 // TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud  --  the
 // same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP. RX query
@@ -18,10 +18,10 @@
 //   'S'+'0'   --  query firmware version string -> "=MP3 Trigger v2.NN\r\n"
 //   'S'+'1'   --  query SD track count          -> "=NNN\r\n"
 //   't'+N     --  play track N by filename prefix NNNxxxx.MP3 (N: uint8_t 1-255)
-//   'v'+V     --  set volume (VS1053 native: 0=loudest, 255=silent  --  inverted)
+//   'v'+V     --  set volume (VS1063 native: 0=loudest, 255=silent  --  inverted)
 //   'O'       --  toggle play/pause (not used; stop() plays silent track instead)
 //
-// Volume mapping (0-30 normalised -> VS1053 inverted register):
+// Volume mapping (0-30 normalised -> VS1063 inverted register):
 //   nativeVol = (30 - vol) * MP3TRIGGER_VOL_MAX / 30
 //   vol=0 -> 255 (silent), vol=30 -> 0 (maximum), vol=15 -> 127.
 //
@@ -45,7 +45,7 @@
 // Operator must have 254XXXX.MP3 in the SD root (all R2 packs include it).
 static constexpr uint8_t MP3TRIGGER_STOP_TRACK = 254;
 
-// VS1053 native volume range: 0 = maximum loudness, 255 = silent.
+// VS1063 native volume range: 0 = maximum loudness, 255 = silent.
 static constexpr uint8_t MP3TRIGGER_VOL_MAX = 255;
 
 class AudioDriverMp3Trigger : public AudioDriver {
@@ -59,7 +59,7 @@ class AudioDriverMp3Trigger : public AudioDriver {
     bool begin(uint8_t vol) override;
 
     // Play a track by 1-based filename-prefix index (NNNxxxx.MP3).
-    // Track 0 is silently ignored. Track > 255 is logged and dropped: VS1053
+    // Track 0 is silently ignored. Track > 255 is logged and dropped: VS1063
     // 't' command is a single uint8_t; casting 256 to uint8_t yields 0x00 and
     // would play the wrong track.
     void playTrack(uint16_t track) override;
@@ -70,7 +70,7 @@ class AudioDriverMp3Trigger : public AudioDriver {
     void stop() override;
 
     // Set volume. vol is 0-30 (clamped by AudioTask before this call).
-    // Scaled to VS1053 inverted range: nativeVol = (30 - vol) * 255 / 30.
+    // Scaled to VS1063 inverted range: nativeVol = (30 - vol) * 255 / 30.
     void setVolume(uint8_t vol) override;
 
     const char* driverName() const override {
