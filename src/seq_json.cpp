@@ -79,26 +79,23 @@ static const char* randomModeToString(uint8_t mode) {
     }
 }
 
-// Move Shape label <-> token. The SAME three words for a servo Part and a light
+// Move Shape token -> value. The SAME three words for a servo Part and a light
 // Part: the surface names them by Part Kind (open/close/flutter against
 // on/off/flash), and the stored token is one either way, which is what lets a
-// Gesture spread one shape across a mixed set (ADR 0049). File-local for the
-// same reason randomModeFromString above is: the wire spelling of a step's own
-// enum has one reader.
+// Gesture spread one shape across a mixed set (ADR 0049).
+//
+// Walks seqBodyShapeToString() rather than restating the words, the same way
+// categoryFromString() below walks audioCategoryToString(), so the vocabulary
+// has one home (include/sequence_engine.h) and the two directions cannot drift.
 static bool bodyShapeFromString(const char* s, uint8_t& out) {
     if (s == nullptr) return false;
-    if (strcmp(s, "open") == 0)    { out = BODY_SHAPE_OPEN;    return true; }
-    if (strcmp(s, "close") == 0)   { out = BODY_SHAPE_CLOSE;   return true; }
-    if (strcmp(s, "flutter") == 0) { out = BODY_SHAPE_FLUTTER; return true; }
-    return false;
-}
-static const char* bodyShapeToString(uint8_t shape) {
-    switch (shape) {
-        case BODY_SHAPE_CLOSE:   return "close";
-        case BODY_SHAPE_FLUTTER: return "flutter";
-        case BODY_SHAPE_OPEN:
-        default:                 return "open";
+    for (uint8_t shape = 0; shape < BODY_SHAPE_COUNT; ++shape) {
+        if (strcmp(seqBodyShapeToString(shape), s) == 0) {
+            out = shape;
+            return true;
+        }
     }
+    return false;
 }
 
 // Audio category label <-> enum (reuse the canonical audioCategoryToString).
@@ -468,7 +465,7 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                 o["type"] = "body";
                 o["part"] = s.payload;
                 if (s.params.shape != (uint8_t)SEQ_BODY_SHAPE_DEFAULT) {
-                    o["shape"] = bodyShapeToString(s.params.shape);
+                    o["shape"] = seqBodyShapeToString(s.params.shape);
                 }
                 if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) {
                     o["howFar"] = s.params.howFar;

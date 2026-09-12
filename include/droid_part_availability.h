@@ -32,8 +32,18 @@ static_assert(DROID_PART_ID_MAX_LEN <= SERVO_OUTPUT_PART_ID_MAX,
               "a generated Part id is longer than the Part field on a Servo Output row");
 
 // -----------------------------------------------------------------------------
-// droidPartAvailabilityReason()
-// The Availability Reason this droid reports for a Part, right now.
+// droidPartAvailabilityFromRow()
+// The Availability Reason for a Part, for a caller that has already searched the
+// Servo Output table itself.
+//
+// It exists because the live table is handed out ONE ROW AT A TIME
+// (configCacheReadServoOutput(): "a task that wants one output should not pay
+// for twenty-four"), so a runtime caller cannot hand the whole table to the
+// function below. The verdict lives here and that function calls it, so there is
+// one policy rather than two that happen to agree today.
+//
+// `anOutputClaimsIt` is the search's result: did any row on this droid record
+// this Part.
 //
 //   CONSOLE_REASON_NONE               an Output claims it; it can move
 //   CONSOLE_REASON_PART_NOT_ASSIGNED  a known Part no Output claims; inert, and
@@ -46,10 +56,23 @@ static_assert(DROID_PART_ID_MAX_LEN <= SERVO_OUTPUT_PART_ID_MAX,
 // to fix a wiring fault they do not have. Protocol Check gates the id at save,
 // so reaching here means the stored step and the image disagree.
 // -----------------------------------------------------------------------------
+inline ConsoleReason droidPartAvailabilityFromRow(const char* partId,
+                                                  bool anOutputClaimsIt) {
+    if (!droidPartIdIsKnown(partId)) {
+        return CONSOLE_REASON_UNKNOWN_ARGUMENT;
+    }
+    return anOutputClaimsIt ? CONSOLE_REASON_NONE : CONSOLE_REASON_PART_NOT_ASSIGNED;
+}
+
+// -----------------------------------------------------------------------------
+// droidPartAvailabilityReason()
+// The Availability Reason this droid reports for a Part, right now, for a caller
+// holding the whole table. Same three answers as above, which it defers to.
+// -----------------------------------------------------------------------------
 inline ConsoleReason droidPartAvailabilityReason(const ServoOutputTable& table,
                                                  const char* partId) {
     if (!droidPartIdIsKnown(partId)) {
-        return CONSOLE_REASON_UNKNOWN_ARGUMENT;
+        return droidPartAvailabilityFromRow(partId, false);
     }
     // Clamped the way every other reader of this table clamps it: a stored
     // count that outran the row array must not walk off the end of it.
@@ -57,8 +80,8 @@ inline ConsoleReason droidPartAvailabilityReason(const ServoOutputTable& table,
         (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
     for (uint8_t row = 0; row < count; ++row) {
         if (servoOutputDrivesPart(table.rows[row], partId)) {
-            return CONSOLE_REASON_NONE;
+            return droidPartAvailabilityFromRow(partId, true);
         }
     }
-    return CONSOLE_REASON_PART_NOT_ASSIGNED;
+    return droidPartAvailabilityFromRow(partId, false);
 }

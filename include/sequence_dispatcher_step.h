@@ -24,6 +24,8 @@ enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_AUDIO_DOLLAR,     // audioQueueDollar(payload, SRC_SEQ)
     SEQ_DISPATCH_AUDIO_CATEGORY,   // audioQueuePlayCategory(...)
     SEQ_DISPATCH_AUDIO_STOP,       // audioQueueTrackStop(SRC_SEQ)
+    SEQ_DISPATCH_BODY_MOVE,        // resolve the Part against the Servo Output
+                                   // rows, then servoCmdQueue
     SEQ_DISPATCH_NONE,             // Silent success (unknown action)
 };
 
@@ -45,6 +47,12 @@ struct SequenceDispatcherStepActions {
 
     // For all text-payload targets (DOME_CMD, AUDIO_DOLLAR)
     // The adapter will use act.payload directly
+    //
+    // SEQ_DISPATCH_BODY_MOVE carries no fields either, and for a reason worth
+    // stating: which Output drives the Part is the builder's own droid's answer,
+    // held in the live Servo Output table, and this core is pure. The adapter
+    // walks the rows and hands the one it found to sequenceBodyStepPlan()
+    // (include/sequence_body_step.h), which owns that decision.
 };
 
 // Sequence Dispatcher Step Core: pure decision logic.

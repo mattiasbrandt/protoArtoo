@@ -37,6 +37,18 @@ static SeqAction audioDollar(const char* cmd) {
     return a;
 }
 
+static SeqAction bodyMove(const char* part, SeqBodyShape shape, uint8_t howFar,
+                          uint16_t flutterMs) {
+    SeqAction a;
+    memset(&a, 0, sizeof(a));
+    a.kind = SEQ_ACT_BODY_MOVE;
+    strncpy(a.payload, part, sizeof(a.payload) - 1);
+    a.bodyShape = (uint8_t)shape;
+    a.bodyHowFar = howFar;
+    a.bodyFlutterMs = flutterMs;
+    return a;
+}
+
 static int ringBit(int panel) {
     const uint8_t c = seqEngineRingPanelCount();
     for (uint8_t i = 0; i < c; ++i) {
@@ -281,6 +293,32 @@ static void test_last_run_json_uses_unambiguous_counter_names() {
     TEST_ASSERT_NULL(strstr(out, "domeQueueDropDelta"));
 }
 
+// A body move is recorded legibly rather than as the "<none>" every unrecognised
+// kind used to fall through to, and it sets NO effect scope: a body step stamps
+// no effect class, so there is no terminal cleanup for a scope bit to be diffed
+// against (ADR 0049). The audio scope used to be inferred as "not dome", which
+// made a body move an audio effect.
+static void test_body_move_recorded_legibly_and_sets_no_scope() {
+    seqEvidenceBegin("DM:BODY", 1, 0, 0);
+    seqEvidenceRecordTx(bodyMove("doorFL", BODY_SHAPE_OPEN, 60, 0), false);
+
+    SeqRunEvidence ev;
+    TEST_ASSERT_TRUE(seqEvidenceSnapshot(ev));
+    TEST_ASSERT_EQUAL_STRING("<body:doorFL:open:60>", ev.tx[0]);
+    TEST_ASSERT_EQUAL_UINT8(0, ev.fxScopes);
+    TEST_ASSERT_EQUAL_UINT16(0, ev.netOpenRingMask);
+    TEST_ASSERT_EQUAL_UINT16(0, ev.touchedRingMask);
+}
+
+static void test_body_flutter_records_its_duration() {
+    seqEvidenceBegin("DM:BODYFLUT", 1, 0, 0);
+    seqEvidenceRecordTx(bodyMove("doorRR", BODY_SHAPE_FLUTTER, 70, 1200), false);
+
+    SeqRunEvidence ev;
+    TEST_ASSERT_TRUE(seqEvidenceSnapshot(ev));
+    TEST_ASSERT_EQUAL_STRING("<body:doorRR:flutter:70:1200>", ev.tx[0]);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_initial_snapshot_is_invalid);  // first: pristine record
@@ -294,6 +332,8 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_a_run_that_exactly_fills_the_ring_is_captured_whole);
     RUN_TEST(test_command_capture_is_bounded_by_the_entry_width);
     RUN_TEST(test_artoo_esp32_keeps_its_own_ring_dimensions);
+    RUN_TEST(test_body_move_recorded_legibly_and_sets_no_scope);
+    RUN_TEST(test_body_flutter_records_its_duration);
     RUN_TEST(test_end_completed_and_drop_delta);
     RUN_TEST(test_retry_count);
     RUN_TEST(test_abort_outcome_wins_over_completed_fallback);
