@@ -1,0 +1,11 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -459,6 +459,7 @@
+       // deferred-asset gate below has nothing to hold back.
+       boardArtUse.setAttribute("href", `#art-${productId}`);
+       boardArt.setAttribute("aria-label", `${boardLabel} PCB`);
++      boardImage.dataset.deferredSrc = `/${productId}.webp`;
+       showBoardArt();
+       return;
+     }
