@@ -448,7 +448,16 @@ test("the browser title names the surface and the droid, the same way round on e
 test("the nav offers every surface, addressed by hash so the fragment never reaches the controller", async () => {
   const env = await boot();
   const links = env.document.querySelectorAll("[data-surface-link]");
-  assert.equal(links.length, 10, "ten surfaces in the nav");
+  assert.deepEqual(
+    [...new Set(links.map((link) => link.dataset.surfaceLink))].sort(),
+    ["dome", "drive", "firmware", "home", "rc", "seq", "servo", "setup", "sound", "wifi"],
+    "every surface the shell knows is offered somewhere in the nav",
+  );
+  assert.equal(
+    links.length,
+    12,
+    "twelve entries for ten surfaces: Sound and Dome are in two Activity Groups each (#361)",
+  );
   links.forEach((link) => {
     assert.equal(
       link.getAttribute("href"),

@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..f5528054 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -77,7 +77,7 @@
+       id: "perform",
+       label: "Perform",
+       hint: "author a move and play it back",
+-      members: ["seq", "sound", "dome"],
++      members: ["seq", "dome"],
+     },
+     {
+       id: "configure",

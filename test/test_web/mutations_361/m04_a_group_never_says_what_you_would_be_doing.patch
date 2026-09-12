@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..2395f0a5 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -375,7 +375,7 @@
+         <div class="nav-group" data-nav-group="${group.id}" role="group" aria-labelledby="${labelId}">
+           <p class="nav-group-head" id="${labelId}">
+             <span class="nav-group-label">${group.label}</span>
+-            <span class="nav-group-hint">${group.hint}</span>
++            <span class="nav-group-hint"></span>
+           </p>
+           <div class="nav-group-links">${links}</div>
+         </div>`;
