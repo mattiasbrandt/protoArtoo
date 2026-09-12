@@ -979,14 +979,15 @@ test("a press on a refused control the browser hides from hit testing is still h
   container.appendChild(button);
   env.document.getElementById("shell-content").appendChild(container);
 
+  // The away-press first, while no notice has been shown for this cause yet:
+  // ordered the other way round the burst window suppresses the second
+  // showing by itself and the assertion holds whether the pointer's box was
+  // consulted or not. It was vacuous exactly that way until a mutation said so.
+  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 400, clientY: 400 });
+  assert.equal(noticeShown(env), false, "nothing refused was pressed there");
+
+  env.document.dispatch("pointerup", { type: "pointerup", target: container });
   env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 150, clientY: 40 });
   assert.equal(noticeShown(env), true, "the control under the pointer is the one that was refused");
   assert.match(noticeText(env), /has not consented to browser control/);
-
-  // And a press on the same container away from that control is not a press on
-  // it: the box is the whole test, so it has to actually be consulted.
-  env.document.getElementById("ignored-input-notice").classList.add("hidden");
-  env.document.dispatch("pointerup", { type: "pointerup", target: container });
-  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 400, clientY: 400 });
-  assert.equal(noticeShown(env), false, "nothing refused was pressed");
 });
