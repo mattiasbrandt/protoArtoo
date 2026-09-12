@@ -16,9 +16,11 @@
 //
 // Signal handling and compatibility notes:
 //   - RMT input is configured with invert_in=1 (expected for inverted SBUS wire).
-//   - Decode path includes a polarity fallback in task context for receivers that
-//     present non-standard or pre-inverted output.
-//   - Parser tries both standard (100 kbaud) and fast (200 kbaud) SBUS bit timing.
+//   - No polarity fallback and no fixed-timing alternatives: invertBits=true and
+//     the 200 kbaud period produced 75% of header-mismatch noise and zero
+//     successful decodes on the HOTRC DS-650, and were removed (commit d9f4a50e).
+//   - The bit period is estimated per frame instead (sbusEstimateBitPeriod),
+//     because this transmitter clocks at about 115 kbaud rather than 100.
 //
 // Frame gap detection:
 //   signal_range_max_ns = 300 us keeps frame segmentation stable while tolerating

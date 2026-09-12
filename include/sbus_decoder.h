@@ -9,16 +9,20 @@
 // Conflict B (UART2) from the UART contention audit.
 //
 // Hardware: HOTRC SBUS-A receivers on GPIO 15 (drive) and GPIO 13 (dome).
-// Protocol: 25-byte frame; supports standard 100 kbaud SBUS and fast 200 kbaud
-// timing variants seen on some receiver/transmitter combinations.
+// Protocol: 25-byte frame. The bit period is estimated per frame rather than
+// assumed: the HOTRC SBUS-A clocks at about 115 kbaud (8.68 us/bit), not the
+// nominal 100. See sbusEstimateBitPeriod() and docs/spec-sheets/hotrc-ds650-radio.md.
 //
-// Frame format: [0x0F header][22 data bytes][flags byte][0x00 footer]
+// Frame format: [0x0F header][22 data bytes][flags byte][footer]
+//   Footer is 0x00 or an SBUS2 variant with low nibble 0x04 (isValidSbusFooter);
+//   the HOTRC SBUS-A sends 0x04.
 //   16 channels x 11 bits packed LSB-first into bytes 1-22.
 //   Flags byte (index 23): bit0=CH17, bit1=CH18, bit2=lost_frame, bit3=failsafe.
 //
 // Physical signal handling:
 //   - RMT channel uses invert_in=1 for standard inverted SBUS wiring.
-//   - Decoder includes task-context polarity fallback for non-standard output paths.
+//   - No polarity fallback: invertBits=true never decoded a HOTRC frame and was
+//     removed (commit d9f4a50e). One decode attempt per frame.
 //
 // RMT configuration:
 //   resolution_hz = 1 MHz  --  1 us/tick.

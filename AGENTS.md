@@ -42,7 +42,8 @@ epic issue. Material an agent needs only on some paths lives under
   `docs/soak.md` (the contract itself is ADR 0035)
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
-- HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
+- HotRC DS-650 product and HOTRC profile truth: `docs/spec-sheets/hotrc-ds650-radio.md`
+  (supersedes `docs/spec-sheets/hotrc-sbus-spec.md`, kept as the older summary)
 - Teeces / JawaLite truth: `docs/spec-sheets/teeces-dome-lighting.md`
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
 - Sabertooth / SyRen packet serial truth: `docs/spec-sheets/sabertooth-syren-packet-serial.md`
