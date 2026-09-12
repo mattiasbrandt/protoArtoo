@@ -848,11 +848,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
     uint32_t prevT = 0;
     PanelIntent pendingFlutter[PC_MAX_STEPS];
     uint8_t pendingFlutterCount = 0;
-    // Body flutters owed a close, as step INDICES rather than copies of the Part
-    // id: the id is already in steps[i].payload, and 96 indices cost 96 bytes of
-    // this frame where 96 ids would cost thirteen times that.
-    uint8_t pendingBodyFlutter[PC_MAX_STEPS];
-    uint8_t pendingBodyFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -974,28 +969,32 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                         return pcFailAt(label, i, "flutterMs",
                                       "flutter duration out of range (50..60000)");
                     }
-                    if (pendingBodyFlutterCount >= PC_MAX_STEPS) {
-                        return pcFailAt(label, i, "shape", "too many body flutter steps");
-                    }
-                    pendingBodyFlutter[pendingBodyFlutterCount++] = i;
-                } else {
-                    if (p.flutterMs != 0) {
-                        return pcFailAt(label, i, "flutterMs",
-                                      "only a flutter carries a duration");
-                    }
-                    if (p.shape == BODY_SHAPE_CLOSE) {
-                        // This close discharges every earlier flutter of the same
-                        // Part. There is no body counterpart to the dome's group
-                        // close (:CL15/:CL00), so an exact Part match is the whole
-                        // rule -- a body close names one Part.
-                        uint8_t write = 0;
-                        for (uint8_t f = 0; f < pendingBodyFlutterCount; ++f) {
-                            if (strcmp(steps[pendingBodyFlutter[f]].payload, s.payload) != 0) {
-                                pendingBodyFlutter[write++] = pendingBodyFlutter[f];
-                            }
+                    // A body flutter ends OPEN and owes a later close in the same
+                    // branch -- the same rule the dome flutter above carries,
+                    // because one word means one thing across the droid
+                    // (ADR 0049). Answered by looking forward from here rather
+                    // than by carrying a pending list: there is no body
+                    // counterpart to the dome's group close, so the only question
+                    // is whether a later step closes THIS Part, and a list of
+                    // ninety-six owed flutters would put 96 B on a frame that
+                    // already carries the deepest chain on the Sequence
+                    // Coordinator's task (ADR 0040).
+                    bool closedLater = false;
+                    for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
+                        if (steps[j].type == STEP_BODY &&
+                            seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
+                            strcmp(steps[j].payload, s.payload) == 0) {
+                            closedLater = true;
+                            break;
                         }
-                        pendingBodyFlutterCount = write;
                     }
+                    if (!closedLater) {
+                        return pcFailAt(label, i, "shape",
+                                      "flutter needs a later close of the same Part");
+                    }
+                } else if (p.flutterMs != 0) {
+                    return pcFailAt(label, i, "flutterMs",
+                                  "only a flutter carries a duration");
                 }
                 // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
                 // body step did, so there is no persistent state for terminal
@@ -1016,15 +1015,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
     }
     if (pendingFlutterCount > 0) {
         return pcFail(label, ":OF requires a later matching :CL in the same branch");
-    }
-    // A body flutter ends OPEN and owes a later close in the same branch, which
-    // is the same rule the dome flutter above carries -- one word, one meaning
-    // across the droid (ADR 0049). Anchored to the offending step rather than to
-    // the branch, because this list keeps the index the dome's squashed copy
-    // cannot.
-    if (pendingBodyFlutterCount > 0) {
-        return pcFailAt(label, pendingBodyFlutter[0], "shape",
-                      "flutter needs a later close of the same Part in this branch");
     }
     return pcOk();
 }
