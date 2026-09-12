@@ -52,14 +52,22 @@ even if the RC receiver does not assert its own failsafe flag.
 ## Layer 3 - Web drive command timeout
 
 - Source: body firmware timeout
-- Implementation: `src/tasks/drive.cpp`
+- Implementation: `src/drive_arbiter.cpp` detects it; `src/tasks/drive.cpp`
+  syncs it into the failsafe gate once per 50 Hz tick
 - Trigger: last drive command came from `SRC_WEB_API` and is older than
   `cfg_webDriveTimeoutMs` (default `WEB_DRIVE_TIMEOUT_MS = 500`)
 - Result: `webDriveExpired=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_WEB_TIMEOUT`
+- Cleared by: any newer drive command. A browser drive command renews it; an RC
+  radio command ends it, so the radio drives again as soon as it sends a frame.
+  On a tie the radio counts as newer.
 
 Web control is intentionally dead-man style. A client must keep refreshing the
-command; silence is treated as a stop condition.
+command; silence is treated as a stop condition. The hold belongs to the
+browser's own command: once the RC radio has sent anything newer, a stale browser
+command no longer stops the feet. Releasing the browser's drive button and
+turning browser control off both send a zero browser command, so each starts the
+timeout like any other.
 
 ## Layer 4 - ESP32 Watchdog Timer
 
