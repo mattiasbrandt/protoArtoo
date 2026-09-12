@@ -16,8 +16,10 @@
 
 #include "sequence_engine.h"  // SeqToggleGroup
 
-// Capacity cap (issue #2 grill decision 5: 16 Learned Sequences total).
-static const uint8_t SEQ_STORE_MAX = 16;
+// Capacity cap: 10 Learned Sequences total. Issue #2 grill decision 5 set 16;
+// the operator lowered it to 10 on 2026-09-13 (#382) so the saved sequences
+// and the web UI stop competing for the same filesystem blocks.
+static const uint8_t SEQ_STORE_MAX = 10;
 
 struct SeqIndexEntry {
     char           name[24];      // "DM:MYSEQ"

@@ -921,7 +921,7 @@ static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const Co
 // colon-separated per-field rather than "=" - the same
 // consoleFormatRcSourceSummary() convention above, so a value can never be
 // mistaken for a second key=value pair on the wire. Both stores are
-// small and fully in-memory (SEQ_STORE_MAX = 16, the Factory catalog is a
+// small and fully in-memory (SEQ_STORE_MAX = 10, the Factory catalog is a
 // flash-resident const table), so - like system.status.logs' bounded ring -
 // no separate paging protocol is needed.
 static void consoleExecuteDomeApiListSequences(uint32_t requestId, const ConsoleRecordSink* sink) {

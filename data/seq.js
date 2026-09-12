@@ -23,6 +23,11 @@
     expanded: new Set(), // Slice 1: Set of step indices that are expanded (presentation-only)
   };
 
+  // How many Learned Sequences the controller stores. Mirrors SEQ_STORE_MAX in
+  // include/seq_store_index.h, which is what actually refuses the save;
+  // test/test_web/test_seq_capacity_382.js holds the two together (#382).
+  const LEARNED_SEQUENCE_CAP = 10;
+
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
 
@@ -232,7 +237,7 @@
 
   const renderListView = () => {
     // Update capacity (Learned sequences only)
-    els.capacityDisplay.textContent = `${sequences.length} / 16 saved`;
+    els.capacityDisplay.textContent = `${sequences.length} / ${LEARNED_SEQUENCE_CAP} saved`;
 
     // Compute untuned Factory sequences (those without a Learned override)
     const learnedNames = new Set(sequences.map(s => s.name));
@@ -2430,8 +2435,8 @@
       showEditorFeedback(validation.error || "Fix validation errors before saving.", "error");
       return;
     }
-    if (editorState.isNew && sequences.length >= 16) {
-      showEditorFeedback("Capacity limit: 16 sequences on device. Delete one first.", "error");
+    if (editorState.isNew && sequences.length >= LEARNED_SEQUENCE_CAP) {
+      showEditorFeedback(`Capacity limit: ${LEARNED_SEQUENCE_CAP} sequences on device. Delete one first.`, "error");
       return;
     }
     const saveBtn = document.getElementById("seq-editor-save");

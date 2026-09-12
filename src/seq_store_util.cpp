@@ -35,7 +35,7 @@ bool seqStoreNameToFile(const char* name, char* out, size_t cap) {
 ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
                                           size_t fileLen, size_t freeBytes) {
     if (isNew && count >= SEQ_STORE_MAX) {
-        return ufail("name", "store full (16 sequences max)");
+        return ufail("name", "store full (10 sequences max)");
     }
     if (fileLen > SEQ_FILE_MAX_BYTES) {
         // The size in the message comes from the same macro as the constant it

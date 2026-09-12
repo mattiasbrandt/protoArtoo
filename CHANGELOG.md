@@ -63,6 +63,15 @@ the patch releases, whose notes live on their own GitHub Release.
   photographs ride the default asset set only; the Artoo board does not
   carry them (ADR 0065).
 
+### Changed
+- **Your droid keeps ten sequences of your own, not sixteen.** Sixteen
+  full-size sequences never fitted on an artoo-esp32: your saved sequences and
+  the web pages share the same flash, and it ran out before the fifteenth. Ten
+  always fit, with room left for the pages to grow, and the FireBeetle keeps the
+  same ten so a droid can do the same things on either board. If you have saved
+  more than ten, the controller lists the first ten it finds, so export the
+  ones you want to keep before you update.
+
 ## [1.3.0] - 2026-09-11
 
 ### Changed
