@@ -117,6 +117,25 @@ class ProductDrawings(unittest.TestCase):
         self.assertTrue(DEFAULT_ART.is_file())
         self.assertEqual([], SYMBOL_RE.findall(DEFAULT_ART.read_text(encoding="utf-8")))
 
+    def test_each_partial_can_be_inlined(self):
+        # A partial is text spliced into a page. HTML comments do not nest, so a
+        # comment that quotes an include directive closes early and leaks the
+        # rest of itself onto the page -- and tools/gzip_fsdata.py reads that
+        # quoted directive as a real nested include and refuses the build. Both
+        # wait until a page includes the partial, which nothing does yet, so
+        # they are caught here rather than on the day the picker ships.
+        directive = re.compile(r"<!--\s*PA:INCLUDE\s+[A-Za-z0-9_.\-/]+\s*-->")
+        for path in (LEGACY_ART, DEFAULT_ART):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(partial=str(path.relative_to(ROOT))):
+                self.assertIsNone(
+                    directive.search(text),
+                    "a quoted include directive is a nested include to the build",
+                )
+                outside = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+                self.assertNotIn("-->", outside, "a comment closed early and leaks onto the page")
+                self.assertNotIn("<!--", outside, "a comment never closes")
+
 
 if __name__ == "__main__":
     unittest.main()
