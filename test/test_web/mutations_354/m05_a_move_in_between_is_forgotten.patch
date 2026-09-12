@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..f84ae5f7 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -188,7 +188,7 @@
+         group.n += 1;
+         groups.set(key, group);
+       }
+-      last.set(key, command);
++      if (!last.has(key)) last.set(key, command);
+     });
+     return [...groups.values()].map(({ n, first, label }) => {
+       const who = label.element || label.part;

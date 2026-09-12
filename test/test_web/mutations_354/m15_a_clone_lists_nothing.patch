@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 1f5e9811..567361bc 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -411,7 +411,7 @@
+     showRehearsalReport(
+       `What the Rehearsal found in ${full.name} as it ships:`,
+       "info",
+-      full,
++      { steps: [] },
+       "list"
+     );
+   };

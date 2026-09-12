@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..de13408b 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -262,7 +262,7 @@
+       total += 1;
+       let gap = null;
+       if (step.type === "dome" && panelIntent(step.cmd)) gap = "dome-timing";
+-      else if (step.type === "body") gap = "body-timing";
++
+       else if (step.type === "random") gap = "random-pick";
+       if (gap) {
+         unchecked += 1;

@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..8d232d01 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -100,7 +100,7 @@
+         const count = Math.min(step.body, steps.length - i - 1);
+         const period = Number(step.periodMs) || 0;
+         const duration = Number(step.durationMs) || 0;
+-        for (let start = 0; period > 0 && start < duration; start += period) {
++        for (let start = 0; period > 0 && start < Math.min(duration, 1); start += period) {
+           for (let k = 1; k <= count; k += 1) {
+             const inner = steps[i + k] || {};
+             events.push({ t: (Number(step.t) || 0) + start + (Number(inner.t) || 0), step: i + k, def: inner });

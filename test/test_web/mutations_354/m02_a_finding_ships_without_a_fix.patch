@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..138aff95 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -73,7 +73,7 @@
+     if (!LEVELS.includes(level)) {
+       throw new TypeError(`A Rehearsal finding is a warning or a note, never "${level}"`);
+     }
+-    if (!code || !msg || !fix) {
++    if (!code || !msg) {
+       throw new TypeError(`Rehearsal finding "${code}" needs a code, a message and a fix`);
+     }
+     const out = { level, code, msg, fix };
