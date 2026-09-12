@@ -804,8 +804,8 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
 // purpose: the joined list is DROID_FITTED_PARTS_STR_MAX bytes, and a frame
 // that size would sit on the serial config-write path, whose task stack chain
 // is a measured constant that one ConfigSnapshot-sized frame per nesting level
-// already nearly overran once (include/config.h, include/config_store.h, #226). One bounded allocation on a Core 0 write path costs
-// that chain nothing, and a failed one is reported rather than swallowed -
+// already nearly overran once (include/config.h, include/config_store.h, #226).
+// One bounded allocation on a Core 0 write path costs that chain nothing, and a failed one is reported rather than swallowed -
 // the caller answers "not persisted" and the writer has touched nothing.
 // -----------------------------------------------------------------------------
 bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w) {
