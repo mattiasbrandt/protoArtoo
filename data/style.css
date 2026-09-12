@@ -2606,6 +2606,32 @@ body[data-page="servo"] .input-narrow {
   font-size: var(--fs-2xs);
 }
 
+/* The Ignored Input Notice (CONTEXT.md, #324, #346).
+
+   Uncoloured on purpose. Nothing failed and nothing is refusing the operator
+   personally: a control is switched off and the notice says which droid state
+   is off, so it is a Note, and colour is reserved for refusals and for what
+   the builder can act on (#327, docs/ui-copy-voice.md rule 11). The route is
+   the only thing that looks like a link, because the route is the point. */
+.ignored-input-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-xs);
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: color-mix(in srgb, var(--lift) 4%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+
+.ignored-input-route {
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+
 
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;

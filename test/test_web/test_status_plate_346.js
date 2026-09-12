@@ -698,3 +698,190 @@ test("a plate click is not a page load, so the shell keeps its session", async (
   assert.equal(event.defaultPrevented, false, "a hash address needs no interception");
   assert.equal(env.requests.length, before, "and it fetched nothing");
 });
+
+// ---------------------------------------------------------------------------
+// The Ignored Input Notice: the other end of the same mechanism
+//
+// The chip assumes you are looking at the screen; the notice assumes you know
+// where to go. Together they answer what and where (#324).
+// ---------------------------------------------------------------------------
+
+// A control a surface has switched off, the way gateControls() switches one
+// off, and the press the browser still delivers on it: pointerdown, because a
+// disabled control suppresses mousedown and click outright.
+const refusedControl = (env) => {
+  const button = env.document.createElement("button");
+  button.setAttribute("aria-disabled", "true");
+  button.disabled = true;
+  env.document.getElementById("shell-content").appendChild(button);
+  return button;
+};
+
+const pointer = (env, target) => ({
+  down: () => env.document.dispatch("pointerdown", { type: "pointerdown", target }),
+  up: () => env.document.dispatch("pointerup", { type: "pointerup", target }),
+});
+
+const noticeShown = (env) => !env.document.getElementById("ignored-input-notice").classList.contains("hidden");
+const noticeText = (env) => env.document.getElementById("ignored-input-text").textContent;
+const noticeRoute = (env) => env.document.getElementById("ignored-input-route");
+
+test("a press on a control the droid cannot act on says what is off, instead of nothing", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  assert.equal(noticeShown(env), false, "nothing has been pressed yet");
+
+  pointer(env, refusedControl(env)).down();
+
+  assert.equal(noticeShown(env), true, "the silence is the failure this closes");
+  assert.match(noticeText(env), /That control is switched off right now\./, "it reports the attempt");
+  assert.match(noticeText(env), /The estop is latched\./, "and names what is off");
+  assert.equal(
+    env.document.getElementById("ignored-input-notice").getAttribute("role"),
+    "status",
+    "a notice, not an alert: nothing failed and nothing is refusing the operator personally",
+  );
+});
+
+test("the notice routes where that thing is changed, and to the chip's own destination", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: false, webControlEnabled: false } });
+  await sleep(5);
+  pointer(env, refusedControl(env)).down();
+
+  assert.match(noticeText(env), /has not consented to browser control/);
+  assert.equal(
+    noticeRoute(env).getAttribute("href"),
+    env.chip("control").getAttribute("href"),
+    "the notice says what and the chip says where -- one destination, not two",
+  );
+  assert.match(noticeRoute(env).textContent, /^Open Foot Drive, where that is changed$/,
+    "and the destination is named by reading SURFACES, so a rename stays one field");
+});
+
+test("only the rising edge of a press is an attempt", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  const press = pointer(env, refusedControl(env));
+
+  press.down();
+  assert.match(noticeText(env), /The estop is latched\./);
+
+  // The droid's state changes under a pointer that is still down. A second
+  // pointerdown -- a second finger, or a browser repeating one -- is not a
+  // second attempt, so the notice must not follow it.
+  env.pushStatus({ estop: false, webControlEnabled: false });
+  await sleep(5);
+  press.down();
+  assert.match(
+    noticeText(env),
+    /The estop is latched\./,
+    "a pointerdown while already pressing is the same attempt",
+  );
+
+  // Releasing and pressing again is a new attempt.
+  press.up();
+  press.down();
+  assert.match(noticeText(env), /has not consented to browser control/, "and this one is heard");
+});
+
+test("bursts merge over a 1500 ms wall-clock window", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  const press = pointer(env, refusedControl(env));
+  const node = env.document.getElementById("ignored-input-notice");
+
+  press.down();
+  press.up();
+  assert.equal(noticeShown(env), true);
+
+  // Put the notice away the way its own visible window does, so a second
+  // showing is observable rather than indistinguishable from the first.
+  node.classList.add("hidden");
+  press.down();
+  press.up();
+  assert.equal(noticeShown(env), false, "a second attempt inside the window merges into the first");
+
+  await sleep(1600);
+  press.down();
+  assert.equal(noticeShown(env), true, "and past the window it is a new attempt");
+});
+
+test("the rate limit resets the moment the thing stops being off", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  const press = pointer(env, refusedControl(env));
+  const node = env.document.getElementById("ignored-input-notice");
+
+  press.down();
+  press.up();
+  assert.equal(noticeShown(env), true);
+  node.classList.add("hidden");
+
+  // Cleared, then latched again, well inside the burst window. Having been
+  // told once is not a reason to be silent about the next time it happens:
+  // changing your mind and back must not buy a second and a half of silence.
+  env.pushStatus({ estop: false });
+  await sleep(5);
+  env.pushStatus({ estop: true });
+  await sleep(5);
+
+  press.down();
+  assert.equal(noticeShown(env), true, "the window was released when the estop cleared");
+});
+
+test("the notice comes down when its cause clears, because the door it opened has closed", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  pointer(env, refusedControl(env)).down();
+  assert.equal(noticeShown(env), true);
+
+  env.pushStatus({ estop: false });
+  await sleep(5);
+  assert.equal(noticeShown(env), false, "what it was pointing at is fixed");
+});
+
+test("the notice stays quiet when the droid is holding nothing the plate carries", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  await sleep(5);
+  pointer(env, refusedControl(env)).down();
+  assert.equal(
+    noticeShown(env),
+    false,
+    "a control off for a reason this plate does not carry would otherwise be told"
+      + " whatever happened to be off, which is a guess dressed as a fact",
+  );
+});
+
+test("pressing a control that is not switched off says nothing at all", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  const live = env.document.createElement("button");
+  env.document.getElementById("shell-content").appendChild(live);
+
+  pointer(env, live).down();
+  assert.equal(noticeShown(env), false, "nothing was ignored: the press went through");
+});
+
+test("the notice is uncoloured, and never wears a reserved colour", async () => {
+  // Nothing failed, so it is a Note (#327, docs/ui-copy-voice.md rule 11).
+  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const root = /:root\s*\{([^{}]*)\}/.exec(css)[1];
+  const reserved = ["--warning", "--danger"].map(
+    (name) => new RegExp(`${name}:\\s*([^;]+)`).exec(root)[1].trim(),
+  );
+
+  const offenders = [];
+  const rule = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rule.exec(css)) !== null) {
+    if (!/ignored-input/.test(match[1])) continue;
+    for (const declaration of match[2].split(";")) {
+      const resolved = declaration.replace(/var\(\s*(--[\w-]+)[^)]*\)/g, (whole, name) => {
+        const value = new RegExp(`${name}:\\s*([^;]+)`).exec(root);
+        return value ? value[1].trim() : whole;
+      });
+      if (reserved.some((colour) => resolved.includes(colour))) offenders.push(`${match[1].trim()} {${declaration} }`);
+    }
+  }
+  assert.deepEqual(offenders, [], "a Note carries neither amber nor red");
+});

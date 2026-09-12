@@ -670,6 +670,10 @@
         </div>
         <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Still finding out what the droid is doing.</p>
         <p class="status-plate-affordance">Press a chip to open the screen where that thing is changed. ESTOP cuts drive right here.</p>
+        <div class="ignored-input-notice hidden" id="ignored-input-notice" role="status" aria-live="polite">
+          <span id="ignored-input-text"></span>
+          <a class="ignored-input-route" id="ignored-input-route" href="#${DEFAULT_PAGE}"></a>
+        </div>
       </div>
       <div class="status-bar" id="conn-status">
         <div class="status-subline" id="fw-meta">Loading firmware info...</div>
@@ -926,8 +930,184 @@
     plateStreamBroken = false;
     paintPlate(payload);
     renderPlateFreshness();
+    releaseSettledCauses(payload);
   };
 
+  // ---------------------------------------------------------------------------
+  // The Ignored Input Notice
+  //
+  // The failure this closes is silence. A control the droid cannot act on is
+  // switched off with `disabled` plus aria-disabled (window.PAApi.gateControls,
+  // data/web_api.js), and pressing a disabled control produces nothing at all:
+  // no request, no feedback line, no log. The reference's own UX review made
+  // that its FIRST finding -- "nothing on screen tells you the drive is
+  // disarmed when you move a stick" -- and the operator's eyes are on the
+  // droid, not on the page.
+  //
+  // The hook is a capture-phase `pointerdown`, and it is pointerdown because
+  // that is what a browser still delivers: measured in Chromium on
+  // 2026-09-12, a press on a disabled <button> dispatches pointerdown to the
+  // button itself and suppresses mousedown and click entirely, so pointerdown
+  // is the only event left that names what the operator pressed. It is the one
+  // place the whole surface is covered, because gateControls() is how every
+  // page refuses a control.
+  //
+  // Only the transition from not-pressing to pressing is an attempt. A second
+  // finger, a repeated pointerdown during one press, or a held button must not
+  // each count (r2d2-astromech-simulator v1.79.0, src/js/input/pad-ui.js:213),
+  // and bursts then merge over a window of WALL CLOCK -- deliberately not the
+  // droid's uptime, which stops advancing exactly when the droid feels most
+  // broken (:165).
+  //
+  // The notice says what is OFF and never claims to have diagnosed the press:
+  // the shell can see that a refused control was pressed and what the droid is
+  // holding, and those are two facts rather than one. When the droid is
+  // holding nothing the plate tracks, it stays quiet.
+  // ---------------------------------------------------------------------------
+  const NOTICE_BURST_MS = 1500;
+  // How long one notice stays up. It is a receipt, not an alarm, and it comes
+  // down sooner than this the moment its cause clears.
+  const NOTICE_VISIBLE_MS = 6000;
+
+  // One row per way the droid is holding still, ordered by what bites fastest,
+  // and each row routes where its Status Plate chip routes -- so the notice
+  // says WHAT and the chip says WHERE, to one destination rather than two.
+  //
+  // Two rows carry a `page` of their own and say why: the estop's chip acts in
+  // place and so has no destination, while the release does (Foot Drive and
+  // Dashboard); and Stationary Mode earns no chip under #324's admission rule
+  // but is still a real refusal -- POST /api/drive rejects on it
+  // (src/web/api_drive.cpp) -- so it names the surface its Commanded Mode
+  // buttons live on.
+  const IGNORED_INPUT_CAUSES = [
+    {
+      id: "estop",
+      chip: "estop",
+      page: "drive",
+      says: "The estop is latched",
+      active: (status) => status.estop === true,
+    },
+    {
+      id: "feet",
+      chip: "drive",
+      says: "The feet are not armed",
+      // The same enumeration the DRIVE chip makes, minus the estop, which has
+      // its own row above and would otherwise shadow it.
+      active: (status) =>
+        !hasKey(status, "drive") ||
+        status.sbusHwFailsafe === true ||
+        status.sbusSignalLost === true ||
+        status.webDriveExpired === true,
+    },
+    {
+      id: "stationary",
+      chip: null,
+      page: "home",
+      says: "Stationary Mode has the feet locked",
+      active: (status) => status.stationary === true,
+    },
+    {
+      id: "control",
+      chip: "control",
+      says: "This droid has not consented to browser control yet",
+      active: (status) => status.webControlEnabled !== true,
+    },
+  ];
+
+  const noticeNode = document.getElementById("ignored-input-notice");
+  const noticeText = document.getElementById("ignored-input-text");
+  const noticeRoute = document.getElementById("ignored-input-route");
+
+  // Wall clock, per cause, of the last notice shown for it.
+  const noticeShownAt = new Map();
+  let noticeCause = null;
+  let noticeHideTimer = null;
+  let noticePressing = false;
+
+  const noticePageFor = (cause) =>
+    cause.page || PLATE_CHIPS.find((chip) => chip.id === cause.chip)?.page || DEFAULT_PAGE;
+
+  const hideNotice = () => {
+    noticeCause = null;
+    if (noticeHideTimer !== null) {
+      window.clearTimeout(noticeHideTimer);
+      noticeHideTimer = null;
+    }
+    noticeNode?.classList.add("hidden");
+  };
+
+  const showNotice = (cause) => {
+    if (!noticeNode || !noticeText || !noticeRoute) return;
+    const page = noticePageFor(cause);
+    const destination = surfaceByPage.get(page);
+    noticeText.textContent = `That control is switched off right now. ${cause.says}.`;
+    noticeRoute.textContent = `Open ${destination ? destination.name : page}, where that is changed`;
+    noticeRoute.setAttribute("href", `#${page}`);
+    noticeNode.classList.remove("hidden");
+    noticeCause = cause.id;
+    if (noticeHideTimer !== null) window.clearTimeout(noticeHideTimer);
+    noticeHideTimer = window.setTimeout(hideNotice, NOTICE_VISIBLE_MS);
+  };
+
+  const reportIgnoredInput = () => {
+    // Nothing has arrived yet, so there is nothing to name. The plate's own
+    // freshness state is already saying so.
+    if (plateFrame === null) return;
+    const cause = IGNORED_INPUT_CAUSES.find((candidate) => candidate.active(plateFrame));
+    // A control switched off for a reason this plate does not carry is not
+    // this notice's business: it would otherwise name whatever happened to be
+    // off, which is a guess dressed as a fact.
+    if (!cause) return;
+    const now = Date.now();
+    const shownAt = noticeShownAt.get(cause.id);
+    if (shownAt !== undefined && now - shownAt < NOTICE_BURST_MS) return;
+    noticeShownAt.set(cause.id, now);
+    showNotice(cause);
+  };
+
+  // The rate limit resets the moment the answer stops being undecided: a cause
+  // that has stopped being true drops its window, so changing your mind and
+  // back does not buy a second of silence. And the notice comes down with it,
+  // because the door it was holding open has closed
+  // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:878).
+  const releaseSettledCauses = (status) => {
+    IGNORED_INPUT_CAUSES.forEach((cause) => {
+      if (cause.active(status)) return;
+      noticeShownAt.delete(cause.id);
+      if (noticeCause === cause.id) hideNotice();
+    });
+  };
+
+  if (noticeNode) {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        const rising = !noticePressing;
+        noticePressing = true;
+        if (!rising) return;
+        // aria-disabled rather than the `disabled` property: gateControls()
+        // sets both, and the attribute is the one a container can carry for a
+        // control that is not a form element.
+        if (!event.target?.closest?.('[aria-disabled="true"]')) return;
+        reportIgnoredInput();
+      },
+      true
+    );
+    const releasePointer = () => {
+      noticePressing = false;
+    };
+    document.addEventListener("pointerup", releasePointer, true);
+    document.addEventListener("pointercancel", releasePointer, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wiring the plate and its notice
+  //
+  // One site, and it comes after both are fully declared: PAStatusStream hands
+  // a new subscriber the last status it saw straight away, so a subscription
+  // opened above this line could reach the notice's own reader before it
+  // exists.
+  // ---------------------------------------------------------------------------
   if (plateRegion) {
     window.PAStatusStream?.subscribe((eventType, payload) => {
       if (eventType === "status") notePlateStatus(payload);
