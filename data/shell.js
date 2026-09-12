@@ -85,7 +85,8 @@
       hint: "say what the droid is made of",
       members: [
         // Droid Build heads the group: it is the answer the rest of Configure
-        // is shaped by. Dormant until the C3 group (#368) lands the surface.
+        // is shaped by. Dormant until the C3 group (#351 and its siblings)
+        // lands it as a destination (#288).
         "droidbuild",
         // Today's Setup is the surface a droid is actually configured from --
         // Hardware Components, LED Strip, Droid Identity. It leaves this row
@@ -105,7 +106,8 @@
       label: "Maintain",
       hint: "check the controller over and keep it up to date",
       members: [
-        // Dormant until C3 (#288) splits today's Setup and lands Maintenance.
+        // Dormant until the C3 group splits today's Setup into Configuration
+        // and Maintenance (#288, #351).
         "maintenance",
         "wifi",
         "firmware",
