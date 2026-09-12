@@ -59,8 +59,9 @@ even if the RC receiver does not assert its own failsafe flag.
 - Result: `webDriveExpired=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_WEB_TIMEOUT`
 - Cleared by: any newer drive command. A browser drive command renews it; an RC
-  radio command ends it, so the radio drives again as soon as it sends a frame.
-  On a tie the radio counts as newer.
+  radio command ends it, so the radio drives again within one 50 Hz drive tick
+  of sending a frame (the tick the frame arrives still reads the gate layer the
+  previous tick set). On a tie the radio counts as newer.
 
 Web control is intentionally dead-man style. A client must keep refreshing the
 command; silence is treated as a stop condition. The hold belongs to the
