@@ -5517,7 +5517,10 @@ label.sound-search-field {
   border-left: 2px dashed var(--border);
 }
 
+/* margin: auto is what centres a modal <dialog>; the reset at the top of this
+   file zeroes every margin, which left it pinned to the top-left corner. */
 .parts-move-dialog {
+  margin: auto;
   width: calc(100% - 2 * var(--space-lg));
   max-width: 32rem;
   padding: var(--space-lg);
