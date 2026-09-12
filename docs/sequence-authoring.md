@@ -22,6 +22,7 @@ Every choreography is built from core step kinds:
 | `dome` | send a dome command (`:OP`/`:CL`/`:OF` panel intent, `@...` logic/PSI, `*...` holo, `:SE##`) |
 | `audio` | play a body sound ($-command; named roles preferred -- see below) |
 | `domeRotate` | body-owned timed dome rotation (speed -100..100%, duration in ms) |
+| `body` | move one body **Part** -- a door, an arm, the dataport (see below) |
 | `loop` | beat/BPM iteration; repeats a body of steps |
 | `random` | runtime panel pick; emits a random panel intent command |
 | `audioCat` | random track from a sound category with fallback |
@@ -101,6 +102,47 @@ the motor automatically on terminal, abort, preempt, or estop.
 
 In Factory Sequences, use the `SEQ_DOME_ROTATE(t, speedPct, durationMs)` macro.
 
+## Moving a body part
+
+A body step names the **Part** -- not a channel, not an output address -- and says
+what it does in the same three words a dome panel already uses:
+
+```json
+{ "t": 400, "type": "body", "part": "doorFL", "shape": "flutter",
+  "howFar": 60, "flutterMs": 1200 }
+```
+
+- `part`: a Droid Parts Catalog id (`doorFL`, `dataport`, `utilUp`, `gripArm`,
+  ...). **Required.** The catalog is `docs/droid-parts.yaml`.
+- `shape`: `open` | `close` | `flutter`. Optional; **omit it for `open`**. These
+  are the dome's own three words, so one word means one thing across the droid,
+  and a body **light** part stores the same token (a surface shows it as
+  on / off / flash).
+- `howFar`: 1..100, a percentage of **that part's own throw** -- the open/close
+  ends recorded on the Servo Output that drives it. Optional; omit it for the
+  whole throw. So the same step means the same gesture on a different linkage,
+  and recalibrating the part changes the microseconds without touching the
+  routine. A value below 5% is *floored* to 5% rather than refused, because the
+  model has no way to mean "does not move".
+- `flutterMs`: how long a flutter goes on, 50..60000. Only a flutter carries it.
+
+Speed, acceleration and easing are **not** on the step. They live on the Servo
+Output and apply to every use of that part, so your choreography travels between
+droids and your physics does not.
+
+**Naming a part nothing drives yet is fine.** It saves, and at run time the body
+reports `part-not-assigned` and carries on to the next step. Wire the part, let a
+Servo Output record it, and the same saved sequence starts moving it with nothing
+re-authored.
+
+**The body undoes nothing.** A part left open when the sequence ends stays open:
+write the close as a step, exactly as you already do for pie panels. A flutter
+ends *open* and requires a later `close` of the same part in the same branch --
+the same rule `:OF` carries on the dome.
+
+In Factory Sequences, use the
+`SEQ_BODY(t, part, shape, howFar, flutterMs)` macro.
+
 ## Cleanup is automatic
 
 You do **not** author teardown. The engine tracks which persistent effects fired (panel
@@ -112,6 +154,12 @@ correct-by-construction; in Factory tables you tag the first activating step exp
 
 The `:OF` cleanup rule is the one exception where Protocol Check requires explicit same-branch
 close authorship. Auto-reset is a safety net, not a substitute for authored flutter cleanup.
+
+**Body parts are outside all of this.** The engine stamps no effect class on a
+`body` step and schedules nothing for it at the end of a run: a door left open
+stays open, because the Servo Output's own release schedule already stops it
+being held and the body knows exactly where the part arrived. The close is a step
+you write. A body flutter owes one in the same branch, same as `:OF`.
 
 ## Authoring a Factory Sequence (C++)
 
@@ -145,6 +193,8 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
     {"t": 0,   "type": "dome",     "cmd": ":OP14"},
     {"t": 100, "type": "dome",     "cmd": ":OFP3"},
     {"t": 600, "type": "dome",     "cmd": ":CLP3"},
+    {"t": 620, "type": "body",     "part": "doorFL", "howFar": 60},
+    {"t": 700, "type": "body",     "part": "doorFL", "shape": "close"},
     {"t": 800, "type": "loop",     "body": 2, "periodMs": 1846, "durationMs": 14000},
     {"t": 0,   "type": "random",   "set": "ring", "mode": "flutter",
                                    "moveMs": 300, "jitterMs": 500, "distinct": true},
@@ -153,7 +203,7 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   "closeSteps": [] }
 ```
 
-- `type` is one of `dome | audio | loop | random | audioCat | end`.
+- `type` is one of `dome | audio | body | loop | random | audioCat | domeRotate | end`.
 - `dome` steps carry a single panel intent or Advanced dome command string.
 - A `loop` header is followed by its `body` steps (relative `t`); no nesting.
 - `random` steps pick from a logical target set (`ring`, `pie`, `all`, `hold`) and emit
@@ -188,6 +238,7 @@ the format cannot express a bypass for.
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
+| `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape; every flutter needs a later `close` of the same part in the same branch |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
 | capacity | 16 files max. Per-file size and free-space floor depend on the controller board: **12 KB / 24 KB** on artoo-esp32, **24 KB / 48 KB** on the FireBeetle 2 (ESP32-P4). Only the larger board can hold a sequence that uses all 96+96 steps |
