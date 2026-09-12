@@ -981,6 +981,30 @@ void test_real_toggle_entries_are_catalog_with_branches() {
     }
 }
 
+// No two dome commands in a branch leave at the same instant. DM:LOW sent three
+// :OP at t=4400 and DM:OPENALL seven at t=900 -- the same-timestamp burst that
+// overflowed the dome's eight-entry command queue on 2026-06-18 (#287, #354).
+static void assertNoSharedDomeTimestamp(const SeqStep* steps, uint8_t count,
+                                        const char* name) {
+    for (uint8_t i = 0; i < count; ++i) {
+        if (steps[i].type != STEP_DOME_CMD) continue;
+        for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
+            if (steps[j].type != STEP_DOME_CMD) continue;
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(steps[i].tMs, steps[j].tMs, name);
+        }
+    }
+}
+
+void test_real_low_and_openall_send_no_same_timestamp_burst() {
+    static const char* const names[] = { "DM:LOW", "DM:OPENALL" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        const SequenceEntry* e = sequenceCatalogFind(names[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e, names[i]);
+        assertNoSharedDomeTimestamp(e->steps, e->stepCount, names[i]);
+        assertNoSharedDomeTimestamp(e->closeSteps, e->closeStepCount, names[i]);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // STEP_RANDOM resolution
 // -----------------------------------------------------------------------------
@@ -1347,6 +1371,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);
     RUN_TEST(test_real_hello_entry_opens_p1_once);
+    RUN_TEST(test_real_low_and_openall_send_no_same_timestamp_burst);
 
     return UNITY_END();
 }

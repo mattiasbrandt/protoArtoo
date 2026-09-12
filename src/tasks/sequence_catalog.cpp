@@ -510,14 +510,19 @@ static const SeqStep kLowOpenSteps[] = {
     SEQ_DOME(3850, FX_NONE, ":CL01"),
     SEQ_DOME(4050, FX_NONE, ":CL13"),
     SEQ_DOME(4250, FX_NONE, ":CL11"),
-    // final open: P11/P13/P1 together, then P2,P3,P4,P7  --  ring ends open
+    // final open: P11, P13, P1, then P2, P3, P4, P7  --  ring ends open.
+    // One panel at a time, 200 ms apart. The first three used to share t=4400
+    // and the rest followed 100 ms apart: the same-timestamp burst that
+    // overflowed the dome's eight-entry command queue and silently dropped a
+    // close on 2026-06-18 (DM:ROCKMARCH above keeps >= ~200 ms for that reason;
+    // #287, #354).
     SEQ_DOME(4400, FX_NONE, ":OP11"),
-    SEQ_DOME(4400, FX_NONE, ":OP13"),
-    SEQ_DOME(4400, FX_NONE, ":OP01"),
-    SEQ_DOME(4500, FX_NONE, ":OP02"),
-    SEQ_DOME(4600, FX_NONE, ":OP03"),
-    SEQ_DOME(4700, FX_NONE, ":OP04"),
-    SEQ_DOME(4800, FX_NONE, ":OP07"),
+    SEQ_DOME(4600, FX_NONE, ":OP13"),
+    SEQ_DOME(4800, FX_NONE, ":OP01"),
+    SEQ_DOME(5000, FX_NONE, ":OP02"),
+    SEQ_DOME(5200, FX_NONE, ":OP03"),
+    SEQ_DOME(5400, FX_NONE, ":OP04"),
+    SEQ_DOME(5600, FX_NONE, ":OP07"),
     SEQ_TERM(5900),
 };
 
@@ -554,35 +559,38 @@ static const SeqStep kOpenallOpenSteps[] = {
     SEQ_DOME(450, FX_NONE, ":OPP4"),
     SEQ_DOME(600, FX_NONE, ":OPP5"),
     SEQ_DOME(750, FX_NONE, ":OPP6"),
-    // open ring panels together
+    // open ring panels one at a time, 200 ms apart. All seven used to leave at
+    // t=900 together: the same-timestamp burst that overflowed the dome's
+    // eight-entry command queue on 2026-06-18 (#287, #354). Everything after
+    // the ring moves 1200 ms later with it, so the twinkle keeps its own shape.
     SEQ_DOME(900, FX_NONE, ":OP11"),
-    SEQ_DOME(900, FX_NONE, ":OP13"),
-    SEQ_DOME(900, FX_NONE, ":OP01"),
-    SEQ_DOME(900, FX_NONE, ":OP02"),
-    SEQ_DOME(900, FX_NONE, ":OP03"),
-    SEQ_DOME(900, FX_NONE, ":OP04"),
-    SEQ_DOME(900, FX_NONE, ":OP07"),
+    SEQ_DOME(1100, FX_NONE, ":OP13"),
+    SEQ_DOME(1300, FX_NONE, ":OP01"),
+    SEQ_DOME(1500, FX_NONE, ":OP02"),
+    SEQ_DOME(1700, FX_NONE, ":OP03"),
+    SEQ_DOME(1900, FX_NONE, ":OP04"),
+    SEQ_DOME(2100, FX_NONE, ":OP07"),
     // twinkle cycle 1: P1, P2, PP2, PP4
-    SEQ_DOME(1000, FX_NONE, ":OP01"),
-    SEQ_DOME(1100, FX_NONE, ":OP01"),
-    SEQ_DOME(1180, FX_NONE, ":OP02"),
-    SEQ_DOME(1280, FX_NONE, ":OP02"),
-    SEQ_DOME(1360, FX_NONE, ":OP02"),
-    SEQ_DOME(1460, FX_NONE, ":OPP2"),
-    SEQ_DOME(1560, FX_NONE, ":OPP2"),
-    SEQ_DOME(1740, FX_NONE, ":OPP4"),
-    SEQ_DOME(1840, FX_NONE, ":OPP4"),
+    SEQ_DOME(2200, FX_NONE, ":OP01"),
+    SEQ_DOME(2300, FX_NONE, ":OP01"),
+    SEQ_DOME(2380, FX_NONE, ":OP02"),
+    SEQ_DOME(2480, FX_NONE, ":OP02"),
+    SEQ_DOME(2560, FX_NONE, ":OP02"),
+    SEQ_DOME(2660, FX_NONE, ":OPP2"),
+    SEQ_DOME(2760, FX_NONE, ":OPP2"),
+    SEQ_DOME(2940, FX_NONE, ":OPP4"),
+    SEQ_DOME(3040, FX_NONE, ":OPP4"),
     // twinkle cycle 2
-    SEQ_DOME(1940, FX_NONE, ":OP01"),
-    SEQ_DOME(2040, FX_NONE, ":OP01"),
-    SEQ_DOME(2120, FX_NONE, ":OP02"),
-    SEQ_DOME(2220, FX_NONE, ":OP02"),
-    SEQ_DOME(2300, FX_NONE, ":OP02"),
-    SEQ_DOME(2400, FX_NONE, ":OPP2"),
-    SEQ_DOME(2500, FX_NONE, ":OPP2"),
-    SEQ_DOME(2680, FX_NONE, ":OPP4"),
-    SEQ_DOME(2780, FX_NONE, ":OPP4"),
-    SEQ_TERM(3680),
+    SEQ_DOME(3140, FX_NONE, ":OP01"),
+    SEQ_DOME(3240, FX_NONE, ":OP01"),
+    SEQ_DOME(3320, FX_NONE, ":OP02"),
+    SEQ_DOME(3420, FX_NONE, ":OP02"),
+    SEQ_DOME(3500, FX_NONE, ":OP02"),
+    SEQ_DOME(3600, FX_NONE, ":OPP2"),
+    SEQ_DOME(3700, FX_NONE, ":OPP2"),
+    SEQ_DOME(3880, FX_NONE, ":OPP4"),
+    SEQ_DOME(3980, FX_NONE, ":OPP4"),
+    SEQ_TERM(4880),
 };
 
 // DM:OPENALL close  --  close every panel serially in all-panels order.
