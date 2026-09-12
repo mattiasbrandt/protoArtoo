@@ -244,14 +244,18 @@
     }
   };
 
+  // The seven body routines. Each description is the purpose the firmware
+  // catalog gives DM:SE<id> (src/tasks/sequence_catalog.cpp), word for word
+  // after its ":SE<id> - " prefix, so the picker and the droid describe the same
+  // routine; test_rc_body_routine_copy_354.js holds the two together (#354).
   const MARCDUINO_SEQUENCES = [
-    { id: 30, name: "Utility arm open-and-close", description: "Open both utility arms, then close them." },
-    { id: 31, name: "All body panels open and close", description: "Open all body panels, then close them." },
-    { id: 32, name: "All body doors wiggle-close", description: "Open all body doors, then close with wiggle timing." },
-    { id: 33, name: "Use gripper arm", description: "Run the body sequence that uses ARM1 gripper motion." },
-    { id: 34, name: "Use interface tool", description: "Run the body sequence that uses ARM2 interface-tool motion." },
-    { id: 35, name: "Ping-pong body doors", description: "Alternate body door motion in ping-pong pattern." },
-    { id: 36, name: "BT-1 two-gripper sequence", description: "Run the BT-1 style dual-gripper body sequence." },
+    { id: 30, name: "Utility arm open-and-close", description: "Both utility arms swing out, then flick in and out twice before they close (5 s)." },
+    { id: 31, name: "All body panels open and close", description: "Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+    { id: 32, name: "All body doors wiggle-close", description: "The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
+    { id: 33, name: "Use gripper arm", description: "The left breadpan door opens and the gripper arm rises and snaps its claw three times, then folds away (8 s)." },
+    { id: 34, name: "Use interface tool", description: "The right breadpan door opens and the interface arm rises and works its tool three times, then folds away (9 s)." },
+    { id: 35, name: "Ping-pong body doors", description: "The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
+    { id: 36, name: "BT-1 two-gripper sequence", description: "BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },
   ];
 
   // Factory dome sequences (fallback when /api/seq/list is unavailable)
@@ -268,7 +272,7 @@
     { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco sequence delegating to SE09 (46 s)' },
     { payload: 'DM:VADER',     label: 'Imperial March',       description: 'Imperial March -- red logics/holos (47 s)' },
     { payload: 'DM:ROCKMARCH', label: 'Rock March',           description: 'Imperial March alternate visual (47 s)' },
-    { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Panel wave + logic scroll greeting (4 s)' },
+    { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Logic text greeting, then P1 opens and closes (4 s)' },
     { payload: 'DM:LEIA',      label: 'Leia',                 description: 'Front holo Leia effect, logic Leia mode (36 s)' },
     { payload: 'DM:CANTINA',   label: 'Cantina',              description: '130 BPM alternating panel dance (17 s)' },
     { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
