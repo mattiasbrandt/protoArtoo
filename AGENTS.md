@@ -52,6 +52,7 @@ epic issue. Material an agent needs only on some paths lives under
 - ExpressLRS / CRSF truth: `docs/spec-sheets/elrs-crsf-radio.md`
 - Pololu Maestro / Maestro serial truth: `docs/spec-sheets/pololu-maestro-servo-controller.md`
 - DFPlayer Mini / DFPlayer serial truth: `docs/spec-sheets/dfplayer-mini-sound.md`
+- DY-SV5W / DY UART truth: `docs/spec-sheets/dy-sv5w-sound.md`
 - Long-term project memory: MemPalace — see "Memory" below
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`

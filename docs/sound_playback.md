@@ -9,7 +9,7 @@ task or subsystem writes to the audio GPIO directly.
 
 - [1. Backend Architecture](#1-backend-architecture)
 - [2. Backend Details](#2-backend-details)
-- [2.1 `AUDIO_SOFT_UART` - Software UART Binary Frame](#21-audio_soft_uart---software-uart-binary-frame)
+- [2.1 `AUDIO_SOFT_UART` - DY-SV5W Binary Frame](#21-audio_soft_uart--dy-sv5w-binary-frame)
 - [2.2 `AUDIO_CHIRP` - CHIRP Audio Trigger ASCII Backend](#22-audio_chirp---chirp-audio-trigger-ascii-backend)
 - [2.3 `AUDIO_MP3TRIGGER` - SparkFun MP3 Trigger](#23-audio_mp3trigger---sparkfun-mp3-trigger)
 - [3. MarcDuino `$` Command Mapping](#3-marcduino--command-mapping)
@@ -50,21 +50,31 @@ new module, and flash. No other firmware changes required.
 
 ## 2. Backend Details
 
-### 2.1 `AUDIO_SOFT_UART` — Software UART Binary Frame
+### 2.1 `AUDIO_SOFT_UART` — DY-SV5W Binary Frame
 
-**File:** `src/drivers/audio_soft_uart.cpp`
+**Files:** `src/drivers/audio_dy_sv5w.cpp`, `include/audio_dy_sv5w.h`
 
-A TX-only software bit-bang UART driver that sends binary command frames in the
-format `0xAA [CMD] [LEN] [DATA...] 0xAB` at 9600 baud on `PIN_AUDIO_TX`
-(GPIO 26). All three hardware UARTs are reserved on this board, so software
-bit-bang is used. At 9600 baud on a 240 MHz ESP32 this is reliable.
+**Full protocol reference: [`docs/spec-sheets/dy-sv5w-sound.md`](spec-sheets/dy-sv5w-sound.md)** —
+the source of truth for this module: every command and query frame with its
+computed checksum, the DIP mode table, the electrical contract, the storage
+rules, and what our own hardware has proven.
 
-Tested with the **DY-SV5W** voice playback module. Likely compatible with other
-modules using the same binary frame protocol.
+Binary command frames at 9600 baud 8-N-1, in the format
+`0xAA [CMD] [LEN] [DATA...] [SM]`, where `SM` is the low 8 bits of the sum of all
+preceding bytes. There is **no end marker**: the `0xAB` that ends the play-state
+query `AA 01 00 AB` is that frame's checksum (`0xAA + 0x01 + 0x00`), not a footer.
 
-> ⚠ Command bytes in the driver are flagged for hardware validation (T09).
-> Different module firmware versions may differ. Verify with a logic analyser
-> or serial monitor on first power-up.
+Transport depends on the board, keyed on `PA_CAP_DEDICATED_AUDIO_UART`. On
+artoo-esp32 all three hardware UART controllers are spoken for, so TX is an
+interrupt-protected software bit-bang on `PIN_AUDIO_TX` (GPIO 26) and RX borrows
+the dome link's controller through `audioUartClaim()`. Where the board has a
+spare controller, audio gets it in both directions. The driver is identical on
+both: the `AudioSerialIO` seam hides the difference.
+
+Command bytes are source-verified against the module datasheet, the DYPlayer and
+BetterDuino references, and 23 native tests (`test_audio_frames`,
+`test_audio_io_seam`). Playback, stop and volume are confirmed on hardware
+(2026-03-22).
 
 **DY-SV5W SD card layout** (standard R2 community numbering):
 files are placed in the SD root numbered sequentially (`001.mp3`, `002.mp3` …).
@@ -82,7 +92,13 @@ Example:
 - Result: requesting track `003` may play the file named `004.mp3`
 
 Recommended rule: keep the root directory as strict `NNN.mp3` contiguous files
-(`001`..`N`) with no skipped numbers.
+(`001`..`N`) with no skipped numbers, and copy them onto an empty card in
+playing order — the module numbers tracks by the order it enumerates them, not
+by their names.
+
+Some DY-SV5W boards play from **on-board flash** rather than the card and report
+device `0x02` instead of `0x01`. The driver asks (`0x09`) and never assumes; see
+the spec sheet's storage section.
 
 ---
 
@@ -397,3 +413,5 @@ Implementation references:
 3. [CHIRP Audio Trigger GitHub](https://github.com/joymonkey/CHIRP)
 4. [R2D2 Sounds — Printed Droid](https://www.printed-droid.com/kb/r2d2-sounds)
 5. [DY-SV5W — Arduino Forum](https://forum.arduino.cc/t/how-to-use-dy-sv5w-mp3-player/1218247)
+6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — this project's protocol and hardware research for the DY-SV5W
+7. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) — the planned fourth member
