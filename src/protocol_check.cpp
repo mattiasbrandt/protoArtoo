@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
+#include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
 
 // Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in the header.
@@ -847,6 +848,11 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
     uint32_t prevT = 0;
     PanelIntent pendingFlutter[PC_MAX_STEPS];
     uint8_t pendingFlutterCount = 0;
+    // Body flutters owed a close, as step INDICES rather than copies of the Part
+    // id: the id is already in steps[i].payload, and 96 indices cost 96 bytes of
+    // this frame where 96 ids would cost thirteen times that.
+    uint8_t pendingBodyFlutter[PC_MAX_STEPS];
+    uint8_t pendingBodyFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -943,6 +949,61 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = FX_NONE;
                 break;
             }
+            case STEP_BODY: {
+                // Form, and only form (ADR 0044). Whether an Output claims this
+                // Part, whether the target is reachable and whether the move
+                // completes in time are the Rehearsal's questions and never
+                // block a save -- a Part nothing drives yet is the normal state
+                // of a build in progress, and authoring for an arm that is not
+                // wired is deliberate (#301).
+                if (!droidPartIdIsKnown(s.payload)) {
+                    return pcFailAt(label, i, "part",
+                                  "not a Part in the Droid Parts Catalog");
+                }
+                const SeqStepParams& p = s.params;
+                if (p.shape >= BODY_SHAPE_COUNT) {
+                    return pcFailAt(label, i, "shape",
+                                  "shape must be open, close or flutter");
+                }
+                if (p.howFar > SEQ_BODY_HOWFAR_MAX) {
+                    return pcFailAt(label, i, "howFar", "howFar must be 1..100");
+                }
+                if (p.shape == BODY_SHAPE_FLUTTER) {
+                    if (p.flutterMs < PC_BODY_FLUTTER_MS_MIN ||
+                        p.flutterMs > PC_BODY_FLUTTER_MS_MAX) {
+                        return pcFailAt(label, i, "flutterMs",
+                                      "flutter duration out of range (50..60000)");
+                    }
+                    if (pendingBodyFlutterCount >= PC_MAX_STEPS) {
+                        return pcFailAt(label, i, "shape", "too many body flutter steps");
+                    }
+                    pendingBodyFlutter[pendingBodyFlutterCount++] = i;
+                } else {
+                    if (p.flutterMs != 0) {
+                        return pcFailAt(label, i, "flutterMs",
+                                      "only a flutter carries a duration");
+                    }
+                    if (p.shape == BODY_SHAPE_CLOSE) {
+                        // This close discharges every earlier flutter of the same
+                        // Part. There is no body counterpart to the dome's group
+                        // close (:CL15/:CL00), so an exact Part match is the whole
+                        // rule -- a body close names one Part.
+                        uint8_t write = 0;
+                        for (uint8_t f = 0; f < pendingBodyFlutterCount; ++f) {
+                            if (strcmp(steps[pendingBodyFlutter[f]].payload, s.payload) != 0) {
+                                pendingBodyFlutter[write++] = pendingBodyFlutter[f];
+                            }
+                        }
+                        pendingBodyFlutterCount = write;
+                    }
+                }
+                // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
+                // body step did, so there is no persistent state for terminal
+                // cleanup to reset. A Part left open stays open, and saying so is
+                // a Rehearsal Note rather than anything this gate acts on.
+                s.effectClass = FX_NONE;
+                break;
+            }
             case STEP_LOOP:
                 s.effectClass = FX_NONE;  // body steps carry their own classes
                 break;
@@ -955,6 +1016,15 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
     }
     if (pendingFlutterCount > 0) {
         return pcFail(label, ":OF requires a later matching :CL in the same branch");
+    }
+    // A body flutter ends OPEN and owes a later close in the same branch, which
+    // is the same rule the dome flutter above carries -- one word, one meaning
+    // across the droid (ADR 0049). Anchored to the offending step rather than to
+    // the branch, because this list keeps the index the dome's squashed copy
+    // cannot.
+    if (pendingBodyFlutterCount > 0) {
+        return pcFailAt(label, pendingBodyFlutter[0], "shape",
+                      "flutter needs a later close of the same Part in this branch");
     }
     return pcOk();
 }

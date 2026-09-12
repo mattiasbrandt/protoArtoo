@@ -79,6 +79,21 @@ static const uint16_t PC_RAND_JITTER_MAX  = 2000;
 static const uint8_t  PC_NAME_BODY_MAX    = 18;  // chars after "DM:"
 static const uint8_t  PC_CMD_MAX          = 63;  // payload[64] minus NUL
 
+// A Body Step's flutter duration, bounded by the model's own two ends rather
+// than by a measurement of the body (ADR 0049). Both are derived, not chosen:
+//   MIN  the shortest servo move this model already accepts (PC_SM_MOVE_MIN),
+//        so a flutter too short to contain one move cannot be authored.
+//   MAX  the longest repeat this model already accepts (PC_LOOP_PERIOD_MAX),
+//        and a flutter is a repeat.
+// These are FORM bounds and nothing more. Whether this droid's Output can
+// actually complete a move inside the duration depends on that Output's own
+// Motion Profile, which is the Rehearsal's question and never blocks a save
+// (ADR 0044). In particular neither number is a Cadence Floor: the Floor is
+// UNMEASURED on the body, and the ~450 ms figure is the DOME's, measured on
+// dome hardware -- it is not restated here as a body figure.
+static const uint16_t PC_BODY_FLUTTER_MS_MIN = PC_SM_MOVE_MIN;
+static const uint16_t PC_BODY_FLUTTER_MS_MAX = PC_LOOP_PERIOD_MAX;
+
 // -----------------------------------------------------------------------------
 // Staging draft  --  the in-memory form a Learned Sequence takes between JSON parse
 // and engine execution. `steps`/`closeSteps` point at caller-owned buffers

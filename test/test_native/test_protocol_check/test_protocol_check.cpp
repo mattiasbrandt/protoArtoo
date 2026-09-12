@@ -601,6 +601,160 @@ static void test_retrain_factory_toggle_same_group_accepts() {
 }
 
 // -----------------------------------------------------------------------------
+// Body Steps  --  form only (ADR 0044, ADR 0049)
+// -----------------------------------------------------------------------------
+
+static void test_body_step_valid_open_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 60, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, s[0].effectClass);
+}
+
+// A Part no Output claims SAVES: it is a known Part, and an unwired Part is the
+// normal state of a build in progress (#301). The report is at run.
+static void test_body_step_unassigned_part_still_saves() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "gripClaw", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_body_step_unknown_part_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "armOfTheFuture", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].part", r.field);
+}
+
+static void test_body_step_empty_part_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].part", r.field);
+}
+
+static void test_body_step_unknown_shape_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", 7, 0, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
+}
+
+static void test_body_step_how_far_above_range_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 101, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].howFar", r.field);
+}
+
+// Below the floor is FORM-legal and gets floored at read time; refusing it would
+// be a judgement about what the author meant.
+static void test_body_step_how_far_below_floor_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 1, 0),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_FLOOR, seqBodyHowFar(s[0].params));
+}
+
+static void test_body_step_flutter_with_close_accepts() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_body_step_flutter_without_close_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
+}
+
+// A close of a DIFFERENT Part discharges nothing: a body close names one Part,
+// and there is no group close on this side of the droid.
+static void test_body_step_flutter_closed_on_another_part_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_BODY(1200, "doorFL", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
+}
+
+// The close has to come LATER: a close ahead of the flutter leaves it owed.
+static void test_body_step_close_before_flutter_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_BODY(200, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[1].shape", r.field);
+}
+
+static void test_body_step_flutter_duration_below_min_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, PC_BODY_FLUTTER_MS_MIN - 1),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+static void test_body_step_flutter_duration_above_max_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, PC_BODY_FLUTTER_MS_MAX + 1),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(1500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+static void test_body_step_duration_on_open_rejected() {
+    static SeqStep s[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 0, 900),
+        SEQ_TERM(500),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+// -----------------------------------------------------------------------------
 // Toggle group helper
 // -----------------------------------------------------------------------------
 
@@ -667,6 +821,21 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_retrain_factory_nontoggle_with_none_accepts);
     RUN_TEST(test_retrain_factory_toggle_wrong_group_rejected);
     RUN_TEST(test_retrain_factory_toggle_same_group_accepts);
+
+    RUN_TEST(test_body_step_valid_open_accepts);
+    RUN_TEST(test_body_step_unassigned_part_still_saves);
+    RUN_TEST(test_body_step_unknown_part_rejected);
+    RUN_TEST(test_body_step_empty_part_rejected);
+    RUN_TEST(test_body_step_unknown_shape_rejected);
+    RUN_TEST(test_body_step_how_far_above_range_rejected);
+    RUN_TEST(test_body_step_how_far_below_floor_accepts);
+    RUN_TEST(test_body_step_flutter_with_close_accepts);
+    RUN_TEST(test_body_step_flutter_without_close_rejected);
+    RUN_TEST(test_body_step_flutter_closed_on_another_part_rejected);
+    RUN_TEST(test_body_step_close_before_flutter_rejected);
+    RUN_TEST(test_body_step_flutter_duration_below_min_rejected);
+    RUN_TEST(test_body_step_flutter_duration_above_max_rejected);
+    RUN_TEST(test_body_step_duration_on_open_rejected);
 
     RUN_TEST(test_toggle_group_valid_helper);
 
