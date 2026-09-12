@@ -43,6 +43,35 @@ inline uint8_t servo_arm_id_to_ledc_channel(uint8_t arm_id) {
 }
 
 // -----------------------------------------------------------------------------
+// servo_ledc_channel_to_arm_id()
+// The inverse: which armId addresses this LEDC channel, if any.
+//
+// A caller that starts from an Output Address rather than from an arm name needs
+// this direction  --  the Servo Output rows record a driver and a channel
+// (ADR 0041), and servoCmdQueue speaks armId. The two vocabularies are kept
+// apart on purpose and this is the one bridge, not a reconciliation of them
+// (include/ledc_pwm.h).
+//
+// Returns false for LEDC_CH_DOME (a brushless ESC, not addressable as a servo)
+// and for anything out of range, leaving *out untouched. A bool rather than a
+// sentinel value: 255 already means the ARM1+ARM2 broadcast on
+// ServoCommand::armId (include/robot_state.h), so "not an arm" would have to
+// invent a second magic number to sit beside the one that means "both".
+// -----------------------------------------------------------------------------
+inline bool servo_ledc_channel_to_arm_id(uint8_t channel, uint8_t* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    for (uint8_t arm_id = 0; arm_id < 5; ++arm_id) {
+        if (servo_arm_id_to_ledc_channel(arm_id) == channel) {
+            *out = arm_id;
+            return true;
+        }
+    }
+    return false;
+}
+
+// -----------------------------------------------------------------------------
 // servo_arm_enabled()
 // Return true if the given armId is enabled, given the per-arm enable flags and
 // AUX LED header reservation state.

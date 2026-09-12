@@ -27,10 +27,12 @@
 
 #include "audio_task.h"
 #include "config_cache.h"
+#include "console_record.h"   // consoleReasonString() - the Availability Reason token
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store.h"
+#include "sequence_body_step.h"
 #include "sequence_dispatcher.h"
 #include "sequence_dispatcher_step.h"
 #include "sequence_engine.h"
@@ -68,6 +70,56 @@ bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
     out.source = SRC_SEQ;
     out.timestampMs = nowMs;
     return true;
+}
+
+// -----------------------------------------------------------------------------
+// dispatchBodyMove  --  a Body Step reaching the body servo path.
+//
+// The Part is resolved against the live Servo Output rows HERE, at dispatch,
+// every time. Nothing about the answer is cached: wire the arm, let an Output
+// record the Part, and the same saved step starts moving it with nothing
+// re-authored (include/droid_part_availability.h). The rows are read one at a
+// time because that is how the cache hands them out -- one 70-byte row on this
+// frame rather than the whole 1682-byte table.
+//
+// A Part no Output claims is REPORTED and the sequence carries on: an unwired
+// Part is the normal state of a build in progress, so the step is inert and the
+// rest of the choreography is untouched (#301). Returning true is therefore
+// correct -- the action was handled, and only a full queue is a retry.
+//
+// A flutter resolves to its how-far target, because a flutter ends open
+// (ADR 0049). The oscillation on the way there is NOT performed yet: it is
+// generated motion, and generated motion is what the Cadence Floor paces --
+// which is unmeasured on the body and deferred past this ticket. Until it
+// exists, a routine fluttering several Parts at once would be emitting exactly
+// the many-at-once shape the Floor is there to hold apart.
+// -----------------------------------------------------------------------------
+static bool dispatchBodyMove(const SeqAction& act) {
+    const uint8_t rowCount = configCacheServoOutputCount();
+    ServoOutputRow row = {};
+    const ServoOutputRow* driving = nullptr;
+    for (uint8_t i = 0; i < rowCount; ++i) {
+        if (configCacheReadServoOutput(i, &row) &&
+            servoOutputDrivesPart(row, act.payload)) {
+            driving = &row;
+            break;
+        }
+    }
+
+    const SeqBodyStepPlan plan = sequenceBodyStepPlan(act, driving);
+    if (!plan.drive) {
+        PA_LOG_INFO(TAG, "body %s not moved - %s", act.payload,
+                    consoleReasonString(plan.reason));
+        return true;  // inert step; the sequence carries on
+    }
+
+    ServoCommand cmd = {};
+    cmd.armId = plan.armId;
+    cmd.type = SERVO_CMD_POSITION;
+    cmd.positionUs = plan.targetUs;
+    cmd.source = SRC_SEQ;
+    cmd.timestampMs = millis();
+    return xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE;
 }
 
 // =============================================================================
@@ -163,6 +215,9 @@ static bool dispatchAction(const SeqAction& act) {
         case SEQ_DISPATCH_AUDIO_STOP:
             // Forward to audio stop queue.
             return audioQueueTrackStop(SRC_SEQ);
+
+        case SEQ_DISPATCH_BODY_MOVE:
+            return dispatchBodyMove(act);
 
         case SEQ_DISPATCH_NONE:
         default:

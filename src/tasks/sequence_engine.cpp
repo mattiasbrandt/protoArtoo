@@ -54,6 +54,9 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
     setPayload(a, payload);
     st.finalDueRel[idx] = dueRel;
 }
@@ -70,6 +73,9 @@ static void addFinalDomeRotateStop(SeqEngineState& st) {
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
     a.payload[0] = '\0';
     st.finalDueRel[idx] = 0;
 }
@@ -365,6 +371,9 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
     a.audioFallbackSlot = 0;
     a.domeSpeedPct = 0;
     a.domeDurationMs = 0;
+    a.bodyShape = 0;
+    a.bodyHowFar = 0;
+    a.bodyFlutterMs = 0;
     a.payload[0] = '\0';
     uint32_t jitter = 0;
 
@@ -389,6 +398,19 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             break;
         case STEP_AUDIO_STOP:
             a.kind = SEQ_ACT_AUDIO_STOP;
+            break;
+        case STEP_BODY:
+            // The Part travels as the payload, by its catalog id, because a
+            // sequence names the Part and never the Output Address (ADR 0041):
+            // the id is what survives a re-address, and the wiring question is
+            // asked of the Servo Output table at dispatch. The shape and how-far
+            // go out already resolved, so the engine is where both defaults are
+            // spent and no consumer re-decides them.
+            a.kind = SEQ_ACT_BODY_MOVE;
+            setPayload(a, step.payload);
+            a.bodyShape = (uint8_t)seqBodyShape(step.params);
+            a.bodyHowFar = seqBodyHowFar(step.params);
+            a.bodyFlutterMs = step.params.flutterMs;
             break;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);
@@ -636,6 +658,14 @@ void seqEngineCommit(SeqEngineState& st) {
                st.pending.domeSpeedPct != 0) {
         st.domeRotateActive = true;
     }
+    // SEQ_ACT_BODY_MOVE records nothing here, and that absence is the decision
+    // (ADR 0049): the engine undoes nothing a body step did. A Part left open
+    // when the sequence ends stays open -- the Output's own release schedule
+    // un-holds it, the body knows arrival exactly, and the close is a step the
+    // author writes, exactly as they already must for a pie panel. So there is
+    // no body counterpart to domeRotateActive above and no terminal action to
+    // queue: "this routine leaves the dataport open" is a Rehearsal Note,
+    // because the sequence performed exactly as written.
 
     st.pendingComputed = false;
     st.cursor++;

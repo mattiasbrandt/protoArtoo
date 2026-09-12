@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
+#include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
 
 // Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in the header.
@@ -940,6 +941,65 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                     return pcFailAt(label, i, "speedPct",
                                   "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
                 }
+                s.effectClass = FX_NONE;
+                break;
+            }
+            case STEP_BODY: {
+                // Form, and only form (ADR 0044). Whether an Output claims this
+                // Part, whether the target is reachable and whether the move
+                // completes in time are the Rehearsal's questions and never
+                // block a save -- a Part nothing drives yet is the normal state
+                // of a build in progress, and authoring for an arm that is not
+                // wired is deliberate (#301).
+                if (!droidPartIdIsKnown(s.payload)) {
+                    return pcFailAt(label, i, "part",
+                                  "not a Part in the Droid Parts Catalog");
+                }
+                const SeqStepParams& p = s.params;
+                if (p.shape >= BODY_SHAPE_COUNT) {
+                    return pcFailAt(label, i, "shape",
+                                  "shape must be open, close or flutter");
+                }
+                if (p.howFar > SEQ_BODY_HOWFAR_MAX) {
+                    return pcFailAt(label, i, "howFar", "howFar must be 1..100");
+                }
+                if (p.shape == BODY_SHAPE_FLUTTER) {
+                    if (p.flutterMs < PC_BODY_FLUTTER_MS_MIN ||
+                        p.flutterMs > PC_BODY_FLUTTER_MS_MAX) {
+                        return pcFailAt(label, i, "flutterMs",
+                                      "flutter duration out of range (50..60000)");
+                    }
+                    // A body flutter ends OPEN and owes a later close in the same
+                    // branch -- the same rule the dome flutter above carries,
+                    // because one word means one thing across the droid
+                    // (ADR 0049). Answered by looking forward from here rather
+                    // than by carrying a pending list: there is no body
+                    // counterpart to the dome's group close, so the only question
+                    // is whether a later step closes THIS Part, and a list of
+                    // ninety-six owed flutters would put 96 B on a frame that
+                    // already carries the deepest chain on the Sequence
+                    // Coordinator's task (ADR 0040).
+                    bool closedLater = false;
+                    for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
+                        if (steps[j].type == STEP_BODY &&
+                            seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
+                            strcmp(steps[j].payload, s.payload) == 0) {
+                            closedLater = true;
+                            break;
+                        }
+                    }
+                    if (!closedLater) {
+                        return pcFailAt(label, i, "shape",
+                                      "flutter needs a later close of the same Part");
+                    }
+                } else if (p.flutterMs != 0) {
+                    return pcFailAt(label, i, "flutterMs",
+                                  "only a flutter carries a duration");
+                }
+                // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
+                // body step did, so there is no persistent state for terminal
+                // cleanup to reset. A Part left open stays open, and saying so is
+                // a Rehearsal Note rather than anything this gate acts on.
                 s.effectClass = FX_NONE;
                 break;
             }

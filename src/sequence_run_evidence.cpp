@@ -11,6 +11,7 @@
 #include <Arduino.h>      // portMUX_TYPE, taskENTER_CRITICAL (native: stubbed)
 #include <string.h>
 
+#include "droid_parts.h"  // DROID_PART_ID_MAX_LEN -- the longest id the catalog has
 #include "robot_state.h"  // portMUX_TYPE
 
 static portMUX_TYPE seqEvidenceMux = portMUX_INITIALIZER_UNLOCKED;
@@ -101,6 +102,32 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             snprintf(out, cap, "<domeRotate:%d:%u>",
                      (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
             break;
+        case SEQ_ACT_BODY_MOVE: {
+            // Part, shape and how-far, plus a flutter's duration when there is
+            // one. This is what the engine emitted, which is what this record is
+            // for -- whether an Output claimed the Part is answered at dispatch
+            // and reported there.
+            //
+            // The Part id is copied into a buffer sized against the CATALOG
+            // rather than formatted straight out of the 64-byte payload. Both
+            // halves matter: an entry is 48 bytes on artoo-esp32, so the wide
+            // field genuinely could not fit, and a string longer than the
+            // longest id the catalog declares is not a Part id in the first
+            // place -- Protocol Check gated it at save.
+            char part[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(part, act.payload, sizeof(part) - 1);
+            part[sizeof(part) - 1] = '\0';
+            if (act.bodyFlutterMs != 0) {
+                snprintf(out, cap, "<body:%s:%s:%u:%u>", part,
+                         seqBodyShapeToString(act.bodyShape),
+                         (unsigned)act.bodyHowFar, (unsigned)act.bodyFlutterMs);
+            } else {
+                snprintf(out, cap, "<body:%s:%s:%u>", part,
+                         seqBodyShapeToString(act.bodyShape),
+                         (unsigned)act.bodyHowFar);
+            }
+            break;
+        }
         default:
             strncpy(out, "<none>", cap - 1);
             out[cap - 1] = '\0';
@@ -139,8 +166,12 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     char rep[SEQ_EVID_CMD_LEN];
     actionToString(act, rep, sizeof(rep));
-    const bool isDome = (act.kind == SEQ_ACT_DOME_CMD ||
-                         act.kind == SEQ_ACT_DOME_ROTATE);
+    // Named by what they ARE, not by what they are not: the audio scope used to
+    // be inferred as "anything that is not dome", which made every future
+    // non-dome action kind an audio effect by default.
+    const bool isAudio = (act.kind == SEQ_ACT_AUDIO_DOLLAR ||
+                          act.kind == SEQ_ACT_AUDIO_CATEGORY ||
+                          act.kind == SEQ_ACT_AUDIO_STOP);
 
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
@@ -165,10 +196,14 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
         if (act.kind == SEQ_ACT_DOME_CMD) {
             applyScope(g, rep);
             applyRing(g, rep);
-        } else if (!isDome) {
-            // SEQ_ACT_DOME_ROTATE has no Marcduino payload, no scope/ring tracking.
+        } else if (isAudio) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
+        // SEQ_ACT_DOME_ROTATE has no Marcduino payload, so no scope or ring
+        // tracking. SEQ_ACT_BODY_MOVE sets no scope bit either, and that is the
+        // model rather than a gap: a body step stamps no effect class, so there
+        // is no terminal cleanup for a scope bit to be diffed against
+        // (ADR 0049).
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
 }

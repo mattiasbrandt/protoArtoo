@@ -266,11 +266,13 @@ never type an ID.
   | `part-not-assigned` | the droid knows this Part, but no Output on it drives the Part, so nothing moves (#301) |
 
   `part-not-assigned` is the one that is a fact about the builder's wiring
-  rather than about the image, the board or a toggle. No operation reports it
-  yet - the body step type that names a Part does not exist - but the token is
-  defined here rather than minted later, because the whole point of it is that
-  a step authored before its arm was wired starts working once an Output claims
-  that Part, with nothing re-authored.
+  rather than about the image, the board or a toggle. The body step type that
+  names a Part now exists (#349), and the Sequence Coordinator reports this
+  reason when a step names a Part no Servo Output on the droid claims - the step
+  is inert and the sequence carries on. It is asked of the Servo Output table at
+  execution, every time, which is the whole point of it: a step authored before
+  its arm was wired starts working once an Output claims that Part, with nothing
+  re-authored.
 
   Other reasons name the specific failure: `line-too-long`,
   `secret-not-settable`, `read-only` (the operation reads, but nothing in the

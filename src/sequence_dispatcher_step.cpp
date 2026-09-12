@@ -41,6 +41,13 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
             actions.target = SEQ_DISPATCH_AUDIO_STOP;
             break;
 
+        case SEQ_ACT_BODY_MOVE:
+            // Route only. The Part -> Output resolution needs the live Servo
+            // Output table, which this pure core cannot reach; the adapter does
+            // that walk and sequenceBodyStepPlan() decides from the row.
+            actions.target = SEQ_DISPATCH_BODY_MOVE;
+            break;
+
         default:
             // Unknown action: silent success (fail-safe behavior).
             actions.target = SEQ_DISPATCH_NONE;

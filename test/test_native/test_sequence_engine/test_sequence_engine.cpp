@@ -569,6 +569,173 @@ static const SequenceEntry kLoopEntry = {
     2000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
+// =============================================================================
+// Body Steps (ADR 0049)
+// =============================================================================
+
+void test_body_step_emits_part_shape_and_how_far() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(400, "doorFL", BODY_SHAPE_OPEN, 60, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    SeqAction act = {};
+    TEST_ASSERT_FALSE(seqEnginePeek(st, 1399, stubRand, act));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 1400, stubRand, act));
+    TEST_ASSERT_EQUAL_INT(SEQ_ACT_BODY_MOVE, (int)act.kind);
+    TEST_ASSERT_EQUAL_STRING("doorFL", act.payload);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(60, act.bodyHowFar);
+    TEST_ASSERT_EQUAL_UINT16(0, act.bodyFlutterMs);
+}
+
+// A step that says nothing about its shape or how far it goes is an open over
+// the whole throw, and the engine spends both defaults so no consumer re-decides
+// them.
+void test_body_step_defaults_resolve_to_open_over_the_whole_throw() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "dataport", 0, SEQ_BODY_HOWFAR_UNSET, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_DEF", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_DEFAULT, act.bodyHowFar);
+}
+
+// A Factory-authored body step carries no effect class, and that is the decision
+// rather than an omission (ADR 0049): the engine undoes nothing a body step did,
+// so there is nothing for activeFx to carry into terminal cleanup.
+void test_body_step_carries_no_effect_class() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 100, 0),
+        SEQ_TERM(500),
+    };
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, steps[0].effectClass);
+}
+
+// The accessor is total: a stored shape this build does not model resolves to
+// the default rather than reaching the drive path as a number nobody meant.
+void test_body_step_unmodelled_shape_resolves_to_the_default() {
+    SeqStepParams p = {};
+    p.shape = (uint8_t)BODY_SHAPE_COUNT;  // one past the vocabulary
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    p.shape = 200;
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, (uint8_t)seqBodyShape(p));
+    // And the default is open: a step that says nothing about its shape opens.
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, (uint8_t)SEQ_BODY_SHAPE_DEFAULT);
+}
+
+// The floor is what stops a how-far meaning "does not move"; it floors rather
+// than refusing, because refusing would be a judgement about intent.
+void test_body_step_how_far_is_floored_not_refused() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "utilUp", BODY_SHAPE_CLOSE, 1, 0),
+        SEQ_TERM(1000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_FLOOR", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_CLOSE, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_FLOOR, act.bodyHowFar);
+}
+
+void test_body_step_flutter_carries_its_duration() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
+        SEQ_BODY(1200, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(2000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_FLUT", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_FLUTTER, act.bodyShape);
+    TEST_ASSERT_EQUAL_UINT16(1200, act.bodyFlutterMs);
+}
+
+// The engine undoes nothing a body step did (ADR 0049): a Part left open stays
+// open, so normal termination schedules no release and the run goes idle with
+// nothing drained.
+void test_body_step_schedules_no_release_on_normal_termination() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "doorFL", BODY_SHAPE_OPEN, 0, 0),
+        SEQ_TERM(500),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_TERM", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    char log[128] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("doorFL", log);
+
+    // Terminal transition: nothing at all is queued for the open door.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 500, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// Same on an abort: estop aborts the sequence and releases every Output
+// (ADR 0043), so the engine has nothing of its own to undo here either.
+void test_body_step_abort_emits_no_cleanup() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "gripArm", BODY_SHAPE_OPEN, 100, 0),
+        SEQ_TERM(5000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BODY_ABORT", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        6000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, nullptr, 0));
+
+    seqEngineAbort(st);
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 100, nullptr, 0));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
 void test_loop_iterations_fire_at_period_offsets() {
     SeqEngineState st;
     seqEngineInit(st);
@@ -1118,6 +1285,15 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_terminal_cleanup_after_dome_rotate_emits_neutral_rotation_stop);
     RUN_TEST(test_zero_speed_dome_rotate_does_not_emit_cleanup_stop);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
+
+    RUN_TEST(test_body_step_emits_part_shape_and_how_far);
+    RUN_TEST(test_body_step_defaults_resolve_to_open_over_the_whole_throw);
+    RUN_TEST(test_body_step_carries_no_effect_class);
+    RUN_TEST(test_body_step_unmodelled_shape_resolves_to_the_default);
+    RUN_TEST(test_body_step_how_far_is_floored_not_refused);
+    RUN_TEST(test_body_step_flutter_carries_its_duration);
+    RUN_TEST(test_body_step_schedules_no_release_on_normal_termination);
+    RUN_TEST(test_body_step_abort_emits_no_cleanup);
 
     RUN_TEST(test_loop_iterations_fire_at_period_offsets);
     RUN_TEST(test_loop_late_tick_catches_up_all_iterations);

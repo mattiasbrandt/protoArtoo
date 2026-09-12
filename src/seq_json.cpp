@@ -79,6 +79,25 @@ static const char* randomModeToString(uint8_t mode) {
     }
 }
 
+// Move Shape token -> value. The SAME three words for a servo Part and a light
+// Part: the surface names them by Part Kind (open/close/flutter against
+// on/off/flash), and the stored token is one either way, which is what lets a
+// Gesture spread one shape across a mixed set (ADR 0049).
+//
+// Walks seqBodyShapeToString() rather than restating the words, the same way
+// categoryFromString() below walks audioCategoryToString(), so the vocabulary
+// has one home (include/sequence_engine.h) and the two directions cannot drift.
+static bool bodyShapeFromString(const char* s, uint8_t& out) {
+    if (s == nullptr) return false;
+    for (uint8_t shape = 0; shape < BODY_SHAPE_COUNT; ++shape) {
+        if (strcmp(seqBodyShapeToString(shape), s) == 0) {
+            out = shape;
+            return true;
+        }
+    }
+    return false;
+}
+
 // Audio category label <-> enum (reuse the canonical audioCategoryToString).
 static bool categoryFromString(const char* s, uint8_t& out) {
     if (s == nullptr) return false;
@@ -238,6 +257,55 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
         s.params.durationMs = durationMs;
         return pcOk();
     }
+    if (strcmp(type, "body") == 0) {
+        s.type = STEP_BODY;
+        const char* part = obj["part"] | (const char*)nullptr;
+        if (part == nullptr) {
+            return pcFailAt(label, idx, "part", "missing part");
+        }
+        if (strnlen(part, sizeof(s.payload)) >= sizeof(s.payload)) {
+            return pcFailAt(label, idx, "part", "part too long");
+        }
+        // The Part id travels in the payload, as the catalog spells it. Whether
+        // the catalog declares it is protocolCheck()'s to say, like every other
+        // semantic bound in this parser.
+        strncpy(s.payload, part, sizeof(s.payload) - 1);
+
+        // Absent shape means the default, and absent is how the default is
+        // stored, so there is nothing to write when the key is missing.
+        const char* shapeStr = obj["shape"] | (const char*)nullptr;
+        if (shapeStr != nullptr) {
+            uint8_t shape = 0;
+            if (!bodyShapeFromString(shapeStr, shape)) {
+                return pcFailAt(label, idx, "shape", "unknown move shape");
+            }
+            s.params.shape = shape;
+        }
+
+        // howFar is 1..100 on the wire. Zero is refused HERE and only here,
+        // because this is the one place that can tell "the author said 0" from
+        // "the author said nothing" -- and zero in storage is how absence is
+        // recorded. Read wide and signed so a negative is rejected rather than
+        // wrapping into a plausible percentage.
+        JsonVariantConst howFar = obj["howFar"];
+        if (!howFar.isNull()) {
+            const long long v = howFar | 0LL;
+            if (v < 1 || v > (long long)SEQ_BODY_HOWFAR_MAX) {
+                return pcFailAt(label, idx, "howFar", "howFar must be 1..100");
+            }
+            s.params.howFar = (uint8_t)v;
+        }
+
+        JsonVariantConst flutterMs = obj["flutterMs"];
+        if (!flutterMs.isNull()) {
+            const long long v = flutterMs | 0LL;
+            if (v < 0 || v > 0xFFFFLL) {
+                return pcFailAt(label, idx, "flutterMs", "must be 0..65535");
+            }
+            s.params.flutterMs = (uint16_t)v;
+        }
+        return pcOk();
+    }
     if (strcmp(type, "end") == 0) {
         s.type = STEP_END;
         return pcOk();
@@ -389,6 +457,22 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                 o["type"] = "domeRotate";
                 o["speedPct"] = s.params.speedPct;
                 o["durationMs"] = s.params.durationMs;
+                break;
+            case STEP_BODY:
+                // Each of the three is written only when it says something the
+                // default does not, so a clone reads as the builder authored it
+                // rather than as the model spelled out.
+                o["type"] = "body";
+                o["part"] = s.payload;
+                if (s.params.shape != (uint8_t)SEQ_BODY_SHAPE_DEFAULT) {
+                    o["shape"] = seqBodyShapeToString(s.params.shape);
+                }
+                if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) {
+                    o["howFar"] = s.params.howFar;
+                }
+                if (s.params.flutterMs != 0) {
+                    o["flutterMs"] = s.params.flutterMs;
+                }
                 break;
             case STEP_END:
             default:
