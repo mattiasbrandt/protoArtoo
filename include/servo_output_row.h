@@ -111,9 +111,11 @@ constexpr ServoPulseBand SERVO_BAND_ABS = {SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_U
 // SERVO_THROW_MS_MIN is one 50 Hz ServoTask tick rounded up: a full throw asked
 // for in less than that cannot be resolved by the frame period and is a snap,
 // not a ramp. SERVO_THROW_MS_DEFAULT is 1000 because that is the number this
-// firmware already stands in for travel time with  --  seq_open_ms /
-// seq_close_ms, the dwell ADR 0041 says should default from the computed figure
-// once one exists. SERVO_ACCEL_MS_DEFAULT is a quarter of it, so the default
+// firmware stood in for travel time with before the Motion Profile existed  --
+// seq_open_ms / seq_close_ms, the dwell ADR 0041 said should default from the
+// computed figure once one existed, and which went when its only reader, the
+// body routine state machine, did (#354, #362). SERVO_ACCEL_MS_DEFAULT is a
+// quarter of it, so the default
 // move ramps up for a quarter, cruises for a half and ramps down for a quarter
 // rather than carrying a constant nothing derives.
 // -----------------------------------------------------------------------------
