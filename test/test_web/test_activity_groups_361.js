@@ -373,6 +373,19 @@ test("the wheeled drive is named Foot Drive in the nav, and its route is still d
   assert.equal(env.document.title, "Foot Drive - artoo", "and the browser title reads the one place a surface is named");
 });
 
+test("the chrome that points at that screen calls it by the same name", async () => {
+  // One name per concept: the estop says where the release is, and a builder
+  // looking for it reads the nav (docs/ui-copy-voice.md "Naming", #288).
+  const env = await boot();
+  const button = env.document.getElementById("shell-estop-button");
+  assert.match(
+    env.document.querySelector(".shell-estop-consequence").textContent,
+    /Foot Drive or Dashboard/,
+    "the line under the button names the screen the nav names",
+  );
+  assert.match(button.getAttribute("aria-label"), /Foot Drive or Dashboard/, "and so does the accessible name");
+});
+
 test("no other surface was renamed, and every name still comes from SURFACES", async () => {
   const env = await boot();
   const names = env.document.querySelectorAll("[data-surface-link]").map((link) => link.textContent.trim());
