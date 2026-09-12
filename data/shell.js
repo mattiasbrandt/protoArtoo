@@ -1088,7 +1088,17 @@
         // aria-disabled rather than the `disabled` property: gateControls()
         // sets both, and the attribute is the one a container can carry for a
         // control that is not a form element.
-        if (!event.target?.closest?.('[aria-disabled="true"]')) return;
+        const refused = event.target?.closest?.('[aria-disabled="true"]');
+        if (!refused) return;
+        // Except when it means BUSY rather than off. The Dashboard marks a
+        // control aria-disabled while its request is in flight -- the sleep
+        // toggle, the Commanded Mode buttons and the Mood buttons all do
+        // (data/app.js setSleepPending / setModePending / setMoodPending) --
+        // and those carry .is-pending as well. Saying "that control is
+        // switched off" about a control that is merely waiting for the droid
+        // to answer is false, and it would fire on exactly the second press an
+        // impatient operator makes.
+        if (refused.classList?.contains?.("is-pending")) return;
         reportIgnoredInput();
       },
       true

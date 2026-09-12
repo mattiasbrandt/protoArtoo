@@ -885,3 +885,17 @@ test("the notice is uncoloured, and never wears a reserved colour", async () => 
   }
   assert.deepEqual(offenders, [], "a Note carries neither amber nor red");
 });
+
+test("a control that is merely waiting for the droid is not a control that is off", async () => {
+  // The Dashboard marks a control aria-disabled while its request is in
+  // flight, and those carry .is-pending. "That control is switched off" is
+  // false about one that is waiting for an answer -- and it would fire on
+  // exactly the second press an impatient operator makes.
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  await sleep(5);
+  const pending = refusedControl(env);
+  pending.classList.add("is-pending");
+
+  pointer(env, pending).down();
+  assert.equal(noticeShown(env), false, "busy is not off");
+});
