@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index cd932ee3..9a984cd5 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -547,7 +547,6 @@
+   const attach = (surface, entry) => {
+     currentSurface = surface;
+     document.body.dataset.page = surface.page;
+-    if (window.PASurface?.isStale(surface.page)) shellContent.appendChild(resumedNote);
+     shellContent.appendChild(entry.content);
+     if (topActions) entry.actionNodes.forEach((node) => topActions.appendChild(node));
+     markActive(surface.page);

@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 6f0d3b24..1f2c0538 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1687,7 +1687,7 @@
+   // (ADR 0048, #360). Two answers gate it and they are asked in different
+   // places -- whether this build HAS a profiler is the manifest's, below;
+   // whether asking is wanted at all is the shell's.
+-  const poll = window.PASurface.poll(refreshProfiler, {
++  const poll = window.PageBootstrap.createBackgroundPoll(refreshProfiler, {
+     cadenceMs: 5000,
+     runOnStart: true,
+     refreshOnReturn: true,

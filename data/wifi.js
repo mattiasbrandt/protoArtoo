@@ -542,21 +542,16 @@
     }
   };
 
-  let pollTimer = null;
-  const refreshDiagnostics = (label) => {
-    loadWifiDiagnostics().catch((error) => {
-      console.warn(`[wifi] diagnostics ${label} failed:`, error);
-    });
-  };
-
-  const startPolling = () => {
-    if (pollTimer !== null) return;
-    pollTimer = window.setInterval(() => {
-      if (document.visibilityState !== "hidden") {
-        refreshDiagnostics("poll");
-      }
-    }, POLL_INTERVAL_MS);
-  };
+  // Owned by this surface: the shell stops it when the operator leaves WiFi and
+  // starts it again on the way back (ADR 0048, #360). The hidden-tab pause and
+  // the refresh on returning to the tab are the poll's own, so the separate
+  // visibilitychange handler this page used to carry is gone.
+  const diagnosticsPoll = window.PASurface.poll(
+    () => loadWifiDiagnostics().catch((error) => {
+      console.warn("[wifi] diagnostics poll failed:", error);
+    }),
+    { cadenceMs: POLL_INTERVAL_MS, refreshOnReturn: true }
+  );
 
   const rebootToApply = async () => {
     if (!window.PAApi || state.rebootRequestPending || !state.wifiConfig?.pendingApply) return;
@@ -570,12 +565,6 @@
       state.rebootRequestPending = false;
       setApplyFeedback(`Reboot failed: ${window.PAApi.messageFor(error)}`, "error");
       setApplyButtonState();
-    }
-  };
-
-  const onVisibilityChange = () => {
-    if (document.visibilityState !== "hidden") {
-      refreshDiagnostics("refresh");
     }
   };
 
@@ -612,7 +601,6 @@
   [modeClient, modeStandaloneAp].forEach((input) => {
     if (input) input.addEventListener("change", syncModeOptions);
   });
-  document.addEventListener("visibilitychange", onVisibilityChange);
 
   // The bootstrap announces readiness once required resources are in and every
   // section has settled -- which is where a "loaded" message becomes true.
@@ -633,7 +621,7 @@
     } else {
       setFeedback(`WiFi settings partly loaded; retrying ${failing.length} of ${bootstrap.sections.length}.`, "error");
     }
-    startPolling();
+    diagnosticsPoll.start();
   };
 
   if (window.PABootstrap) {
@@ -647,6 +635,6 @@
     startPageLoad();
   } else {
     loadPageData();
-    startPolling();
+    diagnosticsPoll.start();
   }
 })();

@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 8affc54f..71d1544c 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -295,7 +295,7 @@
+   // while playing gets asked every two seconds. skipWhen is what keeps those
+   // two apart in one poll -- it gates the cadence tick and not the refresh.
+   let moduleStatusCadenceWanted = false;
+-  const moduleStatusPoll = window.PASurface.poll(
++  const moduleStatusPoll = window.PageBootstrap.createBackgroundPoll(
+     () => updateModuleStatus().catch(() => {}),
+     { cadenceMs: 2000, skipWhen: () => !moduleStatusCadenceWanted, refreshOnReturn: true }
+   );

@@ -489,6 +489,183 @@
     return { start, cancelRetry, stop };
   };
 
+  // ---------------------------------------------------------------------------
+  // Surface-owned polling: what a left surface stops asking for
+  //
+  // ADR 0048 departs from the reference's "a hidden pane changes visibility
+  // only, never behavior" on purpose. The controller carries a fixed budget of
+  // three live-update clients on a 250 ms send deadline, and a stalled client
+  // is evicted rather than buffered (include/web_event_stream.h:11-34), so a
+  // screen nobody is reading must stop asking. What changes is only what the
+  // browser asks for: nothing the droid is doing changes when a surface is
+  // left -- no sequence stops, no output releases, no drive frame is dropped,
+  // no latch clears (#360).
+  //
+  // ONE named predicate decides whether a surface's polling is wanted, and one
+  // reconciler is the only thing that reads it. That is the reference's own
+  // shape: hwWanted() is three lines and hwTick() is the only caller
+  // (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-host.js:341). The same
+  // rule written as a test inside each of the polling sites would be one rule
+  // with a dozen places to get it wrong.
+  //
+  // WHY THIS LIVES HERE rather than in the Operator Shell, which is what
+  // actually knows about surfaces: every page module has the bootstrap and not
+  // every context has the shell, so a surface module can create its poll
+  // unconditionally, and a page opened without a shell -- a direct document, a
+  // test host -- polls exactly as it did before the shell existed. This file
+  // holds no idea of what a surface is beyond its name. The shell supplies the
+  // policy: it is the only caller of showing(), and the only reader of
+  // isStale() and unmountHeld().
+  // ---------------------------------------------------------------------------
+
+  const surfacePolls = new Set();
+  const unmountHolds = new Set();
+
+  // The surface the shell says is on screen. `null` means no shell has said
+  // anything yet, which is not the same as "no surface": see the predicate.
+  let showingSurface = null;
+
+  // The predicate. Null means nobody is routing, so a page that is simply
+  // itself keeps polling; otherwise a poll runs only while its own surface is
+  // the one on screen.
+  const surfacePollWanted = (owner) => showingSurface === null || owner === showingSurface;
+
+  // The reconciler. Every start, every stop and every change of what is on
+  // screen comes through here, so the predicate has exactly one reader.
+  const syncSurfacePoll = (entry) => {
+    const run = entry.wanted && surfacePollWanted(entry.owner);
+    if (run === entry.running) return;
+    entry.running = run;
+    if (run) entry.poll.start();
+    else entry.poll.stop();
+  };
+
+  // A poll that was stopped for being off screen is stale until it answers
+  // again: what is on the surface is from before the operator left it. The
+  // reference stops the packet clock whenever it clamps an output, for exactly
+  // this reason -- a live-looking zero is worse than a stale value
+  // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:896-901).
+  const markSurfaceFresh = (entry) => {
+    if (!entry.stale) return;
+    entry.stale = false;
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-fresh", { detail: { surface: entry.owner } }));
+  };
+
+  // Creates a background poll owned by the surface currently on screen. Same
+  // handle as createBackgroundPoll -- start(), stop(), cancelRetry() -- except
+  // that start() means "this surface wants this running", not "run now": the
+  // reconciler decides, so a surface may turn its own poll on from an event
+  // that arrives while the operator is looking at something else.
+  //
+  // Create it in the surface's script body. That is the only moment the shell
+  // guarantees is inside the surface's own mount, and it costs nothing: the
+  // poll does not run until start().
+  const createSurfacePoll = (attempt, options = {}) => {
+    const entry = { owner: showingSurface, wanted: false, running: false, stale: false };
+    entry.poll = createBackgroundPoll(() => {
+      const result = attempt();
+      // Fresh the moment the surface has answered again. Guarded rather than
+      // assumed thenable: several polling sites hand back nothing at all. A
+      // rejected attempt deliberately does not clear the mark -- the values on
+      // screen are still the ones from before.
+      if (result && typeof result.then === "function") {
+        return result.then((value) => {
+          markSurfaceFresh(entry);
+          return value;
+        });
+      }
+      markSurfaceFresh(entry);
+      return result;
+    }, options);
+    surfacePolls.add(entry);
+    return {
+      start: () => {
+        entry.wanted = true;
+        syncSurfacePoll(entry);
+      },
+      stop: () => {
+        entry.wanted = false;
+        syncSurfacePoll(entry);
+      },
+      cancelRetry: () => entry.poll.cancelRetry(),
+    };
+  };
+
+  // The shell names the surface now on screen. Everything owned by anything
+  // else stops here, and stopping is the only thing that marks a surface's
+  // values as no longer current -- a surface that turned its own poll off, the
+  // way the memory profiler does when the manifest says it is not in this
+  // build, has not been left and is not stale.
+  const showingSurfaceIs = (page) => {
+    const next = page === undefined || page === null ? null : String(page);
+    if (next === showingSurface) return;
+    showingSurface = next;
+    surfacePolls.forEach((entry) => {
+      const wasRunning = entry.running;
+      syncSurfacePoll(entry);
+      if (wasRunning && !entry.running) entry.stale = true;
+    });
+  };
+
+  // True while a surface has polling that stopped when the operator left it and
+  // has not answered since.
+  const surfaceIsStale = (page) => {
+    for (const entry of surfacePolls) {
+      if (entry.owner === page && entry.stale) return true;
+    }
+    return false;
+  };
+
+  // A surface can hold its own unmount open: decide() returns true while it
+  // must not be taken off screen yet. This is the capability, not a feature --
+  // nothing registers a hold today, and the surface that will (an unsaved
+  // sequence edit, #289/#299) is the one that owns the question it asks.
+  //
+  // decide() being called is also how a surface learns it is being asked to
+  // leave, which is the moment it would put that question on screen; when it
+  // has an answer it calls releaseUnmount() and the navigation goes through.
+  //
+  // A hold cannot strand the operator: the estop is chrome the shell renders
+  // once and never unmounts, so it stays live behind a surface that is holding.
+  const holdUnmount = (decide) => {
+    if (typeof decide !== "function") return;
+    unmountHolds.add({ owner: showingSurface, decide });
+  };
+
+  const unmountHeld = (page) => {
+    for (const hold of unmountHolds) {
+      if (hold.owner !== page) continue;
+      try {
+        if (hold.decide() === true) return true;
+      } catch (error) {
+        // A guard that throws must not trap the operator on a screen: an
+        // unmount nobody could decide is allowed, and the failure is reported
+        // rather than swallowed.
+        console.warn("[surface] unmount guard failed:", error);
+      }
+    }
+    return false;
+  };
+
+  // The surface that was holding has finished asking. The shell re-reads the
+  // address rather than being told where to go, so a hold that is released
+  // long after the operator moved on lands where they actually are.
+  const releaseUnmount = () => {
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-release"));
+  };
+
+  window.PASurface = {
+    poll: createSurfacePoll,
+    holdUnmount,
+    releaseUnmount,
+    // The shell's half of the contract; nothing else calls these.
+    showing: showingSurfaceIs,
+    isStale: surfaceIsStale,
+    unmountHeld,
+  };
+
   window.PageBootstrap = {
     DEFAULT_BUSY_RETRY_MS,
     OPERATION_DEADLINE_MS,

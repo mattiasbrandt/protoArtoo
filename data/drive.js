@@ -246,6 +246,10 @@
     }
   };
 
+  // A command loop, not a poll: it is what a held button is doing to the droid,
+  // so it is NOT owned by the shell's surface polling (#360). Unmounting a
+  // surface must never drop a drive frame, and the release handlers below --
+  // pointerup, pointerleave, pointercancel -- are what end it.
   const startHoldLoop = (speed, steer) => {
     stopHoldLoop();
     postDriveCommand(speed, steer);
@@ -476,24 +480,17 @@
       });
     }
   } else {
-    const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // Retry next cycle.
-      });
-    };
-
-    refreshFromFallback();
-
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 2000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
-      }
-    });
+    // Owned by this surface: the shell stops it when the operator leaves Drive
+    // and starts it again on the way back (ADR 0048, #360). This is a READ of
+    // the droid's status; the hold loop above is a command loop and is
+    // deliberately not owned by the shell -- see startHoldLoop().
+    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
+      // Retry next cycle.
+    }), {
+      cadenceMs: 2000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 
   // -------------------------------------------------------------------------

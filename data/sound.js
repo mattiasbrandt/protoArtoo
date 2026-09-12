@@ -223,7 +223,6 @@
   const catalogSelectAll = document.getElementById("catalog-select-all");
   const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
-  let moduleStatusRefreshTimer = null;
   let catalogSupported = false;
   let catalogReady = false;
   let catalogBanks = [];
@@ -285,18 +284,25 @@
     return SOUND_VIEW_MODE_ADVANCED;
   };
 
-  const resetModuleStatusAutoRefresh = (caps) => {
-    if (moduleStatusRefreshTimer !== null) {
-      window.clearInterval(moduleStatusRefreshTimer);
-      moduleStatusRefreshTimer = null;
-    }
+  // Owned by this surface: the shell stops it when the operator leaves Sound and
+  // starts it again on the way back (ADR 0048, #360). Created here rather than
+  // inside the reset below, because the surface a poll belongs to is decided
+  // when it is made.
+  //
+  // The cadence is the module's to grant and the return-to-tab read is not:
+  // this page has always re-read the module's state on coming back to the tab
+  // whatever the backend can do, while only a backend that is safe to query
+  // while playing gets asked every two seconds. skipWhen is what keeps those
+  // two apart in one poll -- it gates the cadence tick and not the refresh.
+  let moduleStatusCadenceWanted = false;
+  const moduleStatusPoll = window.PASurface.poll(
+    () => updateModuleStatus().catch(() => {}),
+    { cadenceMs: 2000, skipWhen: () => !moduleStatusCadenceWanted, refreshOnReturn: true }
+  );
+  moduleStatusPoll.start();
 
-    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) {
-      moduleStatusRefreshTimer = window.setInterval(() => {
-        if (document.visibilityState === "hidden") return;
-        updateModuleStatus().catch(() => {});
-      }, 2000);
-    }
+  const resetModuleStatusAutoRefresh = (caps) => {
+    moduleStatusCadenceWanted = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
   };
 
   const applyCapabilityUI = (caps) => {
@@ -2071,23 +2077,15 @@
       });
     }
   } else {
-    const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // Retry next cycle.
-      });
-    };
-
-    refreshFromFallback();
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 2000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
-      }
-    });
+    // Owned by this surface: the shell stops it when the operator leaves Sound
+    // and starts it again on the way back (ADR 0048, #360).
+    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
+      // Retry next cycle.
+    }), {
+      cadenceMs: 2000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 
   namedSoundFilterInput?.addEventListener("input", () => {
@@ -2333,12 +2331,6 @@
   };
 
   startPageLoad();
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") {
-      updateModuleStatus().catch(() => {});
-    }
-  });
 
   // Poll button — sends a POST /api/audio/query which runs queryModuleState()
   // in AudioTask, then re-fetches /api/audio after 1.5 s to show the result.

@@ -1227,17 +1227,14 @@
       refreshSerialStatus().catch(() => {});
     }
   } else {
-    // Fallback: poll every 5 s, suspended while the tab is hidden.
-    refreshSerialStatus().catch(() => {});
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshSerialStatus().catch(() => {});
-    }, 5000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshSerialStatus().catch(() => {});
-      }
-    });
+    // Fallback: poll every 5 s, suspended while the tab is hidden and while the
+    // operator is reading another surface -- the shell stops it on the way out
+    // and starts it again on the way back (ADR 0048, #360).
+    window.PASurface.poll(() => refreshSerialStatus().catch(() => {}), {
+      cadenceMs: 5000,
+      runOnStart: true,
+      refreshOnReturn: true,
+    }).start();
   }
 })();
 
@@ -1684,7 +1681,13 @@
     }
   }
 
-  const poll = window.PageBootstrap.createBackgroundPoll(refreshProfiler, {
+  // The memory profiler is the other surface an operator opens when something
+  // is already wrong, so it is owned by this surface: the shell stops it the
+  // moment they read something else and starts it again on the way back
+  // (ADR 0048, #360). Two answers gate it and they are asked in different
+  // places -- whether this build HAS a profiler is the manifest's, below;
+  // whether asking is wanted at all is the shell's.
+  const poll = window.PASurface.poll(refreshProfiler, {
     cadenceMs: 5000,
     runOnStart: true,
     refreshOnReturn: true,

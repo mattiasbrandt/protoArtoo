@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index aa6dbd93..800bf586 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -528,7 +528,7 @@
+   // The predicate. Null means nobody is routing, so a page that is simply
+   // itself keeps polling; otherwise a poll runs only while its own surface is
+   // the one on screen.
+-  const surfacePollWanted = (owner) => showingSurface === null || owner === showingSurface;
++  const surfacePollWanted = () => true;
+ 
+   // The reconciler. Every start, every stop and every change of what is on
+   // screen comes through here, so the predicate has exactly one reader.

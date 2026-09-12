@@ -1,0 +1,13 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index 30f3dd32..9b37a0db 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -546,7 +546,7 @@
+   // starts it again on the way back (ADR 0048, #360). The hidden-tab pause and
+   // the refresh on returning to the tab are the poll's own, so the separate
+   // visibilitychange handler this page used to carry is gone.
+-  const diagnosticsPoll = window.PASurface.poll(
++  const diagnosticsPoll = window.PageBootstrap.createBackgroundPoll(
+     () => loadWifiDiagnostics().catch((error) => {
+       console.warn("[wifi] diagnostics poll failed:", error);
+     }),

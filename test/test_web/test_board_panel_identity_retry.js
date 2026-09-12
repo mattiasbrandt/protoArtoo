@@ -87,6 +87,9 @@ test("Board panel: sets .src when PAAssetsReady true, data-deferred-src when fal
       PAIdentity: null,
       PABootstrap: { registerSection: () => {}, setResourceLabels() {} },
       PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
+      // data/page_bootstrap.js publishes window.PASurface in the browser; this
+      // context hand-rolls its globals, so it has to carry it too (#360).
+      PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
       addEventListener(type, handler) {
         if (!windowListeners.has(type)) windowListeners.set(type, []);
         windowListeners.get(type).push(handler);
@@ -206,6 +209,9 @@ test("Board panel: sets .src when PAAssetsReady true, data-deferred-src when fal
       PAIdentity: null,
       PABootstrap: { registerSection: () => {}, setResourceLabels() {} },
       PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
+      // data/page_bootstrap.js publishes window.PASurface in the browser; this
+      // context hand-rolls its globals, so it has to carry it too (#360).
+      PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
       addEventListener(type, handler) {
         if (!windowListeners.has(type)) windowListeners.set(type, []);
         windowListeners.get(type).push(handler);

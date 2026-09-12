@@ -1,0 +1,13 @@
+diff --git i/data/drive.js w/data/drive.js
+index 895002b7..f1347219 100644
+--- i/data/drive.js
++++ w/data/drive.js
+@@ -484,7 +484,7 @@
+     // and starts it again on the way back (ADR 0048, #360). This is a READ of
+     // the droid's status; the hold loop above is a command loop and is
+     // deliberately not owned by the shell -- see startHoldLoop().
+-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
++    window.PageBootstrap.createBackgroundPoll(() => refreshStatusOnce().catch(() => {
+       // Retry next cycle.
+     }), {
+       cadenceMs: 2000,

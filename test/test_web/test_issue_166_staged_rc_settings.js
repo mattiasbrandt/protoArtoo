@@ -85,6 +85,9 @@ const loadInteractiveModule = (file, respond) => {
     PageBootstrap: {
       createBackgroundPoll: () => ({ start() {}, stop() {} }),
     },
+    // data/page_bootstrap.js publishes window.PASurface in the browser; this
+    // context hand-rolls its globals, so it has to carry it too (#360).
+    PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
     PAStatusStream: {
       isSupported: () => false,
       subscribe() {},

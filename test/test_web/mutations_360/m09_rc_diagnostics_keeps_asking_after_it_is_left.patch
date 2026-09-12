@@ -1,0 +1,13 @@
+diff --git i/data/rc.js w/data/rc.js
+index 4ec35959..23ca913a 100644
+--- i/data/rc.js
++++ w/data/rc.js
+@@ -1669,7 +1669,7 @@
+   // so the bootstrap's section can see a failure and retry it, but a background
+   // refresh has already said so in the editor feedback line and has nobody to
+   // hand a rejection to.
+-  window.PASurface.poll(() => loadRcDiagnostics().catch(() => {}), {
++  window.PageBootstrap.createBackgroundPoll(() => loadRcDiagnostics().catch(() => {}), {
+     cadenceMs: hasRcStream ? 0 : 1000,
+     refreshOnReturn: true,
+   }).start();

@@ -1598,12 +1598,6 @@
     navigator.sendBeacon("/api/rc/debug", body);
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") {
-      loadRcDiagnostics();
-    }
-  });
-
   setEditorDirtyState("clean", "Saved");
   setEditorSavedTimestamp(null);
 
@@ -1662,14 +1656,21 @@
   startPageLoad();
 
   const hasRcStream = subscribeRcEvents();
-  if (!hasRcStream) {
-    const refreshFromFallback = () => {
-      loadRcDiagnostics();
-    };
 
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 1000);
-  }
+  // RC diagnostics is one of the two surfaces an operator opens when something
+  // is already wrong, and the one that asks hardest -- so it is owned by this
+  // surface, and the shell stops it the moment the operator reads something
+  // else (ADR 0048, #360). With the shared stream there is no cadence at all:
+  // what remains is the refresh on returning to the tab or to this screen,
+  // which used to be a document-level visibilitychange handler that kept firing
+  // long after the operator had left RC behind.
+  //
+  // The catch is this caller's, not the loader's: loadRcDiagnostics() rethrows
+  // so the bootstrap's section can see a failure and retry it, but a background
+  // refresh has already said so in the editor feedback line and has nobody to
+  // hand a rejection to.
+  window.PASurface.poll(() => loadRcDiagnostics().catch(() => {}), {
+    cadenceMs: hasRcStream ? 0 : 1000,
+    refreshOnReturn: true,
+  }).start();
 })();
