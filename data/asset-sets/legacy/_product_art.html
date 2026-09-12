@@ -1,0 +1,818 @@
+<!--
+  Product drawings for the legacy asset set (#382, ADR 0065).
+
+  One line drawing per Component Registry product, in place of the default
+  set's photograph. Drawn for this project from the product photographs as
+  reference; nothing here is traced, so the set carries one hand and no
+  third-party copyright.
+
+  Why one sprite rather than a file each: littlefs charges a 4 KiB block per
+  file whatever the content, so twenty drawings as twenty files cost 81,920 B
+  to carry 25 KB of art. Inlined they cost about 8 KB, and the drawings pick up
+  the page's colour, which an SVG reached by <img> or an external <use> cannot.
+  A partial is not imaged (tools/gzip_fsdata.py), so this file costs the
+  artoo-esp32 nothing at all until a page inlines it.
+
+  The symbols carry no <title>: a Component Picker card names its product in
+  text beside the drawing, so the drawing is decorative and the card marks it
+  aria-hidden. A card asks the document for its art and falls back to the
+  photograph when there is no symbol, which is how one page serves both sets:
+
+      const art = document.getElementById('art-' + id);   // legacy
+      // else <img src="/<id>.webp">                       // default
+
+  Every id here is the product's Component Registry token
+  (include/component_registry.inc), prefixed 'art-'. The two are kept in step
+  by test/test_tools/test_product_art.py, which fails when a product has no
+  drawing or a drawing names no product.
+-->
+<svg class="product-art-sprite" xmlns="http://www.w3.org/2000/svg" hidden aria-hidden="true">
+  <defs>
+    <!-- Shared marks. A drawing is stroke-only on currentColor; the few solid
+         marks (pins, LEDs, sockets) are the same currentColor at low opacity,
+         so a drawing reads as one hand rather than as outline plus fill. -->
+    <g id="art-led-row" fill="currentColor" opacity=".5" stroke="none">
+      <circle cx="0" cy="0" r="1.7"/><circle cx="10" cy="0" r="1.7"/>
+      <circle cx="20" cy="0" r="1.7"/><circle cx="30" cy="0" r="1.7"/>
+      <circle cx="40" cy="0" r="1.7"/><circle cx="50" cy="0" r="1.7"/>
+      <circle cx="60" cy="0" r="1.7"/><circle cx="70" cy="0" r="1.7"/>
+      <circle cx="80" cy="0" r="1.7"/><circle cx="90" cy="0" r="1.7"/>
+      <circle cx="100" cy="0" r="1.7"/><circle cx="110" cy="0" r="1.7"/>
+      <circle cx="120" cy="0" r="1.7"/>
+    </g>
+    <!-- One servo channel: signal, positive, ground, the way a three-pin
+         header reads on a board silkscreen. -->
+    <g id="art-pin3" fill="currentColor" opacity=".55" stroke="none">
+      <rect x="0" y="0" width="4" height="4"/>
+      <rect x="0" y="7" width="4" height="4"/>
+      <rect x="0" y="14" width="4" height="4"/>
+    </g>
+    <!-- A screw terminal: the block and the driver slot in its screw head. -->
+    <g id="art-screw" fill="none" stroke="currentColor" stroke-width="1.15">
+      <rect x="0" y="0" width="16" height="16" rx="1.5"/>
+      <circle cx="8" cy="8" r="4.6"/>
+      <path d="M4.6 8h6.8"/>
+    </g>
+    <!-- An eight-pin chip, the mark that stops a board reading as an empty box. -->
+    <g id="art-chip" fill="none" stroke="currentColor" stroke-width="1.15">
+      <rect x="0" y="0" width="34" height="22" rx="2"/>
+      <circle cx="5" cy="5" r="1.6" fill="currentColor" stroke="none" opacity=".6"/>
+      <path d="M6 0v-3M14 0v-3M22 0v-3M30 0v-3M6 22v3M14 22v3M22 22v3M30 22v3" opacity=".7"/>
+    </g>
+    <!-- An ESP32 module: the shield can and the meander antenna, which is what
+         makes one readable as an ESP32 at card size. -->
+    <g id="art-esp32" fill="none" stroke="currentColor">
+      <rect x="0" y="0" width="72" height="56" rx="2" stroke-width="1.6"/>
+      <path d="M10 12h5v-6h5v6h5v-6h5v6h5v-6h5v6h5v-6h5v6h5" stroke-width="1.15"/>
+      <rect x="8" y="20" width="56" height="28" rx="1.5" stroke-width=".9" opacity=".55"/>
+    </g>
+  </defs>
+
+  <!-- Artoo Controller PCB: the black board with an ESP32 D1 Mini seated in
+       its socket, which is how a builder meets it. -->
+  <symbol id="art-artoo_pcb" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="26" y="54" width="268" height="196" rx="5" stroke-width="2.4"/>
+      <g stroke-width="1.15">
+        <circle cx="42" cy="70" r="5"/><circle cx="278" cy="70" r="5"/>
+        <circle cx="42" cy="234" r="5"/><circle cx="278" cy="234" r="5"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+        <text x="58" y="84" font-size="13">Artoo</text>
+        <text x="46" y="243" font-size="6">0 TOP  1 HOVERBOARD  2 SOUND  3 DOME</text>
+      </g>
+      <!-- The two rows the ESP32 D1 Mini drops into -->
+      <g fill="currentColor" opacity=".5" stroke="none">
+        <rect x="100" y="112" width="4" height="4"/><rect x="112" y="112" width="4" height="4"/>
+        <rect x="124" y="112" width="4" height="4"/><rect x="136" y="112" width="4" height="4"/>
+        <rect x="148" y="112" width="4" height="4"/><rect x="160" y="112" width="4" height="4"/>
+        <rect x="172" y="112" width="4" height="4"/><rect x="184" y="112" width="4" height="4"/>
+        <rect x="196" y="112" width="4" height="4"/><rect x="208" y="112" width="4" height="4"/>
+        <rect x="100" y="170" width="4" height="4"/><rect x="112" y="170" width="4" height="4"/>
+        <rect x="124" y="170" width="4" height="4"/><rect x="136" y="170" width="4" height="4"/>
+        <rect x="148" y="170" width="4" height="4"/><rect x="160" y="170" width="4" height="4"/>
+        <rect x="172" y="170" width="4" height="4"/><rect x="184" y="170" width="4" height="4"/>
+        <rect x="196" y="170" width="4" height="4"/><rect x="208" y="170" width="4" height="4"/>
+        <!-- Serial comms, one block per lane, down the left edge -->
+        <use href="#art-pin3" x="52" y="96"/><use href="#art-pin3" x="52" y="124"/>
+        <use href="#art-pin3" x="52" y="152"/><use href="#art-pin3" x="52" y="180"/>
+        <!-- Servo arms and the dome lead across the top -->
+        <use href="#art-pin3" x="130" y="64"/><use href="#art-pin3" x="148" y="64"/>
+        <use href="#art-pin3" x="166" y="64"/><use href="#art-pin3" x="184" y="64"/>
+        <use href="#art-pin3" x="202" y="64"/>
+        <!-- Radio channels along the bottom -->
+        <use href="#art-pin3" x="130" y="198"/><use href="#art-pin3" x="148" y="198"/>
+        <use href="#art-pin3" x="166" y="198"/><use href="#art-pin3" x="184" y="198"/>
+        <!-- I2C -->
+        <rect x="46" y="212" width="4" height="4"/><rect x="56" y="212" width="4" height="4"/>
+        <rect x="66" y="212" width="4" height="4"/><rect x="76" y="212" width="4" height="4"/>
+      </g>
+      <!-- The ESP32 D1 Mini, seated in the socket and over the board's edge.
+           Solid so the board reads as behind it rather than through it. -->
+      <g fill="var(--pa-art-bg,#0c1525)">
+        <rect x="238" y="92" width="134" height="102" rx="4" stroke-width="2.4"/>
+        <rect x="258" y="112" width="72" height="56" rx="2" stroke-width="1.6"/>
+      </g>
+      <use href="#art-esp32" x="258" y="112"/>
+      <g fill="currentColor" opacity=".55" stroke="none">
+        <rect x="244" y="98" width="4" height="4"/><rect x="256" y="98" width="4" height="4"/>
+        <rect x="268" y="98" width="4" height="4"/><rect x="280" y="98" width="4" height="4"/>
+        <rect x="292" y="98" width="4" height="4"/><rect x="304" y="98" width="4" height="4"/>
+        <rect x="316" y="98" width="4" height="4"/><rect x="328" y="98" width="4" height="4"/>
+        <rect x="340" y="98" width="4" height="4"/><rect x="352" y="98" width="4" height="4"/>
+        <rect x="244" y="184" width="4" height="4"/><rect x="256" y="184" width="4" height="4"/>
+        <rect x="268" y="184" width="4" height="4"/><rect x="280" y="184" width="4" height="4"/>
+        <rect x="292" y="184" width="4" height="4"/><rect x="304" y="184" width="4" height="4"/>
+        <rect x="316" y="184" width="4" height="4"/><rect x="328" y="184" width="4" height="4"/>
+        <rect x="340" y="184" width="4" height="4"/><rect x="352" y="184" width="4" height="4"/>
+      </g>
+      <path d="M290 194v12h30v-12" stroke-width="1.6"/>
+    </g>
+  </symbol>
+
+  <!-- FireBeetle 2 ESP32-P4: the module board with USB-C and the camera FPC
+       latch, under the expansion carrier that carries the header field. -->
+  <symbol id="art-firebeetle2" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <!-- The carrier sits behind, drawn first; its pins are what a builder
+           plugs into, so the header field is the thing to get right. -->
+      <rect x="140" y="34" width="222" height="118" rx="5" stroke-width="2.4"/>
+      <g stroke-width="1.15">
+        <circle cx="156" cy="50" r="6"/><circle cx="346" cy="50" r="6"/>
+        <circle cx="156" cy="136" r="6"/><circle cx="346" cy="136" r="6"/>
+      </g>
+      <rect x="188" y="52" width="132" height="52" rx="2" stroke-width="1.4"/>
+      <g fill="currentColor" opacity=".5" stroke="none">
+        <rect x="194" y="58" width="4" height="4"/><rect x="209" y="58" width="4" height="4"/>
+        <rect x="224" y="58" width="4" height="4"/><rect x="239" y="58" width="4" height="4"/>
+        <rect x="254" y="58" width="4" height="4"/><rect x="269" y="58" width="4" height="4"/>
+        <rect x="284" y="58" width="4" height="4"/><rect x="299" y="58" width="4" height="4"/>
+        <rect x="194" y="74" width="4" height="4"/><rect x="209" y="74" width="4" height="4"/>
+        <rect x="224" y="74" width="4" height="4"/><rect x="239" y="74" width="4" height="4"/>
+        <rect x="254" y="74" width="4" height="4"/><rect x="269" y="74" width="4" height="4"/>
+        <rect x="284" y="74" width="4" height="4"/><rect x="299" y="74" width="4" height="4"/>
+        <rect x="194" y="90" width="4" height="4"/><rect x="209" y="90" width="4" height="4"/>
+        <rect x="224" y="90" width="4" height="4"/><rect x="239" y="90" width="4" height="4"/>
+        <rect x="254" y="90" width="4" height="4"/><rect x="269" y="90" width="4" height="4"/>
+        <rect x="284" y="90" width="4" height="4"/><rect x="299" y="90" width="4" height="4"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity=".6">
+        <text x="188" y="130">FireBeetle 2</text>
+      </g>
+      <!-- The P4 board in front, solid so the carrier reads as behind it -->
+      <rect x="30" y="136" width="256" height="118" rx="5" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <!-- USB-C on the bottom edge, the camera FPC latch on the left -->
+      <path d="M74 254v12a3 3 0 0 0 3 3h36a3 3 0 0 0 3-3v-12" stroke-width="1.6"/>
+      <rect x="40" y="156" width="16" height="66" rx="2" stroke-width="1.4"/>
+      <path d="M44 162v54M48 162v54M52 162v54" stroke-width=".7" opacity=".4"/>
+      <rect x="176" y="180" width="52" height="52" rx="3" stroke-width="1.6"/>
+      <path d="M184 180v-5M196 180v-5M208 180v-5M220 180v-5M184 232v5M196 232v5M208 232v5M220 232v5" stroke-width=".8" opacity=".6"/>
+      <use href="#art-chip" x="76" y="176"/>
+      <circle cx="252" cy="164" r="7" stroke-width="1.15"/>
+      <g fill="currentColor" opacity=".5" stroke="none">
+        <rect x="76" y="142" width="4" height="4"/><rect x="90" y="142" width="4" height="4"/>
+        <rect x="104" y="142" width="4" height="4"/><rect x="118" y="142" width="4" height="4"/>
+        <rect x="132" y="142" width="4" height="4"/><rect x="146" y="142" width="4" height="4"/>
+        <rect x="160" y="142" width="4" height="4"/><rect x="174" y="142" width="4" height="4"/>
+        <rect x="188" y="142" width="4" height="4"/><rect x="202" y="142" width="4" height="4"/>
+        <rect x="216" y="142" width="4" height="4"/><rect x="230" y="142" width="4" height="4"/>
+        <rect x="132" y="242" width="4" height="4"/><rect x="146" y="242" width="4" height="4"/>
+        <rect x="160" y="242" width="4" height="4"/><rect x="174" y="242" width="4" height="4"/>
+        <rect x="188" y="242" width="4" height="4"/><rect x="202" y="242" width="4" height="4"/>
+        <rect x="216" y="242" width="4" height="4"/><rect x="230" y="242" width="4" height="4"/>
+        <rect x="244" y="242" width="4" height="4"/><rect x="258" y="242" width="4" height="4"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity=".6">
+        <text x="176" y="164">ESP32-P4</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- AstroPixels Plus: the long logic board with its ESP32 seated at one end,
+       and the round front logic and PSI boards it drives. -->
+  <symbol id="art-astropixels_plus" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="30" y="54" width="340" height="70" rx="4" stroke-width="2.4"/>
+      <!-- The ESP32 seated at one end, then the pixel outputs along the board -->
+      <rect x="42" y="60" width="72" height="56" rx="2" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <use href="#art-esp32" x="42" y="60"/>
+      <path d="M98 116v8h20v-8" stroke-width="1.15"/>
+      <g fill="currentColor" opacity=".5" stroke="none">
+        <rect x="130" y="62" width="4" height="4"/><rect x="130" y="74" width="4" height="4"/>
+        <rect x="130" y="86" width="4" height="4"/><rect x="130" y="98" width="4" height="4"/>
+        <rect x="130" y="110" width="4" height="4"/>
+        <rect x="142" y="62" width="4" height="4"/><rect x="142" y="74" width="4" height="4"/>
+        <rect x="142" y="86" width="4" height="4"/><rect x="142" y="98" width="4" height="4"/>
+        <rect x="142" y="110" width="4" height="4"/>
+        <use href="#art-pin3" x="286" y="64"/><use href="#art-pin3" x="300" y="64"/>
+        <use href="#art-pin3" x="314" y="64"/><use href="#art-pin3" x="328" y="64"/>
+        <use href="#art-pin3" x="342" y="64"/><use href="#art-pin3" x="356" y="64"/>
+      </g>
+      <use href="#art-chip" x="176" y="90"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9" opacity=".6">
+        <text x="176" y="78">AstroPixels</text>
+      </g>
+      <!-- Front logic: two square displays between two round PSIs -->
+      <rect x="30" y="162" width="66" height="66" rx="4" stroke-width="1.6"/>
+      <use href="#art-led-row" transform="translate(40,176) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(40,188) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(40,200) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(40,212) scale(.42,1)"/>
+      <circle cx="158" cy="195" r="34" stroke-width="1.6"/>
+      <circle cx="158" cy="195" r="26" stroke-width=".8" opacity=".45"/>
+      <circle cx="240" cy="195" r="34" stroke-width="1.6"/>
+      <circle cx="240" cy="195" r="26" stroke-width=".8" opacity=".45"/>
+      <rect x="302" y="162" width="66" height="66" rx="4" stroke-width="1.6"/>
+      <use href="#art-led-row" transform="translate(312,176) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(312,188) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(312,200) scale(.42,1)"/>
+      <use href="#art-led-row" transform="translate(312,212) scale(.42,1)"/>
+    </g>
+  </symbol>
+
+  <!-- Teeces: the rear logic display over the two front boards, the two PSIs,
+       and the small controller that drives the chain. -->
+  <symbol id="art-teeces" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="30" y="40" width="290" height="70" rx="4" stroke-width="2.4"/>
+      <use href="#art-led-row" transform="translate(46,58) scale(1.85,1)"/>
+      <use href="#art-led-row" transform="translate(46,70) scale(1.85,1)"/>
+      <use href="#art-led-row" transform="translate(46,82) scale(1.85,1)"/>
+      <use href="#art-led-row" transform="translate(46,94) scale(1.85,1)"/>
+      <rect x="30" y="126" width="140" height="76" rx="4" stroke-width="2.4"/>
+      <use href="#art-led-row" transform="translate(46,144) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(46,158) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(46,172) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(46,186) scale(.86,1)"/>
+      <rect x="180" y="126" width="140" height="76" rx="4" stroke-width="2.4"/>
+      <use href="#art-led-row" transform="translate(196,144) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(196,158) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(196,172) scale(.86,1)"/>
+      <use href="#art-led-row" transform="translate(196,186) scale(.86,1)"/>
+      <!-- Two PSIs -->
+      <circle cx="90" cy="252" r="38" stroke-width="2.4"/>
+      <use href="#art-led-row" transform="translate(66,240) scale(.4,1)"/>
+      <use href="#art-led-row" transform="translate(66,252) scale(.4,1)"/>
+      <use href="#art-led-row" transform="translate(66,264) scale(.4,1)"/>
+      <circle cx="196" cy="252" r="38" stroke-width="2.4"/>
+      <use href="#art-led-row" transform="translate(172,240) scale(.4,1)"/>
+      <use href="#art-led-row" transform="translate(172,252) scale(.4,1)"/>
+      <use href="#art-led-row" transform="translate(172,264) scale(.4,1)"/>
+      <!-- The controller board and its power terminal -->
+      <rect x="332" y="126" width="42" height="110" rx="3" stroke-width="1.6"/>
+      <rect x="340" y="140" width="26" height="30" rx="2" stroke-width="1.15"/>
+      <rect x="338" y="206" width="30" height="18" rx="2" stroke-width="1.15"/>
+      <path d="M346 210v10M360 210v10" stroke-width=".8" opacity=".5"/>
+    </g>
+  </symbol>
+
+  <!-- CHIRP Audio Trigger: the three transport buttons, the card slot and the
+       audio jack, which is the whole of what a builder handles. -->
+  <symbol id="art-chirp" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="58" y="40" width="284" height="220" rx="5" stroke-width="2.4"/>
+      <g stroke-width="1.15">
+        <circle cx="74" cy="56" r="5"/><circle cx="326" cy="56" r="5"/>
+        <circle cx="74" cy="244" r="5"/><circle cx="326" cy="244" r="5"/>
+      </g>
+      <!-- Prev, play, next -->
+      <g stroke-width="1.6">
+        <circle cx="100" cy="76" r="10"/><circle cx="128" cy="76" r="10"/><circle cx="156" cy="76" r="10"/>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".5">
+        <circle cx="100" cy="76" r="4"/><circle cx="128" cy="76" r="4"/><circle cx="156" cy="76" r="4"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+        <text x="90" y="112" font-size="15">CHIRP</text>
+        <text x="90" y="124" font-size="6.5">AUDIO TRIGGER</text>
+        <text x="272" y="70" font-size="6.5">POWER</text>
+      </g>
+      <!-- microSD slot on the top edge, audio out on the right -->
+      <rect x="196" y="44" width="92" height="56" rx="2" stroke-width="1.6"/>
+      <path d="M204 100v-48M280 100v-48" stroke-width=".7" opacity=".4"/>
+      <circle cx="302" cy="66" r="4" fill="currentColor" stroke="none" opacity=".55"/>
+      <rect x="292" y="112" width="50" height="40" rx="3" stroke-width="1.6"/>
+      <circle cx="342" cy="132" r="10" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <!-- USB-C on the left edge, reset beside the chips -->
+      <rect x="44" y="132" width="24" height="34" rx="5" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <circle cx="204" cy="132" r="7" stroke-width="1.4"/>
+      <use href="#art-chip" x="112" y="160"/>
+      <use href="#art-chip" x="196" y="176"/>
+      <!-- Power in, the serial header, and the supply-select jumper -->
+      <g stroke-width="1.4">
+        <circle cx="104" cy="230" r="7"/><circle cx="130" cy="230" r="7"/>
+      </g>
+      <rect x="80" y="196" width="34" height="14" rx="2" stroke-width="1.15"/>
+      <rect x="248" y="216" width="66" height="24" rx="2" stroke-width="1.4"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="258" y="226" width="5" height="5"/><rect x="272" y="226" width="5" height="5"/>
+        <rect x="286" y="226" width="5" height="5"/><rect x="300" y="226" width="5" height="5"/>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- DFPlayer Mini: a card socket with sixteen pins around it. The sheet calls
+       it a form factor rather than a part, so the form factor is the drawing. -->
+  <symbol id="art-dfplayer_mini" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="108" y="46" width="184" height="208" rx="4" stroke-width="2.4"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9" opacity=".65">
+        <text x="136" y="72">DFPlayer Mini</text>
+      </g>
+      <rect x="132" y="84" width="136" height="146" rx="3" stroke-width="1.6"/>
+      <path d="M132 100h136M252 230v-24h16" stroke-width=".9" opacity=".5"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <circle cx="118" cy="92" r="4"/><circle cx="118" cy="112" r="4"/>
+        <circle cx="118" cy="132" r="4"/><circle cx="118" cy="152" r="4"/>
+        <circle cx="118" cy="172" r="4"/><circle cx="118" cy="192" r="4"/>
+        <circle cx="118" cy="212" r="4"/><circle cx="118" cy="232" r="4"/>
+        <circle cx="282" cy="92" r="4"/><circle cx="282" cy="112" r="4"/>
+        <circle cx="282" cy="132" r="4"/><circle cx="282" cy="152" r="4"/>
+        <circle cx="282" cy="172" r="4"/><circle cx="282" cy="192" r="4"/>
+        <circle cx="282" cy="212" r="4"/><circle cx="282" cy="232" r="4"/>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- DY-SV5W: the card slot, the speaker terminal, the volume trimmer and the
+       mode DIP bank a builder sets before it will do anything. -->
+  <symbol id="art-dy_sv5w" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="62" y="40" width="276" height="220" rx="5" stroke-width="2.4"/>
+      <g stroke-width="1.15">
+        <circle cx="78" cy="56" r="5"/><circle cx="322" cy="56" r="5"/>
+        <circle cx="78" cy="244" r="5"/><circle cx="322" cy="244" r="5"/>
+      </g>
+      <!-- micro-USB on the left edge -->
+      <rect x="48" y="96" width="26" height="24" rx="3" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <!-- Volume trimmer, supply cap, speaker terminal -->
+      <rect x="104" y="70" width="36" height="36" rx="2" stroke-width="1.6"/>
+      <circle cx="122" cy="88" r="11" stroke-width="1.15"/>
+      <path d="M114 88h16M122 80v16" stroke-width=".9" opacity=".6"/>
+      <circle cx="172" cy="90" r="18" stroke-width="1.6"/>
+      <path d="M158 82a18 18 0 0 0 28 0" stroke-width=".9" opacity=".5"/>
+      <rect x="212" y="64" width="52" height="34" rx="2" stroke-width="1.6"/>
+      <circle cx="226" cy="81" r="5" stroke-width="1.15"/><circle cx="250" cy="81" r="5" stroke-width="1.15"/>
+      <!-- microSD slot -->
+      <rect x="228" y="112" width="98" height="70" rx="2" stroke-width="1.6"/>
+      <path d="M236 182v-70M318 182v-70" stroke-width=".7" opacity=".4"/>
+      <use href="#art-chip" x="126" y="150"/>
+      <!-- Mode DIP bank -->
+      <rect x="232" y="198" width="66" height="38" rx="2" stroke-width="1.6"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="242" y="208" width="10" height="18"/><rect x="258" y="208" width="10" height="18"/>
+        <rect x="274" y="208" width="10" height="18"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity=".6">
+        <text x="232" y="248">ON 1 2 3</text>
+        <text x="82" y="140">DY-SV5W</text>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".5">
+        <rect x="72" y="160" width="5" height="5"/><rect x="72" y="176" width="5" height="5"/>
+        <rect x="72" y="192" width="5" height="5"/><rect x="72" y="208" width="5" height="5"/>
+        <rect x="72" y="224" width="5" height="5"/>
+        <rect x="96" y="238" width="5" height="5"/><rect x="112" y="238" width="5" height="5"/>
+        <rect x="128" y="238" width="5" height="5"/><rect x="144" y="238" width="5" height="5"/>
+        <rect x="160" y="238" width="5" height="5"/><rect x="176" y="238" width="5" height="5"/>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- MP3 Trigger: the bank of trigger pads down one edge is the thing that
+       makes it recognisable, so it is drawn at full count. -->
+  <symbol id="art-mp3_trigger" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="62" y="40" width="276" height="220" rx="5" stroke-width="2.4"/>
+      <g stroke-width="1.15">
+        <circle cx="78" cy="56" r="5"/><circle cx="322" cy="56" r="5"/>
+        <circle cx="78" cy="244" r="5"/><circle cx="322" cy="244" r="5"/>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <circle cx="98" cy="76" r="4"/><circle cx="114" cy="76" r="4"/>
+        <circle cx="98" cy="96" r="4"/><circle cx="114" cy="96" r="4"/>
+        <circle cx="98" cy="116" r="4"/><circle cx="114" cy="116" r="4"/>
+        <circle cx="98" cy="136" r="4"/><circle cx="114" cy="136" r="4"/>
+        <circle cx="98" cy="156" r="4"/><circle cx="114" cy="156" r="4"/>
+        <circle cx="98" cy="176" r="4"/><circle cx="114" cy="176" r="4"/>
+        <circle cx="98" cy="196" r="4"/><circle cx="114" cy="196" r="4"/>
+        <circle cx="98" cy="216" r="4"/><circle cx="114" cy="216" r="4"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+        <text x="188" y="76" font-size="11">MP3 Trigger</text>
+        <text x="188" y="88" font-size="6.5">robertsonics</text>
+      </g>
+      <!-- microSD slot, the barrel jack and the audio out -->
+      <rect x="238" y="100" width="88" height="60" rx="2" stroke-width="1.6"/>
+      <path d="M246 160v-60M318 160v-60" stroke-width=".7" opacity=".4"/>
+      <use href="#art-chip" x="150" y="120"/>
+      <use href="#art-chip" x="150" y="160"/>
+      <rect x="94" y="196" width="52" height="40" rx="3" stroke-width="1.6"/>
+      <circle cx="120" cy="216" r="10" stroke-width="1.4"/>
+      <circle cx="120" cy="216" r="4" fill="currentColor" stroke="none" opacity=".55"/>
+      <rect x="240" y="200" width="56" height="36" rx="3" stroke-width="1.6"/>
+      <circle cx="296" cy="218" r="9" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+    </g>
+  </symbol>
+
+  <!-- PCA9685: sixteen three-pin channels in a row, which is the reason to
+       fit one, with the supply cap and terminal at the near end. -->
+  <symbol id="art-pca9685" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="22" y="88" width="356" height="124" rx="4" stroke-width="2.4"/>
+      <g stroke-width="1.15"><circle cx="36" cy="200" r="5"/><circle cx="364" cy="100" r="5"/></g>
+      <!-- Supply cap and the screw terminal beside it -->
+      <circle cx="62" cy="132" r="18" stroke-width="1.6"/>
+      <path d="M48 124a18 18 0 0 0 28 0" stroke-width=".9" opacity=".5"/>
+      <use href="#art-screw" x="92" y="106"/><use href="#art-screw" x="112" y="106"/>
+      <!-- Sixteen channels -->
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <use href="#art-pin3" x="146" y="112"/><use href="#art-pin3" x="160" y="112"/>
+        <use href="#art-pin3" x="174" y="112"/><use href="#art-pin3" x="188" y="112"/>
+        <use href="#art-pin3" x="206" y="112"/><use href="#art-pin3" x="220" y="112"/>
+        <use href="#art-pin3" x="234" y="112"/><use href="#art-pin3" x="248" y="112"/>
+        <use href="#art-pin3" x="266" y="112"/><use href="#art-pin3" x="280" y="112"/>
+        <use href="#art-pin3" x="294" y="112"/><use href="#art-pin3" x="308" y="112"/>
+        <use href="#art-pin3" x="326" y="112"/><use href="#art-pin3" x="340" y="112"/>
+        <use href="#art-pin3" x="354" y="112"/><use href="#art-pin3" x="368" y="112"/>
+        <!-- The control header, underneath -->
+        <rect x="46" y="196" width="5" height="5"/><rect x="62" y="196" width="5" height="5"/>
+        <rect x="78" y="196" width="5" height="5"/><rect x="94" y="196" width="5" height="5"/>
+        <rect x="110" y="196" width="5" height="5"/><rect x="126" y="196" width="5" height="5"/>
+        <!-- Address jumpers, on top -->
+        <rect x="206" y="94" width="5" height="5"/><rect x="220" y="94" width="5" height="5"/>
+        <rect x="234" y="94" width="5" height="5"/><rect x="248" y="94" width="5" height="5"/>
+        <rect x="262" y="94" width="5" height="5"/><rect x="276" y="94" width="5" height="5"/>
+      </g>
+      <use href="#art-chip" x="150" y="164"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity=".6">
+        <text x="46" y="178">PCA9685</text>
+        <text x="146" y="106">0</text><text x="364" y="106">15</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- Pololu Maestro 18: eighteen channels in three rows, the mini-USB it is
+       configured over, and the processor between them. -->
+  <symbol id="art-pololu_maestro" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="48" y="58" width="304" height="184" rx="4" stroke-width="2.4"/>
+      <g stroke-width="1.15"><circle cx="66" cy="76" r="6"/><circle cx="66" cy="224" r="6"/></g>
+      <!-- mini-USB on the left edge -->
+      <rect x="34" y="96" width="34" height="30" rx="3" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <path d="M42 104h18M42 118h18" stroke-width=".8" opacity=".45"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <circle cx="104" cy="150" r="4"/><circle cx="118" cy="150" r="4"/><circle cx="132" cy="150" r="4"/>
+        <!-- The signal header along the top -->
+        <rect x="110" y="68" width="5" height="5"/><rect x="126" y="68" width="5" height="5"/>
+        <rect x="142" y="68" width="5" height="5"/><rect x="158" y="68" width="5" height="5"/>
+        <rect x="174" y="68" width="5" height="5"/><rect x="190" y="68" width="5" height="5"/>
+        <rect x="206" y="68" width="5" height="5"/><rect x="222" y="68" width="5" height="5"/>
+        <rect x="110" y="82" width="5" height="5"/><rect x="126" y="82" width="5" height="5"/>
+        <rect x="142" y="82" width="5" height="5"/><rect x="158" y="82" width="5" height="5"/>
+        <rect x="174" y="82" width="5" height="5"/><rect x="190" y="82" width="5" height="5"/>
+        <rect x="206" y="82" width="5" height="5"/><rect x="222" y="82" width="5" height="5"/>
+        <!-- Eighteen servo channels -->
+        <use href="#art-pin3" x="248" y="106"/><use href="#art-pin3" x="266" y="106"/>
+        <use href="#art-pin3" x="284" y="106"/><use href="#art-pin3" x="302" y="106"/>
+        <use href="#art-pin3" x="320" y="106"/><use href="#art-pin3" x="338" y="106"/>
+        <use href="#art-pin3" x="248" y="148"/><use href="#art-pin3" x="266" y="148"/>
+        <use href="#art-pin3" x="284" y="148"/><use href="#art-pin3" x="302" y="148"/>
+        <use href="#art-pin3" x="320" y="148"/><use href="#art-pin3" x="338" y="148"/>
+        <use href="#art-pin3" x="248" y="190"/><use href="#art-pin3" x="266" y="190"/>
+        <use href="#art-pin3" x="284" y="190"/><use href="#art-pin3" x="302" y="190"/>
+        <use href="#art-pin3" x="320" y="190"/><use href="#art-pin3" x="338" y="190"/>
+      </g>
+      <rect x="126" y="168" width="56" height="56" rx="2" stroke-width="1.6"/>
+      <path d="M136 168v-5M150 168v-5M164 168v-5M176 168v-5M136 224v5M150 224v5M164 224v5M176 224v5" stroke-width=".8" opacity=".6"/>
+      <rect x="200" y="180" width="28" height="28" rx="2" stroke-width="1.4"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity=".6">
+        <text x="100" y="120">Maestro 18</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- Sabertooth 2x25: the two heatsinks and the six power screws are what a
+       builder is looking at when they pick it out of a box. -->
+  <symbol id="art-sabertooth_2x25" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="76" y="54" width="248" height="192" rx="3" stroke-width="2.4"/>
+      <!-- Heatsinks -->
+      <g stroke-width="1.6">
+        <rect x="34" y="54" width="42" height="192" rx="2"/>
+        <rect x="324" y="54" width="42" height="192" rx="2"/>
+      </g>
+      <g stroke-width=".8" opacity=".5">
+        <path d="M44 58v184M54 58v184M64 58v184M334 58v184M344 58v184M354 58v184"/>
+      </g>
+      <!-- Six power terminals -->
+      <use href="#art-screw" x="88" y="62"/><use href="#art-screw" x="126" y="62"/>
+      <use href="#art-screw" x="164" y="62"/><use href="#art-screw" x="202" y="62"/>
+      <use href="#art-screw" x="240" y="62"/><use href="#art-screw" x="278" y="62"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6" opacity=".6">
+        <text x="86" y="94">M2A</text><text x="124" y="94">M2B</text><text x="166" y="94">B-</text>
+        <text x="204" y="94">B+</text><text x="238" y="94">M1B</text><text x="276" y="94">M1A</text>
+      </g>
+      <!-- Bulk capacitors -->
+      <circle cx="146" cy="146" r="24" stroke-width="1.6"/>
+      <path d="M128 138a24 24 0 0 0 36 0" stroke-width=".9" opacity=".5"/>
+      <circle cx="242" cy="146" r="24" stroke-width="1.6"/>
+      <path d="M224 138a24 24 0 0 0 36 0" stroke-width=".9" opacity=".5"/>
+      <rect x="184" y="120" width="18" height="52" rx="2" stroke-width="1.15"/>
+      <!-- The six mode switches, and the signal terminals beside them -->
+      <rect x="88" y="196" width="76" height="34" rx="2" stroke-width="1.6"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="96" y="204" width="8" height="18"/><rect x="108" y="204" width="8" height="18"/>
+        <rect x="120" y="204" width="8" height="18"/><rect x="132" y="204" width="8" height="18"/>
+        <rect x="144" y="204" width="8" height="18"/><rect x="152" y="204" width="6" height="18"/>
+      </g>
+      <use href="#art-screw" x="204" y="204"/><use href="#art-screw" x="226" y="204"/>
+      <use href="#art-screw" x="248" y="204"/><use href="#art-screw" x="270" y="204"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity=".6">
+        <text x="204" y="236">S1 S2 0V 5V</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- SyRen 10: the same family as the Sabertooth at half the job, in its
+       aluminium channel, with the switch bank on top. -->
+  <symbol id="art-syren10" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="40" y="84" width="320" height="148" rx="4" stroke-width="1.6" opacity=".8"/>
+      <rect x="62" y="92" width="276" height="132" rx="2" stroke-width="2.4"/>
+      <!-- Signal in on one side, motor and battery on the other -->
+      <use href="#art-screw" x="70" y="100"/><use href="#art-screw" x="70" y="128"/>
+      <use href="#art-screw" x="70" y="156"/><use href="#art-screw" x="70" y="184"/>
+      <use href="#art-screw" x="306" y="100"/><use href="#art-screw" x="306" y="128"/>
+      <use href="#art-screw" x="306" y="156"/><use href="#art-screw" x="306" y="184"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity=".6">
+        <text x="90" y="112">S2</text><text x="90" y="140">S1</text>
+        <text x="90" y="168">5V</text><text x="90" y="196">0V</text>
+        <text x="288" y="112">M1</text><text x="288" y="140">B-</text>
+        <text x="288" y="168">B+</text><text x="288" y="196">M2</text>
+        <text x="240" y="106">SyRen 10</text>
+      </g>
+      <rect x="132" y="100" width="72" height="26" rx="2" stroke-width="1.6"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="140" y="106" width="8" height="14"/><rect x="152" y="106" width="8" height="14"/>
+        <rect x="164" y="106" width="8" height="14"/><rect x="176" y="106" width="8" height="14"/>
+        <rect x="188" y="106" width="8" height="14"/><rect x="196" y="106" width="6" height="14"/>
+      </g>
+      <circle cx="262" cy="156" r="17" stroke-width="1.6"/>
+      <path d="M249 148a17 17 0 0 0 26 0" stroke-width=".9" opacity=".5"/>
+      <use href="#art-chip" x="140" y="146"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <circle cx="146" cy="200" r="3.5"/><circle cx="182" cy="200" r="3.5"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6" opacity=".55">
+        <text x="152" y="203">Error</text><text x="188" y="203">Status</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- Flipsky Mini FSESC 6.7: a small board almost hidden by the cable it
+       carries, which is how one arrives and how it looks once fitted. -->
+  <symbol id="art-flipsky_mini_v6_vesc" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Battery leads and motor phases, drawn heavy because they are heavy -->
+      <g stroke-width="5" opacity=".75">
+        <path d="M172 76V34M228 76V34"/>
+        <path d="M166 224v42M200 224v42M234 224v42"/>
+      </g>
+      <g stroke-width="2.2" opacity=".7">
+        <path d="M132 132H74l-14-8M132 150H74l-14 8"/>
+        <path d="M268 140h54l16-10M268 158h54l16 10"/>
+      </g>
+      <rect x="132" y="96" width="136" height="128" rx="5" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <!-- The three bulk capacitors standing off the top edge -->
+      <g stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)">
+        <rect x="140" y="64" width="30" height="42" rx="7"/>
+        <rect x="184" y="64" width="30" height="42" rx="7"/>
+        <rect x="228" y="64" width="30" height="42" rx="7"/>
+      </g>
+      <circle cx="200" cy="150" r="16" stroke-width="1.6"/>
+      <path d="M190 150h20" stroke-width=".9" opacity=".5"/>
+      <use href="#art-chip" x="150" y="184"/>
+      <g fill="currentColor" stroke="none" opacity=".5">
+        <rect x="136" y="120" width="5" height="5"/><rect x="136" y="134" width="5" height="5"/>
+        <rect x="136" y="148" width="5" height="5"/><rect x="136" y="162" width="5" height="5"/>
+        <rect x="259" y="120" width="5" height="5"/><rect x="259" y="134" width="5" height="5"/>
+        <rect x="259" y="148" width="5" height="5"/><rect x="259" y="162" width="5" height="5"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity=".6">
+        <text x="196" y="216">COMM</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- ISDT ESC70: a sealed brick with its ribbed case and the round switch on
+       a lead, since neither is optional and both are how it is recognised. -->
+  <symbol id="art-isdt_esc70" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke-width="5" opacity=".75">
+        <path d="M100 100V38M132 100V38M164 100V38M196 100V38"/>
+      </g>
+      <rect x="78" y="98" width="150" height="136" rx="9" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <g stroke-width="1.15" opacity=".55">
+        <path d="M92 178l44-58M110 178l44-58M128 178l44-58M146 178l44-58M164 178l44-58M182 178l30-40"/>
+      </g>
+      <g stroke-width="1.4">
+        <rect x="94" y="200" width="46" height="20" rx="2"/>
+        <rect x="152" y="200" width="46" height="20" rx="2"/>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="102" y="206" width="4" height="8"/><rect x="114" y="206" width="4" height="8"/>
+        <rect x="126" y="206" width="4" height="8"/>
+        <rect x="160" y="206" width="4" height="8"/><rect x="172" y="206" width="4" height="8"/>
+        <rect x="184" y="206" width="4" height="8"/>
+      </g>
+      <!-- The power switch, on its own lead -->
+      <path d="M304 152V60" stroke-width="2.2" opacity=".7"/>
+      <circle cx="304" cy="192" r="38" stroke-width="2.4"/>
+      <path d="M304 174a18 18 0 1 0 13 5" stroke-width="1.6"/>
+    </g>
+  </symbol>
+
+  <!-- Hoverboard: the whole machine rather than the board inside it, because a
+       builder buys one of these and takes it apart. -->
+  <symbol id="art-hoverboard" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke-width="2.4">
+        <circle cx="84" cy="176" r="52"/><circle cx="316" cy="176" r="52"/>
+      </g>
+      <g stroke-width="1.6" opacity=".85">
+        <circle cx="84" cy="176" r="38"/><circle cx="316" cy="176" r="38"/>
+      </g>
+      <g stroke-width="1.15" opacity=".6">
+        <circle cx="84" cy="176" r="20"/><circle cx="316" cy="176" r="20"/>
+        <path d="M84 156v40M64 176h40M316 156v40M296 176h40"/>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".5">
+        <circle cx="84" cy="176" r="6"/><circle cx="316" cy="176" r="6"/>
+      </g>
+      <!-- The two foot platforms and the pivot between them -->
+      <path d="M104 124h80a12 12 0 0 1 12 12v54a12 12 0 0 1-12 12h-80q-16-14-16-39t16-39z" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <path d="M296 124h-80a12 12 0 0 0-12 12v54a12 12 0 0 0 12 12h80q16-14 16-39t-16-39z" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <rect x="190" y="128" width="20" height="70" rx="4" stroke-width="1.6" fill="var(--pa-art-bg,#0c1525)"/>
+      <g stroke-width="1.15" opacity=".6">
+        <rect x="118" y="140" width="62" height="38" rx="5"/>
+        <rect x="220" y="140" width="62" height="38" rx="5"/>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".5">
+        <circle cx="149" cy="190" r="3.5"/><circle cx="251" cy="190" r="3.5"/>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- Xbox Controller: the arrangement of sticks, pad and face buttons, which
+       is what identifies a gamepad at this size. -->
+  <symbol id="art-xbox_controller" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M128 84q28-18 58-16h28q30-2 58 16 32 20 44 74 12 54-16 72-28 18-48-10l-28-42q-10-14-28-14h-40q-18 0-28 14l-28 42q-20 28-48 10-28-18-16-72 12-54 44-74z" stroke-width="2.4"/>
+      <g stroke-width="1.6" opacity=".75">
+        <rect x="140" y="62" width="46" height="12" rx="6"/>
+        <rect x="214" y="62" width="46" height="12" rx="6"/>
+      </g>
+      <!-- Left stick and the direction pad below it -->
+      <circle cx="150" cy="122" r="19" stroke-width="2"/>
+      <circle cx="150" cy="122" r="10" stroke-width="1.15" opacity=".7"/>
+      <path d="M144 172h11v-11h15v11h11v15h-11v11h-15v-11h-11z" stroke-width="1.6"/>
+      <!-- Right stick, and the four face buttons above it -->
+      <circle cx="234" cy="166" r="19" stroke-width="2"/>
+      <circle cx="234" cy="166" r="10" stroke-width="1.15" opacity=".7"/>
+      <g stroke-width="1.6">
+        <circle cx="264" cy="100" r="9.5"/><circle cx="286" cy="122" r="9.5"/>
+        <circle cx="242" cy="122" r="9.5"/><circle cx="264" cy="144" r="9.5"/>
+      </g>
+      <!-- The guide button and the pair beside it -->
+      <circle cx="200" cy="106" r="11" stroke-width="1.6"/>
+      <circle cx="200" cy="106" r="4.5" stroke-width="1.15" opacity=".7"/>
+      <g stroke-width="1.4">
+        <circle cx="176" cy="132" r="5"/><circle cx="224" cy="132" r="5"/>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- HotRC DS-650: the wand a builder actually holds, and the receiver that
+       comes in the same box and goes in the droid. -->
+  <symbol id="art-hotrc_ds650" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M96 78q0-32 42-32t42 32v104q0 30-16 48l-14 16q-12 14-26 0l-14-16q-14-18-14-48z" stroke-width="2.4"/>
+      <rect x="112" y="58" width="52" height="26" rx="3" stroke-width="1.4"/>
+      <path d="M120 66h36M120 74h24" stroke-width=".8" opacity=".5"/>
+      <circle cx="138" cy="112" r="19" stroke-width="2"/>
+      <circle cx="138" cy="112" r="9" stroke-width="1.15" opacity=".7"/>
+      <g stroke-width="1.4">
+        <circle cx="120" cy="150" r="8"/><circle cx="156" cy="150" r="8"/>
+        <circle cx="120" cy="174" r="8"/><circle cx="156" cy="174" r="8"/>
+        <circle cx="120" cy="198" r="8"/><circle cx="156" cy="198" r="8"/>
+      </g>
+      <path d="M180 128q10 8 10 22t-10 20" stroke-width="1.4" opacity=".7"/>
+      <g stroke-width="1.15" opacity=".5">
+        <path d="M112 222h52M116 232h44"/>
+      </g>
+      <!-- The receiver, to scale beside it -->
+      <rect x="248" y="170" width="118" height="80" rx="5" stroke-width="2.4"/>
+      <path d="M248 186l-30-12" stroke-width="1.6" opacity=".7"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="8" opacity=".65">
+        <text x="258" y="196">F-06A</text>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <use href="#art-pin3" x="260" y="212"/><use href="#art-pin3" x="276" y="212"/>
+        <use href="#art-pin3" x="292" y="212"/><use href="#art-pin3" x="308" y="212"/>
+        <use href="#art-pin3" x="324" y="212"/><use href="#art-pin3" x="340" y="212"/>
+      </g>
+      <circle cx="348" cy="188" r="5" stroke-width="1.15"/>
+    </g>
+  </symbol>
+
+  <!-- RC Receiver, PWM: one lead per channel out of a numbered pin block, which
+       is the difference a builder is choosing between here. -->
+  <symbol id="art-rc_transmitter_pwm" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="62" y="86" width="276" height="128" rx="7" stroke-width="2.4"/>
+      <path d="M62 118H26l-8-6" stroke-width="2.2" opacity=".7"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+        <text x="86" y="132" font-size="20">F-06A</text>
+        <text x="86" y="156" font-size="14">HotRC</text>
+        <text x="86" y="176" font-size="7">INPUT 4V-9V DC</text>
+        <text x="212" y="106" font-size="6.5">PWM</text>
+      </g>
+      <!-- Six numbered channels, then the block they land in -->
+      <g stroke-width="1.15">
+        <rect x="210" y="110" width="16" height="14" rx="1.5"/>
+        <rect x="210" y="128" width="16" height="14" rx="1.5"/>
+        <rect x="210" y="146" width="16" height="14" rx="1.5"/>
+        <rect x="210" y="164" width="16" height="14" rx="1.5"/>
+        <rect x="210" y="182" width="16" height="14" rx="1.5"/>
+        <rect x="210" y="200" width="16" height="8" rx="1.5"/>
+      </g>
+      <rect x="240" y="98" width="88" height="104" rx="3" stroke-width="1.6"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <use href="#art-pin3" x="252" y="110"/><use href="#art-pin3" x="252" y="140"/>
+        <use href="#art-pin3" x="252" y="170"/>
+        <use href="#art-pin3" x="278" y="110"/><use href="#art-pin3" x="278" y="140"/>
+        <use href="#art-pin3" x="278" y="170"/>
+        <use href="#art-pin3" x="304" y="110"/><use href="#art-pin3" x="304" y="140"/>
+        <use href="#art-pin3" x="304" y="170"/>
+      </g>
+      <circle cx="164" cy="192" r="8" stroke-width="1.4"/>
+      <rect x="182" y="184" width="22" height="16" rx="2" stroke-width="1.15"/>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6" opacity=".6">
+        <text x="152" y="212">BIND</text><text x="180" y="212">EXT-V</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- RC Receiver, SBUS: one lead for every channel, on a board small enough
+       to disappear into a droid. Drawn small on purpose. -->
+  <symbol id="art-rc_transmitter_sbus" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="128" y="122" width="164" height="66" rx="4" stroke-width="2.4"/>
+      <path d="M128 140l-52-10" stroke-width="1.8" opacity=".7"/>
+      <rect x="118" y="132" width="14" height="14" rx="2" stroke-width="1.15"/>
+      <rect x="196" y="130" width="52" height="34" rx="2" stroke-width="1.4"/>
+      <path d="M204 130v34M240 130v34" stroke-width=".7" opacity=".4"/>
+      <use href="#art-chip" transform="translate(140,134) scale(.7)"/>
+      <circle cx="160" cy="172" r="5" stroke-width="1.15"/>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <rect x="262" y="130" width="5" height="5"/><rect x="276" y="130" width="5" height="5"/>
+        <rect x="262" y="144" width="5" height="5"/><rect x="276" y="144" width="5" height="5"/>
+        <rect x="262" y="158" width="5" height="5"/><rect x="276" y="158" width="5" height="5"/>
+        <rect x="262" y="172" width="5" height="5"/><rect x="276" y="172" width="5" height="5"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="7" opacity=".6">
+        <text x="140" y="182">SBUS</text>
+      </g>
+    </g>
+  </symbol>
+
+  <!-- RC Receiver, ELRS: the two diversity antennas are the mark of one, and
+       the channel rows sit on the top face. -->
+  <symbol id="art-rc_transmitter_elrs" viewBox="0 0 400 300">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke-width="2.4" opacity=".8">
+        <path d="M126 214l-52 46M158 214l-52 52"/>
+      </g>
+      <g stroke-width="1.15" opacity=".6">
+        <path d="M70 252l8 8M102 258l8 8"/>
+      </g>
+      <rect x="96" y="90" width="212" height="124" rx="7" stroke-width="2.4" fill="var(--pa-art-bg,#0c1525)"/>
+      <path d="M96 122h212" stroke-width="1.4" opacity=".7"/>
+      <g stroke-width="1.15" opacity=".5">
+        <path d="M120 122l14-32M148 122l14-32M176 122l14-32"/>
+      </g>
+      <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+        <text x="212" y="112" font-size="8">ELRS 2.4G</text>
+      </g>
+      <g fill="currentColor" stroke="none" opacity=".55">
+        <use href="#art-pin3" x="116" y="140"/><use href="#art-pin3" x="140" y="140"/>
+        <use href="#art-pin3" x="164" y="140"/><use href="#art-pin3" x="188" y="140"/>
+        <use href="#art-pin3" x="212" y="140"/><use href="#art-pin3" x="236" y="140"/>
+        <use href="#art-pin3" x="260" y="140"/><use href="#art-pin3" x="284" y="140"/>
+      </g>
+      <rect x="116" y="178" width="80" height="22" rx="2" stroke-width="1.4"/>
+      <path d="M126 178v22M136 178v22M146 178v22" stroke-width=".7" opacity=".4"/>
+      <circle cx="272" cy="188" r="7" stroke-width="1.4"/>
+    </g>
+  </symbol>
+</svg>
