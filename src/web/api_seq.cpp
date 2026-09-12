@@ -44,7 +44,14 @@ namespace {
 // A row-per-sequence listing tops out at SEQ_STORE_MAX (16) rows of roughly
 // 130 bytes, so 4 KB is comfortable headroom. A whole sequence with its steps
 // is bounded by the same per-file cap the store enforces on save.
+//
+// The Factory catalog listing is its own ceiling because it grows with the
+// catalog rather than with the store, and each row carries a purpose sentence.
+// Measured by serializing the rows as the route writes them: 2959 B for the 16
+// entries before #354, 4359 B once the seven body routines joined -- past the
+// 4 KB above, which answered 500. 6 KB leaves room for another handful.
 constexpr size_t kSeqListMaxBytes = 4096;
+constexpr size_t kSeqBuiltinsListMaxBytes = 6144;
 constexpr size_t kSeqDocumentMaxBytes = SEQ_FILE_MAX_BYTES;
 constexpr size_t kSeqErrorMaxBytes = 512;
 
@@ -172,7 +179,8 @@ void handleSeqListGet(WebRequest& req) {
 // GET /api/seq/builtins?name=X   - full JSON v1 of one factory sequence.
 //
 // The list form carries no step data, so the whole-catalog response stays a few
-// hundred bytes and cannot exhaust the fragmented heap mid-send. Serializing all
+// kilobytes (kSeqBuiltinsListMaxBytes) and cannot exhaust the fragmented heap
+// mid-send. Serializing all
 // factory sequences with their steps into one buffered response was large enough
 // to OOM the prior async backend during delivery, and ESP32's exceptions-disabled
 // libstdc++ turns the failed allocation into terminate()/abort() (panic reboot).
@@ -206,7 +214,7 @@ void handleSeqBuiltinsGet(WebRequest& req) {
         o["stepCount"] = e->stepCount;
         o["purpose"] = (e->purpose != nullptr) ? e->purpose : "";
     }
-    webSendJsonDocument(req, doc, kSeqListMaxBytes, TAG);
+    webSendJsonDocument(req, doc, kSeqBuiltinsListMaxBytes, TAG);
 }
 
 // GET /api/seq?name=  - raw stored JSON of one Learned Sequence.

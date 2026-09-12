@@ -339,6 +339,13 @@ void test_builtins_lists_the_factory_catalog_without_steps() {
     // The list form is metadata only; step data is what made this payload
     // large enough to exhaust fragmented heap mid-send.
     TEST_ASSERT_FALSE(bodyContains(b, "\"steps\""));
+    // Every entry fits under the ceiling: the seven body routines (#354) took
+    // the listing past the 4 KB it used to share with the Learned list, and the
+    // route answered 500 with the whole catalog missing.
+    for (uint8_t i = 0; i < sequenceCatalogCount(); ++i) {
+        TEST_ASSERT_TRUE_MESSAGE(bodyContains(b, sequenceCatalogAt(i)->name),
+                                 sequenceCatalogAt(i)->name);
+    }
 }
 
 void test_builtins_of_an_unknown_name_is_404() {
