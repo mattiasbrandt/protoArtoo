@@ -1,10 +1,20 @@
 // =============================================================================
 // test/test_web/test_board_panel_identity_retry.js
 //
-// Regression test for #202 Slice 6: board panel recovery after identity retry.
-// When identity resolves after assets-ready has already fired (because identity
-// was initially unavailable but is now retrying successfully), the board image
-// src must be set directly, not via data-deferred-src (which won't be swept).
+// The Setup board picture, which comes from the build's asset set (#382,
+// ADR 0065), and its recovery after an identity retry (#202).
+//
+// The order is the one every product card follows: the line drawing when the
+// page inlined one (the legacy set, built for artoo_esp32), else the photograph
+// at /<registry id>.webp (the default set, built for firebeetle2), else the
+// placeholder. The board panel and the sprite are the shipped files: setup.html
+// is parsed with its _product_art.html include expanded from each set, so a
+// renamed panel id or a lost symbol turns this suite red.
+//
+// The photograph keeps the deferred-asset gate from #202: identity can resolve
+// after the one-shot data-deferred-src sweep has already run, so the src is set
+// directly once PAAssetsReady is true, and deferred before. A drawing fetches
+// nothing and never touches the gate.
 // =============================================================================
 
 import { test } from "node:test";
@@ -13,287 +23,223 @@ import vm from "node:vm";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { MiniDOMParser } from "./helpers/mini_dom.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(__dirname, "../../data");
+const setupSrc = readFileSync(join(dataDir, "setup.js"), "utf8");
 
-const makeElement = () => {
-  const listeners = new Map();
-  const attributes = new Map();
-  const element = {
-    id: "",
-    dataset: {},
-    style: {},
-    className: "",
-    classList: { add() {}, remove() {}, contains: () => false },
-    textContent: "",
-    innerHTML: "",
-    value: "",
-    checked: false,
-    disabled: false,
-    hidden: false,
-    type: "checkbox",
-    src: undefined,
-    onload: null,
-    onerror: null,
-    addEventListener(type, handler) {
-      if (!listeners.has(type)) listeners.set(type, []);
-      listeners.get(type).push(handler);
-    },
-    setAttribute(name, value) { attributes.set(name, String(value)); },
-    removeAttribute(name) { attributes.delete(name); },
-    querySelectorAll: () => [],
-    querySelector: () => null,
-    closest: () => null,
-    appendChild() {},
-    click() {},
-  };
-  return element;
+const INCLUDE_RE = /<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->/g;
+
+// setup.html as one asset set's build serves it, as far as the board picture
+// is concerned: that set's sprite inlined. The recovery kernel is not what this
+// suite is about and stays an unexpanded comment.
+const setupDocument = (set) => {
+  const page = readFileSync(join(dataDir, "setup.html"), "utf8").replace(INCLUDE_RE, (directive, target) =>
+    target === "_product_art.html" ? readFileSync(join(dataDir, "asset-sets", set, target), "utf8") : directive
+  );
+  return new MiniDOMParser().parseFromString(page);
 };
 
-test("Board panel: sets .src when PAAssetsReady true, data-deferred-src when false", async (t) => {
-  const setupSrc = readFileSync(join(__dirname, "../../data/setup.js"), "utf8");
+// The board panel is read from the real markup. Everything else setup.js wires
+// up at load is not what these tests are about and gets a permissive stub.
+const PANEL_IDS = new Set(["board-art", "board-art-use", "board-image", "board-image-placeholder", "board-placeholder-text"]);
 
-  // Test case 1: PAAssetsReady is false when identity resolves
-  await t.test("Before assets-ready, uses data-deferred-src", async () => {
-    const windowListeners = new Map();
-    const boardImage = makeElement();
-    boardImage.id = "board-image";
-
-    const placeholder = makeElement();
-    placeholder.id = "board-image-placeholder";
-
-    const placeholderText = makeElement();
-    placeholderText.id = "board-placeholder-text";
-
-    const documentMock = {
-      getElementById: (id) => {
-        if (id === "board-image") return boardImage;
-        if (id === "board-image-placeholder") return placeholder;
-        if (id === "board-placeholder-text") return placeholderText;
-        return makeElement();
-      },
-      querySelector: () => makeElement(),
-      querySelectorAll: () => [],
-      createElement: () => makeElement(),
-      createTextNode: () => makeElement(),
-      addEventListener() {},
-      removeEventListener() {},
-      body: makeElement(),
-    };
-
-    const windowMock = {
-      document: documentMock,
-      PAAssetsReady: false,  // Assets NOT ready yet
-      PAIdentity: null,
-      PABootstrap: { registerSection: () => {}, setResourceLabels() {} },
-      PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
-      // data/page_bootstrap.js publishes window.PASurface in the browser; this
-      // context hand-rolls its globals, so it has to carry it too (#360).
-      PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
-      addEventListener(type, handler) {
-        if (!windowListeners.has(type)) windowListeners.set(type, []);
-        windowListeners.get(type).push(handler);
-      },
-      removeEventListener() {},
-      BOARD_LABELS: {
-        artoo_esp32: "Artoo Controller",
-        firebeetle2: "FireBeetle 2",
-      },
-      setTimeout: () => 1,
-      clearTimeout() {},
-      setInterval: () => 1,
-      clearInterval() {},
-      location: { origin: "http://device", href: "http://device/setup.html" },
-      localStorage: { getItem: () => null, setItem() {} },
-      requestAnimationFrame: () => 1,
-      confirm: () => true,
-      CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
-      Event: class {},
-    };
-
-    const context = {
-      window: windowMock,
-      document: documentMock,
-      console: { log() {}, warn() {}, error() {}, info() {} },
-      setTimeout: windowMock.setTimeout,
-      clearTimeout: windowMock.clearTimeout,
-      setInterval: windowMock.setInterval,
-      clearInterval: windowMock.clearInterval,
-      fetch: async () => ({ json: async () => ({}) }),
-      confirm: () => true,
-      CustomEvent: windowMock.CustomEvent,
-      Event: windowMock.Event,
-      URLSearchParams,
-      AbortController,
-      JSON,
-      Math,
-      Date,
-      Number,
-      String,
-      Boolean,
-      Array,
-      Object,
-      Set,
-      Map,
-      Promise,
-      Error,
-      RegExp,
-    };
-    context.globalThis = context;
-    // Add window properties to context
-    for (const key of ["PAApi", "PAUtils", "PABootstrap", "PageBootstrap"]) {
-      if (windowMock[key]) context[key] = windowMock[key];
-    }
-
-    // Run setup.js in the context
-    vm.runInNewContext(setupSrc, context, { filename: "setup.js" });
-
-    // Fire identity-available event before assets-ready
-    const handlers = windowListeners.get("pa:identity-available") || [];
-    assert.ok(handlers.length > 0, "setup.js should register pa:identity-available handler");
-
-    for (const handler of handlers) {
-      handler({
-        detail: {
-          droidName: "artoo",
-          board: "artoo_esp32",
-          board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
-        },
-      });
-    }
-
-    // Before assets-ready: should use data-deferred-src, not .src
-    assert.strictEqual(
-      boardImage.dataset.deferredSrc,
-      "/board_artoo_esp32.jpg",
-      "Before PAAssetsReady, should set data-deferred-src"
-    );
-    assert.strictEqual(
-      boardImage.src,
-      undefined,
-      "Before PAAssetsReady, should NOT set .src"
-    );
-  });
-
-  // Test case 2: PAAssetsReady is true when identity resolves (late retry)
-  await t.test("After assets-ready, sets .src directly", async () => {
-    const windowListeners = new Map();
-    const boardImage = makeElement();
-    boardImage.id = "board-image";
-
-    const placeholder = makeElement();
-    placeholder.id = "board-image-placeholder";
-
-    const placeholderText = makeElement();
-    placeholderText.id = "board-placeholder-text";
-
-    const documentMock = {
-      getElementById: (id) => {
-        if (id === "board-image") return boardImage;
-        if (id === "board-image-placeholder") return placeholder;
-        if (id === "board-placeholder-text") return placeholderText;
-        return makeElement();
-      },
-      querySelector: () => makeElement(),
-      querySelectorAll: () => [],
-      createElement: () => makeElement(),
-      createTextNode: () => makeElement(),
-      addEventListener() {},
-      removeEventListener() {},
-      body: makeElement(),
-    };
-
-    const windowMock = {
-      document: documentMock,
-      PAAssetsReady: true,  // Assets ARE ready (one-shot sweep already ran)
-      PAIdentity: null,
-      PABootstrap: { registerSection: () => {}, setResourceLabels() {} },
-      PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
-      // data/page_bootstrap.js publishes window.PASurface in the browser; this
-      // context hand-rolls its globals, so it has to carry it too (#360).
-      PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
-      addEventListener(type, handler) {
-        if (!windowListeners.has(type)) windowListeners.set(type, []);
-        windowListeners.get(type).push(handler);
-      },
-      removeEventListener() {},
-      BOARD_LABELS: {
-        artoo_esp32: "Artoo Controller",
-        firebeetle2: "FireBeetle 2",
-      },
-      setTimeout: () => 1,
-      clearTimeout() {},
-      setInterval: () => 1,
-      clearInterval() {},
-      location: { origin: "http://device", href: "http://device/setup.html" },
-      localStorage: { getItem: () => null, setItem() {} },
-      requestAnimationFrame: () => 1,
-      confirm: () => true,
-      CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
-      Event: class {},
-    };
-
-    const context = {
-      window: windowMock,
-      document: documentMock,
-      console: { log() {}, warn() {}, error() {}, info() {} },
-      setTimeout: windowMock.setTimeout,
-      clearTimeout: windowMock.clearTimeout,
-      setInterval: windowMock.setInterval,
-      clearInterval: windowMock.clearInterval,
-      fetch: async () => ({ json: async () => ({}) }),
-      confirm: () => true,
-      CustomEvent: windowMock.CustomEvent,
-      Event: windowMock.Event,
-      URLSearchParams,
-      AbortController,
-      JSON,
-      Math,
-      Date,
-      Number,
-      String,
-      Boolean,
-      Array,
-      Object,
-      Set,
-      Map,
-      Promise,
-      Error,
-      RegExp,
-    };
-    context.globalThis = context;
-    // Add window properties to context
-    for (const key of ["PAApi", "PAUtils", "PABootstrap", "PageBootstrap"]) {
-      if (windowMock[key]) context[key] = windowMock[key];
-    }
-
-    // Run setup.js in the context
-    vm.runInNewContext(setupSrc, context, { filename: "setup.js" });
-
-    // Fire identity-available event after assets-ready (simulating late retry)
-    const handlers = windowListeners.get("pa:identity-available") || [];
-    assert.ok(handlers.length > 0, "setup.js should register pa:identity-available handler");
-
-    for (const handler of handlers) {
-      handler({
-        detail: {
-          droidName: "artoo",
-          board: "artoo_esp32",
-          board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
-        },
-      });
-    }
-
-    // After assets-ready: should set .src directly, not data-deferred-src
-    assert.strictEqual(
-      boardImage.src,
-      "/board_artoo_esp32.jpg",
-      "After PAAssetsReady, should set .src directly"
-    );
-    assert.strictEqual(
-      boardImage.dataset.deferredSrc,
-      undefined,
-      "After PAAssetsReady, should NOT set data-deferred-src"
-    );
-  });
+const makeElement = () => ({
+  id: "",
+  dataset: {},
+  style: {},
+  className: "",
+  classList: { add() {}, remove() {}, contains: () => false },
+  textContent: "",
+  innerHTML: "",
+  value: "",
+  checked: false,
+  disabled: false,
+  hidden: false,
+  type: "checkbox",
+  addEventListener() {},
+  setAttribute() {},
+  removeAttribute() {},
+  querySelectorAll: () => [],
+  querySelector: () => null,
+  closest: () => null,
+  appendChild() {},
+  click() {},
 });
+
+const bootSetup = ({ set, assetsReady }) => {
+  const parsed = setupDocument(set);
+  const windowListeners = new Map();
+
+  const documentMock = {
+    getElementById: (id) => (PANEL_IDS.has(id) || id.startsWith("art-") ? parsed.getElementById(id) : makeElement()),
+    querySelector: () => makeElement(),
+    querySelectorAll: () => [],
+    createElement: () => makeElement(),
+    createTextNode: () => makeElement(),
+    addEventListener() {},
+    removeEventListener() {},
+    body: makeElement(),
+  };
+
+  const windowMock = {
+    document: documentMock,
+    PAAssetsReady: assetsReady,
+    PAIdentity: null,
+    PABootstrap: { registerSection: () => {}, setResourceLabels() {} },
+    PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
+    // data/page_bootstrap.js publishes window.PASurface in the browser; this
+    // context hand-rolls its globals, so it has to carry it too (#360).
+    PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
+    addEventListener(type, handler) {
+      if (!windowListeners.has(type)) windowListeners.set(type, []);
+      windowListeners.get(type).push(handler);
+    },
+    removeEventListener() {},
+    setTimeout: () => 1,
+    clearTimeout() {},
+    setInterval: () => 1,
+    clearInterval() {},
+    location: { origin: "http://device", href: "http://device/setup.html" },
+    localStorage: { getItem: () => null, setItem() {} },
+    requestAnimationFrame: () => 1,
+    confirm: () => true,
+    CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+    Event: class {},
+  };
+
+  const context = {
+    window: windowMock,
+    document: documentMock,
+    console: { log() {}, warn() {}, error() {}, info() {} },
+    setTimeout: windowMock.setTimeout,
+    clearTimeout: windowMock.clearTimeout,
+    setInterval: windowMock.setInterval,
+    clearInterval: windowMock.clearInterval,
+    fetch: async () => ({ json: async () => ({}) }),
+    confirm: () => true,
+    CustomEvent: windowMock.CustomEvent,
+    Event: windowMock.Event,
+    URLSearchParams,
+    AbortController,
+    JSON,
+    Math,
+    Date,
+    Number,
+    String,
+    Boolean,
+    Array,
+    Object,
+    Set,
+    Map,
+    Promise,
+    Error,
+    RegExp,
+  };
+  context.globalThis = context;
+  for (const key of ["PABootstrap", "PageBootstrap"]) context[key] = windowMock[key];
+
+  vm.runInNewContext(setupSrc, context, { filename: "setup.js" });
+
+  const panel = {
+    art: parsed.getElementById("board-art"),
+    use: parsed.getElementById("board-art-use"),
+    image: parsed.getElementById("board-image"),
+    placeholder: parsed.getElementById("board-image-placeholder"),
+    placeholderText: parsed.getElementById("board-placeholder-text"),
+  };
+  for (const [name, element] of Object.entries(panel)) {
+    assert.ok(element, `setup.html must carry the board panel's ${name} element`);
+  }
+
+  const announceBoard = (board) => {
+    const handlers = windowListeners.get("pa:identity-available") || [];
+    assert.ok(handlers.length > 0, "setup.js should register a pa:identity-available handler");
+    for (const handler of handlers) {
+      handler({
+        detail: {
+          droidName: "artoo",
+          board,
+          board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
+        },
+      });
+    }
+  };
+
+  // Which of the three the panel shows, by the same class the stylesheet hides.
+  const showing = () => ["art", "image", "placeholder"].filter((name) => !panel[name].classList.contains("hidden"));
+
+  return { panel, announceBoard, showing };
+};
+
+for (const assetsReady of [false, true]) {
+  test(`legacy set: the Artoo PCB is drawn inline from the page's sprite and nothing is fetched (PAAssetsReady ${assetsReady})`, () => {
+    const { panel, announceBoard, showing } = bootSetup({ set: "legacy", assetsReady });
+
+    announceBoard("artoo_esp32");
+
+    assert.strictEqual(panel.use.getAttribute("href"), "#art-artoo_pcb", "the board's registry id names its drawing");
+    assert.deepStrictEqual(showing(), ["art"], "the drawing replaces both the photograph and the placeholder");
+    assert.strictEqual(panel.art.getAttribute("aria-label"), "Artoo Controller PCB");
+    assert.strictEqual(panel.image.src, undefined, "a drawn board must not fetch a photograph");
+    assert.strictEqual(panel.image.dataset.deferredSrc, undefined, "a drawn board must not queue a photograph");
+  });
+}
+
+test("legacy set: the FireBeetle 2 is drawn from its own symbol", () => {
+  const { panel, announceBoard, showing } = bootSetup({ set: "legacy", assetsReady: false });
+
+  announceBoard("firebeetle2");
+
+  assert.strictEqual(panel.use.getAttribute("href"), "#art-firebeetle2");
+  assert.deepStrictEqual(showing(), ["art"]);
+  assert.strictEqual(panel.image.dataset.deferredSrc, undefined);
+});
+
+test("default set: before assets-ready, the photograph waits in data-deferred-src", () => {
+  const { panel, announceBoard, showing } = bootSetup({ set: "default", assetsReady: false });
+
+  announceBoard("firebeetle2");
+
+  assert.strictEqual(panel.image.dataset.deferredSrc, "/firebeetle2.webp", "Before PAAssetsReady, should set data-deferred-src");
+  assert.strictEqual(panel.image.src, undefined, "Before PAAssetsReady, should NOT set .src");
+  assert.ok(!showing().includes("art"), "the default set carries no drawing to show");
+});
+
+test("default set: after assets-ready (a late identity retry), the photograph's src is set directly", () => {
+  const { panel, announceBoard, showing } = bootSetup({ set: "default", assetsReady: true });
+
+  announceBoard("artoo_esp32");
+
+  assert.strictEqual(panel.image.src, "/artoo_pcb.webp", "After PAAssetsReady, should set .src to the registry id's photograph");
+  assert.strictEqual(panel.image.dataset.deferredSrc, undefined, "After PAAssetsReady, should NOT set data-deferred-src");
+  assert.strictEqual(panel.image.alt, "Artoo Controller PCB");
+
+  panel.image.onload();
+  assert.deepStrictEqual(showing(), ["image"], "a loaded photograph replaces the placeholder");
+});
+
+test("default set: a photograph that fails to load gives way to the placeholder", () => {
+  const { panel, announceBoard, showing } = bootSetup({ set: "default", assetsReady: true });
+
+  announceBoard("firebeetle2");
+  panel.image.onerror();
+
+  assert.deepStrictEqual(showing(), ["placeholder"]);
+  assert.strictEqual(panel.placeholderText.textContent, "FireBeetle 2 — No photo of this board yet.");
+});
+
+for (const set of ["legacy", "default"]) {
+  test(`${set} set: a board with neither a drawing nor a photograph shows the placeholder and fetches nothing`, () => {
+    const { panel, announceBoard, showing } = bootSetup({ set, assetsReady: true });
+
+    announceBoard("esp32s3_devkit");
+
+    assert.deepStrictEqual(showing(), ["placeholder"]);
+    assert.strictEqual(panel.placeholderText.textContent, "esp32s3_devkit — No photo of this board yet.");
+    assert.strictEqual(panel.image.src, undefined, "a board no set pictures has no route to ask");
+    assert.strictEqual(panel.image.dataset.deferredSrc, undefined);
+    assert.strictEqual(panel.use.getAttribute("href"), null);
+  });
+}

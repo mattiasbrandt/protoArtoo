@@ -1,0 +1,12 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -446,7 +446,7 @@
+ 
+     const boardId = identity.board;
+     const boardLabel = BOARD_LABELS[boardId] || boardId;
+-    const productId = BOARD_PRODUCT_IDS[boardId];
++    const productId = BOARD_PRODUCT_IDS[boardId] || boardId;
+     if (!productId) {
+       // Not a registry product, so no set has a drawing or a photograph of it,
+       // and there is no /<id>.webp route to ask.

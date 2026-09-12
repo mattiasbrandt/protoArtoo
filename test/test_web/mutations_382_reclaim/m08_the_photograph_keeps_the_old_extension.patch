@@ -1,0 +1,12 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -463,7 +463,7 @@
+       return;
+     }
+ 
+-    const imageSrc = `/${productId}.webp`;
++    const imageSrc = `/${productId}.jpg`;
+ 
+     // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
+     boardImage.onload = () => {

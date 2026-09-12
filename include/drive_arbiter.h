@@ -13,7 +13,9 @@
 //
 // Arbitration logic:
 //   - Most recent source (within timeout window) wins.
-//   - Web source times out after cfg_webDriveTimeoutMs.
+//   - Web source times out after cfg_webDriveTimeoutMs. The timeout holds the
+//     output at zero only while the web command is also the most recent one;
+//     any newer command, an RC one included, ends the hold.
 //   - Speed/steer are clamped to +/-speedLimitMax before output.
 //   - If any failsafe layer or web timeout is active, output is zeroed.
 // =============================================================================
@@ -32,7 +34,7 @@ struct DriveOutput {
     int16_t speed;              // -speedLimitMax .. +speedLimitMax
     int16_t steer;              // -speedLimitMax .. +speedLimitMax
     bool failsafeActive;        // true if FailsafeGate or web timeout requires zero output
-    bool webTimedOut;           // true when the latest web command is stale
+    bool webTimedOut;           // true when the web command is stale AND no newer RC command exists
     bool rcTimedOut;            // true when the latest RC command is stale (diagnostics)
     DriveSource activeSource;   // which source provided the current output (RC or WEB_API)
     uint32_t activeTimestampMs; // submit timestamp of the winning source (for status mirrors)

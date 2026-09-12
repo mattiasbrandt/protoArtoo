@@ -392,17 +392,28 @@
     showBoardPlaceholder("Could not tell which board this is.");
   });
 
-  // ---- Board image conditional loading ----
+  // ---- Board picture ----
   const BOARD_LABELS = {
     artoo_esp32: "Artoo Controller",
     firebeetle2: "FireBeetle 2",
   };
 
+  // identity.board names the firmware build, but a board's pictures are filed
+  // under its Component Registry id (include/component_registry.inc, the Body
+  // Controller family), and for the Artoo PCB the two tokens differ.
+  const BOARD_PRODUCT_IDS = {
+    artoo_esp32: "artoo_pcb",
+    firebeetle2: "firebeetle2",
+  };
+
+  const boardArt = document.getElementById("board-art");
+  const boardArtUse = document.getElementById("board-art-use");
   const boardImage = document.getElementById("board-image");
   const boardPlaceholder = document.getElementById("board-image-placeholder");
   const boardPlaceholderText = document.getElementById("board-placeholder-text");
 
   const showBoardPlaceholder = (text) => {
+    if (boardArt) boardArt.classList.add("hidden");
     if (boardImage) boardImage.classList.add("hidden");
     if (boardPlaceholder) {
       boardPlaceholder.classList.remove("hidden");
@@ -411,10 +422,22 @@
   };
 
   const showBoardImage = () => {
+    if (boardArt) boardArt.classList.add("hidden");
     if (boardImage) boardImage.classList.remove("hidden");
     if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
   };
 
+  const showBoardArt = () => {
+    if (boardImage) boardImage.classList.add("hidden");
+    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
+    boardArt.classList.remove("hidden");
+  };
+
+  // The picture comes from this build's asset set (ADR 0065), in the order every
+  // product card follows: the line drawing, else the photograph, else the
+  // placeholder. Which set was built is read from the document, not declared:
+  // setup.html inlines the set's sprite, and only the legacy set's carries
+  // symbols.
   const updateBoardImage = (identity) => {
     if (!boardImage || !identity || !identity.board) {
       showBoardPlaceholder("Checking which board this is…");
@@ -423,7 +446,24 @@
 
     const boardId = identity.board;
     const boardLabel = BOARD_LABELS[boardId] || boardId;
-    const imageSrc = `/board_${boardId}.jpg`;
+    const productId = BOARD_PRODUCT_IDS[boardId];
+    if (!productId) {
+      // Not a registry product, so no set has a drawing or a photograph of it,
+      // and there is no /<id>.webp route to ask.
+      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
+      return;
+    }
+
+    if (boardArt && boardArtUse && document.getElementById(`art-${productId}`)) {
+      // Drawn from the page's own sprite: nothing is fetched, so the
+      // deferred-asset gate below has nothing to hold back.
+      boardArtUse.setAttribute("href", `#art-${productId}`);
+      boardArt.setAttribute("aria-label", `${boardLabel} PCB`);
+      showBoardArt();
+      return;
+    }
+
+    const imageSrc = `/${productId}.webp`;
 
     // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
     boardImage.onload = () => {

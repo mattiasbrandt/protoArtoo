@@ -29,10 +29,27 @@ const servedPages = fs
 
 const read = (name) => fs.readFileSync(path.join(dataDir, name), "utf8");
 
+// Every asset set a build can name (ADR 0065). Each build serves the same pages
+// with its own set's partials inlined, so a page is checked once per set.
+const assetSetsDir = path.join(dataDir, "asset-sets");
+const assetSets = fs
+  .readdirSync(assetSetsDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
+
+// Resolve a partial exactly as tools/gzip_fsdata.py does: the build's asset set
+// first, then the common data root. null when neither holds it, which the build
+// refuses.
+const resolveInclude = (set, target) =>
+  [path.join(assetSetsDir, set, target), path.join(dataDir, target)].find((candidate) =>
+    fs.existsSync(candidate),
+  ) || null;
+
 // Expand exactly as tools/gzip_fsdata.py does at build time: single pass, no
 // recursion. What the controller serves is this, not the page source.
-const expand = (html) =>
-  html.replace(INCLUDE_RE, (_match, target) => read(target));
+const expand = (html, set) =>
+  html.replace(INCLUDE_RE, (_match, target) => fs.readFileSync(resolveInclude(set, target), "utf8"));
 
 // A comment that closes early leaves its tail rendering as visible body text
 // and its surplus "-->" as literal content. Scanning for a close delimiter
@@ -51,6 +68,7 @@ const orphanCommentClose = (html) => {
 
 test("every served page exists to be checked", () => {
   assert.ok(servedPages.length > 0, "no served pages found in data/");
+  assert.ok(assetSets.length > 0, "no asset sets found in data/asset-sets/");
 });
 
 for (const name of servedPages) {
@@ -62,7 +80,9 @@ for (const name of servedPages) {
       `${name} must carry <!-- PA:INCLUDE ${RECOVERY_KERNEL} --> in its <head>`,
     );
     for (const target of includes) {
-      assert.ok(fs.existsSync(path.join(dataDir, target)), `${name} includes missing ${target}`);
+      for (const set of assetSets) {
+        assert.ok(resolveInclude(set, target), `${name} includes ${target}, which the ${set} set's build cannot find`);
+      }
     }
   });
 
@@ -93,8 +113,10 @@ for (const name of servedPages) {
     assert.match(read(name), /<link\s+rel="stylesheet"\s+href="\/style\.css">/, name);
   });
 
-  test(`${name} serves no orphaned comment text`, () => {
-    const at = orphanCommentClose(expand(read(name)));
-    assert.equal(at, -1, `${name}: comment close at byte ${at} is outside any comment`);
-  });
+  for (const set of assetSets) {
+    test(`${name} serves no orphaned comment text in the ${set} set's build`, () => {
+      const at = orphanCommentClose(expand(read(name), set));
+      assert.equal(at, -1, `${name} (${set}): comment close at byte ${at} is outside any comment`);
+    });
+  }
 }
