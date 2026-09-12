@@ -67,7 +67,8 @@ compatibility IDs to a mixed set; use the explicit `P1`-`P6` aliases instead.
 | `:OF15` (ring group) | `:CL15` or `:CL00` |
 | `:OF00` (all) | `:CL00` |
 
-`:OP` does not require an explicit same-branch close; terminal/abort cleanup handles it.
+`:OP` needs no same-branch close on a ring panel: terminal and abort cleanup close those one
+at a time. A pie opened with `:OP` stays open unless the branch closes it.
 
 ### Non-panel dome commands
 
@@ -146,8 +147,8 @@ In Factory Sequences, use the
 ## Cleanup is automatic
 
 You do **not** author teardown. The engine tracks which persistent effects fired (panel
-open, logic/PSI, holo, long audio) and emits the matching resets (`:CL00`, `@0T1`/`@0P1`,
-`*ST00`, audio stop) on the terminal `end` step and on abort/preempt/estop. In Learned
+open, logic/PSI, holo, long audio) and emits the matching resets (`@0T1`/`@0P1`, `*ST00`,
+audio stop, and an individual close for each ring panel the run left open) on the terminal `end` step and on abort/preempt/estop. In Learned
 Sequences the effect class is *inferred* by Protocol Check from each command, so cleanup is
 correct-by-construction; in Factory tables you tag the first activating step explicitly
 (`FX_PANEL`, `FX_LOGIC_PSI`, `FX_HOLO`, `FX_AUDIO`).

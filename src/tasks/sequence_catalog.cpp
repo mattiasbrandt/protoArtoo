@@ -20,8 +20,11 @@
 
 // Effect-class convention: tag the FIRST step that activates each persistent
 // effect (panel open, logic/PSI mode, holo effect, long audio). The engine
-// auto-emits the matching resets (@0T1/@0P1, *ST00, :CL00, audio stop) on
-// terminal transitions, so tables do not repeat standard cleanup steps.
+// auto-emits the matching resets (@0T1/@0P1, *ST00, audio stop) on terminal
+// transitions, so tables do not repeat standard cleanup steps. Panels are the
+// exception in both directions: the engine closes only the ring panels a run
+// left open, one at a time, never with a group close and never a pie -- so a
+// table that opens pies closes them itself.
 
 // =============================================================================
 // Flat sequences
@@ -53,7 +56,7 @@ static const SeqStep kHelloSteps[] = {
     SEQ_DOME(0, FX_NONE, "@3MGeneral Kenobi"),
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
     SEQ_DOME(800, FX_NONE, ":CL01"),      // P1 close
-    SEQ_TERM(950),                               // auto :CL00 (close + release)
+    SEQ_TERM(950),                               // P1 already closed: no panel cleanup
 };
 
 // DM:NOD  --  short acknowledgment: sound + logic text + P1 wave.
@@ -63,7 +66,7 @@ static const SeqStep kNodSteps[] = {
     SEQ_DOME(0, FX_NONE, "@1MYes"),              // logic text
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
     SEQ_DOME(150, FX_NONE, ":CL01"),      // P1 close
-    SEQ_TERM(300),                               // auto scoped :CL15 (ring-only close + release)
+    SEQ_TERM(300),                               // P1 already closed: no panel cleanup
 };
 
 // DM:FLUTTER  --  ring then pie panels sweep to 75%, then close (10 s window).
@@ -100,7 +103,7 @@ static const SeqStep kFlutterSteps[] = {
     SEQ_DOME(3450, FX_NONE, ":CLP4"),
     SEQ_DOME(3600, FX_NONE, ":CLP5"),
     SEQ_DOME(3750, FX_NONE, ":CLP6"),
-    SEQ_TERM(4250),                              // auto :CL00 (release)
+    SEQ_TERM(4250),                              // every panel closed above: no panel cleanup
 };
 
 // DM:BLOOM  --  pies open together over 1.2 s, wiggle three times, close (8 s).
@@ -159,7 +162,7 @@ static const SeqStep kBloomSteps[] = {
     SEQ_DOME(5150, FX_NONE, ":CLP4"),
     SEQ_DOME(5150, FX_NONE, ":CLP5"),
     SEQ_DOME(5150, FX_NONE, ":CLP6"),
-    SEQ_TERM(5650),                              // auto :CL00 (release)
+    SEQ_TERM(5650),                              // pies closed above; the engine never closes a pie
 };
 
 // DM:LEIA  --  Leia message mode (36 s): front holo Leia, other holos off,
@@ -282,7 +285,8 @@ static const SeqStep kCantinaSteps[] = {
     SEQ_DOME(923, FX_NONE, ":OP02"),
     SEQ_DOME(923, FX_NONE, ":OP04"),
     SEQ_DOME(923, FX_NONE, ":OP11"),
-    SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00; ring panels left open close
+                                                 // one at a time, pies stay as the last beat left them
 };
 
 // DM:ROCKMARCH  --  Imperial March with one ring panel stepping per beat
@@ -379,9 +383,10 @@ static const SeqStep kScreamSteps[] = {
     SEQ_RAND(100, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
     SEQ_RAND(180, SLOTSET_HOLD, RAND_FLUTTER, 0, 100, 0, 0),
     SEQ_RAND(280, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
-    // happy all-clear cue before the auto-reset closes everything
+    // happy all-clear cue before the reset: logics and holos reset, the ring closes, the pies stay open
     SEQ_AUDIO(6800, "$H"),
-    SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00; ring panels left open close
+                                                 // one at a time, the pies it burst open stay open
 };
 
 // DM:OVERLOAD  --  failure logics/PSI, holos short-circuit, six panels flutter
@@ -404,14 +409,16 @@ static const SeqStep kOverloadSteps[] = {
     SEQ_RAND(2350, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_RAND(3000, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_RAND(3650, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
-    SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00; a flutter marks no panel
+                                                 // open, so no panel cleanup
 };
 
 // =============================================================================
 // Toggle sequences (ADR 0004 decision 8)  --  `steps` is the open branch,
 // `closeSteps` the close branch; the engine picks by latched group state and
 // flips the latch on normal completion. Close branches end without a release;
-// the engine emits :CL00 once no group remains latched open (issue #2 gap #1).
+// once no group remains latched open the engine closes any ring panel still
+// open, one at a time, and never sends :CL00 (issue #2 gap #1).
 // =============================================================================
 
 // DM:PIES open  --  pie wave: open PP1->PP6, close PP6->PP1, reopen, twice (12 s).
@@ -532,8 +539,8 @@ static const SeqStep kLowOpenSteps[] = {
 // the dome (esp_reset_reason=BROWNOUT, code 9, 2026-06-17 hardware repro) -- the dome
 // dropped by ~the 3rd close, so overlapping servo inrush current exceeded the dome
 // supply. The holo reset (*ST00) is isolated at t=0 so its draw does not stack with
-// the first panel close, and the terminal scoped :CL15 (emitted at SEQ_TERM) is
-// staggered ~1 s after the last individual close. See
+// the first panel close. Terminal cleanup has nothing left to close by the end,
+// and it would never send a group :CL15 anyway. See
 // tasks/issue2-panel-intent-rewrite-plan.md "Hardware regression 2026-06-17".
 static const SeqStep kLowCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),

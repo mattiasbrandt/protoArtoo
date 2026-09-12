@@ -70,7 +70,8 @@ enum SeqStepType : uint8_t {
 enum SeqEffectClass : uint8_t {
     FX_NONE      = 0,
     FX_LOGIC_PSI = 1 << 0,  // @0T* / @0P*   --  reset with @0T1 + @0P1
-    FX_PANEL     = 1 << 1,  // panel opens    --  reset with :CL00 (close + release)
+    FX_PANEL     = 1 << 1,  // panel opens    --  ring panels left open close one at a
+                            // time; never a group close, never a pie
     FX_HOLO      = 1 << 2,  // holo effects   --  reset with *ST00
     FX_AUDIO     = 1 << 3,  // long audio     --  Track Stop on ABNORMAL termination only
                             // (ring-out preserved on normal completion)
