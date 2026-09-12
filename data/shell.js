@@ -31,7 +31,11 @@
   // ---------------------------------------------------------------------------
   const SURFACES = [
     { page: "home", doc: "/dashboard.html", icon: "🏠", name: "Dashboard", aliases: ["dashboard"] },
-    { page: "drive", doc: "/drive.html", icon: "🏎️", name: "Drive", aliases: [] },
+    // Foot Drive in full on every operator surface, because once a body servo
+    // controller and the Dome ESC are both drive controllers an unqualified
+    // "Drive" names three things (#288). The old spelling was also the route,
+    // so the alias is the rename record rather than a second address.
+    { page: "drive", doc: "/drive.html", icon: "🏎️", name: "Foot Drive", aliases: ["drive"] },
     { page: "dome", doc: "/dome.html", icon: "🔄", name: "Dome", aliases: [] },
     { page: "sound", doc: "/sound.html", icon: "🔊", name: "Sound", aliases: [] },
     { page: "servo", doc: "/servo.html", icon: "🦾", name: "Servos", aliases: ["servos"] },
@@ -40,6 +44,73 @@
     { page: "setup", doc: "/setup.html", icon: "⚙️", name: "Setup", aliases: [] },
     { page: "wifi", doc: "/wifi.html", icon: "📶", name: "WiFi", aliases: [] },
     { page: "firmware", doc: "/firmware.html", icon: "💾", name: "Firmware", aliases: [] },
+  ];
+
+  // ---------------------------------------------------------------------------
+  // The Activity Groups
+  //
+  // The nav is ordered by the job a builder is doing rather than by firmware
+  // subsystem -- Drive, Perform, Configure, Maintain (ADR 0048, #288). A
+  // surface may appear in more than one group, because Sound and Dome are
+  // reached for both when driving and when authoring: a group is a way to find
+  // something, never a claim to own it, and letting a surface appear twice
+  // costs a second entry pointing at the same route rather than a special case
+  // in the renderer.
+  //
+  // A member row names a surface by its `page` identifier and never by its
+  // name, so this table cannot drift from what the nav says and a rename is
+  // still one field in SURFACES. A member with no SURFACES row renders
+  // nothing, and a group with nothing to render draws nothing -- which is why
+  // the whole table is written now, dormant rows included: the surfaces those
+  // rows name land in their group the day their SURFACES row is added, with no
+  // change to the nav. If one of those tickets picks a different `page`, one
+  // string here is the whole retrofit.
+  // ---------------------------------------------------------------------------
+  const ACTIVITY_GROUPS = [
+    {
+      id: "drive",
+      label: "Drive",
+      hint: "drive it, turn the dome, make some noise",
+      members: ["drive", "dome", "sound", "rc"],
+    },
+    {
+      id: "perform",
+      label: "Perform",
+      hint: "author a move and play it back",
+      members: ["seq", "sound", "dome"],
+    },
+    {
+      id: "configure",
+      label: "Configure",
+      hint: "say what the droid is made of",
+      members: [
+        // Droid Build heads the group: it is the answer the rest of Configure
+        // is shaped by. Dormant until the C3 group (#368) lands the surface.
+        "droidbuild",
+        // Today's Setup is the surface a droid is actually configured from --
+        // Hardware Components, LED Strip, Droid Identity. It leaves this row
+        // when C3 (#288) splits it into Configuration and Maintenance, not
+        // before. Guided Setup, the first-run takeover that leaves the nav for
+        // good (#351), is a different thing and is never in a group.
+        "setup",
+        // Servos stays here until C1a (#347) decides what becomes of it once
+        // Parts carries the output-to-part mapping.
+        "servo",
+        "parts", // dormant until C1a (#347)
+        "wiring", // dormant until C2a (#350)
+      ],
+    },
+    {
+      id: "maintain",
+      label: "Maintain",
+      hint: "check the controller over and keep it up to date",
+      members: [
+        // Dormant until C3 (#288) splits today's Setup and lands Maintenance.
+        "maintenance",
+        "wifi",
+        "firmware",
+      ],
+    },
   ];
 
   const DEFAULT_PAGE = "home";
@@ -53,11 +124,25 @@
   // structurally cannot be.
   const NEVER_REMEMBERED = new Set(["setup"]);
 
-  const surfaceFor = new Map();
+  // Two maps, because an Activity Group's member row names a `page` and
+  // nothing else: an alias resolves an address a builder typed, and must not
+  // put a surface in a group it was never given a row in.
+  const surfaceByPage = new Map(SURFACES.map((surface) => [surface.page, surface]));
+
+  const surfaceFor = new Map(surfaceByPage);
   SURFACES.forEach((surface) => {
-    surfaceFor.set(surface.page, surface);
     surface.aliases.forEach((alias) => surfaceFor.set(alias, surface));
   });
+
+  // Which groups hold a surface, and which surfaces no group claims. Both are
+  // read from the one table above, so adding a group is adding a row.
+  const pagesInGroup = new Map(ACTIVITY_GROUPS.map((group) => [group.id, new Set(group.members)]));
+  const groupedPages = new Set(ACTIVITY_GROUPS.flatMap((group) => group.members));
+  // Dashboard is the landing and sits outside the groups on purpose: it
+  // answers what the droid is doing rather than what the builder is doing
+  // (ADR 0048). Anything else no group claims is drawn beside it rather than
+  // falling out of the nav, so a surface is reachable the moment it exists.
+  const ungroupedSurfaces = SURFACES.filter((surface) => !groupedPages.has(surface.page));
 
   // The legacy address of each surface, plus the two spellings of the shell's
   // own document, so a link written before hash routes still opens what it
@@ -269,10 +354,37 @@
   // ---------------------------------------------------------------------------
   const shellTop = document.getElementById("shell-top");
   if (shellTop) {
-    const navHtml = SURFACES.map(
-      (surface) =>
-        `<a href="#${surface.page}" data-surface-link="${surface.page}">${surface.icon} ${surface.name}</a>`
-    ).join("");
+    const navLink = (surface) =>
+      `<a href="#${surface.page}" data-surface-link="${surface.page}">${surface.icon} ${surface.name}</a>`;
+
+    // The divider between groups is drawn rather than stored: the group's own
+    // rule in data/style.css carries it, so retiring a group is deleting a row
+    // and never a migration (r2d2-astromech-simulator v1.79.0,
+    // src/js/config/wizard.js:2180-2182).
+    const groupHtml = (group) => {
+      const links = group.members
+        .map((page) => surfaceByPage.get(page))
+        .filter(Boolean)
+        .map(navLink)
+        .join("");
+      // Nothing to offer, nothing drawn -- which is what keeps a dormant row
+      // free until the surface it names exists.
+      if (!links) return "";
+      const labelId = `nav-group-${group.id}-label`;
+      return `
+        <div class="nav-group" data-nav-group="${group.id}" role="group" aria-labelledby="${labelId}">
+          <p class="nav-group-head" id="${labelId}">
+            <span class="nav-group-label">${group.label}</span>
+            <span class="nav-group-hint">${group.hint}</span>
+          </p>
+          <div class="nav-group-links">${links}</div>
+        </div>`;
+    };
+
+    const navHtml = [
+      ...ungroupedSurfaces.map(navLink),
+      ...ACTIVITY_GROUPS.map(groupHtml),
+    ].join("");
 
     shellTop.innerHTML = `
       <div class="topbar">
@@ -541,6 +653,18 @@
   const markActive = (page) => {
     document.querySelectorAll("[data-surface-link]").forEach((link) => {
       link.classList.toggle("active", link.dataset.surfaceLink === page);
+    });
+    // The group marker is computed from the surface that was landed on, never
+    // held as a second piece of state: a deep link from anywhere pulls its
+    // group over through the one navigation path, and there is no "switch
+    // group" route to keep in sync with the address
+    // (r2d2-astromech-simulator v1.79.0, src/js/config/workspaces.js:195-197).
+    // Every group holding the surface is marked, because a surface in two
+    // groups is found in both and owned by neither. Like the active link, this
+    // is an attribute flip on chrome that is already there -- the nav is never
+    // re-rendered, or the estop bound inside it would go with it.
+    document.querySelectorAll("[data-nav-group]").forEach((groupEl) => {
+      groupEl.classList.toggle("is-current", pagesInGroup.get(groupEl.dataset.navGroup)?.has(page) === true);
     });
   };
 

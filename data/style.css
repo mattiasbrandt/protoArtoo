@@ -300,6 +300,63 @@ nav a.active {
   pointer-events: none;
 }
 
+/* ---------------------------------------------------------------------------
+   Activity Groups: the nav is ordered by the job a builder is doing rather
+   than by firmware subsystem (ADR 0048, #288).
+
+   A group is a column - its name and the hint saying what the builder is
+   doing above the row of surfaces it offers - and the column is bottom-aligned
+   so the tabs still sit along the nav's bottom edge however tall the heads
+   run. The divider is drawn here rather than stored beside the data, so
+   adding or retiring a group stays a render-time decision.
+   --------------------------------------------------------------------------- */
+nav > a {
+  align-self: flex-end;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-2xs);
+  margin-left: var(--space-sm);
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--border);
+}
+
+.nav-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  margin: 0;
+  padding: 0 var(--space-2xs);
+}
+
+.nav-group-label {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--silver);
+}
+
+.nav-group-hint {
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+
+/* The group holding the surface on screen. A surface in two groups lights
+   both: a group is a way to find something, never a claim to own it. */
+.nav-group.is-current .nav-group-label {
+  color: var(--accent-bright);
+}
+
+.nav-group-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3xs);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
