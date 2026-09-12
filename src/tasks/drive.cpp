@@ -171,24 +171,24 @@ void driveTask(void* pvParameters) {
             DriveFeedback fb;
             if (driveBackendPollFeedback(driveSerial, &fb)) {
                 taskENTER_CRITICAL(&robotStateMux);
-                robotState.hb_batteryRaw    = fb.batteryRaw;
-                robotState.hb_boardTempRaw  = fb.boardTempRaw;
-                robotState.hb_speedR        = fb.speedR;
-                robotState.hb_speedL        = fb.speedL;
-                robotState.hb_currentL      = fb.currentL;
-                robotState.hb_currentR      = fb.currentR;
-                robotState.hb_feedbackValid = true;
-                robotState.hb_lastFeedbackMs = millis();
+                robotState.driveFeedbackBatteryRaw   = fb.batteryRaw;
+                robotState.driveFeedbackBoardTempRaw = fb.boardTempRaw;
+                robotState.driveFeedbackSpeedR       = fb.speedR;
+                robotState.driveFeedbackSpeedL       = fb.speedL;
+                robotState.driveFeedbackCurrentL     = fb.currentL;
+                robotState.driveFeedbackCurrentR     = fb.currentR;
+                robotState.driveFeedbackValid        = true;
+                robotState.driveFeedbackAtMs         = millis();
                 taskEXIT_CRITICAL(&robotStateMux);
             } else {
                 // Check for stale data: invalidate if no frame received recently.
                 taskENTER_CRITICAL(&robotStateMux);
-                bool wasValid  = robotState.hb_feedbackValid;
-                uint32_t lastMs = robotState.hb_lastFeedbackMs;
+                bool wasValid  = robotState.driveFeedbackValid;
+                uint32_t lastMs = robotState.driveFeedbackAtMs;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (wasValid && (uint32_t)(millis() - lastMs) > kFeedbackStaleMs) {
+                if (wasValid && driveFeedbackIsStale(lastMs, millis(), kFeedbackStaleMs)) {
                     taskENTER_CRITICAL(&robotStateMux);
-                    robotState.hb_feedbackValid = false;
+                    robotState.driveFeedbackValid = false;
                     taskEXIT_CRITICAL(&robotStateMux);
                     PA_LOG_INFO(TAG, "drive backend feedback stale (>%lu ms) - invalidated",
                                 (unsigned long)kFeedbackStaleMs);
