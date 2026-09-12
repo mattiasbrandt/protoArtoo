@@ -1,9 +1,9 @@
 // =============================================================================
-// test/test_web/test_part_photos.js
+// test/test_web/test_product_photos.js
 //
 // The default asset set's Component Picker photographs (#316, ADR 0065).
 //
-// These are the files a picker card fetches at /part_<id>.webp. A missing
+// These are the files a picker card fetches at /<registry-id>.webp. A missing
 // file is a cosmetic gap, never "your board cannot do this"; the files that
 // do ship must be WebP, 400x300, and at most two LittleFS blocks (8 KiB).
 // Deleting or replacing one with a JPEG turns this suite red.
@@ -19,9 +19,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const DEFAULT_SET = join(ROOT, "data/asset-sets/default");
 const CAP_BYTES = 8192;
 
-// Every Component Registry product that is a physical part. esp32_gpio_ledc
+// Every Component Registry product that is a physical product. esp32_gpio_ledc
 // is the MCU's own PWM and has no photograph.
-const PART_IDS = [
+const PRODUCT_IDS = [
   "artoo_pcb",
   "firebeetle2",
   "hotrc_ds650",
@@ -69,10 +69,10 @@ function readVp8Size(buf) {
   };
 }
 
-test("the default set carries a WebP photograph for every physical part", () => {
+test("the default set carries a WebP photograph for every physical product", () => {
   assert.equal(existsSync(DEFAULT_SET), true, "data/asset-sets/default must exist");
-  for (const id of PART_IDS) {
-    const path = join(DEFAULT_SET, `part_${id}.webp`);
+  for (const id of PRODUCT_IDS) {
+    const path = join(DEFAULT_SET, `${id}.webp`);
     assert.equal(existsSync(path), true, `missing ${path}`);
     const buf = readFileSync(path);
     assert.equal(buf.toString("ascii", 0, 4), "RIFF", `${id} is not RIFF`);
@@ -83,8 +83,8 @@ test("the default set carries a WebP photograph for every physical part", () => 
 });
 
 test("each photograph is 400x300", () => {
-  for (const id of PART_IDS) {
-    const buf = readFileSync(join(DEFAULT_SET, `part_${id}.webp`));
+  for (const id of PRODUCT_IDS) {
+    const buf = readFileSync(join(DEFAULT_SET, `${id}.webp`));
     const size = readVp8Size(buf);
     assert.ok(size, `${id} is not a VP8 key frame we can size`);
     assert.equal(size.width, 400, `${id} width ${size.width}`);
@@ -92,10 +92,10 @@ test("each photograph is 400x300", () => {
   }
 });
 
-test("the default set does not carry extra part photographs", () => {
+test("the default set does not carry extra product photographs", () => {
   const present = readdirSync(DEFAULT_SET)
-    .filter((name) => name.startsWith("part_") && name.endsWith(".webp"))
+    .filter((name) => name.endsWith(".webp"))
     .sort();
-  const expected = PART_IDS.map((id) => `part_${id}.webp`).sort();
+  const expected = PRODUCT_IDS.map((id) => `${id}.webp`).sort();
   assert.deepEqual(present, expected);
 });

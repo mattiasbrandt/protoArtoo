@@ -95,7 +95,7 @@ class AssetSetStaging(unittest.TestCase):
     def test_default_photographs_fit_two_littlefs_blocks(self):
         """8 KiB is two 4 KiB blocks. 9 KiB would be three (#316, ADR 0065)."""
         default = DATA / "asset-sets" / "default"
-        photos = sorted(default.glob("part_*.webp"))
+        photos = sorted(default.glob("*.webp"))
         self.assertGreaterEqual(len(photos), 1)
         for path in photos:
             size = path.stat().st_size

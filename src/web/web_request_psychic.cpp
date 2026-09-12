@@ -651,21 +651,28 @@ void initPsychicWebServer() {
     if (webLittleFsMounted()) {
         // PsychicHttp's MIME table has no .webp and falls back to text/plain
         // (PsychicFileResponse.cpp:107-133). The picker photographs live at
-        // /part_<id>.webp; this endpoint claims that shape before serveStatic()
-        // can, and answers image/webp (#316, ADR 0065).
-        s_server.on("/part_*", HTTP_GET,
-                    [](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
-                        const String path = vendorReq->path();
-                        if (!webPathIsPartPhoto(path.c_str()) || !LittleFS.exists(path)) {
-                            WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-                            WebRequest req(&ctx);
-                            handleNotFound(req);
-                            return ctx.result;
-                        }
-                        PsychicFileResponse file(vendorResp, LittleFS, path,
-                                                 String(webWebpContentType()));
-                        return file.send();
-                    });
+        // /<registry-id>.webp; one endpoint per product, registered before
+        // serveStatic(), answers image/webp (#316, ADR 0065). There is no
+        // shared prefix, so a trailing-wildcard template cannot name them.
+        auto handleProductPhoto = [](PsychicRequest* vendorReq,
+                                     PsychicResponse* vendorResp) -> esp_err_t {
+            const String path = vendorReq->path();
+            if (!webPathIsProductPhoto(path.c_str()) || !LittleFS.exists(path)) {
+                WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+                WebRequest req(&ctx);
+                handleNotFound(req);
+                return ctx.result;
+            }
+            PsychicFileResponse file(vendorResp, LittleFS, path, String(webWebpContentType()));
+            return file.send();
+        };
+#define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key)
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, capabilities, gate, \
+                          included)                                                        \
+        s_server.on("/" id ".webp", HTTP_GET, handleProductPhoto);
+#include "../../include/component_registry.inc"
+#undef PA_COMPONENT_PART
+#undef PA_COMPONENT_CATEGORY
         s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
     } else {
         PA_LOG_WARN(TAG, "LittleFS not mounted; static serving unavailable");

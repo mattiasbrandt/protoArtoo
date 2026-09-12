@@ -3,7 +3,7 @@
 
 Takes the operator-supplied originals in tasks/product-images/ (gitignored),
 cuts a near-white studio background, and writes 400x300 WebP files under
-data/asset-sets/default/part_<id>.webp.
+data/asset-sets/default/<id>.webp.
 
 The UI is dark-only (data/style.css --bg: #0c1525). White product-shot
 backgrounds glare as bright rectangles on a picker card, so every photograph
@@ -15,7 +15,7 @@ requires.
 
 Not a build step. Re-run by hand when an original is replaced:
 
-    python3 tools/encode_part_photos.py
+    python3 tools/encode_product_photos.py
 """
 
 from __future__ import annotations
@@ -214,14 +214,14 @@ def main() -> int:
 
     total = 0
     over = 0
-    for source_name, part_id in SOURCES.items():
+    for source_name, product_id in SOURCES.items():
         src_path = args.src / source_name
         if not src_path.is_file():
-            print(f"MISSING {source_name} -> part_{part_id}.webp", file=sys.stderr)
+            print(f"MISSING {source_name} -> {product_id}.webp", file=sys.stderr)
             return 1
         fitted = fit(cutout(Image.open(src_path)))
         quality, data = fit_cap(fitted)
-        dest = args.dst / f"part_{part_id}.webp"
+        dest = args.dst / f"{product_id}.webp"
         dest.write_bytes(data)
         total += len(data)
         flag = "OK" if len(data) <= CAP_BYTES else "OVER"

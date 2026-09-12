@@ -358,7 +358,7 @@ def find_registered_routes() -> set[str]:
     """All literal API paths registered as routes across src/web/*.cpp.
 
     The registry's api_path column is the HTTP API. A static-asset handler
-    (the Component Picker photographs at /part_*.webp, #316) is not an API
+    (the Component Picker photographs at /<id>.webp, #316) is not an API
     endpoint and is not demanded of the registry.
     """
     routes: set[str] = set()

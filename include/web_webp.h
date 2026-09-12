@@ -11,7 +11,8 @@
 // helpers and answers image/webp instead.
 //
 // A page names one path whichever asset set it was built with (ADR 0065):
-// /part_<id>.webp, where <id> is the Component Registry token.
+// /<id>.webp, where <id> is the Component Registry token. These are products,
+// not droid Parts -- no part_ prefix.
 // =============================================================================
 #pragma once
 
@@ -22,31 +23,32 @@ inline const char* webWebpContentType() {
     return "image/webp";
 }
 
-// True when uri is exactly /part_<registry-id>.webp. The id is the token
+// True when uri is exactly /<registry-id>.webp. The id is the token
 // include/component_registry.inc declares: lowercase letters, digits and
 // underscore, starting with a letter. Anything else -- a query string, a
 // second slash, a '..', an uppercase letter -- is rejected, so this cannot
 // be talked into opening a different file.
-inline bool webPathIsPartPhoto(const char* uri) {
+inline bool webPathIsProductPhoto(const char* uri) {
     if (uri == nullptr) {
         return false;
     }
-    static const char kPrefix[] = "/part_";
     static const char kSuffix[] = ".webp";
-    const size_t prefixLen = sizeof(kPrefix) - 1;
     const size_t suffixLen = sizeof(kSuffix) - 1;
     const size_t len = strlen(uri);
-    if (len < prefixLen + 1 + suffixLen) {
+    if (len < 1 + 1 + suffixLen) {
         return false;
     }
-    if (strncmp(uri, kPrefix, prefixLen) != 0) {
+    if (uri[0] != '/') {
         return false;
     }
     if (strcmp(uri + (len - suffixLen), kSuffix) != 0) {
         return false;
     }
-    const char* id = uri + prefixLen;
+    const char* id = uri + 1;
     const char* idEnd = uri + (len - suffixLen);
+    if (id == idEnd) {
+        return false;
+    }
     if (*id < 'a' || *id > 'z') {
         return false;
     }
@@ -63,6 +65,6 @@ inline bool webPathIsPartPhoto(const char* uri) {
 // The type the owned handler will send, or nullptr if this path is not ours
 // (and serveStatic() may still claim it). The ticket's test is this returning
 // image/webp for a .webp photograph rather than the table's text/plain.
-inline const char* webPartPhotoContentType(const char* uri) {
-    return webPathIsPartPhoto(uri) ? webWebpContentType() : nullptr;
+inline const char* webProductPhotoContentType(const char* uri) {
+    return webPathIsProductPhoto(uri) ? webWebpContentType() : nullptr;
 }

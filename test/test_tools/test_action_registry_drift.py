@@ -672,12 +672,12 @@ class TestNoBoolEnumValues(unittest.TestCase):
 
 
 class StaticAssetHandlersAreNotApiRoutes(unittest.TestCase):
-    def test_part_photograph_paths_are_not_demanded_of_the_registry(self):
-        """The Component Picker photographs (#316) register /part_* ahead of
+    def test_product_photograph_paths_are_not_demanded_of_the_registry(self):
+        """The Component Picker photographs (#316) register /<id>.webp ahead of
         serveStatic() so the MIME type is image/webp. That is not an API
         endpoint and must not fail the api_path drift check."""
         routes = check_action_registry_drift.find_registered_routes()
-        self.assertNotIn("/part_*", routes)
+        self.assertNotIn("/hotrc_ds650.webp", routes)
         for route in routes:
             self.assertTrue(
                 route.startswith("/api/") or route.startswith("/upload/"),
