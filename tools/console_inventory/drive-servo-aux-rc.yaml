@@ -753,7 +753,7 @@ rows:
   missing_metadata: []
   notes: Aggregate-field in /api/status. Servo open/close state.
 - name: servo.api.get-outputs
-  type: action
+  type: status
   registry_api_path: /api/servo/outputs
   registry_cpp_enum: null
   registry_cpp_file: src/web/api_config.cpp
@@ -767,9 +767,10 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:105 - webRegisterRoute("/api/servo/outputs", kGet, handleServoOutputsGet)
   - include/api_config.h:127 - void handleServoOutputsGet(WebRequest& req)
-  - src/web/api_config.cpp:1098 - void handleServoOutputsGet(WebRequest& req) {
-  - src/web/api_config.cpp:1104 - configCacheReadServoOutput(i, &row) reads each live row
+  - src/web/api_config.cpp - handleServoOutputsGet() reads each live row with configCacheReadServoOutput(i, &row)
+  - src/console/console_module.cpp - consoleExecuteServoApiGetOutputs() reads the same rows, one item each
+  - src/web/api_status_serializers.cpp - captureServoOutputCommanded(), the one read of a commanded position both adapters share
   executor_or_core: configCacheReadServoOutput
   missing_metadata: []
-  notes: "Web-API only, added by #347 for the Parts destination. No Console read path for the rows
-    exists; whether the bench-side view needs one is routed to C1b (#362)."
+  notes: "Added by #347 for the Parts destination; #362 gave it a Console record shape (item-indexed,
+    type status) so the bench side reads the rows, and where each Output stands, with no WiFi."

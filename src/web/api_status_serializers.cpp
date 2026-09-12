@@ -53,6 +53,7 @@ esp_reset_reason_t esp_reset_reason();
 #include "dome_link.h"
 #include "reset_reason.h"
 #include "robot_state.h"
+#include "servo_helpers.h"  // servo_ledc_channel_to_arm_id(), the address -> armId bridge
 #include "web_network_manager.h"
 #include "web_server.h"
 
@@ -203,6 +204,36 @@ void captureDomeStatusSnapshot(DomeStatusSnapshot* out) {
     out->domeTargetSpeed = robotState.domeTargetSpeed;
     taskEXIT_CRITICAL(&robotStateMux);
     out->domeEnabled = cfg.system.enable_dome_esc;
+}
+
+void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
+                                 ServoOutputCommandedSnapshot* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = ServoOutputCommandedSnapshot{};
+
+    // ServoTask speaks armId and the rows speak an Output Address, and
+    // servo_ledc_channel_to_arm_id() is the one bridge between the two. An
+    // address it does not know is not an output ServoTask drives.
+    uint8_t armId = 0;
+    if (driver != SERVO_DRIVER_LEDC || !servo_ledc_channel_to_arm_id(channel, &armId) ||
+        armId >= SERVO_ARM_COUNT) {
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const ServoCommandedPosition commanded = robotState.servoCommanded[armId];
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    // No pulse, no position: the widths of an output nobody has driven are not
+    // a place it stands, so they are not handed on.
+    if (!commanded.pulsing) {
+        return;
+    }
+    out->pulsing = true;
+    out->nowUs = commanded.nowUs;
+    out->targetUs = commanded.targetUs;
 }
 
 void captureDomeSerialLinkSnapshot(DomeSerialLinkSnapshot* out) {

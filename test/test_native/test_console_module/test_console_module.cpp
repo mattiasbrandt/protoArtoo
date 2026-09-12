@@ -793,6 +793,68 @@ static void runSeqItemQuery(const char* operationName) {
     consoleExecuteCommand(&req, &sink);
 }
 
+// servo.api.get-outputs (#362): the bench side's read of the Servo Output rows,
+// one item per row, in the REST answer's own key names. Every Part a ganged
+// Output drives is named, the band follows the fitted component, and an Output
+// with no pulse says so with `-` rather than a width that reads as a position.
+// AUX1 is armId 2 on LEDC channel 3, and every width below differs, so a read
+// that confused the two indexes could not pass.
+void test_servo_api_get_outputs_streams_every_row_as_an_item() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+
+    const char* const ganged[] = {"utilUp", "doorFL"};
+    for (const char* part : ganged) {
+        ServoOutputPartMove move = {};
+        snprintf(move.part, sizeof(move.part), "%s", part);
+        move.toOutput = true;
+        move.toDriver = SERVO_DRIVER_LEDC;
+        move.toChannel = LEDC_CH_ARM1;
+        TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED, configCacheMoveServoOutputPart(move));
+    }
+    ServoOutputEdit micro = {};
+    micro.driver = SERVO_DRIVER_LEDC;
+    micro.channel = LEDC_CH_AUX2;
+    micro.fields = SERVO_FIELD_COMPONENT;
+    micro.component = SERVO_COMP_MG90S;
+    configCacheApplyServoOutputEdits(&micro, 1);
+
+    const RobotState saved = robotState;
+    robotState.servoCommanded[0] = {1620, 2000, true};   // ARM1, part way through a move
+    robotState.servoCommanded[2] = {1100, 1200, false};  // AUX1, no pulse whatever the widths
+    robotState.servoCommanded[3] = {2400, 2400, true};   // AUX2
+
+    runSeqItemQuery("servo.api.get-outputs");
+    robotState = saved;
+
+    TEST_ASSERT_TRUE(g_seqItemCap.beginCalled);
+    TEST_ASSERT_TRUE(g_seqItemCap.endCalled);
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_seqItemCap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    TEST_ASSERT_EQUAL_INT(SERVO_OUTPUT_ROW_DEFAULT_COUNT, g_seqItemCap.count);
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:0 name:ARM1 parts:utilUp,doorFL bandLoUs:1000 bandHiUs:2000 "
+        "commandedUs:1620 targetUs:2000",
+        g_seqItemCap.values[0]);
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:3 name:AUX1 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:-",
+        g_seqItemCap.values[2]);
+    TEST_ASSERT_EQUAL_STRING(
+        "address:ledc:4 name:AUX2 parts:- bandLoUs:500 bandHiUs:2500 "
+        "commandedUs:2400 targetUs:2400",
+        g_seqItemCap.values[3]);
+
+    // Leave a controller nobody has wired for whatever runs next.
+    prefs.begin("proto", false);
+    prefs.clear();
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
 void test_dome_api_list_sequences_streams_the_real_index_as_items() {
     SeqIndexEntry e = {};
     snprintf(e.name, sizeof(e.name), "%s", "DM:MYSEQ");
@@ -2145,9 +2207,8 @@ void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
         "system.api.get-admission-trace",
         // the browser Console Adapter itself, not an operation
         "system.console",
-        // a read with no Console record shape yet; the bench side's need for
-        // one is C1b's (#362), and the Parts page reads it over REST (#347)
-        "servo.api.get-outputs",
+        // servo.api.get-outputs left this set at #362, when it gained a record
+        // shape: test_servo_api_get_outputs_streams_every_row_as_an_item
     };
     const size_t kRecordedCount = sizeof(kRecorded) / sizeof(kRecorded[0]);
 
@@ -5148,6 +5209,7 @@ int main(int, char**) {
     RUN_TEST(test_action_dispatch_attributes_web_source);
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
     RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
+    RUN_TEST(test_servo_api_get_outputs_streams_every_row_as_an_item);
     RUN_TEST(test_action_executor_not_ready_count_report);
 
     RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);

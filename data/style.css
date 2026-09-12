@@ -5650,3 +5650,102 @@ label.sound-search-field {
   justify-content: flex-end;
   margin-top: var(--space-lg);
 }
+
+/* ---------------------------------------------------------------------------
+   Parts (#362): the output-first table
+
+   Rides the part-first table's rules above (.parts-table, .parts-row,
+   .parts-output) and adds what an Output has that a Part row does not: the
+   tier counts and the position bar.
+
+   Two marks on one bar, against one span. The fill is where the controller is
+   driving the Output now and the tick is where the move ends, so they part
+   while it travels and meet when it arrives (after r2d2-astromech-simulator
+   v1.79.0, src/css/11-hw.css:37-39). Neither is a reading, and neither colours
+   for state. An Output with no pulse keeps the bar's frame and loses both
+   marks; a light row carries no bar at all, because a light has no travel.
+   --------------------------------------------------------------------------- */
+.outputs-section {
+  margin-top: var(--space-xl);
+}
+
+.outputs-section h4 {
+  color: var(--silver-bright);
+  margin-bottom: var(--space-xs);
+}
+
+.outputs-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  margin-block: var(--space-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.outputs-tier {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-sm);
+}
+
+.outputs-address {
+  margin-left: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+
+.outputs-parts {
+  display: block;
+  margin-bottom: var(--space-2xs);
+}
+
+.outputs-row:not(.is-wired) .outputs-parts {
+  color: var(--text-dim);
+}
+
+.outputs-bar {
+  position: relative;
+  height: 10px;
+  min-width: 6rem;
+  overflow: hidden;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+}
+
+.outputs-now {
+  width: 0;
+  height: 100%;
+  background: var(--silver);
+}
+
+.outputs-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+}
+
+.outputs-bar.is-off .outputs-now,
+.outputs-bar.is-off .outputs-tick,
+.outputs-row.partkind-light .outputs-bar {
+  display: none;
+}
+
+.outputs-us {
+  display: block;
+  margin-top: var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.outputs-release {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}

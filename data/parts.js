@@ -1,12 +1,13 @@
 // =============================================================================
 // data/parts.js
 //
-// Parts (ADR 0050, #347): every Part on the droid, grouped the way a builder
-// thinks about them, and the Output that drives each one. This is the
-// part-first projection of the one mapping GET /api/servo/outputs answers; the
-// output-first table reads the same answer, so the two cannot disagree.
+// Parts (ADR 0050, #347, #362): every Part on the droid, grouped the way a
+// builder thinks about them, and the Output that drives each one; and every
+// Output, everything it drives, and where it has been told to be. The two tables
+// are the part-first and output-first projections of the one mapping
+// GET /api/servo/outputs answers, read once for both, so they cannot disagree.
 //
-// Three rules shape this file.
+// Four rules shape this file.
 //
 // No row is ever hidden. A fresh droid shows every catalog Part reading
 // "- not wired -", which is the honest state of a build in progress, and hiding
@@ -25,9 +26,15 @@
 // (#347). Taking a Part off the Output it is on names the Part, the Output it
 // leaves, what that Output keeps and what the Part will move with, and asks
 // with the verb. The firmware refuses a move that does not name the Output the
-// Part is leaving, so a surface cannot skip the question by accident; moveFor()
-// and announcement() are exported so the output-first table, guided Setup and
-// an import ask it in the same words.
+// Part is leaving, so a surface cannot skip the question by accident. Both
+// tables here make their moves through one request(), and moveFor() and
+// announcement() are exported so guided Setup and an import ask it in the same
+// words.
+//
+// Both position marks are COMMANDED (#318, #362). The bar is the width the
+// controller has put on the pin and the tick is where the move ends; nothing on
+// this droid reads a servo back, so no word on the output-first table may
+// present either as where a horn actually is.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -36,8 +43,29 @@
   const NOT_WIRED = "– not wired –";
   // The Output Address token a move sends for "no Output" (docs/api.md).
   const NO_OUTPUT = "none";
-  // Another client, or the Console, can move a Part while this page is open.
-  const POLL_MS = 10000;
+  // The bench feed (#318). One read of the outputs answer a second repaints both
+  // tables - where every Output stands, and any Part another client or the
+  // Console moved - and only while Parts is on screen: the shell stops it when
+  // the operator leaves (#360). A position rides this rather than /api/events,
+  // which carries the estop and is not to be crowded by rows of motion.
+  const POLL_MS = 1000;
+
+  // #293's honesty tiers, as the in-use count the output-first table is headed
+  // with (#318). The fourth - a Part no Output claims - is the part-first
+  // table's to count. A tier is a count, never a place a row moves to: the rows
+  // stay in the order the leads plug in, so nothing is regrouped under the
+  // builder's pointer while they wire.
+  const TIERS = [
+    { id: "driving", label: "Driving parts" },
+    { id: "switched-off", label: "Wired but switched off" },
+    { id: "no-part", label: "Output with no part" },
+  ];
+  // A firmware older than this page reports no position at all, and that is not
+  // the same as an Output with no pulse, so it is never counted as switched off.
+  const tierOf = (output) => {
+    if (output.parts.length === 0) return "no-part";
+    return output.reported && output.commandedUs === null ? "switched-off" : "driving";
+  };
 
   // In the order a builder walks the droid: the dome top down, then the body.
   // A Common Addition is a Part the base design does not carry (`cadName:
@@ -145,6 +173,30 @@
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
+  // The output-first table's frame, built once and before the droid has
+  // answered, so the page says it is finding out rather than showing nothing.
+  // The markup file is full (its image block has no room), so this is written
+  // here; the feedback line moves below it, since it reports a move made from
+  // either table.
+  const outputsSection = document.createElement("section");
+  outputsSection.className = "outputs-section";
+  outputsSection.innerHTML =
+    `<h4>🔌 What each output drives</h4>` +
+    `<p class="desc">Every output on the controller, in the order the leads plug in, with every part on it - ` +
+    `a lead split to two doors names both. Pick a part in a row to put it on that output; if the part is on ` +
+    `another output, this page asks before it moves it. The bar is where the controller is driving that servo ` +
+    `right now and the tick is where the move ends, so the gap between them is the move still to go. Both are ` +
+    `what the controller told the servo, not a reading: nothing on this droid can feel where a servo really is, ` +
+    `so a jammed one shows exactly what a free one does. The table asks the droid once a second while this page ` +
+    `is open.</p>` +
+    `<p class="outputs-tiers" role="status" aria-live="polite">` +
+    TIERS.map((tier) => `<span class="outputs-tier" data-tier="${tier.id}">${tier.label} — finding out</span>`).join("") +
+    `</p><div class="parts-table-wrap" id="outputs-table"></div>`;
+  tableRegion.parentNode.appendChild(outputsSection);
+  if (feedback) tableRegion.parentNode.appendChild(feedback);
+  const outputsRegion = outputsSection.querySelector("#outputs-table");
+  const tierNodes = new Map(Array.from(outputsSection.querySelectorAll("[data-tier]"), (node) => [node.dataset.tier, node]));
+
   // ---------------------------------------------------------------------------
   // Built once
   // ---------------------------------------------------------------------------
@@ -181,6 +233,119 @@
       addresses: null,
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // The output-first table: built once per set of Outputs
+  // ---------------------------------------------------------------------------
+  // Every catalog Part, grouped as the part-first table groups them, so a
+  // builder finds a Part the same way from either end.
+  const addOptions = groupParts(catalog.parts)
+    .map(
+      (group) =>
+        `<optgroup label="${esc(group.label)}">` +
+        group.parts.map((part) => `<option value="${esc(part.id)}">${esc(partLabel(part.id))}</option>`).join("") +
+        `</optgroup>`
+    )
+    .join("");
+
+  // An Output nobody has named - an expander's row - shows its address as its
+  // name, and a named one shows the address beside it.
+  const outputRowHtml = (output) => {
+    const label = outputLabel(output);
+    const address = output.name ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
+    return (
+      `<tr class="parts-row outputs-row" data-output="${esc(output.address)}">` +
+      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}</th>` +
+      `<td><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
+      `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
+      `${addOptions}</select></td>` +
+      `<td><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
+      `<span class="outputs-us"></span></td><td class="outputs-release"></td></tr>`
+    );
+  };
+
+  const outputRows = new Map();
+  let outputAddresses = null;
+
+  // The only rebuild, and only when the set of Outputs itself changes - which a
+  // controller does across a reboot, not while this page is reading it (#318).
+  const buildOutputs = (addresses) => {
+    outputsRegion.innerHTML =
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
+      `<th scope="col">Commanded position</th><th scope="col">Output Release</th></tr></thead><tbody>` +
+      outputs.map(outputRowHtml).join("") +
+      `</tbody></table>`;
+    outputRows.clear();
+    outputsRegion.querySelectorAll("[data-output]").forEach((node) => {
+      outputRows.set(node.dataset.output, {
+        node,
+        parts: node.querySelector(".outputs-parts"),
+        bar: node.querySelector(".outputs-bar"),
+        now: node.querySelector(".outputs-now"),
+        tick: node.querySelector(".outputs-tick"),
+        us: node.querySelector(".outputs-us"),
+        release: node.querySelector(".outputs-release"),
+      });
+    });
+    outputAddresses = addresses;
+  };
+
+  // Both marks against one span, so they cannot disagree about scale and the
+  // gap between them is the move (r2d2-astromech-simulator v1.79.0,
+  // src/js/maestro/hw-table.js:186). The span is the band the Output's widths
+  // are clamped into, so a commanded width never falls off either end.
+  const markAt = (us, output) => {
+    const span = output.bandHiUs - output.bandLoUs;
+    const fraction = span > 0 ? (us - output.bandLoUs) / span : 0;
+    return `${(Math.min(1, Math.max(0, fraction)) * 100).toFixed(1)}%`;
+  };
+
+  // A row whose every Part is a light carries no travel and no release: a light
+  // has neither, and a zero or an empty bar would still read as a promise about
+  // movement (data/droid_part_kind.js). What an estop does to a light is an open
+  // question (#318), so nothing here says it is stopped, held or released.
+  const isLightRow = (output) =>
+    output.parts.length > 0 && output.parts.every((id) => Boolean(kinds?.isLight(partById.get(id))));
+
+  // Only style, textContent and classList, on nodes that already exist: a
+  // repaint never rebuilds a row, so the control under the builder's pointer
+  // stays where it is (hw-table.js:171-174).
+  const paintOutputRow = (output) => {
+    const row = outputRows.get(output.address);
+    if (!row) return;
+    const light = isLightRow(output);
+    const pulsing = output.commandedUs !== null;
+    row.node.classList.toggle("is-wired", output.parts.length > 0);
+    row.node.classList.toggle("partkind-light", light);
+    row.bar.classList.toggle("is-off", !pulsing);
+    row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
+    row.now.style.width = pulsing ? markAt(output.commandedUs, output) : "0%";
+    row.tick.style.left = pulsing ? markAt(output.targetUs, output) : "0%";
+    if (!output.reported) {
+      row.us.textContent = "Not reported by this firmware";
+      row.release.textContent = "Not reported by this firmware";
+      return;
+    }
+    // An Output with no pulse says so: a blank cell cannot be told from a table
+    // that has stopped updating.
+    if (!pulsing) row.us.textContent = "— off";
+    else if (light) row.us.textContent = "A light has no position";
+    else if (output.targetUs === output.commandedUs) row.us.textContent = `${output.commandedUs} µs`;
+    else row.us.textContent = `${output.commandedUs} → ${output.targetUs} µs`;
+    if (light) row.release.textContent = "None - a light has nothing to let go of";
+    else row.release.textContent = pulsing ? "Holds where it stops" : "Limp - no pulse";
+  };
+
+  const paintOutputs = (addresses) => {
+    if (outputAddresses !== addresses) buildOutputs(addresses);
+    outputs.forEach(paintOutputRow);
+    const counts = new Map(TIERS.map((tier) => [tier.id, 0]));
+    outputs.forEach((output) => counts.set(tierOf(output), counts.get(tierOf(output)) + 1));
+    TIERS.forEach((tier) => {
+      const count = counts.get(tier.id);
+      tierNodes.get(tier.id).textContent = `${tier.label} — ${count} ${count === 1 ? "output" : "outputs"}`;
+    });
+  };
 
   // ---------------------------------------------------------------------------
   // Repainted in place
@@ -220,6 +385,7 @@
     if (outputs === null) return;
     const addresses = outputs.map((output) => output.address).join(",");
     rows.forEach((row, id) => paintRow(id, row, addresses));
+    paintOutputs(addresses);
 
     const wired = catalog.parts.filter((part) => outputOf(outputs, part.id) !== null).length;
     const idle = outputs.filter((output) => output.parts.length === 0).length;
@@ -242,6 +408,11 @@
       address: String(output.address),
       name: typeof output.name === "string" ? output.name : "",
       parts: Array.isArray(output.parts) ? output.parts.map(String) : [],
+      reported: "commandedUs" in output,
+      bandLoUs: Number(output.bandLoUs) || 0,
+      bandHiUs: Number(output.bandHiUs) || 0,
+      commandedUs: typeof output.commandedUs === "number" ? output.commandedUs : null,
+      targetUs: typeof output.targetUs === "number" ? output.targetUs : null,
     }));
     paint();
   };
@@ -252,7 +423,8 @@
   const send = async (move) => {
     const label = partLabel(move.part);
     pendingPart = move.part;
-    rows.get(move.part).select.disabled = true;
+    const partRow = rows.get(move.part);
+    if (partRow) partRow.select.disabled = true;
     showFeedback(`Moving ${label}...`);
     try {
       await window.PAApi.postForm(
@@ -281,18 +453,20 @@
 
   let asking = null;
 
-  const ask = (move) => {
+  // `control` is the one the builder chose with, on either table, and it is
+  // where focus goes back to if they cancel.
+  const ask = (move, control) => {
     const words = announcement(move);
     dialogTitle.textContent = words.title;
     dialogBody.textContent = words.body;
-    asking = move;
+    asking = { move, control };
     pendingPart = move.part;
     dialog.showModal();
   };
 
   const answer = (confirmed) => {
-    const move = asking;
-    if (!move) return;
+    if (!asking) return;
+    const { move, control } = asking;
     asking = null;
     pendingPart = null;
     if (dialog.open) dialog.close();
@@ -302,7 +476,20 @@
     }
     // Cancelled: the control goes back to the truth, and focus to the control.
     paint();
-    rows.get(move.part).select.focus?.();
+    control?.focus?.();
+  };
+
+  // The one rule both tables move a Part by: one move at a time, a move that
+  // takes a Part off another Output is asked first, and anything else goes
+  // straight to the droid (#347, #362).
+  const request = (move, control) => {
+    if (pendingPart !== null) {
+      showFeedback(`One move at a time: wait for ${partLabel(pendingPart)} to land.`, "warning");
+      return;
+    }
+    if (move.from === move.to) return;
+    if (move.announce) ask(move, control);
+    else send(move);
   };
 
   document.getElementById("parts-move-confirm")?.addEventListener("click", () => answer(true));
@@ -317,14 +504,18 @@
     const select = event.target;
     const id = select?.closest?.("[data-part]")?.dataset.part;
     if (!id || outputs === null) return;
-    if (pendingPart !== null) {
-      showFeedback(`One move at a time: wait for ${partLabel(pendingPart)} to land.`, "warning");
-      return;
-    }
-    const move = moveFor(outputs, id, select.value);
-    if (move.from === move.to) return;
-    if (move.announce) ask(move);
-    else send(move);
+    request(moveFor(outputs, id, select.value), select);
+  });
+
+  outputsRegion.addEventListener("change", (event) => {
+    const select = event.target;
+    const address = select?.closest?.("[data-output]")?.dataset.output;
+    const id = select?.value;
+    if (!address || !id || outputs === null) return;
+    // A pick is a request, not a state this control keeps: it goes back to its
+    // prompt, and the row's Drives cell says what the droid answered.
+    select.value = "";
+    request(moveFor(outputs, id, address), select);
   });
 
   // A control that was held catches up with whatever arrived while it was.
@@ -339,7 +530,7 @@
       "/droid_part_kind.js": "parts list",
       "/parts.js": "parts table",
     });
-    window.PABootstrap.registerSection("parts-outputs", loadOutputs, { label: "what drives each part" });
+    window.PABootstrap.registerSection("parts-outputs", loadOutputs, { label: "what drives each part and output" });
   } else {
     loadOutputs().catch((error) => console.warn("[parts] outputs unavailable:", error));
   }

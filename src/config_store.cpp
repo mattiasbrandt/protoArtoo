@@ -255,9 +255,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
-    snap->servo.seq_open_ms = 1000;
-    snap->servo.seq_close_ms = 1000;
-
     snap->servo.aux_led_pin = AUX_LED_PIN_DISABLED;
     snap->servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
 
@@ -516,10 +513,10 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 }
 
 // -----------------------------------------------------------------------------
-// The two questions the servo drive path asks of a row  --  answered as values,
-// never as a row.
+// The three questions the servo drive path asks of a row  --  answered as
+// values, never as a row.
 //
-// Both live here rather than as one find-me-the-row accessor because their
+// All live here rather than as one find-me-the-row accessor because their
 // caller is ServoTask, whose worst-case static chain is a measured constant
 // (SERVO_TASK_MEASURED_CHAIN_BYTES, include/config.h) that ADR 0040's checker
 // re-derives from the linked image on every slice. A ServoOutputRow is 70 B,
@@ -528,9 +525,9 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 // should not pay for a Part list, a Motion Profile and a boot behaviour it will
 // not read.
 //
-// Neither copies a row inside this file either: the clamp takes its row by
-// reference and the pair is read field by field, both straight out of the live
-// table under the lock.
+// None of them copies a row inside this file either: the clamp takes its row by
+// reference and the pair and the Motion Profile are read field by field, all
+// straight out of the live table under the lock.
 // -----------------------------------------------------------------------------
 
 // The pulse width this output will actually be driven to, bounded by what the
@@ -576,6 +573,31 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     if (found) {
         *openUs = servoOutputCache.rows[index].open_us;
         *closeUs = servoOutputCache.rows[index].close_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The Motion Profile a move is planned from, field by field out of the live
+// table under the lock like the pair above. The span is derived here through
+// servoOutputLowUs() / servoOutputHighUs(), the one place that decides which
+// end of a directional pair is which, so ServoTask never orders the pair itself.
+bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
+                                             uint16_t* spanUs, uint16_t* throwMs,
+                                             uint16_t* accelMs, bool* calibrated) {
+    if (spanUs == nullptr || throwMs == nullptr || accelMs == nullptr || calibrated == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        const ServoOutputRow& row = servoOutputCache.rows[index];
+        *spanUs = (uint16_t)(servoOutputHighUs(row) - servoOutputLowUs(row));
+        *throwMs = row.throw_ms;
+        *accelMs = row.accel_ms;
+        *calibrated = row.calibrated;
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return found;
@@ -1066,9 +1088,29 @@ bool configSaveServoOutputs(Preferences& prefs) {
     return ok;
 }
 
+// The sequence dwell ServoConfig no longer carries (#362). Its only reader was
+// the body routine state machine #354 deleted, so nothing on this controller
+// will ever read these again, and a key nobody reads is an NVS entry spent on
+// nothing. Removed after a save that landed, on the reasoning #345 used for the
+// fixed servo key sets: the removal needs no schema bump because it has nothing
+// to migrate, and it is idempotent - a controller that never had the keys, or
+// has already lost them, finds nothing to remove.
+static void removeRetiredServoKeys(Preferences& prefs) {
+    static const char* const kRetired[] = {"seq_op", "seq_cl"};
+    for (size_t i = 0; i < sizeof(kRetired) / sizeof(kRetired[0]); ++i) {
+        if (prefs.isKey(kRetired[i])) {
+            prefs.remove(kRetired[i]);
+        }
+    }
+}
+
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     PrefsWriter writer(prefs);
-    return configSerialize(snapshot, writer);
+    const bool ok = configSerialize(snapshot, writer);
+    if (ok) {
+        removeRetiredServoKeys(prefs);
+    }
+    return ok;
 }
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
@@ -1083,7 +1125,11 @@ bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
 
 bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
     PrefsWriter writer(prefs);
-    return configSerializeServo(config, writer);
+    const bool ok = configSerializeServo(config, writer);
+    if (ok) {
+        removeRetiredServoKeys(prefs);
+    }
+    return ok;
 }
 
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {

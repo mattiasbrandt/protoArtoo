@@ -110,6 +110,26 @@ struct DomeStatusSnapshot {
 // why a second short critical section is preferred over nesting)
 void captureDomeStatusSnapshot(DomeStatusSnapshot* out);
 
+// Where one Output has been told to be (#362): the width ServoTask put on its
+// pin, where the move in progress ends, and whether there is a pulse on it at
+// all. Both widths are COMMANDED -- nothing on this droid reads a servo back --
+// so every surface labels them that way. GET /api/servo/outputs and the
+// Console's servo.api.get-outputs both read a position through this one
+// function, so the two cannot disagree about where an Output stands.
+struct ServoOutputCommandedSnapshot {
+    bool pulsing;       // false: no pulse on the pin, and the two widths are 0
+    uint16_t nowUs;     // the width on the pin, part way through a move too
+    uint16_t targetUs;  // where the move in progress ends; nowUs when none is
+};
+
+// Capture one Output's commanded position from ServoTask's mirror
+// (RobotState::servoCommanded). An Output Address ServoTask does not drive --
+// an expander's row, or an address that is not a servo -- answers pulsing
+// false.
+// thread-safe: yes (owns its own short critical section)
+void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
+                                 ServoOutputCommandedSnapshot* out);
+
 // The dynamic fields of the "dome" port object inside formatSerialJson()'s
 // GET /api/serial response (below): "active", "heartbeatRx", "heartbeatTx".
 // The other keys in that sub-object (label, name, hardwareRequired, note) are

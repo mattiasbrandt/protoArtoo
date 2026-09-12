@@ -290,6 +290,65 @@ void test_the_servo_outputs_answer_lists_every_row_and_all_its_parts() {
     TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)outputs[2]["parts"].as<JsonArray>().size());
 }
 
+// Where each Output has been told to be, against the band both marks are drawn
+// across (#362). Both widths are commanded - ServoTask's mirror, read through
+// captureServoOutputCommanded() - and an Output with no pulse on it answers null
+// for both, rather than a zero that reads as a position.
+//
+// AUX1 is armId 2 on LEDC channel 3, so a read that used the channel as the
+// mirror index would hand AUX1 AUX2's position; the widths below differ on every
+// Output so that mistake cannot pass.
+void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band() {
+    seedUnwiredServoOutputRows();
+    ServoOutputEdit micro = {};
+    micro.driver = SERVO_DRIVER_LEDC;
+    micro.channel = LEDC_CH_AUX2;
+    micro.fields = SERVO_FIELD_COMPONENT;
+    micro.component = SERVO_COMP_MG90S;
+    configCacheApplyServoOutputEdits(&micro, 1);
+
+    robotState.servoCommanded[0] = {1600, 1900, true};   // ARM1, part way through a move
+    robotState.servoCommanded[1] = {1500, 1500, true};   // ARM2, standing
+    robotState.servoCommanded[2] = {1100, 1200, false};  // AUX1, no pulse whatever the widths
+    robotState.servoCommanded[3] = {2400, 2400, true};   // AUX2, an MG90S near its top
+    robotState.servoCommanded[4] = {0, 0, false};        // AUX3, never driven
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+    robotState = RobotState{};
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonArray outputs = doc["outputs"].as<JsonArray>();
+
+    TEST_ASSERT_EQUAL_STRING("ledc:0", outputs[0]["address"] | "");
+    TEST_ASSERT_EQUAL_UINT16(1000, outputs[0]["bandLoUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(2000, outputs[0]["bandHiUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(1600, outputs[0]["commandedUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(1900, outputs[0]["targetUs"] | 0);
+
+    TEST_ASSERT_EQUAL_UINT16(1500, outputs[1]["commandedUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(1500, outputs[1]["targetUs"] | 0);
+
+    TEST_ASSERT_EQUAL_STRING("ledc:4", outputs[3]["address"] | "");
+    TEST_ASSERT_EQUAL_UINT16(500, outputs[3]["bandLoUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(2500, outputs[3]["bandHiUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(2400, outputs[3]["commandedUs"] | 0);
+
+    // Not pulsing is said with null on the wire - both keys present, neither a
+    // number - so an absent key and a stalled table cannot look the same.
+    TEST_ASSERT_NOT_NULL(strstr(
+        backend.sentBody,
+        "{\"address\":\"ledc:3\",\"name\":\"AUX1\",\"parts\":[],\"bandLoUs\":1000,"
+        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null}"));
+    TEST_ASSERT_NOT_NULL(strstr(
+        backend.sentBody,
+        "{\"address\":\"ledc:5\",\"name\":\"AUX3\",\"parts\":[],\"bandLoUs\":1000,"
+        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null}"));
+}
+
 // The largest answer the table can give: every row it can hold, each at the
 // longest address, holding every Part the catalog declares between them. The
 // route refuses a payload at its ceiling with a 500, so the bound is measured
@@ -319,7 +378,9 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     handleServoOutputsGet(req);
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_LESS_THAN_UINT32(2560u, (uint32_t)strlen(backend.sentBody));
+    // 3229 B measured at #362, when every row gained its band and commanded
+    // position; the route refuses at 4096.
+    TEST_ASSERT_LESS_THAN_UINT32(4096u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
     JsonArray outputs = doc["outputs"].as<JsonArray>();
@@ -337,6 +398,7 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_servo_outputs_answer_lists_every_row_and_all_its_parts);
+    RUN_TEST(test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band);
     RUN_TEST(test_a_full_table_of_outputs_fits_under_the_route_ceiling);
     RUN_TEST(test_get_returns_config_json);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);

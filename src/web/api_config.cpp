@@ -31,6 +31,7 @@
 #include "api_config_snapshot.h"
 #include "api_json_response.h"
 #include "api_rc_map_apply.h"
+#include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "web_param_source.h"
 #include "drive_speed_preset.h"
@@ -1078,18 +1079,24 @@ void handleConfigPost(WebRequest& req) {
     sendConfigSnapshot(req, working);
 }
 
-// GET /api/servo/outputs - every live Servo Output row, and the Parts each drives.
+// GET /api/servo/outputs - every live Servo Output row, the Parts each drives,
+// and where each has been told to be.
 //
 // Both projections of the Parts destination read this one answer, so the
 // part-first table and the output-first table cannot disagree about which
 // Output moves which Part (ADR 0050, #347).
 //
+// It is also the Parts destination's bench feed: the page reads it on a short
+// cadence only while Parts is on screen, which is how a commanded position
+// reaches the output-first table without riding the shared /api/events stream
+// that carries the estop (#318, #362).
+//
 // Its own route rather than more keys on /api/config, for three reasons: that
 // response is a fixed 3072 B static buffer already sized to its own worst case,
 // and a table of twenty-four rows does not fit beside it; the Parts surface asks
 // for this far more often than a page asks for the whole config; and the
-// output-first table will add columns to every row. A per-request document
-// spends no BSS, which is the scarcest budget on this target
+// output-first table adds columns to every row. A per-request document spends
+// no BSS, which is the scarcest budget on this target
 // (include/api_json_response.h).
 //
 // A row is copied out one at a time. That is 70 B on the web server task's frame
@@ -1114,11 +1121,36 @@ void handleServoOutputsGet(WebRequest& req) {
         for (uint8_t slot = 0; slot < partCount; ++slot) {
             parts.add(servoOutputPartAt(row, slot));
         }
+
+        // The span both position marks are drawn across: the band this Output
+        // can be driven in, set by the component fitted to it. Every commanded
+        // width is clamped into it on the way to the pin
+        // (servoOutputClampPulse()), so neither mark can fall off either end.
+        const ServoPulseBand band = servoComponentBand(row.component);
+        output["bandLoUs"] = band.lo;
+        output["bandHiUs"] = band.hi;
+
+        // Commanded, both: where ServoTask has told the Output to be now, and
+        // where the move in progress ends. Nothing reads a servo back. null for
+        // an Output with no pulse on it, rather than a zero that reads as a
+        // position.
+        ServoOutputCommandedSnapshot commanded = {};
+        captureServoOutputCommanded(row.driver, row.channel, &commanded);
+        if (commanded.pulsing) {
+            output["commandedUs"] = commanded.nowUs;
+            output["targetUs"] = commanded.targetUs;
+        } else {
+            output["commandedUs"] = nullptr;
+            output["targetUs"] = nullptr;
+        }
     }
     // A sanity ceiling, not a buffer. The largest answer the table can give -
     // twenty-four rows at their longest address holding every Part the catalog
-    // declares between them - is held under it by test_api_config_get.
-    webSendJsonDocument(req, doc, 2560, TAG);
+    // declares between them - is held under it by test_api_config_get. It was
+    // 2560 B over a 1621 B answer until #362 gave every row its band and its
+    // commanded position, 67 B a row; the same answer is now 3229 B. A fitted
+    // droid with five rows answers in well under a kilobyte.
+    webSendJsonDocument(req, doc, 4096, TAG);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).
