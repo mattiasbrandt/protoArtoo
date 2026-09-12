@@ -76,6 +76,8 @@ Recognized line families from dome ingress:
 - Sequence control lines:
   - `dome=seqon,<seconds>`
   - `dome=seqoff`
+  - `dome=rot,<speedPct>,<durationMs>` (timed dome rotation; clamped to +/-100,
+    ignored when the Dome ESC is not staged active)
 - Cue lines:
   - `BD:<cue>`
 - Marcduino subset routed to body parser:
