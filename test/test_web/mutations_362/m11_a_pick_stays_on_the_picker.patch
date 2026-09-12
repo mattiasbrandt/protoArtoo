@@ -1,0 +1,12 @@
+diff --git i/data/parts.js w/data/parts.js
+index 6ec4589c..8975412d 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -514,7 +514,6 @@
+     if (!address || !id || outputs === null) return;
+     // A pick is a request, not a state this control keeps: it goes back to its
+     // prompt, and the row's Drives cell says what the droid answered.
+-    select.value = "";
+     request(moveFor(outputs, id, address), select);
+   });
+ 

@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 6ec4589c..18d2aa2a 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -313,7 +313,7 @@
+   const paintOutputRow = (output) => {
+     const row = outputRows.get(output.address);
+     if (!row) return;
+-    const light = isLightRow(output);
++    const light = false;
+     const pulsing = output.commandedUs !== null;
+     row.node.classList.toggle("is-wired", output.parts.length > 0);
+     row.node.classList.toggle("partkind-light", light);
