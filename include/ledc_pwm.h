@@ -8,7 +8,11 @@
 //   - AUX1 (GPIO 19)  --  Spare servo output (also labelled ARM3)
 //   - AUX2 (GPIO 18)  --  Spare servo output (also labelled ARM4)
 //   - AUX3 (GPIO 32)  --  Spare servo output (also labelled ARM5)
-//   - DOME (GPIO 25)  --  Dome rotation ESC (brushless motor, not a servo)
+//   - DOME (GPIO 25 on artoo-esp32, 48 on firebeetle2)  --  Dome rotation ESC.
+//     A BRUSHED ESC, not a servo and not a brushless controller: the fitted part
+//     is an ISDT ESC70, whose own specification is "540/550/775 Brushed motor"
+//     (docs/spec-sheets/isdt-esc70-dome-esc.md). It is driven as standard RC PWM,
+//     which is the only signal it accepts.
 //
 // ESP32 LEDC Configuration:
 //   - Timer: 50Hz (20ms period), 16-bit resolution
