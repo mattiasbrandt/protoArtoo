@@ -1,0 +1,11 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1123,6 +1123,7 @@
+       if (eventType === "status") notePlateStatus(payload);
+       else if (eventType === "stream_error") {
+         plateStreamBroken = true;
++        paintPlate(null);
+         renderPlateFreshness();
+       }
+     });

@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -407,8 +407,7 @@
+     {
+       id: "estop",
+       label: "ESTOP",
+-      // The single cell that acts rather than routes, so it carries no page.
+-      page: null,
++      page: "drive",
+       affordance: "Cuts drive now",
+       read: (status) =>
+         status.estop === true ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),

@@ -1,0 +1,27 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -481,13 +481,22 @@
+         status.webControlEnabled === true ? chipState("", "ON") : chipState("", "OFF"),
+     },
+     {
++      id: "spd",
++      label: "SPD",
++      page: "drive",
++      read: (status) => {
++        const cap = Number(status.speedLimitMax);
++        return chipState("", Number.isFinite(cap) ? String(cap) : CHIP_UNKNOWN);
++      },
++    },
++    {
+       id: "sleep",
+       label: "SLEEP",
+       page: "home",
+       read: (status) => (status.sleepMode === true ? chipState("", "ON") : chipState("", "OFF")),
+     },
+     {
+-      id: "spd",
++      id: "spd_unreachable",
+       label: "SPD",
+       page: "drive",
+       // The cap, which is measured, and not the preset name, which may not

@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1088,8 +1088,7 @@
+         // aria-disabled rather than the `disabled` property: gateControls()
+         // sets both, and the attribute is the one a container can carry for a
+         // control that is not a form element.
+-        const refused = event.target?.closest?.('[aria-disabled="true"]');
+-        if (!refused) return;
++        const refused = event.target;
+         // Except when it means BUSY rather than off. The Dashboard marks a
+         // control aria-disabled while its request is in flight -- the sleep
+         // toggle, the Commanded Mode buttons and the Mood buttons all do
