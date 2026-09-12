@@ -125,6 +125,21 @@ jobs:
       # built without one so the Developer WiFi Shortcut (ADR 0015) stays
       # unavailable and a fresh controller boots into WiFi Provisioning.
       # Even the placeholder secrets.h.example defines the shortcut macros.
+      # esbuild minifies the web UI inside every pio build (tools/gzip_fsdata.py,
+      # #382) and the build refuses to run without it. npm ci installs the
+      # version package-lock.json pins; its bin directory goes on PATH.
+      - name: 🟢 Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 📦 Install esbuild
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: 🏗️ Build firmware
         run: |
           export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
