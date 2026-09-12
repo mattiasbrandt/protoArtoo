@@ -8,7 +8,7 @@
 //   SM = low 8 bits of sum of ALL preceding bytes (0xAA + CMD + LEN + DATA).
 //   Example: play   = AA 02 00 AC  (AA+02+00 = AC)
 //            stop   = AA 04 00 AE  (AA+04+00 = AE)
-//            vol 15 = AA 13 01 0F C7  (AA+13+01+0F = C7)
+//            vol 15 = AA 13 01 0F CD  (AA+13+01+0F = CD)
 //
 // NOTE: The "0xAB end-marker" previously used was wrong. 0xAB appearing in
 //   query frame AA 01 00 AB is coincidence (AA+01+00 = AB). End-marker dialect
@@ -272,7 +272,11 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
 // Send live queries for device, play state, and current track.
 // Populates 'out' from the responses; returns true if at least one query
 // received a valid response (i.e. the UART link is alive).
-// Called by AudioTask after begin() and then periodically every ~2 s.
+// Called by AudioTask after begin(), and thereafter only when the operator asks
+// -- the Sound page's Poll button. The idle-phase auto-query is gated on
+// AUDIO_CAP_QUERY_SAFE_PLAYING (src/tasks/audio_task_step.cpp), which this
+// module does not declare, so there is no periodic poll for it at all. Polling
+// a DY-SV5W mid-track is what the spontaneous-byte defence below exists for.
 // Blocking up to ~900 ms total (3 x 300 ms timeout) in the worst case.
 // Only call from AudioTask (Core 0).
 // -----------------------------------------------------------------------------
@@ -342,8 +346,9 @@ void AudioDriverDySv5w::getCachedState(AudioModuleState& out) const {
 // DYPlayer::playSpecified: {0xAA, 0x07, 0x02, hi, lo}
 // BetterDuino MDuinoSoundDYPlayer::Play: {0xAA, 0x07, 0x02, 0x00, SoundNr}
 //
-// NOTE: BetterDuino uses uint8_t for track number (max 255). We support
-// uint16_t for forward compatibility but clamp to 255 for DY-SV5W modules.
+// NOTE: BetterDuino uses uint8_t for track number (max 255). The frame carries
+// a 16-bit big-endian index, so nothing is clamped here and the full range is
+// sent; test_audio_frames asserts the 65535 payload bytes.
 // -----------------------------------------------------------------------------
 void AudioDriverDySv5w::playTrack(uint16_t track) {
     if (track == 0) {
