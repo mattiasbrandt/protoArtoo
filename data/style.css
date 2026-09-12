@@ -5424,3 +5424,136 @@ label.sound-search-field {
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+/* ---------------------------------------------------------------------------
+   Parts (#347): the part-first table
+
+   Its own block, added whole, so no shared rule above changes. Every value is a
+   token from the palette at the top of this file.
+
+   A Part's Kind is carried by treatment and never by colour (#327,
+   data/droid_part_kind.js): a light row wears a dashed rule down its edge and a
+   "light" tag, and nothing on the table colours for state. A Part with no
+   Output is dimmed rather than coloured, because a build in progress is not a
+   fault.
+   --------------------------------------------------------------------------- */
+.parts-summary {
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  margin-block: var(--space-sm);
+}
+
+.parts-table-wrap {
+  overflow-x: auto;
+}
+
+.parts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.parts-table thead th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.parts-group th {
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--fs-xs);
+  color: var(--silver);
+  padding: var(--space-lg) var(--space-sm) var(--space-2xs);
+}
+
+.parts-row th,
+.parts-row td {
+  text-align: left;
+  font-weight: 400;
+  vertical-align: middle;
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.parts-shorthand,
+.parts-kind {
+  margin-left: var(--space-xs);
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+
+.parts-shorthand {
+  font-family: var(--font-mono);
+}
+
+.parts-kind {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-xs);
+}
+
+.parts-gang {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.parts-gang:empty {
+  display: none;
+}
+
+.parts-output {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--text);
+  background: color-mix(in srgb, var(--lift) 4%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+
+.parts-output:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.parts-row:not(.is-wired) .parts-output {
+  color: var(--text-dim);
+}
+
+.parts-row.partkind-light th {
+  border-left: 2px dashed var(--border);
+}
+
+/* margin: auto is what centres a modal <dialog>; the reset at the top of this
+   file zeroes every margin, which left it pinned to the top-left corner. */
+.parts-move-dialog {
+  margin: auto;
+  width: calc(100% - 2 * var(--space-lg));
+  max-width: 32rem;
+  padding: var(--space-lg);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-3);
+}
+
+.parts-move-dialog::backdrop {
+  background: color-mix(in srgb, var(--scrim) 70%, transparent);
+}
+
+.parts-move-dialog h4 {
+  color: var(--silver-bright);
+  margin-bottom: var(--space-sm);
+}
+
+.parts-move-dialog .button-row {
+  justify-content: flex-end;
+  margin-top: var(--space-lg);
+}

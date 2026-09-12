@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 8d60da27..e61245bb 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -296,7 +296,7 @@
+     asking = null;
+     pendingPart = null;
+     if (dialog.open) dialog.close();
+-    if (confirmed) {
++    if (confirmed || move) {
+       send(move);
+       return;
+     }

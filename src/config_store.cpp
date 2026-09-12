@@ -446,7 +446,8 @@ bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
     return live;
 }
 
-// The one runtime write onto the rows (ADR 0041).
+// The runtime write onto a row's endpoints and component (ADR 0041). A Part's
+// place on the rows is moved by configCacheMoveServoOutputPart() below.
 //
 // The Apply Core that validates a builder's numbers is pure -- it cannot reach
 // this table (ADR 0011) -- so it records what the request asked for as a list
@@ -497,6 +498,21 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return report;
+}
+
+// The runtime write onto a Part's place (ADR 0050, #347).
+//
+// One critical section for the whole move: taking the Part off one row and
+// putting it on another are two list writes, and a reader that ran between them
+// would see a Part no Output drives -- which the sequence engine answers as
+// part-not-assigned, on a Part that was wired the whole time. Bounded by the
+// table size and the slot count, with no allocation and no I/O, the same
+// argument configCacheApplyServoOutputEdits() makes for its own pass.
+ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move) {
+    taskENTER_CRITICAL(&configCacheMux);
+    const ServoPartMoveOutcome outcome = servoOutputTableMovePart(&servoOutputCache, move);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return outcome;
 }
 
 // -----------------------------------------------------------------------------

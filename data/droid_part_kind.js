@@ -30,14 +30,10 @@
 // question (#318) rather than a behaviour this module implies, so nothing here
 // reports a light as stopped, held, or released.
 //
-// NO PAGE LOADS THIS MODULE YET (#375). It appears in no `data-scripts`
-// attribute and no other data/*.js calls `window.DroidPartKind`; what reads it
-// today is the web suite, and tools/check_droid_parts_drift.py, which names it
-// as the consumer that keeps the catalog's `light` Kind honest. It is staged
-// for C1a (#347), the first surface that draws a Part row - which is what the
-// rules below are written for. Said out loud because a module nothing loads
-// reads as shipped otherwise, and this project has shipped one before. Delete
-// this paragraph when #347 wires the first page to it.
+// Parts (data/parts.js, #347) is the first page that loads it, and draws a
+// light row with the treatment below. tools/check_droid_parts_drift.py also
+// names this module as the consumer that keeps the catalog's `light` Kind
+// honest.
 //
 // It is ADVISORY, and it never refuses anything. Plenty of builds move
 // something the reference drawing shows as a display, so a servo Output mapped
@@ -64,9 +60,9 @@
   const SERVO_AFFORDANCES = Object.freeze(["travel", "throw", "position", "release"]);
   const LIGHT_AFFORDANCES = Object.freeze(["brightness"]);
 
-  // The state class a light wears. The rules for it belong beside the first
-  // surface that draws a Part row (#347), in the token layer #341 landed - this
-  // module decides WHICH treatment a Part gets, never what it looks like.
+  // The state class a light wears. Its rules are in data/style.css's Parts
+  // block (#347), on the token layer #341 landed - this module decides WHICH
+  // treatment a Part gets, never what it looks like.
   const LIGHT_CLASS = "partkind-light";
 
   /** The Kind the catalog declares for this Part, or null where it declares none. */

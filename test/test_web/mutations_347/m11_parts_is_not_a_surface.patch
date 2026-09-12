@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index 56cd44b3..5e9a786c 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -39,7 +39,6 @@
+     { page: "dome", doc: "/dome.html", icon: "🔄", name: "Dome", aliases: [] },
+     { page: "sound", doc: "/sound.html", icon: "🔊", name: "Sound", aliases: [] },
+     { page: "servo", doc: "/servo.html", icon: "🦾", name: "Servos", aliases: ["servos"] },
+-    { page: "parts", doc: "/parts.html", icon: "🧩", name: "Parts", aliases: [] },
+     { page: "seq", doc: "/seq.html", icon: "🎬", name: "Sequences", aliases: ["sequences"] },
+     { page: "rc", doc: "/rc.html", icon: "🕹️", name: "RC Control", aliases: [] },
+     { page: "setup", doc: "/setup.html", icon: "⚙️", name: "Setup", aliases: [] },

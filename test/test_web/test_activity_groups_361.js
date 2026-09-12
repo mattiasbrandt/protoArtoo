@@ -9,7 +9,7 @@
 // The one case no shipped build has today -- a group whose every member row
 // names a surface that does not exist yet -- is reached by booting the same
 // shipped shell with rows taken out of SURFACES, which is precisely what this
-// build looks like to the four dormant rows.
+// build looks like to the three dormant rows.
 // =============================================================================
 
 import { test } from "node:test";
@@ -227,8 +227,8 @@ test("each group offers the surfaces its rows name, in the order they are writte
   assert.deepEqual(members.perform, ["seq", "sound", "dome"]);
   assert.deepEqual(
     members.configure,
-    ["setup", "servo"],
-    "Droid Build, Parts and Wiring are declared and dormant, so only the two that exist are drawn",
+    ["setup", "servo", "parts"],
+    "Droid Build and Wiring are declared and dormant, so only the three that exist are drawn -- Parts woke with #347",
   );
   assert.deepEqual(members.maintain, ["wifi", "firmware"], "Maintenance is dormant until it exists");
 });
@@ -236,7 +236,7 @@ test("each group offers the surfaces its rows name, in the order they are writte
 test("a member row naming a surface this build does not have draws nothing at all", async () => {
   const env = await boot();
   const offered = env.document.querySelectorAll("[data-surface-link]").map((link) => link.dataset.surfaceLink);
-  ["droidbuild", "parts", "wiring", "maintenance"].forEach((page) => {
+  ["droidbuild", "wiring", "maintenance"].forEach((page) => {
     assert.equal(
       offered.includes(page),
       false,
@@ -391,7 +391,7 @@ test("no other surface was renamed, and every name still comes from SURFACES", a
   const withoutIcon = (text) => text.replace(/^\S+\s+/, "");
   assert.deepEqual(
     [...new Set(names.map(withoutIcon))].sort(),
-    ["Dashboard", "Dome", "Firmware", "Foot Drive", "RC Control", "Sequences", "Servos", "Setup", "Sound", "WiFi"],
-    "one rename, and the other nine surfaces are untouched",
+    ["Dashboard", "Dome", "Firmware", "Foot Drive", "Parts", "RC Control", "Sequences", "Servos", "Setup", "Sound", "WiFi"],
+    "one rename, the other nine surfaces untouched, and Parts added under its own name (#347)",
   );
 });

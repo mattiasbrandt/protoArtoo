@@ -53,6 +53,15 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // post-commit state back into it costs no second copy.
 struct ConfigCommitOutcome {
     bool persisted = false;  // false -> caller reports "failed to persist config"
+    // Non-null when the request carried a Part move the live table refused - the
+    // Part is not on the Output the move named, the destination is full, or no
+    // row is addressed there (servoOutputTableMovePart()). Nothing in the request
+    // was applied and nothing was persisted; the caller answers 409 with this
+    // sentence, and `working` is not the committed state so is not rendered.
+    // Only a request naming movePart can be refused, and the Console's scalar
+    // config adapter carries exactly one field that is never movePart, so today
+    // the REST route is the one caller that meets it.
+    const char* refusal = nullptr;
 };
 
 // =============================================================================
@@ -115,6 +124,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 
 void handleConfigGet(WebRequest& req);
 void handleConfigPost(WebRequest& req);
+void handleServoOutputsGet(WebRequest& req);
 void handleRcMapGet(WebRequest& req);
 void handleRcMapPost(WebRequest& req);
 void handleWifiPost(WebRequest& req);
