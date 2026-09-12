@@ -1,9 +1,13 @@
-Legacy asset set (ADR 0065, #316).
+Legacy asset set (ADR 0065, #382).
 
-This directory exists so `artoo_esp32` (custom_asset_set = legacy) does not
-fail the staging step now that `data/asset-sets/` is present. It carries
-**line drawings** in place of the default set's photographs; those drawings
-are #382's and are not this ticket's.
+The narrower of the two sets: it carries **line drawings** where the default set
+carries photographs. The name describes what the set holds and never the board
+that carries it -- the artoo-esp32 is not a legacy board.
+
+The drawings are one inlined sprite, `_product_art.html`, rather than a file
+each, because littlefs charges a 4 KiB block per file whatever the content. That
+file's own header says the rest.
 
 A file whose name starts with `_` is a partial and is not imaged
-(tools/gzip_fsdata.py), so this note costs the 4 MB board nothing.
+(tools/gzip_fsdata.py), so neither this note nor the sprite costs the 4 MB board
+anything until a page inlines it.

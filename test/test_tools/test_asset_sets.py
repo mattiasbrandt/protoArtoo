@@ -3,10 +3,15 @@
 
 ADR 0065 -- only what is SHOWN may differ between boards. A file declares which
 builds carry it by which set directory it sits in, so the fact lives beside the
-file instead of in a list that goes stale. These tests cover the staging rule, the declarations, and the
-8 KiB per-photograph cap now that the default set carries pictures (#316).
+file instead of in a list that goes stale. These tests cover the staging rule,
+the declarations, the 8 KiB per-photograph cap now that the default set carries
+pictures (#316), and PA:INCLUDE resolution across the set and common roots,
+which is what lets a set carry a fragment of a page and not only whole files
+(#382).
 """
 
+import gzip
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -104,6 +109,137 @@ class AssetSetStaging(unittest.TestCase):
                 8192,
                 f"{path.name} is {size} B, over the 8 KiB block-boundary cap",
             )
+
+
+class _FakeSConsEnv:
+    """Stands in for the ``env`` object SCons injects via ``Import("env")``.
+
+    Only what gzip_fsdata.py actually calls: ``subst()`` for the three
+    ``$VAR`` lookups, ``GetProjectOption()`` for ``custom_asset_set``, and
+    ``Replace()`` to repoint ``PROJECT_DATA_DIR`` at the staged copy.
+    """
+
+    def __init__(self, project_data_dir, build_dir, custom_asset_set="default"):
+        self._vars = {
+            "$PIOPLATFORM": "espressif32",
+            "$PROJECT_DATA_DIR": str(project_data_dir),
+            "$BUILD_DIR": str(build_dir),
+        }
+        self._custom_asset_set = custom_asset_set
+        self.replaced = {}
+
+    def subst(self, key):
+        return self._vars[key]
+
+    def GetProjectOption(self, name, default=None):
+        if name == "custom_asset_set":
+            return self._custom_asset_set
+        return default
+
+    def Replace(self, **kwargs):
+        self.replaced.update(kwargs)
+
+
+def _run_gzip_fsdata(fake_env):
+    """Run gzip_fsdata.py's module body -- including its unconditional
+    ``main()`` call at the bottom -- against a fake env, standing in for the
+    SCons runner that would otherwise exec it with a real one. ``Import()``
+    is SCons's own builtin, injecting a variable into the calling script's
+    globals as a side effect rather than returning it; there is no such
+    builtin under plain ``python3 -m unittest``, so this supplies one for the
+    single name the script asks for.
+    """
+    source = GZIP_FSDATA.read_text(encoding="utf-8")
+    namespace = {"__name__": "gzip_fsdata_under_test", "__file__": str(GZIP_FSDATA)}
+
+    def fake_import(name):
+        assert name == "env", "gzip_fsdata.py now Imports something other than 'env'"
+        namespace["env"] = fake_env
+
+    namespace["Import"] = fake_import
+    exec(compile(source, str(GZIP_FSDATA), "exec"), namespace)
+    return namespace
+
+
+class PartialIncludeResolution(unittest.TestCase):
+    """PA:INCLUDE must resolve a partial the same way whole-file staging
+    resolves a path: this environment's asset set before the common data
+    root (#382). Before this, _expand_includes searched only
+    $PROJECT_DATA_DIR, so a partial living inside a set was unreachable no
+    matter which set an environment named."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "data"
+        self.build = Path(self.tmp.name) / "build"
+        self.src.mkdir()
+        self.build.mkdir()
+        # Every page below must inline the kernel to clear the mandatory
+        # guard; it lives in the common root exactly as on a real build.
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _set_dir(self, name):
+        set_dir = self.src / "asset-sets" / name
+        set_dir.mkdir(parents=True)
+        return set_dir
+
+    def _build(self, custom_asset_set):
+        _run_gzip_fsdata(_FakeSConsEnv(self.src, self.build, custom_asset_set))
+
+    def _staged_html(self, name):
+        with gzip.open(self.build / "fsdata_gz" / (name + ".gz"), "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_partial_present_only_in_the_set_resolves_from_the_set(self):
+        set_dir = self._set_dir("myset")
+        (set_dir / "_only_in_set.html").write_text("SET-ONLY", encoding="utf-8")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _only_in_set.html -->",
+            encoding="utf-8",
+        )
+        self._build(custom_asset_set="myset")
+        self.assertIn("SET-ONLY", self._staged_html("page.html"))
+
+    def test_partial_present_in_both_resolves_to_the_sets_copy(self):
+        set_dir = self._set_dir("myset")
+        (self.src / "_shared.html").write_text("COMMON-VERSION", encoding="utf-8")
+        (set_dir / "_shared.html").write_text("SET-VERSION", encoding="utf-8")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _shared.html -->",
+            encoding="utf-8",
+        )
+        self._build(custom_asset_set="myset")
+        staged = self._staged_html("page.html")
+        self.assertIn("SET-VERSION", staged)
+        self.assertNotIn("COMMON-VERSION", staged)
+
+    def test_partial_present_only_in_common_still_resolves_with_a_set_active(self):
+        # The set exists and is active but carries no kernel of its own --
+        # this is exactly how _recovery_kernel.html must keep working once
+        # a build names a set.
+        self._set_dir("myset")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->", encoding="utf-8"
+        )
+        self._build(custom_asset_set="myset")
+        self.assertIn("KERNEL", self._staged_html("page.html"))
+
+    def test_partial_in_neither_root_raises_systemexit_naming_both(self):
+        set_dir = self._set_dir("myset")
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html -->"
+            "<!-- PA:INCLUDE _does_not_exist.html -->",
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build(custom_asset_set="myset")
+        message = str(ctx.exception)
+        self.assertIn("_does_not_exist.html", message)
+        self.assertIn(str(set_dir), message)
+        self.assertIn(str(self.src), message)
 
 
 if __name__ == "__main__":

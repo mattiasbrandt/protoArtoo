@@ -40,6 +40,11 @@ include is a hard build failure, never a silently shipped page without recovery
 — and so is a served page that carries no kernel directive at all, since a page
 without one fails silently in exactly the situation recovery exists for.
 
+A partial resolves in the same order the file staging below does: this
+environment's asset set first, then the common data root. This lets a set
+carry its own partial, and it is why _recovery_kernel.html -- which no set has
+ever carried -- keeps resolving from the common root untouched.
+
 Runs after extract_version.py so the freshly-written fs-version.json is included
 in the LittleFS staging directory.
 """
@@ -100,8 +105,15 @@ def _is_partial(filename):
     return filename.startswith(PARTIAL_PREFIX)
 
 
-def _expand_includes(path, src_root):
+def _expand_includes(path, include_roots):
     """Return the file's bytes with any PA:INCLUDE directives replaced.
+
+    include_roots is searched in order. Callers pass the active asset set
+    before the common data root -- the same "set is staged on top of the
+    common tree" rule the file walk in main() already applies to whole files
+    -- so a page can name a partial without knowing which root this build
+    will find it in, and _recovery_kernel.html, which no set has ever
+    carried, still falls through to the common root exactly as before.
 
     Deliberately single-pass and non-recursive: a partial that itself contains a
     directive is rejected rather than quietly half-expanded, because a partially
@@ -120,11 +132,18 @@ def _expand_includes(path, src_root):
         )
 
     def _replace(match):
-        target = os.path.join(src_root, match.group(1))
-        if not os.path.isfile(target):
+        name = match.group(1)
+        target = None
+        for root in include_roots:
+            candidate = os.path.join(root, name)
+            if os.path.isfile(candidate):
+                target = candidate
+                break
+        if target is None:
             raise SystemExit(
-                "[gzip_fsdata] %s includes '%s', which does not exist. "
-                "Refusing to build a page without it." % (path, match.group(1))
+                "[gzip_fsdata] %s includes '%s', which does not exist in %s. "
+                "Refusing to build a page without it."
+                % (path, name, " or ".join(include_roots))
             )
         with open(target, "r", encoding="utf-8") as pf:
             partial = pf.read()
@@ -178,6 +197,10 @@ def main():
     if os.path.isdir(set_root):
         roots.append((set_root, True))
 
+    # Derived from the walk above rather than rebuilt, so include order and
+    # staging order cannot drift apart.
+    include_roots = [root for root, in_set in roots if in_set] + [src]
+
     gz_count = 0
     raw_count = 0
     partial_count = 0
@@ -206,7 +229,7 @@ def main():
                 if _should_gzip(name):
                     dp = os.path.join(dst_root, name + ".gz")
                     if os.path.splitext(name)[1].lower() in HTML_EXTS:
-                        payload = _expand_includes(sp, src)
+                        payload = _expand_includes(sp, include_roots)
                         with gzip.open(dp, "wb", compresslevel=9) as fo:
                             fo.write(payload)
                     else:
