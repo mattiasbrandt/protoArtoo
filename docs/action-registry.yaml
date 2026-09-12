@@ -2499,6 +2499,13 @@ entries:
   - web_api
   safety_critical: false
   requires_web_control: false
+  # Answers executor-not-ready on the Console, on purpose (#347): the rows have
+  # no Console record shape yet, and REST is the one way to read them. Whether
+  # the bench side needs a Console read path - the Wave 0 checkpoint found no
+  # route to an endpoint value at all - is routed to C1b (#362), which owns the
+  # output-first view. Recorded in consoleExecuteCommand()'s dispatch-site
+  # comment and pinned by test_the_executor_not_ready_set_is_exactly_the_
+  # recorded_rows.
   nvs_key: null
   executor: configCacheReadServoOutput
 - name: aux.action.led-color

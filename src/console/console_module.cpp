@@ -3480,14 +3480,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // Resolve the (possibly aliased) operation name to its
             // RobotActionId via ACTION_REGISTRY[] (#220). Not found here
             // means this action has no RC-bindable target yet - a motion
-            // target #222 owns, or one of the twelve rows below.
+            // target #222 owns, or one of the thirteen rows below.
             //
             // EVERY action row that still answers EXECUTOR_NOT_READY lands
             // here on purpose, and each one has a recorded reason on its own
-            // docs/action-registry.yaml entry (#221). They are twelve, in
-            // three groups; test_the_executor_not_ready_set_is_exactly_the_
+            // docs/action-registry.yaml entry (#221). They are thirteen, in
+            // four groups; test_the_executor_not_ready_set_is_exactly_the_
             // recorded_rows (test/test_native/test_console_module) names them
-            // and fails if a thirteenth appears, so a new unwired row cannot
+            // and fails if a fourteenth appears, so a new unwired row cannot
             // join this set silently.
             //
             // 1. #206's document/bulk-transfer exclusion - the transfer IS the
@@ -3509,6 +3509,12 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
             // 3. Not an operation at all:
             //      system.console  is the browser Console Adapter itself
             //                      (POST /api/console, ADR 0036)
+            // 4. A read with no Console record shape yet, decided elsewhere:
+            //      servo.api.get-outputs  configCacheReadServoOutput() - every
+            //                             Servo Output row and the Parts it
+            //                             drives, for the Parts page (#347).
+            //                             Whether the bench side needs it on
+            //                             the Console is C1b's (#362).
             RobotActionId target = ROBOT_ACTION_NONE;
             if (entry != nullptr && consoleFindRobotActionId(entry->name, &target)) {
                 // Tokenize the argument remainder ONCE here (#221 criterion
