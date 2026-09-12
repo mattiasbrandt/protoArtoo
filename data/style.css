@@ -76,6 +76,11 @@
   --fs-lg: 1.1rem;      /* h2 */
   --fs-xl: 1.45rem;     /* h1 */
 
+  /* The one monospace stack. Declared here because a fixed-position readout
+     wants digits that do not change width as the value does; the .mono utility
+     still carries its own copy and is not this slice's rule to edit. */
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
   /* Corner radii. --radius-pill is a capsule of any height; --radius-round is
      a circle and only ever goes on a square box. */
   --radius-xs: 3px;
@@ -2451,6 +2456,156 @@ body[data-page="servo"] .input-narrow {
   color: var(--text-dim);
   font-size: 0.82rem;
 }
+
+/* The Status Plate (CONTEXT.md "Status Plate", #324, #346).
+
+   One recessed instrument plate carrying eight borderless cells in fixed
+   positions, so it is read by muscle memory rather than scanned. The chrome
+   writes it once and repaints values in place; nothing here is rebuilt on a
+   navigation.
+
+   The separator sits on the LEFT edge of every cell after the first, so a
+   cell that is ever hidden takes its rule with it and no JavaScript ever
+   touches a separator (r2d2-astromech-simulator v1.79.0,
+   src/css/02-layout.css:31). All eight of ours are always present, so that is
+   insurance rather than a requirement -- and it is the cheap kind.
+
+   A chip is deliberately not dressed as a button. The plate is the one
+   recess; eight recesses would read as eight unrelated widgets instead of one
+   instrument, which is the reference's own note on the same rule: "Status is
+   NOT pressable, so it no longer dresses like a button: no border, no plate."
+   Ours do take a press -- seven open the screen where the thing is changed
+   and the first cuts drive -- so they carry a pointer and a hover lift, and
+   nothing else.
+
+   Colour on the plate reports the droid's own health and never a posture the
+   operator chose (#327 "Status Colour"): --success for a thing doing its job,
+   --danger for something stopped or refused, and no colour at all for a
+   chosen mode, a switched-off component or a value the droid has not sent
+   yet. Amber is spent nowhere here. Amber means the builder can act and
+   should, and every cell on this plate offers the same one move -- the click
+   -- so the hue would carry no information. The freshness state is never
+   amber for the reason #324 gives: the operator cannot act on it and the
+   reconnect is already running. */
+.status-plate-region {
+  margin-top: var(--space-lg);
+}
+
+.status-plate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  min-width: 0;
+  background: linear-gradient(180deg, var(--surface-alt), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 4px color-mix(in srgb, var(--shade) 42%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--lift) 4%, transparent);
+}
+
+.status-plate > * + * {
+  border-left: 1px solid var(--border);
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.status-chip:hover,
+.status-chip:focus-visible {
+  background: color-mix(in srgb, var(--lift) 6%, transparent);
+  color: var(--text);
+  outline: none;
+}
+
+.status-chip-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-round);
+  background: var(--text-dim);
+  opacity: 0.5;
+}
+
+.status-chip-label {
+  font-weight: 700;
+}
+
+.status-chip-value {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Doing its job. */
+.status-chip-live {
+  color: var(--success);
+}
+
+.status-chip-live .status-chip-dot {
+  background: var(--success);
+  opacity: 1;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 55%, transparent);
+}
+
+/* Stopped or refused -- the one thing --danger says (#327). On this plate
+   that is a latched estop, feet a failsafe is holding at zero, and a link
+   that was up and is gone. A component nobody fitted and a mode the operator
+   chose are neither, and take no colour. */
+.status-chip-stopped {
+  color: var(--danger);
+}
+
+.status-chip-stopped .status-chip-dot {
+  background: var(--danger);
+  opacity: 1;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+/* The whole plate's one freshness state, and the fixed line that says what a
+   press does. The freshness line is the only thing that moves with the age of
+   the readout: there is no per-chip marker, because everything on the plate
+   arrives on one stream and saying its age eight times repeats one fact. */
+.status-plate-freshness {
+  margin-top: var(--space-2xs);
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+}
+
+.status-plate-region[data-freshness="finding-out"] .status-plate-freshness {
+  font-weight: 700;
+}
+
+/* Visible, at the entrance, and fixed: a title carries no affordance on a
+   button and a bench tablet has no hover at all, so what a press does is
+   written on the page rather than hidden in an attribute (ADR 0059,
+   docs/ui-copy-voice.md rule 12). It says what the press does; each chip's
+   own text says what the droid is doing. Two surfaces that cannot drift. */
+.status-plate-affordance {
+  margin-top: var(--space-3xs);
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+}
+
 
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;

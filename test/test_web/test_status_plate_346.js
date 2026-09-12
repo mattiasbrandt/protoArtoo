@@ -1,0 +1,700 @@
+// =============================================================================
+// test/test_web/test_status_plate_346.js
+//
+// The Status Plate on the Operator Shell (#346, #324, CONTEXT.md).
+//
+// The shipped page_bootstrap.js + shell.js + status_stream.js are executed
+// against the shipped data/index.html in a real node tree, with the event
+// stream driven through a stub that delivers frames the way the device does --
+// one "status" event carrying JSON, and a reconnect that replays the frame it
+// already had. So "the plate says what the droid is doing, and says how old
+// that is" is observed on the live document rather than reasoned about.
+//
+// The two traps the reference shipped are what most of these tests are about:
+// a chip naming a value nothing measured, and a chip watching half of its own
+// condition.
+// =============================================================================
+
+import { test } from "node:test";
+import assert from "node:assert";
+import vm from "node:vm";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+import { MiniDocument, MiniDOMParser, clickOn } from "./helpers/mini_dom.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(__dirname, "../../data");
+const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
+
+const bootstrapFile = readData("page_bootstrap.js");
+const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
+const part3Marker = bootstrapFile.indexOf("// ============================ PART 3");
+const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
+const part3Src = bootstrapFile.substring(part3Marker);
+const shellSrc = readData("shell.js");
+const statusStreamSrc = readData("status_stream.js");
+
+const IDENTITY = {
+  droidName: "artoo",
+  board: "artoo_esp32",
+  board_capabilities: { sbus: true },
+  build_flags: { audio: true },
+};
+
+// A droid with everything fitted and nothing wrong: the shape every test below
+// starts from, so a test says only what it changes.
+const HEALTHY = Object.freeze({
+  estop: false,
+  sbusHwFailsafe: false,
+  sbusSignalLost: false,
+  webDriveExpired: false,
+  webControlEnabled: true,
+  sleepMode: false,
+  stationary: false,
+  speedLimitMax: 600,
+  speedPreset: "normal",
+  drive: { state: "idle", detail: "No drive command requested" },
+  rcCh1: { state: "active", detail: "Drive SBUS active" },
+  dome_link: { state: "connected", uart_owner: "dome" },
+  audio: { state: "idle", link_ok: true, rx_status: "available" },
+  // Telemetry the plate must refuse.
+  uptimeMs: 27790,
+  heapFree: 173152,
+  wifiRssi: -70,
+  wifiConnected: true,
+});
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const boot = async ({ status = null } = {}) => {
+  const document = new MiniDocument();
+  const indexHtml = readData("index.html");
+  const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
+  parsedIndex.body.children.forEach((child) => document.body.appendChild(document.importNode(child, true)));
+  const chain = /data-scripts="([^"]*)"/.exec(indexHtml)[1];
+  document.documentElement.setAttribute("data-scripts", chain);
+  document.body.setAttribute("data-page", "home");
+  document.currentScript = { dataset: { scripts: chain } };
+
+  const env = {
+    document,
+    requests: [],
+    posts: [],
+    // null means the boot read never answers, which is how a session with no
+    // frame at all is reached.
+    status,
+  };
+
+  const windowListeners = new Map();
+  const windowMock = {
+    setTimeout: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      timer.unref?.();
+      return timer;
+    },
+    clearTimeout: (id) => clearTimeout(id),
+    setInterval: (fn, ms) => {
+      const timer = setInterval(fn, ms);
+      timer.unref?.();
+      return timer;
+    },
+    clearInterval: (id) => clearInterval(id),
+    addEventListener: (type, fn) => {
+      if (!windowListeners.has(type)) windowListeners.set(type, []);
+      windowListeners.get(type).push(fn);
+    },
+    removeEventListener: () => {},
+    dispatchEvent: (event) => {
+      (windowListeners.get(event.type) || []).forEach((fn) => fn(event));
+      return true;
+    },
+    location: {
+      origin: "http://device",
+      _hash: "",
+      get hash() {
+        return this._hash;
+      },
+      set hash(value) {
+        const text = String(value);
+        const next = text === "" || text.startsWith("#") ? text : `#${text}`;
+        if (next === this._hash) return;
+        this._hash = next;
+        (windowListeners.get("hashchange") || []).forEach((fn) => fn({ type: "hashchange" }));
+      },
+    },
+    history: {
+      replaceState: (_state, _title, url) => {
+        windowMock.location._hash = String(url);
+      },
+    },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    PAApi: {
+      get: async (path) => {
+        env.requests.push(path);
+        if (path === "/api/identity") return { data: IDENTITY };
+        if (path === "/api/status") {
+          if (env.status === null) await new Promise(() => {});
+          return { data: { ...env.status } };
+        }
+        if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
+        throw new Error(`unexpected request ${path}`);
+      },
+      estopPostForm: async (path) => {
+        env.posts.push({ path, via: "estopPostForm" });
+        return { data: { ok: true } };
+      },
+      postForm: async (path) => {
+        env.posts.push({ path, via: "postForm" });
+        return { data: { ok: true } };
+      },
+      messageFor: (error) => error?.message || "Request failed",
+      gateControls: () => {},
+    },
+    PAUtils: { escapeHtml: (value) => String(value), showFeedback: () => {} },
+  };
+
+  class FakeEvent {
+    constructor(type) {
+      this.type = type;
+    }
+  }
+  class FakeCustomEvent extends FakeEvent {
+    constructor(type, opts = {}) {
+      super(type);
+      this.detail = opts.detail;
+    }
+  }
+
+  // The device's own delivery shape: a "status" event whose data is JSON text,
+  // an onopen that fires on every (re)connect, and an onerror the transport
+  // reports a drop through.
+  const sources = [];
+  class FakeEventSource {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      sources.push(this);
+    }
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(handler);
+    }
+    close() {}
+    deliver(type, event) {
+      (this.listeners.get(type) || []).forEach((handler) => handler(event));
+    }
+  }
+
+  const context = {
+    window: windowMock,
+    document,
+    console: { warn: () => {}, log: () => {}, error: () => {} },
+    AbortController,
+    Date,
+    JSON,
+    Object,
+    Array,
+    Set,
+    Map,
+    String,
+    Number,
+    Boolean,
+    Promise,
+    Error,
+    Math,
+    Event: FakeEvent,
+    CustomEvent: FakeCustomEvent,
+    EventSource: FakeEventSource,
+    DOMParser: class {
+      parseFromString(html, type) {
+        return new MiniDOMParser().parseFromString(html, type);
+      }
+    },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  };
+  context.globalThis = context;
+
+  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc };
+  document.onAttach = (node) => {
+    if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
+    const src = node.src;
+    setTimeout(() => {
+      if (REAL_SCRIPTS[src]) vm.runInNewContext(REAL_SCRIPTS[src], context, { filename: src });
+      node.onload?.();
+    }, 2).unref?.();
+  };
+
+  vm.runInNewContext(part1Src, context, { filename: "page_bootstrap.part1.js" });
+  vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
+
+  env.window = windowMock;
+  env.navigate = (to) => {
+    windowMock.location.hash = to;
+  };
+  env.source = () => sources[sources.length - 1];
+  // A frame the droid pushed: fresh JSON text, so the shell sees an object it
+  // has never seen before.
+  env.pushStatus = (patch) =>
+    env.source()?.deliver("status", { data: JSON.stringify({ ...HEALTHY, ...patch }) });
+  // A reconnect: the stream replays the frame it already holds, which is the
+  // same object every subscriber was handed before.
+  env.reopenStream = () => env.source()?.onopen?.();
+  env.breakStream = () => env.source()?.onerror?.();
+
+  env.chips = () => env.document.querySelectorAll("[data-chip]");
+  env.chip = (id) => env.document.getElementById(`chip-${id}`);
+  env.chipValue = (id) => env.chip(id)?.querySelector(".status-chip-value")?.textContent;
+  env.chipClass = (id) => env.chip(id)?.className;
+  env.freshness = () => env.document.getElementById("status-plate-freshness")?.textContent;
+  env.freshnessState = () => env.document.getElementById("status-plate-region")?.dataset.freshness;
+
+  await sleep(160);
+  return env;
+};
+
+// The eight, in the order #324 fixed them: by what bites fastest, never by
+// subsystem. Written out here rather than read from shell.js, so a reordering
+// of the shipped table fails this test instead of agreeing with it.
+const EXPECTED_CHIPS = ["estop", "drive", "rclink", "control", "sleep", "spd", "domelink", "soundlink"];
+
+// ---------------------------------------------------------------------------
+// The plate
+// ---------------------------------------------------------------------------
+
+test("eight chips render in the fixed order, on one plate, with internal separators", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+
+  assert.deepEqual(
+    env.chips().map((chip) => chip.dataset.chip),
+    EXPECTED_CHIPS,
+    "the order is read by muscle memory, so it is the contract",
+  );
+
+  const plates = env.document.querySelectorAll(".status-plate");
+  assert.equal(plates.length, 1, "one recessed plate, not eight floating boxes");
+  assert.deepEqual(
+    plates[0].children.map((child) => child.dataset.chip),
+    EXPECTED_CHIPS,
+    "every chip is a cell of that one plate",
+  );
+
+  // The separator is the plate's own rule on the left edge of every cell after
+  // the first, so a cell that is ever hidden takes its rule with it. Asserted
+  // on the stylesheet because there is nothing in the markup to assert: no
+  // JavaScript may touch a separator, and this is what says so.
+  const css = readData("style.css");
+  assert.match(css, /\.status-plate > \* \+ \* \{\s*border-left:/, "the plate draws its own separators");
+  assert.deepEqual(
+    env.chips().filter((chip) => /separator|divider/i.test(chip.className)),
+    [],
+    "no chip carries a separator of its own",
+  );
+});
+
+test("the plate is chrome: the same nodes survive every navigation", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  const before = EXPECTED_CHIPS.map((id) => env.chip(id));
+  const region = env.document.getElementById("status-plate-region");
+  assert.ok(before.every(Boolean), "all eight are there to begin with");
+
+  for (const route of ["drive", "dome", "sound", "servo", "seq", "rc", "setup", "wifi", "firmware", "home"]) {
+    env.navigate(`#${route}`);
+    await sleep(180);
+    assert.equal(env.document.body.dataset.page, route, `${route} is the mounted surface`);
+    assert.strictEqual(env.document.getElementById("status-plate-region"), region, `${route}: the same plate`);
+    EXPECTED_CHIPS.forEach((id, index) => {
+      assert.strictEqual(env.chip(id), before[index], `${route}: ${id} is the same node`);
+    });
+  }
+});
+
+test("every chip shows a value in both states, and none of them goes blank", async () => {
+  // Each row drives one chip to both ends of its own condition. A plate that
+  // is empty when all is well cannot be told from one that stopped updating,
+  // so "" is a failure on either side.
+  const bothWays = {
+    estop: [{}, { estop: true }],
+    drive: [{}, { drive: undefined }],
+    rclink: [{}, { rcCh1: undefined }],
+    control: [{}, { webControlEnabled: false }],
+    sleep: [{}, { sleepMode: true }],
+    spd: [{}, { speedLimitMax: 300 }],
+    domelink: [{}, { dome_link: { state: "disabled" } }],
+    soundlink: [{}, { audio: undefined }],
+  };
+
+  const env = await boot({ status: { ...HEALTHY } });
+  for (const [id, patches] of Object.entries(bothWays)) {
+    const seen = [];
+    for (const patch of patches) {
+      // undefined in a patch means "the key the firmware omits", which
+      // JSON.stringify drops for us -- the same absence the device sends.
+      env.pushStatus(patch);
+      await sleep(5);
+      const value = env.chipValue(id);
+      assert.ok(value && value.trim().length > 0, `${id} went blank for ${JSON.stringify(patch)}`);
+      seen.push(value);
+    }
+    assert.notEqual(seen[0], seen[1], `${id} says the same thing in both states`);
+  }
+});
+
+test("no telemetry reaches the plate, and there is no WiFi chip", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  const plateText = env.document.querySelector(".status-plate").textContent;
+
+  assert.ok(!EXPECTED_CHIPS.includes("wifi"), "WiFi earns no chip: if WiFi is down nobody is reading this");
+  for (const telemetry of ["27790", "173152", "-70", "UPTIME", "HEAP", "RSSI", "WIFI"]) {
+    assert.ok(
+      !plateText.toUpperCase().includes(telemetry),
+      `${telemetry} is Dashboard's and never the plate's, found in ${JSON.stringify(plateText)}`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A chip watching half its condition -- the reference's shipped Bug 2
+// ---------------------------------------------------------------------------
+
+test("DRIVE reads every input that can hold the feet, not one of them", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  assert.equal(env.chipValue("drive"), "ARMED");
+
+  // Each of these alone makes DriveTask emit zero frames. A chip reading only
+  // the estop sits dark for the other three.
+  for (const patch of [
+    { estop: true },
+    { sbusHwFailsafe: true },
+    { sbusSignalLost: true },
+    { webDriveExpired: true },
+  ]) {
+    env.pushStatus(patch);
+    await sleep(5);
+    assert.equal(
+      env.chipValue("drive"),
+      "STOPPED",
+      `the feet are held by ${Object.keys(patch)[0]} and the chip must say so`,
+    );
+    assert.match(env.chipClass("drive"), /status-chip-stopped/, "and it is the one colour for stopped");
+  }
+
+  // A Foot Drive nobody fitted is not a droid that stopped: no colour.
+  env.pushStatus({ drive: undefined });
+  await sleep(5);
+  assert.equal(env.chipValue("drive"), "OFF");
+  assert.equal(env.chipClass("drive"), "status-chip", "a component nobody fitted takes no colour");
+});
+
+test("RC LINK reads the hardware failsafe bit as well as the frames", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  assert.equal(env.chipValue("rclink"), "OK");
+
+  // A transmitter switched off: the receiver keeps sending frames and asserts
+  // its failsafe bit, so the channel still reads "active" and only the bit
+  // says the link is dead. This is the half a one-source chip misses.
+  env.pushStatus({ sbusHwFailsafe: true, rcCh1: { state: "active" } });
+  await sleep(5);
+  assert.equal(env.chipValue("rclink"), "FAILSAFE");
+
+  // single_sbus + useCh2: the firmware routes the drive receiver to rcCh2 and
+  // omits rcCh1 entirely. A chip reading rcCh1 alone reports no RC on a
+  // working droid.
+  env.pushStatus({ rcCh1: undefined, rcCh2: { state: "active" } });
+  await sleep(5);
+  assert.equal(env.chipValue("rclink"), "OK", "the routed receiver is still the RC link");
+
+  env.pushStatus({ rcCh1: { state: "signal_lost" } });
+  await sleep(5);
+  assert.equal(env.chipValue("rclink"), "LOST");
+
+  env.pushStatus({ rcCh1: { state: "not_seen" } });
+  await sleep(5);
+  assert.equal(env.chipValue("rclink"), "NO FRAMES");
+  assert.equal(env.chipClass("rclink"), "status-chip", "a link that never started has not stopped");
+
+  // Standard PWM: the firmware publishes no liveness for PWM inputs at all,
+  // so the chip names the input and claims no link. A chip may only print what
+  // something measured.
+  env.pushStatus({ rcCh1: { state: "ready" } });
+  await sleep(5);
+  assert.equal(env.chipValue("rclink"), "PWM");
+});
+
+test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  assert.equal(env.chipValue("domelink"), "OK");
+  assert.equal(env.chipValue("soundlink"), "OK");
+
+  // The dome and the sound module share UART2. While sound holds it the dome
+  // heartbeat cannot arrive and the firmware reports a plain "lost" -- so a
+  // chip reading only the state says the link died when nobody could ask.
+  env.pushStatus({ dome_link: { state: "lost", uart_owner: "audio" } });
+  await sleep(5);
+  assert.equal(env.chipValue("domelink"), "SOUND HAS BUS");
+  assert.equal(env.chipClass("domelink"), "status-chip", "a busy bus is not a stopped link");
+
+  env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
+  await sleep(5);
+  assert.equal(env.chipValue("domelink"), "LOST");
+  assert.match(env.chipClass("domelink"), /status-chip-stopped/);
+
+  // The same shape from the other end: link_ok false means either no answer or
+  // a bus the dome is holding, and only rx_status tells them apart.
+  env.pushStatus({ audio: { link_ok: false, rx_status: "blocked_by_dome_uart" } });
+  await sleep(5);
+  assert.equal(env.chipValue("soundlink"), "DOME HAS BUS");
+  assert.equal(env.chipClass("soundlink"), "status-chip");
+
+  env.pushStatus({ audio: { link_ok: false, rx_status: "no_response" } });
+  await sleep(5);
+  assert.equal(env.chipValue("soundlink"), "NO ANSWER");
+  assert.match(env.chipClass("soundlink"), /status-chip-stopped/);
+});
+
+// ---------------------------------------------------------------------------
+// A chip naming a value nothing measured -- the reference's shipped Bug 1
+// ---------------------------------------------------------------------------
+
+test("SPD prints the cap the droid sent and never a preset name it cannot check", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  assert.equal(env.chipValue("spd"), "600", "the cap, straight from the payload");
+
+  env.pushStatus({ speedLimitMax: 450, speedPreset: "normal" });
+  await sleep(5);
+  assert.equal(
+    env.chipValue("spd"),
+    "450",
+    "a limit written directly leaves the payload's preset name saying normal regardless,"
+      + " so the chip prints the number that is measured",
+  );
+  assert.ok(
+    !env.chipValue("spd").toLowerCase().includes("normal"),
+    "and never the name, which would be a preset the number does not belong to",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A route, a control, and an affordance that says which
+// ---------------------------------------------------------------------------
+
+test("a chip press opens the screen where that thing is changed, through the one navigation path", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+
+  const destinations = { drive: "drive", rclink: "rc", control: "drive", sleep: "home", spd: "drive", domelink: "dome", soundlink: "sound" };
+  for (const [id, page] of Object.entries(destinations)) {
+    assert.equal(env.chip(id).getAttribute("href"), `#${page}`, `${id} carries the address of ${page}`);
+    env.navigate("#home");
+    await sleep(180);
+    // A hash address is the whole navigation: the same path the nav, a legacy
+    // link and a typed address all take. Nothing here is a second router.
+    env.navigate(env.chip(id).getAttribute("href"));
+    await sleep(200);
+    assert.equal(env.document.body.dataset.page, page, `${id} landed on ${page}`);
+  }
+
+  assert.deepEqual(env.posts, [], "and not one of the seven asked the droid for anything");
+});
+
+test("only the estop acts, and it is the same stop the topbar button sends", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  const estopChip = env.chip("estop");
+
+  assert.equal(estopChip.tagName, "BUTTON", "the one cell that acts is not an address");
+  assert.equal(estopChip.getAttribute("href"), null, "and it routes nowhere");
+
+  estopChip.fire("click", { type: "click" });
+  await sleep(40);
+  assert.deepEqual(
+    env.posts.map((post) => post.path),
+    ["/api/estop"],
+    "one latch request and nothing else",
+  );
+  assert.equal(
+    env.posts[0].via,
+    "estopPostForm",
+    "carried by the estop path, which skips the request slot and is never retried -- the same"
+      + " function the topbar button calls, so the two cannot drift",
+  );
+
+  // And the release is still not one press from every screen: the chip
+  // latches, it never clears.
+  assert.deepEqual(
+    env.posts.filter((post) => post.path === "/api/estop/clear"),
+    [],
+    "the direction that lets the droid move again stays on Drive and Dashboard",
+  );
+});
+
+test("what a press does is visible on the page, and separate from what a chip reports", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+
+  // Visible text at the entrance, not a title: a title carries no affordance
+  // on a button and a bench tablet has no hover at all (ADR 0059).
+  const affordance = env.document.querySelector(".status-plate-affordance").textContent;
+  assert.match(affordance, /Press a chip to open the screen/, "it says what pressing does");
+  assert.match(affordance, /ESTOP cuts drive/, "including the one cell that acts instead");
+
+  // The title is fixed and names the consequence; the chip's text is the
+  // state. Two surfaces, and the paint function only ever touches one of them.
+  const titleBefore = env.chip("domelink").getAttribute("title");
+  assert.match(titleBefore, /^Opens Dome, where this is changed$/);
+  env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
+  await sleep(5);
+  assert.equal(env.chip("domelink").getAttribute("title"), titleBefore, "the affordance does not move with the state");
+  assert.equal(env.chipValue("domelink"), "LOST", "while the state does");
+
+  // The destination is named by reading SURFACES, so a rename stays one field.
+  assert.equal(
+    env.chip("drive").getAttribute("title"),
+    "Opens Foot Drive, where this is changed",
+    "B2d renamed Drive to Foot Drive with its page untouched; the plate reads the name rather than restating it",
+  );
+
+  // Nothing carries a second copy of the state: the visible text is the
+  // accessible name (WCAG 2.5.3), so there is no aria-label to go stale.
+  assert.deepEqual(
+    env.chips().filter((chip) => chip.getAttribute("aria-label") !== null).map((chip) => chip.dataset.chip),
+    [],
+    "a chip with an aria-label has two copies of its state",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// One freshness state for the whole plate
+// ---------------------------------------------------------------------------
+
+test("the plate says its own age, once, and never per chip", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+
+  assert.equal(env.document.querySelectorAll(".status-plate-freshness").length, 1, "one freshness state");
+  assert.match(env.freshness(), /Last heard from the droid/, "and it says how old the readout is");
+  assert.equal(env.freshnessState(), "live");
+
+  assert.deepEqual(
+    env.chips().filter((chip) => /fresh|stale|age/i.test(chip.className)).map((chip) => chip.dataset.chip),
+    [],
+    "eight markers would repeat one fact seven times",
+  );
+});
+
+test("before the droid has said anything the plate says it is still finding out", async () => {
+  // The boot read never answers, so no frame has arrived at all.
+  const env = await boot({ status: null });
+
+  assert.equal(env.freshnessState(), "finding-out");
+  assert.match(env.freshness(), /Still finding out/);
+  for (const id of EXPECTED_CHIPS) {
+    assert.equal(env.chipValue(id), "FINDING OUT", `${id} says so rather than going blank`);
+  }
+});
+
+test("a dropped stream keeps the values and says it is reconnecting", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true });
+  await sleep(5);
+  assert.equal(env.chipValue("estop"), "LATCHED");
+
+  env.breakStream();
+  assert.equal(env.freshnessState(), "finding-out");
+  assert.match(env.freshness(), /Reconnecting/);
+  assert.match(env.freshness(), /the values it last sent/);
+  assert.equal(env.chipValue("estop"), "LATCHED", "the values are kept: a blank plate is the worse lie");
+
+  env.pushStatus({ estop: true });
+  await sleep(5);
+  assert.equal(env.freshnessState(), "live", "a frame arriving is the stream working again");
+});
+
+test("a replayed frame does not restamp the age", async () => {
+  // The stream re-emits the frame it already holds when it reconnects and when
+  // a hidden tab comes back. Counting that as a new measurement is the plate
+  // claiming a reading nobody took, at exactly the moment an operator is most
+  // likely to be looking at it.
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({});
+  await sleep(2600);
+
+  // Read the seconds rather than the whole line: the line ticks once a second
+  // on its own, so comparing the text across a second boundary would fail for
+  // the one reason this test is not about.
+  const secondsShown = () => {
+    const match = /droid (\d+)s ago/.exec(env.freshness());
+    return match ? Number(match[1]) : null;
+  };
+
+  const aged = secondsShown();
+  assert.ok(aged !== null && aged >= 2, `the age advanced on its own, got ${JSON.stringify(env.freshness())}`);
+
+  env.reopenStream();
+  const afterReplay = secondsShown();
+  assert.ok(
+    afterReplay !== null && afterReplay >= aged,
+    `replaying the cached frame must not reset the age: ${JSON.stringify(env.freshness())}`,
+  );
+
+  env.pushStatus({});
+  await sleep(5);
+  assert.match(env.freshness(), /just now/, "while a frame the droid actually sent does");
+});
+
+test("the freshness state is never amber", async () => {
+  // CONTEXT.md "Status Plate": the operator cannot act on a reconnect that is
+  // already running, and #327 reserves amber for what they can act on. Read
+  // off the stylesheet, resolved through :root, because "the rule does not
+  // contain the string --warning" is not the same claim.
+  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const root = /:root\s*\{([^{}]*)\}/.exec(css)[1];
+  const amber = /--warning:\s*([^;]+)/.exec(root)[1].trim();
+  assert.match(amber, /^#[0-9a-fA-F]{6}$/, `expected a colour for --warning, read ${amber}`);
+
+  const offenders = [];
+  const rule = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rule.exec(css)) !== null) {
+    const selector = match[1].trim();
+    if (!/status-plate|status-chip|ignored-input/.test(selector)) continue;
+    for (const declaration of match[2].split(";")) {
+      const resolved = declaration.replace(/var\(\s*(--[\w-]+)[^)]*\)/g, (whole, name) => {
+        const value = new RegExp(`${name}:\\s*([^;]+)`).exec(root);
+        return value ? value[1].trim() : whole;
+      });
+      if (resolved.includes(amber) || /--warning/.test(declaration)) {
+        offenders.push(`${selector} {${declaration} }`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], "the plate must not spend amber anywhere");
+});
+
+// ---------------------------------------------------------------------------
+// What the plate must not have cost
+// ---------------------------------------------------------------------------
+
+test("the plate reads the status the session already holds and opens no second stream", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+
+  assert.equal(
+    env.requests.filter((path) => path === "/api/status").length,
+    1,
+    "one read for the session -- the plate rides the estop's, it does not add its own",
+  );
+  assert.equal(env.document.getElementById("fw-meta")?.textContent, "Loading firmware info...",
+    "and the firmware line the footer owns is still in the container the plate moved into");
+});
+
+test("a plate click is not a page load, so the shell keeps its session", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  // The shell's capture handler turns a link to a surface DOCUMENT into a
+  // route. A chip carries a hash address instead, which the browser resolves
+  // without a request at all -- so this asserts the chip never reaches that
+  // handler and never asks the device for a document.
+  const before = env.requests.length;
+  const event = clickOn(env.document, env.chip("dome"), { target: env.chip("domelink") });
+  assert.equal(event.defaultPrevented, false, "a hash address needs no interception");
+  assert.equal(env.requests.length, before, "and it fetched nothing");
+});
