@@ -48,6 +48,7 @@ epic issue. Material an agent needs only on some paths lives under
 - PCA9685 / I2C PWM expander truth: `docs/spec-sheets/pca9685-servo-expander.md`
 - Sabertooth / SyRen packet serial truth: `docs/spec-sheets/sabertooth-syren-packet-serial.md`
 - Flipsky VESC / VESC UART truth: `docs/spec-sheets/flipsky-vesc-foot-drive.md`
+- Hoverboard hacked-firmware truth (EFeru FOC and RoboDurden Gen2.x): `docs/spec-sheets/hoverboard-hacked-firmware-foot-drive.md`
 - Xbox controller / XInput, GIP and Bluetooth HID truth: `docs/spec-sheets/xbox-controller-input.md`
 - ExpressLRS / CRSF truth: `docs/spec-sheets/elrs-crsf-radio.md`
 - Pololu Maestro / Maestro serial truth: `docs/spec-sheets/pololu-maestro-servo-controller.md`
