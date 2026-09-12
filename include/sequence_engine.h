@@ -180,8 +180,10 @@ struct SeqStepParams {
                                  // FX_AUDIO (ADR 0010). Factory catalog entries set
                                  // effectClass directly via SEQ_AUDIO_FX and ignore
                                  // this field. Appended last so existing positional
-                                 // catalog-macro initializers stay valid (aggregate
-                                 // init zero-fills trailing members).
+                                 // catalog-macro initializers keep meaning what they
+                                 // meant; they still had to name it, because the
+                                 // firmware targets build with
+                                 // -Werror=missing-field-initializers.
     // BODY (STEP_BODY), appended last for the same reason audioBounded was, and
     // the rule is the same for whoever comes next: a new member goes on the END
     // of this struct, so every positional initializer that already exists keeps

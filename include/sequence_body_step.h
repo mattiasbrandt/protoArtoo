@@ -93,6 +93,11 @@ inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
     SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, 0, 0 };
 
     plan.reason = droidPartAvailabilityFromRow(act.payload, row != nullptr);
+    // The null test is not a second case -- a null row can only come back as
+    // part-not-assigned or unknown-argument, both caught by the first clause.
+    // It is what makes the dereference below provably safe to a reader and to
+    // static analysis, rather than safe by a chain of reasoning about the line
+    // above.
     if (plan.reason != CONSOLE_REASON_NONE || row == nullptr) {
         return plan;
     }
