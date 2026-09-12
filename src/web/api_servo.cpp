@@ -45,10 +45,9 @@ int16_t parseArmId(const char* arm) {
 }
 
 // See include/api_servo.h for the full contract. `cmd` is zero-initialised
-// here (the pre-port handler left an uninitialised local's `sequenceId`
-// field, dead for every type but SERVO_CMD_SEQUENCE - src/tasks/
-// servo_task.cpp never reads it for OPEN/CLOSE/POSITION - so this closes
-// that latent UB without changing anything ServoTask observes).
+// here: the pre-port handler left fields of an uninitialised local unset that
+// ServoTask never read for OPEN/CLOSE/POSITION, so this closes that latent UB
+// without changing anything ServoTask observes.
 ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
                                        CommandSource source) {
     ServoSubmitOutcome outcome;

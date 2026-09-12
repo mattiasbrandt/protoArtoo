@@ -123,14 +123,12 @@ enum ServoCommandType : uint8_t {
     SERVO_CMD_POSITION,
     SERVO_CMD_OPEN,
     SERVO_CMD_CLOSE,
-    SERVO_CMD_SEQUENCE,
 };
 
 struct ServoCommand {
     uint8_t armId;          // 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3, 255=broadcast (ARM1+ARM2)
     ServoCommandType type;  // Command type
     uint16_t positionUs;    // Target pulse width (us) for POSITION type
-    uint8_t sequenceId;     // Sequence ID 30-36 for SEQUENCE type
     CommandSource source;
     uint32_t timestampMs;
 };
@@ -248,6 +246,8 @@ struct RobotState {
     // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask writes; DomeLinkTask writes for coordination) ---
     bool domeSeqActive;    // true while a dome sequence is running (written by SequenceDispatcherTask and DomeLinkTask)
     uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis() (written by SequenceDispatcherTask and DomeLinkTask)
+    bool seqRunActive;     // true while the Sequence Coordinator has a run in progress, start to end or abort
+                           // (written by SequenceDispatcherTask only; ServoTask reads it to park what a run moved)
 
     // --- Zone 9: Shared telemetry / documented handshake flags (multi-writer by design) ---
     uint32_t queueOverflowCount;  // shared telemetry counter, incremented by many tasks

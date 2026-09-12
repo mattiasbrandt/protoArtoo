@@ -14,6 +14,7 @@
 #include <unity.h>
 
 #include "audio_playback_policy.h"
+#include "droid_parts.h"  // droidPartIdIsKnown() - a routine names Parts the catalog has
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
@@ -1005,6 +1006,100 @@ void test_real_low_and_openall_send_no_same_timestamp_burst() {
     }
 }
 
+// :SE30..:SE36 are Factory Sequences built from Body Steps (ADR 0049, #354).
+// Every one used to run the same open-wait-close state machine in ServoTask;
+// the seven names are the specification, so each must be a routine of its own.
+void test_body_routines_are_factory_sequences_of_body_steps() {
+    for (int id = 30; id <= 36; ++id) {
+        const char* name = sequenceBodyRoutineName(id);
+        TEST_ASSERT_NOT_NULL(name);
+        const SequenceEntry* e = sequenceCatalogFind(name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e, name);
+        TEST_ASSERT_EQUAL_MESSAGE(TOGGLE_NONE, e->toggleGroup, name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e->purpose, name);
+
+        uint8_t bodySteps = 0;
+        for (uint8_t i = 0; i < e->stepCount; ++i) {
+            const SeqStep& s = e->steps[i];
+            if (s.type == STEP_END) {
+                TEST_ASSERT_EQUAL_UINT8_MESSAGE(e->stepCount - 1, i, name);
+                continue;
+            }
+            // Nothing but Body Steps: no dome command, no sound, no :SE forward.
+            TEST_ASSERT_EQUAL_MESSAGE(STEP_BODY, s.type, name);
+            TEST_ASSERT_TRUE_MESSAGE(droidPartIdIsKnown(s.payload), s.payload);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(FX_NONE, s.effectClass, name);
+            ++bodySteps;
+        }
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, bodySteps, name);
+    }
+    TEST_ASSERT_NULL(sequenceBodyRoutineName(29));
+    TEST_ASSERT_NULL(sequenceBodyRoutineName(37));
+}
+
+// The engine undoes nothing a body step did (ADR 0049), so a routine that means
+// to put the droid back has to write the closes itself. Every Part one of the
+// seven moves ends closed, as it does in the routines they were taken from.
+void test_body_routines_leave_every_part_they_move_closed() {
+    for (int id = 30; id <= 36; ++id) {
+        const SequenceEntry* e = sequenceCatalogFind(sequenceBodyRoutineName(id));
+        TEST_ASSERT_NOT_NULL(e);
+        for (uint8_t i = 0; i < e->stepCount; ++i) {
+            if (e->steps[i].type != STEP_BODY) continue;
+            uint8_t last = i;
+            for (uint8_t j = (uint8_t)(i + 1); j < e->stepCount; ++j) {
+                if (e->steps[j].type == STEP_BODY &&
+                    strcmp(e->steps[j].payload, e->steps[i].payload) == 0) {
+                    last = j;
+                }
+            }
+            TEST_ASSERT_EQUAL_MESSAGE(BODY_SHAPE_CLOSE, seqBodyShape(e->steps[last].params),
+                                      e->steps[i].payload);
+        }
+    }
+}
+
+// No two of the seven are the same routine under different numbers.
+void test_no_two_body_routines_are_the_same_routine() {
+    for (int a = 30; a <= 36; ++a) {
+        const SequenceEntry* ea = sequenceCatalogFind(sequenceBodyRoutineName(a));
+        for (int b = a + 1; b <= 36; ++b) {
+            const SequenceEntry* eb = sequenceCatalogFind(sequenceBodyRoutineName(b));
+            bool same = ea->stepCount == eb->stepCount;
+            for (uint8_t i = 0; same && i < ea->stepCount; ++i) {
+                same = ea->steps[i].tMs == eb->steps[i].tMs &&
+                       ea->steps[i].type == eb->steps[i].type &&
+                       strcmp(ea->steps[i].payload, eb->steps[i].payload) == 0 &&
+                       ea->steps[i].params.shape == eb->steps[i].params.shape;
+            }
+            TEST_ASSERT_FALSE_MESSAGE(same, ea->name);
+        }
+    }
+}
+
+// :SE32 runs through the engine as Body Step moves, in order, and ends: the
+// doors spring open, wiggle, and shut with the last close.
+void test_body_routine_wiggle_close_runs_as_body_moves() {
+    const SequenceEntry* e = sequenceCatalogFind(sequenceBodyRoutineName(32));
+    TEST_ASSERT_NOT_NULL(e);
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+
+    SeqAction act;
+    uint8_t moves = 0;
+    uint8_t lastShape = 0xFF;
+    while (seqEnginePeek(st, 60000, stubRand, act)) {
+        TEST_ASSERT_EQUAL(SEQ_ACT_BODY_MOVE, act.kind);
+        lastShape = act.bodyShape;
+        ++moves;
+        seqEngineCommit(st);
+    }
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)(e->stepCount - 1), moves);
+    TEST_ASSERT_EQUAL_UINT8(BODY_SHAPE_CLOSE, lastShape);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
 // -----------------------------------------------------------------------------
 // STEP_RANDOM resolution
 // -----------------------------------------------------------------------------
@@ -1372,6 +1467,10 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_clear_latches_helper);
     RUN_TEST(test_real_hello_entry_opens_p1_once);
     RUN_TEST(test_real_low_and_openall_send_no_same_timestamp_burst);
+    RUN_TEST(test_body_routines_are_factory_sequences_of_body_steps);
+    RUN_TEST(test_body_routines_leave_every_part_they_move_closed);
+    RUN_TEST(test_no_two_body_routines_are_the_same_routine);
+    RUN_TEST(test_body_routine_wiggle_close_runs_as_body_moves);
 
     return UNITY_END();
 }

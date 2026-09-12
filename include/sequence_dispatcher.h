@@ -78,3 +78,8 @@ const SequenceEntry* sequenceCatalogFind(const char* name);
 // Catalog iteration  --  for GET /api/seq/builtins (clone-to-retrain) and tests.
 uint8_t sequenceCatalogCount();
 const SequenceEntry* sequenceCatalogAt(uint8_t i);
+
+// The Factory Sequence that is body routine :SE<seId> ("DM:SE30" for 30), or
+// nullptr outside 30..36. RC and dome RX hand the name to sequenceStart(), so
+// a Retrained Sequence of that name shadows it like any other (ADR 0049).
+const char* sequenceBodyRoutineName(int seId);

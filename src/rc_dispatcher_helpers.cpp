@@ -78,17 +78,13 @@ void rcDispatchAudioTrigger(const char* audioTrigger) {
 // Servo Command Queue Helpers
 // =============================================================================
 
-static bool queueServoSequence(uint8_t sequenceId, CommandSource src) {
-    ServoCommand cmd = {};
-    cmd.type = SERVO_CMD_SEQUENCE;
-    cmd.sequenceId = sequenceId;
-    cmd.source = src;
-    cmd.timestampMs = millis();
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
-        return false;
-    }
-    return true;
+// A numbered body routine, :SE30..:SE36, is a Factory Sequence built from Body
+// Steps (ADR 0049), so it starts through the Sequence Coordinator like any other
+// DM:* name -- which is also what lets a Retrained Sequence of that name shadow
+// it. False when the id is not a body routine or the request queue is full.
+static bool startBodyRoutine(uint8_t sequenceId, CommandSource src) {
+    const char* name = sequenceBodyRoutineName(sequenceId);
+    return name != nullptr && sequenceStart(name, src);
 }
 
 static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
@@ -129,8 +125,8 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
 
     if (res.servoIndex >= 0) {
         if (res.servoIsSequence) {
-            if (!queueServoSequence(res.servoSequenceId, src)) {
-                PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
+            if (!startBodyRoutine(res.servoSequenceId, src)) {
+                PA_LOG_WARN(TAG, "droid sequence body routine not started: :SE%02u",
                             (unsigned)res.servoSequenceId);
                 queueFull = true;
             }

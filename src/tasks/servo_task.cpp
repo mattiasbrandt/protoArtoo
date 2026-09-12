@@ -2,7 +2,7 @@
 // src/tasks/servo_task.cpp
 //
 // ServoTask  --  LEDC PWM control for utility arm servos and spare servo outputs.
-// Handles open/close commands and Marcduino sequences for:
+// Handles open, close and position commands, from every source, for:
 //   - ARM1 (Top/Left utility arm, GPIO 23)
 //   - ARM2 (Bottom/Right utility arm, GPIO 5)
 //   - AUX1-3 (Spare servo outputs, GPIO 19/18/32)
@@ -36,28 +36,14 @@ static bool s_dome_enabled = false;
 static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
 
 // -----------------------------------------------------------------------------
-// Sequence state machine
-// -----------------------------------------------------------------------------
-enum SequenceState : uint8_t {
-    SEQ_IDLE = 0,
-    SEQ_OPENING,
-    SEQ_OPEN_PAUSE,
-    SEQ_CLOSING,
-};
-
-static struct {
-    SequenceState state;
-    uint32_t stateStartMs;
-    uint8_t activeArm;  // 0=ARM1, 1=ARM2, 255=both
-    uint8_t sequenceId;
-} seqState = {};
-
-// -----------------------------------------------------------------------------
 // Where each output is, and the move it is part way through (ADR 0052).
 //
 // `commandedUs` is the pulse this task last put on the pin. A move starts from
 // it, so it is only trusted once this task has written something there:
 // `known` is false until then, and a move from an unknown position is a jump.
+//
+// `seqMoved` marks an output a sequence was the last thing to command, which is
+// what the park below acts on. Any other source commanding the output clears it.
 // -----------------------------------------------------------------------------
 static constexpr uint8_t kArmCount = 5;  // ARM1, ARM2, AUX1-3
 
@@ -65,6 +51,7 @@ static struct {
     uint16_t commandedUs;
     bool known;
     bool moving;
+    bool seqMoved;
     ServoMotionRamp ramp;
 } s_arm[kArmCount] = {};
 
@@ -335,99 +322,20 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 }
 
 // -----------------------------------------------------------------------------
-// executeSequence()
-// Execute Marcduino sequence :SE30-:SE36.
-// Per ADR 0027, if the sequence's target arm(s) are all disabled, do not start
-// the state machine (state stays SEQ_IDLE) and log at debug level.
-// A sequence with one enabled arm and one disabled arm runs on the enabled arm only.
-// Both-arm sequences with no enabled arms are silently rejected (not started).
-// -----------------------------------------------------------------------------
-static void executeSequence(uint8_t seqId) {
-    uint8_t activeArm = 255;  // default to both-arm for decision logic
-
-    switch (seqId) {
-        case 30:                       // Utility arm open-and-close
-        case 31:  // All body panels open and close
-        case 32:  // All body doors open and wiggle-close
-        case 35:  // Ping-pong body doors
-        case 36:  // BT-1 two-gripper sequence
-            activeArm = 255;  // Both arms
-            break;
-
-        case 33:  // Body  --  use gripper arm (ARM1)
-            activeArm = 0;
-            break;
-
-        case 34:  // Body  --  use interface tool (ARM2)
-            activeArm = 1;
-            break;
-
-        default:
-            seqState.state = SEQ_IDLE;
-            return;
-    }
-
-    // Gate on enabled arm(s): reject if target arm(s) are all disabled.
-    if (activeArm == 255) {
-        if (!isArmEnabled(0) && !isArmEnabled(1)) {
-            PA_LOG_DEBUG(TAG, "Sequence :SE%02d - both arms disabled, not started", seqId);
-            seqState.state = SEQ_IDLE;
-            return;
-        }
-    } else {
-        if (!isArmEnabled(activeArm)) {
-            PA_LOG_DEBUG(TAG, "Sequence :SE%02d - arm%d disabled, not started", seqId, activeArm);
-            seqState.state = SEQ_IDLE;
-            return;
-        }
-    }
-
-    // Start the sequence.
-    seqState.sequenceId = seqId;
-    seqState.state = SEQ_OPENING;
-    seqState.stateStartMs = millis();
-    seqState.activeArm = activeArm;
-
-    uint16_t openUs, closeUs;
-
-    switch (seqId) {
-        case 30:
-        case 31:
-        case 32:
-        case 35:
-        case 36:
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
-            setArmPosition(1, openUs);
-            break;
-
-        case 33:
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
-            break;
-
-        case 34:
-            getOpenClosePositions(1, openUs, closeUs);
-            setArmPosition(1, openUs);
-            break;
-
-        default:
-            break;
-    }
-
-    PA_LOG_INFO(TAG, "Sequence :SE%02d started", seqId);
-}
-
-// -----------------------------------------------------------------------------
-// abortSequenceAndPark()
-// End the sequence now and put the arm(s) at their close position.
+// parkSequenceMovedOutputs()
+// Put every output a running sequence moved at its close position.
+//
+// Estop and Sleep Mode land here, and only while a sequence run is in progress:
+// the body routines :SE30..:SE36 were parked closed at estop and sleep when
+// ServoTask ran them itself, and they are sequences now (ADR 0049), so the same
+// promise holds for every run -- not for a door somebody opened by hand, and not
+// for one a routine deliberately left open after it finished.
 //
 // This path SNAPS, and it must keep snapping. A Servo Output's Motion Profile
 // (ADR 0052) gives it a ramp, and a ramp opens a gap between the commanded
 // position and where the servo actually is -- so easing into a safe state
-// leaves the droid somewhere nobody asked for while it eases. Estop and Sleep
-// Mode both land here, and both bypass the ramp: the two setArmPosition() calls
-// below write the endpoint straight through and abandon any move in progress
+// leaves the droid somewhere nobody asked for while it eases. setArmPosition()
+// writes the endpoint straight through and abandons any move in progress
 // (ADR 0041, ADR 0043).
 //
 // Both ADRs are cited as decisions this snap has to survive, NOT as behaviour
@@ -438,95 +346,28 @@ static void executeSequence(uint8_t seqId) {
 // 939ed705 implements none of it yet"), and whoever brings the release here
 // replaces this park rather than adding to it.
 // -----------------------------------------------------------------------------
-static void abortSequenceAndPark(const char* reason) {
-    if (seqState.state == SEQ_IDLE) {
-        return;
+static void parkSequenceMovedOutputs(const char* reason) {
+    bool parked = false;
+    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+        if (!s_arm[armId].seqMoved) {
+            continue;
+        }
+        uint16_t openUs = 0;
+        uint16_t closeUs = SERVO_PULSE_NEUTRAL_US;
+        getOpenClosePositions(armId, openUs, closeUs);
+        setArmPosition(armId, closeUs);
+        s_arm[armId].seqMoved = false;
+        parked = true;
     }
-
-    const uint8_t activeArm = seqState.activeArm;
-    const uint8_t sequenceId = seqState.sequenceId;
-    seqState.state = SEQ_IDLE;
-
-    uint16_t openUs = 0;
-    uint16_t closeUs = SERVO_PULSE_NEUTRAL_US;
-    if (activeArm == 255) {
-        getOpenClosePositions(0, openUs, closeUs);
-        setArmPosition(0, closeUs);
-        getOpenClosePositions(1, openUs, closeUs);
-        setArmPosition(1, closeUs);
-    } else if (activeArm <= 4) {
-        getOpenClosePositions(activeArm, openUs, closeUs);
-        setArmPosition(activeArm, closeUs);
-    }
-
-    PA_LOG_INFO(TAG, "Sequence :SE%02d aborted - %s", sequenceId, reason);
-}
-
-// -----------------------------------------------------------------------------
-// updateSequence()
-// Update sequence state machine.
-// -----------------------------------------------------------------------------
-static void updateSequence() {
-    if (seqState.state == SEQ_IDLE)
-        return;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    bool estop = robotState.estop;
-    bool sleepMode = robotState.sleepMode;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    if (sleepMode) {
-        abortSequenceAndPark("sleep mode active");
-        return;
-    }
-    if (estop) {
-        abortSequenceAndPark("estop active");
-        return;
-    }
-
-    uint32_t elapsed = millis() - seqState.stateStartMs;
-    uint16_t openUs, closeUs;
-
-    ServoConfig cfg = {};
-    configCacheReadServo(&cfg);
-    uint16_t seqOpenMs = cfg.seq_open_ms;
-    uint16_t seqCloseMs = cfg.seq_close_ms;
-
-    switch (seqState.state) {
-        case SEQ_OPENING:
-            if (elapsed > seqOpenMs) {
-                seqState.state = SEQ_CLOSING;
-                seqState.stateStartMs = millis();
-
-                if (seqState.activeArm == 255) {
-                    getOpenClosePositions(0, openUs, closeUs);
-                    setArmPosition(0, closeUs);
-                    setArmPosition(1, closeUs);
-                } else {
-                    getOpenClosePositions(seqState.activeArm, openUs, closeUs);
-                    setArmPosition(seqState.activeArm, closeUs);
-                }
-                PA_LOG_DEBUG(TAG, "Sequence closing");
-            }
-            break;
-
-        case SEQ_CLOSING:
-            if (elapsed > seqCloseMs) {
-                seqState.state = SEQ_IDLE;
-                PA_LOG_INFO(TAG, "Sequence :SE%02d complete", seqState.sequenceId);
-            }
-            break;
-
-        default:
-            break;
+    if (parked) {
+        PA_LOG_INFO(TAG, "Outputs a sequence was moving parked closed - %s", reason);
     }
 }
 
 // -----------------------------------------------------------------------------
 // processCommand()
 // Process incoming servo command.
-// Per ADR 0027, sequences are gated inside executeSequence(), not here.
-// Regular arm commands (open/close/position) are gated per isArmEnabled().
+// Every command is gated per isArmEnabled() (ADR 0027).
 // -----------------------------------------------------------------------------
 static void processCommand(const ServoCommand& cmd) {
     // Safety: Check estop  --  reject all commands while emergency stopped
@@ -539,15 +380,17 @@ static void processCommand(const ServoCommand& cmd) {
         PA_LOG_WARN(TAG, "[%s] Command rejected - estop active", commandSourceToString(cmd.source));
         return;
     }
-    if (sleepMode && cmd.type == SERVO_CMD_SEQUENCE) {
-        PA_LOG_INFO(TAG, "[%s] Sequence command ignored - sleep mode active",
+    // A sequence keeps running through Sleep Mode, but it does not move the body
+    // while the droid is asleep -- the same rule the body routines kept when
+    // ServoTask ran them itself. A move from a person is still accepted.
+    if (sleepMode && cmd.source == SRC_SEQ) {
+        PA_LOG_INFO(TAG, "[%s] Sequence move ignored - sleep mode active",
                     commandSourceToString(cmd.source));
         return;
     }
 
     // Feature toggle: reject arm commands for disabled or AUX-LED-reserved subsystems.
-    // Sequences are gated separately in executeSequence().
-    if (cmd.type != SERVO_CMD_SEQUENCE && !isArmEnabled(cmd.armId)) {
+    if (!isArmEnabled(cmd.armId)) {
         PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
                      commandSourceToString(cmd.source), cmd.armId);
         return;
@@ -589,7 +432,7 @@ static void processCommand(const ServoCommand& cmd) {
             if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
                 PA_LOG_WARN(TAG, "[%s] Invalid position %d us - rejected",
                             commandSourceToString(cmd.source), cmd.positionUs);
-                break;
+                return;  // moved nothing, so it changes nothing below
             }
             if (cmd.armId == 255) {
                 driveArmTo(0, cmd.positionUs);
@@ -601,11 +444,16 @@ static void processCommand(const ServoCommand& cmd) {
                         cmd.positionUs);
             break;
 
-        case SERVO_CMD_SEQUENCE:
-            PA_LOG_INFO(TAG, "[%s] Sequence :SE%02d started", commandSourceToString(cmd.source),
-                        cmd.sequenceId);
-            executeSequence(cmd.sequenceId);
-            break;
+    }
+
+    // Record who moved the output last, for the park. Only a command that got
+    // this far counts: a rejected one moved nothing.
+    const bool fromSequence = cmd.source == SRC_SEQ;
+    if (cmd.armId == 255) {
+        s_arm[0].seqMoved = fromSequence;
+        s_arm[1].seqMoved = fromSequence;
+    } else if (cmd.armId < kArmCount) {
+        s_arm[cmd.armId].seqMoved = fromSequence;
     }
 }
 
@@ -707,6 +555,7 @@ void servoTask(void* pvParameters) {
     ServoCommand cmd;
     bool hwmLogged = false;
     bool halted = false;
+    bool runActiveBeforeHalt = false;
 
     while (true) {
         if (!hwmLogged) {
@@ -716,23 +565,44 @@ void servoTask(void* pvParameters) {
         }
 
         // Entering estop or Sleep Mode stops every move where it is, before a
-        // command or a frame can carry one further. On the edge only: a direct
-        // command is still accepted in Sleep Mode, and it must be able to move.
+        // command or a frame can carry one further, and parks what a running
+        // sequence moved. On the edge only: a direct command is still accepted
+        // in Sleep Mode, and it must be able to move.
+        //
+        // The three flags are read in one critical section, and "a run was in
+        // progress" is taken from the last frame BEFORE the halt. The Sequence
+        // Coordinator ends the run when it sees estop, so reading the run flag
+        // on the halt frame itself could find it already cleared and skip the
+        // park; a frame that still saw no halt cannot have seen that either.
         taskENTER_CRITICAL(&robotStateMux);
         const bool haltNow = robotState.estop || robotState.sleepMode;
+        const bool runActive = robotState.seqRunActive;
         taskEXIT_CRITICAL(&robotStateMux);
         if (haltNow && !halted) {
             stopAllMoves("estop or sleep mode entered");
+            if (runActiveBeforeHalt || runActive) {
+                parkSequenceMovedOutputs("estop or sleep mode entered");
+            }
+        }
+        if (!haltNow) {
+            runActiveBeforeHalt = runActive;
         }
         halted = haltNow;
+
+        // Once no run is in progress, nothing a finished run moved is the park's
+        // any more: a routine that left a door open meant to, and the next run
+        // must not close it at estop. Cleared before this frame's commands, so a
+        // move from a run that starts in this frame is still recorded.
+        if (!runActive) {
+            for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+                s_arm[armId].seqMoved = false;
+            }
+        }
 
         // Process any pending commands (non-blocking)
         while (xQueueReceive(servoCmdQueue, &cmd, 0) == pdTRUE) {
             processCommand(cmd);
         }
-
-        // Update sequence state machine
-        updateSequence();
 
         // Advance every move in progress by one frame
         updateMotion();

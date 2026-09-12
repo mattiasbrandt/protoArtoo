@@ -11,13 +11,21 @@ comments plus the table below.
 
 ## Migrated sequences
 
-_None yet._ Community choreographies are migrated on request -- open a
+Community choreographies are migrated on request -- open a
 [Sequence request](https://github.com/mattiasbrandt/protoArtoo/issues/new?template=sequence-request.md),
 or, if you built one in the editor, use **Share to project**.
 
 | Sequence | Source project | Origin (URL / commit) | License | Migrated in |
 |---|---|---|---|---|
-| -- | -- | -- | -- | -- |
+| `DM:SE30` .. `DM:SE35` (the body buttons `:SE30`..`:SE35`) | Tim Hebel's body sequences, as carried in BetterDuino Firmware V4 | [RealNobser/BetterDuinoFirmwareV4](https://github.com/RealNobser/BetterDuinoFirmwareV4) `include/PanelSequences.h` @ `3682082a`; credited there to [Eebel/SHADOW_MD_EEBEL](https://github.com/Eebel/SHADOW_MD_EEBEL) | none declared -- neither repository carries a LICENSE | #354 |
+| `DM:SE36` (the body button `:SE36`) | David Steinke's BT-1 sequence, as carried in BetterDuino Firmware V4 | same file and commit, `bt_body_panel_use_claws` | none declared | #354 |
+
+**What was taken is the choreography, re-expressed.** Which part moves, in which
+order, and when -- read off the source's timing tables and written again as Body
+Steps that name Parts. No source code was copied. The source's per-routine servo
+speed was not taken: speed lives on each Output's Motion Profile here, not on a
+routine (ADR 0049, ADR 0052).
+
 
 ## Sources and licenses
 
