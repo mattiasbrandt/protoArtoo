@@ -440,6 +440,160 @@ static void test_domerotate_serialize_roundtrip() {
 }
 
 // =============================================================================
+// body step (ADR 0049)
+// =============================================================================
+
+static void test_body_parse_full() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"doorFL\",\"shape\":\"flutter\","
+        "\"howFar\":60,\"flutterMs\":1200},"
+        "{\"t\":1200,\"type\":\"body\",\"part\":\"doorFL\",\"shape\":\"close\"},"
+        "{\"t\":1500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_BODY, d.steps[0].type);
+    TEST_ASSERT_EQUAL_STRING("doorFL", d.steps[0].payload);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_FLUTTER, d.steps[0].params.shape);
+    TEST_ASSERT_EQUAL_UINT8(60, d.steps[0].params.howFar);
+    TEST_ASSERT_EQUAL_UINT16(1200, d.steps[0].params.flutterMs);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_CLOSE, d.steps[1].params.shape);
+    TEST_ASSERT_EQUAL_UINT16(0, d.steps[1].params.flutterMs);
+
+    // The whole draft is form-legal, flutter's owed close included.
+    ProtocolCheckResult pc = protocolCheck(d);
+    TEST_ASSERT_TRUE_MESSAGE(pc.ok, pc.message);
+}
+
+// An absent shape and an absent howFar are stored as absent, and the accessors
+// are what turn them into "open, over the whole throw".
+static void test_body_parse_defaults_stay_unstored() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"dataport\"},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SEQ_BODY_SHAPE_DEFAULT, d.steps[0].params.shape);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_UNSET, d.steps[0].params.howFar);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_OPEN, seqBodyShape(d.steps[0].params));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BODY_HOWFAR_DEFAULT, seqBodyHowFar(d.steps[0].params));
+}
+
+static void test_body_parse_missing_part_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"shape\":\"open\"},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].part", r.field);
+}
+
+static void test_body_parse_unknown_shape_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"doorFL\",\"shape\":\"wiggle\"},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
+}
+
+// Zero is refused at the wire, and this is the only place that can: zero in
+// storage is how absence is recorded, so an author who writes it would silently
+// get the whole throw instead.
+static void test_body_parse_how_far_zero_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"doorFL\",\"howFar\":0},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].howFar", r.field);
+}
+
+static void test_body_parse_how_far_negative_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"doorFL\",\"howFar\":-20},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].howFar", r.field);
+}
+
+static void test_body_parse_flutter_ms_out_of_field_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:BODYDEF\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"body\",\"part\":\"doorFL\",\"shape\":\"flutter\","
+        "\"flutterMs\":70000},"
+        "{\"t\":500,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].flutterMs", r.field);
+}
+
+// A body step round-trips, and the two defaults stay OFF the wire.
+static void test_body_serialize_roundtrip_omits_defaults() {
+    static const SeqStep steps[] = {
+        SEQ_BODY(0, "utilUp", BODY_SHAPE_OPEN, SEQ_BODY_HOWFAR_UNSET, 0),
+        SEQ_BODY(400, "doorRR", BODY_SHAPE_FLUTTER, 70, 1200),
+        SEQ_BODY(1600, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
+        SEQ_TERM(2000),
+    };
+    SequenceEntry e = { "DM:BODYRT", steps, 4, 5000, TOGGLE_NONE, nullptr, 0, nullptr };
+
+    char json[1024];
+    size_t n = seqJsonSerialize(e, "user", json, sizeof(json));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"type\":\"body\""));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"part\":\"utilUp\""));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"shape\":\"flutter\""));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"howFar\":70"));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"flutterMs\":1200"));
+    // The first step is the default shape over the whole throw: nothing written.
+    TEST_ASSERT_NULL(strstr(json, "\"shape\":\"open\""));
+    TEST_ASSERT_NULL(strstr(json, "\"howFar\":0"));
+
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    for (uint8_t i = 0; i < 4; ++i) {
+        TEST_ASSERT_TRUE_MESSAGE(stepEqIgnoringFx(d.steps[i], steps[i]), "step differs");
+    }
+}
+
+// A sequence saved by a build that predates the appended members still loads:
+// no body step in it, and every other step parses to the same SeqStep it always
+// did, with the new members zero.
+static void test_prior_build_sequence_still_loads() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:OLDSAVE\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
+        "{\"t\":0,\"type\":\"dome\",\"cmd\":\":OP01\"},"
+        "{\"t\":150,\"type\":\"dome\",\"cmd\":\":CL01\"},"
+        "{\"t\":300,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    ProtocolCheckResult pc = protocolCheck(d);
+    TEST_ASSERT_TRUE_MESSAGE(pc.ok, pc.message);
+    for (uint8_t i = 0; i < d.stepCount; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(0, d.steps[i].params.shape);
+        TEST_ASSERT_EQUAL_UINT8(0, d.steps[i].params.howFar);
+        TEST_ASSERT_EQUAL_UINT16(0, d.steps[i].params.flutterMs);
+    }
+}
+
+// =============================================================================
 // boundAudio field (ADR 0010 Bounded Audio)
 // =============================================================================
 
@@ -659,6 +813,16 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_domerotate_reject_nonzero_speed_with_zero_duration);
     RUN_TEST(test_domerotate_reject_negative_duration);
     RUN_TEST(test_domerotate_serialize_roundtrip);
+
+    RUN_TEST(test_body_parse_full);
+    RUN_TEST(test_body_parse_defaults_stay_unstored);
+    RUN_TEST(test_body_parse_missing_part_rejected);
+    RUN_TEST(test_body_parse_unknown_shape_rejected);
+    RUN_TEST(test_body_parse_how_far_zero_rejected);
+    RUN_TEST(test_body_parse_how_far_negative_rejected);
+    RUN_TEST(test_body_parse_flutter_ms_out_of_field_rejected);
+    RUN_TEST(test_body_serialize_roundtrip_omits_defaults);
+    RUN_TEST(test_prior_build_sequence_still_loads);
 
     RUN_TEST(test_audio_boundaudio_default_true_when_omitted);
     RUN_TEST(test_audio_boundaudio_explicit_true);
