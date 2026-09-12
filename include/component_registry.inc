@@ -113,9 +113,9 @@ PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGO
 // configuration rather than a second product.
 // -----------------------------------------------------------------------------
 PA_COMPONENT_PART( 3, "hotrc_ds650",         "HotRC DS-650",         COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Transmitter - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Transmitter - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Transmitter - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Receiver - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Receiver - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 
 // -----------------------------------------------------------------------------

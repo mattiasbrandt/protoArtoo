@@ -23,7 +23,7 @@
 
 // Drive source enumeration (replaces CommandSource for drive-specific use)
 enum class DriveSource : uint8_t {
-    RC       = 0,  // RC transmitter via SBUS receiver
+    RC       = 0,  // RC radio via SBUS receiver
     WEB_API  = 1,  // Browser / REST API
 };
 

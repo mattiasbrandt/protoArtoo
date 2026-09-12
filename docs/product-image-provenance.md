@@ -18,10 +18,10 @@ Encoded 400x300 WebP, dark ground `#0c1525`, at most 8 KiB
 |---|---|---|---|---|
 | `artoo_pcb.webp` | Artoo PCB (artoo.uk) | supported | Operator-supplied product photograph of Steve Wagg's Artoo Controller v1.1 with an ESP32 D1 Mini seated. The board design is Steve's (LICENSE item 2, https://artoo.uk). | Used with the hardware this firmware already credits. |
 | `firebeetle2.webp` | FireBeetle 2 (ESP32-P4) | supported | Operator-supplied DFRobot product photograph of the FireBeetle 2 ESP32-P4 and its carrier. | Manufacturer product image, used to identify the board. |
-| `hotrc_ds650.webp` | HotRC DS-650 | supported | Operator-supplied listing photograph of a pistol-grip transmitter (branded Havcybin on this shot) with a HotRC F-06A in frame. The registry row is the HotRC DS-650 handset. | Manufacturer / listing photograph, used to identify the class of handset. |
-| `rc_transmitter_pwm.webp` | RC Transmitter - PWM | supported | Operator-supplied product photograph of a HotRC F-06A PWM receiver. The row is a receiver, not a transmitter — recorded here because the photograph is of the box in the droid, which is what protoArtoo talks to. | Manufacturer product image, used to identify the receiver. |
-| `rc_transmitter_sbus.webp` | RC Transmitter - SBUS | supported | Operator-supplied product photograph of an SBUS receiver. Same receiver-not-transmitter note as the PWM row. | Manufacturer product image, used to identify the receiver. |
-| `rc_transmitter_elrs.webp` | RC Transmitter - ELRS | roadmap | Operator-supplied product photograph of an ELRS receiver (SuperP-class). Same receiver-not-transmitter note. `tasks/product-images/elrs-radio.png` is a handset and was not encoded. | Manufacturer product image, used to identify the receiver. |
+| `hotrc_ds650.webp` | HotRC DS-650 | supported | Operator-supplied listing photograph of a pistol-grip RC radio (branded Havcybin on this shot) with a HotRC F-06A in frame. The registry row is the HotRC DS-650. | Manufacturer / listing photograph, used to identify the class of RC radio. |
+| `rc_transmitter_pwm.webp` | RC Receiver - PWM | supported | Operator-supplied product photograph of a HotRC F-06A PWM receiver. The photograph is of the box in the droid, which is what protoArtoo reads. | Manufacturer product image, used to identify the receiver. |
+| `rc_transmitter_sbus.webp` | RC Receiver - SBUS | supported | Operator-supplied product photograph of an SBUS receiver. | Manufacturer product image, used to identify the receiver. |
+| `rc_transmitter_elrs.webp` | RC Receiver - ELRS | roadmap | Operator-supplied product photograph of an ELRS receiver (SuperP-class). `tasks/product-images/elrs-radio.png` is a handset and was not encoded. | Manufacturer product image, used to identify the receiver. |
 | `xbox_controller.webp` | Xbox Controller | roadmap | Operator-supplied photograph of a white Xbox 360 wired controller. EXIF: Nikon D7000, Adobe Photoshop CS5, 2014-08-29. Photographer not named on the file. | Third-party photograph; copyright holder unknown. Used only as product identification on a picker card. |
 | `pca9685.webp` | PCA9685 | roadmap | Operator-supplied product photograph of a 16-channel PCA9685 expander board. | Manufacturer / listing photograph, used to identify the board. |
 | `pololu_maestro.webp` | Pololu Maestro | roadmap | Operator-supplied product photograph of a Pololu Maestro. | Manufacturer product image, used to identify the board. |
@@ -42,8 +42,3 @@ Not photographed:
 | Product | Why |
 |---|---|
 | ESP32 GPIO (LEDC) | The MCU's own PWM. There is no separate product to hold. |
-
-The PWM / SBUS / ELRS registry labels still read **RC Transmitter**. The
-photographs are of the receivers those rows actually name. Relabelling the
-operator-facing strings is copy, which #316 leaves to #297 / #298; the
-operator recorded the misnomer on this ticket on 2026-09-12.

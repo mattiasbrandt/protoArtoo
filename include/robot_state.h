@@ -36,7 +36,7 @@ enum FailsafeSource : uint8_t {
 
 enum CommandSource : uint8_t {
     SRC_NONE = 0,
-    SRC_SBUS,      // RC transmitter via SBUS receiver
+    SRC_SBUS,      // RC radio via SBUS receiver
     SRC_WEB_API,   // Browser / REST API
     SRC_INTERNAL,  // Internal (safety zeroing, boot defaults)
     SRC_SEQ,       // Sequence coordinator (SequenceDispatcherTask)

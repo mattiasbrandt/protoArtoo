@@ -688,18 +688,22 @@ _Avoid_: controller (unqualified, anywhere in operator copy), main controller, b
 
 **Radio Controller**:
 The RC gear a builder drives the droid with, and the lineup category naming which one reaches the **Body Controller**. "Radio" is the word a droid builder already brings — the same reason the Flagged Ambiguities entry below rejected "radio module" for the **WiFi Module**.
-_Avoid_: controller (unqualified), RC controller (says radio twice), radio module (that names the WiFi Module)
+_Avoid_: controller (unqualified), RC controller (says radio twice), radio module (that names the WiFi Module), RC transmitter
 
-**RC Transmitter**:
-The handset in the operator's hands - the thing with the sticks and switches - as distinct from the receiver in the droid that protoArtoo actually reads. A member of the **Radio Controller** lineup category rather than a rival to it. Always qualified, because "transmitter" alone names any radio and a builder arriving from the hobby says "RC" before they say "transmitter" (#330).
-_Avoid_: transmitter (unqualified), handset, radio (that is the Radio Controller category), TX in operator copy
+**RC Receiver**:
+The box in the droid that protoArtoo reads - PWM, SBUS or ELRS. A member of the **Radio Controller** lineup category rather than a rival to it. Always qualified, because "receiver" alone names any radio and a builder arriving from the hobby says "RC" before they say "receiver" (#330).
+_Avoid_: RC transmitter, transmitter, receiver (unqualified), RX in operator copy
+
+**RC Radio**:
+The controlling end, with the sticks and switches - a HotRC DS-650, a RadioMaster TX16S. A member of the **Radio Controller** lineup category, alongside the **RC Receiver** it talks to. Always qualified, because "radio" alone names any radio and a builder arriving from the hobby says "RC" before they say "radio".
+_Avoid_: RC transmitter, transmitter, radio (unqualified), handset, TX in operator copy
 
 **RC Channel**:
-One of the 18 numbers an SBUS frame carries, and what a builder assigns a switch to on their **RC Transmitter**. protoArtoo never sees the switch - it sees a number and decides high, mid or low. The qualifier is mandatory: the Flagged Ambiguities entry settled on 2026-09-07 that "channel" names at least four unrelated things, and this is the RC one (#286, #330).
+One of the 18 numbers an SBUS frame carries, and what a builder assigns a switch to on their **RC Radio**. protoArtoo never sees the switch - it sees a number and decides high, mid or low. The qualifier is mandatory: the Flagged Ambiguities entry settled on 2026-09-07 that "channel" names at least four unrelated things, and this is the RC one (#286, #330).
 _Avoid_: channel (unqualified), button slot (ShadowMD's word, and both counts this project quoted for it - 83 and 40 - are ShadowMD's), button, slot
 
 **RC Map**:
-Which action each **RC Channel** fires, and therefore **what the droid will do tonight** - protoArtoo has no separate running order and needs none, because this already is one and already persists. A builder authors a **Sequence**, maps it to an RC Channel, and it appears among the droid's big targets on **Dashboard**: the same list read from two ends, so the **RC Transmitter** and the browser can never offer different shows. There are **11** trigger bindings against 18 RC Channels, 2 bound by default and 9 free; the ceiling is presented and explained, never used to refuse (operator, 2026-09-09). Always qualified, because **Parts** owns the other mapping - which **Output** moves which **Part** (#330).
+Which action each **RC Channel** fires, and therefore **what the droid will do tonight** - protoArtoo has no separate running order and needs none, because this already is one and already persists. A builder authors a **Sequence**, maps it to an RC Channel, and it appears among the droid's big targets on **Dashboard**: the same list read from two ends, so the **RC Radio** and the browser can never offer different shows. There are **11** trigger bindings against 18 RC Channels, 2 bound by default and 9 free; the ceiling is presented and explained, never used to refuse (operator, 2026-09-09). Always qualified, because **Parts** owns the other mapping - which **Output** moves which **Part** (#330).
 _Avoid_: map (unqualified), playlist, loadout, running order as a second object, show (that is what an operator does, not a thing we store)
 
 **Dome Controller**:

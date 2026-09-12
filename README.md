@@ -241,7 +241,7 @@ Key changes from upstream:
 ## Architecture overview
 
 ```
-RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi──  Browser
+RC Receiver ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi──  Browser
                                  │                    │
                             UART1 (115200)        UART2 (9600)
                                  │                    │ bidirectional
@@ -267,7 +267,7 @@ The dome has no local sound module. The body is the sole audio authority.
 **Audio System**
 - Three supported audio modules: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger,
   and SparkFun MP3 Trigger — swap between them with a reflash, no rewiring
-- Audio commands from any source — RC transmitter, web browser, or dome controller —
+- Audio commands from any source — RC radio, web browser, or dome controller —
   are handled together without conflicts
 - Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
   track numbers configurable from the web UI
@@ -280,7 +280,7 @@ The dome has no local sound module. The body is the sole audio authority.
   state, device type, play state, and track count from the module itself
 
 **Moods and Sequences**
-- 15 mood and sequence presets selectable from the dashboard or RC transmitter
+- 15 mood and sequence presets selectable from the dashboard or RC radio
 - Mood selection plays audio on the body and forwards the matching dome lighting sequence
   when the dome link is active
 - Last active mood restored on reboot

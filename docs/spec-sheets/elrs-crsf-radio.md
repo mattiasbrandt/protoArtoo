@@ -39,9 +39,9 @@ with the artefact or bench test that would settle them.
 
 | Category | Product | Role | Status |
 | --- | --- | --- | --- |
-| **Radio Controller** | RC Transmitter -- ELRS | the radio the droid is driven with | `roadmap` |
+| **Radio Controller** | RC Receiver -- ELRS | the radio the droid is driven with | `roadmap` |
 
-#311's body is right that this is a **sub-choice of the generic RC Transmitter
+#311's body is right that this is a **sub-choice of the generic RC Receiver
 entry**, beside Standard PWM and SBUS, both of which already ship
 (`docs/pin_map.md:166-172`). Under `CONTEXT.md`'s test -- *"if it changes the
 driver it is a protocol; if it does not, it is configuration"* -- CRSF is
@@ -517,7 +517,7 @@ The telemetry frames map onto what protoArtoo already holds in `RobotState`:
 
 This is not theoretical. ShadyRC already sends battery voltage up the link
 (Section 11.4), and CHIRP Droid Control's stated goal is *"Send system status
-and audio file details to the operators radio transmitter via ExpressLRS
+and audio file details to the operators RC radio via ExpressLRS
 telemetry packets."*
 
 > [!NOTE]

@@ -41,7 +41,7 @@ Radio Controller already holds HotRC SBUS, generic PWM and SBUS transmitters as
 supported members, with ELRS/CRSF
 ([#311](https://github.com/mattiasbrandt/protoArtoo/issues/311)) and this on the
 roadmap. A gamepad is not a worse radio than a transmitter; it is a **different
-kind of input surface**. An RC transmitter gives a handful of proportional
+kind of input surface**. An RC radio gives a handful of proportional
 channels and switches, sized for a droid's drive axes. A gamepad gives two
 sticks, two analog triggers, a hat and eleven buttons, which is why the hobby's
 Xbox droids carry forty-odd actions on one pad and its RC droids do not.

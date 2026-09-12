@@ -5,7 +5,7 @@
 // Tests: pwmSignalLostCheck() for timeout detection and edge cases.
 //
 // Safety relevance: PWM signal loss must be detected to prevent latched
-// drive commands when RC transmitter disconnects or goes out of range.
+// drive commands when the RC receiver disconnects or goes out of range.
 // =============================================================================
 #include <unity.h>
 
