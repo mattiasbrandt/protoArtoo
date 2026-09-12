@@ -251,6 +251,22 @@ as a worker still holding the slice, and the next wave's tab lands beside a
 ghost. Close only panes and tabs you created; another session may be in a
 neighbouring workspace.
 
+**A web slice's worker may also have left a browser open.** Playwright runs
+HEADED here, so a visual check leaves a real window on the operator's desktop.
+Check before you close the pane:
+
+```
+ps -o pid=,cmd= -C chrome | grep ms-playwright     # the browsers
+readlink /proc/<claude-pid>/cwd                    # names the worktree that owns one
+```
+
+Trace the owner through the MCP server's parent chain to the worker's `claude`
+process; its cwd is the worktree. **A window owned by a worker that is still
+running is IN USE - never kill it mid-slice.** One owned by the slice you are
+closing should die with its pane; if it does not, kill the browser process and
+say so in the status comment. Never kill a browser you cannot trace to a
+worktree you own - it may be the operator's own session.
+
 ## Device verification (serialized - coordinator + operator, never workers)
 
 The device is a single shared resource and may be bench-mode (controller

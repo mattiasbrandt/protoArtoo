@@ -121,6 +121,13 @@ BOUNDARIES
   report the result either way; the gate's --fenced check rejects the edit.
 - Never edit a shared test harness to accommodate the code under test; fix
   the code or report the conflict.
+- If you opened a browser, close it. Playwright here runs HEADED by default,
+  so every browser you open is a window left on the operator's desktop. Close
+  it with the runtime's browser-close tool as the last step of the check,
+  before you write your report - including a check that found nothing and a
+  check you abandoned. The `playwright` skill's Shutdown protocol is the
+  detail. Leaving one open has already cost the operator real desktop clutter
+  (2026-09-12).
 - If a stated requirement of the ticket cannot be met, STOP and report on
   the issue. Shipping the remainder while reporting the ticket complete is
   an automatic reject.
