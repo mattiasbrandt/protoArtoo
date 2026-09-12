@@ -1,0 +1,12 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -394,7 +394,7 @@
+   // where the firmware routes the drive receiver to rcCh2 and omits rcCh1
+   // entirely (src/web/web_server.cpp, the enableRcCh1 guard). Reading rcCh1
+   // alone would therefore report "no RC" on a working single-SBUS droid.
+-  const RC_LINK_CHANNELS = ["rcCh1", "rcCh2"];
++  const RC_LINK_CHANNELS = ["rcCh1"];
+ 
+   // A chip's state class: "" is the quiet default, "live" is the thing doing
+   // its job, "stopped" is something stopped or refused. A posture the

@@ -1,0 +1,12 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1059,8 +1059,6 @@
+     // off, which is a guess dressed as a fact.
+     if (!cause) return;
+     const now = Date.now();
+-    const shownAt = noticeShownAt.get(cause.id);
+-    if (shownAt !== undefined && now - shownAt < NOTICE_BURST_MS) return;
+     noticeShownAt.set(cause.id, now);
+     showNotice(cause);
+   };

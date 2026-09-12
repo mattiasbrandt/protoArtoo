@@ -1,0 +1,16 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -432,11 +432,7 @@
+       // failsafeClear), so it names the last reason rather than a live one.
+       read: (status) => {
+         if (!hasKey(status, "drive")) return chipState("", "OFF");
+-        const held =
+-          status.estop === true ||
+-          status.sbusHwFailsafe === true ||
+-          status.sbusSignalLost === true ||
+-          status.webDriveExpired === true;
++        const held = status.estop === true;
+         return held ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
+       },
+     },

@@ -510,9 +510,9 @@ The telemetry frames map onto what protoArtoo already holds in `RobotState`:
 
 | CRSF frame | protoArtoo already has |
 | --- | --- |
-| `0x08 BATTERY_SENSOR` | `hb_batteryRaw` |
-| `0x0D TEMP` | `hb_boardTempRaw` |
-| `0x0C RPM` | `hb_speedL`, `hb_speedR` |
+| `0x08 BATTERY_SENSOR` | `driveFeedbackBatteryRaw` |
+| `0x0D TEMP` | `driveFeedbackBoardTempRaw` |
+| `0x0C RPM` | `driveFeedbackSpeedL`, `driveFeedbackSpeedR` |
 | `0x21 FLIGHT_MODE` | a short status string -- estop, armed, speed preset |
 
 This is not theoretical. ShadyRC already sends battery voltage up the link

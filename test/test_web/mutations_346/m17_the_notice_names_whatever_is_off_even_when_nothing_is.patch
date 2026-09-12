@@ -1,0 +1,12 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1057,7 +1057,7 @@
+     // A control switched off for a reason this plate does not carry is not
+     // this notice's business: it would otherwise name whatever happened to be
+     // off, which is a guess dressed as a fact.
+-    if (!cause) return;
++    const named = cause || IGNORED_INPUT_CAUSES[0];
+     const now = Date.now();
+     const shownAt = noticeShownAt.get(cause.id);
+     if (shownAt !== undefined && now - shownAt < NOTICE_BURST_MS) return;

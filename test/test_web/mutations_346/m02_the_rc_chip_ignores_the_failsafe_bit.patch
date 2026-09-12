@@ -1,0 +1,11 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -450,7 +450,6 @@
+       // while it keeps sending frames, so the channel still reads "active"
+       // and only `sbusHwFailsafe` says the link is dead.
+       read: (status) => {
+-        if (status.sbusHwFailsafe === true) return chipState("stopped", "FAILSAFE");
+         const states = RC_LINK_CHANNELS.filter((key) => hasKey(status, key)).map((key) => {
+           const channel = status[key];
+           return channel !== null && typeof channel === "object" ? channel.state : undefined;

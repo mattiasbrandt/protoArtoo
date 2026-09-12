@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1122,9 +1122,7 @@
+     document.addEventListener(
+       "pointerdown",
+       (event) => {
+-        const rising = !noticePressing;
+         noticePressing = true;
+-        if (!rising) return;
+         // aria-disabled rather than the `disabled` property: gateControls()
+         // sets both, and the attribute is the one a container can carry for a
+         // control that is not a form element.

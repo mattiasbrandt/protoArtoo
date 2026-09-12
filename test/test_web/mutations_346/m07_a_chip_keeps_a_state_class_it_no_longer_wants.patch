@@ -1,0 +1,12 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -868,7 +868,7 @@
+       const cell = plateCells.get(chip.id);
+       if (!cell) return;
+       const painted = status ? chip.read(status) : chipState("", CHIP_UNKNOWN);
+-      cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
++      if (painted.state) cell.node.classList.add(`status-chip-${painted.state}`);
+       if (cell.value) cell.value.textContent = painted.value;
+     });
+   };

@@ -166,18 +166,23 @@ struct RobotState {
     uint32_t failsafeLastTriggerToZeroMs;  // latency from trigger to first zero output (ms)
     FailsafeSource failsafeLastTriggerSource;
     // Drive backend feedback, filled from DriveFeedback (include/drive_backend.h)
-    // where the fitted backend reports at all -- not every controller does. The
-    // hb_ prefix is the hoverboard's and outlives it here only because
-    // /api/status publishes these names; renaming the fields is a status-payload
-    // change (#346), not a drive-path one.
-    int16_t hb_batteryRaw;
-    int16_t hb_boardTempRaw;
-    int16_t hb_speedR;
-    int16_t hb_speedL;
-    int16_t hb_currentL;
-    int16_t hb_currentR;
-    bool hb_feedbackValid;
-    uint32_t hb_lastFeedbackMs;
+    // where the fitted backend reports at all -- not every controller does.
+    // Named for the direction rather than for a controller, beside the
+    // driveOutput* fields that carry the other direction: A6 (#339) put the
+    // foot drive behind a seam and DriveTask no longer knows what a hoverboard
+    // is, and these were the last place in a generic path that said one
+    // (#304 resolution 5+8, renamed under #346).
+    //
+    // Only true while frames keep arriving: driveFeedbackIsStale() below is
+    // the rule, and DriveTask applies it.
+    int16_t driveFeedbackBatteryRaw;
+    int16_t driveFeedbackBoardTempRaw;
+    int16_t driveFeedbackSpeedR;
+    int16_t driveFeedbackSpeedL;
+    int16_t driveFeedbackCurrentL;
+    int16_t driveFeedbackCurrentR;
+    bool driveFeedbackValid;
+    uint32_t driveFeedbackAtMs;
 
     // --- Zone 2: RC input (RcInputTask) ---
     uint16_t rcPwmPulseUs[6];
@@ -268,6 +273,31 @@ extern QueueHandle_t sequenceQueue;
 void loadConfigToState();
 
 bool saveConfigToNvs();
+
+// ----------------------------------------------------------------------------
+// driveFeedbackIsStale()
+//
+// Whether the driveFeedback* mirror above has stopped being true. Feedback is
+// a reading, not a setting: a backend that has gone quiet leaves the last
+// numbers sitting in RobotState, and a surface showing them cannot tell them
+// from live ones. So DriveTask invalidates the mirror rather than letting it
+// go on being published.
+//
+// Pure, so the rule is testable away from the 50 Hz loop that applies it --
+// the same shape as pwmSignalLostCheck() (include/rc_pwm_helpers.h).
+//
+// params: lastFeedbackMs - millis() when the last frame was stored (0 = never)
+//         nowMs          - current timestamp (millis())
+//         staleMs        - how long a reading stays true
+// returns: true when the mirror must not be presented as live
+// ----------------------------------------------------------------------------
+inline bool driveFeedbackIsStale(uint32_t lastFeedbackMs, uint32_t nowMs, uint32_t staleMs) {
+    if (lastFeedbackMs == 0) {
+        return true;  // No frame has ever arrived, which is stale by definition
+    }
+    // Unsigned subtraction handles millis() overflow correctly
+    return (uint32_t)(nowMs - lastFeedbackMs) > staleMs;
+}
 
 // ----------------------------------------------------------------------------
 // Failsafe instrumentation helpers (MUST be called under robotStateMux lock)

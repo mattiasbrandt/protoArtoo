@@ -282,13 +282,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t domeRxUnknownCount;
     DomeLinkTransport domeActiveTransport;
     DomeUartOwner domeUartOwner;
-    int16_t hbBatteryRaw;
-    int16_t hbBoardTempRaw;
-    int16_t hbSpeedR;
-    int16_t hbSpeedL;
-    int16_t hbCurrentL;
-    int16_t hbCurrentR;
-    bool hbFeedbackValid;
+    int16_t fbBatteryRaw;
+    int16_t fbBoardTempRaw;
+    int16_t fbSpeedR;
+    int16_t fbSpeedL;
+    int16_t fbCurrentL;
+    int16_t fbCurrentR;
+    bool fbValid;
 
     if (buffer == nullptr || bufferSize == 0) {
         return false;
@@ -339,13 +339,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     domeRxUnknownCount = robotState.domeRxUnknownCount;
     domeActiveTransport = robotState.domeActiveTransport;
     domeUartOwner = robotState.domeUartOwner;
-    hbBatteryRaw = robotState.hb_batteryRaw;
-    hbBoardTempRaw = robotState.hb_boardTempRaw;
-    hbSpeedR = robotState.hb_speedR;
-    hbSpeedL = robotState.hb_speedL;
-    hbCurrentL = robotState.hb_currentL;
-    hbCurrentR = robotState.hb_currentR;
-    hbFeedbackValid = robotState.hb_feedbackValid;
+    fbBatteryRaw = robotState.driveFeedbackBatteryRaw;
+    fbBoardTempRaw = robotState.driveFeedbackBoardTempRaw;
+    fbSpeedR = robotState.driveFeedbackSpeedR;
+    fbSpeedL = robotState.driveFeedbackSpeedL;
+    fbCurrentL = robotState.driveFeedbackCurrentL;
+    fbCurrentR = robotState.driveFeedbackCurrentR;
+    fbValid = robotState.driveFeedbackValid;
     enableArm1 = cfg.system.enable_arm1;
     enableArm2 = cfg.system.enable_arm2;
     enableAux1 = cfg.system.enable_aux1;
@@ -740,16 +740,22 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
         }
 
-        if (hbFeedbackValid) {
-            char hbBuf[128];
-            snprintf(hbBuf, sizeof(hbBuf),
+        // The drive backend's own feedback. The RobotState fields it is read
+        // from are no longer named for one controller, but the published key
+        // still is: "hoverboard" has a consumer (data/drive.js
+        // renderHoverboard) and a documented contract (docs/api.md), so
+        // renaming it is an API change with its own callers to move and not a
+        // field rename (#346, #304).
+        if (fbValid) {
+            char fbBuf[128];
+            snprintf(fbBuf, sizeof(fbBuf),
                      ",\"hoverboard\":{\"batteryV\":%.2f,\"boardTempC\":%.1f"
                      ",\"speedR\":%d,\"speedL\":%d"
                      ",\"currentL\":%.2f,\"currentR\":%.2f}",
-                     (double)(hbBatteryRaw / 100.0f), (double)(hbBoardTempRaw / 10.0f),
-                     (int)hbSpeedR, (int)hbSpeedL, (double)(hbCurrentL / 100.0f),
-                     (double)(hbCurrentR / 100.0f));
-            ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
+                     (double)(fbBatteryRaw / 100.0f), (double)(fbBoardTempRaw / 10.0f),
+                     (int)fbSpeedR, (int)fbSpeedL, (double)(fbCurrentL / 100.0f),
+                     (double)(fbCurrentR / 100.0f));
+            ok = appendJsonChunk(pos, remaining, fbBuf) && ok;
         }
 
 #if PA_CAP_HOSTED_WIFI

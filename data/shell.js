@@ -350,6 +350,234 @@
   };
 
   // ---------------------------------------------------------------------------
+  // The Status Plate: what the droid is doing, in eight fixed positions
+  //
+  // The cut is the decision, not the list. /api/status carries 112 keys and
+  // the great majority are web-server internals; a chip earns its place only
+  // if seeing it would change what the operator does next, which is what
+  // leaves eight (#324, CONTEXT.md "Status Plate"). Telemetry -- uptime, heap,
+  // signal strength, loop rate -- belongs to the Dashboard and never here,
+  // and WiFi earns no chip because if WiFi is down nobody is reading this.
+  //
+  // Order is by what bites fastest, never by subsystem, and it is fixed: the
+  // plate is read by muscle memory rather than scanned, so a chip that moves
+  // costs more than a chip that is missing.
+  //
+  // Every chip shows a VALUE in every state -- "OFF" and "ARMED" are both
+  // words, and neither branch is ever blank. A plate that is empty when all
+  // is well cannot be told from one that has stopped updating, which is this
+  // ticket's own definition of worse than nothing (the reference's paint
+  // function has no blank branch either: r2d2-astromech-simulator v1.79.0,
+  // src/js/app/hud.js:188).
+  //
+  // Each chip is a ROUTE: pressing it opens the surface where that thing is
+  // changed, through the same hash address the nav uses, and it changes
+  // nothing itself. The Latching Estop is the single exception and acts in
+  // place. A chip's destination is written as a `page` identifier and its
+  // operator-facing name is read back out of SURFACES, so a rename is still
+  // one field and this table cannot drift from what the nav says (#288).
+  // ---------------------------------------------------------------------------
+
+  // Before the droid has said anything. One word, the same one the estop's
+  // own state line uses, and no chip ever returns to it once a frame has
+  // arrived: the values are then kept and it is the PLATE that says how old
+  // they are. That is the difference between this and a per-chip freshness
+  // marker, which #324 rejected.
+  const CHIP_UNKNOWN = "FINDING OUT";
+
+  const hasKey = (payload, key) =>
+    payload !== null && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, key);
+
+  // The two RC receivers. rcCh3..rcCh6 are further channels of the same
+  // receiver and only ever report "ready" or "standby", so they carry no link
+  // state at all; rcCh1 is the drive receiver except in single_sbus + useCh2,
+  // where the firmware routes the drive receiver to rcCh2 and omits rcCh1
+  // entirely (src/web/web_server.cpp, the enableRcCh1 guard). Reading rcCh1
+  // alone would therefore report "no RC" on a working single-SBUS droid.
+  const RC_LINK_CHANNELS = ["rcCh1", "rcCh2"];
+
+  // A chip's state class: "" is the quiet default, "live" is the thing doing
+  // its job, "stopped" is something stopped or refused. A posture the
+  // operator chose -- Non-RC Control, Sleep Mode -- and a component nobody
+  // fitted take no class at all, because colour on this plate reports the
+  // droid's health and never a choice (#327 "Status Colour").
+  const chipState = (state, value) => ({ state, value });
+
+  const PLATE_CHIPS = [
+    {
+      id: "estop",
+      label: "ESTOP",
+      // The single cell that acts rather than routes, so it carries no page.
+      page: null,
+      affordance: "Cuts drive now",
+      read: (status) =>
+        status.estop === true ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
+    },
+    {
+      id: "drive",
+      label: "DRIVE",
+      page: "drive",
+      // Every input that can hold the feet at zero is read here, and there are
+      // five: the operator's latch and the watchdog-reset latch (which the
+      // firmware merges into `estop`), the receiver's hardware failsafe bit,
+      // the SBUS watchdog, and the web-drive timeout. Any one of them makes
+      // DriveTask emit zero frames (src/drive_arbiter.cpp, failsafeIsActive()
+      // || webTimedOut), so a chip reading one of the five would sit dark
+      // while the droid was held still -- which is the reference's shipped
+      // Bug 2 exactly: one clock guarded two channels and the summary chip
+      // tested one of them (r2d2-astromech-simulator, src/js/app/hud.js:203).
+      //
+      // `failsafeSource` is deliberately NOT one of the five: the firmware
+      // never resets it when a layer clears (src/failsafe_gate.cpp,
+      // failsafeClear), so it names the last reason rather than a live one.
+      read: (status) => {
+        if (!hasKey(status, "drive")) return chipState("", "OFF");
+        const held =
+          status.estop === true ||
+          status.sbusHwFailsafe === true ||
+          status.sbusSignalLost === true ||
+          status.webDriveExpired === true;
+        return held ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
+      },
+    },
+    {
+      id: "rclink",
+      label: "RC LINK",
+      page: "rc",
+      // The worst state across every receiver that reports one, plus the
+      // hardware failsafe bit -- which is the half that would otherwise be
+      // missed. A transmitter switched off makes the receiver assert failsafe
+      // while it keeps sending frames, so the channel still reads "active"
+      // and only `sbusHwFailsafe` says the link is dead.
+      read: (status) => {
+        if (status.sbusHwFailsafe === true) return chipState("stopped", "FAILSAFE");
+        const states = RC_LINK_CHANNELS.filter((key) => hasKey(status, key)).map((key) => {
+          const channel = status[key];
+          return channel !== null && typeof channel === "object" ? channel.state : undefined;
+        });
+        if (states.includes("signal_lost")) return chipState("stopped", "LOST");
+        if (states.includes("not_seen")) return chipState("", "NO FRAMES");
+        if (states.includes("active")) return chipState("live", "OK");
+        // Standard PWM inputs: the firmware publishes whether they are enabled
+        // and nothing whatever about whether pulses are arriving -- PWM loss
+        // submits a zero frame and triggers no failsafe layer and no key
+        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip
+        // names the kind of input and claims no link, because a chip may only
+        // print what something measured.
+        if (states.includes("ready")) return chipState("", "PWM");
+        return chipState("", states.length > 0 ? "STANDBY" : "OFF");
+      },
+    },
+    {
+      id: "control",
+      label: "CONTROL",
+      page: "drive",
+      // Non-RC Control: the consent by which a browser, the Controller
+      // Console or a sequence may command the droid. It is not persisted and
+      // boots off, so "OFF" is the ordinary posture of a controller that has
+      // just restarted rather than a fault -- and a chosen posture takes no
+      // colour.
+      read: (status) =>
+        status.webControlEnabled === true ? chipState("", "ON") : chipState("", "OFF"),
+    },
+    {
+      id: "sleep",
+      label: "SLEEP",
+      page: "home",
+      read: (status) => (status.sleepMode === true ? chipState("", "ON") : chipState("", "OFF")),
+    },
+    {
+      id: "spd",
+      label: "SPD",
+      page: "drive",
+      // The cap, which is measured, and not the preset name, which may not
+      // be. Writing speedLimitMax directly to a value that matches no preset
+      // leaves the payload reporting "normal" regardless
+      // (src/web/api_config_apply.cpp, the resolveSpeedPresetForLimit
+      // fallback), so a chip printing the name would name a preset the number
+      // does not belong to -- the reference's shipped Bug 1, where a chip
+      // printed the only delay the app had when its label was written.
+      read: (status) => {
+        const cap = Number(status.speedLimitMax);
+        return chipState("", Number.isFinite(cap) ? String(cap) : CHIP_UNKNOWN);
+      },
+    },
+    {
+      id: "domelink",
+      label: "DOME LINK",
+      page: "dome",
+      // The heartbeat state, and the UART owner, which is the second half.
+      // The dome shares UART2 with the sound module, and while sound holds it
+      // the heartbeat cannot arrive at all -- the firmware reports that as an
+      // ordinary "lost", so a chip reading only the state would say the dome
+      // link died when the truth is that nobody can ask.
+      read: (status) => {
+        const link = status.dome_link;
+        const linkState = link !== null && typeof link === "object" ? link.state : undefined;
+        if (linkState === "connected") return chipState("live", "OK");
+        if (linkState === "disabled") return chipState("", "OFF");
+        if (link !== null && typeof link === "object" && link.uart_owner === "audio") {
+          return chipState("", "SOUND HAS BUS");
+        }
+        if (linkState === "lost") return chipState("stopped", "LOST");
+        if (linkState === "not_seen") return chipState("", "NO HEARTBEAT");
+        return chipState("", CHIP_UNKNOWN);
+      },
+    },
+    {
+      id: "soundlink",
+      label: "SOUND LINK",
+      page: "sound",
+      // link_ok is half the condition. A false link_ok means either the
+      // module did not answer or the dome owns the UART and nobody could ask,
+      // and only rx_status tells the two apart (src/drivers/audio_chirp.cpp,
+      // classifyRxStatus). Reading link_ok alone reports a dead module for a
+      // bus that is merely busy.
+      read: (status) => {
+        if (!hasKey(status, "audio")) return chipState("", "OFF");
+        const audio = status.audio;
+        if (audio === null || typeof audio !== "object") return chipState("", CHIP_UNKNOWN);
+        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "DOME HAS BUS");
+        if (audio.link_ok === true) return chipState("live", "OK");
+        if (audio.rx_status === "no_response") return chipState("stopped", "NO ANSWER");
+        return chipState("", CHIP_UNKNOWN);
+      },
+    },
+  ];
+
+  // A destination is named by reading SURFACES, never by restating a name
+  // here: B2d renamed Drive to Foot Drive with its `page` untouched, and a
+  // name written twice is a name that goes stale the next time the copy sweep
+  // runs (#288).
+  const chipAffordance = (chip) => {
+    if (chip.page === null) return chip.affordance;
+    const destination = surfaceByPage.get(chip.page);
+    return destination ? `Opens ${destination.name}, where this is changed` : chip.affordance;
+  };
+
+  // The cell markup. Seven cells are anchors carrying the surface's own hash
+  // address, so a press is the one navigation path the nav and every legacy
+  // link already use -- there is no second router to keep in step. The estop
+  // cell is a button because it acts.
+  //
+  // The title says what the press does and is written once, here; it is never
+  // touched by the paint function, so the consequence of a click and the state
+  // being reported cannot drift into each other (the reference's fixed-title
+  // discipline, src/js/maestro/hw-ui.js:227). Nothing carries an aria-label:
+  // the visible text IS the accessible name, so there is no second copy of
+  // the state to keep in step (WCAG 2.5.3).
+  const chipHtml = (chip) => {
+    const inner =
+      `<span class="status-chip-dot"></span>` +
+      `<span class="status-chip-label">${chip.label}</span>` +
+      `<span class="status-chip-value">${CHIP_UNKNOWN}</span>`;
+    const shared = `class="status-chip" id="chip-${chip.id}" data-chip="${chip.id}" title="${chipAffordance(chip)}"`;
+    return chip.page === null
+      ? `<button type="button" ${shared}>${inner}</button>`
+      : `<a ${shared} href="#${chip.page}">${inner}</a>`;
+  };
+
+  // ---------------------------------------------------------------------------
   // Chrome: rendered once, and never again. Everything a navigation changes is
   // an attribute on what is already there, so nothing the shell owns is rebuilt
   // out from under a handler bound to it.
@@ -428,9 +656,25 @@
     `;
   }
 
+  // The plate is chrome by the same rule as the estop above: written once,
+  // then repainted in place. It rides on the status the session already holds
+  // and asks the droid for nothing of its own -- the one /api/status read and
+  // the one stream are the estop's, and a second reader would spend one of the
+  // controller's three client slots to say what the first already knows.
   const shellStatus = document.getElementById("shell-status");
   if (shellStatus) {
     shellStatus.innerHTML = `
+      <div class="status-plate-region" id="status-plate-region" data-freshness="finding-out">
+        <div class="status-plate" id="status-plate" role="group" aria-label="What the droid is doing">
+          ${PLATE_CHIPS.map(chipHtml).join("")}
+        </div>
+        <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Still finding out what the droid is doing.</p>
+        <p class="status-plate-affordance">Press a chip to open the screen where that thing is changed. ESTOP cuts drive right here.</p>
+        <div class="ignored-input-notice hidden" id="ignored-input-notice" role="status" aria-live="polite">
+          <span id="ignored-input-text"></span>
+          <a class="ignored-input-route" id="ignored-input-route" href="#${DEFAULT_PAGE}"></a>
+        </div>
+      </div>
       <div class="status-bar" id="conn-status">
         <div class="status-subline" id="fw-meta">Loading firmware info...</div>
       </div>
@@ -528,36 +772,42 @@
     await readStatusOnce({ handle });
   };
 
+  // Deliberately unguarded against a second press while the first is in
+  // flight. POST /api/estop is idempotent in the firmware -- failsafeTrigger()
+  // sets a bit it may already hold (src/failsafe_gate.cpp) -- and
+  // estopPostForm bypasses the request slot and never retries, so a second
+  // press cannot queue behind the first. A pending guard here would swallow
+  // exactly the press an operator makes because the first looked like it did
+  // nothing.
+  //
+  // One function, two entrances: the STOP button in the topbar and the plate's
+  // ESTOP chip at the foot of the page both call it. Two copies of a stop
+  // could drift, and the one control where that matters most is this one.
+  const requestStop = async () => {
+    if (!window.PAApi) return;
+    showEstopFeedback("Stopping the droid...");
+    try {
+      await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
+    } catch (error) {
+      // A stop that did not reach the droid has to say so in its own line:
+      // the state line still reports what the droid last told us, which is
+      // not the same thing and must not be overwritten with a guess.
+      showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
+      return;
+    }
+    showEstopFeedback("Stop sent", "success");
+    try {
+      await readStatusOnce();
+    } catch (error) {
+      // The stop already succeeded; only the confirmation read failed. The
+      // firmware broadcasts the new status itself, so the state line catches
+      // up on the stream a moment later.
+      console.warn("[shell] status read after stop failed:", error);
+    }
+  };
+
   if (estopButton) {
-    // Deliberately unguarded against a second press while the first is in
-    // flight. POST /api/estop is idempotent in the firmware -- failsafeTrigger()
-    // sets a bit it may already hold (src/failsafe_gate.cpp) -- and
-    // estopPostForm bypasses the request slot and never retries, so a second
-    // press cannot queue behind the first. A pending guard here would swallow
-    // exactly the press an operator makes because the first looked like it did
-    // nothing.
-    estopButton.addEventListener("click", async () => {
-      if (!window.PAApi) return;
-      showEstopFeedback("Stopping the droid...");
-      try {
-        await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
-      } catch (error) {
-        // A stop that did not reach the droid has to say so in its own line:
-        // the state line still reports what the droid last told us, which is
-        // not the same thing and must not be overwritten with a guess.
-        showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
-        return;
-      }
-      showEstopFeedback("Stop sent", "success");
-      try {
-        await readStatusOnce();
-      } catch (error) {
-        // The stop already succeeded; only the confirmation read failed. The
-        // firmware broadcasts the new status itself, so the state line catches
-        // up on the stream a moment later.
-        console.warn("[shell] status read after stop failed:", error);
-      }
-    });
+    estopButton.addEventListener("click", requestStop);
 
     // Subscribed in both modes: the stream is where a change arrives, and it
     // is also what readStatusOnce() hands its answer to, so this is the one
@@ -590,6 +840,346 @@
     } else {
       loadInitialStatus();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // The Status Plate: painting it, and saying how old it is
+  //
+  // The cells are looked up once. Nothing here queries the document again on a
+  // repaint, and nothing rebuilds a cell: a chip is an attribute and a text
+  // node on a node that was written at boot, which is the same discipline the
+  // nav and the estop above already keep.
+  // ---------------------------------------------------------------------------
+  const plateRegion = document.getElementById("status-plate-region");
+  const plateFreshness = document.getElementById("status-plate-freshness");
+  const plateCells = new Map();
+  PLATE_CHIPS.forEach((chip) => {
+    const node = document.getElementById(`chip-${chip.id}`);
+    if (!node) return;
+    plateCells.set(chip.id, { node, value: node.querySelector(".status-chip-value") });
+  });
+
+  // One writer for every cell, so no chip can grow a rendering path of its own
+  // (the reference's chip(), r2d2-astromech-simulator v1.79.0,
+  // src/js/app/hud.js:188). The class is REWRITTEN rather than toggled, so a
+  // state class cannot survive a repaint that no longer wants it.
+  const paintPlate = (status) => {
+    PLATE_CHIPS.forEach((chip) => {
+      const cell = plateCells.get(chip.id);
+      if (!cell) return;
+      const painted = status ? chip.read(status) : chipState("", CHIP_UNKNOWN);
+      cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
+      if (cell.value) cell.value.textContent = painted.value;
+    });
+  };
+
+  // The plate's ONE freshness state. Not one per chip: everything on it
+  // arrives on one stream, so its age is one fact and saying it eight times
+  // repeats that fact seven times (#324).
+  //
+  // The age is read from the browser's own clock, not from the droid's
+  // uptimeMs, and that is the point: the droid's clock is the thing that stops
+  // advancing exactly when this readout starts to matter. It is the other half
+  // of the reference's "wall clock, not simulated time" rule
+  // (src/js/input/pad-ui.js:165).
+  //
+  // Only a frame the session has not seen before restamps the age. The stream
+  // re-emits its cached frame when it reconnects and when a hidden tab becomes
+  // visible again (data/status_stream.js), and stamping those as new would
+  // have the plate claim a measurement nobody took -- at precisely the moment
+  // #324 says an operator meets a stale plate most often, which is switching
+  // back to the tab to look at it.
+  let plateFrame = null;
+  let plateFrameAt = 0;
+  let plateStreamBroken = false;
+
+  const plateAgeText = (elapsedMs) => {
+    if (elapsedMs < 1500) return "just now";
+    const seconds = Math.round(elapsedMs / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}min ago`;
+    return "over an hour ago";
+  };
+
+  const renderPlateFreshness = () => {
+    if (!plateRegion || !plateFreshness) return;
+    if (plateFrame === null) {
+      plateRegion.dataset.freshness = "finding-out";
+      plateFreshness.textContent = "Still finding out what the droid is doing.";
+      return;
+    }
+    const heard = `Last heard from the droid ${plateAgeText(Date.now() - plateFrameAt)}.`;
+    // Never amber, and the values are never blanked: the operator cannot act
+    // on a reconnect that is already running, and a blank plate would be the
+    // presentation they meet most often (#324, #327).
+    plateRegion.dataset.freshness = plateStreamBroken ? "finding-out" : "live";
+    plateFreshness.textContent = plateStreamBroken
+      ? `${heard} Reconnecting - these are the values it last sent.`
+      : heard;
+  };
+
+  const notePlateStatus = (payload) => {
+    if (!payload || typeof payload !== "object") return;
+    if (payload !== plateFrame) {
+      plateFrame = payload;
+      plateFrameAt = Date.now();
+    }
+    // A frame arriving at all is the stream working, whether it is new or the
+    // cached one replayed on reconnect.
+    plateStreamBroken = false;
+    paintPlate(payload);
+    renderPlateFreshness();
+    releaseSettledCauses(payload);
+  };
+
+  // ---------------------------------------------------------------------------
+  // The Ignored Input Notice
+  //
+  // The failure this closes is silence. A control the droid cannot act on is
+  // switched off with `disabled` plus aria-disabled (window.PAApi.gateControls,
+  // data/web_api.js), and pressing a disabled control produces nothing at all:
+  // no request, no feedback line, no log. The reference's own UX review made
+  // that its FIRST finding -- "nothing on screen tells you the drive is
+  // disarmed when you move a stick" -- and the operator's eyes are on the
+  // droid, not on the page.
+  //
+  // The hook is a capture-phase `pointerdown`, and it is pointerdown because
+  // that is what a browser still delivers: measured in Chromium on
+  // 2026-09-12, a press on a disabled <button> dispatches pointerdown to the
+  // button itself and suppresses mousedown and click entirely, so pointerdown
+  // is the only event left that names what the operator pressed. It is the one
+  // place the whole surface is covered, because gateControls() is how every
+  // page refuses a control.
+  //
+  // Only the transition from not-pressing to pressing is an attempt. A second
+  // finger, a repeated pointerdown during one press, or a held button must not
+  // each count (r2d2-astromech-simulator v1.79.0, src/js/input/pad-ui.js:213),
+  // and bursts then merge over a window of WALL CLOCK -- deliberately not the
+  // droid's uptime, which stops advancing exactly when the droid feels most
+  // broken (:165).
+  //
+  // The notice says what is OFF and never claims to have diagnosed the press:
+  // the shell can see that a refused control was pressed and what the droid is
+  // holding, and those are two facts rather than one. When the droid is
+  // holding nothing the plate tracks, it stays quiet.
+  // ---------------------------------------------------------------------------
+  const NOTICE_BURST_MS = 1500;
+  // How long one notice stays up. It is a receipt, not an alarm, and it comes
+  // down sooner than this the moment its cause clears.
+  const NOTICE_VISIBLE_MS = 6000;
+
+  // One row per way the droid is holding still, ordered by what bites fastest,
+  // and each row routes where its Status Plate chip routes -- so the notice
+  // says WHAT and the chip says WHERE, to one destination rather than two.
+  //
+  // Two rows carry a `page` of their own and say why: the estop's chip acts in
+  // place and so has no destination, while the release does (Foot Drive and
+  // Dashboard); and Stationary Mode earns no chip under #324's admission rule
+  // but is still a real refusal -- POST /api/drive rejects on it
+  // (src/web/api_drive.cpp) -- so it names the surface its Commanded Mode
+  // buttons live on.
+  const IGNORED_INPUT_CAUSES = [
+    {
+      id: "estop",
+      chip: "estop",
+      page: "drive",
+      says: "The estop is latched",
+      active: (status) => status.estop === true,
+    },
+    {
+      id: "feet",
+      chip: "drive",
+      says: "The feet are not armed",
+      // The same enumeration the DRIVE chip makes, minus the estop, which has
+      // its own row above and would otherwise shadow it.
+      active: (status) =>
+        !hasKey(status, "drive") ||
+        status.sbusHwFailsafe === true ||
+        status.sbusSignalLost === true ||
+        status.webDriveExpired === true,
+    },
+    {
+      id: "stationary",
+      chip: null,
+      page: "home",
+      says: "Stationary Mode has the feet locked",
+      active: (status) => status.stationary === true,
+    },
+    {
+      id: "control",
+      chip: "control",
+      says: "This droid has not consented to browser control yet",
+      active: (status) => status.webControlEnabled !== true,
+    },
+  ];
+
+  const noticeNode = document.getElementById("ignored-input-notice");
+  const noticeText = document.getElementById("ignored-input-text");
+  const noticeRoute = document.getElementById("ignored-input-route");
+
+  // Wall clock, per cause, of the last notice shown for it.
+  const noticeShownAt = new Map();
+  let noticeCause = null;
+  let noticeHideTimer = null;
+  let noticePressing = false;
+
+  const noticePageFor = (cause) =>
+    cause.page || PLATE_CHIPS.find((chip) => chip.id === cause.chip)?.page || DEFAULT_PAGE;
+
+  const hideNotice = () => {
+    noticeCause = null;
+    if (noticeHideTimer !== null) {
+      window.clearTimeout(noticeHideTimer);
+      noticeHideTimer = null;
+    }
+    noticeNode?.classList.add("hidden");
+  };
+
+  const showNotice = (cause) => {
+    if (!noticeNode || !noticeText || !noticeRoute) return;
+    const page = noticePageFor(cause);
+    const destination = surfaceByPage.get(page);
+    noticeText.textContent = `That control is switched off right now. ${cause.says}.`;
+    noticeRoute.textContent = `Open ${destination ? destination.name : page}, where that is changed`;
+    noticeRoute.setAttribute("href", `#${page}`);
+    noticeNode.classList.remove("hidden");
+    noticeCause = cause.id;
+    if (noticeHideTimer !== null) window.clearTimeout(noticeHideTimer);
+    noticeHideTimer = window.setTimeout(hideNotice, NOTICE_VISIBLE_MS);
+  };
+
+  const reportIgnoredInput = () => {
+    // Nothing has arrived yet, so there is nothing to name. The plate's own
+    // freshness state is already saying so.
+    if (plateFrame === null) return;
+    const cause = IGNORED_INPUT_CAUSES.find((candidate) => candidate.active(plateFrame));
+    // A control switched off for a reason this plate does not carry is not
+    // this notice's business: it would otherwise name whatever happened to be
+    // off, which is a guess dressed as a fact.
+    if (!cause) return;
+    const now = Date.now();
+    const shownAt = noticeShownAt.get(cause.id);
+    if (shownAt !== undefined && now - shownAt < NOTICE_BURST_MS) return;
+    noticeShownAt.set(cause.id, now);
+    showNotice(cause);
+  };
+
+  // The rate limit resets the moment the answer stops being undecided: a cause
+  // that has stopped being true drops its window, so changing your mind and
+  // back does not buy a second of silence. And the notice comes down with it,
+  // because the door it was holding open has closed
+  // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:878).
+  const releaseSettledCauses = (status) => {
+    IGNORED_INPUT_CAUSES.forEach((cause) => {
+      if (cause.active(status)) return;
+      noticeShownAt.delete(cause.id);
+      if (noticeCause === cause.id) hideNotice();
+    });
+  };
+
+  // Which refused control a press landed on -- and it takes two tries, because
+  // a refused button is not merely inert to clicks, it is invisible to hit
+  // testing: data/style.css puts `pointer-events: none` on `.btn:disabled` and
+  // `.btn[aria-disabled="true"]`, so the press lands on whatever is behind the
+  // control and event.target names the container instead of the button.
+  //
+  // Measured in a browser on the shipped stylesheet, which is the only place
+  // it is visible: a bare disabled button in a page with no CSS does receive
+  // pointerdown on itself, so a probe without this stylesheet says the first
+  // branch below is all that is needed, and it is not.
+  //
+  // First branch: the target itself, for a refused thing that is still
+  // hit-testable -- an aria-disabled row is an ordinary element and keeps its
+  // pointer events (data/rc.js's action list is one).
+  //
+  // Second branch: the refused control whose box holds the pointer, searched
+  // inside the element the press did land on. That element is the nearest
+  // hit-testable ancestor, so the control is one of its descendants.
+  const refusedAt = (event) => {
+    const target = event.target;
+    if (!target?.closest) return null;
+    const hit = target.closest('[aria-disabled="true"]');
+    if (hit) return hit;
+    const { clientX, clientY } = event;
+    if (typeof clientX !== "number" || typeof clientY !== "number") return null;
+    const candidates = target.querySelectorAll?.('[aria-disabled="true"]') || [];
+    return (
+      Array.from(candidates).find((candidate) => {
+        const box = candidate.getBoundingClientRect?.();
+        return (
+          box &&
+          clientX >= box.left &&
+          clientX <= box.right &&
+          clientY >= box.top &&
+          clientY <= box.bottom
+        );
+      }) || null
+    );
+  };
+
+  if (noticeNode) {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        const rising = !noticePressing;
+        noticePressing = true;
+        if (!rising) return;
+        // aria-disabled rather than the `disabled` property: gateControls()
+        // sets both, and the attribute is the one a container can carry for a
+        // control that is not a form element.
+        const refused = refusedAt(event);
+        if (!refused) return;
+        // Except when it means BUSY rather than off. The Dashboard marks a
+        // control aria-disabled while its request is in flight -- the sleep
+        // toggle, the Commanded Mode buttons and the Mood buttons all do
+        // (data/app.js setSleepPending / setModePending / setMoodPending) --
+        // and those carry .is-pending as well. Saying "that control is
+        // switched off" about a control that is merely waiting for the droid
+        // to answer is false, and it would fire on exactly the second press an
+        // impatient operator makes.
+        if (refused.classList?.contains?.("is-pending")) return;
+        reportIgnoredInput();
+      },
+      true
+    );
+    const releasePointer = () => {
+      noticePressing = false;
+    };
+    document.addEventListener("pointerup", releasePointer, true);
+    document.addEventListener("pointercancel", releasePointer, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wiring the plate and its notice
+  //
+  // One site, and it comes after both are fully declared: PAStatusStream hands
+  // a new subscriber the last status it saw straight away, so a subscription
+  // opened above this line could reach the notice's own reader before it
+  // exists.
+  // ---------------------------------------------------------------------------
+  if (plateRegion) {
+    window.PAStatusStream?.subscribe((eventType, payload) => {
+      if (eventType === "status") notePlateStatus(payload);
+      else if (eventType === "stream_error") {
+        plateStreamBroken = true;
+        renderPlateFreshness();
+      }
+    });
+
+    // A display tick, not a poll: it asks the droid for nothing and rewrites
+    // one line of text. Skipped while the tab is hidden, where there is nobody
+    // to read it and no stream open either (Hidden Tab Pause).
+    const PLATE_TICK_MS = 1000;
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      renderPlateFreshness();
+    }, PLATE_TICK_MS);
+
+    // The one cell that acts instead of routing, wired to the same function
+    // the topbar's STOP button calls. The other seven are anchors carrying a
+    // hash address and need no handler at all.
+    plateCells.get("estop")?.node.addEventListener("click", requestStop);
   }
 
   // ---------------------------------------------------------------------------

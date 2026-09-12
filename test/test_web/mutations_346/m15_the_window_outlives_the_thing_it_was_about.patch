@@ -1,0 +1,11 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1073,7 +1073,6 @@
+   const releaseSettledCauses = (status) => {
+     IGNORED_INPUT_CAUSES.forEach((cause) => {
+       if (cause.active(status)) return;
+-      noticeShownAt.delete(cause.id);
+       if (noticeCause === cause.id) hideNotice();
+     });
+   };

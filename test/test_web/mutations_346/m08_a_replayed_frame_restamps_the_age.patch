@@ -1,0 +1,16 @@
+diff --git a/data/shell.js b/data/shell.js
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -921,10 +921,8 @@
+ 
+   const notePlateStatus = (payload) => {
+     if (!payload || typeof payload !== "object") return;
+-    if (payload !== plateFrame) {
+-      plateFrame = payload;
+-      plateFrameAt = Date.now();
+-    }
++    plateFrame = payload;
++    plateFrameAt = Date.now();
+     // A frame arriving at all is the stream working, whether it is new or the
+     // cached one replayed on reconnect.
+     plateStreamBroken = false;
