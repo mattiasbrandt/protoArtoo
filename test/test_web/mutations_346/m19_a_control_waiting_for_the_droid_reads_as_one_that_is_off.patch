@@ -1,7 +1,7 @@
 diff --git a/data/shell.js b/data/shell.js
 --- a/data/shell.js
 +++ b/data/shell.js
-@@ -1098,7 +1098,6 @@
+@@ -1138,7 +1138,6 @@
          // switched off" about a control that is merely waiting for the droid
          // to answer is false, and it would fire on exactly the second press an
          // impatient operator makes.
