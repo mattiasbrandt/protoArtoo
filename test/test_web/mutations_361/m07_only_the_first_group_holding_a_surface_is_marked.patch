@@ -1,0 +1,14 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..46a16a96 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -664,7 +664,8 @@
+     // is an attribute flip on chrome that is already there -- the nav is never
+     // re-rendered, or the estop bound inside it would go with it.
+     document.querySelectorAll("[data-nav-group]").forEach((groupEl) => {
+-      groupEl.classList.toggle("is-current", pagesInGroup.get(groupEl.dataset.navGroup)?.has(page) === true);
++      const first = ACTIVITY_GROUPS.find((group) => group.members.includes(page));
++      groupEl.classList.toggle("is-current", first?.id === groupEl.dataset.navGroup);
+     });
+   };
+ 

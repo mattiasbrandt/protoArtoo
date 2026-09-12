@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..4afcdaf9 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -369,7 +369,6 @@
+         .join("");
+       // Nothing to offer, nothing drawn -- which is what keeps a dormant row
+       // free until the surface it names exists.
+-      if (!links) return "";
+       const labelId = `nav-group-${group.id}-label`;
+       return `
+         <div class="nav-group" data-nav-group="${group.id}" role="group" aria-labelledby="${labelId}">

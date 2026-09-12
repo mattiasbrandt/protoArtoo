@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..54126b16 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -383,7 +383,7 @@
+ 
+     const navHtml = [
+       ...ungroupedSurfaces.map(navLink),
+-      ...ACTIVITY_GROUPS.map(groupHtml),
++      ...[...ACTIVITY_GROUPS].reverse().map(groupHtml),
+     ].join("");
+ 
+     shellTop.innerHTML = `

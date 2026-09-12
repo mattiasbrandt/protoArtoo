@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..c5efb9d9 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -35,7 +35,7 @@
+     // controller and the Dome ESC are both drive controllers an unqualified
+     // "Drive" names three things (#288). The old spelling was also the route,
+     // so the alias is the rename record rather than a second address.
+-    { page: "drive", doc: "/drive.html", icon: "🏎️", name: "Foot Drive", aliases: ["drive"] },
++    { page: "drive", doc: "/drive.html", icon: "🏎️", name: "Drive", aliases: ["drive"] },
+     { page: "dome", doc: "/dome.html", icon: "🔄", name: "Dome", aliases: [] },
+     { page: "sound", doc: "/sound.html", icon: "🔊", name: "Sound", aliases: [] },
+     { page: "servo", doc: "/servo.html", icon: "🦾", name: "Servos", aliases: ["servos"] },

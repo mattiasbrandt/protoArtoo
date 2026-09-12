@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index 13cdc1a9..f2294a91 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -142,7 +142,7 @@
+   // answers what the droid is doing rather than what the builder is doing
+   // (ADR 0048). Anything else no group claims is drawn beside it rather than
+   // falling out of the nav, so a surface is reachable the moment it exists.
+-  const ungroupedSurfaces = SURFACES.filter((surface) => !groupedPages.has(surface.page));
++  const ungroupedSurfaces = SURFACES.filter((surface) => surface.page !== undefined);
+ 
+   // The legacy address of each surface, plus the two spellings of the shell's
+   // own document, so a link written before hash routes still opens what it
