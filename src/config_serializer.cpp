@@ -214,19 +214,8 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
 
 void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def) {
     *out = def;
-    out->seq_open_ms = r.readU16("seq_op", def.seq_open_ms);
-    out->seq_close_ms = r.readU16("seq_cl", def.seq_close_ms);
     out->aux_led_pin = r.readU8(NVS_KEY_AUX_LED_PIN, def.aux_led_pin);
     out->aux_led_count = r.readU8(NVS_KEY_AUX_LED_COUNT, def.aux_led_count);
-
-    if (out->seq_open_ms < 100)
-        out->seq_open_ms = 100;
-    if (out->seq_open_ms > 5000)
-        out->seq_open_ms = 5000;
-    if (out->seq_close_ms < 100)
-        out->seq_close_ms = 100;
-    if (out->seq_close_ms > 5000)
-        out->seq_close_ms = 5000;
 
     if (!auxLedPinSettingValid(out->aux_led_pin)) {
         out->aux_led_pin = AUX_LED_PIN_DISABLED;
@@ -526,8 +515,6 @@ bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w) {
     bool ok = true;
     // No endpoint and no component type: an addressed Servo Output row holds
     // both and configSerializeServoOutputs() writes it (#345, ADR 0041).
-    ok = w.writeU16("seq_op", cfg.seq_open_ms) && ok;
-    ok = w.writeU16("seq_cl", cfg.seq_close_ms) && ok;
     ok = w.writeU8(NVS_KEY_AUX_LED_PIN, cfg.aux_led_pin) && ok;
     ok = w.writeU8(NVS_KEY_AUX_LED_COUNT, cfg.aux_led_count) && ok;
     return ok;
@@ -816,8 +803,8 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
 // The Fitted Parts are joined on the heap rather than in a local char buffer on
 // purpose: the joined list is DROID_FITTED_PARTS_STR_MAX bytes, and a frame
 // that size would sit on the serial config-write path, whose task stack chain
-// is a measured constant that a 916-byte snapshot already nearly overran once
-// (include/config.h, #226). One bounded allocation on a Core 0 write path costs
+// is a measured constant that one ConfigSnapshot-sized frame per nesting level
+// already nearly overran once (include/config.h, include/config_store.h, #226). One bounded allocation on a Core 0 write path costs
 // that chain nothing, and a failed one is reported rather than swallowed -
 // the caller answers "not persisted" and the writer has touched nothing.
 // -----------------------------------------------------------------------------

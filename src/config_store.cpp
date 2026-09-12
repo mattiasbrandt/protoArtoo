@@ -255,9 +255,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
-    snap->servo.seq_open_ms = 1000;
-    snap->servo.seq_close_ms = 1000;
-
     snap->servo.aux_led_pin = AUX_LED_PIN_DISABLED;
     snap->servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
 
@@ -1066,9 +1063,29 @@ bool configSaveServoOutputs(Preferences& prefs) {
     return ok;
 }
 
+// The sequence dwell ServoConfig no longer carries (#362). Its only reader was
+// the body routine state machine #354 deleted, so nothing on this controller
+// will ever read these again, and a key nobody reads is an NVS entry spent on
+// nothing. Removed after a save that landed, on the reasoning #345 used for the
+// fixed servo key sets: the removal needs no schema bump because it has nothing
+// to migrate, and it is idempotent - a controller that never had the keys, or
+// has already lost them, finds nothing to remove.
+static void removeRetiredServoKeys(Preferences& prefs) {
+    static const char* const kRetired[] = {"seq_op", "seq_cl"};
+    for (size_t i = 0; i < sizeof(kRetired) / sizeof(kRetired[0]); ++i) {
+        if (prefs.isKey(kRetired[i])) {
+            prefs.remove(kRetired[i]);
+        }
+    }
+}
+
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     PrefsWriter writer(prefs);
-    return configSerialize(snapshot, writer);
+    const bool ok = configSerialize(snapshot, writer);
+    if (ok) {
+        removeRetiredServoKeys(prefs);
+    }
+    return ok;
 }
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
@@ -1083,7 +1100,11 @@ bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
 
 bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
     PrefsWriter writer(prefs);
-    return configSerializeServo(config, writer);
+    const bool ok = configSerializeServo(config, writer);
+    if (ok) {
+        removeRetiredServoKeys(prefs);
+    }
+    return ok;
 }
 
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
