@@ -26,6 +26,30 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **The numbered body buttons do what their names say.** `:SE30` to `:SE36`
+  used to run the same open-and-close on the two utility arms, whichever one
+  you pressed. Each is now its own routine, taken from the body sequences
+  builders already know. The utility arms flick out and back. Every door and
+  arm works in turn. The doors spring open and wiggle shut. The gripper arm
+  snaps its claw, and the interface arm works its tool. The breadpan doors
+  ping-pong, and a BT-1's two claws snap together. They move the parts you
+  have assigned to outputs; a part with nothing wired to it is skipped and the
+  rest of the routine still runs. To change one, save your own sequence under
+  its name, `DM:SE30` to `DM:SE36`.
+- **A calibrated servo moves at its own pace.** Once you have measured an
+  output's ends, every move it makes, from a button, the browser or a
+  sequence, takes the time you set: time to full throw, and time to get up to
+  speed. An output you have not calibrated still jumps straight to position,
+  as it always has. Estop and sleep stop a move where it is.
+- **The sequence editor rehearses what you wrote.** Beside the check that
+  decides whether a sequence can be saved, the editor now counts what will
+  not happen the way you wrote it. Examples: dome commands so close together
+  that the dome drops some, a panel told to open again while it is already
+  opening, a `$s` that silences idle chatter until reboot, a body part left
+  open. Each one says how to fix it. You get the full list when you save and
+  when you tune a Factory sequence, and a folded summary after a test run. It
+  also says how many steps it could check and why the rest could not be. It
+  never stops a save or a run.
 - **The picker cards can show the part in your hand.** Every product in the
   lineup now has a photograph on the FireBeetle 2 — the same dark ground as
   the rest of the UI, sized to a card, so matching a card to the hardware on

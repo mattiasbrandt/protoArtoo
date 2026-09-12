@@ -144,6 +144,59 @@ the same rule `:OF` carries on the dome.
 In Factory Sequences, use the
 `SEQ_BODY(t, part, shape, howFar, flutterMs)` macro.
 
+### The numbered body routines
+
+`:SE30`..`:SE36` -- the body buttons a builder arriving from ShadowMD already has
+bound -- are the Factory Sequences `DM:SE30`..`DM:SE36`, written entirely in Body
+Steps. RC and the dome link start them through the Sequence Coordinator, so they
+preempt and are preempted like any other sequence, and saving a Learned Sequence
+under one of those names retrains that button.
+
+| Button | Routine | Parts it moves |
+|---|---|---|
+| `:SE30` | utility arms out, flick in and out twice, close | `utilUp`, `utilLo` |
+| `:SE31` | doors open, arms rise and work their tools, dataport, everything folds away | `dataport`, `utilUp`, `utilLo`, `doorFL`, `gripArm`, `gripClaw`, `doorFR`, `interArm`, `interTool` |
+| `:SE32` | doors, dataport and utility arms spring open and wiggle shut | `dataport`, `utilUp`, `utilLo`, `doorFL`, `doorFR` |
+| `:SE33` | left door, gripper arm rises, claw snaps three times | `doorFL`, `gripArm`, `gripClaw` |
+| `:SE34` | right door, interface arm rises, tool works three times | `doorFR`, `interArm`, `interTool` |
+| `:SE35` | the breadpan doors take turns, faster then slower | `doorFL`, `doorFR` |
+| `:SE36` | BT-1: both doors, both arms, both claws snap together | `doorFL`, `gripArm`, `gripClaw`, `doorFR`, `interArm`, `interTool` |
+
+A Part no Output drives is skipped with `part-not-assigned` and the routine carries
+on, so a droid with only the two utility arms wired still runs every one. Each
+routine ends with every Part it moved closed. How fast any of them moves is the
+Output's Motion Profile, not the routine's. Where the choreography came from is
+in [`sequence-credits.md`](sequence-credits.md).
+
+If estop or Sleep Mode arrives while a sequence is running, the outputs that
+sequence moved snap to their close position -- the promise the body routines kept
+when ServoTask ran them itself -- and any move in progress stops where it is.
+
+## The Rehearsal
+
+The editor reads the sequence you are writing and says what will not happen the
+way you wrote it. It is not Protocol Check: Protocol Check decides whether a
+sequence can be saved, and the Rehearsal can never stop a save or a run
+(ADR 0044). Its counts sit under Protocol Check's verdict. You get the full list
+when you save and when you tune a Factory sequence, and a folded badge after a
+test run.
+
+Every finding is one of two levels -- a **warning** (it will not do what you
+wrote) or a **note** (worth knowing) -- and carries a token beside its message
+and a fix:
+
+| Token | Level | What it catches | Why it is a rule |
+|---|---|---|---|
+| `dispatch-spacing` | warning | dome commands less than 200 ms apart, or at the same moment | the dome's eight-entry command queue dropped a close on 2026-06-18 |
+| `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between | `DM:HELLO`'s five identical opens made one |
+| `quiet-in-sequence` | warning | a `$s` step | it turned idle chatter off until reboot on 2026-06-17 |
+| `part-left-open` | note | a body Part whose last step is not a close | the body undoes nothing (ADR 0049) |
+
+It also says how many steps it could check. A dome panel move, a body move and a
+random pick each carry a question it cannot answer from the page -- how long the
+panel or part takes to move, or which panel the dice will choose -- and those
+steps are named as not checked, with what would close the gap.
+
 ## Cleanup is automatic
 
 You do **not** author teardown. The engine tracks which persistent effects fired (panel
