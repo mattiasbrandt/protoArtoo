@@ -75,6 +75,19 @@ class BudgetFileValidation(unittest.TestCase):
                                    env_budget["flash_budget_bytes"],
                                    f"{env_name} ceiling must be >= budget")
 
+    def test_filesystem_figures_are_whole_littlefs_blocks(self):
+        """LittleFS allocates whole 4,096 B blocks, so a filesystem budget that is
+        not a multiple of one names a block count nobody can reach: 470,016 B was
+        114.75 blocks, and its rationale called it 115 (#382)."""
+        budgets = slice_verify.load_budgets()
+        for env_name, env_budget in budgets["envs"].items():
+            for key in ("fs_budget_bytes", "fs_ceiling_bytes", "partition_fs_bytes"):
+                if key not in env_budget:
+                    continue
+                self.assertEqual(env_budget[key] % 4096, 0,
+                                 f"{env_name} {key} = {env_budget[key]} B is not a whole "
+                                 f"number of 4,096 B blocks")
+
 
 class PlatformResolution(unittest.TestCase):
     """Test env-to-platform resolution via registry."""
