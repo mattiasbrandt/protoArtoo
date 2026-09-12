@@ -2120,9 +2120,9 @@ void test_scoped_non_motion_actions_are_not_executor_not_ready() {
 }
 
 // The closing guard for #221 (epic row #46): the action rows that still answer
-// executor-not-ready are exactly these twelve, each carrying a true, specific
+// executor-not-ready are exactly these thirteen, each carrying a true, specific
 // reason on its own docs/action-registry.yaml entry and in the dispatch-site
-// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A thirteenth row
+// comment (consoleExecuteCommand()'s CONSOLE_OP_ACTION case). A fourteenth row
 // joining the set fails here, so the next unwired operation cannot arrive
 // unexplained; a row leaving it fails here too, so the list cannot rot.
 //
@@ -2145,6 +2145,9 @@ void test_the_executor_not_ready_set_is_exactly_the_recorded_rows() {
         "system.api.get-admission-trace",
         // the browser Console Adapter itself, not an operation
         "system.console",
+        // a read with no Console record shape yet; the bench side's need for
+        // one is C1b's (#362), and the Parts page reads it over REST (#347)
+        "servo.api.get-outputs",
     };
     const size_t kRecordedCount = sizeof(kRecorded) / sizeof(kRecorded[0]);
 

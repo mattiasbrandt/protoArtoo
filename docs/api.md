@@ -511,6 +511,42 @@ curl -s -X POST http://artoo.local/api/servo \
 {"ok":true}
 ```
 
+### GET /api/servo/outputs
+
+Every live Servo Output row, and the Parts each one drives (ADR 0041, ADR 0050).
+Both projections of the Parts destination read this one answer — which Output
+moves a Part, and what an Output moves — so they cannot disagree. Read-only: a
+Part is moved with `movePart` on `POST /api/config`.
+
+- Success: `200` JSON:
+- `outputs`: one entry per live row, in table order:
+  - `address`: the Output Address as one token, `<driver>:<channel>` (`ledc:3`).
+    It is the spelling `movePartFrom` and `movePartTo` take, so send back the
+    address you read rather than composing one.
+  - `name`: the name a builder already knows the Output by (`ARM1`, `ARM2`,
+    `AUX1`..`AUX3` on the LEDC outputs), or `""` for an address nobody has
+    named, such as an expander's row.
+  - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
+    when it drives nothing. More than one is a ganged lead: every Part listed
+    moves when the Output does. A Part appears on at most one Output.
+- Errors: `500` if the answer could not be built.
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/servo/outputs
+```
+
+#### Example response (a fresh controller, then one door ganged with an arm)
+
+```json
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[]},{"address":"ledc:1","name":"ARM2","parts":[]},{"address":"ledc:3","name":"AUX1","parts":[]},{"address":"ledc:4","name":"AUX2","parts":[]},{"address":"ledc:5","name":"AUX3","parts":[]}]}
+```
+
+```json
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"]},{"address":"ledc:1","name":"ARM2","parts":[]},{"address":"ledc:3","name":"AUX1","parts":[]},{"address":"ledc:4","name":"AUX2","parts":[]},{"address":"ledc:5","name":"AUX3","parts":[]}]}
+```
+
 ### POST /api/aux-led/color
 
 Sets AUX LED color.
@@ -1261,6 +1297,19 @@ Updates supported config fields and persists to NVS.
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
+- Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent
+  together or not at all. `movePart` is a Part id this build models;
+  `movePartFrom` is the Output the Part is on **now** and `movePartTo` the one
+  it is going to, each an Output Address exactly as `GET /api/servo/outputs`
+  spells it (`ledc:3`) or `none`. A Part is on at most one Output, so a move
+  takes it off the one it was on; an Output may drive several Parts, so the
+  destination keeps whatever it already drives. Naming the origin is required
+  on purpose: a surface can only take a Part off an Output it has read the Part
+  on, which is the moment it must tell the builder so before sending (#347). A
+  move that changes nothing — the Part is already there — succeeds. A shape
+  error is `400` `{"ok":false,"error":"movePart, movePartFrom and movePartTo must
+  be sent together: a Part this build models, and each end an Output Address or
+  none"}`.
 
 - Supported JSON body fields:
 - `rc.sbusTimeoutMs` (50..5000)
@@ -1275,6 +1324,11 @@ Updates supported config fields and persists to NVS.
   change is staged and the controller has not rebooted.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields
+- `409` when a Part move cannot land on the table as it stands — the Part is
+  not on `movePartFrom` (`"that Part is not on the Output movePartFrom names -
+  read the outputs again, then move it"`), the destination already drives as
+  many Parts as it can, or no Output is addressed at `movePartTo`. **Nothing in
+  the request was applied**, including any other field sent beside the move.
 - `500` failed persistence or response build/alloc failure
 - `503` `{"ok":false,"error":"config write busy"}` — another config writer (the
   Controller Console, or another form POST) held the config write window for

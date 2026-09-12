@@ -761,8 +761,175 @@ void test_naming_the_wider_component_carries_the_old_value_across_intact() {
     TEST_ASSERT_EQUAL_UINT8(0, report.rowsRepaired);
 }
 
+// --- a Part's place: the move door (ADR 0050, #347) ---------------------------
+
+namespace {
+
+constexpr int kNone = -1;
+
+// One move, with each end an LEDC channel or kNone.
+ServoOutputPartMove ledcMove(const char* part, int from, int to) {
+    ServoOutputPartMove move = {};
+    snprintf(move.part, sizeof(move.part), "%s", part);
+    move.fromOutput = from != kNone;
+    move.fromDriver = SERVO_DRIVER_LEDC;
+    move.fromChannel = (from != kNone) ? (uint8_t)from : 0;
+    move.toOutput = to != kNone;
+    move.toDriver = SERVO_DRIVER_LEDC;
+    move.toChannel = (to != kNone) ? (uint8_t)to : 0;
+    return move;
+}
+
+uint8_t rowAt(const ServoOutputTable& table, uint8_t channel) {
+    return servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, channel);
+}
+
+// How many live rows drive a Part. The whole point of steal-not-share is that
+// this is never more than one.
+uint8_t rowsDriving(const ServoOutputTable& table, const char* part) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < table.count; ++i) {
+        if (servoOutputDrivesPart(table.rows[i], part)) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+}  // namespace
+
+void test_moving_a_part_takes_it_off_the_output_it_was_on() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    TEST_ASSERT_EQUAL_UINT8(rowAt(table, LEDC_CH_ARM1), servoOutputTableFindPart(table, "doorFL"));
+
+    // Assigning it elsewhere moves it; it is never shared.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_AUX1)));
+    TEST_ASSERT_EQUAL_UINT8(1, rowsDriving(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(rowAt(table, LEDC_CH_AUX1), servoOutputTableFindPart(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(table.rows[rowAt(table, LEDC_CH_ARM1)]));
+
+    // And off every Output, which is a move too.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED, servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX1, kNone)));
+    TEST_ASSERT_EQUAL_UINT8(0, rowsDriving(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX, servoOutputTableFindPart(table, "doorFL"));
+}
+
+// A ganged lead: both breadpan doors on one Output, both reading as driven, and
+// moving one of them away leaves the other exactly where it was.
+void test_an_output_drives_every_part_ganged_to_it() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_AUX2)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFR", kNone, LEDC_CH_AUX2)));
+
+    const uint8_t aux2 = rowAt(table, LEDC_CH_AUX2);
+    TEST_ASSERT_EQUAL_UINT8(2, servoOutputPartCount(table.rows[aux2]));
+    TEST_ASSERT_EQUAL_UINT8(aux2, servoOutputTableFindPart(table, "doorFL"));
+    TEST_ASSERT_EQUAL_UINT8(aux2, servoOutputTableFindPart(table, "doorFR"));
+
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_MOVED, servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX2, LEDC_CH_AUX3)));
+    TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(table.rows[aux2]));
+    TEST_ASSERT_EQUAL_STRING("doorFR", servoOutputPartAt(table.rows[aux2], 0));
+}
+
+// The announcement rule, mechanically: a move that names an origin the Part is
+// not on is a table its sender never read, and it changes nothing at all.
+void test_a_move_from_where_the_part_is_not_changes_nothing() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    const ServoOutputTable before = table;
+
+    // Told the Part is on nothing, when it is on ARM1: the steal nobody announced.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_NOT_WHERE_STATED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_AUX1)));
+    // Told it is on AUX2, when it is on ARM1: a table that changed underneath.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NOT_WHERE_STATED,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_AUX2, LEDC_CH_AUX1)));
+    // An origin no row has is never where a Part is, even an unwired one.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NOT_WHERE_STATED,
+        servoOutputTableMovePart(&table, ledcMove("utilLo", LEDC_CH_DOME, LEDC_CH_AUX1)));
+
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+}
+
+void test_a_move_that_cannot_land_is_refused_before_anything_is_touched() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    const char* const kGang[] = {"pie1", "pie2", "pie3", "pie4"};
+    for (const char* part : kGang) {
+        TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                                servoOutputTableMovePart(&table, ledcMove(part, kNone, LEDC_CH_ARM2)));
+    }
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED,
+                            servoOutputTableMovePart(&table, ledcMove("doorFL", kNone, LEDC_CH_ARM1)));
+    const ServoOutputTable before = table;
+
+    // A full Output does not take a fifth, and the Part stays where it was
+    // rather than landing nowhere.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_OUTPUT_FULL,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_ARM2)));
+    // The dome ESC's channel is not an Output.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_NO_SUCH_OUTPUT,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_DOME)));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_NOT_A_PART,
+                            servoOutputTableMovePart(&table, ledcMove("banana", kNone, LEDC_CH_AUX1)));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+
+    // Asking for where it already is has nothing to do and is not an error.
+    TEST_ASSERT_EQUAL_UINT8(
+        SERVO_PART_ALREADY_THERE,
+        servoOutputTableMovePart(&table, ledcMove("doorFL", LEDC_CH_ARM1, LEDC_CH_ARM1)));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &table, sizeof(table));
+}
+
+void test_an_output_address_is_one_token_with_one_spelling() {
+    char buf[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    TEST_ASSERT_TRUE(servoOutputFormatAddress(buf, sizeof(buf), SERVO_DRIVER_LEDC, 255));
+    TEST_ASSERT_EQUAL_STRING("ledc:255", buf);
+
+    ServoOutputDriver driver = SERVO_DRIVER_COUNT;
+    uint8_t channel = 0;
+    TEST_ASSERT_TRUE(servoOutputParseAddress("ledc:3", &driver, &channel));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, channel);
+
+    // Only an address the driver has: the dome ESC is spelled like an Output and
+    // is not one.
+    const char* const kNotOutputs[] = {"ledc:2", "ledc:", ":3", "pca:1", "ledc:3x", "ledc:256",
+                                       "ledc", "", "ledc:-1"};
+    for (const char* raw : kNotOutputs) {
+        TEST_ASSERT_FALSE_MESSAGE(servoOutputParseAddress(raw, &driver, &channel), raw);
+    }
+
+    TEST_ASSERT_EQUAL_STRING("ARM1", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+    TEST_ASSERT_EQUAL_STRING("AUX3", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    TEST_ASSERT_EQUAL_STRING("", servoOutputAddressName(SERVO_DRIVER_LEDC, SERVO_OUTPUT_CHANNEL_UNSET));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+
+    RUN_TEST(test_moving_a_part_takes_it_off_the_output_it_was_on);
+    RUN_TEST(test_an_output_drives_every_part_ganged_to_it);
+    RUN_TEST(test_a_move_from_where_the_part_is_not_changes_nothing);
+    RUN_TEST(test_a_move_that_cannot_land_is_refused_before_anything_is_touched);
+    RUN_TEST(test_an_output_address_is_one_token_with_one_spelling);
 
     RUN_TEST(test_defaults_never_hand_out_a_zero_travel_time);
     RUN_TEST(test_defaults_are_limp_and_unmeasured);

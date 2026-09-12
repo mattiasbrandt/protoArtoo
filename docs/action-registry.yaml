@@ -2482,6 +2482,32 @@ entries:
   nvs_key: null
   executor: buildStatusJson
   is_query: false
+- name: servo.api.get-outputs
+  display_name: Get Servo Outputs
+  description: 'Every live Servo Output row and the Parts each one drives (ADR 0041, ADR 0050), as the Output Address token a Part move names. Both projections of the Parts destination read this one answer.
+    Read-only; a Part moves through POST /api/config movePart.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo/outputs
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_config.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # Answers executor-not-ready on the Console, on purpose (#347): the rows have
+  # no Console record shape yet, and REST is the one way to read them. Whether
+  # the bench side needs a Console read path - the Wave 0 checkpoint found no
+  # route to an endpoint value at all - is routed to C1b (#362), which owns the
+  # output-first view. Recorded in consoleExecuteCommand()'s dispatch-site
+  # comment and pinned by test_the_executor_not_ready_set_is_exactly_the_
+  # recorded_rows.
+  nvs_key: null
+  executor: configCacheReadServoOutput
 - name: aux.action.led-color
   display_name: LED Color
   description: Set AUX LED strip RGB color

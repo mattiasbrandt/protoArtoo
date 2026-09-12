@@ -102,6 +102,7 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/dome/layout", WebMethod::kGet, handleDomeLayoutGet);
 
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
+    webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
     webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost);

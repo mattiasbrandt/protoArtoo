@@ -225,6 +225,24 @@ bool applyDroidBuildHalf(const ConfigParamSource& params, const char* designName
     return true;
 }
 
+// -----------------------------------------------------------------------------
+// parsePartMoveEnd()
+// One end of a Part move: `none`, or an Output Address a driver actually has.
+// Anything else - an absent field included - is not an end.
+// -----------------------------------------------------------------------------
+bool parsePartMoveEnd(const char* raw, bool* onOutput, ServoOutputDriver* driver,
+                      uint8_t* channel) {
+    if (raw == nullptr) {
+        return false;
+    }
+    if (strcmp(raw, "none") == 0) {
+        *onOutput = false;
+        return true;
+    }
+    *onOutput = true;
+    return servoOutputParseAddress(raw, driver, channel);
+}
+
 bool paramBool(const ConfigParamSource& params, const char* name, bool* out) {
     const char* raw = configParamGet(params, name);
     if (raw == nullptr || out == nullptr) {
@@ -440,6 +458,32 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         result->droidBuild.fittedChanged = true;
         appendApplied(&result->applied, "[CFG] fittedParts updated to %u part(s)",
                       (unsigned)droidFittedPartsCount(result->droidBuild.fitted));
+        result->changed = true;
+    }
+
+    // A Part's place on the Outputs (ADR 0050, #347). All three fields or none:
+    // a move that names only where a Part is going cannot say which Output it is
+    // taking the Part away from, and that half is the one a builder has to be
+    // told about before it happens.
+    if (configParamHas(params, "movePart") || configParamHas(params, "movePartFrom") ||
+        configParamHas(params, "movePartTo")) {
+        const char* part = configParamGet(params, "movePart");
+        ServoOutputPartMove move = {};
+        if (part == nullptr || part[0] == '\0' ||
+            strlen(part) > SERVO_OUTPUT_PART_ID_MAX || !servoOutputPartIdIsValid(part) ||
+            !parsePartMoveEnd(configParamGet(params, "movePartFrom"), &move.fromOutput,
+                              &move.fromDriver, &move.fromChannel) ||
+            !parsePartMoveEnd(configParamGet(params, "movePartTo"), &move.toOutput,
+                              &move.toDriver, &move.toChannel)) {
+            setError(result, "movePart, movePartFrom and movePartTo must be sent together: a "
+                             "Part this build models, and each end an Output Address or none");
+            return;
+        }
+        snprintf(move.part, sizeof(move.part), "%s", part);
+        result->partMove.requested = true;
+        result->partMove.move = move;
+        appendApplied(&result->applied, "[CFG] movePart %s to %s", move.part,
+                      configParamGet(params, "movePartTo"));
         result->changed = true;
     }
 

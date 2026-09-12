@@ -42,7 +42,7 @@ void configCacheReadWifi(WifiConfig* out);
 // on their own NVS keys -- see include/config_serializer.h for why the table is
 // not a snapshot field. The live table is filled by configLoadServoOutputs() on
 // the boot path and changed at runtime only by the Commit Step, through
-// configCacheApplyServoOutputEdits() below.
+// configCacheApplyServoOutputEdits() and configCacheMoveServoOutputPart() below.
 //
 // configCacheReadServoOutput hands out ONE row: the table is far larger than
 // anything else this cache copies by value, and a task that wants one output
@@ -84,15 +84,23 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
 // configCacheReadServoOutputEndpoints(), which returns false for the second.
 ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel);
 
-// configCacheApplyServoOutputEdits: the one runtime write onto the rows. The
-// Apply Core is pure and cannot reach the table, so it records what a request
-// asked for as addressed ServoOutputEdits and the Commit Step hands them here.
-// Called from the Commit Step and from nowhere else -- the boot path has
-// already read the stored rows, and an edit pushed over the top would undo
-// that. An edit naming an Output Address no live row has changes nothing and
-// reports nothing. Returns what the component band moved.
+// configCacheApplyServoOutputEdits: the runtime write onto a row's endpoints and
+// component. The Apply Core is pure and cannot reach the table, so it records
+// what a request asked for as addressed ServoOutputEdits and the Commit Step
+// hands them here. Called from the Commit Step and from nowhere else -- the boot
+// path has already read the stored rows, and an edit pushed over the top would
+// undo that. An edit naming an Output Address no live row has changes nothing
+// and reports nothing. Returns what the component band moved.
 ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
                                                          size_t count);
+
+// configCacheMoveServoOutputPart: the runtime write onto a Part's place, and the
+// only write that touches two rows at once (ADR 0050, #347). The whole move is
+// one critical section, so no reader ever catches the Part on both Outputs or on
+// neither halfway through. Every rule and every refusal is
+// servoOutputTableMovePart()'s; this adds only the lock. Called from the Commit
+// Step and from nowhere else, for the same reason as the edits door above.
+ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move);
 
 // The Droid Build (ADR 0047): which droid a builder says they built, and which
 // Parts are on it. Outside ConfigSnapshot on its own NVS keys, filled by

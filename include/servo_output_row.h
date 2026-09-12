@@ -677,6 +677,83 @@ inline bool servoOutputParseU16(const char* raw, uint16_t* out) {
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputFormatAddress() / servoOutputParseAddress()
+// An Output Address as one token, `ledc:3`: the spelling a request names an
+// Output by, and the one GET /api/servo/outputs hands back, so a surface copies
+// the address it read rather than composing one. It is the first two fields of
+// the stored row record on purpose -- one address, one spelling.
+//
+// A parse accepts only an address the driver actually has
+// (servoOutputChannelIsValid), so `ledc:2` -- the dome ESC -- is not an Output
+// however well it is spelled.
+// -----------------------------------------------------------------------------
+constexpr size_t SERVO_OUTPUT_ADDRESS_STR_MAX = 8;  // "ledc:255"
+
+inline bool servoOutputFormatAddress(char* buf, size_t bufSize, ServoOutputDriver driver,
+                                     uint8_t channel) {
+    if (buf == nullptr || bufSize == 0) {
+        return false;
+    }
+    const int written = snprintf(buf, bufSize, "%s:%u", servoOutputDriverToString(driver),
+                                 (unsigned)channel);
+    return written > 0 && (size_t)written < bufSize;
+}
+
+inline bool servoOutputParseAddress(const char* raw, ServoOutputDriver* driver, uint8_t* channel) {
+    if (raw == nullptr || driver == nullptr || channel == nullptr) {
+        return false;
+    }
+    const char* sep = strchr(raw, ':');
+    if (sep == nullptr) {
+        return false;
+    }
+    char driverToken[8] = {};
+    const size_t driverLen = (size_t)(sep - raw);
+    if (driverLen == 0 || driverLen >= sizeof(driverToken)) {
+        return false;
+    }
+    memcpy(driverToken, raw, driverLen);
+    ServoOutputDriver parsedDriver = SERVO_DRIVER_LEDC;
+    uint16_t parsedChannel = 0;
+    if (!servoOutputParseDriver(driverToken, &parsedDriver) ||
+        !servoOutputParseU16(sep + 1, &parsedChannel) || parsedChannel > 0xFF ||
+        !servoOutputChannelIsValid(parsedDriver, (uint8_t)parsedChannel)) {
+        return false;
+    }
+    *driver = parsedDriver;
+    *channel = (uint8_t)parsedChannel;
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputAddressName()
+// The name a builder already knows an Output by, where it has one: the labels
+// docs/pin_map.md carries for the five LEDC outputs this controller drives, and
+// the ones Setup's component toggles and the Servos page already use. "" for an
+// address nobody has named -- an expander's rows -- so a surface shows the
+// address rather than a name that is printed nowhere.
+// -----------------------------------------------------------------------------
+inline const char* servoOutputAddressName(ServoOutputDriver driver, uint8_t channel) {
+    if (driver != SERVO_DRIVER_LEDC) {
+        return "";
+    }
+    switch (channel) {
+        case LEDC_CH_ARM1:
+            return "ARM1";
+        case LEDC_CH_ARM2:
+            return "ARM2";
+        case LEDC_CH_AUX1:
+            return "AUX1";
+        case LEDC_CH_AUX2:
+            return "AUX2";
+        case LEDC_CH_AUX3:
+            return "AUX3";
+        default:
+            return "";
+    }
+}
+
+// -----------------------------------------------------------------------------
 // servoOutputRowNormalise()
 // One validator, for every door onto a row.
 //
@@ -1140,6 +1217,114 @@ inline uint32_t servoOutputTableEnforcePartOwnership(ServoOutputTable* table) {
         }
     }
     return affected;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputTableFindPart()
+// The row that drives a Part, or SERVO_OUTPUT_ROW_MAX when no live row does.
+// servoOutputTableEnforcePartOwnership() means there is at most one; were there
+// ever two, the lowest-numbered wins here for the same reason it wins there.
+// -----------------------------------------------------------------------------
+inline uint8_t servoOutputTableFindPart(const ServoOutputTable& table, const char* partId) {
+    const uint8_t count =
+        (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (servoOutputDrivesPart(table.rows[i], partId)) {
+            return i;
+        }
+    }
+    return SERVO_OUTPUT_ROW_MAX;
+}
+
+// -----------------------------------------------------------------------------
+// ServoOutputPartMove / servoOutputTableMovePart()
+// Putting a Part on an Output, taking it off every Output, or moving it from one
+// to another: the act ADR 0050 means by "assigning it elsewhere MOVES it", and
+// the write door servoOutputTableEnforcePartOwnership() says is not its job.
+//
+// A move names BOTH ends -- the Output the Part is being taken from as well as
+// the one it is going to -- and a move whose stated origin is not where the Part
+// actually is changes nothing. That is what makes announcing a move a rule
+// rather than a habit (#347): a surface can only take a Part off an Output it has
+// already read the Part on, which is exactly the moment it has everything it
+// needs to say so first, and a table that changed underneath it is refused
+// rather than silently written over. Every surface meets the same refusal - the
+// part-first table, the output-first one, guided Setup and any import.
+//
+// Every refusal is decided before anything is touched, so a refused move leaves
+// the table exactly as it was. The two list writes are servoOutputRemovePartAt()
+// and servoOutputAddPart(), the same ones every other door uses.
+// -----------------------------------------------------------------------------
+struct ServoOutputPartMove {
+    char part[SERVO_OUTPUT_PART_ID_MAX + 1];
+    bool fromOutput;  // false: the request says the Part is on no Output now
+    ServoOutputDriver fromDriver;
+    uint8_t fromChannel;
+    bool toOutput;  // false: take the Part off every Output
+    ServoOutputDriver toDriver;
+    uint8_t toChannel;
+};
+
+enum ServoPartMoveOutcome : uint8_t {
+    SERVO_PART_MOVED = 0,         // the Part is now where the move sent it
+    SERVO_PART_ALREADY_THERE,     // nothing to do, and nothing wrong
+    SERVO_PART_NOT_WHERE_STATED,  // the table disagrees with the origin the move named
+    SERVO_PART_OUTPUT_FULL,       // the destination already drives SERVO_OUTPUT_PART_SLOTS Parts
+    SERVO_PART_NO_SUCH_OUTPUT,    // no live row is addressed where the move sends it
+    SERVO_PART_NOT_A_PART,        // not an id this build models
+};
+
+inline ServoPartMoveOutcome servoOutputTableMovePart(ServoOutputTable* table,
+                                                     const ServoOutputPartMove& move) {
+    // Shape first, so an id with no terminator inside its slot never reaches
+    // the vocabulary walk -- the same order servoOutputPartIdIsValid() keeps.
+    if (table == nullptr || strnlen(move.part, sizeof(move.part)) >= sizeof(move.part) ||
+        move.part[0] == '\0' || !servoOutputPartIdIsValid(move.part)) {
+        return SERVO_PART_NOT_A_PART;
+    }
+
+    const uint8_t destination =
+        move.toOutput ? servoOutputTableFindByAddress(*table, move.toDriver, move.toChannel)
+                      : SERVO_OUTPUT_ROW_MAX;
+    if (move.toOutput && destination >= SERVO_OUTPUT_ROW_MAX) {
+        return SERVO_PART_NO_SUCH_OUTPUT;
+    }
+
+    // An origin naming an Output no live row has is a table the sender did not
+    // read, even when the Part happens to be on nothing: both halves of that
+    // statement have to hold, not just the comparison below.
+    const uint8_t stated =
+        move.fromOutput ? servoOutputTableFindByAddress(*table, move.fromDriver, move.fromChannel)
+                        : SERVO_OUTPUT_ROW_MAX;
+    const uint8_t current = servoOutputTableFindPart(*table, move.part);
+    if ((move.fromOutput && stated >= SERVO_OUTPUT_ROW_MAX) || current != stated) {
+        return SERVO_PART_NOT_WHERE_STATED;
+    }
+
+    if (current == destination) {
+        return SERVO_PART_ALREADY_THERE;
+    }
+    if (destination < SERVO_OUTPUT_ROW_MAX &&
+        servoOutputPartCount(table->rows[destination]) >= SERVO_OUTPUT_PART_SLOTS) {
+        return SERVO_PART_OUTPUT_FULL;
+    }
+
+    if (current < SERVO_OUTPUT_ROW_MAX) {
+        const uint8_t count = servoOutputPartCount(table->rows[current]);
+        for (uint8_t slot = 0; slot < count; ++slot) {
+            if (strcmp(table->rows[current].parts[slot], move.part) == 0) {
+                servoOutputRemovePartAt(&table->rows[current], slot);
+                break;
+            }
+        }
+    }
+    if (destination < SERVO_OUTPUT_ROW_MAX) {
+        // Cannot refuse here: the id is valid, the destination is not the row
+        // the Part was on, ownership means no other row drove it, and the slot
+        // count was checked above.
+        (void)servoOutputAddPart(&table->rows[destination], move.part);
+    }
+    return SERVO_PART_MOVED;
 }
 
 // -----------------------------------------------------------------------------

@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 8d60da27..ee2e9c8c 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -103,7 +103,7 @@
+       to: arrives ? arrives.address : NO_OUTPUT,
+       leaves,
+       arrives,
+-      announce: leaves !== null && arrives !== null && leaves !== arrives,
++      announce: false,
+       keeps: leaves ? leaves.parts.filter((id) => id !== partId) : [],
+       joins: arrives && arrives !== leaves ? arrives.parts.slice() : [],
+     };

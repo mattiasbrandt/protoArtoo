@@ -477,8 +477,99 @@ void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
     TEST_ASSERT_EQUAL_STRING(before.dome.design, after.dome.design);
 }
 
+// --- Part moves through the whole route (ADR 0050, #347) ---------------------
+
+// Five empty rows, whatever an earlier test left in storage: a move persists,
+// so every test here starts from a controller nobody has wired.
+void seedUnwiredServoOutputRows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+int postMove(const char* part, const char* from, const char* to, WebRequestTestBackend* backend) {
+    const WebRequestTestParam params[] = {
+        {"movePart", part}, {"movePartFrom", from}, {"movePartTo", to}};
+    backend->params = params;
+    backend->paramCount = 3;
+    WebRequest req(backend);
+    handleConfigPost(req);
+    backend->params = nullptr;
+    backend->paramCount = 0;
+    return backend->sentCode;
+}
+
+uint8_t rowDriving(const char* part) {
+    ServoOutputRow row = {};
+    for (uint8_t i = 0; configCacheReadServoOutput(i, &row); ++i) {
+        if (servoOutputDrivesPart(row, part)) {
+            return row.channel;
+        }
+    }
+    return SERVO_OUTPUT_CHANNEL_UNSET;
+}
+
+// A move lands on both rows it touches and runs the Commit Step to its end.
+// The status broadcast is the last thing that step does, after the rows are
+// written, so seeing it is seeing a commit that did not stop short. (The
+// Preferences double keeps each instance's store to itself, so a reload through
+// a second instance cannot observe the write; the row record the save writes is
+// test_servo_output_row's.)
+void test_a_part_move_takes_it_off_one_output_and_is_committed() {
+    seedUnwiredServoOutputRows();
+
+    WebRequestTestBackend first;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &first));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
+
+    const unsigned broadcastsBefore = g_test_status_broadcast_count;
+    WebRequestTestBackend second;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "ledc:0", "ledc:3", &second));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, rowDriving("doorFL"));
+    ServoOutputRow arm1 = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &arm1));
+    TEST_ASSERT_EQUAL_UINT8(0, servoOutputPartCount(arm1));
+    TEST_ASSERT_EQUAL_UINT(broadcastsBefore + 1, g_test_status_broadcast_count);
+}
+
+// The steal nobody announced. The request says the door is on nothing, the
+// table says ARM1: the whole request is refused, the field riding beside the
+// move included, and nothing reaches storage.
+void test_a_move_from_an_output_the_part_is_not_on_changes_nothing() {
+    seedUnwiredServoOutputRows();
+    WebRequestTestBackend seed;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &seed));
+    const unsigned broadcastsBefore = g_test_status_broadcast_count;
+
+    const WebRequestTestParam params[] = {{"movePart", "doorFL"},
+                                          {"movePartFrom", "none"},
+                                          {"movePartTo", "ledc:3"},
+                                          {"speedLimitMax", "250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING(
+        "that Part is not on the Output movePartFrom names - read the outputs again, then move it",
+        doc["error"] | "");
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
+    TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+    // The Commit Step stopped before its save, so it never broadcast either.
+    TEST_ASSERT_EQUAL_UINT(broadcastsBefore, g_test_status_broadcast_count);
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_a_part_move_takes_it_off_one_output_and_is_committed);
+    RUN_TEST(test_a_move_from_an_output_the_part_is_not_on_changes_nothing);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);

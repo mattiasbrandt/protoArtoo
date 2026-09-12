@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/parts.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Parts - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate: a direct visit is handed to the shell at this route (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#parts");</script>
+    <!-- PA:INCLUDE _recovery_kernel.html -->
+  </head>
+  <body data-page="parts">
+    <div id="shell-top"></div>
+
+    <div class="card">
+      <h3>🧩 Parts</h3>
+      <p class="desc">Every part on your droid, and the output that drives it. Pick an output to wire a part. A part is only ever on one output, so picking a new one moves it, and this page asks before it takes a part off the output it is on. One output can drive several parts that always move together, like two doors on one lead.</p>
+      <p class="parts-summary" id="parts-summary" role="status" aria-live="polite">Finding out what drives each part...</p>
+      <div class="parts-table-wrap" id="parts-table"></div>
+      <p class="feedback mt-12" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    </div>
+
+    <dialog class="parts-move-dialog" id="parts-move-dialog" role="alertdialog" aria-labelledby="parts-move-title" aria-describedby="parts-move-body">
+      <h4 id="parts-move-title"></h4>
+      <p id="parts-move-body"></p>
+      <div class="button-row">
+        <button class="btn" type="button" id="parts-move-cancel">Cancel</button>
+        <button class="btn accent" type="button" id="parts-move-confirm">Move it</button>
+      </div>
+    </dialog>
+
+    <div id="shell-status"></div>
+  </body>
+</html>

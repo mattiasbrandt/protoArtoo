@@ -95,6 +95,23 @@ struct ConfigDroidBuildEdit {
     DroidFittedParts fitted = {};
 };
 
+// What the request asked of a Part's place on the Outputs (ADR 0050, #347).
+//
+// A move arrives as three fields that mean something only together: the Part,
+// the Output it is on now, and the Output it is going to, each end an Output
+// Address or `none`. This core checks their shape - a Part this build models, an
+// address a driver actually has. Whether the Part really is where the request
+// says is a question about the live table, which this core cannot reach, so the
+// Commit Step asks it and refuses the whole request, before anything else in it
+// lands, when the answer is no.
+//
+// `requested` is false on a request that named none of the three, which is
+// every request that is not a move.
+struct ConfigPartMove {
+    bool requested = false;
+    ServoOutputPartMove move = {};
+};
+
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
     ConfigApplyError error;
@@ -102,6 +119,7 @@ struct ConfigApplyResult {
     ConfigAppliedFields applied;
     ConfigServoOutputEdits servoOutputs;
     ConfigDroidBuildEdit droidBuild;
+    ConfigPartMove partMove;
 };
 
 // `working` must already hold the current cached snapshot (shell reads it

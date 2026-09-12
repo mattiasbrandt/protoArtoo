@@ -16,6 +16,8 @@
 
 #include "api_config.h"
 #include "config_cache.h"
+#include "config_nvsio.h"
+#include "config_serializer.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
 
@@ -233,8 +235,109 @@ void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
                              (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
 }
 
+// --- GET /api/servo/outputs (ADR 0050, #347) --------------------------------
+
+namespace {
+
+void seedUnwiredServoOutputRows() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+}
+
+void moveOnto(const char* part, uint8_t channel) {
+    ServoOutputPartMove move = {};
+    snprintf(move.part, sizeof(move.part), "%s", part);
+    move.fromOutput = false;
+    move.toOutput = true;
+    move.toDriver = SERVO_DRIVER_LEDC;
+    move.toChannel = channel;
+    TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED, configCacheMoveServoOutputPart(move));
+}
+
+}  // namespace
+
+// Every live row, addressed the way a move names it, with every Part it drives -
+// a ganged lead lists both, and an Output driving nothing says so with an empty
+// list rather than by being left out.
+void test_the_servo_outputs_answer_lists_every_row_and_all_its_parts() {
+    seedUnwiredServoOutputRows();
+    moveOnto("utilUp", LEDC_CH_ARM1);
+    moveOnto("doorFL", LEDC_CH_ARM1);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonArray outputs = doc["outputs"].as<JsonArray>();
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)SERVO_OUTPUT_ROW_DEFAULT_COUNT, (uint32_t)outputs.size());
+
+    TEST_ASSERT_EQUAL_STRING("ledc:0", outputs[0]["address"] | "");
+    TEST_ASSERT_EQUAL_STRING("ARM1", outputs[0]["name"] | "");
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)outputs[0]["parts"].as<JsonArray>().size());
+    TEST_ASSERT_EQUAL_STRING("utilUp", outputs[0]["parts"][0] | "");
+    TEST_ASSERT_EQUAL_STRING("doorFL", outputs[0]["parts"][1] | "");
+
+    TEST_ASSERT_EQUAL_STRING("ledc:3", outputs[2]["address"] | "");
+    TEST_ASSERT_EQUAL_STRING("AUX1", outputs[2]["name"] | "");
+    TEST_ASSERT_TRUE(outputs[2]["parts"].is<JsonArray>());
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)outputs[2]["parts"].as<JsonArray>().size());
+}
+
+// The largest answer the table can give: every row it can hold, each at the
+// longest address, holding every Part the catalog declares between them. The
+// route refuses a payload at its ceiling with a 500, so the bound is measured
+// here rather than argued about - the catalog grows, and this is where that
+// growth would first show.
+void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    table.count = SERVO_OUTPUT_ROW_MAX;
+    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+        TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[i / SERVO_OUTPUT_PART_SLOTS],
+                                            droidPartIdAt(i)));
+    }
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    PrefsWriter writer(prefs);
+    TEST_ASSERT_TRUE(configSerializeServoOutputs(table, writer));
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX, configCacheServoOutputCount());
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_LESS_THAN_UINT32(2560u, (uint32_t)strlen(backend.sentBody));
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonArray outputs = doc["outputs"].as<JsonArray>();
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)SERVO_OUTPUT_ROW_MAX, (uint32_t)outputs.size());
+    size_t parts = 0;
+    for (JsonObject output : outputs) {
+        parts += output["parts"].as<JsonArray>().size();
+    }
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT, (uint32_t)parts);
+
+    // Leave a controller nobody has wired for whatever runs next.
+    seedUnwiredServoOutputRows();
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_the_servo_outputs_answer_lists_every_row_and_all_its_parts);
+    RUN_TEST(test_a_full_table_of_outputs_fits_under_the_route_ceiling);
     RUN_TEST(test_get_returns_config_json);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);
     RUN_TEST(test_the_old_field_names_are_answered_from_the_rows);
