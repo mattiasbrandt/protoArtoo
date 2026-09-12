@@ -7,9 +7,10 @@
   third-party copyright.
 
   Why one sprite rather than a file each: littlefs charges a 4 KiB block per
-  file whatever the content, so twenty drawings as twenty files cost 81,920 B
-  to carry 25 KB of art. Inlined they cost about 8 KB, and the drawings pick up
-  the page's colour, which an SVG reached by <img> or an external <use> cannot.
+  file whatever the content, so twenty drawings as twenty files would take about
+  twenty blocks for art that gzips to 9,267 B as a single file. Inlined into a
+  page they measured +8,192 B, two blocks, and the drawings pick up the page's
+  colour, which an SVG reached by <img> or an external <use> cannot.
   A partial is not imaged (tools/gzip_fsdata.py), so this file costs the
   artoo-esp32 nothing at all until a page inlines it.
 
