@@ -554,6 +554,44 @@ void test_web_control_disable_submits_a_zero_frame() {
     TEST_ASSERT_EQUAL_INT16(0, resolvedDriveOutput().speed);
 }
 
+void test_radio_drives_after_browser_control_is_disabled() {
+    // #394: disabling browser control submits a WEB_API (0,0) frame, which
+    // ages out like any browser command. A newer radio command must end the
+    // web drive timeout, or the radio goes dead half a second after the
+    // browser is switched off.
+    robotState.webControlEnabled = true;
+
+    const WebRequestTestParam driveParams[] = {{"speed", "150"}, {"steer", "0"}};
+    WebRequestTestBackend driveBackend;
+    driveBackend.params = driveParams;
+    driveBackend.paramCount = 2;
+    WebRequest driveReq(&driveBackend);
+    handleDrivePost(driveReq);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleWebControlDisablePost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    // The shipped timeout, not resolvedDriveOutput()'s 60 s window: this test
+    // is about what happens once the browser's command has aged out.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    DriveArbiterConfig cfg = {};
+    cfg.speedLimitMax = snap.drive.speedLimitMax;
+    cfg.webDriveTimeoutMs = 500;
+    cfg.rcDriveTimeoutMs = 5000;
+
+    g_test_millis += 600;
+    driveArbiterSubmit(DriveSource::RC, 120, 0, millis());
+
+    DriveOutput out = driveArbiterResolve(cfg, millis());
+    TEST_ASSERT_FALSE(out.webTimedOut);
+    TEST_ASSERT_FALSE(out.failsafeActive);
+    TEST_ASSERT_EQUAL_INT((int)DriveSource::RC, (int)out.activeSource);
+    TEST_ASSERT_EQUAL_INT16(120, out.speed);
+}
+
 // -----------------------------------------------------------------------------
 // Manual command routing (shared with POST /api/manual-command)
 // -----------------------------------------------------------------------------
@@ -960,6 +998,7 @@ int main(int, char**) {
     RUN_TEST(test_speed_preset_reports_the_applied_cap);
     RUN_TEST(test_speed_preset_reports_a_failed_persist);
     RUN_TEST(test_web_control_disable_submits_a_zero_frame);
+    RUN_TEST(test_radio_drives_after_browser_control_is_disabled);
 
     RUN_TEST(test_manual_command_keywords_are_case_insensitive);
     RUN_TEST(test_manual_command_rejects_an_unknown_keyword);

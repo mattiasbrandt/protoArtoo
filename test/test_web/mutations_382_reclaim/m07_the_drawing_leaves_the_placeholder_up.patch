@@ -1,0 +1,11 @@
+diff --git a/data/setup.js b/data/setup.js
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -429,7 +429,6 @@
+ 
+   const showBoardArt = () => {
+     if (boardImage) boardImage.classList.add("hidden");
+-    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
+     boardArt.classList.remove("hidden");
+   };
+ 

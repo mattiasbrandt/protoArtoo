@@ -4027,6 +4027,19 @@ label.sound-search-field {
   display: none;
 }
 
+/* The legacy asset set's line drawing, drawn inline from the sprite setup.html
+   includes (ADR 0065). Framed like the photograph, at the photograph's 4:3 and
+   no taller, so the panel reads the same on either board. Its strokes are
+   currentColor; the global .hidden rule hides it. */
+.board-image-wrap .board-art {
+  width: min(100%, 346px);
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
 .board-placeholder {
   display: flex;
   flex-direction: column;

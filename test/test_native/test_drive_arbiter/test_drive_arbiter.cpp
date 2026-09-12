@@ -188,20 +188,88 @@ void test_failsafe_active_zeros_output() {
 }
 
 void test_rc_fallback_when_web_times_out() {
-    // When web times out, failsafe is triggered and output is zeroed
-    // RC is still the active source, but output is zero because failsafe is active
+    // The browser sent the LAST drive command (1100, after the radio's 1000)
+    // and then went silent. That is the dead-man case the web timeout exists
+    // for: output is held at zero even though RC is still inside its own
+    // window and is reported as the active source.
+    //
+    // The hold lasts only while the browser is the last submitter. Any newer
+    // drive command, the radio's included, ends it -- see
+    // test_radio_command_ends_web_timeout_hold below (#394).
     driveArbiterSubmit(DriveSource::RC, 100, 50, 1000);
     driveArbiterSubmit(DriveSource::WEB_API, 200, 100, 1100);
 
     DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500, .rcDriveTimeoutMs = 5000};
 
-    // Web times out — failsafe is triggered, output is zeroed
-    // RC is the active source (most recent non-timed-out), but failsafe overrides output
+    // Web times out while still the last submitter: output is zeroed.
+    // RC is the active source (most recent non-timed-out), but the hold overrides output
     DriveOutput out = driveArbiterResolve(cfg, 1601);
     TEST_ASSERT_TRUE(out.failsafeActive);
     TEST_ASSERT_EQUAL_INT16(0, out.speed);
     TEST_ASSERT_EQUAL_INT16(0, out.steer);
     TEST_ASSERT_EQUAL_INT((int)DriveSource::RC, (int)out.activeSource);
+}
+
+// One DriveTask tick as src/tasks/drive.cpp runs it: resolve, then sync the
+// resolved web-timeout state into FailsafeGate. The path back runs through
+// both halves, so testing resolve() alone would miss a gate layer that never
+// clears.
+static DriveOutput driveTaskTick(const DriveArbiterConfig& cfg, uint32_t nowMs) {
+    DriveOutput out = driveArbiterResolve(cfg, nowMs);
+    failsafeUpdateWebTimeout(out.webTimedOut);
+    return out;
+}
+
+void test_radio_command_ends_web_timeout_hold() {
+    // #394: drive from the browser, stop, then drive from the radio.
+    DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500, .rcDriveTimeoutMs = 5000};
+
+    driveArbiterSubmit(DriveSource::WEB_API, 200, 0, 1000);
+    // Releasing the browser's drive button posts (0,0), which is itself a web
+    // command (data/drive.js) and ages out like any other.
+    driveArbiterSubmit(DriveSource::WEB_API, 0, 0, 1050);
+
+    // The browser is the last submitter and has gone silent: the hold stands.
+    DriveOutput held = driveTaskTick(cfg, 1600);
+    TEST_ASSERT_TRUE(held.webTimedOut);
+    TEST_ASSERT_TRUE(held.failsafeActive);
+    TEST_ASSERT_TRUE(failsafeIsActive());
+    TEST_ASSERT_TRUE(robotState.webDriveExpired);
+
+    // The radio sends a newer command. No browser action follows.
+    driveArbiterSubmit(DriveSource::RC, 100, 50, 1620);
+
+    // First tick after it: the timeout no longer counts, so DriveTask's sync
+    // clears the gate layer. The output of this one tick is still zero,
+    // because resolve() read the layer the previous tick had set.
+    DriveOutput releasing = driveTaskTick(cfg, 1620);
+    TEST_ASSERT_FALSE(releasing.webTimedOut);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_FALSE(robotState.webDriveExpired);
+
+    // Next tick: the radio drives the feet.
+    driveArbiterSubmit(DriveSource::RC, 100, 50, 1640);
+    DriveOutput driving = driveTaskTick(cfg, 1640);
+    assertDriveOutput(driving, 100, 50, false, DriveSource::RC);
+
+    // And it stays released for as long as the radio keeps sending, long
+    // after the browser's last command.
+    driveArbiterSubmit(DriveSource::RC, 120, 0, 5000);
+    DriveOutput later = driveTaskTick(cfg, 5000);
+    assertDriveOutput(later, 120, 0, false, DriveSource::RC);
+}
+
+void test_radio_command_at_same_timestamp_ends_web_timeout_hold() {
+    // A tie goes to the radio, as arbitration already does
+    // (test_source_priority_at_same_timestamp).
+    driveArbiterSubmit(DriveSource::WEB_API, 0, 0, 1000);
+    driveArbiterSubmit(DriveSource::RC, 100, 50, 1000);
+
+    DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500, .rcDriveTimeoutMs = 5000};
+    DriveOutput out = driveArbiterResolve(cfg, 1501);
+
+    // RC is 501 ms old, inside its 5000 ms window; web is stale but not last.
+    assertDriveOutput(out, 100, 50, false, DriveSource::RC);
 }
 
 void test_millis_overflow_handling() {
@@ -414,6 +482,8 @@ int main() {
     RUN_TEST(test_speed_limit_clamping);
     RUN_TEST(test_failsafe_active_zeros_output);
     RUN_TEST(test_rc_fallback_when_web_times_out);
+    RUN_TEST(test_radio_command_ends_web_timeout_hold);
+    RUN_TEST(test_radio_command_at_same_timestamp_ends_web_timeout_hold);
     RUN_TEST(test_millis_overflow_handling);
     RUN_TEST(test_web_zero_command);
     RUN_TEST(test_source_priority_at_same_timestamp);

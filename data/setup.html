@@ -18,7 +18,15 @@
   <body data-page="setup">
     <div id="shell-top"></div>
 
+    <!-- The asset set's product drawings (ADR 0065). The legacy set inlines a
+         symbol per product here and the board picture below draws one; the
+         default set's partial is empty, so that build shows the photograph.
+         It sits in the body because the Operator Shell mounts only a
+         surface's body, and the drawings must be in the document to be drawn. -->
+    <!-- PA:INCLUDE _product_art.html -->
+
     <div class="board-image-wrap" id="board-image-panel">
+      <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
       <img id="board-image" alt="" title="">
       <div id="board-image-placeholder" class="board-placeholder">
         <div class="board-placeholder-icon">🎛️</div>
