@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 1f5e9811..9536af71 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1434,7 +1434,7 @@
+ 
+     // Disable save button if invalid
+     const saveBtn = document.getElementById("seq-editor-save");
+-    if (saveBtn) saveBtn.disabled = !validation.ok;
++    if (saveBtn) saveBtn.disabled = !validation.ok || (window.SeqRehearsal && window.SeqRehearsal.rehearse(editorState.current).counts.warning > 0);
+ 
+     // The Rehearsal's counts sit beside Protocol Check's verdict and never feed
+     // it: the save button above answers to Protocol Check alone (ADR 0044).

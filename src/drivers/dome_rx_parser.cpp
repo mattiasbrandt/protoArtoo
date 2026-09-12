@@ -31,6 +31,7 @@
 #include "marcduino_helpers.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
+#include "sequence_dispatcher.h"  // :SE30..:SE36 start as Factory Sequences
 #include "web_server.h"
 
 static const char* TAG = "MARCDUINO";
@@ -103,6 +104,10 @@ bool handlePanelCommand(const char* cmd) {
 //
 // Direct body sequence IDs: :SE30-:SE36
 // Full-droid sequence IDs:  :SE01-:SE09, :SE15, :SE16 (decomposed locally)
+//
+// A body sequence is a Factory Sequence built from Body Steps (ADR 0049), so it
+// starts through the Sequence Coordinator under its DM:SE<nn> name rather than
+// as a command to ServoTask.
 // -----------------------------------------------------------------------------
 bool handleSequenceCommand(const char* cmd) {
     if (cmd[0] != ':' || cmd[1] != 'S' || cmd[2] != 'E') {
@@ -142,20 +147,13 @@ bool handleSequenceCommand(const char* cmd) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (estop) {
-            PA_LOG_WARN(TAG, "[SERVO] sequence command rejected - estop active");
+            PA_LOG_WARN(TAG, "[SEQ] body routine rejected - estop active");
+        } else if (!sequenceStart(sequenceBodyRoutineName(mappedSeqId), SRC_INTERNAL)) {
+            PA_LOG_WARN(TAG, "[SEQ] body routine :SE%02d not started - sequence queue full",
+                        mappedSeqId);
         } else {
-            ServoCommand servoCmd = {};
-            servoCmd.type = SERVO_CMD_SEQUENCE;
-            servoCmd.sequenceId = (uint8_t)mappedSeqId;
-            servoCmd.source = SRC_INTERNAL;
-            servoCmd.timestampMs = millis();
-
-            if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
-                logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
-            } else {
-                handled = true;
-                queuedSeqId = mappedSeqId;
-            }
+            handled = true;
+            queuedSeqId = mappedSeqId;
         }
     }
 

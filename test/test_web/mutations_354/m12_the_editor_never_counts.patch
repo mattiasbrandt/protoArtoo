@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 1f5e9811..4d5ff2de 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1439,7 +1439,7 @@
+     // The Rehearsal's counts sit beside Protocol Check's verdict and never feed
+     // it: the save button above answers to Protocol Check alone (ADR 0044).
+     const rehearsalEl = document.getElementById("seq-editor-rehearsal");
+-    if (rehearsalEl && window.SeqRehearsal) {
++    if (rehearsalEl && !window.SeqRehearsal) {
+       rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(
+         window.SeqRehearsal.rehearse(editorState.current)
+       );

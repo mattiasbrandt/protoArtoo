@@ -89,7 +89,8 @@ Recognized line families from dome ingress:
   - `BD:<cue>`
 - Marcduino subset routed to body parser:
   - `:OPxx`, `:CLxx`, `:MVxxdddd`
-  - `:SE30-:SE36`
+  - `:SE30-:SE36` (body routines: each starts the Factory Sequence `DM:SE30`..`DM:SE36`
+    through the Sequence Coordinator, so a Retrained Sequence of that name replaces it)
   - `:SE01-:SE09`, `:SE15`, `:SE16` (decomposed to body-side actions)
   - `$...`
   - `#APSL`, `#APWU`

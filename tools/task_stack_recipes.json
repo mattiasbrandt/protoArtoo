@@ -68,11 +68,10 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5248,
-          "product_bytes": 5248,
-          "profiler_bytes": 5248,
-          "rule": "above",
-          "reason": "The pre-#256 literal, kept rather than lowered onto a Xtensa figure that can prove an overrun and cannot prove a margin."
+          "chain_bytes": 5616,
+          "product_bytes": 5616,
+          "profiler_bytes": 5616,
+          "rule": "applied"
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -323,11 +322,11 @@
             "embeddedCliProcess"
           ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement.",
-          "chain_bytes": 7360,
-          "product_bytes": 7360,
-          "profiler_bytes": 7360,
+          "chain_bytes": 7376,
+          "product_bytes": 7376,
+          "profiler_bytes": 7376,
           "components": {
-            "onCliCommand": 6960,
+            "onCliCommand": 6976,
             "consoleTask": 320,
             "embeddedCliProcess": 80
           },

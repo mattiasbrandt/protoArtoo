@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 1f5e9811..38c41576 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -2439,7 +2439,7 @@
+     showEditorFeedback("Saving...", "info");
+     try {
+       await PAApi.postJson("/api/seq", editorState.current);
+-      showRehearsalReport("Saved.", "ok", editorState.current, "list");
++      showEditorFeedback("Saved.", "ok");
+       editorState.isNew = false;
+       editorState.tuningFactory = null;
+       editorState.original = JSON.parse(JSON.stringify(editorState.current));

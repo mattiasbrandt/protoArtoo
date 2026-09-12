@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..3365aee9 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -136,7 +136,7 @@
+     let worst = null;
+     for (let k = 1; k < dome.length; k += 1) {
+       const gap = dome[k].t - dome[k - 1].t;
+-      if (gap < DOME_SPACING_MS) {
++      if (gap <= DOME_SPACING_MS) {
+         tight += 1;
+         if (!worst || gap < worst.gap) worst = { gap, before: dome[k - 1], after: dome[k] };
+       }

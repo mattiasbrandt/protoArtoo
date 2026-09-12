@@ -1,0 +1,12 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..50b2e63b 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -290,7 +290,6 @@
+     <div class="seq-rehearsal-counts" data-rehearsal-counts>
+       <span class="seq-rehearsal-count seq-rehearsal-count-warning" data-count="warning">${plural(report.counts.warning, "warning", "warnings")}</span>
+       <span class="seq-rehearsal-count" data-count="note">${plural(report.counts.note, "note", "notes")}</span>
+-      <span class="seq-rehearsal-checked">Rehearsal ${checkedLine(report)}</span>
+     </div>`;
+ 
+   const listHtml = (report) => {

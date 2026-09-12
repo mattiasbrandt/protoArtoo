@@ -1,5 +1,11 @@
 # Servo panel sequence state machine stays inline
 
+Status: superseded (2026-09-12, #354). The state machine no longer exists:
+`:SE30`..`:SE36` became Factory Sequences built from Body Steps (ADR 0049), each
+its own routine, run by the Sequence Coordinator. The revisit trigger below fired
+in the strongest form -- the choreographies diverged -- and the answer was not to
+extract the machine but to delete it.
+
 An architecture sweep proposed extracting the servo task's panel-sequence state
 machine into a Step Core (a pure `step(state, nowMs, triggers) -> actions`
 module, the shape ADR 0005 and ADR 0014 gave the protoR2link Arbiter and the

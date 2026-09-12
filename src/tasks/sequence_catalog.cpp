@@ -20,8 +20,11 @@
 
 // Effect-class convention: tag the FIRST step that activates each persistent
 // effect (panel open, logic/PSI mode, holo effect, long audio). The engine
-// auto-emits the matching resets (@0T1/@0P1, *ST00, :CL00, audio stop) on
-// terminal transitions, so tables do not repeat standard cleanup steps.
+// auto-emits the matching resets (@0T1/@0P1, *ST00, audio stop) on terminal
+// transitions, so tables do not repeat standard cleanup steps. Panels are the
+// exception in both directions: the engine closes only the ring panels a run
+// left open, one at a time, never with a group close and never a pie -- so a
+// table that opens pies closes them itself.
 
 // =============================================================================
 // Flat sequences
@@ -41,18 +44,19 @@ static const SeqStep kVaderSteps[] = {
 };
 
 // DM:HELLO  --  "Hello There" greeting (4 s).
-// Front and rear logic text, then a six-pulse P1 panel wave.
+// Front and rear logic text, then P1 opens and closes.
+//
+// It used to send :OP01 five times 160 ms apart, commented open / half / open /
+// half / open. :OP is an open, not a pulse, and a panel already opening ignores
+// a second one, so the five made ONE open and never the six-pulse wave this
+// header promised (#287). One open is what it does, so one open is what it says.
 static const SeqStep kHelloSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // happy/greeting clip
     SEQ_DOME(0, FX_NONE, "@1MHello There"),      // front logic text
     SEQ_DOME(0, FX_NONE, "@3MGeneral Kenobi"),
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
-    SEQ_DOME(160, FX_NONE, ":OP01"),     // P1 half
-    SEQ_DOME(320, FX_NONE, ":OP01"),     // P1 open
-    SEQ_DOME(480, FX_NONE, ":OP01"),     // P1 half
-    SEQ_DOME(640, FX_NONE, ":OP01"),     // P1 open
     SEQ_DOME(800, FX_NONE, ":CL01"),      // P1 close
-    SEQ_TERM(950),                               // auto :CL00 (close + release)
+    SEQ_TERM(950),                               // P1 already closed: no panel cleanup
 };
 
 // DM:NOD  --  short acknowledgment: sound + logic text + P1 wave.
@@ -62,7 +66,7 @@ static const SeqStep kNodSteps[] = {
     SEQ_DOME(0, FX_NONE, "@1MYes"),              // logic text
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
     SEQ_DOME(150, FX_NONE, ":CL01"),      // P1 close
-    SEQ_TERM(300),                               // auto scoped :CL15 (ring-only close + release)
+    SEQ_TERM(300),                               // P1 already closed: no panel cleanup
 };
 
 // DM:FLUTTER  --  ring then pie panels sweep to 75%, then close (10 s window).
@@ -99,7 +103,7 @@ static const SeqStep kFlutterSteps[] = {
     SEQ_DOME(3450, FX_NONE, ":CLP4"),
     SEQ_DOME(3600, FX_NONE, ":CLP5"),
     SEQ_DOME(3750, FX_NONE, ":CLP6"),
-    SEQ_TERM(4250),                              // auto :CL00 (release)
+    SEQ_TERM(4250),                              // every panel closed above: no panel cleanup
 };
 
 // DM:BLOOM  --  pies open together over 1.2 s, wiggle three times, close (8 s).
@@ -158,7 +162,7 @@ static const SeqStep kBloomSteps[] = {
     SEQ_DOME(5150, FX_NONE, ":CLP4"),
     SEQ_DOME(5150, FX_NONE, ":CLP5"),
     SEQ_DOME(5150, FX_NONE, ":CLP6"),
-    SEQ_TERM(5650),                              // auto :CL00 (release)
+    SEQ_TERM(5650),                              // pies closed above; the engine never closes a pie
 };
 
 // DM:LEIA  --  Leia message mode (36 s): front holo Leia, other holos off,
@@ -213,8 +217,13 @@ static const SeqStep kHeartSteps[] = {
 // The closes are unconditional physical assurance: DM:RESET seats the ring
 // regardless of what this sequence opened, so the closes set the per-run net-open
 // mask to 0 and the terminal cleanup emits no further panel commands.
+//
+// The sound is ended with a Track Stop, not `$s`. `$s` is the mood system's
+// Quiet: it stops playback AND turns idle chatter off until the droid reboots,
+// so a reset that sent it left the droid permanently muted -- the defect
+// DM:ROCKMARCH shipped and ADR 0010 fixed there (#287, #354).
 static const SeqStep kResetSteps[] = {
-    SEQ_AUDIO(0, "$s"),                          // stop playback
+    SEQ_AUDIO_STOP(0),                           // stop playback, keep idle chatter
     SEQ_DOME(0,    FX_NONE, ":CL01"),            // staggered ring closes, ~450 ms
     SEQ_DOME(450,  FX_NONE, ":CL02"),            // apart (brownout-safe; never a
     SEQ_DOME(900,  FX_NONE, ":CL03"),            // group close, never a pie close)
@@ -276,7 +285,8 @@ static const SeqStep kCantinaSteps[] = {
     SEQ_DOME(923, FX_NONE, ":OP02"),
     SEQ_DOME(923, FX_NONE, ":OP04"),
     SEQ_DOME(923, FX_NONE, ":OP11"),
-    SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00; ring panels left open close
+                                                 // one at a time, pies stay as the last beat left them
 };
 
 // DM:ROCKMARCH  --  Imperial March with one ring panel stepping per beat
@@ -373,9 +383,10 @@ static const SeqStep kScreamSteps[] = {
     SEQ_RAND(100, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
     SEQ_RAND(180, SLOTSET_HOLD, RAND_FLUTTER, 0, 100, 0, 0),
     SEQ_RAND(280, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
-    // happy all-clear cue before the auto-reset closes everything
+    // happy all-clear cue before the reset: logics and holos reset, the ring closes, the pies stay open
     SEQ_AUDIO(6800, "$H"),
-    SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00; ring panels left open close
+                                                 // one at a time, the pies it burst open stay open
 };
 
 // DM:OVERLOAD  --  failure logics/PSI, holos short-circuit, six panels flutter
@@ -398,14 +409,16 @@ static const SeqStep kOverloadSteps[] = {
     SEQ_RAND(2350, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_RAND(3000, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_RAND(3650, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
-    SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00; a flutter marks no panel
+                                                 // open, so no panel cleanup
 };
 
 // =============================================================================
 // Toggle sequences (ADR 0004 decision 8)  --  `steps` is the open branch,
 // `closeSteps` the close branch; the engine picks by latched group state and
 // flips the latch on normal completion. Close branches end without a release;
-// the engine emits :CL00 once no group remains latched open (issue #2 gap #1).
+// once no group remains latched open the engine closes any ring panel still
+// open, one at a time, and never sends :CL00 (issue #2 gap #1).
 // =============================================================================
 
 // DM:PIES open  --  pie wave: open PP1->PP6, close PP6->PP1, reopen, twice (12 s).
@@ -504,14 +517,19 @@ static const SeqStep kLowOpenSteps[] = {
     SEQ_DOME(3850, FX_NONE, ":CL01"),
     SEQ_DOME(4050, FX_NONE, ":CL13"),
     SEQ_DOME(4250, FX_NONE, ":CL11"),
-    // final open: P11/P13/P1 together, then P2,P3,P4,P7  --  ring ends open
+    // final open: P11, P13, P1, then P2, P3, P4, P7  --  ring ends open.
+    // One panel at a time, 200 ms apart. The first three used to share t=4400
+    // and the rest followed 100 ms apart: the same-timestamp burst that
+    // overflowed the dome's eight-entry command queue and silently dropped a
+    // close on 2026-06-18 (DM:ROCKMARCH above keeps >= ~200 ms for that reason;
+    // #287, #354).
     SEQ_DOME(4400, FX_NONE, ":OP11"),
-    SEQ_DOME(4400, FX_NONE, ":OP13"),
-    SEQ_DOME(4400, FX_NONE, ":OP01"),
-    SEQ_DOME(4500, FX_NONE, ":OP02"),
-    SEQ_DOME(4600, FX_NONE, ":OP03"),
-    SEQ_DOME(4700, FX_NONE, ":OP04"),
-    SEQ_DOME(4800, FX_NONE, ":OP07"),
+    SEQ_DOME(4600, FX_NONE, ":OP13"),
+    SEQ_DOME(4800, FX_NONE, ":OP01"),
+    SEQ_DOME(5000, FX_NONE, ":OP02"),
+    SEQ_DOME(5200, FX_NONE, ":OP03"),
+    SEQ_DOME(5400, FX_NONE, ":OP04"),
+    SEQ_DOME(5600, FX_NONE, ":OP07"),
     SEQ_TERM(5900),
 };
 
@@ -521,8 +539,8 @@ static const SeqStep kLowOpenSteps[] = {
 // the dome (esp_reset_reason=BROWNOUT, code 9, 2026-06-17 hardware repro) -- the dome
 // dropped by ~the 3rd close, so overlapping servo inrush current exceeded the dome
 // supply. The holo reset (*ST00) is isolated at t=0 so its draw does not stack with
-// the first panel close, and the terminal scoped :CL15 (emitted at SEQ_TERM) is
-// staggered ~1 s after the last individual close. See
+// the first panel close. Terminal cleanup has nothing left to close by the end,
+// and it would never send a group :CL15 anyway. See
 // tasks/issue2-panel-intent-rewrite-plan.md "Hardware regression 2026-06-17".
 static const SeqStep kLowCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),
@@ -548,35 +566,38 @@ static const SeqStep kOpenallOpenSteps[] = {
     SEQ_DOME(450, FX_NONE, ":OPP4"),
     SEQ_DOME(600, FX_NONE, ":OPP5"),
     SEQ_DOME(750, FX_NONE, ":OPP6"),
-    // open ring panels together
+    // open ring panels one at a time, 200 ms apart. All seven used to leave at
+    // t=900 together: the same-timestamp burst that overflowed the dome's
+    // eight-entry command queue on 2026-06-18 (#287, #354). Everything after
+    // the ring moves 1200 ms later with it, so the twinkle keeps its own shape.
     SEQ_DOME(900, FX_NONE, ":OP11"),
-    SEQ_DOME(900, FX_NONE, ":OP13"),
-    SEQ_DOME(900, FX_NONE, ":OP01"),
-    SEQ_DOME(900, FX_NONE, ":OP02"),
-    SEQ_DOME(900, FX_NONE, ":OP03"),
-    SEQ_DOME(900, FX_NONE, ":OP04"),
-    SEQ_DOME(900, FX_NONE, ":OP07"),
+    SEQ_DOME(1100, FX_NONE, ":OP13"),
+    SEQ_DOME(1300, FX_NONE, ":OP01"),
+    SEQ_DOME(1500, FX_NONE, ":OP02"),
+    SEQ_DOME(1700, FX_NONE, ":OP03"),
+    SEQ_DOME(1900, FX_NONE, ":OP04"),
+    SEQ_DOME(2100, FX_NONE, ":OP07"),
     // twinkle cycle 1: P1, P2, PP2, PP4
-    SEQ_DOME(1000, FX_NONE, ":OP01"),
-    SEQ_DOME(1100, FX_NONE, ":OP01"),
-    SEQ_DOME(1180, FX_NONE, ":OP02"),
-    SEQ_DOME(1280, FX_NONE, ":OP02"),
-    SEQ_DOME(1360, FX_NONE, ":OP02"),
-    SEQ_DOME(1460, FX_NONE, ":OPP2"),
-    SEQ_DOME(1560, FX_NONE, ":OPP2"),
-    SEQ_DOME(1740, FX_NONE, ":OPP4"),
-    SEQ_DOME(1840, FX_NONE, ":OPP4"),
+    SEQ_DOME(2200, FX_NONE, ":OP01"),
+    SEQ_DOME(2300, FX_NONE, ":OP01"),
+    SEQ_DOME(2380, FX_NONE, ":OP02"),
+    SEQ_DOME(2480, FX_NONE, ":OP02"),
+    SEQ_DOME(2560, FX_NONE, ":OP02"),
+    SEQ_DOME(2660, FX_NONE, ":OPP2"),
+    SEQ_DOME(2760, FX_NONE, ":OPP2"),
+    SEQ_DOME(2940, FX_NONE, ":OPP4"),
+    SEQ_DOME(3040, FX_NONE, ":OPP4"),
     // twinkle cycle 2
-    SEQ_DOME(1940, FX_NONE, ":OP01"),
-    SEQ_DOME(2040, FX_NONE, ":OP01"),
-    SEQ_DOME(2120, FX_NONE, ":OP02"),
-    SEQ_DOME(2220, FX_NONE, ":OP02"),
-    SEQ_DOME(2300, FX_NONE, ":OP02"),
-    SEQ_DOME(2400, FX_NONE, ":OPP2"),
-    SEQ_DOME(2500, FX_NONE, ":OPP2"),
-    SEQ_DOME(2680, FX_NONE, ":OPP4"),
-    SEQ_DOME(2780, FX_NONE, ":OPP4"),
-    SEQ_TERM(3680),
+    SEQ_DOME(3140, FX_NONE, ":OP01"),
+    SEQ_DOME(3240, FX_NONE, ":OP01"),
+    SEQ_DOME(3320, FX_NONE, ":OP02"),
+    SEQ_DOME(3420, FX_NONE, ":OP02"),
+    SEQ_DOME(3500, FX_NONE, ":OP02"),
+    SEQ_DOME(3600, FX_NONE, ":OPP2"),
+    SEQ_DOME(3700, FX_NONE, ":OPP2"),
+    SEQ_DOME(3880, FX_NONE, ":OPP4"),
+    SEQ_DOME(3980, FX_NONE, ":OPP4"),
+    SEQ_TERM(4880),
 };
 
 // DM:OPENALL close  --  close every panel serially in all-panels order.
@@ -599,6 +620,197 @@ static const SeqStep kOpenallCloseSteps[] = {
 };
 
 // =============================================================================
+// Body routines  --  :SE30..:SE36 (ADR 0049, #354)
+//
+// The seven numbered body buttons a builder arriving from ShadowMD already has
+// bound. Each used to run one shared open-wait-close state machine in ServoTask,
+// so all seven did the same thing; here each is the routine its name describes,
+// written as Body Steps that name Parts. A Part nothing drives yet reports
+// part-not-assigned and the routine carries on, so a droid with only the two
+// utility arms wired still runs every one of them (#301).
+//
+// Lineage. The choreography -- which part moves, in what order, and when -- is
+// read off the timing tables in BetterDuino Firmware V4, include/PanelSequences.h
+// at 3682082a (github.com/RealNobser/BetterDuinoFirmwareV4): body_utility_arms_open,
+// body_panel_all_test, body_panel_spook, body_panel_use_gripper,
+// body_panel_use_interface_tool and body_panel_pingpong_Doors, credited there to
+// Tim Hebel (github.com/Eebel/SHADOW_MD_EEBEL), and bt_body_panel_use_claws by
+// David Steinke. Neither repository declares a license; no code was copied, and
+// the attribution is docs/sequence-credits.md.
+//
+// How the tables were read. A row there holds every servo at a position for the
+// row's duration in hundredths of a second, and the sequencer moves the servos
+// the moment a row starts (MDuinoSequencer::nextStep). So a step here fires at
+// the sum of the durations before its row, and only a Part whose position
+// changed gets a step -- a row that restates a position is not a move, and
+// sending it again would be the repeated-command shape #287 found in DM:HELLO.
+// Every source routine begins by closing its servos; that row is kept, for the
+// Parts each routine moves, so a routine starts from shut whatever was left open.
+//
+// Servo columns -> Parts (BetterDuino README, Body Master servo table):
+//   1 DPL -> dataport       2 UtlArmU -> utilUp     3 UtlArmL -> utilLo
+//   4 LBdyDr -> doorFL      5 LArm -> gripArm       6 LArmTool -> gripClaw
+//   7 RBdyDr -> doorFR      8 RArm -> interArm      9 RArmTool -> interTool
+//
+// What was deliberately not taken: the source sets a servo speed per routine.
+// Here a routine carries no physics -- how fast a door moves is its Output's
+// Motion Profile, set once by the builder (ADR 0049, ADR 0052).
+// =============================================================================
+
+#define BODY_OPEN(t, part)  SEQ_BODY((t), (part), BODY_SHAPE_OPEN, 0, 0)
+#define BODY_CLOSE(t, part) SEQ_BODY((t), (part), BODY_SHAPE_CLOSE, 0, 0)
+
+// DM:SE30  --  :SE30, utility arm open-and-close.
+// Both utility arms swing out, then flick in and out twice before they close.
+static const SeqStep kSe30Steps[] = {
+    BODY_CLOSE(0, "utilUp"),    BODY_CLOSE(0, "utilLo"),
+    BODY_OPEN(200, "utilUp"),   BODY_OPEN(200, "utilLo"),
+    BODY_CLOSE(1700, "utilUp"), BODY_CLOSE(1700, "utilLo"),
+    BODY_OPEN(2000, "utilUp"),  BODY_OPEN(2000, "utilLo"),
+    BODY_CLOSE(2300, "utilUp"), BODY_CLOSE(2300, "utilLo"),
+    BODY_OPEN(2600, "utilUp"),  BODY_OPEN(2600, "utilLo"),
+    BODY_CLOSE(2900, "utilUp"), BODY_CLOSE(2900, "utilLo"),
+    SEQ_TERM(4800),
+};
+
+// DM:SE31  --  :SE31, all body panels open and close.
+// The breadpan doors and utility arms open, both arms rise with their tools, the
+// dataport opens last (it hits a tool if it opens first), the tools and utility
+// arms work, and everything folds away in order.
+static const SeqStep kSe31Steps[] = {
+    BODY_CLOSE(0, "dataport"), BODY_CLOSE(0, "utilUp"),   BODY_CLOSE(0, "utilLo"),
+    BODY_CLOSE(0, "doorFL"),   BODY_CLOSE(0, "gripArm"),  BODY_CLOSE(0, "gripClaw"),
+    BODY_CLOSE(0, "doorFR"),   BODY_CLOSE(0, "interArm"), BODY_CLOSE(0, "interTool"),
+    // open the doors and the utility arms
+    BODY_OPEN(200, "utilUp"), BODY_OPEN(200, "utilLo"), BODY_OPEN(200, "doorFL"), BODY_OPEN(200, "doorFR"),
+    // raise the arms, open the tools
+    BODY_OPEN(1700, "gripArm"), BODY_OPEN(1700, "gripClaw"), BODY_OPEN(1700, "interArm"), BODY_OPEN(1700, "interTool"),
+    // open the dataport
+    BODY_OPEN(3200, "dataport"),
+    // close the tools and the utility arms
+    BODY_CLOSE(6200, "utilUp"), BODY_CLOSE(6200, "utilLo"), BODY_CLOSE(6200, "gripClaw"), BODY_CLOSE(6200, "interTool"),
+    // open them again
+    BODY_OPEN(6700, "utilUp"), BODY_OPEN(6700, "utilLo"), BODY_OPEN(6700, "gripClaw"), BODY_OPEN(6700, "interTool"),
+    // tools: close, open, close
+    BODY_CLOSE(7200, "gripClaw"), BODY_CLOSE(7200, "interTool"),
+    BODY_OPEN(7700, "gripClaw"),  BODY_OPEN(7700, "interTool"),
+    BODY_CLOSE(8200, "dataport"), BODY_CLOSE(8200, "gripClaw"), BODY_CLOSE(8200, "interTool"),
+    // lower the arms, fold the utility arms
+    BODY_CLOSE(8900, "utilUp"), BODY_CLOSE(8900, "utilLo"), BODY_CLOSE(8900, "gripArm"), BODY_CLOSE(8900, "interArm"),
+    // close the doors
+    BODY_CLOSE(11400, "doorFL"), BODY_CLOSE(11400, "doorFR"),
+    SEQ_TERM(13400),
+};
+
+// DM:SE32  --  :SE32, all body doors open and wiggle-close.
+// The breadpan doors, the dataport and both utility arms spring open, then
+// wiggle shut: open and closed again three times, quickly, before the last close.
+static const SeqStep kSe32Steps[] = {
+    BODY_CLOSE(0, "dataport"),    BODY_CLOSE(0, "utilUp"),    BODY_CLOSE(0, "utilLo"),
+    BODY_CLOSE(0, "doorFL"),      BODY_CLOSE(0, "doorFR"),
+    BODY_OPEN(200, "dataport"),   BODY_OPEN(200, "utilUp"),   BODY_OPEN(200, "utilLo"),
+    BODY_OPEN(200, "doorFL"),     BODY_OPEN(200, "doorFR"),
+    BODY_CLOSE(700, "dataport"),  BODY_CLOSE(700, "utilUp"),  BODY_CLOSE(700, "utilLo"),
+    BODY_CLOSE(700, "doorFL"),    BODY_CLOSE(700, "doorFR"),
+    BODY_OPEN(800, "dataport"),   BODY_OPEN(800, "utilUp"),   BODY_OPEN(800, "utilLo"),
+    BODY_OPEN(800, "doorFL"),     BODY_OPEN(800, "doorFR"),
+    BODY_CLOSE(900, "dataport"),  BODY_CLOSE(900, "utilUp"),  BODY_CLOSE(900, "utilLo"),
+    BODY_CLOSE(900, "doorFL"),    BODY_CLOSE(900, "doorFR"),
+    BODY_OPEN(1000, "dataport"),  BODY_OPEN(1000, "utilUp"),  BODY_OPEN(1000, "utilLo"),
+    BODY_OPEN(1000, "doorFL"),    BODY_OPEN(1000, "doorFR"),
+    BODY_CLOSE(1200, "dataport"), BODY_CLOSE(1200, "utilUp"), BODY_CLOSE(1200, "utilLo"),
+    BODY_CLOSE(1200, "doorFL"),   BODY_CLOSE(1200, "doorFR"),
+    BODY_OPEN(1400, "dataport"),  BODY_OPEN(1400, "utilUp"),  BODY_OPEN(1400, "utilLo"),
+    BODY_OPEN(1400, "doorFL"),    BODY_OPEN(1400, "doorFR"),
+    BODY_CLOSE(1500, "dataport"), BODY_CLOSE(1500, "utilUp"), BODY_CLOSE(1500, "utilLo"),
+    BODY_CLOSE(1500, "doorFL"),   BODY_CLOSE(1500, "doorFR"),
+    SEQ_TERM(4000),
+};
+
+// DM:SE33  --  :SE33, use the gripper arm.
+// The left breadpan door opens, the gripper arm rises and snaps its claw three
+// times, then the arm lowers and the door closes.
+static const SeqStep kSe33Steps[] = {
+    BODY_CLOSE(0, "doorFL"), BODY_CLOSE(0, "gripArm"), BODY_CLOSE(0, "gripClaw"),
+    BODY_OPEN(200, "doorFL"),
+    BODY_OPEN(1700, "gripArm"),
+    BODY_OPEN(3200, "gripClaw"),
+    BODY_CLOSE(3300, "gripClaw"),
+    BODY_OPEN(3400, "gripClaw"),
+    BODY_CLOSE(3500, "gripClaw"),
+    BODY_OPEN(3600, "gripClaw"),
+    BODY_CLOSE(3700, "gripClaw"),
+    BODY_CLOSE(3900, "gripArm"),
+    BODY_CLOSE(5600, "doorFL"),
+    SEQ_TERM(8100),
+};
+
+// DM:SE34  --  :SE34, use the interface tool.
+// The right breadpan door opens, the interface arm rises and works its tool three
+// times, then the arm lowers and the door closes.
+static const SeqStep kSe34Steps[] = {
+    BODY_CLOSE(0, "doorFR"), BODY_CLOSE(0, "interArm"), BODY_CLOSE(0, "interTool"),
+    BODY_OPEN(200, "doorFR"),
+    BODY_OPEN(1700, "interArm"),
+    BODY_OPEN(3200, "interTool"),
+    BODY_CLOSE(3400, "interTool"),
+    BODY_OPEN(3600, "interTool"),
+    BODY_CLOSE(3800, "interTool"),
+    BODY_OPEN(4000, "interTool"),
+    BODY_CLOSE(4200, "interTool"),
+    BODY_CLOSE(4600, "interArm"),
+    BODY_CLOSE(6300, "doorFR"),
+    SEQ_TERM(8800),
+};
+
+// DM:SE35  --  :SE35, ping-pong body doors.
+// The two breadpan doors take turns, the gaps between turns shrinking from 1.5 s
+// to 0.5 s and then opening out again, before both close.
+static const SeqStep kSe35Steps[] = {
+    BODY_CLOSE(0, "doorFL"),     BODY_CLOSE(0, "doorFR"),
+    BODY_OPEN(200, "doorFL"),
+    BODY_CLOSE(1700, "doorFL"),  BODY_OPEN(1700, "doorFR"),
+    BODY_OPEN(3200, "doorFL"),   BODY_CLOSE(3200, "doorFR"),
+    BODY_CLOSE(4300, "doorFL"),  BODY_OPEN(4300, "doorFR"),
+    BODY_OPEN(5400, "doorFL"),   BODY_CLOSE(5400, "doorFR"),
+    BODY_CLOSE(6200, "doorFL"),  BODY_OPEN(6200, "doorFR"),
+    BODY_OPEN(7000, "doorFL"),   BODY_CLOSE(7000, "doorFR"),
+    BODY_CLOSE(7500, "doorFL"),  BODY_OPEN(7500, "doorFR"),
+    BODY_OPEN(8000, "doorFL"),   BODY_CLOSE(8000, "doorFR"),
+    BODY_CLOSE(9300, "doorFL"),  BODY_OPEN(9300, "doorFR"),
+    BODY_CLOSE(10600, "doorFR"),
+    SEQ_TERM(12600),
+};
+
+// DM:SE36  --  :SE36, the BT-1 two-gripper sequence.
+// Both breadpan doors open, both arms rise, and the two claws snap together five
+// times before the arms lower and the doors close. A BT-1 carries a claw on each
+// arm; on this catalog the right arm's end is interTool, which is what a BT-1
+// builder assigns their right claw to.
+static const SeqStep kSe36Steps[] = {
+    BODY_CLOSE(0, "doorFL"),       BODY_CLOSE(0, "gripArm"),  BODY_CLOSE(0, "gripClaw"),
+    BODY_CLOSE(0, "doorFR"),       BODY_CLOSE(0, "interArm"), BODY_CLOSE(0, "interTool"),
+    BODY_OPEN(200, "doorFL"),      BODY_OPEN(200, "doorFR"),
+    BODY_OPEN(1100, "gripArm"),    BODY_OPEN(1100, "interArm"),
+    BODY_OPEN(2000, "gripClaw"),   BODY_OPEN(2000, "interTool"),
+    BODY_CLOSE(2100, "gripClaw"),  BODY_CLOSE(2100, "interTool"),
+    BODY_OPEN(2200, "gripClaw"),   BODY_OPEN(2200, "interTool"),
+    BODY_CLOSE(2300, "gripClaw"),  BODY_CLOSE(2300, "interTool"),
+    BODY_OPEN(2400, "gripClaw"),   BODY_OPEN(2400, "interTool"),
+    BODY_CLOSE(2500, "gripClaw"),  BODY_CLOSE(2500, "interTool"),
+    BODY_OPEN(2600, "gripClaw"),   BODY_OPEN(2600, "interTool"),
+    BODY_CLOSE(2700, "gripClaw"),  BODY_CLOSE(2700, "interTool"),
+    BODY_OPEN(2800, "gripClaw"),   BODY_OPEN(2800, "interTool"),
+    BODY_CLOSE(2900, "gripClaw"),  BODY_CLOSE(2900, "interTool"),
+    BODY_CLOSE(3400, "gripArm"),   BODY_CLOSE(3400, "interArm"),
+    BODY_CLOSE(4600, "doorFL"),    BODY_CLOSE(4600, "doorFR"),
+    SEQ_TERM(7100),
+};
+
+#undef BODY_OPEN
+#undef BODY_CLOSE
+
+// =============================================================================
 // Catalog table
 // =============================================================================
 
@@ -606,7 +818,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:VADER",   kVaderSteps,   SEQ_STEPCOUNT(kVaderSteps),   47000, TOGGLE_NONE, nullptr, 0,
       "Imperial March with red MARCH-mode holos, logics, and PSI; auto-resets at the end (47 s)." },
     { "DM:HELLO",   kHelloSteps,   SEQ_STEPCOUNT(kHelloSteps),   4000,  TOGGLE_NONE, nullptr, 0,
-      "\"Hello There\" greeting: front and rear logic text, then a six-pulse P1 panel wave (4 s)." },
+      "\"Hello There\" greeting: front and rear logic text, then P1 opens and closes (4 s)." },
     { "DM:NOD",     kNodSteps,     SEQ_STEPCOUNT(kNodSteps),     3000,  TOGGLE_NONE, nullptr, 0,
       "Short acknowledgment: a sound, logic text, and a P1 panel wave (3 s)." },
     { "DM:FLUTTER", kFlutterSteps, SEQ_STEPCOUNT(kFlutterSteps), 10000, TOGGLE_NONE, nullptr, 0,
@@ -638,6 +850,20 @@ static const SequenceEntry kCatalog[] = {
     { "DM:OPENALL", kOpenallOpenSteps, SEQ_STEPCOUNT(kOpenallOpenSteps), 10000,
       TOGGLE_ALL,  kOpenallCloseSteps, SEQ_STEPCOUNT(kOpenallCloseSteps),
       "Toggle: pie sweep, all ring panels open, then a P1/P2 and PP2/PP4 twinkle; toggle again to close every panel in order (10 s)." },
+    { "DM:SE30", kSe30Steps, SEQ_STEPCOUNT(kSe30Steps), 5000, TOGGLE_NONE, nullptr, 0,
+      ":SE30 - Both utility arms swing out, then flick in and out twice before they close (5 s)." },
+    { "DM:SE31", kSe31Steps, SEQ_STEPCOUNT(kSe31Steps), 14000, TOGGLE_NONE, nullptr, 0,
+      ":SE31 - Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+    { "DM:SE32", kSe32Steps, SEQ_STEPCOUNT(kSe32Steps), 5000, TOGGLE_NONE, nullptr, 0,
+      ":SE32 - The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
+    { "DM:SE33", kSe33Steps, SEQ_STEPCOUNT(kSe33Steps), 9000, TOGGLE_NONE, nullptr, 0,
+      ":SE33 - The left breadpan door opens and the gripper arm rises and snaps its claw three times, then folds away (8 s)." },
+    { "DM:SE34", kSe34Steps, SEQ_STEPCOUNT(kSe34Steps), 9000, TOGGLE_NONE, nullptr, 0,
+      ":SE34 - The right breadpan door opens and the interface arm rises and works its tool three times, then folds away (9 s)." },
+    { "DM:SE35", kSe35Steps, SEQ_STEPCOUNT(kSe35Steps), 13000, TOGGLE_NONE, nullptr, 0,
+      ":SE35 - The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
+    { "DM:SE36", kSe36Steps, SEQ_STEPCOUNT(kSe36Steps), 8000, TOGGLE_NONE, nullptr, 0,
+      ":SE36 - BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },
 };
 static constexpr uint8_t kCatalogSize =
     (uint8_t)(sizeof(kCatalog) / sizeof(kCatalog[0]));
@@ -703,6 +929,19 @@ uint8_t sequenceCatalogCount() {
 
 const SequenceEntry* sequenceCatalogAt(uint8_t i) {
     return (i < kCatalogSize) ? &kCatalog[i] : nullptr;
+}
+
+// :SE30..:SE36 -> the Factory Sequence that is that body routine. The name is
+// the number a builder already types, so a Retrained Sequence saved as DM:SE32
+// is what :SE32 then runs on every trigger path (ADR 0006, ADR 0049).
+const char* sequenceBodyRoutineName(int seId) {
+    static const char* const kNames[] = {
+        "DM:SE30", "DM:SE31", "DM:SE32", "DM:SE33", "DM:SE34", "DM:SE35", "DM:SE36",
+    };
+    if (seId < 30 || seId > 36) {
+        return nullptr;
+    }
+    return kNames[seId - 30];
 }
 
 SequenceLookupResult sequenceLookup(const char* name) {

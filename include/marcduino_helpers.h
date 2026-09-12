@@ -118,8 +118,9 @@ inline bool marcduino_sequence_id_valid(int seq_id) {
 //   - "$X"    => queue this audio command to AudioTask
 //
 // bodySeqId:
-//   - -1      => no local body servo sequence
-//   - 30 / 31 => queue existing body sequence handler
+//   - -1      => no local body routine
+//   - 30 / 31 => start that body routine, :SE30 / :SE31 -- a Factory Sequence
+//                built from Body Steps (sequenceBodyRoutineName(), ADR 0049)
 // -----------------------------------------------------------------------------
 struct FullDroidBodyAction {
     const char* audioDollarCmd;

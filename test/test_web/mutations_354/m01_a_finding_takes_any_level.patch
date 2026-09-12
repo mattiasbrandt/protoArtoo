@@ -1,0 +1,13 @@
+diff --git i/data/seq_rehearsal.js w/data/seq_rehearsal.js
+index 76f5d899..557cb263 100644
+--- i/data/seq_rehearsal.js
++++ w/data/seq_rehearsal.js
+@@ -70,7 +70,7 @@
+   // finding() -- the only way a finding is made.
+   // ---------------------------------------------------------------------------
+   const finding = (level, code, msg, fix, subject = {}) => {
+-    if (!LEVELS.includes(level)) {
++    if (false && !LEVELS.includes(level)) {
+       throw new TypeError(`A Rehearsal finding is a warning or a note, never "${level}"`);
+     }
+     if (!code || !msg || !fix) {

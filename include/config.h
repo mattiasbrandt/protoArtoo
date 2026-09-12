@@ -771,10 +771,16 @@ constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
 // only where an overrun is provable, because this figure is the floor of an
 // unknown. Not lowered to the rule here -- that would undo that decision.
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5248;
-// above rule (6656): the pre-#256 literal, kept rather than lowered onto a
-// Xtensa figure that can prove an overrun and cannot prove a margin.
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;
+// Re-derived 2026-09-12 (#354): 5248 -> 5616. The RC path now starts the
+// :SE30..:SE36 body routines through sequenceStart() -- directly from
+// rcDispatchSingleAction(), and through the dome RX parser for a :SE command
+// binding -- where it used to queue a ServoCommand, so the walk reaches the
+// Sequence Coordinator's lookup and request send. At this chain the rule lands
+// exactly on the 7168 this arm already held above the old rule (the pre-#256
+// literal), so the arm moves from "above rule" to the rule itself; the stack
+// does not change.
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5616;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5616 -> 7020 -> 7168
 // Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
 // setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
 // stops servo.action.set-position driving a fitted part past what its component
@@ -819,8 +825,15 @@ constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
 constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7360;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
+// Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
+// consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
+// handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
+// testing an RC :SE binding from the Console starts the body routine through the
+// Sequence Coordinator where it used to queue a ServoCommand. The rule moves the
+// stack one step, 9216 -> 9728, which is heap on this board; declining it on
+// #248's reason (keep 9216, which still covers the chain) is the alternative.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7376;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // rule: 7376 -> 9220 -> 9728
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
 // holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is

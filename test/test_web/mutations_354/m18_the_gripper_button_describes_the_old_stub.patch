@@ -1,0 +1,13 @@
+diff --git i/data/rc.js w/data/rc.js
+index f9a3f283..e8c8d577 100644
+--- i/data/rc.js
++++ w/data/rc.js
+@@ -252,7 +252,7 @@
+     { id: 30, name: "Utility arm open-and-close", description: "Both utility arms swing out, then flick in and out twice before they close (5 s)." },
+     { id: 31, name: "All body panels open and close", description: "Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+     { id: 32, name: "All body doors wiggle-close", description: "The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
+-    { id: 33, name: "Use gripper arm", description: "The left breadpan door opens and the gripper arm rises and snaps its claw three times, then folds away (8 s)." },
++    { id: 33, name: "Use gripper arm", description: "Run the body sequence that uses ARM1 gripper motion." },
+     { id: 34, name: "Use interface tool", description: "The right breadpan door opens and the interface arm rises and works its tool three times, then folds away (9 s)." },
+     { id: 35, name: "Ping-pong body doors", description: "The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
+     { id: 36, name: "BT-1 two-gripper sequence", description: "BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },

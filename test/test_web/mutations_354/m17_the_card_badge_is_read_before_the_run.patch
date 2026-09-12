@@ -1,0 +1,12 @@
+diff --git i/data/seq.js w/data/seq.js
+index 1f5e9811..80435af4 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -2514,6 +2514,7 @@
+   };
+ 
+   const handleTestSequence = async (seqName, cardEl) => {
++    await showCardRehearsal(seqName, cardEl);
+     const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+     if (feedbackEl) {
+       feedbackEl.textContent = "Running...";
