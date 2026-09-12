@@ -10,7 +10,7 @@
 // for /, the static handler's default file answers with the shell, and the
 // fragment never reaches the ESP32 -- so nothing here needs a firmware change.
 //
-// The ten .html files stay addressable: each is still the single copy of its
+// The eleven .html files stay addressable: each is still the single copy of its
 // surface's markup, which this file fetches and mounts, and each carries a thin
 // delegate that hands a direct visit over to the shell. Nothing that links to
 // one has to be rewritten.
@@ -39,6 +39,7 @@
     { page: "dome", doc: "/dome.html", icon: "🔄", name: "Dome", aliases: [] },
     { page: "sound", doc: "/sound.html", icon: "🔊", name: "Sound", aliases: [] },
     { page: "servo", doc: "/servo.html", icon: "🦾", name: "Servos", aliases: ["servos"] },
+    { page: "parts", doc: "/parts.html", icon: "🧩", name: "Parts", aliases: [] },
     { page: "seq", doc: "/seq.html", icon: "🎬", name: "Sequences", aliases: ["sequences"] },
     { page: "rc", doc: "/rc.html", icon: "🕹️", name: "RC Control", aliases: [] },
     { page: "setup", doc: "/setup.html", icon: "⚙️", name: "Setup", aliases: [] },
@@ -94,10 +95,10 @@
         // before. Guided Setup, the first-run takeover that leaves the nav for
         // good (#351), is a different thing and is never in a group.
         "setup",
-        // Servos stays here until C1a (#347) decides what becomes of it once
-        // Parts carries the output-to-part mapping.
+        // Servos stays beside Parts. What becomes of it now that Parts carries
+        // the output-to-part mapping is proposed on #347 and not yet decided.
         "servo",
-        "parts", // dormant until C1a (#347)
+        "parts",
         "wiring", // dormant until C2a (#350)
       ],
     },
@@ -1474,7 +1475,7 @@
   // A click on a link to a surface's own document is a route change, not a page
   // load. Capture phase, so a surface's own delegated handler cannot swallow it
   // first; the click still reaches that handler, it just does not reach the
-  // browser's navigation. This is what lets the ten .html addresses, and every
+  // browser's navigation. This is what lets the eleven .html addresses, and every
   // caller that writes one (window.PAUi.setupActionHtml, servo.js, the
   // disabled-reason lines in six pages), keep working unchanged.
   document.addEventListener(

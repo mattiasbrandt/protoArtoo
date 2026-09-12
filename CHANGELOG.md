@@ -26,6 +26,12 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **See what drives every part on your droid.** The new Parts page lists every
+  part, grouped the way you walk the droid, with the output that drives it, and
+  `– not wired –` where nothing does yet. Pick an output to wire a part. A part
+  is only ever on one output, so picking another moves it, and the page asks
+  first: it names the part, the output it leaves and what that output keeps.
+  Two parts on one lead, like a pair of doors, both read as driven.
 - **The picker cards can show the part in your hand.** Every product in the
   lineup now has a photograph on the FireBeetle 2 — the same dark ground as
   the rest of the UI, sized to a card, so matching a card to the hardware on
