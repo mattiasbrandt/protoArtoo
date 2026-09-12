@@ -8,6 +8,13 @@ Poulson -- as the `supported` **Dome Controller** lineup member
 Component Protocol the registry calls `protor2link`, and registered at
 `include/component_registry.inc:139` as part id **13**.
 
+> [!NOTE]
+> **The Component Registry is not on `main` yet.** `include/component_registry.inc`
+> is declared on `epic/operator-experience` and has not merged; every line
+> reference to it in this sheet is against that branch. The other product spec
+> sheets on `main` cite it the same way. Everything else this sheet cites is on
+> `main`.
+
 Research date 2026-09-12. Every fact below was read this session from one of
 five places: the Reeltwo library at the exact version the dome builds against,
 the operator's own AstroPixelsPlus fork on this disk, this repository's own
