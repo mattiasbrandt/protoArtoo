@@ -669,3 +669,17 @@ class TestNoBoolEnumValues(unittest.TestCase):
             f"docs/action-registry.yaml carries a boolean enum value - "
             f"quote it (#249 regression): {errors}"
         )
+
+
+class StaticAssetHandlersAreNotApiRoutes(unittest.TestCase):
+    def test_part_photograph_paths_are_not_demanded_of_the_registry(self):
+        """The Component Picker photographs (#316) register /part_* ahead of
+        serveStatic() so the MIME type is image/webp. That is not an API
+        endpoint and must not fail the api_path drift check."""
+        routes = check_action_registry_drift.find_registered_routes()
+        self.assertNotIn("/part_*", routes)
+        for route in routes:
+            self.assertTrue(
+                route.startswith("/api/") or route.startswith("/upload/"),
+                f"{route} is not an API path and should not be in the registry check",
+            )

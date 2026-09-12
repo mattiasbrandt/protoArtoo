@@ -355,13 +355,21 @@ ROUTE_REGISTRATION_PATTERNS = (
 
 
 def find_registered_routes() -> set[str]:
-    """All literal paths registered as routes across src/web/*.cpp."""
+    """All literal API paths registered as routes across src/web/*.cpp.
+
+    The registry's api_path column is the HTTP API. A static-asset handler
+    (the Component Picker photographs at /part_*.webp, #316) is not an API
+    endpoint and is not demanded of the registry.
+    """
     routes: set[str] = set()
     for path in sorted(WEB_DIR.glob("*.cpp")):
         text = path.read_text(encoding="utf-8")
         for pattern in ROUTE_REGISTRATION_PATTERNS:
             for match in re.finditer(pattern, text):
-                routes.add(match.group(1))
+                route = match.group(1)
+                if not (route.startswith("/api/") or route.startswith("/upload/")):
+                    continue
+                routes.add(route)
     return routes
 
 
