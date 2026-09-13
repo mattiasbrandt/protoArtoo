@@ -162,8 +162,8 @@ async function test() {
     );
 
     assert.ok(
-      capacityText.includes("0 / 16") || capacityText.includes("0 / 16 saved"),
-      `Capacity should show 0 / 16 (Learned only), got: "${capacityText}"`
+      capacityText.includes("0 / 10") || capacityText.includes("0 / 10 saved"),
+      `Capacity should show 0 / 10 (Learned only), got: "${capacityText}"`
     );
 
     console.log(`✓ Capacity display correct: "${capacityText}"`);
@@ -309,8 +309,8 @@ async function test() {
     assert.strictEqual(mixedState.factoryCards, 2, "Should have 2 untuned factory cards (DM:TWIRLY, DM:HELLO)");
     assert.strictEqual(mixedState.retrainedBadge, true, "Retrained card should have Retrained badge");
     assert.ok(
-      mixedState.capacityDisplay.includes("1 / 16"),
-      `Capacity should show 1 / 16 (only learned count), got: "${mixedState.capacityDisplay}"`
+      mixedState.capacityDisplay.includes("1 / 10"),
+      `Capacity should show 1 / 10 (only learned count), got: "${mixedState.capacityDisplay}"`
     );
 
     console.log("✓ Mixed Learned + Factory list works correctly");

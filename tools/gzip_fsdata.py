@@ -32,13 +32,26 @@ Excluded from gzip:
 HTML includes: a page may carry `<!-- PA:INCLUDE _partial.html -->`, which is
 replaced with the contents of that file before gzipping. Partials are named with
 a leading underscore and are NOT themselves imaged. This exists for the Page
-Recovery View kernel, which must be inline on every page — it is the one part of
-the UI that has to survive a failure that sheds external assets, so it cannot be
-an external file — while still living in exactly one editable source rather than
-ten hand-maintained copies that would drift apart. A missing or unexpanded
-include is a hard build failure, never a silently shipped page without recovery
-— and so is a served page that carries no kernel directive at all, since a page
-without one fails silently in exactly the situation recovery exists for.
+Recovery View kernel, which must be inline on every page the browser renders —
+it is the one part of the UI that has to survive a failure that sheds external
+assets, so it cannot be an external file — while still living in exactly one
+editable source. A missing or unexpanded include is a hard build failure, never
+a silently shipped page without recovery — and so is a rendered page that
+carries no kernel directive at all, since a page without one fails silently in
+exactly the situation recovery exists for.
+
+Since the Operator Shell (ADR 0048) the browser renders one document,
+index.html. Every other page is a shell delegate: the shell fetches it and
+imports only its <body>, and a direct visit is replaced by the shell before
+anything else loads, so a delegate's <head> never runs. A delegate therefore
+must NOT carry the kernel — eleven copies cost ten filesystem blocks and could
+never execute (#382) — and one that does is refused, so the copies cannot
+creep back.
+
+Minification: .js and .css are minified by esbuild (whitespace and comments
+only, names kept) before gzipping, so the repo keeps its comments and the image
+does not pay for them (#382). A missing esbuild is a hard failure rather than a
+quietly larger image. See MINIFY_LOADERS for why it is esbuild.
 
 A partial resolves in the same order the file staging below does: this
 environment's asset set first, then the common data root. This lets a set
@@ -53,6 +66,7 @@ import gzip
 import os
 import re
 import shutil
+import subprocess
 
 Import("env")  # noqa: F821  (PlatformIO injects this)
 
@@ -95,10 +109,51 @@ PARTIAL_PREFIX = "_"
 INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
 HTML_EXTS = {".html", ".htm"}
 
-# The one partial every served page is required to inline. It is checked by
+# The one partial every rendered page is required to inline. It is checked by
 # name rather than by "has some directive" so a page cannot satisfy the guard
 # by including something else.
 RECOVERY_KERNEL = "_recovery_kernel.html"
+
+# What makes a page a shell delegate (ADR 0048): the line in its <head> that
+# hands a direct visit to the Operator Shell. Its <head> never runs otherwise,
+# so a delegate must not carry the kernel (see the module docstring).
+SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
+
+# Minified before gzipping, by esbuild; everything else is staged as written.
+# esbuild parses the source, so it removes whitespace and comments without
+# touching a string. rjsmin, the regex minifier tried first, rewrote the
+# whitespace inside nested template literals in six files -- class="parts-row${`
+# ${x}`}" lost its space and joined two class names -- and every file still
+# passed `node --check`, so a syntax check is not evidence a minifier is safe.
+# Identifiers are never renamed: these are classic scripts sharing globals.
+MINIFY_LOADERS = {".js": "js", ".css": "css"}
+
+
+def _minify(path, text):
+    """Return the file's text minified by esbuild. A missing or failing
+    esbuild fails the build rather than quietly staging a larger image."""
+    esbuild = shutil.which("esbuild")
+    if esbuild is None:
+        raise SystemExit(
+            "[gzip_fsdata] cannot minify %s: esbuild is not on PATH. Install the "
+            "esbuild package (pacman -S esbuild), or run `npm ci` and put "
+            "node_modules/.bin on PATH." % path
+        )
+    loader = MINIFY_LOADERS[os.path.splitext(path)[1].lower()]
+    result = subprocess.run(
+        [esbuild, "--minify-whitespace", "--charset=utf8", "--log-level=warning",
+         "--loader=%s" % loader],
+        input=text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "[gzip_fsdata] esbuild failed on %s (exit %d): %s"
+            % (path, result.returncode, result.stderr.strip())
+        )
+    return result.stdout
 
 
 def _is_partial(filename):
@@ -124,9 +179,18 @@ def _expand_includes(path, include_roots):
 
     # Match the directive, never the bare token -- documentation and comments
     # legitimately mention PA:INCLUDE without being one.
-    if RECOVERY_KERNEL not in INCLUDE_RE.findall(text):
+    carries_kernel = RECOVERY_KERNEL in INCLUDE_RE.findall(text)
+    if SHELL_DELEGATE_MARKER in text:
+        if carries_kernel:
+            raise SystemExit(
+                "[gzip_fsdata] %s is a shell delegate and includes '%s'. Its <head> "
+                "never runs -- the Operator Shell imports only its <body> -- so the "
+                "kernel would be imaged and never executed. Remove the directive."
+                % (path, RECOVERY_KERNEL)
+            )
+    elif not carries_kernel:
         raise SystemExit(
-            "[gzip_fsdata] %s does not include '%s'. Every served page inlines the "
+            "[gzip_fsdata] %s does not include '%s'. Every rendered page inlines the "
             "Page Recovery View kernel; add '<!-- PA:INCLUDE %s -->' to its <head>."
             % (path, RECOVERY_KERNEL, RECOVERY_KERNEL)
         )
@@ -202,6 +266,7 @@ def main():
     include_roots = [root for root, in_set in roots if in_set] + [src]
 
     gz_count = 0
+    minified_count = 0
     raw_count = 0
     partial_count = 0
     set_count = 0
@@ -228,10 +293,17 @@ def main():
                     set_count += 1
                 if _should_gzip(name):
                     dp = os.path.join(dst_root, name + ".gz")
-                    if os.path.splitext(name)[1].lower() in HTML_EXTS:
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in HTML_EXTS:
                         payload = _expand_includes(sp, include_roots)
                         with gzip.open(dp, "wb", compresslevel=9) as fo:
                             fo.write(payload)
+                    elif ext in MINIFY_LOADERS:
+                        with open(sp, "r", encoding="utf-8") as fi:
+                            payload = _minify(sp, fi.read()).encode("utf-8")
+                        with gzip.open(dp, "wb", compresslevel=9) as fo:
+                            fo.write(payload)
+                        minified_count += 1
                     else:
                         with open(sp, "rb") as fi, gzip.open(dp, "wb", compresslevel=9) as fo:
                             shutil.copyfileobj(fi, fo)
@@ -244,9 +316,9 @@ def main():
 
     env.Replace(PROJECT_DATA_DIR=stage)
     print(
-        "[gzip_fsdata] staged %d gzipped + %d raw files (%d partials inlined, not imaged; "
-        "%d from asset set '%s'): %d KB -> %d KB (image data dir: %s)"
-        % (gz_count, raw_count, partial_count, set_count, set_name,
+        "[gzip_fsdata] staged %d gzipped (%d minified) + %d raw files (%d partials inlined, "
+        "not imaged; %d from asset set '%s'): %d KB -> %d KB (image data dir: %s)"
+        % (gz_count, minified_count, raw_count, partial_count, set_count, set_name,
            src_bytes // 1024, out_bytes // 1024, stage)
     )
 

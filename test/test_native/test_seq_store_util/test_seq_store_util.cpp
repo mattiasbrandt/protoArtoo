@@ -3,7 +3,7 @@
 //
 // Native tests for the pure Learned Sequence store decision logic
 // (seq_store_util.cpp, issue #2 slice 3): name->file mapping and the save
-// capacity policy (16-file cap, per-file size cap, free-space floor). These
+// capacity policy (10-sequence cap, per-file size cap, free-space floor). These
 // run the real production helpers, so the boundaries are proven, not emulated.
 //
 // The per-file cap and the free-space floor became chip-target specific in #256.
@@ -144,6 +144,26 @@ static void test_free_floor_leaves_room_for_the_outgoing_copy() {
     TEST_ASSERT_EQUAL_STRING("json", below.field);
 }
 
+static void test_store_holds_ten_learned_sequences() {
+    // Operator decision, 2026-09-13 (#382): ten, on both boards. Sixteen
+    // full-size sequences never fitted beside the artoo-esp32's web image, and
+    // data/seq.js shows this same number (test_seq_capacity_382.js).
+    TEST_ASSERT_EQUAL_UINT8(10, SEQ_STORE_MAX);
+}
+
+static void test_store_full_message_names_the_enforced_cap() {
+    // The refusal a builder reads must name the cap that refused them. The
+    // message is a literal and SEQ_STORE_MAX a constant, so this is what holds
+    // the two together: derive the expectation from the constant.
+    ProtocolCheckResult r =
+        seqStoreCapacityCheck(true, SEQ_STORE_MAX, 2000, BIG_FREE);
+    TEST_ASSERT_FALSE(r.ok);
+    char expected[64];
+    snprintf(expected, sizeof(expected), "store full (%u sequences max)",
+             (unsigned)SEQ_STORE_MAX);
+    TEST_ASSERT_EQUAL_STRING(expected, r.message);
+}
+
 static void test_capacity_count_takes_precedence_over_size() {
     // A new, oversized save into a full store reports the slot error first.
     ProtocolCheckResult r = seqStoreCapacityCheck(
@@ -170,5 +190,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_over_cap_message_names_the_enforced_cap);
     RUN_TEST(test_free_floor_leaves_room_for_the_outgoing_copy);
     RUN_TEST(test_capacity_count_takes_precedence_over_size);
+    RUN_TEST(test_store_holds_ten_learned_sequences);
+    RUN_TEST(test_store_full_message_names_the_enforced_cap);
     return UNITY_END();
 }

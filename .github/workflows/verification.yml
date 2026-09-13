@@ -138,7 +138,11 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: 📦 Install npm dependencies
-        run: npm ci
+        # Also puts esbuild on PATH: tools/gzip_fsdata.py minifies the web UI
+        # with it on every pio build, and refuses to build without it (#382).
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: 🔑 Provision CI placeholder secrets.h
         run: cp src/secrets.h.example src/secrets.h

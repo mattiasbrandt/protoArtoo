@@ -747,7 +747,7 @@ void test_logs_query_full_ring_reports_every_line() {
 // Both answer `item` records (one per sequence), not `field` records - the
 // same reason system.status.logs needed its own capture above. One small
 // capture struct covers both (48 rows/320 bytes: comfortably above both
-// SEQ_STORE_MAX (16) and the real, compiled-in Factory catalog's count, and
+// SEQ_STORE_MAX (10) and the real, compiled-in Factory catalog's count, and
 // above the longest realistic item line - see consoleExecuteDomeApiList
 // BuiltinSequences()'s own itemBuf comment, src/console/console_module.cpp).
 

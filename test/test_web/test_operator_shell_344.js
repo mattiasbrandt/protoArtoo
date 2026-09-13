@@ -532,11 +532,12 @@ test("every surface document hands a direct visit to the shell at its own route"
       page,
       `${file}: the route the delegate names is the data-page identifier, not the operator-facing name`,
     );
-    // The delegate has to run before the recovery kernel, or the visit spends a
-    // request loading a bootstrap for a document that is about to be replaced.
+    // A delegate carries no recovery kernel (#382): the shell imports only its
+    // <body>, and a direct visit is replaced before a kernel could run, so the
+    // one kernel the browser needs is index.html's.
     assert.ok(
-      html.indexOf("PAShellDelegate") < html.indexOf("PA:INCLUDE _recovery_kernel.html"),
-      `${file}: the delegate must come before the kernel`,
+      !html.includes("PA:INCLUDE _recovery_kernel.html"),
+      `${file}: a shell delegate must not inline the recovery kernel`,
     );
   });
 });

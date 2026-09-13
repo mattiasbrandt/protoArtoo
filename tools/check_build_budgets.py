@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pio_lock  # tools/, beside this script
+
 ROOT = Path(__file__).resolve().parents[1]
 BUDGETS_FILE = ROOT / "tools" / "build_budgets.json"
 
@@ -71,15 +73,20 @@ def build_environment(env_name, budgets):
     env = os.environ.copy()
     env["PLATFORMIO_CORE_DIR"] = core_dir
 
+    cmd = ["pio", "run", "-e", env_name]
     try:
-        result = subprocess.run(
-            ["pio", "run", "-e", env_name],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-            env=env
-        )
+        # The framework pool is shared by every worktree and rebuilt in place,
+        # so a build outside the machine-wide lock can strand it (AGENTS.md
+        # "The build lock"). Waiting for the lock is not part of the timeout.
+        with pio_lock.build_lock(cmd):
+            result = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=1800,
+                env=env
+            )
 
         if result.returncode != 0:
             print(f"  FAILED: pio run exited with code {result.returncode}", file=sys.stderr)
@@ -118,15 +125,17 @@ def filesystem_image_bytes(env_name, budgets):
     env = os.environ.copy()
     env["PLATFORMIO_CORE_DIR"] = core_dir
 
+    cmd = ["pio", "run", "-e", env_name, "-t", "buildfs"]
     try:
-        result = subprocess.run(
-            ["pio", "run", "-e", env_name, "-t", "buildfs"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            env=env,
-        )
+        with pio_lock.build_lock(cmd):
+            result = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+            )
 
         if result.returncode != 0:
             print(f"  FAILED: pio run -t buildfs exited with code {result.returncode}", file=sys.stderr)

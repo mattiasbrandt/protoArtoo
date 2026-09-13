@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 720b20d8..9b2e2df5 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -26,7 +26,7 @@
+   // How many Learned Sequences the controller stores. Mirrors SEQ_STORE_MAX in
+   // include/seq_store_index.h, which is what actually refuses the save;
+   // test/test_web/test_seq_capacity_382.js holds the two together (#382).
+-  const LEARNED_SEQUENCE_CAP = 10;
++  const LEARNED_SEQUENCE_CAP = 16;
+ 
+   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
+   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen

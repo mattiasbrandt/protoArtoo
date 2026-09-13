@@ -64,7 +64,7 @@ async function runTest() {
         cardsContainer: document.getElementById('seq-cards-container'),
       };
 
-      els.capacityDisplay.textContent = `${seqs.length} / 16 sequences`;
+      els.capacityDisplay.textContent = `${seqs.length} / 10 sequences`;
       els.emptyState.classList.add('hidden');
       els.populatedState.classList.remove('hidden');
 

@@ -163,3 +163,20 @@ operator arrived at it, and they cannot see which rule is firing.
 - **Layout is not decided here** and stays with the frontend UI and UX work.
   Neither are the SVG body views (#317) or draft persistence for an in-progress
   edit (#289, #299).
+
+## Amendment (2026-09-13, #382): a shell delegate carries no recovery kernel
+
+Every surface file became a **thin delegate** under this decision: the shell
+fetches it and imports only its `<body>` (`data/shell.js`
+`parseSurfaceDocument`), and a direct visit runs `location.replace("/#<page>")`
+before anything else in its `<head>`. So a delegate's `<head>` never executes on
+either path, and the Page Recovery View kernel each one still inlined could
+never run. Eleven copies cost ten of the `artoo_esp32` filesystem's 160 blocks,
+measured by imaging.
+
+**The kernel now lives only in `index.html`**, the one document the browser
+renders, which is still where recovery is needed: a failure that sheds assets
+while the shell loads is handled there exactly as before (ADR 0019). The build
+refuses a delegate that includes the kernel (`tools/gzip_fsdata.py`, keyed on
+`window.PAShellDelegate = true`), and `test/test_web/test_page_markup.js` checks
+the same rule from source, so the copies cannot return.
