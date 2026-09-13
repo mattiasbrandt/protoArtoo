@@ -734,28 +734,38 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // only. Sorted the same way on both arms so the two are diffable side by side.
 #if defined(PA_CHIP_TARGET_ESP32P4)
 // Every arm below is exactly the rule applied to its own chain.
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4368;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;  // rule: 4368 -> 5460 -> 5632
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5360;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5360 -> 6700 -> 7168
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3488;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4608;  // rule: 3488 -> 4360 -> 4608
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3280;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4608;  // rule: 3280 -> 4100 -> 4608
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4848;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;  // rule: 4848 -> 6060 -> 6144
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3984;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7360;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7360 -> 9200 -> 9216
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3216;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4448;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4448 -> 5560 -> 5632
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7984;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10240;  // rule: 7984 -> 9980 -> 10240
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5808;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5808 -> 7260 -> 7680
+//
+// Re-walked 2026-09-13 (#256 reopen) on firebeetle2 at 569ff095. Ten of
+// thirteen chains had gone stale: writeFrameCounted() reaches
+// consoleCdcProbeLog() on the USB-CDC drop path (this chip only), and that
+// DEBUG line pays the RISC-V newlib float tail on every task that logs
+// through paLogLine() before the Console bind. Not a decoder fault: 0 of
+// 7634 bodies emitted as data, and the edge is a real jal at
+// console_serial_output.cpp:462. DomeLink, WebEvents and ArduinoOTA do not
+// take that path; their chain figures are the fresh walk, stacks unchanged.
+// SafetyMonitor still records the deeper profiler image (4064 vs product 3888).
+constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4832;
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6144;  // rule: 4832 -> 6040 -> 6144
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 6544;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 8192;  // rule: 6544 -> 8180 -> 8192
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 4000;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3984;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5040;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6656;  // rule: 5040 -> 6300 -> 6656
+constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 4464;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5632;  // rule: 4464 -> 5580 -> 5632
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7296;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7296 -> 9120 -> 9216
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 4064;
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 5120
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4576;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4576 -> 5720 -> 6144
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8320;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8320 -> 10400 -> 10752
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5776;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 7220 -> 7680
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
 constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
 // HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
@@ -763,8 +773,8 @@ constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
 // it), so its pair is declared on this arm only. A future board on another chip
 // that turns the capability on fails at the static_assert below rather than
 // inheriting a number measured on someone else's silicon.
-constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 3648;
-constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 4608;  // rule: 3648 -> 4560 -> 4608
+constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 4480;
+constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 5632;  // rule: 4480 -> 5600 -> 5632
 #elif defined(PA_CHIP_TARGET_ESP32)
 constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
 // above rule (5120): #250 raised the 50 Hz drive loop on both chips rather than

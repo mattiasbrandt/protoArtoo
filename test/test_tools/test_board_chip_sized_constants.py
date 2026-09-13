@@ -90,19 +90,13 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (32, 64, 96, 112),
         "log_ring_max_lines": 112,
-        # Re-derived by the #248 rule from tools/stack_usage_report.py chains
-        # against the linked firebeetle2 image (product and profiler match).
-        # RCInputTask 5376 * 1.25 = 6720 -> 7168; AudioTask 4848 * 1.25 = 6060
-        # -> 6144; WebEvents 5808 * 1.25 = 7260 -> 7680. Only WebEvents moves:
-        # 5808 already exceeds the inherited 6144.
-        "rc_input_stack": 7168,
-        "audio_stack": 6144,
+        # Re-derived 2026-09-13 (#256 reopen) by the #248 rule from the
+        # firebeetle2 product walk. RCInput 6544 -> 8192; Audio 5040 -> 6656;
+        # WebEvents 5776 -> 7680 (stack unchanged); Console 8320 -> 10752.
+        "rc_input_stack": 8192,
+        "audio_stack": 6656,
         "web_events_stack": 7680,
-        # ConsoleTask by the same rule (#226, re-derived by #269 and again at
-        # #271, after #226 wave 10 put a deeper branch on the chain):
-        # 7984 * 1.25 = 9980 -> 10240. The panic the original raise fixed was
-        # captured on this board.
-        "console_stack": 10240,
+        "console_stack": 10752,
     },
 }
 
@@ -410,20 +404,21 @@ class BoardChipSizedConstants(unittest.TestCase):
                 self.assertGreaterEqual(v[key], stack_size_for_chain(chain))
                 self.assertEqual(v[key] % 512, 0)
 
-    def test_p4_webevents_is_the_one_that_moves(self):
-        """The inherited 6144 is 336 B short of the ESP32-P4 chain.
+    def test_p4_webevents_stays_above_the_inherited_6144(self):
+        """WebEvents was the overrun original #256 moved, and it still is.
 
-        RCInputTask and AudioTask re-derive to the same number the shipping
-        artoo image has always had. WebEvents is the overrun this ticket
-        exists to fix, so a later edit that "simplified" it back to 6144
-        on both chips is the regression.
+        RCInputTask and AudioTask coincidentally re-derived to artoo's
+        literals in 2026-09-01; the 2026-09-13 reopen walk raised both on
+        P4, so equality across chips is no longer a property to pin. A later
+        edit that "simplified" WebEvents back to 6144 on both chips is still
+        the regression that ticket exists to catch.
         """
         artoo = self._values("PA_BOARD_ARTOO_ESP32")
         p4 = self._values("PA_BOARD_FIREBEETLE2")
-        self.assertEqual(artoo["rc_input_stack"], p4["rc_input_stack"])
-        self.assertEqual(artoo["audio_stack"], p4["audio_stack"])
         self.assertGreater(p4["web_events_stack"], artoo["web_events_stack"])
         self.assertGreater(p4["web_events_stack"], 6144)
+        self.assertGreater(p4["rc_input_stack"], artoo["rc_input_stack"])
+        self.assertGreater(p4["audio_stack"], artoo["audio_stack"])
 
     def test_artoo_task_stacks_are_not_below_the_measured_chains(self):
         """ESP32 stacks may stay above the rule; they must not drop below the chain.

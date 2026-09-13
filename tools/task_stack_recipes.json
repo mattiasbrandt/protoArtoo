@@ -49,9 +49,9 @@
             "driveTask"
           ],
           "frames": [],
-          "chain_bytes": 4368,
-          "product_bytes": 4368,
-          "profiler_bytes": 4368,
+          "chain_bytes": 4832,
+          "product_bytes": 4832,
+          "profiler_bytes": 4832,
           "rule": "applied"
         }
       }
@@ -79,9 +79,9 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5360,
-          "product_bytes": 5360,
-          "profiler_bytes": 5360,
+          "chain_bytes": 6544,
+          "product_bytes": 6544,
+          "profiler_bytes": 6544,
           "rule": "applied"
         }
       }
@@ -110,9 +110,9 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 3488,
-          "product_bytes": 3488,
-          "profiler_bytes": 3488,
+          "chain_bytes": 4000,
+          "product_bytes": 4000,
+          "profiler_bytes": 4000,
           "rule": "applied"
         }
       }
@@ -141,9 +141,9 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 3280,
-          "product_bytes": 3280,
-          "profiler_bytes": 3280,
+          "chain_bytes": 3984,
+          "product_bytes": 3984,
+          "profiler_bytes": 3984,
           "rule": "applied"
         }
       }
@@ -173,9 +173,9 @@
             "audioTask"
           ],
           "frames": [],
-          "chain_bytes": 4848,
-          "product_bytes": 4848,
-          "profiler_bytes": 4848,
+          "chain_bytes": 5040,
+          "product_bytes": 5040,
+          "profiler_bytes": 5040,
           "rule": "applied"
         }
       }
@@ -204,9 +204,9 @@
             "auxLedTask"
           ],
           "frames": [],
-          "chain_bytes": 3984,
-          "product_bytes": 3984,
-          "profiler_bytes": 3984,
+          "chain_bytes": 4464,
+          "product_bytes": 4464,
+          "profiler_bytes": 4464,
           "rule": "applied"
         }
       }
@@ -235,9 +235,9 @@
             "domeLinkTask"
           ],
           "frames": [],
-          "chain_bytes": 7360,
-          "product_bytes": 7360,
-          "profiler_bytes": 7360,
+          "chain_bytes": 7296,
+          "product_bytes": 7296,
+          "profiler_bytes": 7296,
           "rule": "applied",
           "note": "This task's own frame is 2256 B on RISC-V, split by GCC into two `addi sp,sp,-N` instructions because the allocation exceeds the 12-bit immediate. Reading only the first gave 224 B and hid the overrun until tools/stack_usage_report.py was taught to accumulate them (#250)."
         }
@@ -267,10 +267,10 @@
             "safetyMonitorTask"
           ],
           "frames": [],
-          "chain_bytes": 3216,
-          "product_bytes": 2752,
-          "profiler_bytes": 3216,
-          "deeper_image": "firebeetle2_profiler - 3216 B against the product image's 2752 B. #245 sized this arm from the profiler image for the same reason and recorded 3152 B; the extra 64 B is drift since that ticket.",
+          "chain_bytes": 4064,
+          "product_bytes": 3888,
+          "profiler_bytes": 4064,
+          "deeper_image": "firebeetle2_profiler - 4064 B against the product image's 3888 B. Same substitution as #271: the profiler image (PA_LOG_LEVEL=4) is the deeper walk, and the constant is compiled into both.",
           "rule": "applied"
         }
       }
@@ -299,9 +299,9 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 4448,
-          "product_bytes": 4448,
-          "profiler_bytes": 4448,
+          "chain_bytes": 4576,
+          "product_bytes": 4576,
+          "profiler_bytes": 4576,
           "rule": "applied"
         }
       }
@@ -342,12 +342,12 @@
             "embeddedCliProcess"
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
-          "chain_bytes": 7984,
-          "product_bytes": 7984,
-          "profiler_bytes": 7984,
+          "chain_bytes": 8320,
+          "product_bytes": 8320,
+          "profiler_bytes": 8320,
           "components": {
-            "onCliCommand": 7552,
-            "consoleTask": 336,
+            "onCliCommand": 7856,
+            "consoleTask": 368,
             "embeddedCliProcess": 96
           },
           "rule": "applied"
@@ -380,11 +380,11 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 5808,
-          "product_bytes": 5808,
-          "profiler_bytes": 5808,
+          "chain_bytes": 5776,
+          "product_bytes": 5776,
+          "profiler_bytes": 5776,
           "rule": "applied",
-          "note": "The one arm #256 had to move: 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on RISC-V, so the chain sat past the inherited 6144 before the 25% margin."
+          "note": "The one arm original #256 had to move: 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on RISC-V, so the chain sat past the inherited 6144 before the 25% margin. Re-walked 2026-09-13 (#256 reopen) at 5776, still within 7680."
         }
       }
     },
@@ -435,9 +435,9 @@
             "hostedRecoveryTaskFn"
           ],
           "frames": [],
-          "chain_bytes": 3648,
-          "product_bytes": 3648,
-          "profiler_bytes": 3648,
+          "chain_bytes": 4480,
+          "product_bytes": 4480,
+          "profiler_bytes": 4480,
           "rule": "applied"
         }
       },
