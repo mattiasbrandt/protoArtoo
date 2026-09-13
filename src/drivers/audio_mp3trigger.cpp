@@ -26,7 +26,7 @@
 //     'S'+'0'   --  query firmware version string
 //     'S'+'1'   --  query SD track count
 //     't'+N     --  play track N by filename prefix NNNxxxx.MP3 (N = uint8_t 1-255)
-//     'v'+V     --  set volume: 0=loudest, 255=silent (VS1063 inverted register)
+//     'v'+V     --  set volume: 0=loudest, ascending toward silence (VS1063 inverted)
 //     'O'       --  toggle play/pause (not used directly  --  see stop() below)
 //
 //   Receive (module -> ESP32):
@@ -41,9 +41,10 @@
 // because it works regardless of current module play state. Operator SD root
 // must contain 254XXXX.MP3 (all R2 community packs include it).
 //
-// Volume mapping: VS1063 register is inverted.
-//   nativeVol = (30 - vol) * 255 / 30
-//   vol=0 -> 255 (silent), vol=30 -> 0 (maximum), vol=15 -> 127.
+// Volume mapping: VS1063 register is inverted. We map onto the vendor's
+// audible 0-64, not the full 0-255 (#396).
+//   nativeVol = (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30
+//   vol=0 -> 64 (vendor floor), vol=30 -> 0 (maximum), vol=20 -> 21.
 //
 // Baud rate: 9600 (community standard). Factory default is 38400; set via baud
 // init file on SD root (see docs/sound_playback.md #2.3 for details).
@@ -200,17 +201,16 @@ void AudioDriverMp3Trigger::stop() {
 
 // -----------------------------------------------------------------------------
 // setVolume()
-// vol is 0-30 (clamped by AudioTask before this call). Scaled to VS1063
-// inverted register: nativeVol = (30 - vol) * MP3TRIGGER_VOL_MAX / 30.
-//   vol=0  -> 255 (silent)
-//   vol=30 -> 0   (maximum)
-//   vol=15 -> 127
-// Following BetterDuino: practical audible range is 0-100 on the native scale;
-// values above ~100 are near-inaudible but technically valid per VS1063 spec.
+// vol is 0-30 (clamped by AudioTask before this call). Scaled onto the
+// vendor-audible inverted range (#396): nativeVol =
+// (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30.
+//   vol=0  -> 64 (vendor floor; values above 64 are inaudible)
+//   vol=20 -> 21 (shipped default, inside the audible band)
+//   vol=30 -> 0  (maximum)
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
     uint8_t nativeVol =
-        (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_MAX / 30u);
+        (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_AUDIBLE / 30u);
     m_io.writeByte('v');
     m_io.writeByte(nativeVol);
 }

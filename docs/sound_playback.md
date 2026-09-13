@@ -296,7 +296,7 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 |---|---|---|
 | `playTrack(n)` | `'t'` + `uint8_t(n)` | n must be 1–255; values outside range are dropped |
 | `stop()` | `'t'` + `0xFE` (254) | Play silent blank track MP3TRIGGER_STOP_TRACK |
-| `setVolume(v)` | `'v'` + nativeVol | nativeVol = (30 − v) × 255 / 30 |
+| `setVolume(v)` | `'v'` + nativeVol | nativeVol = (30 − v) × 64 / 30 (vendor audible range; #396) |
 
 > \u26a0 **Stop workaround:** The MP3 Trigger has no discrete stop command.
 > `stop()` plays track 254, the community-standard silent blank track
@@ -305,12 +305,14 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 
 #### Volume scaling (VS1063 register is inverted)
 
-- vol=0 \u2192 nativeVol=255 (silent)
-- vol=15 \u2192 nativeVol=127 (mid)
-- vol=30 \u2192 nativeVol=0 (maximum)
+The register accepts 0–255 (0 = loudest). The vendor guide's useful range is
+0–64; values much above that are inaudible. protoArtoo maps the operator's
+0–30 slider onto that audible span (#396):
 
-Following BetterDuino: practical audible range is approximately 0–100 on the
-native scale; values above ~100 are near-inaudible but technically valid.
+- vol=0 → nativeVol=64 (vendor floor)
+- vol=15 → nativeVol=32 (mid)
+- vol=20 → nativeVol=21 (shipped default)
+- vol=30 → nativeVol=0 (maximum)
 
 #### Status queries
 

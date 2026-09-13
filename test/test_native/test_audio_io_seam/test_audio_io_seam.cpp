@@ -294,7 +294,7 @@ void test_mp3trigger_stop_byte_sequence() {
     TEST_ASSERT_EQUAL_HEX8(0xFE, g_rec.txBuf[1]);
 }
 
-// setVolume(0) → ['v', 0xFF]  (vol=0 → nativeVol=(30-0)*255/30=255)
+// setVolume(0) → ['v', 0x40]  (vol=0 → nativeVol=(30-0)*64/30=64, vendor floor)
 void test_mp3trigger_set_volume_0_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -303,10 +303,10 @@ void test_mp3trigger_set_volume_0_byte_sequence() {
 
     TEST_ASSERT_EQUAL_INT(2, g_rec.txCount);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[0]);
-    TEST_ASSERT_EQUAL_HEX8(0xFF, g_rec.txBuf[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x40, g_rec.txBuf[1]);
 }
 
-// setVolume(30) → ['v', 0x00]  (vol=30 → nativeVol=(30-30)*255/30=0 = maximum)
+// setVolume(30) → ['v', 0x00]  (vol=30 → nativeVol=(30-30)*64/30=0 = maximum)
 void test_mp3trigger_set_volume_max_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -318,7 +318,7 @@ void test_mp3trigger_set_volume_max_byte_sequence() {
     TEST_ASSERT_EQUAL_HEX8(0x00, g_rec.txBuf[1]);
 }
 
-// setVolume(15) → ['v', 0x7F]  (vol=15 → nativeVol=(30-15)*255/30=127)
+// setVolume(15) → ['v', 0x20]  (vol=15 → nativeVol=(30-15)*64/30=32)
 void test_mp3trigger_set_volume_mid_byte_sequence() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -327,7 +327,7 @@ void test_mp3trigger_set_volume_mid_byte_sequence() {
 
     TEST_ASSERT_EQUAL_INT(2, g_rec.txCount);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[0]);
-    TEST_ASSERT_EQUAL_HEX8(0x7F, g_rec.txBuf[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x20, g_rec.txBuf[1]);
 }
 
 // begin() uses the injected IO: at minimum the S0 query ('S','0') must appear.
@@ -345,7 +345,7 @@ void test_mp3trigger_begin_uses_injected_io() {
 
 // Without S0 response begin() does NOT send the S1 query — linkOk gate.
 // TX order without link: ['S','0'] then ['v', nativeVol] only (no S1).
-// nativeVol for vol=10: (30-10)*255/30 = 170 = 0xAA.
+// nativeVol for vol=10: (30-10)*64/30 = 42 = 0x2A.
 void test_mp3trigger_begin_no_s1_without_link() {
     AudioDriverMp3Trigger drv;
     drv.setIO(makeRecordingIO());
@@ -358,7 +358,7 @@ void test_mp3trigger_begin_no_s1_without_link() {
     TEST_ASSERT_EQUAL_HEX8('S', g_rec.txBuf[0]);
     TEST_ASSERT_EQUAL_HEX8('0', g_rec.txBuf[1]);
     TEST_ASSERT_EQUAL_HEX8('v', g_rec.txBuf[2]);
-    TEST_ASSERT_EQUAL_HEX8(0xAA, g_rec.txBuf[3]);  // nativeVol = 170
+    TEST_ASSERT_EQUAL_HEX8(0x2A, g_rec.txBuf[3]);  // nativeVol = 42
 }
 
 // =============================================================================

@@ -76,6 +76,11 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **MP3 Trigger volume uses the range you can actually hear.** The slider used
+  to be stretched across the module's whole 0–255 register, most of which is
+  silent, and the shipped default sat at the edge of audibility. It now maps
+  onto the vendor's 0–64 useful range, so the default is a real two-thirds and
+  turning the slider down still makes sound.
 - **Your droid keeps ten sequences of your own, not sixteen.** Sixteen
   full-size sequences never fitted on an artoo-esp32: your saved sequences and
   the web pages share the same flash, and the pages had grown until only ten

@@ -14,26 +14,13 @@ v2.4 hookup guide, from this repository's driver, tests and defaults, or from th
 astromech projects on this disk. Claims that could not be sourced are marked
 `UNKNOWN` with the artefact or bench test that would settle them.
 
-> [!CAUTION]
-> **The operator's volume slider is silent across most of its travel, and the
-> shipped default sits at or below the edge of audibility.**
->
-> `setVolume()` maps the normalised 0-30 range onto the module's whole 0-255
-> register: `nativeVol = (30 - vol) * 255 / 30`. But the module is **not audible
-> across that whole register**. The vendor's own guide says *"values much above
-> 0x40 are too low to be audible"*, and the one astromech project that measured
-> it puts the practical floor at **100** (*"doc says anything below 64 is
-> inaudible, not true, 100 is"*).
->
-> | Threshold | Native limit | Lowest audible `vol` | Usable slider positions |
-> | --- | --- | --- | --- |
-> | Vendor guide | 64 | **23** | 8 of 31 |
-> | Field measurement | 100 | **19** | 12 of 31 |
->
-> `src/config_store.cpp:166` ships `audioVolume = 20`, which is **native 85** --
-> past the vendor's threshold and barely inside the field one. Section 8.3 does
-> the arithmetic; Open Item 1 is what to do about it. **The driver's own comment
-> already knows this** and maps to 0-255 anyway.
+> [!NOTE]
+> **Volume map (#396, 2026-09-13):** the operator's 0-30 slider maps onto the
+> vendor's audible 0-64 of the inverted register, not the full 0-255.
+> `nativeVol = (30 - vol) * 64 / 30`. Shipped default `audioVolume = 20` is
+> native **21**. A field measurement (AstroPixelsPlus) puts the floor at 100
+> rather than 64; the grill chose the vendor ceiling. Community reports can
+> tighten it; we do not have this module on the bench.
 
 > [!WARNING]
 > **The chip is a VS1063. Five comments in our source say VS1053.**
@@ -117,8 +104,8 @@ If references conflict:
 
 Agent requirements when using this document:
 
-- MUST NOT widen the volume map to the full 0-255 register without reading
-  Section 8.3 first. Most of it is inaudible.
+- MUST NOT map the operator volume slider onto the full 0-255 register. The
+  vendor-audible span is 0-64; #396 is the decision (Section 8.3).
 - MUST NOT treat `'E'` as a hardware error. It means **the requested track does
   not exist** (Section 7.4). Our own comment says otherwise and is wrong.
 - MUST NOT assume a status response is terminated. The guide describes an
@@ -525,7 +512,7 @@ reports a dead link on a live module. Section 14.6 records it; it is benign
 | --- | --- | --- |
 | `playTrack(n)` | `'t'`, `(uint8_t)n` | `audio_mp3trigger.cpp:185-186` |
 | `stop()` | `'t'`, `0xFE` | `audio_mp3trigger.cpp:197-198` |
-| `setVolume(v)` | `'v'`, `(30 - v) * 255 / 30` | `audio_mp3trigger.cpp:212-215` |
+| `setVolume(v)` | `'v'`, `(30 - v) * 64 / 30` | `audio_mp3trigger.cpp` `setVolume()` (#396) |
 | `begin(v)` | `'S'`,`'0'` then `'S'`,`'1'` then `setVolume(v)` | `audio_mp3trigger.cpp:132`, `:148`, `:160` |
 | `queryModuleState()` | `'S'`,`'0'` then `'S'`,`'1'` | `audio_mp3trigger.cpp:243`, `:253` |
 
@@ -572,59 +559,32 @@ it. So `currentTrack` keeps naming the last track we asked for, after it has
 stopped -- which is what "last played" means and is worth knowing when reading the
 Sound page.
 
-### 8.3 Volume: the map spans a register the module cannot use
+### 8.3 Volume: the slider maps onto the vendor-audible 0-64 (#396)
 
 ```c
-uint8_t nativeVol = (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_MAX / 30u);
+uint8_t nativeVol = (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_AUDIBLE / 30u);
 ```
 
-The direction is right -- the VS10xx register is inverted, `0x00` is loudest -- and
-the arithmetic is pinned by eleven native tests. The problem is the **range**.
+`MP3TRIGGER_VOL_AUDIBLE` is **64**. Direction is inverted (`0x00` loudest). The
+register still accepts 0-255; we do not send above 64.
 
-| `vol` | native | vendor: audible? | field: audible? |
-| --- | --- | --- | --- |
-| 30 | 0 | yes (maximum) | yes |
-| 25 | 42 | yes | yes |
-| **23** | **59** | **yes -- last audible step** | yes |
-| 22 | 68 | **no** | yes |
-| **20 (shipped default)** | **85** | **no** | yes, quiet |
-| **19** | **93** | no | **yes -- last audible step** |
-| 18 | 102 | no | **no** |
-| 15 | 127 | no | no |
-| 10 | 170 | no | no |
-| 0 | 255 | no (silent) | no |
+| `vol` | native |
+| --- | --- |
+| 30 | 0 (maximum) |
+| **20 (shipped default)** | **21** |
+| 15 | 32 |
+| 10 | 42 |
+| 0 | 64 (vendor floor) |
 
-Two independent audibility floors exist and neither is ours:
+Until #396 this mapped onto 0-255, so `vol` 0-18 was inaudible and the default
+was native 85. Two floors were on the table: the vendor's 64, and a field
+measurement of 100 (AstroPixelsPlus). The 2026-09-13 grill chose the vendor
+ceiling. Community reports can still tighten it; we do not have this module on
+the bench.
 
-- **The vendor's**, in the guide's own `#VOLM` note: *"Useful range is 0 to 64,
-  with values above 64 being inaudible."* -> the operator's usable span is
-  **`vol` 23-30, eight of thirty-one positions**.
-- **A builder's measurement**, in `~/Documents/GitHub/AstroPixelsPlus/MarcduinoSound.h:64`:
-  *"doc says anything below 64 is inaudible, not true, 100 is. 82 is another good
-  value."* -> usable span **`vol` 19-30, twelve of thirty-one**.
-
-AstroPixelsPlus acts on its own measurement: it maps the operator's whole range
-onto **0-100**, not 0-255 (`MarcduinoSound.h:396`). protoArtoo knows the same
-number -- `docs/sound_playback.md:299-300` says *"practical audible range is
-approximately 0-100 on the native scale"* -- and maps to 0-255 anyway.
-
-> [!CAUTION]
-> **The shipped default volume is at or below the audible floor.**
-> `src/config_store.cpp:166` sets `audioVolume = 20`, which is native **85**:
-> inaudible by the vendor's number, and the quietest usable step by the field
-> one. A builder fitting this module, flashing a default image and pressing play
-> hears little or nothing, and the obvious diagnosis -- wiring, baud, card -- is
-> the wrong one.
->
-> The fix is one line and it is **not** made here, because it changes audible
-> behaviour on a module nobody has bench-tested: mapping `vol` 0-30 onto native
-> 100-0 instead of 255-0 would put the whole slider inside the audible band and
-> make `vol = 20` a genuine two-thirds. Open Item 1 carries it, with the
-> measurement that should precede it.
-
-`30u - vol` is **unsigned and unguarded**. The interface says AudioTask clamps to
-0-30 before the call and it does; a future caller that does not would underflow
-to a large `uint32_t`. Noted, not a live defect.
+`30u - vol` is **unsigned and unguarded**. AudioTask clamps to 0-30 before the
+call; a future caller that does not would underflow to a large `uint32_t`.
+Noted, not a live defect.
 
 ### 8.4 `stop()` plays a track, and the community does not agree which one
 
@@ -876,7 +836,7 @@ MP3 Trigger is the outlier:
 | --- | --- | --- |
 | Frame | **2 bytes, no checksum, no ack** | cheapest command in the family (~2.1 ms of Core 0) |
 | Addressing | **filename prefix** | the only member whose numbering survives a card rebuild (Section 9.1) |
-| Volume native | **0-255, inverted** | and mostly inaudible (Section 8.3) |
+| Volume native | **0-255 inverted; we send 0-64** | vendor-audible span; #396 |
 | Play-state query | **none** | permanently `unknown` on the Sound page |
 | Device-type query | **none** | the only built member missing this bit |
 | Stop | **no stop command** | done by playing a silent track (Section 8.4) |
@@ -1057,7 +1017,7 @@ belt-and-braces that could silently stop matching the belt.
 - Field: Blank-track number elsewhere. Required value: **252** in AstroPixelsPlus/Reeltwo. Do not assume 254 is universal.
 - Field: Volume command. Required value: **`'v'` + binary 0-255, inverted** -- `0x00` loudest.
 - Field: Volume audibility. Required value: the vendor says **above 64 is inaudible**; a builder's measurement says **above 100**. Either way most of the register is silent.
-- Field: protoArtoo volume map. Required value: `nativeVol = (30 - vol) * 255 / 30`. **`vol` below 19 is inaudible; the shipped default of 20 is native 85.** Section 8.3.
+- Field: protoArtoo volume map. Required value: `nativeVol = (30 - vol) * 64 / 30` (#396). Shipped default `vol` 20 is native **21**. The register still accepts 0-255; we do not send above 64.
 - Field: Status queries. Required value: **`'S'`+`'0'`** version, **`'S'`+`'1'`** track count, both replies `'='`-prefixed.
 - Field: Response terminator. Status: **UNKNOWN** -- the guide describes an 18-byte version string that is exactly 18 visible characters, implying no CR/LF. Settled by capturing the bytes (Open Item 2).
 - Field: Unsolicited bytes. Required value: **`'X'` finished, `'x'` cancelled, `'E'` requested track does not exist.** `'E'` is **not** a hardware error.
@@ -1079,7 +1039,7 @@ and dependent work stops.
 
 | # | Item | How to settle it |
 | --- | --- | --- |
-| 1 | **Should the volume map target 0-100 instead of 0-255?** Section 8.3. Today `vol` 0-18 is inaudible and the shipped default of 20 is at the edge. AstroPixelsPlus maps to 0-100 on its own measurement. | Play a known track at native 40, 64, 85, 100 and 120 through a real amplifier and write down where it stops being usable. Then change one line in `setVolume()` and the eleven mirror tests. **A behaviour change on an unverified module -- measure first.** |
+| 1 | **Volume map.** Decided 2026-09-13 (#396): vendor 0-64, not field 0-100 and not full 0-255. Shipped. Community can still report if 64 is too quiet. | Done in firmware. A board-side listen is a community report, not a ticket. |
 | 2 | **Do the `'S'` replies end with CR/LF?** Section 7.3. If not, every query costs its full 500 ms timeout. | Ten minutes: USB-serial adapter, 9600 baud, send `S0`, capture raw bytes, count them. |
 | 3 | **What voltage does the module's TX idle at?** Section 6.3. `PIN_AUDIO_RX` is not 5 V tolerant on either board. | Meter on the module's TX pin with the board powered from 5 V, then from the 3.3 V jumper position. **Do this before wiring one to a controller.** |
 | 4 | **Can back-to-back commands be dropped?** Section 8.1. We post no inter-command delay; the DY-SV5W driver posts 100 ms; a SparkFun forum thread reports a 10-100 ms settling window after `'X'`. | Send `stop()` immediately followed by `playTrack(n)` twenty times and count how many play. |
