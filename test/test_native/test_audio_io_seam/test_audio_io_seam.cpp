@@ -46,11 +46,15 @@ struct RecorderState {
     uint32_t delayTotalMs;
     int      delayCallCount;
     uint32_t fakeTimeMs;
+    uint32_t timeStepMs;
+    bool     holdRxUntilTx;
 
     void reset() {
         memset(txBuf, 0, sizeof(txBuf));
         txCount = rxCount = rxPos = delayCallCount = 0;
         delayTotalMs = fakeTimeMs = 0;
+        timeStepMs = 200;
+        holdRxUntilTx = false;
     }
 
     void injectRx(const uint8_t* data, int len) {
@@ -74,10 +78,13 @@ struct RecorderState {
 static RecorderState g_rec;
 
 static void     rec_writeByte(uint8_t b)  { if (g_rec.txCount < RecorderState::BUF) g_rec.txBuf[g_rec.txCount++] = b; }
-static int      rec_rxAvailable()         { return g_rec.rxCount - g_rec.rxPos; }
+static int      rec_rxAvailable()         {
+    if (g_rec.holdRxUntilTx && g_rec.txCount == 0) { return 0; }
+    return g_rec.rxCount - g_rec.rxPos;
+}
 static int      rec_rxRead()              { return (g_rec.rxPos < g_rec.rxCount) ? g_rec.rxBuf[g_rec.rxPos++] : -1; }
 static void     rec_delayMs(uint32_t ms)  { g_rec.delayTotalMs += ms; ++g_rec.delayCallCount; g_rec.fakeTimeMs += ms; }
-static uint32_t rec_millisNow()           { return (g_rec.fakeTimeMs += 200); }
+static uint32_t rec_millisNow()           { return (g_rec.fakeTimeMs += g_rec.timeStepMs); }
 
 static AudioSerialIO makeRecordingIO() {
     return AudioSerialIO{rec_writeByte, rec_rxAvailable, rec_rxRead, rec_delayMs, rec_millisNow};
@@ -361,6 +368,23 @@ void test_mp3trigger_begin_no_s1_without_link() {
     TEST_ASSERT_EQUAL_HEX8(0x2A, g_rec.txBuf[3]);  // nativeVol = 42
 }
 
+// A finish byte between drain and reply must not fail the query (#396).
+// holdRxUntilTx: bytes appear only after S0 is written, so sendQuery's drain
+// does not eat them. Leading 'X' is skipped; the '=' version string still
+// counts as a live link.
+void test_mp3trigger_query_skips_leading_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+    g_rec.holdRxUntilTx = true;
+    g_rec.timeStepMs = 1;  // 200 ms/call would expire before the line is read
+    g_rec.injectRxString("X=MP3 Trigger v2.50\n");
+
+    AudioModuleState ms{};
+    TEST_ASSERT_TRUE_MESSAGE(drv.queryModuleState(ms),
+                             "leading 'X' must not fail S0 parse");
+    TEST_ASSERT_TRUE(ms.linkOk);
+}
+
 // =============================================================================
 // CHIRP tests
 // =============================================================================
@@ -515,6 +539,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_mp3trigger_set_volume_mid_byte_sequence);
     RUN_TEST(test_mp3trigger_begin_uses_injected_io);
     RUN_TEST(test_mp3trigger_begin_no_s1_without_link);
+    RUN_TEST(test_mp3trigger_query_skips_leading_finish_byte);
 
     // CHIRP
     RUN_TEST(test_chirp_play_track_byte_sequence);

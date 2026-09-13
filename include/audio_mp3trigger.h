@@ -116,6 +116,7 @@ class AudioDriverMp3Trigger : public AudioDriver {
     bool     m_linkOk      = false;  // true if S0 response received in begin()
 
     // Read one \r\n-terminated ASCII response line via m_io.
+    // Skips leading unsolicited bytes until '=' (#396).
     uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
 
     // Drain RX, send 2-byte query (b0, b1), read and return one response line.

@@ -77,14 +77,26 @@ static const AudioSerialIO kMp3ProductionIO {
 
 // Read one '\r\n'-terminated ASCII response line via m_io. '\r' discarded;
 // reading stops at '\n' or timeout. Yields Core 0 while waiting.
+//
+// Leading unsolicited bytes ('X' finished, 'x' cancelled, 'E' missing track)
+// and other non-'=' noise are skipped so a finish byte in the drain-to-reply
+// window cannot fail a live query (#396).
 uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
                                         uint32_t timeoutMs) {
     if (maxLen == 0) { return 0; }
     uint32_t start = m_io.millisNow();
     uint8_t  pos   = 0;
+    bool     started = false;
     while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && pos < maxLen - 1u) {
         if (m_io.rxAvailable()) {
             char c = (char)m_io.rxRead();
+            if (!started) {
+                if (c == '=') {
+                    started = true;
+                    buf[pos++] = c;
+                }
+                continue;
+            }
             if (c == '\n') { break; }
             if (c != '\r') { buf[pos++] = c; }
         } else {
