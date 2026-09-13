@@ -175,9 +175,10 @@
 
   // The output-first table's frame, built once and before the droid has
   // answered, so the page says it is finding out rather than showing nothing.
-  // The markup file is full (its image block has no room), so this is written
-  // here; the feedback line moves below it, since it reports a move made from
-  // either table.
+  // Written here rather than in the markup file, which had no room in the
+  // image when this section was built (#362, before #382 reclaimed it); the
+  // feedback line moves below it, since it reports a move made from either
+  // table.
   const outputsSection = document.createElement("section");
   outputsSection.className = "outputs-section";
   outputsSection.innerHTML =
