@@ -56,6 +56,18 @@ the patch releases, whose notes live on their own GitHub Release.
   is only ever on one output, so picking another moves it, and the page asks
   first: it names the part, the output it leaves and what that output keeps.
   Two parts on one lead, like a pair of doors, both read as driven.
+- **See what every output drives, and where it is told to be.** Parts has a
+  second table with one row for every output on the controller, in the order
+  the leads plug in. Each row names every part on that output, so a lead split
+  to two doors names both. Above it, a count of how many outputs are driving
+  parts, wired but switched off, or driving nothing. A bar shows where the
+  controller is driving each servo right now, and a tick shows where the move
+  ends. Both are what the controller told the servo, not a reading: nothing on
+  the droid can feel where a servo is, so a jammed one looks like a free one.
+  An output with no pulse on it says `— off`. Pick a part in a row to put it on
+  that output, and the page asks first if that takes it off another output.
+  The same rows, with where each output stands, are on the Controller Console
+  as `servo.api.get-outputs`, so a board with no WiFi can read them too.
 - **The picker cards can show the part in your hand.** Every product in the
   lineup now has a photograph on the FireBeetle 2 — the same dark ground as
   the rest of the UI, sized to a card, so matching a card to the hardware on

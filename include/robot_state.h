@@ -133,6 +133,17 @@ struct ServoCommand {
     uint32_t timestampMs;
 };
 
+// The outputs ServoTask drives, one per armId above.
+constexpr uint8_t SERVO_ARM_COUNT = 5;
+
+// Where ServoTask has told one output to be (#362). Commanded, all of it:
+// nothing reads a servo back.
+struct ServoCommandedPosition {
+    uint16_t nowUs;     // the width on the pin, part way through a move too
+    uint16_t targetUs;  // where the move in progress ends; nowUs when none is
+    bool pulsing;       // false until ServoTask has put a pulse on the pin
+};
+
 // -----------------------------------------------------------------------------
 // Dome command message (sent via domeCmdQueue)
 // -----------------------------------------------------------------------------
@@ -228,17 +239,22 @@ struct RobotState {
     AudioRxStatus audio_module_rx_status;
 
     // --- Zone 6: Servo (ServoTask) ---
-    // The commanded width of the two outputs this controller drives, and no
-    // open/closed bit beside them. There was one -- armOpen[2] -- written by
-    // setArmPosition() and read by nothing, deriving "open" from
+    // Where each output ServoTask drives has been told to be, indexed by armId
+    // (ServoCommand::armId, 0=ARM1 .. 4=AUX3). Every surface that shows a
+    // position reads it here, through captureServoOutputCommanded()
+    // (include/api_status.h), and nowhere else (#362).
+    //
+    // Both widths are COMMANDED. Nothing on this droid reads a servo back -- no
+    // encoder, no feedback path -- so neither is where the horn actually is,
+    // and no surface may present one as measured.
+    //
+    // It replaced arm1TargetUs / arm2TargetUs, which covered ARM1 and ARM2 only
+    // and left AUX1-3 with no mirror at all. And still no open/closed bit beside
+    // the widths: there was one -- armOpen[2] -- deriving "open" from
     // `pulseUs > SERVO_PULSE_NEUTRAL_US`, which is wrong on any reversed
-    // Endpoint Pair: past neutral does not mean open when open is the lower
-    // number. ADR 0041 said it becomes real state or it goes, and a stored bit
-    // that can disagree with the width beside it is a second source of truth
-    // for one fact. Which end an output is at is derived from these widths and
+    // Endpoint Pair. Which end an output is at is derived from these widths and
     // the pair on its Servo Output row, where the direction is recorded (#345).
-    uint16_t arm1TargetUs;
-    uint16_t arm2TargetUs;
+    ServoCommandedPosition servoCommanded[SERVO_ARM_COUNT];
 
     // --- Zone 7: Aux LED ---
     AuxLedState auxLed;

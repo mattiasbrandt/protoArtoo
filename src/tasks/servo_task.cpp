@@ -45,7 +45,7 @@ static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
 // `seqMoved` marks an output a sequence was the last thing to command, which is
 // what the park below acts on. Any other source commanding the output clears it.
 // -----------------------------------------------------------------------------
-static constexpr uint8_t kArmCount = 5;  // ARM1, ARM2, AUX1-3
+static constexpr uint8_t kArmCount = SERVO_ARM_COUNT;  // ARM1, ARM2, AUX1-3
 
 static struct {
     uint16_t commandedUs;
@@ -133,13 +133,40 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 }
 
 // -----------------------------------------------------------------------------
+// publishCommanded()
+// Tell every surface where this output has been told to be (#362).
+//
+// `nowUs` is the width on the pin. `targetUs` is where the move in progress
+// ends, or `nowUs` again when nothing is moving, so the two marks a surface
+// draws close up exactly when the move does. `pulsing` is `known`: an output
+// only becomes known by this task putting a pulse on it -- the neutral pulse at
+// init, or a write -- and nothing in this firmware takes a pulse away once it
+// has started. Whoever brings Output Release or pulses-off (ADR 0043, ADR 0064)
+// clears it there.
+//
+// Called at every place one of the three changes: a write, a ramp planned, a
+// move abandoned, and init. It is a copy into robotState under robotStateMux,
+// like every robotState write, and allocates nothing.
+// -----------------------------------------------------------------------------
+static void publishCommanded(uint8_t armId) {
+    const ServoCommandedPosition commanded = {
+        s_arm[armId].commandedUs,
+        s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs,
+        s_arm[armId].known,
+    };
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.servoCommanded[armId] = commanded;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// -----------------------------------------------------------------------------
 // writeArmPulse()
 // Put one width on the pin and say so. The width has already been through
 // resolveArmPulse(); this is the write and nothing else.
 //
-// What is written is what robotState then reports, because the target a status
-// reader sees has to be the pulse the pin is actually holding -- part way
-// through a ramp too.
+// What is written is what robotState then reports, because the position a
+// status reader sees has to be the pulse the pin is actually holding -- part
+// way through a ramp too.
 // -----------------------------------------------------------------------------
 static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
     ledcPwmSetPulseWidth(channel, pulseUs);
@@ -152,13 +179,7 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
     // when open is the lower number (ADR 0041). It has gone; anything wanting
     // to say which end this output is at compares the width against the pair on
     // its row, where the direction is recorded.
-    taskENTER_CRITICAL(&robotStateMux);
-    if (armId == 0) {
-        robotState.arm1TargetUs = pulseUs;
-    } else if (armId == 1) {
-        robotState.arm2TargetUs = pulseUs;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
+    publishCommanded(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -182,40 +203,6 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
-// readMotionProfile()
-// The part of the Output row behind this channel that a move needs: how far a
-// full throw is, the two profile times, and whether anybody measured the ends.
-// False when no live row is addressed there.
-//
-// This is the one read in ServoTask that holds a whole ServoOutputRow. The cache
-// answers the clamp and the Endpoint Pair by address, as values, but has no
-// such accessor for the Motion Profile, and that accessor would live in the
-// config store this ticket may not touch (#354's fence). So the row is read
-// through configCacheReadServoOutput() -- the existing door -- once per command
-// rather than once per frame, in a frame of its own so the 70 B is gone again
-// before the move is planned.
-// -----------------------------------------------------------------------------
-static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throwMs,
-                              uint16_t* accelMs, bool* calibrated) __attribute__((noinline));
-static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throwMs,
-                              uint16_t* accelMs, bool* calibrated) {
-    const uint8_t count = configCacheServoOutputCount();
-    ServoOutputRow row = {};
-    for (uint8_t i = 0; i < count; ++i) {
-        if (!configCacheReadServoOutput(i, &row) || row.driver != SERVO_DRIVER_LEDC ||
-            row.channel != channel) {
-            continue;
-        }
-        *spanUs = (uint16_t)(servoOutputHighUs(row) - servoOutputLowUs(row));
-        *throwMs = row.throw_ms;
-        *accelMs = row.accel_ms;
-        *calibrated = row.calibrated;
-        return true;
-    }
-    return false;
-}
-
-// -----------------------------------------------------------------------------
 // driveArmTo()
 // Send an arm to a pulse width at the pace its Output's Motion Profile sets.
 //
@@ -224,6 +211,10 @@ static bool readMotionProfile(uint8_t channel, uint16_t* spanUs, uint16_t* throw
 // about how long a door takes (ADR 0049, ADR 0052). Where the profile cannot
 // plan a move -- no row, an unmeasured output, no known starting point -- the
 // arm snaps, which is exactly what every move did before the profile existed.
+//
+// The profile arrives as four values, not as the row they sit in: like the
+// clamp and the Endpoint Pair, it is answered by address out of the live table,
+// so no 70 B ServoOutputRow is put on ServoTask's measured chain (ADR 0040).
 // -----------------------------------------------------------------------------
 static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     uint8_t channel = LEDC_CH_MAX;
@@ -237,7 +228,8 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     uint16_t accelMs = 0;
     bool calibrated = false;
     if (!s_arm[armId].known ||
-        !readMotionProfile(channel, &spanUs, &throwMs, &accelMs, &calibrated)) {
+        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
+                                                 &accelMs, &calibrated)) {
         s_arm[armId].moving = false;
         writeArmPulse(armId, channel, targetUs);
         return;
@@ -252,6 +244,9 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     }
     s_arm[armId].ramp = ramp;
     s_arm[armId].moving = true;
+    // Nothing is written until the next frame, but the move already has a
+    // target, and that is what a surface shows beside where the output stands.
+    publishCommanded(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -286,8 +281,14 @@ static void updateMotion() {
 static void stopAllMoves(const char* reason) {
     bool stopped = false;
     for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        stopped = stopped || s_arm[armId].moving;
+        if (!s_arm[armId].moving) {
+            continue;
+        }
         s_arm[armId].moving = false;
+        stopped = true;
+        // The move is over where it got to, so its target is too: no surface
+        // may go on showing a destination the output will never reach.
+        publishCommanded(armId);
     }
     if (stopped) {
         PA_LOG_INFO(TAG, "Moves stopped where they were - %s", reason);
@@ -500,6 +501,7 @@ void servoTaskInit() {
             if (isArmEnabled(armId)) {
                 s_arm[armId].commandedUs = SERVO_PULSE_NEUTRAL_US;
                 s_arm[armId].known = true;
+                publishCommanded(armId);
             }
         }
 

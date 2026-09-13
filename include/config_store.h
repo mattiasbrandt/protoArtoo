@@ -269,23 +269,15 @@ struct AudioConfig {
 
 // No endpoint, no component type: those are an addressed Servo Output row's,
 // and a row is the only place either is stored (#345, ADR 0041). What is left
-// here is servo-adjacent config that is not per-output -- a sequence dwell the
-// whole droid shares, and the AUX LED selection.
+// here is servo-adjacent config that is not per-output: the AUX LED selection.
+//
+// The sequence dwell that used to sit here (seq_open_ms / seq_close_ms, NVS
+// keys seq_op / seq_cl) is gone. Its only reader was ServoTask's own body
+// routine state machine, which #354 deleted when the body routines became
+// sequences; a move's travel time is now the Output's Motion Profile, run by
+// the ramp (ADR 0052). configSave() removes the two keys from a controller
+// that still carries them (#362).
 struct ServoConfig {
-    // The dwell a body sequence holds an arm open or closed for. 1000 ms is a
-    // GUESS, not a measurement, and it is the one this firmware has always
-    // stood in for travel time with.
-    //
-    // ADR 0041 says these should default from the computed travel time once one
-    // exists. Nothing computes one yet: travel time is derived from a row's
-    // Motion Profile by the ramp, and the ramp is not in Waves 0-3 at all, so
-    // there is no figure to default from and no way to measure this number's
-    // error. Deleting them would take the dwell away from a sequence that needs
-    // one; re-defaulting them would be picking a second guess. So they stay,
-    // said out loud: whoever wires the Motion Profile into ServoTask should
-    // default these from it and delete this paragraph (#345, routed from #338).
-    uint16_t seq_open_ms;
-    uint16_t seq_close_ms;
     // NOT a GPIO, despite the name: an AUX slot selection, 0..AUX_LED_PIN_MAX
     // (AUX_LED_PIN_DISABLED/AUX1/AUX2/AUX3, include/config.h). The GPIO it
     // resolves to is the board's, via auxLedSelectionToGpio(), and it is
@@ -445,18 +437,19 @@ struct ConfigSnapshot {
     WifiConfig wifi;
 };
 
-// 916 bytes, measured - and pinned here because two comments elsewhere had
+// 912 bytes, measured - and pinned here because two comments elsewhere had
 // drifted from it and one of them was load-bearing. Every by-value crossing of
-// this struct contributes a 916-byte stack frame: three nested frames on the
+// this struct contributes a 912-byte stack frame: three nested frames on the
 // serial config-write path each carried one, which is how the Console task's
 // chain grew past its stack and panicked both boards (#226). The serializer
 // called it 744 B and ConfigCommitOutcome called itself small.
 //
 // It was 944 B until #345 took the five fixed servo field sets out of
 // ServoConfig - ten endpoints and five component types, 28 B with the padding
-// they carried. A shrink needs no re-measurement to be safe, because every
-// chain this struct is on gets shorter; the number is still updated here so the
-// next reader is not told a frame is bigger than it is.
+// they carried - and 916 B until #362 took out the sequence dwell, two uint16_t
+// fields. A shrink needs no re-measurement to be safe, because every chain this
+// struct is on gets shorter; the number is still updated here so the next
+// reader is not told a frame is bigger than it is.
 //
 // The same number on both chip targets and on the host compiler: every member
 // is an integral, float, enum or char array type, so this struct's alignment
@@ -470,7 +463,7 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
-static_assert(sizeof(ConfigSnapshot) == 916,
+static_assert(sizeof(ConfigSnapshot) == 912,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

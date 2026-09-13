@@ -223,8 +223,44 @@ void test_a_saved_config_writes_no_fixed_servo_key() {
         TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsTypeKey));
     }
     // The servo-domain fields that are not per-output still go down.
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("seq_op"));
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("seq_cl"));
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count(NVS_KEY_AUX_LED_PIN));
+    TEST_ASSERT_EQUAL_size_t(1, writer.data().count(NVS_KEY_AUX_LED_COUNT));
+}
+
+// Test: a save removes the sequence dwell nothing reads any more (#362)
+//
+// seq_op / seq_cl held the dwell ServoTask's body routine state machine waited
+// between an open and a close. #354 deleted the state machine, which was their
+// only reader, so a controller upgrading with the two keys in NVS would carry
+// them forever. The save is what makes them gone on the device rather than
+// only absent from the schema - and a config that never had them saves exactly
+// as before.
+void test_a_saved_config_removes_the_retired_sequence_dwell_keys() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    prefs.putUShort("seq_op", 2200);
+    prefs.putUShort("seq_cl", 900);
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(snap, writer));
+    TEST_ASSERT_EQUAL_size_t(0, writer.data().count("seq_op"));
+    TEST_ASSERT_EQUAL_size_t(0, writer.data().count("seq_cl"));
+
+    TEST_ASSERT_TRUE(configSave(prefs, snap));
+    TEST_ASSERT_FALSE(prefs.isKey("seq_op"));
+    TEST_ASSERT_FALSE(prefs.isKey("seq_cl"));
+
+    // The servo domain saved on its own takes them away too, and a second
+    // save with nothing left to remove still succeeds.
+    prefs.putUShort("seq_op", 2200);
+    TEST_ASSERT_TRUE(configSaveServo(prefs, snap.servo));
+    TEST_ASSERT_FALSE(prefs.isKey("seq_op"));
+    TEST_ASSERT_TRUE(configSave(prefs, snap));
+    TEST_ASSERT_TRUE(prefs.isKey(NVS_KEY_AUX_LED_PIN));
+    prefs.end();
 }
 
 // Test: saving the rows removes the key set they replaced (#345)
@@ -468,12 +504,10 @@ void test_configLoad_save_audio_tracks() {
 //
 // Endpoints and component types are not among them any more - they are an
 // addressed Servo Output row's, saved by configSaveServoOutputs() and covered
-// by test_servo_output_row. What ServoConfig still carries is the sequence
-// dwell and the AUX LED selection.
+// by test_servo_output_row. What ServoConfig still carries is the AUX LED
+// selection.
 void test_configLoad_save_servo_config() {
     ConfigSnapshot snap1 = {};
-    snap1.servo.seq_open_ms = 2100;
-    snap1.servo.seq_close_ms = 900;
     snap1.servo.aux_led_pin = 2;
     snap1.servo.aux_led_count = 8;
 
@@ -487,8 +521,6 @@ void test_configLoad_save_servo_config() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT16(snap1.servo.seq_open_ms, snap2.servo.seq_open_ms);
-    TEST_ASSERT_EQUAL_UINT16(snap1.servo.seq_close_ms, snap2.servo.seq_close_ms);
     TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_pin, snap2.servo.aux_led_pin);
     TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_count, snap2.servo.aux_led_count);
 }
@@ -725,10 +757,6 @@ void test_configCacheRead_captures_all_categories() {
     seeded.dome.dome_rnd_move_ms   = 3000;
     snprintf(seeded.dome.dome_wifi_peer_ip, sizeof(seeded.dome.dome_wifi_peer_ip), "10.0.0.5");
 
-    // Sequence timing
-    seeded.servo.seq_open_ms        = 400;
-    seeded.servo.seq_close_ms       = 600;
-
     // AUX LED
     seeded.servo.aux_led_pin        = 2;
     seeded.servo.aux_led_count      = 8;
@@ -800,10 +828,6 @@ void test_configCacheRead_captures_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(10, snap.dome.dome_rnd_pause_max);
     TEST_ASSERT_EQUAL_UINT16(3000, snap.dome.dome_rnd_move_ms);
     TEST_ASSERT_EQUAL_STRING("10.0.0.5", snap.dome.dome_wifi_peer_ip);
-
-    // Sequence timing
-    TEST_ASSERT_EQUAL_UINT16(400, snap.servo.seq_open_ms);
-    TEST_ASSERT_EQUAL_UINT16(600, snap.servo.seq_close_ms);
 
     // AUX LED
     TEST_ASSERT_EQUAL_UINT8(2, snap.servo.aux_led_pin);
@@ -998,10 +1022,6 @@ void test_configCacheApply_applies_all_categories() {
     snap.dome.dome_rnd_move_ms   = 3500;
     snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "192.168.0.99");
 
-    // Sequence timing
-    snap.servo.seq_open_ms        = 800;
-    snap.servo.seq_close_ms       = 1200;
-
     // AUX LED
     snap.servo.aux_led_pin        = 3;
     snap.servo.aux_led_count      = 12;
@@ -1060,9 +1080,6 @@ void test_configCacheApply_applies_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(85, applied.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, applied.dome.dome_rnd_enable);
     TEST_ASSERT_EQUAL_STRING("192.168.0.99", applied.dome.dome_wifi_peer_ip);
-
-    TEST_ASSERT_EQUAL_UINT16(800, applied.servo.seq_open_ms);
-    TEST_ASSERT_EQUAL_UINT16(1200, applied.servo.seq_close_ms);
 
     TEST_ASSERT_EQUAL_UINT8(3, applied.servo.aux_led_pin);
     TEST_ASSERT_EQUAL_UINT8(12, applied.servo.aux_led_count);
@@ -1152,7 +1169,7 @@ void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
     snap.audio.audioVolume = 12;
-    snap.servo.seq_open_ms = 1900;
+    snap.servo.aux_led_count = 19;
     snap.dome.dome_speed_limit_pct = 75;
     snap.system.enable_audio = true;
 
@@ -1174,7 +1191,7 @@ void test_config_domain_load_functions_are_independently_callable() {
 
     TEST_ASSERT_EQUAL_INT16(550, drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(12, audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT16(1900, servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT8(19, servo.aux_led_count);
     TEST_ASSERT_EQUAL_UINT8(75, dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, system.enable_audio);
 }
@@ -1210,7 +1227,7 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
     TEST_ASSERT_TRUE(configLoad(prefs, &baseline));
     baseline.drive.speedLimitMax = 500;
     baseline.audio.audioVolume = 10;
-    baseline.servo.seq_open_ms = 1900;
+    baseline.servo.aux_led_count = 19;
     baseline.dome.dome_speed_limit_pct = 75;
     baseline.system.enable_audio = true;
     TEST_ASSERT_TRUE(configSave(prefs, baseline));
@@ -1219,7 +1236,7 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
 static void assert_domain_round_trip_baseline_preserved(const ConfigSnapshot& loaded) {
     TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(10, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT16(1900, loaded.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT8(19, loaded.servo.aux_led_count);
     TEST_ASSERT_EQUAL_UINT8(75, loaded.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_audio);
 }
@@ -1260,13 +1277,13 @@ void test_config_domain_round_trip_matrix() {
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     configCacheApply(loaded);
     configCacheRead(&fromState);
-    fromState.servo.seq_open_ms = 2100;
+    fromState.servo.aux_led_count = 21;
     configCacheApply(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveServo(prefs, fromState.servo));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    TEST_ASSERT_EQUAL_UINT16(2100, loaded.servo.seq_open_ms);
-    loaded.servo.seq_open_ms = 1900;
+    TEST_ASSERT_EQUAL_UINT8(21, loaded.servo.aux_led_count);
+    loaded.servo.aux_led_count = 19;
     assert_domain_round_trip_baseline_preserved(loaded);
 
     seed_domain_round_trip_baseline(prefs);
@@ -1582,10 +1599,10 @@ void test_an_edit_outside_the_component_band_is_reported() {
     TEST_ASSERT_EQUAL_UINT16(0, none.fieldsRepaired);
 }
 
-// The servo drive path's only two doors onto a row, and both answer with values
+// The servo drive path's only three doors onto a row, and all answer with values
 // rather than with the row: their caller's worst-case static chain is a measured
 // constant (ADR 0040) and a ServoOutputRow is 70 B to answer a question whose
-// answer is one number or two.
+// answer is one number, two or four.
 void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
     Preferences prefs;
     prefs.begin("proto", false);
@@ -1630,6 +1647,61 @@ void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
         configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, LEDC_CH_DOME, &openUs, &closeUs));
     TEST_ASSERT_EQUAL_UINT16(7, openUs);
     TEST_ASSERT_EQUAL_UINT16(9, closeUs);
+
+    // The Motion Profile a move is planned from (#362): the span of that same
+    // reversed pair is its width, not a negative number and not a row sorted by
+    // the caller, and the two times and the calibrated bit are the row's own.
+    uint16_t spanUs = 0;
+    uint16_t throwMs = 0;
+    uint16_t accelMs = 0;
+    bool calibrated = true;  // poisoned, must be overwritten
+    TEST_ASSERT_TRUE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_ARM1,
+                                                             &spanUs, &throwMs, &accelMs,
+                                                             &calibrated));
+    TEST_ASSERT_EQUAL_UINT16(700, spanUs);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, throwMs);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, accelMs);
+    TEST_ASSERT_FALSE(calibrated);
+
+    // A row somebody has measured and given its own pace says so. No edit door
+    // sets the calibrated bit or the two times, so the row is stored and read
+    // back the way a controller boots with one - and the two times differ, so
+    // an accessor that swapped them could not pass.
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    ServoOutputRow& aux2 = table.rows[3];
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX2, aux2.channel);
+    aux2.open_us = 1900;
+    aux2.close_us = 1100;
+    aux2.throw_ms = 1400;
+    aux2.accel_ms = 300;
+    aux2.calibrated = true;
+    prefs.begin("proto", false);
+    PrefsWriter writer(prefs);
+    TEST_ASSERT_TRUE(configSerializeServoOutputs(table, writer));
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+    TEST_ASSERT_TRUE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_AUX2,
+                                                             &spanUs, &throwMs, &accelMs,
+                                                             &calibrated));
+    TEST_ASSERT_EQUAL_UINT16(800, spanUs);
+    TEST_ASSERT_EQUAL_UINT16(1400, throwMs);
+    TEST_ASSERT_EQUAL_UINT16(300, accelMs);
+    TEST_ASSERT_TRUE(calibrated);
+
+    // And an unclaimed address answers false with every out-param left alone.
+
+    spanUs = 7;
+    throwMs = 8;
+    accelMs = 9;
+    calibrated = true;
+    TEST_ASSERT_FALSE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_DOME,
+                                                              &spanUs, &throwMs, &accelMs,
+                                                              &calibrated));
+    TEST_ASSERT_EQUAL_UINT16(7, spanUs);
+    TEST_ASSERT_EQUAL_UINT16(8, throwMs);
+    TEST_ASSERT_EQUAL_UINT16(9, accelMs);
+    TEST_ASSERT_TRUE(calibrated);
 }
 
 int main() {
@@ -1646,6 +1718,7 @@ int main() {
     RUN_TEST(test_configValidate_sbus_timeout_valid);
     RUN_TEST(test_configValidate_audio_volume);
     RUN_TEST(test_a_saved_config_writes_no_fixed_servo_key);
+    RUN_TEST(test_a_saved_config_removes_the_retired_sequence_dwell_keys);
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
     RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
     RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);

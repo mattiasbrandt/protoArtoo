@@ -39,7 +39,7 @@ void test_default_snapshot_round_trip(void) {
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetNormal, loaded.drive.speedPresetNormal);
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetTurbo, loaded.drive.speedPresetTurbo);
     TEST_ASSERT_EQUAL_INT(defaults.audio.audioVolume, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_INT(defaults.servo.seq_open_ms, loaded.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
 }
 
 // Test 2: Typical snapshot round-trip with non-default values
@@ -52,7 +52,7 @@ void test_typical_snapshot_round_trip(void) {
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "r2d2test");
     snap.drive.speedLimitMax = 600;  // exact upper boundary
     snap.audio.audioVolume = 15;
-    snap.servo.seq_open_ms = 2200;
+    snap.servo.aux_led_count = 22;
     snap.dome.dome_min_speed = 0.25f;
     snap.system.enable_arm1 = true;
 
@@ -71,7 +71,7 @@ void test_typical_snapshot_round_trip(void) {
     TEST_ASSERT_EQUAL_STRING("r2d2test", loaded.system.droid_name);
     TEST_ASSERT_EQUAL_INT(600, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_INT(15, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_INT(2200, loaded.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_INT(22, loaded.servo.aux_led_count);
     TEST_ASSERT_EQUAL_INT(1, loaded.system.enable_arm1);
     // Float comparison with tolerance
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.25f, loaded.dome.dome_min_speed);
@@ -155,7 +155,7 @@ void test_schema_v0_migration(void) {
 
     // Values not in the map should have defaults
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetSlow, loaded.drive.speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT(defaults.servo.seq_open_ms, loaded.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
 }
 
 // Test 6: Unknown key tolerance
@@ -176,7 +176,7 @@ void test_unknown_key_tolerance(void) {
     TEST_ASSERT_EQUAL_INT(600, loaded.drive.speedLimitMax);  // clamped at boundary
     TEST_ASSERT_EQUAL_INT(18, loaded.audio.audioVolume);
     // Unknown key should not corrupt anything
-    TEST_ASSERT_EQUAL_INT(defaults.servo.seq_open_ms, loaded.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
 }
 
 // Test 7: Moodcat mask — upper nibble must be stripped on both serialize and deserialize

@@ -18,6 +18,20 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
+// mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
+// table paints its position marks through element.style. A plain object per
+// element is all a style write needs; it lives here rather than in the shared
+// helper, which is not bent to the code under test (test/test_web/README.md).
+const elementPrototype = Object.getPrototypeOf(new MiniDocument().createElement("div"));
+if (!Object.getOwnPropertyDescriptor(elementPrototype, "style")) {
+  Object.defineProperty(elementPrototype, "style", {
+    get() {
+      if (!this.styleValues) this.styleValues = {};
+      return this.styleValues;
+    },
+  });
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
