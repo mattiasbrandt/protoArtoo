@@ -1,0 +1,12 @@
+diff --git a/data/sound.js b/data/sound.js
+--- a/data/sound.js
++++ b/data/sound.js
+@@ -430,7 +430,7 @@
+       if (mp3MissingTrack) {
+         if (isMp3 && Number.isFinite(missing) && missing > 0) {
+           mp3MissingTrack.textContent =
+-            `Track ${missing} is not on the card — that is the clip, not the wiring.`;
++            "";
+           setElementVisible(mp3MissingTrack, true);
+         } else {
+           mp3MissingTrack.textContent = "";

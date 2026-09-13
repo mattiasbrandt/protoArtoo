@@ -266,7 +266,7 @@ The dome has no local sound module. The body is the sole audio authority.
 
 **Audio System**
 - Three supported audio modules: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger,
-  and SparkFun MP3 Trigger — swap between them with a reflash, no rewiring
+  and SparkFun MP3 Trigger — pick the one that is fitted; the change takes effect at reboot, no rewiring
 - Audio commands from any source — RC radio, web browser, or dome controller —
   are handled together without conflicts
 - Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
@@ -342,7 +342,7 @@ The dome has no local sound module. The body is the sole audio authority.
 - Failsafe response time is measurable and logged
 
 **Hardware Flexibility**
-- Audio module is swappable — changing modules requires only a reflash, no hardware rewiring
+- Audio module is swappable — pick the one that is fitted; it takes effect at reboot, no rewiring
 - AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
 - Runtime WiFi provisioning: a newly flashed controller hosts its own setup
   network at first boot, then the operator picks WiFi Client Mode or

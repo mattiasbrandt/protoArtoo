@@ -81,6 +81,12 @@ the patch releases, whose notes live on their own GitHub Release.
   silent, and the shipped default sat at the edge of audibility. It now maps
   onto the vendor's 0–64 useful range, so the default is a real two-thirds and
   turning the slider down still makes sound.
+- **The Sound page says when an MP3 Trigger clip is missing, and when a range
+  this module cannot play is saved.** Play-state follows the board's finish
+  byte instead of staying unknown. On the Artoo board, listening for that byte
+  no longer takes the dome's serial line. The Sound page also tells you the
+  3.3 V jumper and the 9600 card file, the two things that look like a dead
+  module.
 - **Your droid keeps ten sequences of your own, not sixteen.** Sixteen
   full-size sequences never fitted on an artoo-esp32: your saved sequences and
   the web pages share the same flash, and the pages had grown until only ten

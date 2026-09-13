@@ -67,9 +67,10 @@ const runAudioStatus = async (capabilities) => {
   });
   const totalTracks = recordVisibility(env.element("mod-total-tracks-row"));
   const currentTrack = recordVisibility(env.element("mod-current-track-row"));
+  const deviceRow = recordVisibility(env.element("mod-device-row"));
   await env.runSection("audio-status", {});
   await env.settle();
-  return { totalTracks, currentTrack };
+  return { totalTracks, currentTrack, deviceRow };
 };
 
 test("a module that cannot count tracks does not get a Total tracks row", async () => {
@@ -89,6 +90,22 @@ test("a module that cannot count tracks does not get a Total tracks row", async 
     lastHiddenToggle(currentTrack),
     false,
     "Current track must stay visible when the module declares AUDIO_CAP_CURRENT_TRACK"
+  );
+});
+
+test("a 0x0D module hides the Device row", async () => {
+  const { deviceRow, currentTrack } = await runAudioStatus(
+    CAP_STATUS_QUERY | CAP_TRACK_COUNT | CAP_CURRENT_TRACK
+  );
+  assert.strictEqual(
+    lastHiddenToggle(deviceRow),
+    true,
+    "Device must be hidden when the module does not declare AUDIO_CAP_DEVICE_TYPE"
+  );
+  assert.strictEqual(
+    lastHiddenToggle(currentTrack),
+    false,
+    "Current track must stay visible on a 0x0D module"
   );
 });
 

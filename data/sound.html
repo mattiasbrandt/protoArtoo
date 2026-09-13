@@ -22,6 +22,8 @@
     <div class="card">
       <h3>🔌 Audio Status</h3>
       <p id="mod-query-note" class="desc"></p>
+      <p id="mp3-wire-note" class="desc hidden"></p>
+      <p id="mp3-missing-track" class="desc hidden" role="status" aria-live="polite"></p>
       <table id="mod-status-table" class="sound-table mt-12">
         <tbody>
           <tr>
@@ -188,6 +190,7 @@
       <div class="desc">
         Configure random playback ranges per sound category. Set both Min and Max to 0 for silent/unset.
       </div>
+      <p id="mp3-range-warning" class="desc hidden" role="status"></p>
       <div class="sound-table-wrap mt-12">
         <table class="sound-table">
           <thead>
