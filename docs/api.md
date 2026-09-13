@@ -653,7 +653,7 @@ curl -s http://artoo.local/api/audio
 #### Example response
 
 ```json
-{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0}
+{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0}
 ```
 
 ### POST /api/audio

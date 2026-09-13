@@ -31,6 +31,7 @@
 #include "../../../include/audio_dy_sv5w.h"
 #include "../../../include/audio_chirp.h"
 #include "../../../include/audio_mp3trigger.h"
+#include "../../../src/drivers/audio_soft_uart_rx.h"
 
 // =============================================================================
 // RecordingSerialIO
@@ -428,6 +429,16 @@ void test_mp3trigger_missing_track_byte_clears_playing() {
     drv.serviceRx();
     drv.getCachedState(ms);
     TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(99, ms.missingTrack);
+}
+
+void test_soft_uart_rx_ring_holds_a_finish_byte() {
+    softUartRxBegin();
+    while (softUartRxAvailable() > 0) { (void)softUartRxRead(); }
+    softUartRxPush((uint8_t)'X');
+    TEST_ASSERT_EQUAL_INT(1, softUartRxAvailable());
+    TEST_ASSERT_EQUAL_INT('X', softUartRxRead());
+    TEST_ASSERT_EQUAL_INT(0, softUartRxAvailable());
 }
 
 // =============================================================================
@@ -588,6 +599,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_mp3trigger_play_sets_playing_until_finish_byte);
     RUN_TEST(test_mp3trigger_stop_stays_playing_until_finish_byte);
     RUN_TEST(test_mp3trigger_missing_track_byte_clears_playing);
+    RUN_TEST(test_soft_uart_rx_ring_holds_a_finish_byte);
 
     // CHIRP
     RUN_TEST(test_chirp_play_track_byte_sequence);

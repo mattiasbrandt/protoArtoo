@@ -559,6 +559,7 @@ static void writeModuleState(const AudioModuleState& ms, AudioRxStatus rxStatus)
     robotState.audio_module_device = ms.device;
     robotState.audio_module_total_tracks = ms.totalTracks;
     robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
     robotState.audio_module_rx_status = rxStatus;
     taskEXIT_CRITICAL(&robotStateMux);
 }
@@ -571,6 +572,7 @@ static void pumpUnsolicitedRx() {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.audio_module_play_state = ms.playState;
     robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 

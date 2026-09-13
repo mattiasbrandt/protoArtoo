@@ -3,14 +3,10 @@
 //
 // Concrete AudioDriver for the SparkFun MP3 Trigger v2.x (WIG-13720).
 //
-// TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud  --  the
-// same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP. RX query
-// responses are read via UART_PORT_AUDIO on PIN_AUDIO_RX, opened RX-only
-// (TX pin = -1).
-//
-// Written for the artoo-esp32 posture, where UART_PORT_AUDIO is shared with the
-// dome link and there is no spare TX. No P4 environment selects this backend.
-// AudioTask, not this driver, holds the claim (audioUartClaim()).
+// TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud -- the
+// same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP. RX is
+// GPIO-sampled on PIN_AUDIO_RX on artoo-esp32 so it does not take the dome
+// UART; FireBeetle 2 uses the dedicated audio UART (#396).
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):
@@ -59,9 +55,9 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // Inject a custom I/O seam (call before begin() to override production IO).
     void setIO(const AudioSerialIO& io) { m_io = io; }
 
-    // Configures soft-UART TX and hardware UART RX; sends S0 version query to
-    // verify the serial link, S1 track-count query to cache totalTracks, then
-    // applies initial volume. Blocking  --  runs inside AudioTask on Core 0.
+    // Configures bit-bang TX and board-local RX (GPIO-sampled on artoo-esp32,
+    // dedicated UART on FireBeetle 2). Then S0, S1, boot volume. Blocking --
+    // runs inside AudioTask on Core 0. Does not take the dome UART.
     bool begin(uint8_t vol) override;
 
     // Play a track by 1-based filename-prefix index (NNNxxxx.MP3).

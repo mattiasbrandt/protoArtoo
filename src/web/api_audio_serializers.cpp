@@ -29,16 +29,16 @@ const char* audioDeviceLabel(uint8_t device) {
 
 void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, uint8_t capabilities,
                            bool linkOk, bool active, uint8_t playState, uint8_t device,
-                           uint16_t totalTracks, uint16_t currentTrack, const char* rxStatus,
-                           const char* rxDetail) {
+                           uint16_t totalTracks, uint16_t currentTrack, uint16_t missingTrack,
+                           const char* rxStatus, const char* rxDetail) {
     const char* playSt = audioPlayStateLabel(playState);
     const char* devStr = audioDeviceLabel(device);
     snprintf(buf, bufSize,
              "{\"driver\":\"%s\",\"capabilities\":%u,\"link_ok\":%s,\"active\":%s,"
              "\"play_state\":\"%s\",\"device\":\"%s\","
-             "\"total_tracks\":%u,\"current_track\":%u,"
+             "\"total_tracks\":%u,\"current_track\":%u,\"missing_track\":%u,"
              "\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
              driverName, (unsigned)capabilities, linkOk ? "true" : "false",
              active ? "true" : "false", playSt, devStr, (unsigned)totalTracks,
-             (unsigned)currentTrack, rxStatus, rxDetail);
+             (unsigned)currentTrack, (unsigned)missingTrack, rxStatus, rxDetail);
 }

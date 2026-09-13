@@ -491,7 +491,7 @@ void test_dome_status_current_carries_real_state() {
 
 void test_sound_three_way_field_match() {
     char json[256];
-    formatAudioStatusJson(json, sizeof(json), "TEST", 0, true, false, 0, 0, 0, 0, "ok", "ok");
+    formatAudioStatusJson(json, sizeof(json), "TEST", 0, true, false, 0, 0, 0, 0, 0, "ok", "ok");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("sound.status.current");
 

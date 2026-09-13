@@ -862,6 +862,7 @@ void handleAudioGet(WebRequest& req) {
     char body[256];
     formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active,
                           snap.playState, snap.device, snap.totalTracks, snap.currentTrack,
+                          snap.missingTrack,
                           audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
     req.send(200, "application/json", body);
 }
@@ -881,6 +882,7 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out) {
     out->device = robotState.audio_module_device;
     out->totalTracks = robotState.audio_module_total_tracks;
     out->currentTrack = robotState.audio_module_current_track;
+    out->missingTrack = robotState.audio_module_missing_track;
     out->active = robotState.audioActive;
     out->rxStatus = robotState.audio_module_rx_status;
     taskEXIT_CRITICAL(&robotStateMux);

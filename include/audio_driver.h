@@ -81,6 +81,7 @@ struct AudioModuleState {
     uint8_t device;         // 0=USB   1=SD/TF    2=FLASH   0xFF=unknown/none
     uint16_t totalTracks;   // 0 if unknown
     uint16_t currentTrack;  // 0 if unknown
+    uint16_t missingTrack;  // last track the module said was not on the card; 0 if none
 };
 
 // -----------------------------------------------------------------------------
@@ -157,6 +158,7 @@ class AudioDriver {
         out = AudioModuleState{};
         out.playState = 0xFF;
         out.device = 0xFF;
+        out.missingTrack = 0;
     }
 
     // Drain unsolicited RX (finish/cancel/missing-track bytes) without a query.

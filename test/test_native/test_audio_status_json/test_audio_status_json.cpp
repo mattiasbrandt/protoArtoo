@@ -24,7 +24,7 @@ static void formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* 
                                          uint8_t playState, uint8_t device,
                                          uint16_t totalTracks, uint16_t currentTrack) {
     formatAudioStatusJson(buf, bufSize, driverName, capabilities, linkOk, active, playState,
-                          device, totalTracks, currentTrack, "available",
+                          device, totalTracks, currentTrack, 0, "available",
                           "Sound module RX is available");
 }
 
@@ -133,10 +133,17 @@ void test_capabilities_zero_driver() {
 
 #undef formatAudioStatusJson
 
+void test_missing_track_field() {
+    char buf[256];
+    formatAudioStatusJson(buf, sizeof(buf), "MP3Trigger", 0x0D, true, true, 0x00, 0xFF,
+                          10, 99, 99, "available", "Sound module RX is available");
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"missing_track\":99"));
+}
+
 void test_rx_diagnostics_fields_present() {
     char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, false, false, 0xFF, 0x03,
-                          0, 0, "blocked_by_dome_uart",
+                          0, 0, 0, "blocked_by_dome_uart",
                           "Status unavailable: DomeLink is using UART");
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Status unavailable: DomeLink is using UART\""));
@@ -157,6 +164,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_chirp_capabilities_field);
     RUN_TEST(test_capabilities_zero_driver);
     RUN_TEST(test_device_flash_sd);
+    RUN_TEST(test_missing_track_field);
     RUN_TEST(test_rx_diagnostics_fields_present);
 
     return UNITY_END();

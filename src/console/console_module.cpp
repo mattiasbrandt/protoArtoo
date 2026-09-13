@@ -726,6 +726,8 @@ static void consoleExecuteSoundStatusCurrent(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "total_tracks", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.currentTrack);
     if (sink->onRecordField) sink->onRecordField(requestId, "current_track", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)snap.missingTrack);
+    if (sink->onRecordField) sink->onRecordField(requestId, "missing_track", tempBuf);
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "rx_status", audioRxStatusToken(snap.rxStatus));
         sink->onRecordField(requestId, "rx_detail", audioRxStatusDetail(snap.rxStatus));

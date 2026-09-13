@@ -4,20 +4,12 @@
 // AudioDriver implementation for the SparkFun MP3 Trigger v2.x.
 //
 // TX commands are sent over software UART on PIN_AUDIO_TX at 9600 baud via
-// audio_soft_uart_tx.h. RX query responses are read from UART_PORT_AUDIO on
-// PIN_AUDIO_RX, opened RX-only (TX pin = -1).
+// audio_soft_uart_tx.h. RX is a dedicated audio UART on FireBeetle 2, and
+// GPIO-sampled on PIN_AUDIO_RX on artoo-esp32 so it never takes UART2 from
+// the dome (#396).
 //
-// No P4 environment selects this backend, so it has never run on a board with
-// PA_CAP_DEDICATED_AUDIO_UART; it is written for the artoo-esp32 posture, where
-// UART_PORT_AUDIO IS the dome link's controller and audio has no spare TX. It
-// is correct there and is left alone deliberately -- adding a capability branch
-// no build compiles would ship untested code (#254).
-//
-// This driver does NOT itself check for contention. That is AudioTask's job:
-// it calls audioUartClaim() before queryModuleState() and only calls in on
-// success, reporting a refusal as AUDIO_RX_BLOCKED_BY_DOME_UART. Earlier
-// revisions of this comment claimed the check lived here, which was never true
-// on any commit of this file.
+// queryModuleState() still goes through AudioTask's audioUartClaim() for
+// S0/S1. Finish-byte RX and begin() do not.
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):
@@ -58,16 +50,28 @@
 #include <stdio.h>  // sscanf
 
 #include "audio_soft_uart_tx.h"
+#if !PA_CAP_DEDICATED_AUDIO_UART
+#include "audio_soft_uart_rx.h"
+#endif
 #include "config.h"
 #include "logging.h"
 
 static const char* TAG = "Mp3TrgDrv";
+#if PA_CAP_DEDICATED_AUDIO_UART
 static HardwareSerial s_mp3Serial(UART_PORT_AUDIO);
+#endif
 
-// Production IO adapters
+// Production IO adapters. TX is always the bit-bang. RX is the dedicated
+// audio UART on boards that have one, and GPIO-sampled soft RX on artoo-esp32
+// so a finish byte does not take the dome's controller (#396).
 static void mp3WriteByte(uint8_t b)    { softUartTxByte(b); }
+#if PA_CAP_DEDICATED_AUDIO_UART
 static int  mp3RxAvailable()           { return s_mp3Serial.available(); }
 static int  mp3RxRead()                { return s_mp3Serial.read(); }
+#else
+static int  mp3RxAvailable()           { return softUartRxAvailable(); }
+static int  mp3RxRead()                { return softUartRxRead(); }
+#endif
 static void mp3DelayMs(uint32_t ms)    { vTaskDelay(pdMS_TO_TICKS(ms)); }
 static uint32_t mp3MillisNow()         { return (uint32_t)millis(); }
 
@@ -123,15 +127,20 @@ uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 RX-only on PIN_AUDIO_RX, configure soft-UART TX, wait for module
-// boot, then query firmware version (S0) and track count (S1) before applying
-// the NVS-configured boot volume. Blocking  --  runs in AudioTask on Core 0.
+// Configure TX (bit-bang) and RX (dedicated UART, or GPIO-sampled RX that
+// does not take the dome controller). Then S0/S1 and boot volume.
+// Blocking -- runs in AudioTask on Core 0. Does not call audioUartClaim()
+// (#396): this path must not race DomeLink for UART2.
 // -----------------------------------------------------------------------------
 bool AudioDriverMp3Trigger::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kMp3ProductionIO; }
 
     // Hardware init  --  no-ops in native test builds.
+#if PA_CAP_DEDICATED_AUDIO_UART
     s_mp3Serial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+#else
+    softUartRxBegin();
+#endif
     softUartTxBegin();
 
     // MP3 Trigger mounts the SD card on power-on. 1 s covers cold boot.
@@ -255,6 +264,7 @@ bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
     out.device       = 0xFF;   // no device-type concept for MP3 Trigger
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
+    out.missingTrack = m_missingTrack;
 
     char line[48];
     uint8_t n;
@@ -296,6 +306,7 @@ void AudioDriverMp3Trigger::getCachedState(AudioModuleState& out) const {
     out.device       = 0xFF;
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
+    out.missingTrack = m_missingTrack;
 }
 
 void AudioDriverMp3Trigger::noteUnsolicited(char c) {

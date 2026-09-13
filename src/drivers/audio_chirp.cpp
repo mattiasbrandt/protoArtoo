@@ -628,6 +628,7 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2-6 on SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last index sent via playTrack()
+    out.missingTrack = 0;
 
     // Guard: DomeLink has priority on UART2; return cached state unchanged.
     if (domeUartOwnedBy(DOME_UART_DOME)) {
@@ -702,6 +703,7 @@ void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
     out.device = 0x03;          // CHIRP: Bank 1 flash-backed, Banks 2-6 SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last track index sent to playTrack()
+    out.missingTrack = 0;
 }
 
 // -----------------------------------------------------------------------------
