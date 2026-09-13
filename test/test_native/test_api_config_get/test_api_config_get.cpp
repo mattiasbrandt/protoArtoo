@@ -307,11 +307,11 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
     micro.component = SERVO_COMP_MG90S;
     configCacheApplyServoOutputEdits(&micro, 1);
 
-    robotState.servoCommanded[0] = {1600, 1900, true};   // ARM1, part way through a move
-    robotState.servoCommanded[1] = {1500, 1500, true};   // ARM2, standing
-    robotState.servoCommanded[2] = {1100, 1200, false};  // AUX1, no pulse whatever the widths
-    robotState.servoCommanded[3] = {2400, 2400, true};   // AUX2, an MG90S near its top
-    robotState.servoCommanded[4] = {0, 0, false};        // AUX3, never driven
+    robotState.servoCommanded[0] = {1600, 1900, true, 0};   // ARM1, part way through a move
+    robotState.servoCommanded[1] = {1500, 1500, true, 2};   // ARM2, standing, nudged twice
+    robotState.servoCommanded[2] = {1100, 1200, false, 1};  // AUX1, no pulse whatever the widths, one nudge refused
+    robotState.servoCommanded[3] = {2400, 2400, true, 0};   // AUX2, an MG90S near its top
+    robotState.servoCommanded[4] = {0, 0, false, 0};        // AUX3, never driven
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);
@@ -331,6 +331,10 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
 
     TEST_ASSERT_EQUAL_UINT16(1500, outputs[1]["commandedUs"] | 0);
     TEST_ASSERT_EQUAL_UINT16(1500, outputs[1]["targetUs"] | 0);
+    // The Find by Moving count rides the same answer (#363): a run reads it
+    // before it asks and knows the nudge is over when it has gone up.
+    TEST_ASSERT_EQUAL_UINT8(2, outputs[1]["nudgesDone"] | 99);
+    TEST_ASSERT_EQUAL_UINT8(0, outputs[0]["nudgesDone"] | 99);
 
     TEST_ASSERT_EQUAL_STRING("ledc:4", outputs[3]["address"] | "");
     TEST_ASSERT_EQUAL_UINT16(500, outputs[3]["bandLoUs"] | 0);
@@ -338,15 +342,17 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
     TEST_ASSERT_EQUAL_UINT16(2400, outputs[3]["commandedUs"] | 0);
 
     // Not pulsing is said with null on the wire - both keys present, neither a
-    // number - so an absent key and a stalled table cannot look the same.
+    // number - so an absent key and a stalled table cannot look the same. The
+    // nudge count is a number whatever the pulse: a refused nudge on an Output
+    // with no pulse still ended, and a run waiting on it must see that.
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:3\",\"name\":\"AUX1\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null}"));
+        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null,\"nudgesDone\":1}"));
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:5\",\"name\":\"AUX3\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null}"));
+        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null,\"nudgesDone\":0}"));
 }
 
 // The largest answer the table can give: every row it can hold, each at the
@@ -379,7 +385,8 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     // 3229 B measured at #362, when every row gained its band and commanded
-    // position; the route refuses at 4096.
+    // position, and 3589 B at #363, when every row gained its nudge count;
+    // the route refuses at 4096.
     TEST_ASSERT_LESS_THAN_UINT32(4096u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));

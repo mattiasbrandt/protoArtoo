@@ -117,9 +117,13 @@ void captureDomeStatusSnapshot(DomeStatusSnapshot* out);
 // Console's servo.api.get-outputs both read a position through this one
 // function, so the two cannot disagree about where an Output stands.
 struct ServoOutputCommandedSnapshot {
-    bool pulsing;       // false: no pulse on the pin, and the two widths are 0
-    uint16_t nowUs;     // the width on the pin, part way through a move too
-    uint16_t targetUs;  // where the move in progress ends; nowUs when none is
+    bool pulsing;         // false: no pulse on the pin, and the two widths are 0
+    uint16_t nowUs;       // the width on the pin, part way through a move too
+    uint16_t targetUs;    // where the move in progress ends; nowUs when none is
+    uint8_t nudgesDone;   // Find by Moving nudges that have ended here since boot
+                          // (ServoCommandedPosition::nudgesDone, #363); handed on
+                          // whether or not the output is pulsing -- a count is a
+                          // count, and 0 is the honest one for an output never nudged
 };
 
 // Capture one Output's commanded position from ServoTask's mirror

@@ -1143,13 +1143,21 @@ void handleServoOutputsGet(WebRequest& req) {
             output["commandedUs"] = nullptr;
             output["targetUs"] = nullptr;
         }
+        // How many Find by Moving nudges have ended on this Output since boot
+        // (#363). A run reads it before it asks for a nudge and knows the
+        // nudge is over when it has gone up -- returned, cut short, or refused
+        // -- which a "nudging" flag could not promise, since a whole nudge can
+        // fall between two of the page's one-second reads. Always a number,
+        // even for an Output with no pulse: a count of nothing is 0.
+        output["nudgesDone"] = commanded.nudgesDone;
     }
     // A sanity ceiling, not a buffer. The largest answer the table can give -
     // twenty-four rows at their longest address holding every Part the catalog
     // declares between them - is held under it by test_api_config_get. It was
     // 2560 B over a 1621 B answer until #362 gave every row its band and its
-    // commanded position, 67 B a row; the same answer is now 3229 B. A fitted
-    // droid with five rows answers in well under a kilobyte.
+    // commanded position, 67 B a row, and 3229 B until #363 added the nudge
+    // count, 15 B a row; the same answer is now 3589 B. A fitted droid with
+    // five rows answers in well under a kilobyte.
     webSendJsonDocument(req, doc, 4096, TAG);
 }
 

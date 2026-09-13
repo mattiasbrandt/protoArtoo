@@ -104,6 +104,7 @@ sound.config.mood-category-map|Mood Category Map|Per-mood bitmask selecting whic
 servo.action.open|Open|Open a servo-driven panel or arm to its open position|servoCmdQueue|target:string:1
 servo.action.close|Close|Close a servo-driven panel or arm to its closed position|servoCmdQueue|target:string:1
 servo.action.set-position|Set Position|Move a servo to a specific pulse-width position|servoCmdQueue|target:string:1|position_us:uint16:1
+servo.action.nudge|Nudge|Twitch a servo a little about wherever it is right now - up 100 us, down 100 us, and back to where it started - so you can watch which part moves and wire that part to this output (Find by Moving, ADR 0050). The twitch stays inside the cautious 1000-2000 us band and never goes to a recorded end, so it is safe on an output nobody has measured yet; an output sitting outside that band, or with no pulse on it, is not nudged. One output per nudge; the controller runs the whole out-and-back itself, so the output comes back even if the browser that asked has gone. An estop ends it where it is.\n|servoCmdQueue|target:string:1
 servo.action.stop|Stop|Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no freeze-in-place command). target=both moves ARM1 and ARM2 only; AUX1, AUX2 and AUX3 must be stopped one at a time (robot_state.h's own broadcast-id comment).\n|servoCmdQueue|target:string:1
 servo.action.toggle-arm1|ARM1 Toggle|Toggle the arm 1 servo between open and closed|servoCmdQueue|
 servo.action.toggle-arm2|ARM2 Toggle|Toggle the arm 2 servo between open and closed|servoCmdQueue|
@@ -111,7 +112,7 @@ servo.action.toggle-aux1|AUX1 Toggle|Toggle the aux 1 servo between open and clo
 servo.action.toggle-aux2|AUX2 Toggle|Toggle the aux 2 servo between open and closed|servoCmdQueue|
 servo.action.toggle-aux3|AUX3 Toggle|Toggle the aux 3 servo between open and closed|servoCmdQueue|
 servo.status.current|Servo Status|Current position and state of all servo channels|buildStatusJson|
-servo.api.get-outputs|Get Servo Outputs|Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, and the commanded width now and at the end of the move in progress. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer. Read-only; a Part moves through POST /api/config movePart.\n|configCacheReadServoOutput|
+servo.api.get-outputs|Get Servo Outputs|Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, the commanded width now and at the end of the move in progress, and how many Find by Moving nudges have ended on it since boot. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer. Read-only; a Part moves through POST /api/config movePart.\n|configCacheReadServoOutput|
 aux.action.led-color|LED Color|Set AUX LED strip RGB color|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
 aux.action.led-effect|LED Effect|Set AUX LED strip effect mode|auxLedQueue|effect:string:1
 aux.status.led-state|AUX LED State|Current AUX LED pin selection, color, and effect|buildStatusJson|

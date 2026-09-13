@@ -2341,6 +2341,34 @@ entries:
     required: true
   nvs_key: null
   executor: servoCmdQueue
+- name: servo.action.nudge
+  display_name: Nudge
+  description: 'Twitch a servo a little about wherever it is right now - up 100 us, down 100 us, and back to where it started - so you can watch which part moves and wire that part to this output (Find by Moving, ADR 0050). The twitch stays inside the cautious 1000-2000 us band and never goes to a recorded end, so it is safe on an output nobody has measured yet; an output sitting outside that band, or with no pulse on it, is not nudged. One output per nudge; the controller runs the whole out-and-back itself, so the output comes back even if the browser that asked has gone. An estop ends it where it is.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/robot_state.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: target
+    type: string
+    range:
+    - arm1
+    - arm2
+    - aux1
+    - aux2
+    - aux3
+    required: true
+  nvs_key: null
+  executor: servoCmdQueue
 - name: servo.action.stop
   display_name: Stop
   description: 'Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no
@@ -2484,7 +2512,7 @@ entries:
   is_query: false
 - name: servo.api.get-outputs
   display_name: Get Servo Outputs
-  description: 'Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, and the commanded width now and at the end of the move in progress. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer.
+  description: 'Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, the commanded width now and at the end of the move in progress, and how many Find by Moving nudges have ended on it since boot. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer.
     Read-only; a Part moves through POST /api/config movePart.
 
     '

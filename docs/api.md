@@ -475,13 +475,24 @@ Queues servo command.
 
 - Body fields:
 - `arm`: `arm1|arm2|aux1|aux2|aux3|both`
-- `action`: `open|close|stop|position`
+- `action`: `open|close|stop|position|nudge`
 - `positionUs`: required when `action=position`; range `500..2500`
+- `action=nudge` (Find by Moving, ADR 0050): a small twitch about wherever
+  the output is right now — up 100 µs, down 100 µs, and back to where it
+  started — so a builder can watch which part moves. It carries no width:
+  the controller computes the pair from the width on the pin, keeps both
+  sides inside the cautious 1000–2000 µs band by shifting the pair inward,
+  and runs the whole out-and-back itself, so the output returns even if the
+  browser that asked has gone. Each side rests about 0.6 s. An output with no
+  pulse on it, or sitting outside that band, is not nudged, and an estop ends
+  a nudge where it is. `arm=both` is refused. `GET /api/servo/outputs`'s
+  `nudgesDone` says when a nudge has ended.
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"Missing arm or action parameter"}`
 - `400` `{"ok":false,"error":"Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both"}`
-- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, or position"}`
+- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, or nudge"}`
+- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}`
 - `400` missing/invalid `positionUs`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
@@ -546,6 +557,13 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - Both widths are **commanded**. Nothing on this droid reads a servo back, so
     neither is where the horn actually is: a jammed or unpowered servo reports
     exactly what a free one does.
+  - `nudgesDone`: how many Find by Moving nudges (`POST /api/servo`
+    `action=nudge`) have ended on this Output since boot — returned on their
+    own, cut short by an estop or a later command, or refused before they
+    began. A count rather than a flag because a whole nudge can fall between
+    two one-second reads: read it before you ask for a nudge, and the nudge is
+    over when it has gone up. Wraps at 256; compare, never subtract. Always a
+    number, `0` for an Output never nudged, pulse or no pulse.
 - Errors: `500` if the answer could not be built.
 
 #### Example request
@@ -557,11 +575,11 @@ curl -s http://artoo.local/api/servo/outputs
 #### Example response (a fresh controller with ARM1 and ARM2 switched on, then one door ganged with an arm, part way through opening)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1620,"targetUs":2000},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1620,"targetUs":2000,"nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":1},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0}]}
 ```
 
 ### POST /api/aux-led/color

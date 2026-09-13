@@ -2,7 +2,7 @@
 // src/web/api_servo.cpp
 //
 // Servo control API endpoint
-//   POST /api/servo  - Control arm servos (open/close/position/stop)
+//   POST /api/servo  - Control arm servos (open/close/position/stop/nudge)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The command goes onto servoCmdQueue with a zero wait, so
@@ -82,6 +82,13 @@ bool parseAction(const char* action, ServoCommandType& type, uint16_t& positionU
         type = SERVO_CMD_POSITION;
         return true;
     }
+    // Find by Moving (ADR 0050, #363): no width travels with it. ServoTask
+    // computes the bounded pair from the width on the pin, so this route
+    // cannot be handed a big nudge however the request is spelled.
+    if (strcmp(action, "nudge") == 0) {
+        type = SERVO_CMD_NUDGE;
+        return true;
+    }
     return false;
 }
 
@@ -107,7 +114,15 @@ void handleServoPost(WebRequest& req) {
     ServoCommandType type;
     uint16_t positionUs = 0;
     if (!parseAction(action, type, positionUs)) {
-        webSendJsonError(req, 400, "Invalid action. Use: open, close, stop, or position");
+        webSendJsonError(req, 400, "Invalid action. Use: open, close, stop, position, or nudge");
+        return;
+    }
+
+    // A nudge moves one output so a builder can say which one moved; the
+    // ARM1+ARM2 broadcast would move two in one press. Refused at the door,
+    // where the caller hears why, rather than only in ServoTask's log.
+    if (type == SERVO_CMD_NUDGE && armId == 255) {
+        webSendJsonError(req, 400, "A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3");
         return;
     }
 

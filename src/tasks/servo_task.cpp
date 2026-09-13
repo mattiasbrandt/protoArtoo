@@ -2,7 +2,7 @@
 // src/tasks/servo_task.cpp
 //
 // ServoTask  --  LEDC PWM control for utility arm servos and spare servo outputs.
-// Handles open, close and position commands, from every source, for:
+// Handles open, close, position and nudge commands, from every source, for:
 //   - ARM1 (Top/Left utility arm, GPIO 23)
 //   - ARM2 (Bottom/Right utility arm, GPIO 5)
 //   - AUX1-3 (Spare servo outputs, GPIO 19/18/32)
@@ -21,6 +21,7 @@
 #include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
 #include "servo_helpers.h"
 #include "servo_motion_ramp.h"  // a move planned in time from the Output's profile (ADR 0052)
+#include "servo_nudge.h"        // the bounded pair a Find by Moving nudge visits (ADR 0050)
 #include "servo_output_row.h"  // the addressed rows an endpoint lives on (ADR 0041)
 
 static const char* TAG = "SERVO";
@@ -44,8 +45,23 @@ static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
 //
 // `seqMoved` marks an output a sequence was the last thing to command, which is
 // what the park below acts on. Any other source commanding the output clears it.
+//
+// A Find by Moving nudge (ADR 0050, #363) is one more kind of move on this
+// state, not a second machine beside it. `nudgeLeg` is which of its legs is in
+// progress, 0 when no nudge is; `ramp` is the leg's own ramp, planned the way
+// any move is; and `moving` stays true for the whole nudge, dwells included, so
+// stopAllMoves() ends it where it is exactly as it ends a ramp.
 // -----------------------------------------------------------------------------
 static constexpr uint8_t kArmCount = SERVO_ARM_COUNT;  // ARM1, ARM2, AUX1-3
+
+// How long a nudge rests at each side before moving on. Long enough for an eye
+// that is on the droid rather than the page to catch a small twitch and see
+// which way it went -- a snap is over in one frame, and it is the pause on
+// either side that makes it readable as "out, across, back" rather than a
+// flicker. Short enough that stepping through five spare outputs is seconds,
+// not a chore: a snap nudge is two dwells, 1.2 s, and the whole run of five is
+// well under half a minute with the browser's one-second reads between them.
+static constexpr uint32_t kNudgeDwellMs = 600;
 
 static struct {
     uint16_t commandedUs;
@@ -53,6 +69,11 @@ static struct {
     bool moving;
     bool seqMoved;
     ServoMotionRamp ramp;
+    uint8_t nudgeLeg;          // 1..SERVO_NUDGE_LEG_COUNT while a nudge is in progress, else 0
+    bool nudgeDwelling;        // the leg has arrived and the output is resting there
+    uint32_t nudgeDwellEndMs;  // when that rest ends
+    ServoNudgePlan nudge;
+    uint8_t nudgesDone;        // mirrored to robotState; see ServoCommandedPosition
 } s_arm[kArmCount] = {};
 
 // Forward declaration for functions used in static helpers below.
@@ -153,10 +174,37 @@ static void publishCommanded(uint8_t armId) {
         s_arm[armId].commandedUs,
         s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs,
         s_arm[armId].known,
+        s_arm[armId].nudgesDone,
     };
     taskENTER_CRITICAL(&robotStateMux);
     robotState.servoCommanded[armId] = commanded;
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// -----------------------------------------------------------------------------
+// endNudge() / endMove()
+// The one place a move stops being in progress, whatever stops it: arrival, a
+// later command on the same arm, or the halt edge.
+//
+// A nudge that was in progress is counted as ended here, however it ended. The
+// count is what a discovery run waits on -- it cannot watch the nudge itself,
+// because a whole nudge can fall between two of its one-second reads -- so a
+// nudge cut short by an estop or overtaken by a new command must count exactly
+// as a returned one does, or the run would wait for a return that is never
+// coming. The callers publish; this only changes what they will publish.
+// -----------------------------------------------------------------------------
+static void endNudge(uint8_t armId) {
+    if (s_arm[armId].nudgeLeg == 0) {
+        return;
+    }
+    s_arm[armId].nudgeLeg = 0;
+    s_arm[armId].nudgeDwelling = false;
+    s_arm[armId].nudgesDone++;
+}
+
+static void endMove(uint8_t armId) {
+    s_arm[armId].moving = false;
+    endNudge(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -198,7 +246,7 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
     if (!resolveArmPulse(armId, pulseUs, &channel, &commandedUs)) {
         return;
     }
-    s_arm[armId].moving = false;
+    endMove(armId);
     writeArmPulse(armId, channel, commandedUs);
 }
 
@@ -222,6 +270,9 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     if (!resolveArmPulse(armId, pulseUs, &channel, &targetUs)) {
         return;
     }
+    // Whatever the arm was doing is over: a new command replaces a ramp part
+    // way through, and a nudge part way through, alike.
+    endMove(armId);
 
     uint16_t spanUs = 0;
     uint16_t throwMs = 0;
@@ -230,7 +281,6 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     if (!s_arm[armId].known ||
         !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
                                                  &accelMs, &calibrated)) {
-        s_arm[armId].moving = false;
         writeArmPulse(armId, channel, targetUs);
         return;
     }
@@ -238,7 +288,6 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     const ServoMotionRamp ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, spanUs,
                                                  throwMs, accelMs, calibrated, millis());
     if (ramp.durationMs == 0) {
-        s_arm[armId].moving = false;
         writeArmPulse(armId, channel, targetUs);
         return;
     }
@@ -247,6 +296,126 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     // Nothing is written until the next frame, but the move already has a
     // target, and that is what a surface shows beside where the output stands.
     publishCommanded(armId);
+}
+
+// -----------------------------------------------------------------------------
+// The Find by Moving nudge (ADR 0050, #363)
+//
+// One command, run to completion by this task: out to the upper side of the
+// pair, a dwell, across to the lower side, a dwell, and back to the width the
+// output started from. The whole out-and-back is ServoTask's so that the
+// return cannot depend on a browser staying alive between two requests -- a
+// discovery run that died half way would otherwise leave a spare output
+// parked 100 us off wherever it was, and there is no expiry on a servo hold
+// today (C1d brings ADR 0064's two bounds).
+//
+// Each leg is an ordinary move: through resolveArmPulse() like every drive
+// (ADR 0041), planned from the Output's Motion Profile like every drive
+// (ADR 0052), so a calibrated output eases through its nudge and an unmeasured
+// one snaps, exactly as either does for any other command. The pair itself
+// comes from include/servo_nudge.h, about the width on the pin, inside the
+// cautious band, and from nowhere the command could have put a number.
+// -----------------------------------------------------------------------------
+static void beginNudgeLeg(uint8_t armId, uint8_t leg, uint32_t nowMs);
+
+// The leg has arrived. Rest there where an eye can catch it, or, after the
+// last leg, the nudge is over: the output is back where it started, and the
+// count says so.
+static void nudgeLegArrived(uint8_t armId, uint32_t nowMs) {
+    if (s_arm[armId].nudgeLeg < SERVO_NUDGE_LEG_COUNT) {
+        s_arm[armId].nudgeDwelling = true;
+        s_arm[armId].nudgeDwellEndMs = nowMs + kNudgeDwellMs;
+        return;
+    }
+    endMove(armId);
+    publishCommanded(armId);
+    PA_LOG_INFO(TAG, "Arm%d nudge returned to %u us", armId + 1, (unsigned)s_arm[armId].commandedUs);
+}
+
+static void beginNudgeLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
+    uint8_t channel = LEDC_CH_MAX;
+    uint16_t targetUs = 0;
+    // The pair lies inside the cautious band, which every component band
+    // contains, so the clamp hands it back unchanged -- but the door is the
+    // rule (ADR 0041), not the outcome. This can only fail for an armId
+    // resolveArmPulse() rejects, which beginNudge() has already refused.
+    if (!resolveArmPulse(armId, servoNudgeLegTarget(s_arm[armId].nudge, leg), &channel, &targetUs)) {
+        endMove(armId);
+        publishCommanded(armId);
+        return;
+    }
+    s_arm[armId].nudgeLeg = leg;
+    s_arm[armId].nudgeDwelling = false;
+    s_arm[armId].moving = true;
+
+    uint16_t spanUs = 0;
+    uint16_t throwMs = 0;
+    uint16_t accelMs = 0;
+    bool calibrated = false;
+    ServoMotionRamp ramp = {s_arm[armId].commandedUs, targetUs, nowMs, 0, 0};
+    if (configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
+                                                &accelMs, &calibrated)) {
+        ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, spanUs, throwMs, accelMs,
+                               calibrated, nowMs);
+    }
+    s_arm[armId].ramp = ramp;
+    if (ramp.durationMs == 0) {
+        // A snap: the leg is over the moment it is written.
+        writeArmPulse(armId, channel, targetUs);
+        nudgeLegArrived(armId, nowMs);
+        return;
+    }
+    // A ramp: nothing is written until the next frame, but the leg already has
+    // its target, and that is what a surface shows beside where the output is.
+    publishCommanded(armId);
+}
+
+// A SERVO_CMD_NUDGE that got past processCommand()'s gates. True when a nudge
+// started. Refused -- false, nothing moved -- with the count still bumped so a
+// run waiting on it steps on, when there is no width on the pin to nudge about
+// or that width is outside the cautious band.
+static bool beginNudge(uint8_t armId, CommandSource source) {
+    // One output per nudge, always: a run nudges the spare outputs one at a
+    // time so the builder can say which one moved, and the ARM1+ARM2 broadcast
+    // would move two in one press.
+    if (armId >= kArmCount) {
+        PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one arm, not %d", commandSourceToString(source),
+                    armId);
+        return false;
+    }
+    ServoNudgePlan plan = {};
+    if (!s_arm[armId].known ||
+        !servoNudgePlan(s_arm[armId].commandedUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US, &plan)) {
+        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - %s", commandSourceToString(source), armId + 1,
+                    s_arm[armId].known ? "it sits outside the cautious band" : "no pulse on it yet");
+        s_arm[armId].nudgesDone++;
+        publishCommanded(armId);
+        return false;
+    }
+    // Whatever the arm was doing is over, a nudge in progress included: this
+    // one starts from the width on the pin now.
+    endMove(armId);
+    s_arm[armId].nudge = plan;
+    PA_LOG_INFO(TAG, "[%s] Arm%d nudged %u/%u us about %u us", commandSourceToString(source),
+                armId + 1, (unsigned)plan.hiUs, (unsigned)plan.loUs, (unsigned)plan.homeUs);
+    beginNudgeLeg(armId, 1, millis());
+    return true;
+}
+
+// One frame of a nudge in progress: wait out a dwell, then start the next leg;
+// otherwise advance the leg's ramp like any other move and notice its arrival.
+static void advanceNudge(uint8_t armId, uint8_t channel, uint32_t nowMs) {
+    if (s_arm[armId].nudgeDwelling) {
+        if ((int32_t)(nowMs - s_arm[armId].nudgeDwellEndMs) < 0) {
+            return;
+        }
+        beginNudgeLeg(armId, (uint8_t)(s_arm[armId].nudgeLeg + 1), nowMs);
+        return;
+    }
+    writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, nowMs));
+    if (servoMotionArrived(s_arm[armId].ramp, nowMs)) {
+        nudgeLegArrived(armId, nowMs);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -260,9 +429,13 @@ static void updateMotion() {
             continue;
         }
         const uint8_t channel = armIdToLedcChannel(armId);
+        if (s_arm[armId].nudgeLeg != 0) {
+            advanceNudge(armId, channel, now);
+            continue;
+        }
         writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, now));
         if (servoMotionArrived(s_arm[armId].ramp, now)) {
-            s_arm[armId].moving = false;
+            endMove(armId);
         }
     }
 }
@@ -284,10 +457,11 @@ static void stopAllMoves(const char* reason) {
         if (!s_arm[armId].moving) {
             continue;
         }
-        s_arm[armId].moving = false;
+        endMove(armId);
         stopped = true;
         // The move is over where it got to, so its target is too: no surface
-        // may go on showing a destination the output will never reach.
+        // may go on showing a destination the output will never reach. A nudge
+        // ends the same way, its return never made, and is counted as ended.
         publishCommanded(armId);
     }
     if (stopped) {
@@ -445,6 +619,13 @@ static void processCommand(const ServoCommand& cmd) {
                         cmd.positionUs);
             break;
 
+        case SERVO_CMD_NUDGE:
+            // No width to validate: the command carries none, and the pair is
+            // computed from the pin (include/servo_nudge.h).
+            if (!beginNudge(cmd.armId, cmd.source)) {
+                return;  // moved nothing, so it changes nothing below
+            }
+            break;
     }
 
     // Record who moved the output last, for the park. Only a command that got

@@ -226,6 +226,11 @@ void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
     const ServoCommandedPosition commanded = robotState.servoCommanded[armId];
     taskEXIT_CRITICAL(&robotStateMux);
 
+    // The nudge count travels whatever the pulse state: a discovery run reads
+    // it before it asks and compares afterwards, and a refused nudge on an
+    // output with no pulse still counts as ended (#363).
+    out->nudgesDone = commanded.nudgesDone;
+
     // No pulse, no position: the widths of an output nobody has driven are not
     // a place it stands, so they are not handed on.
     if (!commanded.pulsing) {

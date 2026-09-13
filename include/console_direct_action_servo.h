@@ -1,10 +1,10 @@
 // =============================================================================
 // include/console_direct_action_servo.h
 //
-// Controller Console direct-action executors - servo domain: open, close and
-// set-position (#221 remainder). Split out of src/console/console_module.cpp
-// by #257 so this domain's rows can be extended without colliding with the
-// other domains' files.
+// Controller Console direct-action executors - servo domain: open, close,
+// set-position and stop (#221 remainder), and nudge (#363). Split out of
+// src/console/console_module.cpp by #257 so this domain's rows can be extended
+// without colliding with the other domains' files.
 //
 // HEADER-ONLY DELIBERATELY - see include/console_direct_action_system.h's
 // header comment for the full reasoning (native's fenced build_src_filter
@@ -29,11 +29,17 @@
 #include "api_servo.h"                    // parseArmId(), servoSubmitCommand(), ServoSubmitOutcome
 #include "ledc_pwm.h"                     // SERVO_PULSE_MIN_US/MAX_US
 
-// servo.action.open/close/set-position/stop: target=<arm1|arm2|aux1|aux2|
-// aux3[|both]>, set-position also carries position_us=<500..2500>.
+// servo.action.open/close/set-position/stop/nudge: target=<arm1|arm2|aux1|
+// aux2|aux3[|both]>, set-position also carries position_us=<500..2500>.
 // parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
 // target<->id mapping and the SAME queue submission handleServoPost() uses,
 // reused verbatim - the ADR 0036 Commit Step beside that handler.
+//
+// servo.action.nudge (#363, ADR 0050) carries a target and nothing else: the
+// registry's enum for it excludes "both", the same way set-position's does,
+// because a Find by Moving nudge is one output at a time by definition, and
+// no width, because ServoTask computes the bounded pair from the width on the
+// pin (include/servo_nudge.h) so that no source can ask for a big one.
 //
 // servo.action.stop (#221 remainder registry fix, docs/action-registry.yaml):
 // the row used to declare zero params even though the underlying /api/servo
@@ -123,6 +129,12 @@ static void consoleExecuteServoSetPosition(uint32_t requestId, const char* opera
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_POSITION, args, source, sink);
 }
 
+static void consoleExecuteServoNudge(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_NUDGE, args, source, sink);
+}
+
 // servo.action.stop: target=<arm1|arm2|aux1|aux2|aux3|both> only - no
 // position_us (the registry declares none, unlike set-position), because the
 // pulse width is not an operator choice here, it is always
@@ -179,6 +191,7 @@ static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.close", consoleExecuteServoClose},
     {"servo.action.set-position", consoleExecuteServoSetPosition},
     {"servo.action.stop", consoleExecuteServoStop},
+    {"servo.action.nudge", consoleExecuteServoNudge},
 };
 static const size_t kServoDirectActionExecutorCount =
     sizeof(g_servoDirectActionExecutors) / sizeof(g_servoDirectActionExecutors[0]);

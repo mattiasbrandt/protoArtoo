@@ -1269,9 +1269,9 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 // commanded; nothing on the droid reads a servo back.
 //
 // A row (70 B) and one line on the Console task's measured chain. The longest
-// line is 139 B - an expander's address, four Parts at the longest id and four
-// four-digit widths - against 192, and snprintf truncates in silence, so the
-// margin is the guard.
+// line is 154 B - an expander's address, four Parts at the longest id, four
+// four-digit widths and a three-digit nudge count - against 192, and snprintf
+// truncates in silence, so the margin is the guard.
 static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRecordSink* sink) {
     if (sink->onRecordItem) {
         char itemBuf[192];
@@ -1312,11 +1312,12 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
             if (head > 0 && (size_t)head < sizeof(itemBuf)) {
                 if (commanded.pulsing) {
                     snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
-                             "commandedUs:%u targetUs:%u", (unsigned)commanded.nowUs,
-                             (unsigned)commanded.targetUs);
+                             "commandedUs:%u targetUs:%u nudgesDone:%u", (unsigned)commanded.nowUs,
+                             (unsigned)commanded.targetUs, (unsigned)commanded.nudgesDone);
                 } else {
                     snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
-                             "commandedUs:- targetUs:-");
+                             "commandedUs:- targetUs:- nudgesDone:%u",
+                             (unsigned)commanded.nudgesDone);
                 }
             }
             sink->onRecordItem(requestId, itemBuf);
