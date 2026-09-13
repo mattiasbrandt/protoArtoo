@@ -385,6 +385,51 @@ void test_mp3trigger_query_skips_leading_finish_byte() {
     TEST_ASSERT_TRUE(ms.linkOk);
 }
 
+void test_mp3trigger_play_sets_playing_until_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(5);
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(1, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(5, ms.currentTrack);
+
+    g_rec.injectRxString("X");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+}
+
+void test_mp3trigger_stop_stays_playing_until_finish_byte() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(5);
+    drv.stop();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(1, ms.playState);
+    TEST_ASSERT_EQUAL_UINT16(254, ms.currentTrack);
+
+    g_rec.injectRxString("X");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+}
+
+void test_mp3trigger_missing_track_byte_clears_playing() {
+    AudioDriverMp3Trigger drv;
+    drv.setIO(makeRecordingIO());
+
+    AudioModuleState ms{};
+    drv.playTrack(99);
+    g_rec.injectRxString("E");
+    drv.serviceRx();
+    drv.getCachedState(ms);
+    TEST_ASSERT_EQUAL_UINT8(0, ms.playState);
+}
+
 // =============================================================================
 // CHIRP tests
 // =============================================================================
@@ -540,6 +585,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_mp3trigger_begin_uses_injected_io);
     RUN_TEST(test_mp3trigger_begin_no_s1_without_link);
     RUN_TEST(test_mp3trigger_query_skips_leading_finish_byte);
+    RUN_TEST(test_mp3trigger_play_sets_playing_until_finish_byte);
+    RUN_TEST(test_mp3trigger_stop_stays_playing_until_finish_byte);
+    RUN_TEST(test_mp3trigger_missing_track_byte_clears_playing);
 
     // CHIRP
     RUN_TEST(test_chirp_play_track_byte_sequence);

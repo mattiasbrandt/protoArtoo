@@ -91,6 +91,10 @@ uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
         if (m_io.rxAvailable()) {
             char c = (char)m_io.rxRead();
             if (!started) {
+                if (c == 'X' || c == 'x' || c == 'E') {
+                    noteUnsolicited(c);
+                    continue;
+                }
                 if (c == '=') {
                     started = true;
                     buf[pos++] = c;
@@ -111,7 +115,7 @@ uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
 uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
                                          char* buf, uint8_t maxLen,
                                          uint32_t timeoutMs) {
-    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    serviceRx();
     m_io.writeByte(b0);
     m_io.writeByte(b1);
     return readLine(buf, maxLen, timeoutMs);
@@ -195,6 +199,8 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
         return;
     }
     m_lastTrack = track;
+    m_missingTrack = 0;
+    m_playState = 1;
     m_io.writeByte('t');
     m_io.writeByte((uint8_t)track);
 }
@@ -207,6 +213,8 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
 // SD root must contain 254XXXX.MP3 (all R2 community packs include it).
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::stop() {
+    m_lastTrack = MP3TRIGGER_STOP_TRACK;
+    m_playState = 1;  // blank track is playing until 'X' (#396)
     m_io.writeByte('t');
     m_io.writeByte(MP3TRIGGER_STOP_TRACK);
 }
@@ -243,7 +251,7 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
 
     out.linkOk       = false;
-    out.playState    = 0xFF;   // not queryable in this protocol
+    out.playState    = m_playState;
     out.device       = 0xFF;   // no device-type concept for MP3 Trigger
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
@@ -284,8 +292,32 @@ bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::getCachedState(AudioModuleState& out) const {
     out.linkOk       = m_linkOk;
-    out.playState    = 0xFF;
+    out.playState    = m_playState;
     out.device       = 0xFF;
     out.totalTracks  = m_totalTracks;
     out.currentTrack = m_lastTrack;
+}
+
+void AudioDriverMp3Trigger::noteUnsolicited(char c) {
+    if (c == 'X' || c == 'x') {
+        m_playState = 0;
+        return;
+    }
+    if (c == 'E') {
+        m_missingTrack = m_lastTrack;
+        m_playState = 0;
+        PA_LOG_INFO(TAG, "track %u is not on the card", (unsigned)m_lastTrack);
+    }
+}
+
+void AudioDriverMp3Trigger::serviceRx() {
+    if (!m_io.rxAvailable) { return; }
+    while (m_io.rxAvailable()) {
+        int b = m_io.rxRead();
+        if (b < 0) { break; }
+        char c = (char)b;
+        if (c == 'X' || c == 'x' || c == 'E') {
+            noteUnsolicited(c);
+        }
+    }
 }

@@ -159,6 +159,11 @@ class AudioDriver {
         out.device = 0xFF;
     }
 
+    // Drain unsolicited RX (finish/cancel/missing-track bytes) without a query.
+    // Default is a no-op. Must not take the dome UART. AudioTask calls this
+    // every loop so play-state can follow a finish byte (#396).
+    virtual void serviceRx() {}
+
     // Catalog support (AUDIO_CAP_CATALOG backends only).
     // Drivers without catalog support return false/0/nullptr; these defaults apply to all.
 

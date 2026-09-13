@@ -98,9 +98,9 @@ class AudioDriverMp3Trigger : public AudioDriver {
 
     // Query module state via S0 (link check) and S1 (track count).
     // Assumes the caller holds the audio UART claim; this driver does no
-    // contention check of its own. playState and device are always 0xFF (not
-    // queryable in this protocol). currentTrack is cached from the last
-    // playTrack() call.
+    // contention check of its own. playState follows finish/cancel bytes
+    // (#396), not a query. device is always 0xFF. currentTrack is cached
+    // from the last playTrack() call.
     // Only call from AudioTask (Core 0).
     bool queryModuleState(AudioModuleState& out) override;
 
@@ -108,12 +108,20 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // any time including during playback.
     void getCachedState(AudioModuleState& out) const override;
 
+    // Drain unsolicited 'X'/'x'/'E' without a status query. Does not take
+    // the dome UART (#396).
+    void serviceRx() override;
+
    private:
     AudioSerialIO m_io{};
 
     uint16_t m_totalTracks = 0;      // populated from S1 query in begin()
     uint16_t m_lastTrack   = 0;      // last track index sent to playTrack()
+    uint8_t  m_playState   = 0xFF;   // 0=stop 1=playing; follows 'X'/'x' (#396)
     bool     m_linkOk      = false;  // true if S0 response received in begin()
+    uint16_t m_missingTrack = 0;     // last track the module said was not on the card
+
+    void noteUnsolicited(char c);
 
     // Read one \r\n-terminated ASCII response line via m_io.
     // Skips leading unsolicited bytes until '=' (#396).
