@@ -1,0 +1,12 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..f988135d 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -754,7 +754,6 @@
+   // motion the builder did not press for. Never a hold -- leaving is always
+   // allowed; this only hears that it is happening.
+   window.PASurface?.holdUnmount(() => {
+-    if (run !== null) endRun(`The run stopped when you left Parts. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+     return false;
+   });
+ 

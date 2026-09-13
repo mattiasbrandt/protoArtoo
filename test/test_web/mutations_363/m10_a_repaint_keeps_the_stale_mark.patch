@@ -1,0 +1,12 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..e7508498 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -333,7 +333,6 @@
+     // Whatever the droid has just answered is current, including after an
+     // estop cut a nudge short: the mark that was held back below is shown
+     // again from this answer, not from the one the run had.
+-    row.bar.classList.remove("is-stale");
+     row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
+     row.now.style.width = pulsing ? markAt(output.commandedUs, output) : "0%";
+     row.tick.style.left = pulsing ? markAt(output.targetUs, output) : "0%";

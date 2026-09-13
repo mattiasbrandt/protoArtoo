@@ -1,0 +1,12 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..7024f9f3 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -673,7 +673,6 @@
+       endRun(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+       return;
+     }
+-    if (output.nudgesDone === run.before) return;
+     nudgeNext();
+   };
+ 

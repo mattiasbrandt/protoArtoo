@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..a695b690 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -695,7 +695,7 @@
+       );
+       return;
+     }
+-    if (candidates.some((output) => output.nudgesDone === null)) {
++    if (candidates.some((output) => output.nudgesDone === undefined)) {
+       showFeedback(
+         "This firmware does not say when a nudge has ended, so Find by moving cannot step through the outputs. Update the firmware.",
+         "warning"
