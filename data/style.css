@@ -5664,6 +5664,13 @@ label.sound-search-field {
    v1.79.0, src/css/11-hw.css:37-39). Neither is a reading, and neither colours
    for state. An Output with no pulse keeps the bar's frame and loses both
    marks; a light row carries no bar at all, because a light has no travel.
+
+   The bar does not clip. The tick is 2 px wide and centred on its mark, so a
+   mark at exactly 0% or 100% puts half of it outside the bar's padding box;
+   with overflow hidden that half was cut and the tick read as a 1 px sliver
+   at either end (#362's find, fixed under #363). Both marks are already
+   bounded by the band they are drawn against, so nothing else can leave the
+   bar, and at the ends the tick sits on the border instead of under it.
    --------------------------------------------------------------------------- */
 .outputs-section {
   margin-top: var(--space-xl);
@@ -5709,7 +5716,6 @@ label.sound-search-field {
   position: relative;
   height: 10px;
   min-width: 6rem;
-  overflow: hidden;
   background: var(--well);
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
