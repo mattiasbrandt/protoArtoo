@@ -5755,3 +5755,52 @@ label.sound-search-field {
   font-size: var(--fs-xs);
   color: var(--text-dim);
 }
+
+/* ---------------------------------------------------------------------------
+   Parts (#363): Find by Moving
+
+   The button on an unwired Part's row, and the run that takes its place while
+   the droid nudges the spare Outputs one at a time. A .btn needs its own
+   [hidden] rule, because .btn's display beats the browser's [hidden] default
+   (the same reason .rc-learn-banner[hidden] exists above). A run's text is a
+   status, read in the row where the builder pressed, so it stays inline.
+
+   is-stale is the estop's mark on the output-first table: the nudged Output's
+   last commanded position is no longer current, so the two marks are held
+   back until the droid has answered again (the freshness-stamp pattern,
+   r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894).
+   --------------------------------------------------------------------------- */
+.parts-find {
+  margin-top: var(--space-2xs);
+  min-height: 36px;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-sm);
+}
+
+.parts-find[hidden] {
+  display: none;
+}
+
+.parts-find-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+}
+
+.parts-find-text {
+  flex: 1 1 12rem;
+  font-size: var(--fs-sm);
+}
+
+.parts-find-run .btn {
+  min-height: 36px;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-sm);
+}
+
+.outputs-bar.is-stale .outputs-now,
+.outputs-bar.is-stale .outputs-tick {
+  display: none;
+}

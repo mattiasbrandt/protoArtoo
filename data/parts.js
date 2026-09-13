@@ -35,6 +35,11 @@
 // controller has put on the pin and the tick is where the move ends; nothing on
 // this droid reads a servo back, so no word on the output-first table may
 // present either as where a horn actually is.
+//
+// An Output is found by moving it (ADR 0050, #363). An unwired Part's row
+// carries Find by Moving: the droid nudges each spare Output a little, one at
+// a time, and the builder presses "That one" when the Part twitches. The rules
+// of that run are with the code, below the move.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -201,6 +206,9 @@
   // ---------------------------------------------------------------------------
   // Built once
   // ---------------------------------------------------------------------------
+  // The Find by Moving button starts refused: a run must not start on a guess
+  // about the estop, and the droid has not said yet. The first status frame
+  // gates it, the way the shell's own plate says "finding out" until then.
   const rowHtml = (part) => {
     const kind = kinds ? kinds.treatmentClass(part) : "";
     const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
@@ -210,7 +218,9 @@
       `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
       `<span class="parts-gang"></span></th>` +
       `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
-      `<option value="${NO_OUTPUT}">Finding out...</option></select></td></tr>`
+      `<option value="${NO_OUTPUT}">Finding out...</option></select>` +
+      `<button class="btn parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
+      `disabled aria-disabled="true">🔍 Find by moving</button></td></tr>`
     );
   };
 
@@ -231,6 +241,7 @@
       node,
       select: node.querySelector("select"),
       gang: node.querySelector(".parts-gang"),
+      find: node.querySelector(".parts-find"),
       addresses: null,
     });
   });
@@ -319,6 +330,10 @@
     row.node.classList.toggle("is-wired", output.parts.length > 0);
     row.node.classList.toggle("partkind-light", light);
     row.bar.classList.toggle("is-off", !pulsing);
+    // Whatever the droid has just answered is current, including after an
+    // estop cut a nudge short: the mark that was held back below is shown
+    // again from this answer, not from the one the run had.
+    row.bar.classList.remove("is-stale");
     row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
     row.now.style.width = pulsing ? markAt(output.commandedUs, output) : "0%";
     row.tick.style.left = pulsing ? markAt(output.targetUs, output) : "0%";
@@ -353,6 +368,7 @@
   // ---------------------------------------------------------------------------
   let outputs = null; // null until the droid has answered
   let pendingPart = null; // a move waiting on the builder's answer or on the droid
+  let run = null; // the Find by Moving run in progress, at most one (below)
 
   // The control the builder has hold of: the one focused, or the one whose move
   // is being asked about or is on its way. Its value and its options are theirs
@@ -364,6 +380,9 @@
     row.node.classList.toggle("is-wired", output !== null);
     const gang = output ? output.parts.filter((other) => other !== id) : [];
     row.gang.textContent = gang.length ? ` moves with ${listParts(gang)}` : "";
+    // Find by Moving is for a Part nothing drives, and a row whose run is in
+    // progress shows the run in the button's place.
+    row.find.hidden = output !== null || (run !== null && run.partId === id);
     if (held(id, row.select)) return;
     // The only rebuild, and only of a control nobody is holding: the set of
     // Outputs is fixed from boot, so this runs once per page in practice.
@@ -398,6 +417,8 @@
       text += ` · the droid also drives ${unknown.join(", ")}, which this page's parts list does not know - upload the filesystem that matches the firmware`;
     }
     summary.textContent = text;
+    // The droid has answered again, which is the only thing a run steps on.
+    stepRun();
   };
 
   const loadOutputs = async ({ handle = null } = {}) => {
@@ -414,6 +435,9 @@
       bandHiUs: Number(output.bandHiUs) || 0,
       commandedUs: typeof output.commandedUs === "number" ? output.commandedUs : null,
       targetUs: typeof output.targetUs === "number" ? output.targetUs : null,
+      // How many nudges have ended on this Output (#363); null from a firmware
+      // that does not say, which a run must refuse rather than wait on.
+      nudgesDone: typeof output.nudgesDone === "number" ? output.nudgesDone : null,
     }));
     paint();
   };
@@ -521,6 +545,218 @@
 
   // A control that was held catches up with whatever arrived while it was.
   tableRegion.addEventListener("focusout", () => paint());
+
+  // ---------------------------------------------------------------------------
+  // Find by Moving (ADR 0050, #363)
+  //
+  // A builder who cannot remember which output the rear-left door is on
+  // presses the button on that door's unwired row and watches the droid. The
+  // page steps through the spare Outputs -- the ones driving no Part, with a
+  // pulse on them -- and asks the droid to nudge each one a little, one at a
+  // time; the builder presses "That one" when the Part twitches, and that is
+  // the same move the row's picker makes. Nothing here holds an Output: a
+  // nudge is one firmware command that goes out and comes back on its own
+  // (POST /api/servo action=nudge), so a browser that dies mid-run leaves
+  // the droid where it was, and Stop sends nothing further -- the nudge in
+  // flight finishes its own return.
+  //
+  // One Output at a time, and the droid says when. The page sends the next
+  // nudge only when the previous one has ended, and it knows that from the
+  // answer's nudgesDone count going up -- never from watching the Output
+  // move, because a whole nudge can fall between two of the bench feed's
+  // one-second reads. No other pacing lives here.
+  //
+  // The estop ends a run. The firmware refuses and halts on its own; this
+  // side stops asking and stops showing the nudged Output's last commanded
+  // mark as if it were current, until the droid has answered again (after
+  // r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894, which
+  // kills its freshness stamp the moment a clamp fires). While the estop is
+  // latched the button is refused -- disabled plus aria-disabled, like every
+  // refused control -- and the shell's own ignored-input notice names why, so
+  // nothing here says it twice. No Non-RC Control consent is asked: that flag
+  // has never reached POST /api/servo (ADR 0064).
+  // ---------------------------------------------------------------------------
+  const findButtons = () => Array.from(rows.values(), (row) => row.find);
+  let estopLatched = null; // null until the droid has said
+
+  // One panel, moved onto the row whose run it is: it replaces that row's
+  // button while the run lasts and leaves when the run ends.
+  const runPanel = document.createElement("span");
+  runPanel.className = "parts-find-run";
+  runPanel.innerHTML =
+    `<span class="parts-find-text" role="status" aria-live="polite"></span>` +
+    `<button class="btn accent parts-find-that" type="button">🎯 That one</button>` +
+    `<button class="btn parts-find-stop" type="button">✕ Stop</button>`;
+  const runText = runPanel.querySelector(".parts-find-text");
+
+  // The Outputs a run steps through: nothing on them, a pulse on them (an
+  // Output with none cannot twitch, and the firmware would refuse it), and a
+  // name the servo route takes as its arm.
+  const spareOutputs = () =>
+    outputs.filter((output) => output.parts.length === 0 && output.commandedUs !== null && output.name !== "");
+
+  const gateFind = () => window.PAApi.gateControls(findButtons(), estopLatched === false);
+
+  const endRun = (text, level) => {
+    if (run === null) return;
+    const { partId } = run;
+    run = null;
+    runPanel.remove();
+    const row = rows.get(partId);
+    if (row) row.find.hidden = outputOf(outputs, partId) !== null;
+    if (text) showFeedback(text, level);
+  };
+
+  // The nudged Output's last commanded mark is not current any more: the
+  // estop ended the nudge somewhere the run never read. Held back, not
+  // guessed at, until the next answer repaints the row.
+  const markNotCurrent = (address) => {
+    const row = outputRows.get(address);
+    if (!row) return;
+    row.bar.classList.add("is-stale");
+    row.us.textContent = "Stopped — finding out where it is";
+  };
+
+  // Ask the droid to nudge the next spare Output, or end the run when there
+  // is none left. `before` is the count from the droid's latest answer, and a
+  // later answer with a higher one is the only thing that moves the run on.
+  const nudgeNext = async () => {
+    const current = run;
+    current.at += 1;
+    const label = partLabel(current.partId);
+    const count = current.candidates.length;
+    if (current.at >= count) {
+      endRun(
+        `None of the ${count} spare ${count === 1 ? "output" : "outputs"} moved ${label} in one pass, so it stays ${NOT_WIRED}. ` +
+          `Check the lead, or run it again.`,
+        "warning"
+      );
+      return;
+    }
+    const address = current.candidates[current.at];
+    const output = outputs.find((each) => each.address === address);
+    if (!output || output.nudgesDone === null) {
+      // The droid's answer changed shape under the run: a reboot, or a
+      // different firmware. Nothing is asked of an Output the page cannot
+      // tell has finished.
+      endRun(`${address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      return;
+    }
+    current.address = address;
+    current.before = output.nudgesDone;
+    current.sending = true;
+    runText.textContent =
+      `Nudging ${outputLabel(output)} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
+    try {
+      await window.PAApi.postForm("/api/servo", { arm: output.name.toLowerCase(), action: "nudge" }, { timeoutMs: 4000 });
+    } catch (error) {
+      if (run === current) {
+        endRun(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${label} stays ${NOT_WIRED}.`, "error");
+      }
+      return;
+    }
+    if (run === current) current.sending = false;
+  };
+
+  // Called with every answer from the droid. Steps on only when the Output
+  // the run asked about says its nudge has ended.
+  const stepRun = () => {
+    if (run === null || run.sending || run.address === null) return;
+    const label = partLabel(run.partId);
+    const wiredTo = outputOf(outputs, run.partId);
+    if (wiredTo) {
+      endRun(`${label} is on ${outputLabel(wiredTo)} now, so the run stopped.`);
+      return;
+    }
+    const output = outputs.find((each) => each.address === run.address);
+    if (!output || output.nudgesDone === null) {
+      endRun(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      return;
+    }
+    if (output.nudgesDone === run.before) return;
+    nudgeNext();
+  };
+
+  const startRun = (partId) => {
+    if (outputs === null) return;
+    if (run !== null) {
+      showFeedback(`One run at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
+      return;
+    }
+    if (pendingPart !== null) {
+      showFeedback(`One move at a time: wait for ${partLabel(pendingPart)} to land.`, "warning");
+      return;
+    }
+    const candidates = spareOutputs();
+    if (!candidates.length) {
+      showFeedback(
+        "Nothing to nudge: every output with a pulse on it already drives a part, and an output with no pulse cannot twitch.",
+        "warning"
+      );
+      return;
+    }
+    if (candidates.some((output) => output.nudgesDone === null)) {
+      showFeedback(
+        "This firmware does not say when a nudge has ended, so Find by moving cannot step through the outputs. Update the firmware.",
+        "warning"
+      );
+      return;
+    }
+    run = { partId, candidates: candidates.map((output) => output.address), at: -1, address: null, before: null, sending: false };
+    const row = rows.get(partId);
+    row.find.hidden = true;
+    row.find.parentNode.appendChild(runPanel);
+    nudgeNext();
+  };
+
+  // "That one": the same request the picker makes, so a spare Output takes the
+  // Part with no question and an Output somebody wired meanwhile is asked
+  // about in the same words.
+  const pickThatOne = () => {
+    if (run === null) return;
+    const { partId, address } = run;
+    const control = rows.get(partId)?.select;
+    endRun();
+    request(moveFor(outputs, partId, address), control);
+  };
+
+  const stopRun = () => {
+    if (run === null) return;
+    endRun(`Stopped. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+  };
+
+  runPanel.querySelector(".parts-find-that").addEventListener("click", pickThatOne);
+  runPanel.querySelector(".parts-find-stop").addEventListener("click", stopRun);
+
+  tableRegion.addEventListener("click", (event) => {
+    const button = event.target?.closest?.(".parts-find");
+    const id = button?.closest?.("[data-part]")?.dataset.part;
+    // A browser delivers no click to a disabled button; this is the rule
+    // itself, not a repeat of the shell's notice: a refused control asks the
+    // droid for nothing, however the click arrived.
+    if (!id || button.disabled) return;
+    startRun(id);
+  });
+
+  window.PAStatusStream?.subscribe((eventType, payload) => {
+    if (eventType !== "status" || !payload || typeof payload !== "object") return;
+    estopLatched = payload.estop === true;
+    gateFind();
+    if (estopLatched && run !== null) {
+      const { partId, address } = run;
+      if (address !== null) markNotCurrent(address);
+      endRun(`The estop stopped the run. ${partLabel(partId)} stays ${NOT_WIRED}.`, "error");
+    }
+  });
+
+  // Leaving Parts ends a run: the bench feed stops with the surface (#360),
+  // so nothing could step it on, and a nudge sent on the way back would be
+  // motion the builder did not press for. Never a hold -- leaving is always
+  // allowed; this only hears that it is happening.
+  window.PASurface?.holdUnmount(() => {
+    if (run !== null) endRun(`The run stopped when you left Parts. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+    return false;
+  });
 
   // ---------------------------------------------------------------------------
   // Loading

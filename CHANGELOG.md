@@ -68,6 +68,19 @@ the patch releases, whose notes live on their own GitHub Release.
   that output, and the page asks first if that takes it off another output.
   The same rows, with where each output stands, are on the Controller Console
   as `servo.api.get-outputs`, so a board with no WiFi can read them too.
+- **Find out which output moves a part by making it move.** A part nothing
+  drives yet has a `Find by moving` button on the Parts page. Press it and
+  watch the droid: the controller twitches each spare output a little, one at
+  a time, out one way, across, and back to where it sat, and the row names
+  which one is twitching. Press `That one` when the part moves and it is
+  wired, the same way picking it would have. The twitch is small on purpose,
+  stays inside the cautious 1000-2000 µs band, and never goes to a recorded
+  end, so it is safe on an output nobody has measured yet. The controller
+  runs the whole out-and-back itself, so the output comes back even if your
+  browser goes away mid-run. `Stop` ends a run at any moment and sends
+  nothing more; the estop ends it too, and the button stays refused while the
+  estop is latched. The same twitch is on the Controller Console as
+  `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
 - **The picker cards can show the part in your hand.** Every product in the
   lineup now has a photograph on the FireBeetle 2 — the same dark ground as
   the rest of the UI, sized to a card, so matching a card to the hardware on
