@@ -7,6 +7,9 @@
 // (#396). Dedicated-UART boards do not include this path.
 //
 // Not a public header -- only audio driver .cpp files should include this.
+// The ISR itself lives in audio_soft_uart_rx.cpp: an IRAM_ATTR inline in a
+// header pulled Arduino digitalRead/delayMicroseconds literals after the
+// IRAM code (l32r "literal placed after use" on artoo-esp32).
 // =============================================================================
 #pragma once
 
@@ -20,7 +23,7 @@ inline volatile uint8_t s_softUartRxBuf[SOFT_UART_RX_BUF] = {};
 inline volatile uint8_t s_softUartRxHead = 0;
 inline volatile uint8_t s_softUartRxTail = 0;
 
-inline void IRAM_ATTR softUartRxPush(uint8_t b) {
+inline void softUartRxPush(uint8_t b) {
     uint8_t next = (uint8_t)((s_softUartRxHead + 1u) % SOFT_UART_RX_BUF);
     if (next == s_softUartRxTail) {
         return;
@@ -29,20 +32,11 @@ inline void IRAM_ATTR softUartRxPush(uint8_t b) {
     s_softUartRxHead = next;
 }
 
-// Start bit already seen (falling edge). Sample 8 data bits LSB-first, then
-// the stop bit. ~1.04 ms, Core 0 only, same duration class as softUartTxByte.
-inline void IRAM_ATTR softUartRxIsr() {
-    delayMicroseconds(SOFT_UART_BIT_US + (SOFT_UART_BIT_US / 2u));
-    uint8_t b = 0;
-    for (int i = 0; i < 8; i++) {
-        if (digitalRead(PIN_AUDIO_RX) != LOW) {
-            b = (uint8_t)(b | (uint8_t)(1u << i));
-        }
-        delayMicroseconds(SOFT_UART_BIT_US);
-    }
-    delayMicroseconds(SOFT_UART_BIT_US);
-    softUartRxPush(b);
-}
+#if defined(PA_NATIVE_TEST_STUBS)
+inline void softUartRxIsr() {}
+#else
+void softUartRxIsr();
+#endif
 
 inline void softUartRxBegin() {
     pinMode(PIN_AUDIO_RX, INPUT);
