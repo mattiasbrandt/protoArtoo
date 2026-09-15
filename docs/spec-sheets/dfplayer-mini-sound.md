@@ -65,7 +65,7 @@ The **Sound** category holds four products, and a builder picks one:
 | Product | What it is | Status |
 | --- | --- | --- |
 | DY-SV5W | binary-frame voice module | `supported` |
-| MP3 Trigger | SparkFun/Robertsonics VS1053 board | `supported` |
+| MP3 Trigger | SparkFun/Robertsonics VS1063 board | `supported` |
 | CHIRP Audio Trigger | RP2350 multi-stream mixer, astromech-specific | `supported` |
 | **DFPlayer Mini** | hardware-decoded single-stream player with an amplifier | `roadmap` |
 
@@ -968,10 +968,9 @@ README:
 That second one is a warning for us, not a criticism of them: **volume semantics
 do not survive a module swap, and a stale comment is how the old scale gets
 carried forward.** protoArtoo's answer already exists -- the interface normalises
-to 0-30 and `docs/sound_playback.md` documents the MP3 Trigger's inversion
-explicitly (*"vol=0 -> nativeVol=255 (silent) ... vol=30 -> nativeVol=0
-(maximum)"*). The DFPlayer needs no conversion at all, which is one fewer place to
-get this wrong.
+to 0-30 and `docs/sound_playback.md` documents the MP3 Trigger's inverted
+vendor-audible map (`nativeVol = (30 - vol) * 64 / 30`, #396). The DFPlayer
+needs no conversion at all, which is one fewer place to get this wrong.
 
 ### 11.4 CHIRP is a different tier, and says so
 
@@ -1207,9 +1206,9 @@ this hazard in mind, and `audio_dy_sv5w.cpp` already respects it.
 | Frame | `0xAA CMD LEN .. SM` (4+ B) | short binary | ASCII lines | **fixed 10 B** |
 | Volume native | 0-30 | **0-255, inverted** | -- | **0-30** |
 | Simultaneous streams | 1 | 1 | **3+, mixed** | 1 |
-| Decoding | hardware | VS1053 | software, RP2350 | hardware |
+| Decoding | hardware | VS1063 | software, RP2350 | hardware |
 | Addressing | index, **contiguous required** | file number | catalog + bank/page | **index *or* filename** |
-| Play-state query | yes | **no** -- *"always shows unknown"* | yes | yes (`0x42`) |
+| Play-state query | yes | **no query** -- follows `'X'`/`'x'`/`'E'` | yes | yes (`0x42`) |
 | Track-finished event | -- | -- | -- | **pushed (`0x3D`)** |
 | Hardware busy pin | -- | -- | -- | **yes (`BUSY`)** |
 | On-board amplifier | -- | -- | -- | **yes, <3 W** |
@@ -1229,8 +1228,8 @@ at a time and always will.
 **What the DFPlayer uniquely brings to this family** is the bottom of the price
 range with an amplifier included, plus two observability features no current
 member has: a **pushed track-finished event** and a **hardware busy pin**. The
-MP3 Trigger, at the other end, cannot report play state at all -- protoArtoo's own
-documentation says its indicator *"always shows `unknown`"*.
+MP3 Trigger, at the other end, has no play-state query -- protoArtoo follows
+the board's unsolicited `'X'` / `'x'` / `'E'` bytes instead.
 
 **What it uniquely costs** is identity. The other three are specific boards from
 specific vendors. "A DFPlayer Mini" is a form factor that several unrelated

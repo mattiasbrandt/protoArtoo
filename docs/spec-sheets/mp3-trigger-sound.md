@@ -22,20 +22,30 @@ astromech projects on this disk. Claims that could not be sourced are marked
 > rather than 64; the grill chose the vendor ceiling. Community reports can
 > tighten it; we do not have this module on the bench.
 
+> [!NOTE]
+> **Play-state, RX and picker (#396, 2026-09-15):** play-state follows
+> unsolicited `'X'` / `'x'` / `'E'`; `readLine()` skips those bytes so they
+> cannot fail a live S0/S1 query; `begin()` and `serviceRx()` do not take
+> UART2 (GPIO-sampled RX on artoo-esp32, dedicated UART3 on FireBeetle 2).
+> The Sound page names the 3.3 V jumper, the 9600 card file, a missing clip,
+> and a 254/255 range. Selecting the member is `POST /api/config
+> soundMember=mp3_trigger`; Setup does not pick the product. Component Picker
+> cards (#369) are still to come; `mp3_trigger.webp` already ships in the
+> default asset set.
+
 > [!WARNING]
-> **The chip is a VS1063. Five comments in our source say VS1053.**
-> SparkFun's schematic for this board names part `U7` as
+> **The chip is a VS1063.** SparkFun's schematic names part `U7` as
 > `deviceset="VS1063" device="SMD" value="VS1063"`, annotated *"VLSI VS1063 audio
-> codec IC"*. Nothing functional depends on it -- the inverted 0-255 volume
-> register is the same across the VS10xx family -- but it is a fact stated wrongly
-> in the place a developer would copy it from. Section 2.2, fixed in the change
-> that carries this sheet (Section 14.1).
+> codec IC"*. Comments in this repository that said VS1053 were corrected
+> (Section 14.1). Nothing functional depends on the distinction -- the inverted
+> volume register is the same across the VS10xx family -- but a developer
+> copying from the header should see VS1063.
 
 > [!IMPORTANT]
-> **Our part number is wrong too.** `include/audio_mp3trigger.h:4` and
-> `docs/sound_playback.md:242` both say **DEV-13720**. The SparkFun SKU is
-> **WIG-13720** -- SparkFun's own repository README links
-> `sparkfun.com/products/13720` as *"MP3 Trigger (WIG-13720)"*. Also fixed here.
+> **The SparkFun SKU is WIG-13720, not DEV-13720.** Comments and
+> `docs/sound_playback.md` that said DEV-13720 were corrected (Section 14.2).
+> SparkFun's own repository README links `sparkfun.com/products/13720` as
+> *"MP3 Trigger (WIG-13720)"*.
 
 > [!NOTE]
 > **This part ships in every image and has never been run on our hardware.**
@@ -161,11 +171,11 @@ guide nor the hookup guide states them, and no distributor page read this sessio
 carried a mechanical drawing. Settled by measuring a board, or by opening the
 `.brd` file in `github.com/sparkfun/MP3_Trigger/Hardware`.
 
-### 2.2 The decoder is a VS1063, and this repository says VS1053 five times
+### 2.2 The decoder is a VS1063
 
-`src/drivers/audio_mp3trigger.cpp` and `include/audio_mp3trigger.h` name the
-**VS1053** in five places, including the one a developer would copy -- the volume
-comment. SparkFun's own Eagle schematic disagrees:
+Comments in `src/drivers/audio_mp3trigger.cpp` and `include/audio_mp3trigger.h`
+that named the **VS1053** were corrected (Section 14.1). SparkFun's own Eagle
+schematic is the source:
 
 ```xml
 <part name="U7" library="SparkFun-DigitalIC" deviceset="VS1063" device="SMD" value="VS1063"/>
@@ -272,9 +282,10 @@ blinks and no sound is a wiring or baud problem; anything else is a card problem
 ## 4. Project Integration
 
 - **[`src/drivers/audio_mp3trigger.cpp`](../../src/drivers/audio_mp3trigger.cpp)**
-  (279 lines) and
-  **[`include/audio_mp3trigger.h`](../../include/audio_mp3trigger.h)** (120
-  lines) -- the driver. Section 8 is about these two files.
+  and
+  **[`include/audio_mp3trigger.h`](../../include/audio_mp3trigger.h)**
+  -- the driver. Section 8 is about these two files. GPIO-sampled RX lives in
+  `src/drivers/audio_soft_uart_rx.cpp`.
 - **[`include/audio_driver.h`](../../include/audio_driver.h)** -- the seam.
   Lines 92-97 are the capability vocabulary; `:120-122` is the 0-30 volume
   contract Section 8.3 argues we honour too literally.
@@ -285,9 +296,10 @@ blinks and no sound is a wiring or baud problem; anything else is a card problem
 - **[`src/tasks/audio_sound_member.cpp`](../../src/tasks/audio_sound_member.cpp)**
   -- `kSoundMemberDrivers` binds `"mp3_trigger"` to the driver instance, with a
   `static_assert` that fails the build if a selectable member has no driver.
-- **[`src/tasks/audio_task.cpp`](../../src/tasks/audio_task.cpp)** -- the UART
-  claim around every query (`:723`, `:744`, `:792`), and the unclaimed boot
-  seeding at `:690` that Section 14.5 is about.
+- **[`src/tasks/audio_task.cpp`](../../src/tasks/audio_task.cpp)** --
+  `serviceRx()` every loop (no UART claim); Poll and auto-query still wrap
+  `queryModuleState()` in `audioUartClaim()`. `begin()` no longer opens UART2
+  (Section 14.5).
 - **[`include/config.h`](../../include/config.h)** -- `PIN_AUDIO_TX` /
   `PIN_AUDIO_RX` / `UART_PORT_AUDIO` per Board Variant, and
   `PA_CAP_DEDICATED_AUDIO_UART`.
@@ -490,19 +502,16 @@ when its 500 ms timeout expires.
 | `'M'` `0x4D` + 3 bytes | Quiet Mode only: a trigger-pin bitmask (Section 3.2) |
 
 > [!CAUTION]
-> **`'E'` means the track is missing, not that the hardware is broken.** Both
-> `src/drivers/audio_mp3trigger.cpp:37` and `include/audio_mp3trigger.h` call it
-> *"hardware error"*. The guide is unambiguous: *"'E': When a requested track
-> doesn't exist (error)."* The distinction is the difference between *"your SD
-> card does not have track 126"* and *"your sound board has failed"*, and it is
-> the first thing an operator would act on. Section 14.3 fixes the comment.
+> **`'E'` means the track is missing, not that the hardware is broken.** The
+> guide: *"'E': When a requested track doesn't exist (error)."* The driver
+> records it as `missingTrack` and the Sound page names the clip (#396). The
+> distinction is *"your SD card does not have track 126"* versus *"your sound
+> board has failed"*.
 
-**These arrive at any time, including between a query and its reply.** Our
-`sendQuery()` drains RX immediately before writing, which closes most of the
-window but not all of it: a track finishing in the microseconds after the drain
-puts an `'X'` at the head of the line buffer, `line[0] != '='`, and the query
-reports a dead link on a live module. Section 14.6 records it; it is benign
-(the next poll recovers) and it is real.
+**These arrive at any time, including between a query and its reply.**
+`readLine()` skips leading `'X'` / `'x'` / `'E'` (and other non-`'='` noise)
+and hands them to `noteUnsolicited()`, so a finish byte in the drain-to-reply
+window updates play-state instead of failing a live query (#396).
 
 ## 8. What protoArtoo's driver actually sends
 
@@ -682,27 +691,28 @@ rather than a typo. Open Item 6.
 ### 10.1 Two directions, two mechanisms
 
 ```c
+#if PA_CAP_DEDICATED_AUDIO_UART
 s_mp3Serial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);   // RX only, TX pin = -1
-softUartTxBegin();                                        // TX: bit-bang
+#else
+softUartRxBegin();                                       // GPIO-sampled RX
+#endif
+softUartTxBegin();                                       // TX: bit-bang
 ```
 
-**TX is a software UART and RX is a hardware one**, and they are not the same
-peripheral. The reason is on the artoo-esp32: three hardware UARTs, and UART0 is
-the console, UART1 the drive link, UART2 shared between the dome link and audio's
-RX (`include/config.h:141-152`). There is no spare TX, so audio bit-bangs it.
+**TX is a software UART on both boards.** RX is GPIO-sampled on artoo-esp32 so
+it never takes UART2 from the dome, and a dedicated hardware UART on FireBeetle
+2 (`UART_PORT_AUDIO` = 3). The reason for GPIO RX is on the artoo-esp32: three
+hardware UARTs, UART0 the console, UART1 the drive link, UART2 the dome link
+(`include/config.h`). There is no spare UART for audio, so RX is sampled on
+`PIN_AUDIO_RX` (GPIO 35, input-only) and TX is bit-banged (#396).
 
 | Board Variant | `PIN_AUDIO_TX` | `PIN_AUDIO_RX` | `UART_PORT_AUDIO` | `PA_CAP_DEDICATED_AUDIO_UART` |
 | --- | --- | --- | --- | --- |
-| artoo-esp32 | 26 (bit-bang) | 35 (input-only) | 2, **shared with the dome link** | 0 |
-| firebeetle2 | 34 | 36 | 3, exclusive | 1 |
+| artoo-esp32 | 26 (bit-bang) | 35 (GPIO-sampled, input-only) | unused by this driver | 0 |
+| firebeetle2 | 34 (bit-bang TX) | 36 (UART3 RX) | 3, exclusive | 1 |
 
-> [!NOTE]
-> **No build selects this driver on firebeetle2, so its P4 path has never run.**
-> `audio_mp3trigger.cpp:10-14` says so and says why it was left alone: *"adding a
-> capability branch no build compiles would ship untested code (#254)."* On that
-> board the driver would still bit-bang TX on a pin that has a real UART behind
-> it -- correct, but wasteful, and untested. The DY-SV5W driver branches on the
-> capability; this one does not.
+Every image carries this driver. FireBeetle 2 compiles the dedicated-UART RX
+path; that path has not run against a module on the bench.
 
 ### 10.2 What a command costs Core 0
 
@@ -721,20 +731,25 @@ per byte, with Core 0 non-preemptible**.
 a DY-SV5W play frame. Core 1's real-time loops (drive, RC, dome link) are
 unaffected either way; this is Core 0's web and audio work only.
 
-### 10.3 The read path is borrowed, and the claim is AudioTask's
+### 10.3 Finish-byte RX does not take the dome UART; Poll still claims it
 
-On artoo-esp32 the UART controller this driver reads from belongs to the dome
-link. Every query in `audio_task.cpp` is wrapped in `audioUartClaim()` /
-`audioUartRelease()`, and a denied claim is reported as
-**`AUDIO_RX_BLOCKED_BY_DOME_UART`** -- which the Sound page renders as *"RX
-unavailable while protoR2link owns UART2"* rather than as a dead module.
+On artoo-esp32 this driver's RX is GPIO-sampled. `begin()` and `serviceRx()`
+do not call `audioUartClaim()`, so a clip can finish (and play-state can
+update) while protoR2link owns UART2.
 
-The driver itself does no contention check, and its header is explicit that an
-earlier comment claiming otherwise *"was never true on any commit of this file"*.
-It also does not override `classifyRxStatus()`, and -- exactly as
+`queryModuleState()` -- the Sound page Poll button, and any auto-query -- is
+still wrapped in `audioUartClaim()` / `audioUartRelease()` by AudioTask. A
+denied claim is **`AUDIO_RX_BLOCKED_BY_DOME_UART`**, which the Sound page
+renders as *"RX unavailable while protoR2link owns UART2"* rather than as a
+dead module. That claim is leftover arbitration from when audio RX lived on
+UART2; this driver no longer uses that controller for RX, but Poll still
+waits for it.
+
+The driver itself does no contention check. It also does not override
+`classifyRxStatus()`, and -- exactly as
 [`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 12.3 works out for its own module
--- it does not need to, because `audio_task.cpp` tests the claim **before** calling
-the driver. The one call site that escapes that reasoning is Section 14.5.
+-- it does not need to, because `audio_task.cpp` tests the claim **before**
+calling `queryModuleState()`.
 
 ## 11. Capabilities, status, and what the operator sees
 
@@ -774,11 +789,12 @@ What the three bits actually cost the module to honour:
 > live `0x0D` query. Worth knowing before trusting the field after a track ends
 > on its own.
 
-**Play state has no capability bit at all.** It is emitted unconditionally by the
-API and is permanently `0xFF` here, which is why `docs/sound_playback.md:316`
-says *"Play-state indicator always shows `unknown` for the MP3 Trigger"*. The
-`'X'` / `'x'` messages (Section 7.4) are exactly the information that would fix
-this, and the driver discards them.
+**Play state has no capability bit at all.** It is emitted unconditionally by
+the API. This driver caches it from unsolicited `'X'` (finished) / `'x'`
+(cancelled) / `'E'` (missing track) via `serviceRx()` and `noteUnsolicited()`
+(#396). Until the first of those bytes after boot, `playState` is `0xFF`
+(`unknown`). `'E'` also records `missingTrack`. There is still no play-state
+*query*.
 
 ### 11.2 What the Sound page does with `0x0D`
 
@@ -790,6 +806,8 @@ actually answer."* For this word:
 - Device row: **hidden** (`supportsStatusQuery && supportsDeviceType`)
 - Total tracks row: shown
 - Current track row: shown
+- Play-state: shown; follows `'X'`/`'x'`/`'E'`; `unknown` until the first of
+  those after boot
 - Status table: shown; the no-query notice: hidden
 - **Manual Poll button: shown**, because `showManualPoll` is
   `supportsStatusQuery && !supportsSafePlayingQuery`
@@ -798,6 +816,9 @@ actually answer."* For this word:
 - Note text: *"Status is cached from boot. Use Poll to refresh -- only poll when
   not playing."*
 - CHIRP catalog card: hidden, with *"Catalog unavailable for this backend."*
+- When `driver === "MP3Trigger"`: wiring note (3.3 V jumper, `MP3TRIGR.INI`
+  `#BAUD 9600`), missing-clip banner from `missing_track`, category-range
+  warning for 254/255
 
 The API still emits `"device"` for this module -- it serialises `0xFF` as
 `"none"` -- so a client that branches on the JSON field rather than on the
@@ -821,10 +842,10 @@ what a controller **that has never been told** starts with. The dedicated envs
 (`artoo_esp32_mp3trigger`, `..._ota`, `..._check`) and `make ota-mp3trigger` still
 exist and are the way to ship a board that boots straight onto this module.
 
-> [!NOTE]
-> `README.md:269` still describes swapping sound modules as something you do
-> *"with a reflash"*. Since ADR 0042 it is a setting. Not changed here -- it is
-> operator-facing prose in a file this sheet does not own -- but it is stale.
+Selecting the member is `POST /api/config soundMember=mp3_trigger`. Setup's
+Audio control is an enable toggle plus the live driver name; it does not POST
+this field. The Component Picker cards that would show `mp3_trigger.webp` are
+still to come (#369). The photograph already ships in the default asset set.
 
 ## 12. How the four Sound members differ
 
@@ -837,7 +858,7 @@ MP3 Trigger is the outlier:
 | Frame | **2 bytes, no checksum, no ack** | cheapest command in the family (~2.1 ms of Core 0) |
 | Addressing | **filename prefix** | the only member whose numbering survives a card rebuild (Section 9.1) |
 | Volume native | **0-255 inverted; we send 0-64** | vendor-audible span; #396 |
-| Play-state query | **none** | permanently `unknown` on the Sound page |
+| Play-state query | **none** | follows `'X'`/`'x'`/`'E'`; `unknown` until the first |
 | Device-type query | **none** | the only built member missing this bit |
 | Stop | **no stop command** | done by playing a silent track (Section 8.4) |
 | On-board amplifier | **no** | needs an external amp; output is line level with a DC offset |
@@ -850,9 +871,9 @@ bank convention every R2 sound pack ships in, and the fact that protoArtoo's own
 named-track defaults already *are* its numbers (Section 9.2). A builder migrating
 from MarcDuino, Padawan360 or SHADOW keeps their card and their muscle memory.
 
-**What it uniquely costs** is 255 tracks, no status beyond "the link is up", an
-external amplifier, the price, and a volume curve that needs work before the
-module sounds like anything (Section 8.3).
+**What it uniquely costs** is 255 tracks, no play-state *query* (finish bytes
+only), an external amplifier, and the price. Volume maps onto the vendor's
+0-64 audible span (#396); hardware listen is still unconfirmed.
 
 ## 13. How the hobby drives this module (non-normative)
 
@@ -914,9 +935,9 @@ From Printed Droid's knowledge base, which is builders writing for builders:
 
 ## 14. Findings against the shipping implementation
 
-Six, found by reading the driver against the user guide and the schematic this
-session. Three are fixed in the change that carries this sheet; three are
-reported.
+Found by reading the driver against the user guide and the schematic
+(2026-09-12), then re-read against #396 (2026-09-15). Fixed items stay here
+so a later reader does not re-open them.
 
 ### 14.1 FIXED -- the decoder is a VS1063, not a VS1053
 
@@ -933,11 +954,9 @@ functional turns on it (Section 2.2); the comments are corrected.
 
 ### 14.3 FIXED -- `'E'` means the track is missing, not that the hardware failed
 
-`audio_mp3trigger.cpp:37` and the matching header line document `'E'` as
-*"hardware error"*. The user guide: *"'E': When a requested track doesn't exist
-(error)."* Section 7.4. The driver does not act on `'E'` either way, so this is a
-comment fix -- but it is the comment that would send someone to the wrong
-diagnosis.
+Comments that called `'E'` a *"hardware error"* were corrected when this sheet
+landed. #396 also acts on the byte: `missingTrack` is recorded, play-state
+goes to stop, and the Sound page names the clip.
 
 ### 14.4 FIXED -- `docs/sound_playback.md` sends the reader away for a fact we now have
 
@@ -946,39 +965,21 @@ exact filename and format"* of the baud init file. The filename is
 `MP3TRIGR.INI`, the line is `#BAUD 9600`, and both are now in that document and
 in Section 6.1.
 
-### 14.5 REPORTED -- `begin()`'s queries are not arbitrated
+### 14.5 FIXED -- `begin()` no longer opens UART2
 
-Every query in `audio_task.cpp` is wrapped in `audioUartClaim()` **except the two
-inside `begin()`**. On artoo-esp32 the sequence is the same one
-[`dy-sv5w-sound.md`](dy-sv5w-sound.md) Section 17.5 reasons out for its module,
-with a shorter fuse: `begin()` opens the shared controller RX-only, sleeps
-**1000 ms**, and then queries -- while DomeLinkTask, on the other core, may have
-re-opened the same controller on the dome's pins and set its owner flag.
+#396: on artoo-esp32 `begin()` calls `softUartRxBegin()` (GPIO-sampled RX on
+GPIO 35) and does not call `audioUartClaim()`. Boot S0/S1 no longer race
+DomeLink for UART2. Poll still goes through `audioUartClaim()` (Section 10.3).
+Hardware listen of boot link is still unconfirmed.
 
-If DomeLinkTask wins, S0 gets nothing, `m_linkOk` stays false, S1 is skipped
-entirely, `m_totalTracks` stays 0, and the cached state the Sound page seeds from
-says the module is dead. The operator's Poll button then recovers it, because
-that path **is** arbitrated. Reasoned from code, not measured -- and unlike the
-DY-SV5W there is no hardware record to argue against it. Open Item 7.
+### 14.6 FIXED -- `readLine()` skips leading unsolicited bytes
 
-The same call path is where `classifyRxStatus()` is actually used
-(`audio_task.cpp:690`), unclaimed, so a blocked boot query is reported as
-`NO_RESPONSE` rather than `BLOCKED_BY_DOME_UART`. The driver does not override
-that method and, per Section 10.3, does not need to anywhere else.
-
-### 14.6 REPORTED -- an unsolicited byte can fail a live query
-
-`sendQuery()` drains RX then writes. A track that finishes in the window between
-the drain and the reply puts `'X'` at the head of the buffer; `line[0] != '='`,
-and the driver reports a dead link on a working module until the next poll. The
-guide's `'X'` / `'x'` / `'E'` messages (Section 7.4) are unhandled, so any of the
-three can do it.
-
-The peer sheet's rule applies unchanged --
+#396: `readLine()` skips `'X'` / `'x'` / `'E'` (and other non-`'='` noise)
+until `'='`, and `noteUnsolicited()` updates play-state / `missingTrack`. A
+finish byte in the drain-to-reply window no longer fails a live query. The
+peer sheet's rule --
 [`dy-sv5w-sound.md`](dy-sv5w-sound.md)'s *"MUST NOT assume a query response is
-the next bytes on the wire"* -- and the cheap fix is the same shape: skip leading
-bytes that are not `'='` rather than accepting the first line whole. Benign
-today; Open Item 8.
+the next bytes on the wire"* -- is the shape that landed.
 
 ### 14.7 REPORTED -- the mirror test suite can pass while the driver is wrong
 
@@ -1020,7 +1021,7 @@ belt-and-braces that could silently stop matching the belt.
 - Field: protoArtoo volume map. Required value: `nativeVol = (30 - vol) * 64 / 30` (#396). Shipped default `vol` 20 is native **21**. The register still accepts 0-255; we do not send above 64.
 - Field: Status queries. Required value: **`'S'`+`'0'`** version, **`'S'`+`'1'`** track count, both replies `'='`-prefixed.
 - Field: Response terminator. Status: **UNKNOWN** -- the guide describes an 18-byte version string that is exactly 18 visible characters, implying no CR/LF. Settled by capturing the bytes (Open Item 2).
-- Field: Unsolicited bytes. Required value: **`'X'` finished, `'x'` cancelled, `'E'` requested track does not exist.** `'E'` is **not** a hardware error.
+- Field: Unsolicited bytes. Required value: **`'X'` finished, `'x'` cancelled, `'E'` requested track does not exist.** `'E'` is **not** a hardware error. The driver caches play-state from these bytes (#396); `'E'` also sets `missingTrack`.
 - Field: Quiet Mode. Required value: `'Q'`+`'1'` makes trigger pins report `'M'` plus a 3-byte bitmask instead of playing. Off by default, not preserved across power cycles.
 - Field: Card. Required value: **microSD, SDSC or SDHC, FAT16 or FAT32, root directory only, `NNNxxxx.MP3`**, MP3 up to 192 kbps stereo.
 - Field: Hot swap. Required value: **not supported.** The card is read only at power-on.
@@ -1028,7 +1029,7 @@ belt-and-braces that could silently stop matching the belt.
 - Field: Audio output. Required value: **line level with a DC offset**, no on-board amplifier. AC-couple before a long cable.
 - Field: Trigger pins. Required value: **18**, active low, internally pulled up, 3.3-5 V. protoArtoo uses none of them.
 - Field: Status LED. Required value: **3 short blinks = ready.** 1 long = no card; 1 long + 1 short = card but no MP3s; constant short = decoder fault.
-- Field: Transport on artoo-esp32. Required value: **bit-bang TX on GPIO 26, hardware RX on GPIO 35 (UART2, shared with the dome link)**. About **2.1 ms of blocked Core 0 per command**.
+- Field: Transport on artoo-esp32. Required value: **bit-bang TX on GPIO 26, GPIO-sampled RX on GPIO 35. Does not take UART2.** About **2.1 ms of blocked Core 0 per TX command**. FireBeetle 2 uses dedicated UART3 for RX. Poll still goes through `audioUartClaim()`.
 - Field: Level shifting. Status: **UNKNOWN** -- the module's TX swing is not stated in any document read. `PIN_AUDIO_RX` is not 5 V tolerant (Open Item 3).
 - Field: Hardware verification. Required value: **none.** No bench record exists for this module on this project's droid.
 
@@ -1044,9 +1045,9 @@ and dependent work stops.
 | 3 | **What voltage does the module's TX idle at?** Section 6.3. `PIN_AUDIO_RX` is not 5 V tolerant on either board. | Meter on the module's TX pin with the board powered from 5 V, then from the 3.3 V jumper position. **Do this before wiring one to a controller.** |
 | 4 | **Can back-to-back commands be dropped?** Section 8.1. We post no inter-command delay; the DY-SV5W driver posts 100 ms; a SparkFun forum thread reports a 10-100 ms settling window after `'X'`. | Send `stop()` immediately followed by `playTrack(n)` twenty times and count how many play. |
 | 5 | **Is there a start-up latency worth designing around?** A research pass claimed about 80 ms of MP3 parser delay and 100-500 ms gaps between sequential tracks; **neither is in any document read this session** (Section 5). | Trigger a known track against a scope or a phone recording and measure command-to-first-sample. |
-| 6 | **Should config validation know the fitted module's track ceiling?** Section 9.3. Category ranges validate `0..0xFFFF`; this module drops above 255, plays silence on 254 and the startup sound on 255. | A decision, not a measurement: either a member-aware validator, or a Rehearsal-Warning-style report on the Sound page. It touches shared config validation for one module's sake. |
-| 7 | **Do `begin()`'s queries lose the UART race on artoo-esp32?** Section 14.5. Reasoned from code; unlike the DY-SV5W there is no hardware record arguing against it. | One boot with the dome link on serial and an MP3 Trigger fitted: does the log say *"link OK - version:"* or *"no response to S0 query"*? |
-| 8 | **Should `sendQuery()` skip leading non-`'='` bytes?** Section 14.6. An `'X'` arriving in the window after the drain fails a query on a live module. | Cheap and natively testable through the existing recording IO: feed `X=MP3 Trigger v2.50` and assert the parse still succeeds. |
+| 6 | **Should config validation know the fitted module's track ceiling?** Section 9.3. Category ranges still save `0..0xFFFF`. #396: Sound page warns when a saved range includes 254 or 255; it does not refuse. | Done as save-and-warn. A member-aware validator was the rejected alternative. |
+| 7 | **Do `begin()`'s queries lose the UART race on artoo-esp32?** Section 14.5. #396: `begin()` uses GPIO-sampled RX and does not open UART2. | Firmware race closed. A boot-link listen against a fitted module is still a community report, not a ticket. |
+| 8 | **Should `sendQuery()` skip leading non-`'='` bytes?** Section 14.6. #396: `readLine()` skips `'X'`/`'x'`/`'E'` until `'='`. | Done in firmware. Native IO-seam tests cover the skip. |
 | 9 | **Is `AUDIO_TRACK_HAPPY = 3` right?** Section 9.2. It sits in the community's *general* band, not the *happy* band, while every other named default lands where the table says. | An operator decision about which clip should answer `$H`, not a research result. |
 | 10 | **Does anything test that the Device row is hidden for a `0x0D` module?** `test_sound_capability_consumers_340.js` pins `TRACK_COUNT` both ways but not `DEVICE_TYPE`. | Add the mirror case to the existing web test; it is four lines beside the ones already there. |
 

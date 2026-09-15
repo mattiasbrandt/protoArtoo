@@ -251,9 +251,9 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 // contention check here. SBUS2 is RMT-based and does not contend for it.
 //
 // Drains RX, sends S0 (link), then S1 (track count).
-// playState and device are always 0xFF  --  the MP3 Trigger protocol has no
-// play-state or device-type query commands. currentTrack is the cached value
-// from the last playTrack() call (no live query available).
+// playState is cached from unsolicited 'X'/'x'/'E' (#396), not queried.
+// device is always 0xFF (no device-type command). currentTrack is the cached
+// value from the last playTrack() call (no live query available).
 //
 // Only call from AudioTask (Core 0). Blocking up to ~1 s in the worst case.
 // -----------------------------------------------------------------------------
@@ -297,7 +297,7 @@ bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
 // getCachedState()
 // Returns last-known cached state with no UART traffic. Safe to call at any
 // time including during playback.
-// playState is always 0xFF (no play-state query in this protocol).
+// playState is cached from 'X'/'x'/'E' (#396); 0xFF until the first of those.
 // device is always 0xFF (no device-type concept for MP3 Trigger).
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::getCachedState(AudioModuleState& out) const {
