@@ -248,6 +248,129 @@ class LengthRuleIsCheckedNotAssumed(unittest.TestCase):
 
 
 # =============================================================================
+# A phantom that names a branch target of its own
+# =============================================================================
+# A misframed instruction can decode as a BRANCH, and its target is then an
+# address claimed to be a real instruction boundary that is not one. Seeding a
+# re-framing run from it condemns every real instruction until the next anchor
+# - including any call among them.
+#
+# Measured in `HTTPClient::setCookie` in the artoo-esp32 image: a phantom
+# `blti` at 0x400e22e9 named 0x400e2305, and a real `call8 String::indexOf` at
+# 0x400e2309 was reported misframed because of it. The fixture below is that
+# body's byte stream, with the phantom's printed target moved to one byte
+# before a real `call8` so the same interval split happens at a readable scale.
+#
+# The fixpoint in `_framing()` is what settles it: anchors are re-collected
+# from only those instructions the framing says are real, and a phantom is
+# never one of them.
+
+BOGUS_FN = 0x400E4000
+BOGUS_FN_SIZE = 0x1E
+BOGUS_HELPER = 0x400E5000
+
+BOGUS_PAD_AT = BOGUS_FN + 0x06
+BOGUS_ANCHOR = BOGUS_FN + 0x14       # what the phantom `blti` points at
+BOGUS_REAL_CALL8 = BOGUS_FN + 0x15   # the real edge it would take down
+BOGUS_JUMP_TARGET = BOGUS_FN + 0x1C
+
+BOGUS_SYMBOLS = [
+    "SYMBOL TABLE:",
+    f"{BOGUS_FN:08x} g     F .flash.text\t{BOGUS_FN_SIZE:08x} cookieSetter",
+    f"{BOGUS_HELPER:08x} g     F .flash.text\t00000008 indexOf",
+]
+
+BOGUS_LISTING = [
+    "Disassembly of section .flash.text:",
+    "",
+    f"{BOGUS_FN:08x} <cookieSetter>:",
+    "/repo/libraries/HTTPClient/src/HTTPClient.cpp:1520",
+    f"{BOGUS_FN + 0x00:08x}:\t006136        \tentry\ta1, 48",
+    f"{BOGUS_FN + 0x03:08x}:\t000386        \tj\t{BOGUS_JUMP_TARGET:08x} <cookieSetter+0x1c>",
+    # --- one byte of padding at +0x06; the four lines below are what objdump
+    #     emits instead, and the fourth of them decodes as a BRANCH ---------
+    "/repo/libraries/HTTPClient/src/HTTPClient.cpp:1530",
+    f"{BOGUS_FN + 0x06:08x}:\tc1a200        \tmul16u\ta10, a2, a0",
+    f"{BOGUS_FN + 0x09:08x}:\t111020        \tslli\ta1, a0, 14",
+    f"{BOGUS_FN + 0x0c:08x}:\t55a520        \textui\ta10, a2, 21, 6",
+    f"{BOGUS_FN + 0x0f:08x}:\t180ca6        \tblti\ta12, -1, {BOGUS_ANCHOR:08x} <cookieSetter+0x14>",
+    # --- objdump lands back on a real boundary here ----------------------
+    "/repo/libraries/HTTPClient/src/HTTPClient.cpp:1535",
+    f"{BOGUS_FN + 0x12:08x}:\t201110        \tor\ta1, a1, a1",
+    f"{BOGUS_REAL_CALL8:08x}:\tffb865        \tcall8\t{BOGUS_HELPER:08x} <indexOf>",
+    f"{BOGUS_FN + 0x18:08x}:\t080c          \tmovi.n\ta8, 0",
+    f"{BOGUS_FN + 0x1a:08x}:\t0198          \tl32i.n\ta9, a1, 0",
+    f"{BOGUS_JUMP_TARGET:08x}:\tf01d          \tretw.n",
+    "",
+    f"{BOGUS_HELPER:08x} <indexOf>:",
+    "/repo/src/helper.cpp:9",
+    f"{BOGUS_HELPER:08x}:\t002136        \tentry\ta1, 32",
+    f"{BOGUS_HELPER + 3:08x}:\tf01d          \tretw.n",
+]
+
+
+class BogusAnchorImage(sur.Image):
+    def _run(self, argv):
+        return iter(BOGUS_SYMBOLS if "-t" in argv else BOGUS_LISTING)
+
+
+class APhantomBranchMustNotAnchorAnything(unittest.TestCase):
+    def setUp(self):
+        self.image = BogusAnchorImage(
+            "fake", Path("fake.elf"), Path("objdump"), "xtensa")
+        self.fn = self.image.funcs[BOGUS_FN]
+
+    def test_the_real_call_after_the_phantom_branch_survives(self):
+        """Without the fixpoint this edge is the one that disappears."""
+        self.assertEqual(
+            [(target, insn) for target, insn, _ in self.fn.calls],
+            [(BOGUS_HELPER, "call8")],
+            "the phantom blti's target was trusted as an instruction boundary, "
+            "which splits the interval holding the real call8 and condemns it",
+        )
+
+    def test_the_phantom_branchs_target_is_not_a_boundary(self):
+        insns = {}
+        body_bytes = {}
+        for line in BOGUS_LISTING:
+            got = sur.split_insn(line)
+            if got is None:
+                continue
+            pc, nbytes, mnem, ops, raw = got
+            if not BOGUS_FN <= pc < BOGUS_FN + BOGUS_FN_SIZE:
+                continue
+            insns[pc] = (nbytes, mnem, ops)
+            octets = [int(raw[i:i + 2], 16) for i in range(0, len(raw), 2)][::-1]
+            for offset, value in enumerate(octets):
+                body_bytes[pc + offset] = value
+        # The candidate set does contain it: that is the whole hazard.
+        self.assertIn(
+            BOGUS_ANCHOR,
+            self.image._anchors(
+                BOGUS_FN, BOGUS_FN, BOGUS_FN + BOGUS_FN_SIZE, insns),
+        )
+        real = self.image._framing(
+            BOGUS_FN, BOGUS_FN + BOGUS_FN_SIZE, insns, body_bytes)
+        self.assertIsNotNone(real)
+        self.assertNotIn(BOGUS_ANCHOR, real)
+        self.assertNotIn(BOGUS_PAD_AT, real)
+        self.assertIn(BOGUS_REAL_CALL8, real)
+
+    def test_only_the_four_phantoms_are_rejected(self):
+        self.assertEqual(self.image.misframed_insns, 4)
+        self.assertEqual(self.image.suppressed_calls, [])
+        self.assertEqual(self.image.unvalidated_bodies, set())
+        # 11 instruction lines in this body, 4 of them misframed.
+        self.assertEqual(self.fn.decoded, 7)
+
+    def test_the_chain_still_reaches_the_real_callee(self):
+        walker = sur.Walker([self.image], sur.DEFAULT_PRUNE)
+        total, chain, _ = walker.depth(self.image, self.fn)
+        self.assertEqual(total, 32)
+        self.assertEqual([entry[0] for entry in chain], ["indexOf"])
+
+
+# =============================================================================
 # The RISC-V arm
 # =============================================================================
 # The same code path serves the ESP32-P4 image with its own length rule and its
