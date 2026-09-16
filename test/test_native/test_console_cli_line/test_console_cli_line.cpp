@@ -168,7 +168,7 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-196 count): action 120, config 36,
+// test_console_catalog.cpp's exact-197 count): action 121, config 36,
 // event 15, status 25. Config was 35 before #225 added
 // system.config.log-level, and 34 before #227 added wifi.config.settings.
 // Action was 128 and status 14 before #221's remainder reclassified
@@ -183,7 +183,8 @@ void tearDown() {}
 // taking action to 120; #340 added system.api.get-components, taking status
 // to 24; #347 added servo.api.get-outputs, taking action to 121; #362 moved
 // servo.api.get-outputs across to status when it gained a Console record
-// shape, taking action back to 120 and status to 25.
+// shape, taking action back to 120 and status to 25; #363 added
+// servo.action.nudge, taking action to 121.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -192,8 +193,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(120, g_itemCount,
-        "operations type=action must list exactly the 120 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(121, g_itemCount,
+        "operations type=action must list exactly the 121 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -230,7 +231,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(196, g_itemCount);  // #347 added servo.api.get-outputs
+    TEST_ASSERT_EQUAL_INT(197, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge
 }
 
 // help <op> must still work through the same real path (the reconstruction

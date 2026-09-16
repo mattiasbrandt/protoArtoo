@@ -824,9 +824,9 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
     configCacheApplyServoOutputEdits(&micro, 1);
 
     const RobotState saved = robotState;
-    robotState.servoCommanded[0] = {1620, 2000, true};   // ARM1, part way through a move
-    robotState.servoCommanded[2] = {1100, 1200, false};  // AUX1, no pulse whatever the widths
-    robotState.servoCommanded[3] = {2400, 2400, true};   // AUX2
+    robotState.servoCommanded[0] = {1620, 2000, true, 0};   // ARM1, part way through a move
+    robotState.servoCommanded[2] = {1100, 1200, false, 1};  // AUX1, no pulse whatever the widths, nudged once
+    robotState.servoCommanded[3] = {2400, 2400, true, 3};   // AUX2, nudged three times
 
     runSeqItemQuery("servo.api.get-outputs");
     robotState = saved;
@@ -838,14 +838,16 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
     TEST_ASSERT_EQUAL_INT(SERVO_OUTPUT_ROW_DEFAULT_COUNT, g_seqItemCap.count);
     TEST_ASSERT_EQUAL_STRING(
         "address:ledc:0 name:ARM1 parts:utilUp,doorFL bandLoUs:1000 bandHiUs:2000 "
-        "commandedUs:1620 targetUs:2000",
+        "commandedUs:1620 targetUs:2000 nudgesDone:0",
         g_seqItemCap.values[0]);
+    // The nudge count travels whether or not there is a pulse (#363).
     TEST_ASSERT_EQUAL_STRING(
-        "address:ledc:3 name:AUX1 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:-",
+        "address:ledc:3 name:AUX1 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:- "
+        "nudgesDone:1",
         g_seqItemCap.values[2]);
     TEST_ASSERT_EQUAL_STRING(
         "address:ledc:4 name:AUX2 parts:- bandLoUs:500 bandHiUs:2500 "
-        "commandedUs:2400 targetUs:2400",
+        "commandedUs:2400 targetUs:2400 nudgesDone:3",
         g_seqItemCap.values[3]);
 
     // Leave a controller nobody has wired for whatever runs next.
@@ -4115,6 +4117,39 @@ void test_servo_stop_rejects_position_us_as_an_unknown_argument() {
     TEST_ASSERT_EQUAL_STRING("position_us", capturedValue("argument"));
 }
 
+// servo.action.nudge (#363, ADR 0050): a Find by Moving nudge, reachable from
+// the Console the way set-position is. A target and nothing else: no width,
+// because ServoTask computes the pair from the pin, and no "both", because a
+// nudge is one output at a time by definition.
+void test_servo_nudge_queues_with_the_resolved_arm_id() {
+    runQuery("servo.action.nudge target=aux1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+void test_servo_nudge_rejects_both_as_two_outputs_in_one_press() {
+    runQuery("servo.action.nudge target=both");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+}
+
+void test_servo_nudge_rejects_a_width_as_an_unknown_argument() {
+    runQuery("servo.action.nudge target=arm1 position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("position_us", capturedValue("argument"));
+}
+
+void test_servo_nudge_rejects_a_missing_target() {
+    runQuery("servo.action.nudge");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_MISSING_ARGUMENT, g_cap.reason);
+}
+
 // #257: g_directActionExecutors[] split into five per-domain tables
 // (include/console_direct_action_{system,drive,sound,aux_rc,servo}.h). Every
 // row's own behavior is already asserted above by name (e.g.
@@ -4178,6 +4213,7 @@ void test_257_every_direct_action_row_still_dispatches() {
         "servo.action.close",
         "servo.action.set-position",
         "servo.action.stop",
+        "servo.action.nudge",
     };
     static const size_t kExpectedCount =
         sizeof(kExpectedDirectActionOperations) / sizeof(kExpectedDirectActionOperations[0]);
@@ -5468,6 +5504,10 @@ int main(int, char**) {
     RUN_TEST(test_servo_stop_rejects_a_missing_target);
     RUN_TEST(test_servo_stop_rejects_an_unknown_target);
     RUN_TEST(test_servo_stop_rejects_position_us_as_an_unknown_argument);
+    RUN_TEST(test_servo_nudge_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_nudge_rejects_both_as_two_outputs_in_one_press);
+    RUN_TEST(test_servo_nudge_rejects_a_width_as_an_unknown_argument);
+    RUN_TEST(test_servo_nudge_rejects_a_missing_target);
     RUN_TEST(test_257_every_direct_action_row_still_dispatches);
 
     RUN_TEST(test_profiler_snapshot_answers_not_in_this_build);

@@ -22,7 +22,7 @@
 base_commit: f0b0dbc
 ticket: 211
 domains: [drive, servo, aux, rc]
-row_count: 33
+row_count: 34
 rows:
 - name: aux.action.led-color
   type: action
@@ -614,6 +614,32 @@ rows:
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API. webControlEnabled guard at api_servo.cpp:82. Position 500-2500us. Queue guarded.
+- name: servo.action.nudge
+  type: action
+  registry_api_path: /api/servo
+  registry_cpp_enum: null
+  registry_cpp_file: include/robot_state.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_params:
+  - name: target
+    type: string
+    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    required: true
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:95 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:60 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/tasks/servo_task.cpp - SERVO_CMD_NUDGE case in processCommand() -> beginNudge(); the pair from include/servo_nudge.h
+  executor_or_core: servoCmdQueue
+  missing_metadata: []
+  notes: Web-API (#363, ADR 0050). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask computes the +-100 us pair inside SERVO_BAND_STD from the pin. target=both refused with 400 at the route and at ServoTask. Queue guarded.
 - name: servo.action.stop
   type: action
   registry_api_path: /api/servo

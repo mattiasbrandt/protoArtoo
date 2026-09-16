@@ -1,0 +1,14 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..736cd3cb 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -714,7 +714,8 @@
+   // about in the same words.
+   const pickThatOne = () => {
+     if (run === null) return;
+-    const { partId, address } = run;
++    const { partId } = run;
++    const address = run.candidates[0];
+     const control = rows.get(partId)?.select;
+     endRun();
+     request(moveFor(outputs, partId, address), control);

@@ -123,6 +123,12 @@ enum ServoCommandType : uint8_t {
     SERVO_CMD_POSITION,
     SERVO_CMD_OPEN,
     SERVO_CMD_CLOSE,
+    // Find by Moving (ADR 0050, #363): a small, bounded twitch about wherever
+    // the output already is, out one way, across to the other, and back, run
+    // to completion by ServoTask itself. It carries no target: the pair is
+    // computed from the width on the pin (include/servo_nudge.h), so no source
+    // can ask for a big one. One output per command; 255 is refused.
+    SERVO_CMD_NUDGE,
 };
 
 struct ServoCommand {
@@ -142,6 +148,14 @@ struct ServoCommandedPosition {
     uint16_t nowUs;     // the width on the pin, part way through a move too
     uint16_t targetUs;  // where the move in progress ends; nowUs when none is
     bool pulsing;       // false until ServoTask has put a pulse on the pin
+    // How many Find by Moving nudges have ENDED on this output since boot
+    // (#363): returned on their own, cut short by an estop or a later command,
+    // or refused before they began. A count rather than a flag because a whole
+    // nudge can fall between two of the bench feed's one-second reads, so a
+    // "nudging" bit could be missed; a count that has gone up cannot be.
+    // Wraps, and that is fine: a reader compares it with what it read before
+    // it asked, never with an absolute.
+    uint8_t nudgesDone;
 };
 
 // -----------------------------------------------------------------------------

@@ -170,6 +170,15 @@ const bootParts = async ({ outputs = freshOutputs() } = {}) => {
         return { ok: true, status: 200, data: {} };
       },
       messageFor: (error) => error.message,
+      // The shipped shape (data/web_api.js): Find by Moving (#363) gates its
+      // button through it on every status frame, so the fake needs one.
+      gateControls: (elements, enabled) => {
+        elements.forEach((el) => {
+          if (!el) return;
+          el.disabled = !enabled;
+          el.setAttribute("aria-disabled", enabled ? "false" : "true");
+        });
+      },
     },
     PAUtils: {
       // mini_dom decodes no entities, so escaping here would put "&amp;" in the

@@ -882,6 +882,36 @@ void test_servo_position_without_a_value_is_rejected() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter"));
 }
 
+// Find by Moving (#363): a nudge names an arm and nothing else. No width is
+// taken from the request, so none is required, and none can make it big.
+void test_servo_nudge_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "nudge"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// One output per nudge, so a builder can say which one moved: the ARM1+ARM2
+// broadcast is refused at the door with a reason, not swallowed in a log.
+void test_servo_nudge_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "nudge"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge takes one arm"));
+}
+
 // -----------------------------------------------------------------------------
 // AUX LED
 // -----------------------------------------------------------------------------
@@ -1022,6 +1052,8 @@ int main(int, char**) {
     RUN_TEST(test_servo_rejects_an_unknown_arm);
     RUN_TEST(test_servo_rejects_an_out_of_range_position);
     RUN_TEST(test_servo_position_without_a_value_is_rejected);
+    RUN_TEST(test_servo_nudge_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_nudge_refuses_the_broadcast_arm);
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);

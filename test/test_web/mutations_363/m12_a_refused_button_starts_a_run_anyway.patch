@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index f906a668..25546ea5 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -734,7 +734,7 @@
+     // A browser delivers no click to a disabled button; this is the rule
+     // itself, not a repeat of the shell's notice: a refused control asks the
+     // droid for nothing, however the click arrived.
+-    if (!id || button.disabled) return;
++    if (!id) return;
+     startRun(id);
+   });
+ 

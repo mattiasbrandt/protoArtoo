@@ -1,0 +1,328 @@
+// =============================================================================
+// test/test_web/helpers/parts_surface.js
+//
+// Boots the shipped Operator Shell with the shipped Parts surface against a
+// fake droid, the way test_outputs_table_362.js does inside its own file, and
+// adds what a Find by Moving run needs the droid to answer: a nudgesDone count
+// on every Output, POST /api/servo, a status stream the test can push an estop
+// onto, and a PAApi.gateControls the shipped one's shape. Kept beside the
+// mini_dom rather than inside it: nothing here bends the DOM to the code under
+// test, it only stands in for the droid (test/test_web/README.md).
+// =============================================================================
+
+import assert from "node:assert";
+import vm from "node:vm";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
+
+// mini_dom has no CSSStyleDeclaration, and the position marks are painted
+// through element.style. A plain object per element is all a style write needs.
+const elementPrototype = Object.getPrototypeOf(new MiniDocument().createElement("div"));
+if (!Object.getOwnPropertyDescriptor(elementPrototype, "style")) {
+  Object.defineProperty(elementPrototype, "style", {
+    get() {
+      if (!this.styleValues) this.styleValues = {};
+      return this.styleValues;
+    },
+  });
+}
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(__dirname, "../../../data");
+export const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
+
+const bootstrapFile = readData("page_bootstrap.js");
+const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
+const part3Marker = bootstrapFile.indexOf("// ============================ PART 3");
+const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
+const part3Src = bootstrapFile.substring(part3Marker);
+
+const IDENTITY = {
+  droidName: "artoo",
+  board: "artoo_esp32",
+  board_capabilities: { sbus: true },
+  build_flags: { audio: true },
+};
+
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const output = (address, name, extra = {}) => ({
+  address,
+  name,
+  parts: [],
+  bandLoUs: 1000,
+  bandHiUs: 2000,
+  commandedUs: null,
+  targetUs: null,
+  nudgesDone: 0,
+  ...extra,
+});
+
+// A controller with ARM1 and ARM2 switched on and standing at neutral, AUX1
+// and AUX2 on, and AUX3 off.
+export const freshOutputs = () => [
+  output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:3", "AUX1", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:4", "AUX2", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:5", "AUX3"),
+];
+
+export const withParts = (assignments, outputs = freshOutputs()) => {
+  Object.entries(assignments).forEach(([address, parts]) => {
+    outputs.find((each) => each.address === address).parts = parts.slice();
+  });
+  return outputs;
+};
+
+export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}) => {
+  const document = new MiniDocument();
+  const indexHtml = readData("index.html");
+  const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
+  parsedIndex.body.children.forEach((child) => document.body.appendChild(document.importNode(child, true)));
+  const chain = /data-scripts="([^"]*)"/.exec(indexHtml)[1];
+  document.documentElement.setAttribute("data-scripts", chain);
+  document.body.setAttribute("data-page", "home");
+  document.currentScript = { dataset: { scripts: chain } };
+
+  const env = {
+    document,
+    outputs,
+    status: { estop },
+    posts: [],       // every POST: { path, form }
+    gets: new Map(), // GET path -> count
+    intervals: [],
+    cleared: [],
+    nudgeFails: null, // set to an Error to make the next POST /api/servo fail
+  };
+
+  const windowListeners = new Map();
+  const windowMock = {
+    setTimeout: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      timer.unref?.();
+      return timer;
+    },
+    clearTimeout: (id) => clearTimeout(id),
+    setInterval: (fn, ms) => {
+      const timer = setInterval(fn, ms);
+      timer.unref?.();
+      env.intervals.push({ id: timer, ms, fn });
+      return timer;
+    },
+    clearInterval: (id) => {
+      env.cleared.push(id);
+      clearInterval(id);
+    },
+    addEventListener: (type, fn) => {
+      if (!windowListeners.has(type)) windowListeners.set(type, []);
+      windowListeners.get(type).push(fn);
+    },
+    removeEventListener: () => {},
+    dispatchEvent: (event) => {
+      (windowListeners.get(event.type) || []).forEach((fn) => fn(event));
+      return true;
+    },
+    location: {
+      origin: "http://device",
+      _hash: "",
+      get hash() {
+        return this._hash;
+      },
+      set hash(value) {
+        const text = String(value);
+        const next = text === "" || text.startsWith("#") ? text : `#${text}`;
+        if (next === this._hash) return;
+        this._hash = next;
+        (windowListeners.get("hashchange") || []).forEach((fn) => fn({ type: "hashchange" }));
+      },
+    },
+    history: {
+      replaceState: (_state, _title, url) => {
+        windowMock.location._hash = String(url);
+      },
+    },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    PAApi: {
+      get: async (path) => {
+        env.gets.set(path, (env.gets.get(path) || 0) + 1);
+        if (path === "/api/identity") return { data: IDENTITY };
+        if (path === "/api/status") return { data: { ...env.status } };
+        if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(env.outputs) } };
+        if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
+        throw new Error(`unexpected request ${path}`);
+      },
+      postForm: async (path, form) => {
+        env.posts.push({ path, form: { ...form } });
+        if (path === "/api/servo") {
+          if (env.nudgeFails) {
+            const error = env.nudgeFails;
+            env.nudgeFails = null;
+            throw error;
+          }
+          // The firmware queues the nudge and answers at once; the nudge
+          // itself ends later, when the test bumps nudgesDone.
+          return { ok: true, status: 200, data: { ok: true } };
+        }
+        if (path === "/api/config") {
+          // The firmware's move: off whatever Output had the Part, onto the
+          // one named.
+          env.outputs.forEach((each) => {
+            each.parts = each.parts.filter((id) => id !== form.movePart);
+          });
+          env.outputs.find((each) => each.address === form.movePartTo)?.parts.push(form.movePart);
+          return { ok: true, status: 200, data: {} };
+        }
+        throw new Error(`unexpected POST ${path}`);
+      },
+      estopPostForm: async (path) => {
+        env.posts.push({ path, form: {} });
+        return { data: { ok: true } };
+      },
+      messageFor: (error) => error.message,
+      // The shipped shape (data/web_api.js): disabled plus aria-disabled, which
+      // is what the shell's ignored-input notice looks for on a press.
+      gateControls: (elements, enabled) => {
+        elements.forEach((el) => {
+          if (!el) return;
+          el.disabled = !enabled;
+          el.setAttribute("aria-disabled", enabled ? "false" : "true");
+        });
+      },
+    },
+    PAUtils: {
+      escapeHtml: (value) => String(value),
+      showFeedback: (el, text, level = "") => {
+        if (!el) return;
+        el.textContent = text;
+        el.className = level ? `feedback ${level}` : "feedback";
+      },
+    },
+  };
+
+  class FakeEvent {
+    constructor(type) {
+      this.type = type;
+    }
+  }
+  class FakeCustomEvent extends FakeEvent {
+    constructor(type, opts = {}) {
+      super(type);
+      this.detail = opts.detail;
+    }
+  }
+
+  const context = {
+    window: windowMock,
+    document,
+    console: { warn: () => {}, log: () => {}, error: () => {} },
+    AbortController,
+    Date,
+    JSON,
+    Object,
+    Array,
+    Set,
+    Map,
+    String,
+    Number,
+    Boolean,
+    Promise,
+    Error,
+    Math,
+    Event: FakeEvent,
+    CustomEvent: FakeCustomEvent,
+    DOMParser: class {
+      parseFromString(html, type) {
+        return new MiniDOMParser().parseFromString(html, type);
+      }
+    },
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  };
+  context.globalThis = context;
+
+  const REAL_SCRIPTS = {
+    "/shell.js": readData("shell.js"),
+    "/status_stream.js": readData("status_stream.js"),
+    "/droid_parts.js": readData("droid_parts.js"),
+    "/droid_part_kind.js": readData("droid_part_kind.js"),
+    "/parts.js": readData("parts.js"),
+  };
+  document.onAttach = (node) => {
+    if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
+    const src = node.src;
+    setTimeout(() => {
+      if (REAL_SCRIPTS[src]) vm.runInNewContext(REAL_SCRIPTS[src], context, { filename: src });
+      node.onload?.();
+    }, 2).unref?.();
+  };
+
+  vm.runInNewContext(part1Src, context, { filename: "page_bootstrap.part1.js" });
+  vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
+  env.window = windowMock;
+
+  env.partsRegion = () => document.getElementById("parts-table");
+  env.partRow = (id) => env.partsRegion().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
+  env.findButton = (id) => env.partRow(id).querySelector(".parts-find");
+  env.runPanel = () => document.querySelector(".parts-find-run");
+  env.runText = () => env.runPanel()?.querySelector(".parts-find-text")?.textContent ?? null;
+  env.feedback = () => document.getElementById("parts-feedback").textContent;
+  env.region = () => document.getElementById("outputs-table");
+  env.rows = () => env.region().querySelectorAll("[data-output]");
+  env.row = (address) => env.rows().find((node) => node.dataset.output === address);
+  env.cell = (address, className) => env.row(address).querySelector(`.${className}`);
+  env.text = (address, className) => env.cell(address, className).textContent;
+  env.nudges = () => env.posts.filter((post) => post.path === "/api/servo");
+  env.moves = () => env.posts.filter((post) => post.path === "/api/config");
+  // The builder presses the row's Find by moving button: the click reaches
+  // the table's delegated handler the way a real one does.
+  env.pressFind = (id) => env.partsRegion().fire("click", { target: env.findButton(id) });
+  env.pressThatOne = () => env.runPanel().querySelector(".parts-find-that").fire("click", {});
+  env.pressStop = () => env.runPanel().querySelector(".parts-find-stop").fire("click", {});
+  // One tick of the page's own bench feed: the poll refreshes when the page
+  // becomes visible again, which runs exactly the attempt its interval runs.
+  env.frame = async () => {
+    document.dispatch("visibilitychange", { type: "visibilitychange" });
+    await sleep(20);
+  };
+  // The droid says a nudge on this Output has ended, however it ended.
+  env.endNudge = (address) => {
+    env.outputs.find((each) => each.address === address).nudgesDone += 1;
+  };
+  // A status frame on the shared stream, the way /api/events delivers one.
+  env.pushStatus = (frame) => windowMock.PAStatusStream.seed({ ...frame });
+  env.navigate = (to) => {
+    windowMock.location.hash = to;
+  };
+
+  windowMock.location.hash = "#parts";
+  const deadline = Date.now() + 3000;
+  while (!(env.region() && env.rows().length > 0 && env.partsRegion()?.querySelector("select")?.disabled === false)) {
+    if (Date.now() > deadline) assert.fail("the Parts surface never mounted and painted its rows");
+    await sleep(5);
+  }
+  // The shell's own status read has landed and been handed to the stream by
+  // now, so the Find by moving buttons have been gated once.
+  await sleep(30);
+
+  // A browser's <dialog>; mini_dom has none.
+  const dialog = document.getElementById("parts-move-dialog");
+  dialog.open = false;
+  dialog.showModal = () => {
+    dialog.open = true;
+  };
+  dialog.close = () => {
+    dialog.open = false;
+  };
+  env.dialog = dialog;
+  return env;
+};
