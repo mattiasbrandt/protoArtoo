@@ -925,16 +925,35 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 // not in it keeps what the row had. That is the partial-edit door
 // servoOutputRowNormalise() describes, given a shape a pure caller can fill.
 //
-// It carries captures too, marked by `capture` -- one door onto a row, not two
-// (#364). What differs is only what a capture means: one position, recorded
-// because the builder drove the part there, so the row becomes measured and a
-// swallowed centre follows the ends.
+// It carries every act on a row, not only a typed value -- one door, not three
+// (#364). `kind` says which act, and that is the whole difference between them.
 //
 // It exists because the Apply Core for POST /api/config is pure and cannot
 // reach the live table (ADR 0011): it validates a builder's numbers and records
 // them here, and the Commit Step applies them. Nothing stores an endpoint on
 // the way -- the row is the only place one lives (#345).
 // -----------------------------------------------------------------------------
+// What kind of act one edit is. Three things can happen to a row's widths and
+// they mean different things, so the door is told which rather than guessing
+// from the fields that came with it (#364).
+enum ServoOutputEditKind : uint8_t {
+    // Somebody typed numbers into a form. The row records them and claims
+    // nothing about anybody having measured the part.
+    SERVO_EDIT_TYPED = 0,
+    // The dial was standing at a width the servo was holding and the builder
+    // pressed Set MIN / Set CENTER / Set MAX. Exactly one of SERVO_FIELD_OPEN /
+    // _CENTRE / _CLOSE is named, it goes through servoOutputCapture(), and the
+    // row is marked measured. That is the difference between a number somebody
+    // entered and a position somebody drove a part to.
+    SERVO_EDIT_CAPTURE,
+    // The builder ticked `reverse`: the linkage runs the other way, so the two
+    // ends trade places. No width travels with it, which is the point -- the
+    // swap is made on the row from what the row holds, so a page working from a
+    // second-old copy of the pair cannot write a stale number back, and a
+    // reverse can never be a way to type one.
+    SERVO_EDIT_REVERSE,
+};
+
 struct ServoOutputEdit {
     ServoOutputDriver driver;      // Output Address, half one
     uint8_t channel;               // Output Address, half two
@@ -943,14 +962,7 @@ struct ServoOutputEdit {
     uint16_t centre_us;            // captures only; a typed edit never names it
     uint16_t close_us;
     ServoComponentType component;
-    // A capture, not a typed value (#364). The dial is standing at a width the
-    // servo is holding and the builder has pressed Set MIN / Set CENTER /
-    // Set MAX, so exactly one of SERVO_FIELD_OPEN / _CENTRE / _CLOSE is named,
-    // it goes through servoOutputCapture(), and the row is marked measured. A
-    // form POST typing two numbers into a page is not that and never sets it:
-    // that is the difference between a number somebody entered and a position
-    // somebody drove a part to.
-    bool capture;
+    ServoOutputEditKind kind;
 };
 
 // -----------------------------------------------------------------------------
@@ -986,7 +998,20 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     // with it: naming what is fitted is a separate act, and settling a new
     // component here would change the band the captured width is clamped into
     // in the same breath as recording it.
-    if (edit.capture) {
+    // Reverse is a swap of the pair and nothing else. It is not a capture: a
+    // builder saying which way the linkage runs has not measured anything, and
+    // it must not claim they have. The centre does not move -- swapping the two
+    // ends does not change the travel between them -- and every consumer that
+    // wants an ordering still takes servoOutputLowUs() / servoOutputHighUs(),
+    // so there is still no invert flag anywhere (ADR 0041).
+    if (edit.kind == SERVO_EDIT_REVERSE) {
+        const uint16_t wasOpen = row->open_us;
+        row->open_us = row->close_us;
+        row->close_us = wasOpen;
+        return servoOutputRowNormalise(row, before);
+    }
+
+    if (edit.kind == SERVO_EDIT_CAPTURE) {
         ServoOutputEnd end = SERVO_END_CENTRE;
         uint16_t pulseUs = edit.centre_us;
         if ((edit.fields & SERVO_FIELD_OPEN) != 0) {

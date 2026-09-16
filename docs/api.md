@@ -1397,6 +1397,16 @@ Updates supported config fields and persists to NVS.
   shape error is `400` `{"ok":false,"error":"captureOutput, captureEnd and
   captureUs must be sent together: an Output Address, one of open/centre/close,
   and a width 500..2500"}`.
+- servo reverse (ADR 0041): `reverseOutput` — an Output Address, and nothing
+  else. The linkage runs the other way, so the Output's two ends trade places.
+  **No widths travel with it**: the swap is made on the row from what the row
+  holds, so a surface working from a second-old copy of the pair cannot write a
+  stale number back, and a reverse can never be a way to type one. It records
+  no measurement — a builder saying which way a linkage runs has not measured
+  anything — and `centreUs` does not move, because swapping the ends does not
+  change the travel between them. Sending it again is a real undo: the stored
+  state **is** the pair, and there is no invert flag anywhere. A bad address is
+  `400` `{"ok":false,"error":"reverseOutput must be an Output Address"}`.
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
 - Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent

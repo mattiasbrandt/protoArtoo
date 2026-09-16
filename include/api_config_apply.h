@@ -68,10 +68,10 @@ struct ConfigAppliedFields {
 // One entry per Output Address the request named, so a POST that carries one
 // arm changes one row. `count` is zero on a request that named none.
 // The five legacy field sets can each produce one edit, and a request may carry
-// one capture besides (#364) -- addressed at any Output, including a row the
-// five names cannot reach. Hence the + 1.
+// a capture and a reverse besides (#364) -- each addressed at any Output,
+// including a row the five names cannot reach. Hence the + 2.
 struct ConfigServoOutputEdits {
-    ServoOutputEdit edits[SERVO_LEGACY_FIELD_SET_COUNT + 1];
+    ServoOutputEdit edits[SERVO_LEGACY_FIELD_SET_COUNT + 2];
     size_t count = 0;
 };
 

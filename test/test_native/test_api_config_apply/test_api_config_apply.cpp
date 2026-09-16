@@ -203,7 +203,7 @@ void test_configApply_capture_becomes_one_addressed_capture_edit(void) {
     TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
 
     const ServoOutputEdit& edit = result.servoOutputs.edits[0];
-    TEST_ASSERT_TRUE(edit.capture);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EDIT_CAPTURE, edit.kind);
     TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, edit.driver);
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, edit.channel);
     TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_OPEN, edit.fields);
@@ -281,10 +281,33 @@ void test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit(void) {
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
     TEST_ASSERT_EQUAL_size_t(2, result.servoOutputs.count);
-    TEST_ASSERT_FALSE(result.servoOutputs.edits[0].capture);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EDIT_TYPED, result.servoOutputs.edits[0].kind);
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, result.servoOutputs.edits[0].channel);
-    TEST_ASSERT_TRUE(result.servoOutputs.edits[1].capture);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EDIT_CAPTURE, result.servoOutputs.edits[1].kind);
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, result.servoOutputs.edits[1].channel);
+}
+
+// Reverse (#364): one Output Address, no widths. A page cannot write a stale
+// pair back through it, and it cannot be used to type a number.
+void test_configApply_reverse_is_one_addressed_act_with_no_widths(void) {
+    std::map<std::string, std::string> m = {{"reverseOutput", "ledc:1"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EDIT_REVERSE, result.servoOutputs.edits[0].kind);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, result.servoOutputs.edits[0].channel);
+    TEST_ASSERT_EQUAL_UINT16(0, result.servoOutputs.edits[0].fields);
+}
+
+void test_configApply_reverse_at_a_non_address_is_refused(void) {
+    std::map<std::string, std::string> m = {{"reverseOutput", "none"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
 }
 
 // --- cross-field rules ---
@@ -587,6 +610,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_a_capture_outside_what_a_servo_takes_is_refused);
     RUN_TEST(test_configApply_an_unknown_captured_end_is_refused);
     RUN_TEST(test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit);
+    RUN_TEST(test_configApply_reverse_is_one_addressed_act_with_no_widths);
+    RUN_TEST(test_configApply_reverse_at_a_non_address_is_refused);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
     RUN_TEST(test_configApply_speedLimitMax_derives_from_active_preset_when_omitted);
     RUN_TEST(test_configApply_speedLimitMax_resolves_matching_preset);

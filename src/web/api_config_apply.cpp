@@ -825,7 +825,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                      "Address, one of open/centre/close, and a width 500..2500");
             return;
         }
-        capture.capture = true;
+        capture.kind = SERVO_EDIT_CAPTURE;
         switch (end) {
             case SERVO_END_OPEN:
                 capture.fields = SERVO_FIELD_OPEN;
@@ -844,6 +844,25 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         result->servoOutputs.edits[result->servoOutputs.count++] = capture;
         appendApplied(&result->applied, "[CFG] capture %s %s at %u us", address,
                       configParamGet(params, "captureEnd"), (unsigned)capturedUs);
+        result->changed = true;
+    }
+
+    // Reverse (#364, ADR 0041): the builder has ticked `reverse` on the dial,
+    // saying the linkage runs the other way. One Output Address and nothing
+    // else -- no width travels with it, so a page working from a second-old
+    // copy of the pair cannot write a stale number back, and the swap is made
+    // on the row from what the row holds.
+    if (configParamHas(params, "reverseOutput")) {
+        ServoOutputEdit reverse = {};
+        const char* address = configParamGet(params, "reverseOutput");
+        if (address == nullptr ||
+            !servoOutputParseAddress(address, &reverse.driver, &reverse.channel)) {
+            setError(result, "reverseOutput must be an Output Address");
+            return;
+        }
+        reverse.kind = SERVO_EDIT_REVERSE;
+        result->servoOutputs.edits[result->servoOutputs.count++] = reverse;
+        appendApplied(&result->applied, "[CFG] reverse %s", address);
         result->changed = true;
     }
 

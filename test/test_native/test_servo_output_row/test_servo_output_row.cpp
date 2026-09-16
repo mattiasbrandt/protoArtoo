@@ -245,7 +245,7 @@ void test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag(
     capture.channel = row.channel;
     capture.fields = SERVO_FIELD_CLOSE;
     capture.close_us = 1600;
-    capture.capture = true;
+    capture.kind = SERVO_EDIT_CAPTURE;
 
     const uint16_t repaired = servoOutputApplyEdit(&row, capture);
 
@@ -256,6 +256,52 @@ void test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag(
     // The boot behaviour is untouched: calibrating must never be the act that
     // makes a panel move at power-up.
     TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+}
+
+// Reverse swaps the two ends and claims nothing else. It is not a capture: a
+// builder saying which way the linkage runs has not measured anything.
+void test_reverse_swaps_the_pair_and_measures_nothing() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 1900;
+    row.close_us = 1100;
+    row.centre_us = 1500;
+
+    ServoOutputEdit reverse = {};
+    reverse.driver = row.driver;
+    reverse.channel = row.channel;
+    reverse.kind = SERVO_EDIT_REVERSE;
+    servoOutputApplyEdit(&row, reverse);
+
+    TEST_ASSERT_EQUAL_UINT16(1100, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.close_us);
+    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
+    // The travel between the ends is the same span, so the centre does not move.
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+    TEST_ASSERT_FALSE(row.calibrated);
+
+    // Unticking it is a real undo with no bookkeeping: reverse again and the
+    // pair is exactly what it was, because the state IS the pair.
+    servoOutputApplyEdit(&row, reverse);
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+    TEST_ASSERT_FALSE(servoOutputIsReversed(row));
+}
+
+// A reverse never carries a width, so it cannot put one on the row even when a
+// caller fills the fields it does not read.
+void test_reverse_ignores_any_width_that_rides_with_it() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit reverse = {};
+    reverse.driver = row.driver;
+    reverse.channel = row.channel;
+    reverse.kind = SERVO_EDIT_REVERSE;
+    reverse.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    reverse.open_us = 1234;
+    reverse.close_us = 1777;
+    servoOutputApplyEdit(&row, reverse);
+
+    TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);   // the defaults, swapped
+    TEST_ASSERT_EQUAL_UINT16(2000, row.close_us);
 }
 
 // The same door, not a capture: two typed numbers record widths and claim
@@ -1049,6 +1095,8 @@ int main(int, char**) {
     RUN_TEST(test_the_drag_follows_a_reversed_pair_the_same_way_round);
     RUN_TEST(test_capturing_the_centre_never_drags_anything);
     RUN_TEST(test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag);
+    RUN_TEST(test_reverse_swaps_the_pair_and_measures_nothing);
+    RUN_TEST(test_reverse_ignores_any_width_that_rides_with_it);
     RUN_TEST(test_a_typed_edit_through_the_same_door_is_not_a_capture);
 
     RUN_TEST(test_an_unreadable_record_takes_the_safe_defaults_and_reports);
