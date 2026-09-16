@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup - artoo</title>
+  <link rel="stylesheet" href="anatomy.css">
+  <!-- #398 mockup: guided Setup as a takeover inside the Operator Shell
+       (CONTEXT.md "Setup", "Activity Group"). The chrome stays - the estop is
+       on every screen - and the nav rail's column carries the run's own rail,
+       the answered questions and nothing else. One question step with picture
+       cards and its consequence line; press "Finish with these answers" (or
+       open setup.html#receipt) for the finish receipt. Opens from a file;
+       talks to nothing. Products are the Component Registry's; the drawings
+       are the legacy asset set's (ADR 0065); the answers are fictional. -->
+</head>
+<body data-page="setup">
+  <script>window.PA_STATE = { page: "setup", build: "MrBaddeley MK4" };</script>
+  <!-- The legacy asset set's drawings for the Sound family, from
+       data/asset-sets/legacy/_product_art.html, one hand across the set. The
+       sprite's own `var(--pa-art-bg,#0c1525)` fallbacks are pointed at this
+       stylesheet's --well so no colour literal rides in. -->
+  <svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+    <defs>
+      <g id="art-chip" fill="none" stroke="currentColor" stroke-width="1.15">
+        <rect x="0" y="0" width="34" height="22" rx="2"/>
+        <circle cx="5" cy="5" r="1.6" fill="currentColor" stroke="none" opacity=".6"/>
+        <path d="M6 0v-3M14 0v-3M22 0v-3M30 0v-3M6 22v3M14 22v3M22 22v3M30 22v3" opacity=".7"/>
+      </g>
+    </defs>
+    <symbol id="art-dy_sv5w" viewBox="0 0 400 300">
+      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="62" y="40" width="276" height="220" rx="5" stroke-width="2.4"/>
+        <g stroke-width="1.15">
+          <circle cx="78" cy="56" r="5"/><circle cx="322" cy="56" r="5"/>
+          <circle cx="78" cy="244" r="5"/><circle cx="322" cy="244" r="5"/>
+        </g>
+        <rect x="48" y="96" width="26" height="24" rx="3" stroke-width="1.6" fill="var(--well)"/>
+        <rect x="104" y="70" width="36" height="36" rx="2" stroke-width="1.6"/>
+        <circle cx="122" cy="88" r="11" stroke-width="1.15"/>
+        <path d="M114 88h16M122 80v16" stroke-width=".9" opacity=".6"/>
+        <circle cx="172" cy="90" r="18" stroke-width="1.6"/>
+        <path d="M158 82a18 18 0 0 0 28 0" stroke-width=".9" opacity=".5"/>
+        <rect x="212" y="64" width="52" height="34" rx="2" stroke-width="1.6"/>
+        <circle cx="226" cy="81" r="5" stroke-width="1.15"/><circle cx="250" cy="81" r="5" stroke-width="1.15"/>
+        <rect x="228" y="112" width="98" height="70" rx="2" stroke-width="1.6"/>
+        <path d="M236 182v-70M318 182v-70" stroke-width=".7" opacity=".4"/>
+        <use href="#art-chip" x="126" y="150"/>
+        <rect x="232" y="198" width="66" height="38" rx="2" stroke-width="1.6"/>
+        <g fill="currentColor" stroke="none" opacity=".55">
+          <rect x="242" y="208" width="10" height="18"/><rect x="258" y="208" width="10" height="18"/>
+          <rect x="274" y="208" width="10" height="18"/>
+        </g>
+        <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="6.5" opacity=".6">
+          <text x="232" y="248">ON 1 2 3</text>
+          <text x="82" y="140">DY-SV5W</text>
+        </g>
+        <g fill="currentColor" stroke="none" opacity=".5">
+          <rect x="72" y="160" width="5" height="5"/><rect x="72" y="176" width="5" height="5"/>
+          <rect x="72" y="192" width="5" height="5"/><rect x="72" y="208" width="5" height="5"/>
+          <rect x="72" y="224" width="5" height="5"/>
+          <rect x="96" y="238" width="5" height="5"/><rect x="112" y="238" width="5" height="5"/>
+          <rect x="128" y="238" width="5" height="5"/><rect x="144" y="238" width="5" height="5"/>
+          <rect x="160" y="238" width="5" height="5"/><rect x="176" y="238" width="5" height="5"/>
+        </g>
+      </g>
+    </symbol>
+    <symbol id="art-mp3_trigger" viewBox="0 0 400 300">
+      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="62" y="40" width="276" height="220" rx="5" stroke-width="2.4"/>
+        <g stroke-width="1.15">
+          <circle cx="78" cy="56" r="5"/><circle cx="322" cy="56" r="5"/>
+          <circle cx="78" cy="244" r="5"/><circle cx="322" cy="244" r="5"/>
+        </g>
+        <g fill="currentColor" stroke="none" opacity=".55">
+          <circle cx="98" cy="76" r="4"/><circle cx="114" cy="76" r="4"/>
+          <circle cx="98" cy="96" r="4"/><circle cx="114" cy="96" r="4"/>
+          <circle cx="98" cy="116" r="4"/><circle cx="114" cy="116" r="4"/>
+          <circle cx="98" cy="136" r="4"/><circle cx="114" cy="136" r="4"/>
+          <circle cx="98" cy="156" r="4"/><circle cx="114" cy="156" r="4"/>
+          <circle cx="98" cy="176" r="4"/><circle cx="114" cy="176" r="4"/>
+          <circle cx="98" cy="196" r="4"/><circle cx="114" cy="196" r="4"/>
+          <circle cx="98" cy="216" r="4"/><circle cx="114" cy="216" r="4"/>
+        </g>
+        <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+          <text x="188" y="76" font-size="11">MP3 Trigger</text>
+          <text x="188" y="88" font-size="6.5">robertsonics</text>
+        </g>
+        <rect x="238" y="100" width="88" height="60" rx="2" stroke-width="1.6"/>
+        <path d="M246 160v-60M318 160v-60" stroke-width=".7" opacity=".4"/>
+        <use href="#art-chip" x="150" y="120"/>
+        <use href="#art-chip" x="150" y="160"/>
+        <rect x="94" y="196" width="52" height="40" rx="3" stroke-width="1.6"/>
+        <circle cx="120" cy="216" r="10" stroke-width="1.4"/>
+        <circle cx="120" cy="216" r="4" fill="currentColor" stroke="none" opacity=".55"/>
+        <rect x="240" y="200" width="56" height="36" rx="3" stroke-width="1.6"/>
+        <circle cx="296" cy="218" r="9" stroke-width="1.6" fill="var(--well)"/>
+      </g>
+    </symbol>
+    <symbol id="art-chirp" viewBox="0 0 400 300">
+      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="58" y="40" width="284" height="220" rx="5" stroke-width="2.4"/>
+        <g stroke-width="1.15">
+          <circle cx="74" cy="56" r="5"/><circle cx="326" cy="56" r="5"/>
+          <circle cx="74" cy="244" r="5"/><circle cx="326" cy="244" r="5"/>
+        </g>
+        <g stroke-width="1.6">
+          <circle cx="100" cy="76" r="10"/><circle cx="128" cy="76" r="10"/><circle cx="156" cy="76" r="10"/>
+        </g>
+        <g fill="currentColor" stroke="none" opacity=".5">
+          <circle cx="100" cy="76" r="4"/><circle cx="128" cy="76" r="4"/><circle cx="156" cy="76" r="4"/>
+        </g>
+        <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" opacity=".65">
+          <text x="90" y="112" font-size="15">CHIRP</text>
+          <text x="90" y="124" font-size="6.5">AUDIO TRIGGER</text>
+          <text x="272" y="70" font-size="6.5">POWER</text>
+        </g>
+        <rect x="196" y="44" width="92" height="56" rx="2" stroke-width="1.6"/>
+        <path d="M204 100v-48M280 100v-48" stroke-width=".7" opacity=".4"/>
+        <circle cx="302" cy="66" r="4" fill="currentColor" stroke="none" opacity=".55"/>
+        <rect x="292" y="112" width="50" height="40" rx="3" stroke-width="1.6"/>
+        <circle cx="342" cy="132" r="10" stroke-width="1.6" fill="var(--well)"/>
+        <rect x="44" y="132" width="24" height="34" rx="5" stroke-width="1.6" fill="var(--well)"/>
+        <circle cx="204" cy="132" r="7" stroke-width="1.4"/>
+        <use href="#art-chip" x="112" y="160"/>
+        <use href="#art-chip" x="196" y="176"/>
+        <g stroke-width="1.4">
+          <circle cx="104" cy="230" r="7"/><circle cx="130" cy="230" r="7"/>
+        </g>
+        <rect x="80" y="196" width="34" height="14" rx="2" stroke-width="1.15"/>
+        <rect x="248" y="216" width="66" height="24" rx="2" stroke-width="1.4"/>
+        <g fill="currentColor" stroke="none" opacity=".55">
+          <rect x="258" y="226" width="5" height="5"/><rect x="272" y="226" width="5" height="5"/>
+          <rect x="286" y="226" width="5" height="5"/><rect x="300" y="226" width="5" height="5"/>
+        </g>
+      </g>
+    </symbol>
+    <symbol id="art-dfplayer_mini" viewBox="0 0 400 300">
+      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="108" y="46" width="184" height="208" rx="4" stroke-width="2.4"/>
+        <g fill="currentColor" stroke="none" font-family="ui-monospace,monospace" font-size="9" opacity=".65">
+          <text x="136" y="72">DFPlayer Mini</text>
+        </g>
+        <rect x="132" y="84" width="136" height="146" rx="3" stroke-width="1.6"/>
+        <path d="M132 100h136M252 230v-24h16" stroke-width=".9" opacity=".5"/>
+        <g fill="currentColor" stroke="none" opacity=".55">
+          <circle cx="118" cy="92" r="4"/><circle cx="118" cy="112" r="4"/>
+          <circle cx="118" cy="132" r="4"/><circle cx="118" cy="152" r="4"/>
+          <circle cx="118" cy="172" r="4"/><circle cx="118" cy="192" r="4"/>
+          <circle cx="118" cy="212" r="4"/><circle cx="118" cy="232" r="4"/>
+          <circle cx="282" cy="92" r="4"/><circle cx="282" cy="112" r="4"/>
+          <circle cx="282" cy="132" r="4"/><circle cx="282" cy="152" r="4"/>
+          <circle cx="282" cy="172" r="4"/><circle cx="282" cy="192" r="4"/>
+          <circle cx="282" cy="212" r="4"/><circle cx="282" cy="232" r="4"/>
+        </g>
+      </g>
+    </symbol>
+  </svg>
+
+  <header id="shell-top"></header>
+
+  <div class="frame">
+    <!-- The run's own rail in the nav's column: the questions, numbered because
+         they are a sequence, each with its state. Nothing else lives here. -->
+    <aside class="steps" aria-label="Setup questions">
+      <p class="steps-head">Guided Setup<small>one pass · 9 questions</small></p>
+      <a class="step done" href="#"><span class="n">01</span><span>Connect to WiFi</span><span class="state">answered · workshop</span></a>
+      <a class="step done" href="#"><span class="n">–</span><span>Body Controller</span><span class="state">identified, not asked · Artoo PCB</span></a>
+      <a class="step done" href="#"><span class="n">02</span><span>Droid Build</span><span class="state">answered · MK4, complex and complex</span></a>
+      <a class="step done" href="#"><span class="n">03</span><span>Foot Drive</span><span class="state">answered · Hoverboard</span></a>
+      <a class="step done" href="#"><span class="n">04</span><span>Dome Rotation</span><span class="state">answered · ISDT ESC70</span></a>
+      <a class="step done" href="#"><span class="n">05</span><span>Dome Controller</span><span class="state">answered · AstroPixels Plus</span></a>
+      <a class="step done" href="#"><span class="n">06</span><span>Body servo controller</span><span class="state">answered · ESP32 GPIO</span></a>
+      <a class="step" href="#"><span class="n">07</span><span>Radio Controller</span><span class="state">skipped · stays dual SBUS</span></a>
+      <a class="step" href="#" id="step-sound" aria-current="step"><span class="n">08</span><span>Sound</span><span class="state">this question</span></a>
+      <a class="step" href="#" id="step-name"><span class="n">09</span><span>Name this droid</span><span class="state">not yet</span></a>
+      <p class="rail-foot">Every question can be skipped.<br>Finishing ends the run and Setup leaves the nav.</p>
+    </aside>
+
+    <main>
+      <!-- View 1: the question step. Title, then the question it answers, then two sentences (pattern 3). -->
+      <div id="view-question" class="view">
+        <div class="title">
+          <div>
+            <h1>Set your droid up · Sound</h1>
+            <p class="question">Where does the droid get its voice?</p>
+          </div>
+        </div>
+        <p class="prose">Pick the module on the sound lead. Your sounds stay on its card; this tells the body how to ask for them.</p>
+
+        <div class="panel">
+          <div class="sect"><h2>Sound modules</h2><span class="sub">Component Registry · 3 supported · 1 roadmap</span></div>
+          <!-- Pattern 4: a picture, a name, a pill, one or two sentences. A drawing
+               is "the kind of thing"; it inherits the card's colour. -->
+          <div class="cards" role="group" aria-label="Sound module">
+            <button class="card" type="button" aria-pressed="false">
+              <div class="card-art"><svg aria-hidden="true"><use href="#art-dy_sv5w"/></svg></div>
+              <span class="pill">supported</span>
+              <h3>DY-SV5W</h3>
+              <p>Plays numbered tracks off a microSD card over one serial lead. Can be asked what it is, how many tracks it has and what is playing.</p>
+            </button>
+            <button class="card" type="button" aria-pressed="false">
+              <div class="card-art"><svg aria-hidden="true"><use href="#art-mp3_trigger"/></svg></div>
+              <span class="pill">supported</span>
+              <h3>MP3 Trigger</h3>
+              <p>Robertsonics' board with the trigger pads down one edge. Plays by number and says what is playing.</p>
+            </button>
+            <button class="card" type="button" aria-pressed="true">
+              <div class="card-art"><svg aria-hidden="true"><use href="#art-chirp"/></svg></div>
+              <span class="pill pill-blue">fitted</span>
+              <h3>CHIRP Audio Trigger</h3>
+              <p>Names its tracks, so Sound lists them by name and a mood picks from a list rather than a number.</p>
+            </button>
+            <!-- Settled no (#327): inert, dimmed, no destination, no date. -->
+            <article class="card card-settled" aria-disabled="true">
+              <div class="card-art"><svg aria-hidden="true"><use href="#art-dfplayer_mini"/></svg></div>
+              <span class="pill">roadmap</span>
+              <h3>DFPlayer Mini</h3>
+              <p>Not built yet. Nothing to do here.</p>
+            </article>
+            <button class="card card-text" type="button" aria-pressed="false">
+              <span class="pill">your answer</span>
+              <h3>No sound module</h3>
+              <p>Sequences still run start to finish, in silence, and the sound lead stays free.</p>
+            </button>
+          </div>
+          <!-- The consequence line sits under the choice (pattern 4). -->
+          <div class="note note-info consequence">
+            <b>This picks which module the body talks to, not which sounds it has.</b> Those stay on the module's card. Takes effect after the controller restarts; the finish step says when.
+          </div>
+          <div class="wizard-acts">
+            <button class="btn btn-quiet" type="button"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</button>
+            <span class="count">Question 8 of 9</span>
+            <span class="spacer"></span>
+            <button class="btn btn-quiet" type="button">Skip this question</button>
+            <button class="btn btn-quiet" type="button" data-show="receipt">Finish with these answers</button>
+            <button class="btn btn-primary" type="button">Continue<svg class="i" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+          </div>
+          <p class="feedback">CHIRP Audio Trigger kept as the answer. Nothing restarts until you say so at the end.</p>
+        </div>
+      </div>
+
+      <!-- View 2: the finish receipt. The run ends by saying what it changed -
+           the answers given and the concrete effect of each, with the
+           destinations now reachable - not with a farewell (CONTEXT.md "Setup"). -->
+      <div id="view-receipt" class="view" hidden>
+        <div class="title">
+          <div>
+            <h1>Here is what you told the droid</h1>
+            <p class="question">Nine questions, eight answered, one skipped. Each answer says what it changed and where it is changed from now on.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="sect"><h2>Answers</h2><span class="sub">8 answered · 1 skipped · 3 wait for a restart</span></div>
+          <div class="receipt">
+            <div><span class="q">Connect to WiFi<small>01</small></span><span class="a"><b>workshop</b><span class="effect">Joins it at the next restart, as artoo.local. Change it on WiFi.</span></span></div>
+            <div><span class="q">Body Controller<small>identified</small></span><span class="a"><b>Artoo PCB (artoo.uk)</b><span class="effect">Read from the running image, not a setting. Five body outputs, ARM1 to AUX3.</span></span></div>
+            <div><span class="q">Droid Build<small>02</small></span><span class="a"><b>MrBaddeley MK4 · complex dome · complex body</b><span class="effect">46 parts seeded as fitted. Fit or drop a part on <a href="parts.html">Parts</a>.</span></span></div>
+            <div><span class="q">Foot Drive<small>03</small></span><span class="a"><b>Hoverboard, hacked firmware</b><span class="effect">Drives the feet over the drive lane after a restart. Arm it on Foot Drive.</span></span></div>
+            <div><span class="q">Dome Rotation<small>04</small></span><span class="a"><b>ISDT ESC70 (RC ESC)</b><span class="effect">Turns the dome. Set how fast on Dome.</span></span></div>
+            <div><span class="q">Dome Controller<small>05</small></span><span class="a"><b>AstroPixels Plus</b><span class="effect">Panel and light cues go up over protoR2link. Dome panels open from Dashboard and Dome.</span></span></div>
+            <div><span class="q">Body servo controller<small>06</small></span><span class="a"><b>ESP32 GPIO (LEDC)</b><span class="effect">The body's own five outputs. Say what each one moves on <a href="parts.html">Parts</a>.</span></span></div>
+            <div><span class="q">Radio Controller<small>07</small></span><span class="a"><b>Skipped</b><span class="effect">The receiver stays as it was: dual SBUS. Change it on Configuration.</span></span></div>
+            <div><span class="q">Sound<small>08</small></span><span class="a"><b>CHIRP Audio Trigger</b><span class="effect">Tracks list by name on Sound after a restart.</span></span></div>
+            <div><span class="q">Name this droid<small>09</small></span><span class="a"><b>artoo</b><span class="effect">On every screen, and the network name: artoo.local.</span></span></div>
+          </div>
+          <div class="note note-act consequence">
+            <b>Three answers wait for a restart:</b> WiFi, Foot Drive and Sound. Restart now and they take effect in about ten seconds, or they take effect the next time the controller powers up.
+          </div>
+          <div class="wizard-acts">
+            <button class="btn btn-primary" type="button"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg>Restart the controller now</button>
+            <a class="btn" href="parts.html">Open Parts</a>
+            <button class="btn btn-quiet" type="button" data-show="question">Back to the questions</button>
+            <span class="spacer"></span>
+            <span class="hint">Setup leaves the nav now. Maintenance carries the deliberate way back.</span>
+          </div>
+          <p class="feedback">Saved on the droid. A second browser, or a cleared cache, meets the same answers.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="shell-status"></div>
+  <script src="chrome.js"></script>
+  <script>
+    // Two views in one file: the question step and the finish receipt.
+    // setup.html#receipt opens on the receipt so it can be screenshotted directly.
+    const show = (which) => {
+      document.getElementById("view-question").hidden = which === "receipt";
+      document.getElementById("view-receipt").hidden = which !== "receipt";
+      document.querySelectorAll(".step").forEach((s) => {
+        if (which === "receipt") { s.removeAttribute("aria-current"); s.classList.add("done"); }
+      });
+      if (which === "receipt") {
+        document.getElementById("step-name").querySelector(".state").textContent = "answered · artoo";
+        document.getElementById("step-sound").querySelector(".state").textContent = "answered · CHIRP Audio Trigger";
+      }
+    };
+    document.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => {
+      location.hash = b.dataset.show === "receipt" ? "#receipt" : "";
+      show(b.dataset.show);
+    }));
+    if (location.hash === "#receipt") show("receipt");
+  </script>
+</body>
+</html>
