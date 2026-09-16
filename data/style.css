@@ -302,9 +302,19 @@ h3 {
   outline-offset: 2px;
 }
 
-/* An icon from the sprite data/shell.js injects. It inherits the text colour
-   it sits in and always keeps its label beside it: an operator surface carries
-   no emoji and no unlabelled glyph (ADR 0066, docs/ui-copy-voice.md). */
+/* The icon sprite itself: a <symbol> library that is never painted, only
+   referenced. It is taken out of flow rather than hidden, because display:none
+   on the sprite makes every <use> in the document resolve to nothing. */
+svg.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* An icon from that sprite. It inherits the text colour it sits in and always
+   keeps its label beside it: an operator surface carries no emoji and no
+   unlabelled glyph (ADR 0066, docs/ui-copy-voice.md). */
 svg.i {
   width: 16px;
   height: 16px;
@@ -3067,11 +3077,17 @@ body[data-page="servo"] .input-narrow {
      and that is not this plate's decision to take. */
   position: relative;
   z-index: 1300;
+  /* The eight cells, then the compartment holding the plate's one freshness
+     statement. The statement is a sibling of the cells rather than a ninth one:
+     the eight positions are the contract, and nothing that is not a chip
+     belongs among them. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 1.4fr);
 }
 
 .status-plate {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(150px, 1.4fr);
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   align-items: stretch;
   min-height: var(--plate-h);
   min-width: 0;
@@ -3195,6 +3211,9 @@ body[data-page="servo"] .input-narrow {
   gap: 2px;
   padding: var(--space-sm) var(--space-md);
   min-width: 0;
+  /* The same seam the cells are divided by, so the compartment reads as part of
+     the plate rather than as something parked next to it. */
+  border-left: 1px solid var(--border);
 }
 
 .status-plate-region[data-freshness="finding-out"] .status-plate-freshness {
@@ -3222,6 +3241,7 @@ body[data-page="servo"] .input-narrow {
    fixed and a notice that pushed one aside would move the cell an operator
    reads by muscle memory. */
 .ignored-input-notice {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -3380,9 +3400,14 @@ body[data-page="servo"] .input-narrow {
     border-top: 0;
   }
 
+  .status-plate-region {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .status-plate-fresh {
-    grid-column: 1 / -1;
     padding: var(--space-2xs) var(--space-md);
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
 }
 
