@@ -22,7 +22,11 @@
 (() => {
   // The two Body Controllers. Every value is read from the tree, not composed:
   //   assetSet     platformio.ini:359 (legacy) and :522 (default)
-  //   label        data/setup.js:396-399, BOARD_LABELS
+  //   label        data/setup.js:396-399, BOARD_LABELS - what the shipped
+  //                surface calls the BOARD. It is not the product name's stem:
+  //                on artoo_esp32 the board is the "Artoo Controller" and the
+  //                product is the "Artoo PCB (artoo.uk)", and the switch is
+  //                choosing a board, so it takes the board's own word
   //   productId    data/setup.js:404-407, BOARD_PRODUCT_IDS - a board's
   //                pictures are filed under its Component Registry id, and for
   //                the Artoo PCB the two tokens differ
@@ -33,7 +37,7 @@
   const BOARDS = {
     artoo_esp32: {
       assetSet: "legacy",
-      label: "Artoo PCB",
+      label: "Artoo Controller",
       productId: "artoo_pcb",
       productName: "Artoo PCB (artoo.uk)",
     },

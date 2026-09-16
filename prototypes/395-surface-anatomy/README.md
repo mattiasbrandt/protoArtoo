@@ -206,6 +206,13 @@ lines under each option name the set and what it holds, so the control explains
 itself without a hover (`docs/ui-copy-voice.md` rule 12). The Codex study made
 the same disclaimer about its own query-string router.
 
+Each option is named with the **board's** own label, `Artoo Controller` and
+`FireBeetle 2` (`data/setup.js:396-399`), not with the product name's stem: on
+`artoo_esp32` the board is the *Artoo Controller* and the product fitted to it
+is the *Artoo PCB (artoo.uk)* (`include/component_registry.inc:106`). The switch
+chooses a board, so it takes the board's word; the Body Controller card, which
+names a product, takes the registry's.
+
 The state rides in the URL - `?board=firebeetle2` - and `board.js` carries it
 across the mockup's links, so walking from Setup to Parts does not quietly land
 back on the other board. A capture therefore has an address.
@@ -342,21 +349,21 @@ The same Setup surface, the switch flipped. Only the pictures, the Body
 Controller's name and the last sentence of the consequence line differ; the
 layout, the copy and the numbers are the same two renders.
 
-| Artoo PCB, the legacy set's drawings | FireBeetle 2, the default set's photographs |
+| Artoo Controller, the legacy set's drawings | FireBeetle 2, the default set's photographs |
 |---|---|
-| ![Setup on the Artoo PCB](mock-setup-1440.png) | ![Setup on the FireBeetle 2](mock-setup-firebeetle2-1440.png) |
+| ![Setup on the Artoo Controller](mock-setup-1440.png) | ![Setup on the FireBeetle 2](mock-setup-firebeetle2-1440.png) |
 
 Dashboard's identity plate, which names the board it is running on:
 
-| Artoo PCB | FireBeetle 2 |
+| Artoo Controller | FireBeetle 2 |
 |---|---|
-| ![Dashboard on the Artoo PCB](mock-dashboard-1440.png) | ![Dashboard on the FireBeetle 2](mock-dashboard-firebeetle2-1440.png) |
+| ![Dashboard on the Artoo Controller](mock-dashboard-1440.png) | ![Dashboard on the FireBeetle 2](mock-dashboard-firebeetle2-1440.png) |
 
 The Body Controller step, which is where the board picture lives:
 
-| Artoo PCB | FireBeetle 2 |
+| Artoo Controller | FireBeetle 2 |
 |---|---|
-| ![The Body Controller step on the Artoo PCB](mock-setup-board-1440.png) | ![The Body Controller step on the FireBeetle 2](mock-setup-board-firebeetle2-1440.png) |
+| ![The Body Controller step on the Artoo Controller](mock-setup-board-1440.png) | ![The Body Controller step on the FireBeetle 2](mock-setup-board-firebeetle2-1440.png) |
 
 The finish receipt differs by one line - the Body Controller's name - and is not
 captured twice for that.
