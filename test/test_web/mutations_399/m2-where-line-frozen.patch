@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index f6f423a4..4825d5ec 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -282,7 +282,7 @@
+     // The topbar's where-line, the nav and the browser title all read the same
+     // field, so they cannot say three different things about one screen (#288).
+     const where = document.getElementById("shell-where");
+-    if (where) where.textContent = surface.name;
++    if (where && where.textContent === "") where.textContent = surface.name;
+   };
+ 
+   // Layer 1 validation: ensure the identity manifest conforms to the expected shape
