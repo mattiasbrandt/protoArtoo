@@ -554,9 +554,13 @@ class Image:
         It is NOT monotone, and assuming it was is a mistake this comment used
         to carry: dropping an anchor lengthens the run before it, which can
         make instructions real that were not, and those name anchors of their
-        own. Two of the artoo-esp32 image's 7,019 bodies do not settle inside
-        `ANCHOR_ROUNDS`, both unsized pseudo-symbols; they return None here and
-        keep every edge.
+        own. One body in the artoo-esp32 image's 7,019 does not settle inside
+        `ANCHOR_ROUNDS` -- the unsized region objdump calls
+        `softUartRxIsr()-0x1028`, which oscillates between 88 and 92 anchors.
+        It returns None here and keeps every edge. (`_stext` is unvalidated
+        too, but for the other reason in `_read_body()`: its entry address
+        carries no instruction line for this to start from. It settles at
+        round 5 when seeded.)
         """
         anchors = self._anchors(entry, entry, hi, insns)
         for _ in range(self.ANCHOR_ROUNDS):
