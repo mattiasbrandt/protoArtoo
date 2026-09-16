@@ -96,9 +96,9 @@
   // not survive its own size, drawn on a 40x44 viewBox and rendered at 26x30,
   // which put its 3-unit body slots and 4-unit dome eye at about 2 px of mud.
   // The droid's name carries that corner instead - the part that is the
-  // builder's own anyway. The line-drawn droid on Dashboard stays: it is the
-  // surface's subject at full size, not a mark. (The Dashboard drawing is
-  // original artwork from the Codex study of 2026-09-14, not MDI.)
+  // builder's own anyway. Dashboard's line-drawn droid went the same day and
+  // for a related reason (see dashboard.html), so nothing in these files is
+  // original artwork any more: every glyph here is MDI.
 
   // The board switch. NOT product chrome: the shipped image carries one asset
   // set, chosen at build time, and has nothing to flip (board.js says where).
