@@ -334,7 +334,6 @@ main > * + *, .view > * + * { margin-top: var(--s4); }
 /* Exactly two note colours: amber = act on this, blue = information. */
 .note-act { border-left-color: var(--amber); }
 .note-info { border-left-color: var(--blue); }
-.stack > * + * { margin-top: var(--s3); }
 
 /* The feedback line at the foot of a section. Present in every state. */
 .feedback {
@@ -345,9 +344,6 @@ main > * + *, .view > * + * { margin-top: var(--s4); }
   color: var(--ink-2);
 }
 
-/* An empty state: <b>Nothing X.</b> plus the one act that ends it (pattern 9). */
-.empty { padding: var(--s3); color: var(--ink-2); display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
-.empty b { color: var(--ink); }
 
 /* ---------------------------------------------------------------------------
    Controls
@@ -493,7 +489,6 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .tbl .grp .pin { background: var(--well); }
 .tbl .mono { font-family: var(--mono); font-size: 12px; }
 .tbl .dim { color: var(--ink-3); }
-.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl .tick { width: 36px; text-align: center; }
 .tbl .act { text-align: right; white-space: nowrap; }
 .tbl .act .btn-sm { vertical-align: middle; }
@@ -618,8 +613,6 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 /* ---------------------------------------------------------------------------
    Parts pieces
    --------------------------------------------------------------------------- */
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); margin-bottom: var(--s3); }
-.toolbar .spacer { flex: 1; }
 .buildline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); padding: var(--s3) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--r); font-size: var(--fs-cell); }
 .buildline .k { font: 600 var(--fs-hint) / 1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
 .buildline .spacer { flex: 1; }
@@ -637,7 +630,6 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .step .state { grid-column: 2; font: var(--fs-hint) / 1.4 var(--mono); color: var(--ink-3); }
 .step[aria-current="step"] { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--ink); box-shadow: inset 2px 0 0 var(--blue); }
 .step[aria-current="step"] .n { color: var(--blue); }
-.step.done .n::after { content: ""; }
 .steps .rail-foot { margin-top: auto; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s3); }
