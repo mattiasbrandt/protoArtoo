@@ -418,7 +418,9 @@
   // fetched - droid_build.js's own documented "a page holding a config payload
   // calls adopt() with it and spends no request at all".
   const renderDroidBuild = (build) => {
-    if (!buildDesign) return;
+    // Both halves or neither: this runs inside the log level's section loader,
+    // where a throw becomes a failed section rather than a visible error.
+    if (!buildDesign || !buildDesignDetail) return;
     const designs = (window.DroidParts && window.DroidParts.designs) || [];
     const nameOf = (half) => {
       const design = designs.find((candidate) => candidate.id === half.design);
