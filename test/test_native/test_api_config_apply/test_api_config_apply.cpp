@@ -189,6 +189,104 @@ void test_configApply_without_servo_params_records_no_edit(void) {
     TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
 }
 
+// A capture (#364): one Output Address, one position on it, and the width the
+// dial was standing at. It becomes an addressed edit like any other, so it
+// reaches the rows through the door the Commit Step already opens - marked as a
+// capture, which is what makes it say a human measured this Output.
+void test_configApply_capture_becomes_one_addressed_capture_edit(void) {
+    std::map<std::string, std::string> m = {
+        {"captureOutput", "ledc:3"}, {"captureEnd", "open"}, {"captureUs", "1850"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(1, result.servoOutputs.count);
+
+    const ServoOutputEdit& edit = result.servoOutputs.edits[0];
+    TEST_ASSERT_TRUE(edit.capture);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, edit.driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX1, edit.channel);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_OPEN, edit.fields);
+    TEST_ASSERT_EQUAL_UINT16(1850, edit.open_us);
+}
+
+// The centre is a position a dial captures into, not one a form types.
+void test_configApply_capture_records_a_centre_on_its_own_field(void) {
+    std::map<std::string, std::string> m = {
+        {"captureOutput", "ledc:0"}, {"captureEnd", "centre"}, {"captureUs", "1490"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_FIELD_CENTRE, result.servoOutputs.edits[0].fields);
+    TEST_ASSERT_EQUAL_UINT16(1490, result.servoOutputs.edits[0].centre_us);
+}
+
+// All three fields or none, the shape a Part move already uses: they mean
+// nothing apart. An address with no position is not a capture.
+void test_configApply_a_half_stated_capture_is_refused(void) {
+    std::map<std::string, std::string> m = {{"captureOutput", "ledc:0"}, {"captureUs", "1500"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_NOT_NULL(strstr(result.error.message, "captureEnd"));
+    TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
+}
+
+// An address the driver does not have is not an Output, however well spelled.
+// ledc:2 is the dome ESC, which is not addressable as a servo.
+void test_configApply_a_capture_at_a_non_servo_address_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"captureOutput", "ledc:2"}, {"captureEnd", "close"}, {"captureUs", "1500"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
+}
+
+// A width no servo takes is refused here; what an Output KEEPS is then bounded
+// again by the component fitted to it, on the row, where a moved number can be
+// reported.
+void test_configApply_a_capture_outside_what_a_servo_takes_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"captureOutput", "ledc:0"}, {"captureEnd", "open"}, {"captureUs", "2600"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+}
+
+// An end this model does not have is not a position. "min" and "max" are what
+// the buttons say; open and close are what the row records.
+void test_configApply_an_unknown_captured_end_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"captureOutput", "ledc:0"}, {"captureEnd", "middle"}, {"captureUs", "1500"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+}
+
+// A capture and the five legacy field sets can ride one request without
+// colliding: the capture is the sixth edit slot, addressed at any Output.
+void test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit(void) {
+    std::map<std::string, std::string> m = {{"arm1OpenUs", "1900"},
+                                            {"captureOutput", "ledc:5"},
+                                            {"captureEnd", "close"},
+                                            {"captureUs", "1050"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_size_t(2, result.servoOutputs.count);
+    TEST_ASSERT_FALSE(result.servoOutputs.edits[0].capture);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, result.servoOutputs.edits[0].channel);
+    TEST_ASSERT_TRUE(result.servoOutputs.edits[1].capture);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, result.servoOutputs.edits[1].channel);
+}
+
 // --- cross-field rules ---
 void test_configApply_speed_presets_must_be_distinct(void) {
     std::map<std::string, std::string> m = {
@@ -482,6 +580,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_servo_endpoints_and_type_become_one_addressed_edit);
     RUN_TEST(test_configApply_one_endpoint_edits_only_that_field);
     RUN_TEST(test_configApply_without_servo_params_records_no_edit);
+    RUN_TEST(test_configApply_capture_becomes_one_addressed_capture_edit);
+    RUN_TEST(test_configApply_capture_records_a_centre_on_its_own_field);
+    RUN_TEST(test_configApply_a_half_stated_capture_is_refused);
+    RUN_TEST(test_configApply_a_capture_at_a_non_servo_address_is_refused);
+    RUN_TEST(test_configApply_a_capture_outside_what_a_servo_takes_is_refused);
+    RUN_TEST(test_configApply_an_unknown_captured_end_is_refused);
+    RUN_TEST(test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
     RUN_TEST(test_configApply_speedLimitMax_derives_from_active_preset_when_omitted);
     RUN_TEST(test_configApply_speedLimitMax_resolves_matching_preset);

@@ -31,8 +31,9 @@
 //     (ADR 0052).
 //   - Calibrating an output never ticks its boot behaviour. Finding an endpoint
 //     must not be the act that makes a panel move at power-up, which is why
-//     servoOutputCapture() writes an endpoint and the `calibrated` bit and
-//     touches nothing else.
+//     servoOutputCapture() writes a position and the `calibrated` bit and
+//     touches nothing else -- except the centre, which it drags inside the
+//     travel when a captured end has swallowed it, and says so.
 //
 // Speed and acceleration are *times*, in milliseconds  --  how long a full
 // throw takes and how long the move spends getting up to that speed. The rate
@@ -209,6 +210,28 @@ enum ServoOutputEnd : uint8_t {
     SERVO_END_CLOSE = 2,
 };
 
+// The word a request names a captured position by (#364). Only the three
+// positions a dial can capture into, spelled as the Set MIN / Set CENTER /
+// Set MAX buttons mean them rather than as the enum is spelled.
+inline bool servoParseOutputEnd(const char* raw, ServoOutputEnd* out) {
+    if (raw == nullptr || out == nullptr) {
+        return false;
+    }
+    if (strcmp(raw, "open") == 0) {
+        *out = SERVO_END_OPEN;
+        return true;
+    }
+    if (strcmp(raw, "centre") == 0) {
+        *out = SERVO_END_CENTRE;
+        return true;
+    }
+    if (strcmp(raw, "close") == 0) {
+        *out = SERVO_END_CLOSE;
+        return true;
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // Repair reporting  --  a value changing under somebody is said out loud
 // -----------------------------------------------------------------------------
@@ -328,16 +351,34 @@ inline ServoEasing servoOutputEffectiveEasing(const ServoOutputRow& row) {
 // -----------------------------------------------------------------------------
 // servoOutputCapture()
 // Record where the builder has just driven this output as one end of its
-// Endpoint Pair, and mark the row measured.
+// Endpoint Pair or as its centre, and mark the row measured. This is what
+// Set MIN / Set CENTER / Set MAX do on the firmware side (#291, #364): the dial
+// is already standing at a number the servo is holding, so a capture is one
+// assignment -- there is nothing to compute, parse or validate.
 //
-// It deliberately writes exactly two things. Boot behaviour is a separate
-// decision from calibration: calibrating must never be the act that makes a
-// panel move at power-up, so it is not touched here and no caller may touch it
-// on a capture's behalf (#286, ADR 0052).
+// Boot behaviour is a separate decision from calibration: calibrating must
+// never be the act that makes a panel move at power-up, so it is not touched
+// here and no caller may touch it on a capture's behalf (#286, ADR 0052).
+//
+// A captured END drags the centre inside the travel rather than refusing.
+// Capturing a close at 1700 on a row whose centre is 1500 and whose open is
+// 1900 leaves the centre where it belongs; capturing one at 1600 puts the
+// centre outside the travel the builder has just described, and a centre that
+// is not between the ends is a number no later move can honour. Refusing the
+// capture would refuse the FIRST number of an ordinary calibration, which is
+// the wrong half to protect, so the centre follows and the caller is told.
+// (r2d2-astromech-simulator v1.79.0, src/js/maestro/setup-hw-cal.js:610's
+// pwCentreFollow: "centre moved to N us -- it was outside the travel you just
+// captured".)
+//
+// Capturing the CENTRE never drags anything: the builder is placing that number
+// deliberately, and moving it out from under them would undo the act.
+//
+// returns: the width the centre was dragged to, or 0 when it did not move.
 // -----------------------------------------------------------------------------
-inline void servoOutputCapture(ServoOutputRow* row, ServoOutputEnd end, uint16_t pulseUs) {
+inline uint16_t servoOutputCapture(ServoOutputRow* row, ServoOutputEnd end, uint16_t pulseUs) {
     if (row == nullptr) {
-        return;
+        return 0;
     }
     const uint16_t clamped = servoOutputClampPulse(*row, pulseUs);
     switch (end) {
@@ -346,14 +387,25 @@ inline void servoOutputCapture(ServoOutputRow* row, ServoOutputEnd end, uint16_t
             break;
         case SERVO_END_CENTRE:
             row->centre_us = clamped;
-            break;
+            row->calibrated = true;
+            return 0;  // placed deliberately; nothing follows it
         case SERVO_END_CLOSE:
             row->close_us = clamped;
             break;
         default:
-            return;  // nothing recorded, nothing claimed
+            return 0;  // nothing recorded, nothing claimed
     }
     row->calibrated = true;
+
+    // Which end is which comes from the one place that decides it, so a
+    // reversed linkage drags the same way round as an ordinary one.
+    const uint16_t lo = servoOutputLowUs(*row);
+    const uint16_t hi = servoOutputHighUs(*row);
+    if (row->centre_us >= lo && row->centre_us <= hi) {
+        return 0;
+    }
+    row->centre_us = (row->centre_us < lo) ? lo : hi;
+    return row->centre_us;
 }
 
 // -----------------------------------------------------------------------------
@@ -869,9 +921,14 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 //
 // An edit is addressed rather than indexed, and it carries only the fields the
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
-// SERVO_FIELD_CLOSE and SERVO_FIELD_COMPONENT, and a field not in it keeps what
-// the row had. That is the partial-edit door servoOutputRowNormalise()
-// describes, given a shape a pure caller can fill.
+// SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE and SERVO_FIELD_COMPONENT, and a field
+// not in it keeps what the row had. That is the partial-edit door
+// servoOutputRowNormalise() describes, given a shape a pure caller can fill.
+//
+// It carries captures too, marked by `capture` -- one door onto a row, not two
+// (#364). What differs is only what a capture means: one position, recorded
+// because the builder drove the part there, so the row becomes measured and a
+// swallowed centre follows the ends.
 //
 // It exists because the Apply Core for POST /api/config is pure and cannot
 // reach the live table (ADR 0011): it validates a builder's numbers and records
@@ -881,10 +938,19 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 struct ServoOutputEdit {
     ServoOutputDriver driver;      // Output Address, half one
     uint8_t channel;               // Output Address, half two
-    uint16_t fields;               // which of the three below the request carried
+    uint16_t fields;               // which of the widths below the request carried
     uint16_t open_us;
+    uint16_t centre_us;            // captures only; a typed edit never names it
     uint16_t close_us;
     ServoComponentType component;
+    // A capture, not a typed value (#364). The dial is standing at a width the
+    // servo is holding and the builder has pressed Set MIN / Set CENTER /
+    // Set MAX, so exactly one of SERVO_FIELD_OPEN / _CENTRE / _CLOSE is named,
+    // it goes through servoOutputCapture(), and the row is marked measured. A
+    // form POST typing two numbers into a page is not that and never sets it:
+    // that is the difference between a number somebody entered and a position
+    // somebody drove a part to.
+    bool capture;
 };
 
 // -----------------------------------------------------------------------------
@@ -905,13 +971,41 @@ struct ServoOutputEdit {
 //     centre would last exactly until the next form POST.
 //
 // Returns the repair mask, so a number the band moved is reported rather than
-// silently lost.
+// silently lost. SERVO_FIELD_CENTRE in that mask after a capture is the centre
+// having followed the ends, which is a value moving under the builder and is
+// reported by the same machinery for the same reason.
 // -----------------------------------------------------------------------------
 inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit& edit) {
     if (row == nullptr) {
         return 0;
     }
     const ServoOutputRow before = *row;
+
+    // A capture is one position and the `calibrated` bit, through the one
+    // function that knows what capturing means. It never carries a component
+    // with it: naming what is fitted is a separate act, and settling a new
+    // component here would change the band the captured width is clamped into
+    // in the same breath as recording it.
+    if (edit.capture) {
+        ServoOutputEnd end = SERVO_END_CENTRE;
+        uint16_t pulseUs = edit.centre_us;
+        if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
+            end = SERVO_END_OPEN;
+            pulseUs = edit.open_us;
+        } else if ((edit.fields & SERVO_FIELD_CLOSE) != 0) {
+            end = SERVO_END_CLOSE;
+            pulseUs = edit.close_us;
+        } else if ((edit.fields & SERVO_FIELD_CENTRE) == 0) {
+            return 0;  // a capture naming no position records nothing
+        }
+        const uint16_t draggedTo = servoOutputCapture(row, end, pulseUs);
+        uint16_t repaired = servoOutputRowNormalise(row, before);
+        if (draggedTo != 0) {
+            repaired |= SERVO_FIELD_CENTRE;
+        }
+        return repaired;
+    }
+
     if ((edit.fields & SERVO_FIELD_COMPONENT) != 0) {
         row->component = edit.component;
     }
@@ -972,10 +1066,13 @@ inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, 
     if (row == nullptr) {
         return 0;
     }
-    const ServoOutputEdit whole = {
-        row->driver, row->channel,
-        (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT),
-        openUs,      closeUs,      component};
+    ServoOutputEdit whole = {};
+    whole.driver = row->driver;
+    whole.channel = row->channel;
+    whole.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT);
+    whole.open_us = openUs;
+    whole.close_us = closeUs;
+    whole.component = component;
     return servoOutputApplyEdit(row, whole);
 }
 

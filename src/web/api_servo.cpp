@@ -2,7 +2,8 @@
 // src/web/api_servo.cpp
 //
 // Servo control API endpoint
-//   POST /api/servo  - Control arm servos (open/close/position/stop/nudge)
+//   POST /api/servo  - Control arm servos
+//                      (open/close/position/stop/nudge/hold/release)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The command goes onto servoCmdQueue with a zero wait, so
@@ -63,33 +64,49 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
 
 namespace {
 
-// Map action string to command type and get position
-bool parseAction(const char* action, ServoCommandType& type, uint16_t& positionUs) {
-    if (strcmp(action, "open") == 0) {
-        type = SERVO_CMD_OPEN;
-        return true;
-    }
-    if (strcmp(action, "close") == 0) {
-        type = SERVO_CMD_CLOSE;
-        return true;
-    }
-    if (strcmp(action, "stop") == 0) {
-        type = SERVO_CMD_POSITION;
-        positionUs = SERVO_PULSE_NEUTRAL_US;  // Stop at neutral
-        return true;
-    }
-    if (strcmp(action, "position") == 0) {
-        type = SERVO_CMD_POSITION;
-        return true;
-    }
+// What one action name means. Three rules travel with the name rather than
+// being re-derived from it at each use: the command type, the width the name
+// fixes where it fixes one, and whether the request has to name a width itself.
+//
+// `oneOutputOnly` is the fourth, and it is the reason this is a table. A nudge
+// and a hold are each about ONE Output by definition -- a builder watching
+// which part twitches, and a dial standing on one row -- so the ARM1+ARM2
+// broadcast is refused for both, at the door, where the caller hears why.
+struct ServoActionSpec {
+    const char* name;
+    ServoCommandType type;
+    uint16_t positionUs;  // the width the action fixes; 0 when it fixes none
+    bool needsWidth;      // the request must carry positionUs
+    bool oneOutputOnly;   // arm=both is refused
+};
+
+constexpr ServoActionSpec kServoActions[] = {
+    {"open", SERVO_CMD_OPEN, 0, false, false},
+    {"close", SERVO_CMD_CLOSE, 0, false, false},
+    // "stop" drives to neutral; it does not hold position (include/
+    // console_direct_action_servo.h's header comment has the full note).
+    {"stop", SERVO_CMD_POSITION, SERVO_PULSE_NEUTRAL_US, false, false},
+    {"position", SERVO_CMD_POSITION, 0, true, false},
     // Find by Moving (ADR 0050, #363): no width travels with it. ServoTask
     // computes the bounded pair from the width on the pin, so this route
     // cannot be handed a big nudge however the request is spelled.
-    if (strcmp(action, "nudge") == 0) {
-        type = SERVO_CMD_NUDGE;
-        return true;
+    {"nudge", SERVO_CMD_NUDGE, 0, false, true},
+    // The calibration dial's hold (ADR 0064, #364): drive there and keep the
+    // pulse on it. Every hold refreshes the short expiry; the first one starts
+    // the ten-minute ceiling, which nothing sent here can move.
+    {"hold", SERVO_CMD_HOLD, 0, true, true},
+    // Pulses off (ADR 0043, ADR 0064, #364): the Output goes limp where it is.
+    // No width, because a release commands no position at all.
+    {"release", SERVO_CMD_RELEASE, 0, false, false},
+};
+
+const ServoActionSpec* findAction(const char* action) {
+    for (const ServoActionSpec& spec : kServoActions) {
+        if (strcmp(action, spec.name) == 0) {
+            return &spec;
+        }
     }
-    return false;
+    return nullptr;
 }
 
 }  // namespace
@@ -111,26 +128,32 @@ void handleServoPost(WebRequest& req) {
         return;
     }
 
-    ServoCommandType type;
-    uint16_t positionUs = 0;
-    if (!parseAction(action, type, positionUs)) {
-        webSendJsonError(req, 400, "Invalid action. Use: open, close, stop, position, or nudge");
+    const ServoActionSpec* spec = findAction(action);
+    if (spec == nullptr) {
+        webSendJsonError(
+            req, 400,
+            "Invalid action. Use: open, close, stop, position, nudge, hold, or release");
         return;
     }
 
-    // A nudge moves one output so a builder can say which one moved; the
-    // ARM1+ARM2 broadcast would move two in one press. Refused at the door,
+    // One output at a time where the action is about one output. Refused here,
     // where the caller hears why, rather than only in ServoTask's log.
-    if (type == SERVO_CMD_NUDGE && armId == 255) {
-        webSendJsonError(req, 400, "A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3");
+    if (spec->oneOutputOnly && armId == 255) {
+        char errMsg[96];
+        snprintf(errMsg, sizeof(errMsg),
+                 "A %s takes one arm. Use: arm1, arm2, aux1, aux2, or aux3", spec->name);
+        webSendJsonError(req, 400, errMsg);
         return;
     }
 
-    // Handle position action with positionUs parameter
-    if (type == SERVO_CMD_POSITION && strcmp(action, "position") == 0) {
+    uint16_t positionUs = spec->positionUs;
+    if (spec->needsWidth) {
         char positionRaw[16] = {};
         if (!req.param("positionUs", positionRaw, sizeof(positionRaw))) {
-            webSendJsonError(req, 400, "Missing positionUs parameter for position action");
+            char errMsg[80];
+            snprintf(errMsg, sizeof(errMsg), "Missing positionUs parameter for %s action",
+                     spec->name);
+            webSendJsonError(req, 400, errMsg);
             return;
         }
         // Unparseable input lands on the same range error a numerically
@@ -152,7 +175,8 @@ void handleServoPost(WebRequest& req) {
     // Commit Step (ADR 0036 criterion 1, include/api_servo.h): the same
     // servoCmdQueue submission both this handler and the Console's
     // servo.action.* executors now make.
-    ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, type, positionUs, SRC_WEB_API);
+    ServoSubmitOutcome outcome =
+        servoSubmitCommand((uint8_t)armId, spec->type, positionUs, SRC_WEB_API);
     if (!outcome.ok) {
         webSendJsonError(req, 503, "Servo command queue full");
         return;

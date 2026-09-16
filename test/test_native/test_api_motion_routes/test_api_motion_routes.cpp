@@ -912,6 +912,114 @@ void test_servo_nudge_refuses_the_broadcast_arm() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge takes one arm"));
 }
 
+// The calibration dial's hold (#364, ADR 0064): a width, like a position, and
+// the hold is what differs. The page sends one of these a second while the dial
+// is open, which is what keeps the short expiry from firing.
+void test_servo_hold_takes_an_arm_and_a_width() {
+    const WebRequestTestParam params[] = {
+        {"arm", "aux1"}, {"action", "hold"}, {"positionUs", "1750"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// A hold with no width is not a hold: there is nowhere to hold the Output.
+void test_servo_hold_without_a_width_is_rejected() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "hold"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter for hold"));
+}
+
+// A dial stands on one row, so the ARM1+ARM2 broadcast is refused the same way
+// a nudge's is - and the refusal names the action the caller asked for.
+void test_servo_hold_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {
+        {"arm", "both"}, {"action", "hold"}, {"positionUs", "1500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A hold takes one arm"));
+}
+
+// A hold outside what a servo takes is refused at the door, exactly as a
+// position is: the component band then bounds it again on the way to the pin.
+void test_servo_hold_out_of_range_is_rejected() {
+    const WebRequestTestParam params[] = {
+        {"arm", "arm1"}, {"action", "hold"}, {"positionUs", "2600"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "positionUs must be between"));
+}
+
+// Pulses off (#364, ADR 0043): no width travels with it, because a release
+// commands no position at all - the Output goes limp where it is.
+void test_servo_release_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "aux3"}, {"action", "release"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// Unlike a hold, a release takes the broadcast: letting go of both arms at once
+// is the same act twice, not two outputs moving together.
+void test_servo_release_accepts_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "release"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+}
+
+// The refusal lists what this route actually accepts, so a caller that spelled
+// one wrong is told the set rather than left guessing.
+void test_an_unknown_servo_action_names_every_action_there_is() {
+    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "letgo"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "hold"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "release"));
+}
+
 // -----------------------------------------------------------------------------
 // AUX LED
 // -----------------------------------------------------------------------------
@@ -1054,6 +1162,13 @@ int main(int, char**) {
     RUN_TEST(test_servo_position_without_a_value_is_rejected);
     RUN_TEST(test_servo_nudge_takes_an_arm_and_no_width);
     RUN_TEST(test_servo_nudge_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_hold_takes_an_arm_and_a_width);
+    RUN_TEST(test_servo_hold_without_a_width_is_rejected);
+    RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_hold_out_of_range_is_rejected);
+    RUN_TEST(test_servo_release_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_release_accepts_the_broadcast_arm);
+    RUN_TEST(test_an_unknown_servo_action_names_every_action_there_is);
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);

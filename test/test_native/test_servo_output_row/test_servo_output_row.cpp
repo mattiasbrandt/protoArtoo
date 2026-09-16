@@ -180,6 +180,102 @@ void test_capture_is_clamped_by_the_component_type() {
     TEST_ASSERT_EQUAL_UINT16(1000, row.close_us);
 }
 
+// A capture that leaves the centre where it belongs says nothing happened to
+// it. The default row is open 2000 / centre 1500 / close 1000, so a close
+// captured at 1400 still spans the centre.
+void test_a_capture_that_keeps_the_centre_inside_the_travel_drags_nothing() {
+    ServoOutputRow row = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT16(0, servoOutputCapture(&row, SERVO_END_CLOSE, 1400));
+    TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1400, row.close_us);
+}
+
+// The case the reference project's pwCentreFollow exists for: the builder
+// captures an end that swallows the centre. Refusing would refuse the first
+// number of an ordinary calibration, so the centre follows and the capture
+// reports where it went.
+void test_a_captured_end_that_swallows_the_centre_drags_it_in_and_says_so() {
+    ServoOutputRow row = mg996rRow();
+    // Close captured ABOVE the centre: the travel is now 1600..2000.
+    TEST_ASSERT_EQUAL_UINT16(1600, servoOutputCapture(&row, SERVO_END_CLOSE, 1600));
+    TEST_ASSERT_EQUAL_UINT16(1600, row.centre_us);
+    TEST_ASSERT_EQUAL_UINT16(1600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.open_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+
+    // And the other way: an open captured below the centre drags it down.
+    ServoOutputRow other = mg996rRow();
+    TEST_ASSERT_EQUAL_UINT16(1200, servoOutputCapture(&other, SERVO_END_OPEN, 1200));
+    TEST_ASSERT_EQUAL_UINT16(1200, other.centre_us);
+}
+
+// A reversed linkage is open < close and there is no invert flag, so the drag
+// has to read which end is which from the pair rather than from the names.
+void test_the_drag_follows_a_reversed_pair_the_same_way_round() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 1100;   // reversed: open is the lower number
+    row.close_us = 1900;
+    row.centre_us = 1500;
+
+    // Capturing close at 1300 leaves travel 1100..1300, which the centre is
+    // above.
+    TEST_ASSERT_EQUAL_UINT16(1300, servoOutputCapture(&row, SERVO_END_CLOSE, 1300));
+    TEST_ASSERT_EQUAL_UINT16(1300, row.centre_us);
+    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
+}
+
+// Capturing the centre is the builder placing that number deliberately. Moving
+// it out from under them would undo the act they just performed.
+void test_capturing_the_centre_never_drags_anything() {
+    ServoOutputRow row = mg996rRow();
+    row.open_us = 2000;
+    row.close_us = 1800;
+    TEST_ASSERT_EQUAL_UINT16(0, servoOutputCapture(&row, SERVO_END_CENTRE, 1850));
+    TEST_ASSERT_EQUAL_UINT16(1850, row.centre_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+}
+
+// The capture reaches a row through the same addressed edit door a typed value
+// does, and what differs is what it means: the row becomes measured, and a
+// dragged centre is reported by the repair mask the other door already uses.
+void test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit capture = {};
+    capture.driver = row.driver;
+    capture.channel = row.channel;
+    capture.fields = SERVO_FIELD_CLOSE;
+    capture.close_us = 1600;
+    capture.capture = true;
+
+    const uint16_t repaired = servoOutputApplyEdit(&row, capture);
+
+    TEST_ASSERT_EQUAL_UINT16(1600, row.close_us);
+    TEST_ASSERT_EQUAL_UINT16(1600, row.centre_us);
+    TEST_ASSERT_TRUE(row.calibrated);
+    TEST_ASSERT_TRUE((repaired & SERVO_FIELD_CENTRE) != 0);
+    // The boot behaviour is untouched: calibrating must never be the act that
+    // makes a panel move at power-up.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+}
+
+// The same door, not a capture: two typed numbers record widths and claim
+// nothing about anybody having measured them.
+void test_a_typed_edit_through_the_same_door_is_not_a_capture() {
+    ServoOutputRow row = mg996rRow();
+    ServoOutputEdit typed = {};
+    typed.driver = row.driver;
+    typed.channel = row.channel;
+    typed.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    typed.open_us = 1900;
+    typed.close_us = 1100;
+
+    servoOutputApplyEdit(&row, typed);
+
+    TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
+    TEST_ASSERT_FALSE(row.calibrated);
+}
+
 // --- one validator at every door ---------------------------------------------
 
 void test_an_unreadable_record_takes_the_safe_defaults_and_reports() {
@@ -948,6 +1044,12 @@ int main(int, char**) {
 
     RUN_TEST(test_capture_marks_calibrated_and_never_ticks_boot);
     RUN_TEST(test_capture_is_clamped_by_the_component_type);
+    RUN_TEST(test_a_capture_that_keeps_the_centre_inside_the_travel_drags_nothing);
+    RUN_TEST(test_a_captured_end_that_swallows_the_centre_drags_it_in_and_says_so);
+    RUN_TEST(test_the_drag_follows_a_reversed_pair_the_same_way_round);
+    RUN_TEST(test_capturing_the_centre_never_drags_anything);
+    RUN_TEST(test_a_capture_through_the_edit_door_measures_the_row_and_reports_the_drag);
+    RUN_TEST(test_a_typed_edit_through_the_same_door_is_not_a_capture);
 
     RUN_TEST(test_an_unreadable_record_takes_the_safe_defaults_and_reports);
     RUN_TEST(test_one_bad_field_does_not_cost_the_row_its_calibration);

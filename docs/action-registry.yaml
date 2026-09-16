@@ -2370,6 +2370,69 @@ entries:
     required: true
   nvs_key: null
   executor: servoCmdQueue
+- name: servo.action.hold
+  display_name: Hold
+  description: 'Drive a servo to a pulse width and KEEP driving it there, so you can look at the part and listen to the servo while it is still being held (the calibration dial, ADR 0064). Ordinary moves let go once they arrive; this one does not. The controller bounds the hold in two ways you cannot extend from here: it lets go about three seconds after the last hold command stops arriving, and it lets go ten minutes after the first one whatever keeps arriving. Either way the output goes limp where it is and GET /api/servo/outputs says which bound it was. Send one a second to keep a hold alive; send it again after it lets go to take the output back, which restarts both bounds. One output per hold - target=both is refused.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/robot_state.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: target
+    type: string
+    range:
+    - arm1
+    - arm2
+    - aux1
+    - aux2
+    - aux3
+    required: true
+  - name: position_us
+    type: uint16
+    range:
+    - 500
+    - 2500
+    required: true
+  nvs_key: null
+  executor: servoCmdQueue
+- name: servo.action.release
+  display_name: Pulses Off
+  description: 'Take the pulse off a servo output. The part goes limp exactly where it is - nothing is driven to a position first, so where it ends up is whatever gravity and friction decide (ADR 0043). This is how you end a calibration hold, and it is also what the estop and Sleep Mode now do to every output at once. A released output stays limp until something commands it again, and that first move is a jump rather than a ramp, because the controller no longer knows where the part is. target=both releases ARM1 and ARM2 only; AUX1-3 are released one at a time.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/robot_state.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: target
+    type: string
+    range:
+    - arm1
+    - arm2
+    - aux1
+    - aux2
+    - aux3
+    - both
+    required: true
+  nvs_key: null
+  executor: servoCmdQueue
 - name: servo.action.stop
   display_name: Stop
   description: 'Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no

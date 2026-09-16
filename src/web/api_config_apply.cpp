@@ -795,6 +795,58 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         result->changed = true;
     }
 
+    // A capture: the builder drove the Part until it looked right and pressed
+    // Set MIN / Set CENTER / Set MAX, so what arrives is one Output Address, one
+    // position on it, and the width the dial was standing at (#364, #291).
+    //
+    // All three fields or none, the shape a Part move already uses, and for the
+    // same reason: they mean nothing apart. An address without a position is not
+    // a capture, and a width with no address is not one either.
+    //
+    // It rides the same addressed-edit list the five field sets fill, so it
+    // reaches the rows through the one door the Commit Step already opens; what
+    // marks it out is `capture`, which is what makes it record that a human
+    // measured this Output rather than that somebody typed a number (ADR 0041).
+    // The bounds are the widest a servo takes, as they are for a typed endpoint:
+    // the authoritative clamp is the fitted component's band, applied on the row
+    // where it can report having moved the number.
+    if (configParamHas(params, "captureOutput") || configParamHas(params, "captureEnd") ||
+        configParamHas(params, "captureUs")) {
+        ServoOutputEdit capture = {};
+        ServoOutputEnd end = SERVO_END_CENTRE;
+        uint16_t capturedUs = 0;
+        const char* address = configParamGet(params, "captureOutput");
+        if (address == nullptr ||
+            !servoOutputParseAddress(address, &capture.driver, &capture.channel) ||
+            !servoParseOutputEnd(configParamGet(params, "captureEnd"), &end) ||
+            !paramUint16(params, "captureUs", kServoPulseMinUs, kServoPulseMaxUs, &capturedUs)) {
+            setError(result,
+                     "captureOutput, captureEnd and captureUs must be sent together: an Output "
+                     "Address, one of open/centre/close, and a width 500..2500");
+            return;
+        }
+        capture.capture = true;
+        switch (end) {
+            case SERVO_END_OPEN:
+                capture.fields = SERVO_FIELD_OPEN;
+                capture.open_us = capturedUs;
+                break;
+            case SERVO_END_CENTRE:
+                capture.fields = SERVO_FIELD_CENTRE;
+                capture.centre_us = capturedUs;
+                break;
+            case SERVO_END_CLOSE:
+            default:
+                capture.fields = SERVO_FIELD_CLOSE;
+                capture.close_us = capturedUs;
+                break;
+        }
+        result->servoOutputs.edits[result->servoOutputs.count++] = capture;
+        appendApplied(&result->applied, "[CFG] capture %s %s at %u us", address,
+                      configParamGet(params, "captureEnd"), (unsigned)capturedUs);
+        result->changed = true;
+    }
+
     if (!result->changed) {
         setError(result, "no supported config fields supplied");
         return;
