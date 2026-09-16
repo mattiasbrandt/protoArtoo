@@ -743,6 +743,18 @@ html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
 .card-text .card-art { display: none; }
 /* Settled no: a roadmap card is inert - not a button, no destination, no
    date, no version - and takes the settled dim (#327, Availability Family). */
+/* The Body Controller card, which is also where the board picture lives. One
+   card, never a choice: the Component Registry gates its two products on
+   PA_BOARD, so the image carries exactly one of them. The plate is 300 x 225,
+   the asset set's own 4:3, so a photograph fills it exactly and the drawing
+   sits on the same frame. */
+.boardcard { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start; }
+.boardshot { flex: none; width: 300px; height: 225px; }
+.boardcard-text { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--s2); align-content: start; }
+.boardcard-text .pill { justify-self: start; }
+.boardcard-text h3 { font: 600 var(--fs-h2) / 1.3 var(--sans); }
+.boardcard-text p { font: var(--fs-body) / 1.55 var(--sans); color: var(--ink-2); max-width: var(--measure); }
+
 .card-settled { opacity: var(--avail-dim-settled); border-style: dashed; }
 .card-settled:hover { opacity: 1; }
 .consequence { margin-top: var(--s4); }
@@ -847,6 +859,7 @@ html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
   .plate > * { border-top: 1px solid var(--line); }
   .plate > *:nth-child(-n + 4) { border-top: 0; }
   .plate-fresh { grid-column: 1 / -1; padding: var(--s1) var(--s3); }
+  .boardshot { width: 100%; height: auto; aspect-ratio: 4 / 3; max-width: 300px; }
   .receipt > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
   .tbl .pos { min-width: 120px; }
 }
