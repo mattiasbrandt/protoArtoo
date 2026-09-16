@@ -40,6 +40,15 @@
   --amber: #e2a13a;
   --red: #e05555;
 
+  /* The ground the default asset set's photographs are cut out on. Not a
+     choice: measured off the outer two-pixel frame of all twenty pictures in
+     data/asset-sets/default on 2026-09-16, and every one of them is exactly
+     this. The art plate takes it when the picture is a photograph, so a 4:3
+     picture in a wider plate does not read as a lighter slab inside it. (The
+     legacy sprite's own fallback says #0c1525, one off in blue; it is the
+     drawings' backdrop and nothing here paints with it.) */
+  --photo-ground: #0c1524;
+
   /* Neutral endpoints for translucent lifts and shadows; never painted straight. */
   --lift: #ffffff;
   --shade: #000000;
@@ -132,7 +141,8 @@ svg.i { width: 16px; height: 16px; flex: none; fill: currentColor; }
   top: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr) auto;
+  /* brand | surface and build | the mockup's board switch | the estop */
+  grid-template-columns: var(--rail) minmax(0, 1fr) auto auto;
   align-items: center;
   min-height: var(--topbar-h);
   background: var(--plate);
@@ -163,8 +173,57 @@ svg.i { width: 16px; height: 16px; flex: none; fill: currentColor; }
 }
 .topbar-mid b { color: var(--ink-2); font-weight: 500; }
 
-.estop-wrap {
+/* The board switch: a review control, not product chrome. It is dashed and
+   labelled so it is never read as part of the look being judged - the shipped
+   image carries one asset set, picked at build time, and flips nothing
+   (board.js). The two small lines name the set and what it holds, so the
+   control explains itself without a hover (docs/ui-copy-voice.md rule 12). */
+.boardswitch {
   grid-column: 3;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  margin: 0 var(--s3);
+  padding: 2px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  background: var(--well);
+}
+.bs-label {
+  display: grid;
+  align-content: center;
+  padding: 0 var(--s2);
+  font: 600 var(--fs-hint) / 1.3 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bs-label small { font-weight: 400; letter-spacing: 0.1em; }
+.boardswitch a {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r);
+  color: var(--ink-3);
+  font: 500 12px / 1.2 var(--sans);
+  white-space: nowrap;
+}
+.boardswitch a small { font: var(--fs-hint) / 1.3 var(--mono); letter-spacing: 0.06em; }
+.boardswitch a:hover { background: var(--plate-2); color: var(--ink-2); }
+.boardswitch a[aria-current="true"] {
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+  box-shadow: inset 0 -2px 0 var(--blue);
+  color: var(--ink);
+}
+
+/* Copy that genuinely differs on the two boards is written out per board and
+   the other one is removed, so both readings are legible in the source. */
+html[data-board="artoo_esp32"] [data-board-only="firebeetle2"],
+html[data-board="firebeetle2"] [data-board-only="artoo_esp32"] { display: none; }
+
+.estop-wrap {
+  grid-column: 4;
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -649,6 +708,34 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .card[aria-pressed="true"] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--plate)); }
 .card-art { height: 96px; display: grid; place-items: center; background: var(--well); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink-2); }
 .card-art svg { width: 100%; height: 100%; padding: var(--s1); }
+/* The photograph, where the default set has one in place of the drawing. Ours
+   are cut out on a dark navy ground (#0c1524 at every corner, measured
+   2026-09-16 across all twenty), which sits between --well and --plate, so they
+   need no white plate behind them: the reference project's "a photo on a dark
+   plate reads as a bright slab in a hole" does not apply to this set. What they
+   do need is the plate's seam, which is what keeps the picture's own ground
+   from merging into the well. */
+/* align-self: stretch is load-bearing. .card-art centres its item, which
+   leaves a replaced element's percentage height unresolved, so the picture
+   lays out at its own 4:3 from the card's width and spills 47 px past the
+   plate onto the pill below it (measured 2026-09-16). Stretching the item
+   gives the height something to resolve against and object-fit letterboxes
+   inside it. */
+/* The plate behind a photograph is painted the photograph's own ground, so
+   only the seam shows. board.js stamps the set on <html>; on the legacy set
+   every picture is a drawing that inherits the card's colour and the plate
+   keeps the well. */
+html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
+.card-art img {
+  display: block;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--s1);
+  object-fit: contain;
+}
 .card[aria-pressed="true"] .card-art { color: var(--blue); }
 .card h3 { font: 600 var(--fs-cell) / 1.35 var(--sans); }
 .card p { font: 12px / 1.5 var(--sans); color: var(--ink-2); }
@@ -717,7 +804,7 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
    plate folds to two rows of four.
    --------------------------------------------------------------------------- */
 @media (max-width: 1100px) {
-  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .brand { border-right: 0; }
   .topbar-mid { display: none; }
   .frame { grid-template-columns: minmax(0, 1fr); }
@@ -764,6 +851,13 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
   .tbl .pos { min-width: 120px; }
 }
 
+/* Narrower than the two widths #398 asks for, the board switch gives up its
+   label and its set lines rather than pushing the estop off the topbar. It is
+   a review control; the estop is not. */
+@media (max-width: 700px) {
+  .bs-label, .boardswitch a small { display: none; }
+}
+
 @media (max-width: 600px) {
   .perform { grid-template-columns: minmax(0, 1fr); }
   .moods { grid-template-columns: minmax(0, 1fr); }
@@ -780,6 +874,8 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
           --line: var(--paper-line); --line-2: var(--paper-line); --ink: var(--paper-ink); --ink-2: var(--paper-ink); --ink-3: var(--paper-ink); }
   body { padding-bottom: 0; }
   .topbar, .rail, .steps, .plate-region, .acts, .calactions, .bulk, .wizard-acts { display: none !important; }
+  /* The board switch goes with the chrome; a printed sheet is one board's. */
+  .boardswitch { display: none !important; }
   .frame { display: block; }
   main { max-width: none; padding: 0; }
   .panel, .bay, .tbl tr, .card { break-inside: avoid; }

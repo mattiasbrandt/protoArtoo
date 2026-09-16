@@ -3,7 +3,10 @@
 //
 // Topbar (identity, the Latching Estop as chrome), the nav rail ordered by
 // Activity Group (CONTEXT.md), and the Status Plate: eight cells in fixed
-// positions and one freshness statement. Each page carries only its own body;
+// positions and one freshness statement. The topbar additionally carries the
+// mockup's board switch, which is a review control rather than product chrome;
+// board.js owns it and says why the shipped image has none. Each page carries
+// only its own body;
 // this file paints the frame around it, the way data/shell.js does for the
 // shipped surfaces. Nothing here talks to a controller: PA_STATE is fictional.
 //
@@ -89,6 +92,22 @@
   // from the Codex study of 2026-09-14 and are kept (coordinator call 2).
   const brandmark = `<svg viewBox="0 0 40 44" aria-hidden="true"><path fill="currentColor" d="M8 15a12 12 0 0 1 24 0v3H8zM8 21h24v20H8zM2 21h4v23H2zm32 0h4v23h-4z"/><path fill="var(--plate)" d="M12 24h16v3H12zm0 6h16v3H12zm6 6h4v3h-4z"/><circle fill="var(--plate)" cx="22" cy="11" r="4"/></svg>`;
 
+  // The board switch. NOT product chrome: the shipped image carries one asset
+  // set, chosen at build time, and has nothing to flip (board.js says where).
+  // It sits in the topbar because that is where #398 asks for it, and it is
+  // drawn dashed and labelled "Mockup" so nobody judges it as part of the look.
+  const boardSwitch = () => {
+    const b = window.PABoard;
+    if (!b) return "";
+    const option = ([id, cfg]) =>
+      `<a href="${b.hrefFor(id)}"${id === b.id ? ' aria-current="true"' : ""}>` +
+      `<span>${cfg.label}</span><small>${cfg.assetSet} · ${b.setHolds[cfg.assetSet]}</small></a>`;
+    return `<div class="boardswitch" role="group" aria-label="Which board this mockup is showing">
+        <span class="bs-label">Mockup<small>board</small></span>
+        ${Object.entries(b.boards).map(option).join("")}
+      </div>`;
+  };
+
   // --- Topbar --------------------------------------------------------------
   const top = document.getElementById("shell-top");
   if (top) {
@@ -100,6 +119,7 @@
         <span><span class="brand-name">${state.droidName}</span><br><span class="brand-sub">R2-D2 Body Controller</span></span>
       </a>
       <div class="topbar-mid"><span>${surfaceName(state.page)}</span><span>/</span><b>${state.build || "MrBaddeley MK4"}</b></div>
+      ${boardSwitch()}
       <div class="estop-wrap">
         <div class="estop-lines">
           <span class="estop-state" role="status">${estopState}</span>

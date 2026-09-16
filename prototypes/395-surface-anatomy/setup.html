@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Setup - artoo</title>
   <link rel="stylesheet" href="anatomy.css">
+  <!-- Which board this mockup is showing, from ?board=. In the head so the
+       answer is stamped on <html> before the first frame. -->
+  <script src="board.js"></script>
   <!-- #398 mockup: guided Setup as a takeover inside the Operator Shell
        (CONTEXT.md "Setup", "Activity Group"). The chrome stays - the estop is
        on every screen - and the nav rail's column carries the run's own rail,
@@ -16,11 +19,17 @@
 </head>
 <body data-page="setup">
   <script>window.PA_STATE = { page: "setup", build: "MrBaddeley MK4" };</script>
-  <!-- The legacy asset set's drawings for the Sound family, from
-       data/asset-sets/legacy/_product_art.html, one hand across the set. The
-       sprite's own `var(--pa-art-bg,#0c1525)` fallbacks are pointed at this
-       stylesheet's --well so no colour literal rides in. -->
-  <svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <!-- The LEGACY asset set's drawings, from data/asset-sets/legacy/_product_art.html,
+       one hand across the set. The sprite's own `var(--pa-art-bg,#0c1525)`
+       fallbacks are pointed at this stylesheet's --well so no colour literal
+       rides in.
+
+       This whole sprite is what "legacy" means on a page: board.js removes it
+       when the switch is on the FireBeetle 2, whose build carries the `default`
+       set, and every card below then falls through to its photograph exactly as
+       data/setup.js:457-466 does on the real surface. The default set's own
+       partial is deliberately empty of art for the same reason. -->
+  <svg id="product-art" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
     <defs>
       <g id="art-chip" fill="none" stroke="currentColor" stroke-width="1.15">
         <rect x="0" y="0" width="34" height="22" rx="2"/>
@@ -194,26 +203,26 @@
                is "the kind of thing"; it inherits the card's colour. -->
           <div class="cards" role="group" aria-label="Sound module">
             <button class="card" type="button" aria-pressed="false">
-              <div class="card-art"><svg aria-hidden="true"><use href="#art-dy_sv5w"/></svg></div>
+              <div class="card-art" data-product="dy_sv5w"></div>
               <span class="pill">supported</span>
               <h3>DY-SV5W</h3>
               <p>Plays numbered tracks off a microSD card over one serial lead. Can be asked what it is, how many tracks it has and what is playing.</p>
             </button>
             <button class="card" type="button" aria-pressed="false">
-              <div class="card-art"><svg aria-hidden="true"><use href="#art-mp3_trigger"/></svg></div>
+              <div class="card-art" data-product="mp3_trigger"></div>
               <span class="pill">supported</span>
               <h3>MP3 Trigger</h3>
               <p>Robertsonics' board with the trigger pads down one edge. Plays by number and says what is playing.</p>
             </button>
             <button class="card" type="button" aria-pressed="true">
-              <div class="card-art"><svg aria-hidden="true"><use href="#art-chirp"/></svg></div>
+              <div class="card-art" data-product="chirp"></div>
               <span class="pill pill-blue">fitted</span>
               <h3>CHIRP Audio Trigger</h3>
               <p>Names its tracks, so Sound lists them by name and a mood picks from a list rather than a number.</p>
             </button>
             <!-- Settled no (#327): inert, dimmed, no destination, no date. -->
             <article class="card card-settled" aria-disabled="true">
-              <div class="card-art"><svg aria-hidden="true"><use href="#art-dfplayer_mini"/></svg></div>
+              <div class="card-art" data-product="dfplayer_mini"></div>
               <span class="pill">roadmap</span>
               <h3>DFPlayer Mini</h3>
               <p>Not built yet. Nothing to do here.</p>
