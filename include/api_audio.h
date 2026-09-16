@@ -49,7 +49,7 @@ const char* audioDeviceLabel(uint8_t device);
 
 // GET /api/audio's fields, verbatim (formatAudioStatusJson's JSON keys are
 // driver/capabilities/link_ok/active/play_state/device/total_tracks/
-// current_track/rx_status/rx_detail; driverName/capabilities/rx_status/
+// current_track/missing_track/rx_status/rx_detail; driverName/capabilities/rx_status/
 // rx_detail are derived from this snapshot's fields via audioGetDriverName(),
 // audioGetCapabilities(), audioRxStatusToken()/audioRxStatusDetail(), all
 // already shared between handleAudioGet() and the Console executor).
@@ -60,6 +60,7 @@ struct AudioStatusSnapshot {
     uint8_t device;
     uint16_t totalTracks;
     uint16_t currentTrack;
+    uint16_t missingTrack;
     AudioRxStatus rxStatus;
 };
 
@@ -82,14 +83,15 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 //         device       - 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
 //         totalTracks  - total tracks reported by module (0 if unknown)
 //         currentTrack - currently selected track (0 if unknown)
+//         missingTrack - last track the module said was not on the card (0 if none)
 //         rxStatus     - compact RX diagnostic string (must not be null)
 //         rxDetail     - operator-readable RX diagnostic (must not be null)
 // thread-safe: yes (pure function, no globals)
 void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
                            uint8_t capabilities, bool linkOk, bool active,
                            uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack, const char* rxStatus,
-                           const char* rxDetail);
+                           uint16_t currentTrack, uint16_t missingTrack,
+                           const char* rxStatus, const char* rxDetail);
 
 // Commit Steps (ADR 0036 criterion 1): the handler-owned post-apply side
 // effects for each of the three audio write Apply Cores, extracted so a

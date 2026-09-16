@@ -1,0 +1,12 @@
+diff --git a/data/sound.js b/data/sound.js
+--- a/data/sound.js
++++ b/data/sound.js
+@@ -155,7 +155,7 @@
+   const mp3RangeWarning = document.getElementById("mp3-range-warning");
+   const MP3_DRIVER_NAME = "MP3Trigger";
+   const MP3_WIRE_NOTE =
+-    "Power this board from the 3.3 V jumper — a 5 V rail can kill the controller's receive pin. Put a file named MP3TRIGR.INI on the card with the line #BAUD 9600, or the board will not answer.";
++    "Check the serial wiring.";
+   const MP3_RANGE_WARNING =
+     "This module stops at 255. 254 is Stop's silent file and 255 is the boot clip — they will not play as random chatter.";
+   const globalFb = document.getElementById("global-feedback");

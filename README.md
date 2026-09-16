@@ -25,7 +25,8 @@ tested, and designed to be understood and extended by the wider droid-building c
 - **Drive** — hoverboard motors via custom hoverboard firmware and serial UART communication
 - **RC input** — three selectable modes: Standard PWM (6-channel), Single SBUS, or Dual SBUS
 - **Audio** — pluggable backend: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, or
-  SparkFun MP3 Trigger; abstract `AudioDriver` interface for future modules
+  SparkFun MP3 Trigger. Set the one that is fitted; the change takes effect at reboot.
+  Abstract `AudioDriver` interface for future modules.
 - **Moods** — 15 presets coordinating body sounds and dome lighting; per-mood random chatter rate
 - **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
 - **AUX outputs** — 3× configurable outputs (AUX1-3 on ARM3/ARM4/ARM5): MG996R, MG90S, RGB LED, or disabled
@@ -266,7 +267,7 @@ The dome has no local sound module. The body is the sole audio authority.
 
 **Audio System**
 - Three supported audio modules: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger,
-  and SparkFun MP3 Trigger — swap between them with a reflash, no rewiring
+  and SparkFun MP3 Trigger — set the one that is fitted; the change takes effect at reboot, no rewiring
 - Audio commands from any source — RC radio, web browser, or dome controller —
   are handled together without conflicts
 - Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
@@ -277,7 +278,9 @@ The dome has no local sound module. The body is the sole audio authority.
 **Sound Page**
 - Sound page with volume slider, named sound buttons, direct track play, random chatter
   settings, mood sound intervals, and a live Audio Module status card showing connection
-  state, device type, play state, and track count from the module itself
+  state, play state, and track count
+- On an MP3 Trigger the status card names the 3.3 V jumper and the 9600 card file,
+  says when a clip is missing, and follows play/stop from the board's finish byte
 
 **Moods and Sequences**
 - 15 mood and sequence presets selectable from the dashboard or RC radio
@@ -342,7 +345,7 @@ The dome has no local sound module. The body is the sole audio authority.
 - Failsafe response time is measurable and logged
 
 **Hardware Flexibility**
-- Audio module is swappable — changing modules requires only a reflash, no hardware rewiring
+- Audio module is swappable — pick the one that is fitted; it takes effect at reboot, no rewiring
 - AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
 - Runtime WiFi provisioning: a newly flashed controller hosts its own setup
   network at first boot, then the operator picks WiFi Client Mode or

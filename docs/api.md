@@ -661,6 +661,13 @@ Returns live audio module status.
     `GET /api/identity/components`.
   - `capabilities`: the `AUDIO_CAP_*` bitmask declared on that module's
     Component Registry row. Clients branch on a bit, never on `driver`.
+  - `play_state`: `stop`, `playing`, `paused`, or `unknown`. On the MP3 Trigger
+    this follows unsolicited finish/cancel/missing-track bytes (`'X'`/`'x'`/`'E'`),
+    not a query; it is `unknown` until the first such byte after boot.
+  - `device`: storage source when the module reports one; `none` when the
+    capability is absent (MP3 Trigger).
+  - `missing_track`: last track the module said was not on the card (`'E'` on
+    the MP3 Trigger); `0` when none.
 
 #### Example request
 
@@ -671,7 +678,7 @@ curl -s http://artoo.local/api/audio
 #### Example response
 
 ```json
-{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0}
+{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0}
 ```
 
 ### POST /api/audio
@@ -1310,7 +1317,9 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"soundMember is not a sound module this firmware can drive"}`.
   Independent of `enableAudio`: the toggle says a sound module is fitted, the
   member says which product it is. Saved immediately, **takes effect at the next
-  reboot** like a component toggle.
+  reboot** like a component toggle. Setup's Audio control is that enable
+  toggle plus the live driver name; it does not POST `soundMember`. There is
+  not yet a Configuration-page picker for this field (#369).
 - droid build (ADR 0047): `domeDesign` + `domeVariant`, and `bodyDesign` +
   `bodyVariant`. Each half is sent as a **pair** — a variant means nothing
   without the design it belongs to — and each must name a design the catalog

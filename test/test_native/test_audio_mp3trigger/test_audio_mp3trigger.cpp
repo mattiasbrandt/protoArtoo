@@ -10,9 +10,9 @@
 // test_audio_chirp: all logic under test is extracted as standalone functions
 // that mirror the implementation in audio_mp3trigger.cpp exactly.
 //
-// Volume formula (inverted VS1053 register):
-//   nativeVol = (30 - vol) * MP3TRIGGER_VOL_MAX / 30
-//   vol=0 → 255 (silent), vol=30 → 0 (maximum), vol=15 → 127.
+// Volume formula (inverted VS1063 register, vendor-audible 0-64; #396):
+//   nativeVol = (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30
+//   vol=0 → 64 (vendor floor), vol=30 → 0 (maximum), vol=20 → 21.
 //
 // Stop workaround: play track MP3TRIGGER_STOP_TRACK (254) — see driver header.
 // =============================================================================
@@ -23,8 +23,8 @@
 
 // Replicate constants locally — keeps tests self-contained and avoids pulling
 // in Arduino headers through audio_mp3trigger.h.
-static constexpr uint8_t MP3TRIGGER_STOP_TRACK = 254;
-static constexpr uint8_t MP3TRIGGER_VOL_MAX    = 255;
+static constexpr uint8_t MP3TRIGGER_STOP_TRACK   = 254;
+static constexpr uint8_t MP3TRIGGER_VOL_AUDIBLE  = 64;
 
 // Capability bits (from audio_driver.h — replicated to keep tests standalone)
 static constexpr uint8_t AUDIO_CAP_STATUS_QUERY   = 0x01;
@@ -33,7 +33,7 @@ static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK  = 0x08;
 
 // Volume scaling formula (mirrors audio_mp3trigger.cpp exactly)
 static uint8_t mp3triggerVolScale(uint8_t vol) {
-    return (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_MAX / 30u);
+    return (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_AUDIBLE / 30u);
 }
 
 // Guard logic for track range (mirrors playTrack() guard in audio_mp3trigger.cpp)
@@ -45,10 +45,10 @@ void setUp() {}
 void tearDown() {}
 
 // -----------------------------------------------------------------------------
-// Test 1: Volume scaling boundary — vol=0 → 255 (silent)
+// Test 1: Volume scaling boundary — vol=0 → 64 (vendor audible floor)
 // -----------------------------------------------------------------------------
-void test_volume_zero_maps_to_255() {
-    TEST_ASSERT_EQUAL_UINT8(255, mp3triggerVolScale(0));
+void test_volume_zero_maps_to_vendor_floor() {
+    TEST_ASSERT_EQUAL_UINT8(64, mp3triggerVolScale(0));
 }
 
 // -----------------------------------------------------------------------------
@@ -59,11 +59,11 @@ void test_volume_max_30_maps_to_0() {
 }
 
 // -----------------------------------------------------------------------------
-// Test (bonus): Volume scaling midpoint — vol=15 → 127
-// (30-15)*255/30 = 3825/30 = 127 exactly.
+// Test (bonus): Volume scaling midpoint — vol=15 → 32
+// (30-15)*64/30 = 960/30 = 32 exactly.
 // -----------------------------------------------------------------------------
-void test_volume_mid_15_maps_to_127() {
-    TEST_ASSERT_EQUAL_UINT8(127, mp3triggerVolScale(15));
+void test_volume_mid_15_maps_to_32() {
+    TEST_ASSERT_EQUAL_UINT8(32, mp3triggerVolScale(15));
 }
 
 // -----------------------------------------------------------------------------
@@ -78,12 +78,12 @@ void test_volume_scale_monotonically_decreasing() {
 }
 
 // -----------------------------------------------------------------------------
-// Test 3: Volume scale never exceeds MP3TRIGGER_VOL_MAX (255)
+// Test 3: Volume scale never exceeds MP3TRIGGER_VOL_AUDIBLE (64)
 // -----------------------------------------------------------------------------
-void test_volume_scale_never_exceeds_255() {
+void test_volume_scale_never_exceeds_audible() {
     for (uint8_t v = 0; v <= 30; v++) {
-        TEST_ASSERT_TRUE_MESSAGE(mp3triggerVolScale(v) <= MP3TRIGGER_VOL_MAX,
-                                 "scaled volume must not exceed MP3TRIGGER_VOL_MAX");
+        TEST_ASSERT_TRUE_MESSAGE(mp3triggerVolScale(v) <= MP3TRIGGER_VOL_AUDIBLE,
+                                 "scaled volume must not exceed MP3TRIGGER_VOL_AUDIBLE");
     }
 }
 
@@ -208,18 +208,18 @@ void test_s1_response_no_equals_prefix_skips_parse() {
 
 // Volume formula: additional spot-check values
 void test_volume_10_maps_correct() {
-    // (30-10)*255/30 = 20*255/30 = 5100/30 = 170
-    TEST_ASSERT_EQUAL_UINT8(170, mp3triggerVolScale(10));
+    // (30-10)*64/30 = 20*64/30 = 1280/30 = 42 (integer division)
+    TEST_ASSERT_EQUAL_UINT8(42, mp3triggerVolScale(10));
 }
 
 void test_volume_20_maps_correct() {
-    // (30-20)*255/30 = 10*255/30 = 2550/30 = 85
-    TEST_ASSERT_EQUAL_UINT8(85, mp3triggerVolScale(20));
+    // (30-20)*64/30 = 10*64/30 = 640/30 = 21 (integer division)
+    TEST_ASSERT_EQUAL_UINT8(21, mp3triggerVolScale(20));
 }
 
 void test_volume_1_maps_correct() {
-    // (30-1)*255/30 = 29*255/30 = 7395/30 = 246 (integer division)
-    TEST_ASSERT_EQUAL_UINT8(246, mp3triggerVolScale(1));
+    // (30-1)*64/30 = 29*64/30 = 1856/30 = 61 (integer division)
+    TEST_ASSERT_EQUAL_UINT8(61, mp3triggerVolScale(1));
 }
 
 // -----------------------------------------------------------------------------
@@ -228,11 +228,11 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
 
     // Volume scaling (spec tests 1–3)
-    RUN_TEST(test_volume_zero_maps_to_255);
+    RUN_TEST(test_volume_zero_maps_to_vendor_floor);
     RUN_TEST(test_volume_max_30_maps_to_0);
-    RUN_TEST(test_volume_mid_15_maps_to_127);
+    RUN_TEST(test_volume_mid_15_maps_to_32);
     RUN_TEST(test_volume_scale_monotonically_decreasing);
-    RUN_TEST(test_volume_scale_never_exceeds_255);
+    RUN_TEST(test_volume_scale_never_exceeds_audible);
     RUN_TEST(test_volume_10_maps_correct);
     RUN_TEST(test_volume_20_maps_correct);
     RUN_TEST(test_volume_1_maps_correct);

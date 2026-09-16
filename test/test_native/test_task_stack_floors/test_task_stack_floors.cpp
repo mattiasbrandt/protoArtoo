@@ -215,6 +215,25 @@ void test_the_previously_unmeasured_tasks_now_carry_chains() {
 // entry costs. It is the pre-existing shipping value and #248's tight-heap
 // argument is why it stands; if it is ever raised, this test is where the
 // decision is recorded.
+// Native cannot compile the ESP32-P4 arm. The rule itself is chip-agnostic,
+// so the #256 reopen's P4 derivations are pinned here as arithmetic: an edit
+// that "simplifies" the rule would silently shrink those stacks.
+void test_p4_reopen_derivations_follow_the_rule() {
+    TEST_ASSERT_EQUAL_UINT32(6144U, stackByTheRule(4832U));   // DriveTask
+    TEST_ASSERT_EQUAL_UINT32(8192U, stackByTheRule(6544U));   // RCInputTask
+    TEST_ASSERT_EQUAL_UINT32(5120U, stackByTheRule(4000U));   // ServoTask
+    TEST_ASSERT_EQUAL_UINT32(5120U, stackByTheRule(3984U));   // DomeTask
+    TEST_ASSERT_EQUAL_UINT32(6656U, stackByTheRule(5040U));   // AudioTask
+    TEST_ASSERT_EQUAL_UINT32(5632U, stackByTheRule(4464U));   // AuxLedTask
+    TEST_ASSERT_EQUAL_UINT32(9216U, stackByTheRule(7296U));   // DomeLinkTask
+    TEST_ASSERT_EQUAL_UINT32(5120U, stackByTheRule(4064U));   // SafetyMonitor (profiler)
+    TEST_ASSERT_EQUAL_UINT32(6144U, stackByTheRule(4576U));   // SeqDisp
+    TEST_ASSERT_EQUAL_UINT32(10752U, stackByTheRule(8320U));  // Console
+    TEST_ASSERT_EQUAL_UINT32(7680U, stackByTheRule(5776U));   // WebEvents
+    TEST_ASSERT_EQUAL_UINT32(5120U, stackByTheRule(4000U));   // ArduinoOTA
+    TEST_ASSERT_EQUAL_UINT32(5632U, stackByTheRule(4480U));   // HostedRecovery
+}
+
 void test_the_thinnest_declined_floor_is_dome_task_on_this_board() {
     const uint32_t headroom = DOME_TASK_STACK_BYTES - DOME_TASK_MEASURED_CHAIN_BYTES;
     TEST_ASSERT_EQUAL_UINT32(80U, headroom);
@@ -233,6 +252,7 @@ int main() {
     RUN_TEST(test_every_task_stack_is_a_whole_512_byte_step);
     RUN_TEST(test_safety_monitor_was_raised_because_its_floor_failed);
     RUN_TEST(test_the_previously_unmeasured_tasks_now_carry_chains);
+    RUN_TEST(test_p4_reopen_derivations_follow_the_rule);
     RUN_TEST(test_the_thinnest_declined_floor_is_dome_task_on_this_board);
     return UNITY_END();
 }

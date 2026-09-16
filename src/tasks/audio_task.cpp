@@ -559,7 +559,20 @@ static void writeModuleState(const AudioModuleState& ms, AudioRxStatus rxStatus)
     robotState.audio_module_device = ms.device;
     robotState.audio_module_total_tracks = ms.totalTracks;
     robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
     robotState.audio_module_rx_status = rxStatus;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// Play-state from unsolicited finish bytes. Does not take the dome UART (#396).
+static void pumpUnsolicitedRx() {
+    driver()->serviceRx();
+    AudioModuleState ms{};
+    driver()->getCachedState(ms);
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.audio_module_play_state = ms.playState;
+    robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_missing_track = ms.missingTrack;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -718,6 +731,7 @@ void audioTask(void* pvParameters) {
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);
+                pumpUnsolicitedRx();
             }
             if (ca.refreshCatalog) {
                 bool acquired = audioUartClaim();
@@ -787,6 +801,7 @@ void audioTask(void* pvParameters) {
         if (idle.hasIntent) {
             executePlaybackIntent(idle.intent, SRC_INTERNAL);
         }
+        pumpUnsolicitedRx();
         if (idle.autoQuery) {
             AudioModuleState ms{};
             bool acquired = audioUartClaim();

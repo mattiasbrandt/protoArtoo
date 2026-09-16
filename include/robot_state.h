@@ -250,6 +250,7 @@ struct RobotState {
     uint8_t audio_module_device;
     uint16_t audio_module_total_tracks;
     uint16_t audio_module_current_track;
+    uint16_t audio_module_missing_track;
     AudioRxStatus audio_module_rx_status;
 
     // --- Zone 6: Servo (ServoTask) ---

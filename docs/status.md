@@ -122,8 +122,9 @@ A second controller board, supported for developers.
   failsafe with motors connected, and kill-switch behavior have not yet been
   confirmed on an assembled droid with a hoverboard installed. This is planned
   as follow-up work after `v1.0.0` and will be documented when complete.
-- **MP3 Trigger audio module** — an alternative to the CHIRP module some
-  builders use. Not re-confirmed on hardware for this release.
+- **MP3 Trigger audio module** — a selectable alternative to DY-SV5W and CHIRP.
+  The driver and Sound page are implemented. Not confirmed on hardware for this
+  release.
 - **`help` leaves the description out for some commands.** A description past a
   certain length is dropped rather than shortened: over the serial cable that
   hits 14 of the 194 commands, in the browser 2 of them, so the same `help` can

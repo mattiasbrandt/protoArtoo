@@ -57,10 +57,14 @@ no driver behind it.
 | `chirp` | CHIRP Audio Trigger | ASCII commands, configurable baud | ✅ Implemented — TX+RX, live status queries |
 | `dfplayer_mini` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Planned — no driver in the image |
 
-To change module: wire up the new one and pick it on the Configuration page.
-The change is saved immediately and takes effect at the next boot. The same
-choice over the API is `POST /api/config` with `soundMember=<member id>`; the
-lineup itself is `GET /api/identity/components`.
+To change module: wire up the new one and `POST /api/config` with
+`soundMember=<member id>`. The change is saved immediately and takes effect at
+the next boot. The lineup itself is `GET /api/identity/components`.
+
+Setup's Audio control is an enable toggle plus the live driver name; it does
+not choose which product is fitted. The Component Picker cards that would show
+each module's photograph are still to come (#369). The photographs already
+ship in the default asset set (`/<id>.webp`, including `mp3_trigger.webp`).
 
 The `PA_AUDIO_DRIVER` values (`AUDIO_SOFT_UART`, `AUDIO_CHIRP`,
 `AUDIO_MP3TRIGGER`) still name the same three modules, and still select which
@@ -296,7 +300,7 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 |---|---|---|
 | `playTrack(n)` | `'t'` + `uint8_t(n)` | n must be 1–255; values outside range are dropped |
 | `stop()` | `'t'` + `0xFE` (254) | Play silent blank track MP3TRIGGER_STOP_TRACK |
-| `setVolume(v)` | `'v'` + nativeVol | nativeVol = (30 − v) × 255 / 30 |
+| `setVolume(v)` | `'v'` + nativeVol | nativeVol = (30 − v) × 64 / 30 (vendor audible range; #396) |
 
 > \u26a0 **Stop workaround:** The MP3 Trigger has no discrete stop command.
 > `stop()` plays track 254, the community-standard silent blank track
@@ -305,26 +309,35 @@ All protoArtoo named-track NVS defaults match this layout with no remapping need
 
 #### Volume scaling (VS1063 register is inverted)
 
-- vol=0 \u2192 nativeVol=255 (silent)
-- vol=15 \u2192 nativeVol=127 (mid)
-- vol=30 \u2192 nativeVol=0 (maximum)
+The register accepts 0–255 (0 = loudest). The vendor guide's useful range is
+0–64; values much above that are inaudible. protoArtoo maps the operator's
+0–30 slider onto that audible span (#396):
 
-Following BetterDuino: practical audible range is approximately 0–100 on the
-native scale; values above ~100 are near-inaudible but technically valid.
+- vol=0 → nativeVol=64 (vendor floor)
+- vol=15 → nativeVol=32 (mid)
+- vol=20 → nativeVol=21 (shipped default)
+- vol=30 → nativeVol=0 (maximum)
 
 #### Status queries
 
 The driver sends `'S'+'0'` (version) and `'S'+'1'` (track count) at init and
-on each periodic query to verify the serial link and refresh total tracks.
-Response lines are `=`-prefixed; the `=` character is stripped before parsing.
+on each operator Poll to verify the serial link and refresh total tracks.
+Auto-query is off (`QUERY_SAFE_PLAYING` is not set). Response lines are
+`=`-prefixed; the `=` character is stripped before parsing. Leading `'X'` /
+`'x'` / `'E'` are skipped so a finish byte cannot fail a live query.
 
-Play state and device type cannot be queried in this protocol. `AudioModuleState`
-returns `playState=0xFF` and `device=0xFF` always. The Sound page hides the
-Device row and shows a manual Poll button for this backend.
+Device type cannot be queried in this protocol; `device` is always `0xFF`.
+Play-state is not a query either: unsolicited `'X'` (finished), `'x'`
+(cancelled) and `'E'` (missing track) update cached `playState` (0 = stop,
+1 = playing). Until the first of those bytes after boot, play-state is
+`unknown`. The Sound page hides the Device row, shows a manual Poll button for
+S0/S1, names a missing clip from `'E'`, and warns when a saved category range
+includes 254 or 255.
 
-> \u26a0 **Play-state indicator always shows `unknown`** for the MP3 Trigger.
-> Use the Track counter (cached from last `playTrack()` call) to confirm
-> commands are reaching the module.
+> **Play-state follows the board's finish byte** (#396). It is not a query, and
+> it stays `unknown` until the first `'X'` / `'x'` / `'E'`. `'E'` is a missing
+> file on the card, not a wiring fault. Use Poll for link and track count; do
+> not poll while a clip is playing.
 
 ---
 
@@ -401,7 +414,8 @@ AudioTask manages the random sound timer internally — no driver involvement.
 ## 5. Operator Frontend Surfaces
 
 The audio system is operated primarily through the Sound page, with Setup used
-to enable/disable the hardware path.
+to enable/disable the hardware path. Which sound product is fitted is a
+Component Member (`soundMember`), not a Setup toggle.
 
 ### Sound page (`/sound.html`)
 
@@ -415,6 +429,8 @@ Primary workflows:
 - Mood interval timing controls
 - Direct track playback
 - CHIRP catalog tools (when backend supports catalog)
+- MP3 Trigger: 3.3 V jumper and `MP3TRIGR.INI` `#BAUD 9600` wiring note,
+  missing-clip banner from `'E'`, category-range warning for 254/255
 
 Implementation references:
 
@@ -426,8 +442,11 @@ Implementation references:
 Audio-related controls:
 
 - `S2 - Sound` enable/disable toggle
-- Active driver label visibility for S2
+- Live driver label for S2 (the fitted member's name, not a product picker)
 - Sound serial state visibility in setup diagnostics
+
+The Setup board picture is the body controller (`artoo_pcb` / `firebeetle2`),
+not the sound module.
 
 Implementation references:
 
@@ -444,4 +463,5 @@ Implementation references:
 4. [R2D2 Sounds — Printed Droid](https://www.printed-droid.com/kb/r2d2-sounds)
 5. [DY-SV5W — Arduino Forum](https://forum.arduino.cc/t/how-to-use-dy-sv5w-mp3-player/1218247)
 6. [DY-SV5W spec sheet](spec-sheets/dy-sv5w-sound.md) — this project's protocol and hardware research for the DY-SV5W
-7. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) — the planned fourth member
+7. [MP3 Trigger spec sheet](spec-sheets/mp3-trigger-sound.md) — protocol, card layout, electricals, and what the driver actually sends
+8. [DFPlayer Mini spec sheet](spec-sheets/dfplayer-mini-sound.md) — the planned fourth member

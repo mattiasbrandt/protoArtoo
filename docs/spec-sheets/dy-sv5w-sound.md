@@ -70,7 +70,7 @@ The **Sound** category holds four products, and a builder picks one:
 | Product | What it is | Status | Registry value |
 | --- | --- | --- | --- |
 | **DY-SV5W** | binary-frame voice module with a 5 W amplifier | **`supported`** | **18** |
-| MP3 Trigger | SparkFun/Robertsonics VS1053 board | `supported` | 19 |
+| MP3 Trigger | SparkFun/Robertsonics VS1063 board | `supported` | 19 |
 | CHIRP Audio Trigger | RP2350 multi-stream mixer, astromech-specific | `supported` | 20 |
 | DFPlayer Mini | hardware-decoded single-stream player with an amplifier | `roadmap` | 21 |
 
@@ -838,9 +838,9 @@ value is 30)"*), and by BetterDuino's ladder -- `VolumeMax()` = 30,
 > `setVolume(vol)` puts `vol` in the frame unchanged.
 >
 > That is not universal in this family and the difference bites. The MP3 Trigger's
-> VS1053 register is **inverted and 0-255** (`docs/sound_playback.md`: *"vol=0 ->
-> nativeVol=255 (silent) ... vol=30 -> nativeVol=0 (maximum)"*), and CHIRP scales
-> 0-30 to 0-99. Section 15.2 is a live example of an astromech project carrying an
+> VS1063 register is **inverted**; protoArtoo maps 0-30 onto the vendor-audible
+> 0-64 (`nativeVol = (30 - vol) * 64 / 30`, #396), and CHIRP scales 0-30 to 0-99.
+> Section 15.2 is a live example of an astromech project carrying an
 > MP3 Trigger volume comment into DY-SV5W code and getting the direction backwards.
 
 The setting table's `Remark` column says `VOL: 0x00-0xFF`, which contradicts the
@@ -1563,11 +1563,11 @@ Recorded so nobody searches twice:
 | Transport | **binary, 9600 fixed** | binary, 9600 (38400 factory) | ASCII, configurable | binary, 9600 |
 | Frame | **`AA CMD LEN .. SM`, 4+n B** | 2 bytes | ASCII lines | fixed 10 B |
 | Checksum | **sum, 1 byte** | none | none | 16-bit negated sum |
-| Volume native | **0-30 ascending -- no scaling** | 0-255 **inverted** | 0-99 | 0-30 |
+| Volume native | **0-30 ascending -- no scaling** | 0-255 inverted; we send 0-64 | 0-99 | 0-30 |
 | Simultaneous streams | **1** | 1 | **3+, mixed** | 1 |
-| Decoding | **hardware** | VS1053 | software, RP2350 | hardware |
+| Decoding | **hardware** | VS1063 | software, RP2350 | hardware |
 | Addressing | **index, enumeration order** | file-name prefix | catalog + bank/page | index *or* filename |
-| Play-state query | **yes (`0x01`)** | **no** -- *"always shows unknown"* | yes | yes |
+| Play-state query | **yes (`0x01`)** | **no query** -- follows `'X'`/`'x'`/`'E'` | yes | yes |
 | Device-type query | **yes (`0x09`/`0x0A`)** | no | yes | yes |
 | Safe to query while playing | **no** | no | **yes** | untested |
 | Track-finished event | no | no | no | **pushed** |

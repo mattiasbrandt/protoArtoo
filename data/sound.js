@@ -150,6 +150,14 @@
   const moodMapSaveBtn = document.getElementById("btn-mood-map-save");
   const soundStateBadge = document.getElementById("sound-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
+  const mp3WireNote = document.getElementById("mp3-wire-note");
+  const mp3MissingTrack = document.getElementById("mp3-missing-track");
+  const mp3RangeWarning = document.getElementById("mp3-range-warning");
+  const MP3_DRIVER_NAME = "MP3Trigger";
+  const MP3_WIRE_NOTE =
+    "Power this board from the 3.3 V jumper — a 5 V rail can kill the controller's receive pin. Put a file named MP3TRIGR.INI on the card with the line #BAUD 9600, or the board will not answer.";
+  const MP3_RANGE_WARNING =
+    "This module stops at 255. 254 is Stop's silent file and 255 is the boot clip — they will not play as random chatter.";
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
   const volDisplay = document.getElementById("vol-display");
@@ -184,6 +192,7 @@
   const categoryDirtyTrackers = new Map();
   const systemDirtyTrackers = new Map();
 
+  let lastDriverIsMp3 = false;
   let soundHardwareEnabled = true;
   let moodMapApiAvailable = true;
   let moodMapLoaded = false;
@@ -305,6 +314,31 @@
     moduleStatusCadenceWanted = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
   };
 
+  const mp3RangeNeedsWarning = (lo, hi) => {
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+    if (lo === 0 && hi === 0) return false;
+    return lo > 255 || hi > 255 || (hi >= 254 && lo >= 1);
+  };
+
+  const refreshMp3RangeWarning = (isMp3) => {
+    if (!mp3RangeWarning) return;
+    if (!isMp3) {
+      mp3RangeWarning.textContent = "";
+      setElementVisible(mp3RangeWarning, false);
+      return;
+    }
+    let warn = false;
+    CATEGORY_SOUNDS.forEach((category) => {
+      const minInput = document.getElementById(`cat-min-${category.loKey}`);
+      const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
+      const lo = Number.parseInt(minInput?.value, 10);
+      const hi = Number.parseInt(maxInput?.value, 10);
+      if (mp3RangeNeedsWarning(lo, hi)) warn = true;
+    });
+    mp3RangeWarning.textContent = warn ? MP3_RANGE_WARNING : "";
+    setElementVisible(mp3RangeWarning, warn);
+  };
+
   const applyCapabilityUI = (caps) => {
     const supportsStatusQuery = (caps & AUDIO_CAP_STATUS_QUERY) !== 0;
     const supportsDeviceType = (caps & AUDIO_CAP_DEVICE_TYPE) !== 0;
@@ -385,6 +419,25 @@
       if (modPlayState) modPlayState.textContent = d.play_state ?? "—";
       if (modTotalTracks) modTotalTracks.textContent = d.total_tracks ?? "—";
       if (modCurrentTrack) modCurrentTrack.textContent = d.current_track ?? "—";
+
+      const isMp3 = d.driver === MP3_DRIVER_NAME;
+      lastDriverIsMp3 = isMp3;
+      if (mp3WireNote) {
+        mp3WireNote.textContent = isMp3 ? MP3_WIRE_NOTE : "";
+        setElementVisible(mp3WireNote, isMp3);
+      }
+      const missing = Number(d.missing_track);
+      if (mp3MissingTrack) {
+        if (isMp3 && Number.isFinite(missing) && missing > 0) {
+          mp3MissingTrack.textContent =
+            `Track ${missing} is not on the card — that is the clip, not the wiring.`;
+          setElementVisible(mp3MissingTrack, true);
+        } else {
+          mp3MissingTrack.textContent = "";
+          setElementVisible(mp3MissingTrack, false);
+        }
+      }
+      refreshMp3RangeWarning(isMp3);
 
       // Update the badge with the real module-reported play state.
       // Only override when the module is actually responding; if link_ok is
@@ -1959,6 +2012,7 @@
           catalogCategoryRanges.push({ label: category.label, loKey: category.loKey, lo: minVal, hi: maxVal });
         }
       });
+      refreshMp3RangeWarning(lastDriverIsMp3);
 
       const randMin = document.getElementById("rand-min");
       const randMax = document.getElementById("rand-max");
