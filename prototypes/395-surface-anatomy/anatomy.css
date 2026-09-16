@@ -730,24 +730,21 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .card[aria-pressed="true"] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--plate)); }
 .card-art { height: 96px; display: grid; place-items: center; background: var(--well); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink-2); }
 .card-art svg { width: 100%; height: 100%; padding: var(--s1); }
-/* The photograph, where the default set has one in place of the drawing. Ours
-   are cut out on a dark navy ground (#0c1524 at every corner, measured
-   2026-09-16 across all twenty), which sits between --well and --plate, so they
-   need no white plate behind them: the reference project's "a photo on a dark
-   plate reads as a bright slab in a hole" does not apply to this set. What they
-   do need is the plate's seam, which is what keeps the picture's own ground
-   from merging into the well. */
+/* The plate behind a photograph is painted the photograph's own ground, so
+   only the seam shows. Ours are cut out on a dark navy #0c1524 (measured at
+   every corner of all twenty, 2026-09-16), which sits between --well and
+   --plate, so the reference project's "a photo on a dark plate reads as a
+   bright slab in a hole" does not apply to this set: what it needs is the
+   plate's ground to match and the seam to stay. board.js stamps the set on
+   <html>; on the legacy set every picture is a drawing that inherits the
+   card's colour, and the plate keeps the well. */
+html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
 /* align-self: stretch is load-bearing. .card-art centres its item, which
    leaves a replaced element's percentage height unresolved, so the picture
    lays out at its own 4:3 from the card's width and spills 47 px past the
    plate onto the pill below it (measured 2026-09-16). Stretching the item
    gives the height something to resolve against and object-fit letterboxes
    inside it. */
-/* The plate behind a photograph is painted the photograph's own ground, so
-   only the seam shows. board.js stamps the set on <html>; on the legacy set
-   every picture is a drawing that inherits the card's colour and the plate
-   keeps the well. */
-html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
 .card-art img {
   display: block;
   align-self: stretch;
@@ -765,6 +762,9 @@ html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
 .card-text .card-art { display: none; }
 /* Settled no: a roadmap card is inert - not a button, no destination, no
    date, no version - and takes the settled dim (#327, Availability Family). */
+.card-settled { opacity: var(--avail-dim-settled); border-style: dashed; }
+.card-settled:hover { opacity: 1; }
+
 /* The Body Controller card, which is also where the board picture lives. One
    card, never a choice: the Component Registry gates its two products on
    PA_BOARD, so the image carries exactly one of them. The plate is 300 x 225,
@@ -776,9 +776,6 @@ html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
 .boardcard-text .pill { justify-self: start; }
 .boardcard-text h3 { font: 600 var(--fs-h2) / 1.3 var(--sans); }
 .boardcard-text p { font: var(--fs-body) / 1.55 var(--sans); color: var(--ink-2); max-width: var(--measure); }
-
-.card-settled { opacity: var(--avail-dim-settled); border-style: dashed; }
-.card-settled:hover { opacity: 1; }
 .consequence { margin-top: var(--s4); }
 .wizard-acts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
 .wizard-acts .spacer { flex: 1; }
