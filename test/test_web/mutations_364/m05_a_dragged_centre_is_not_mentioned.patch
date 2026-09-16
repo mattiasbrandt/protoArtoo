@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..ef848195 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1094,7 +1094,7 @@
+     }
+     await refresh();
+     const after = dialOutput();
+-    if (after && after.centreUs !== centreBefore) {
++    if (after && after.centreUs === centreBefore) {
+       setNote(
+         `${label} is ${dial.us} µs. Centre moved to ${after.centreUs} µs — it was outside the travel you just captured.`,
+         "warning"

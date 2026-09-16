@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..23adb4ca 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1303,7 +1303,7 @@
+     const output = outputs.find((each) => each.address === address);
+     if (!output) return;
+     const label = outputLabel(output);
+-    const findingPart = run !== null && run.address === address ? run.partId : null;
++    const findingPart = null;
+     if (findingPart !== null) {
+       // The nudged Output's last commanded mark is not current any more: the
+       // release ended the nudge somewhere the run never read.

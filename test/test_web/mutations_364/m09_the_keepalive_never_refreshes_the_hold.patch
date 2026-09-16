@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..d80927b6 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1030,7 +1030,7 @@
+   const startKeepalive = () => {
+     stopKeepalive();
+     holdTimer = window.setInterval(() => {
+-      if (dial !== null && !dial.sweeping) sendHold();
++      if (dial === null) sendHold();
+     }, HOLD_KEEPALIVE_MS);
+   };
+ 

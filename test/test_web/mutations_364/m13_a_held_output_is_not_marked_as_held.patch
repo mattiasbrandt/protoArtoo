@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..4be521de 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -370,7 +370,7 @@
+     else if (output.targetUs === output.commandedUs) row.us.textContent = `${output.commandedUs} µs`;
+     else row.us.textContent = `${output.commandedUs} → ${output.targetUs} µs`;
+     if (light) row.release.textContent = "None - a light has nothing to let go of";
+-    else if (output.held) row.release.textContent = "The dial is holding it";
++    else if (false) row.release.textContent = "The dial is holding it";
+     else if (pulsing) row.release.textContent = "Holds where it stops";
+     // An Output that has gone limp says WHICH of the ways it can happen this
+     // was (#364): a bound the dial ran into is not the estop letting go.

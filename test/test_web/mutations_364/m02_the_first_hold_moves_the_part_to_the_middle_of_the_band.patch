@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..6ce1b296 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1061,7 +1061,7 @@
+       // Start from where the droid says the Output is standing, so the first
+       // hold does not move the part at all. An Output with no pulse has no
+       // position to start from, so the middle of its band is the honest guess.
+-      us: output.commandedUs === null ? Math.round((band.lo + band.hi) / 2) : output.commandedUs,
++      us: Math.round((band.lo + band.hi) / 2),
+       safe: false,
+       ends: false,
+       sweeping: false,

@@ -1,0 +1,17 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..ed255ab3 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -721,11 +721,7 @@
+     // Ending a nudge bumps nudgesDone, so without this the count going up would
+     // read as "that one finished, try the next" and the run would carry on
+     // past the thing the builder just did.
+-    if (output.commandedUs === null) {
+-      endRun(
+-        `${outputLabel(output)} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`,
+-        "warning"
+-      );
++    if (output.commandedUs === null && false) {
+       return;
+     }
+     if (output.nudgesDone === run.before) return;

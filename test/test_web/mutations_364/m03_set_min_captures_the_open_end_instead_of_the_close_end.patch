@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..f3324797 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -918,7 +918,7 @@
+     `<span class="cal-readout"></span>` +
+     `</div>` +
+     `<div class="cal-acts">` +
+-    `<button class="btn accent cal-set" type="button" data-end="close">Set MIN</button>` +
++    `<button class="btn accent cal-set" type="button" data-end="open">Set MIN</button>` +
+     `<button class="btn accent cal-set" type="button" data-end="centre">Set CENTER</button>` +
+     `<button class="btn accent cal-set" type="button" data-end="open">Set MAX</button>` +
+     `</div>` +

@@ -1,0 +1,14 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..a3eebad6 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1050,8 +1050,7 @@
+     if (outputs === null) return;
+     const output = outputs.find((each) => each.address === address);
+     if (!output) return;
+-    if (run !== null) {
+-      showFeedback(`One at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
++    if (run !== null && false) {
+       return;
+     }
+     if (dial !== null && dial.address !== address) closeDial();
