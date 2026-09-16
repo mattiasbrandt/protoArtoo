@@ -57,6 +57,49 @@ address in the gap after a function to nothing rather than to that function.
 The 1% of function symbols carrying no size are still bounded by the next
 symbol, and are counted in the coverage report.
 
+WHICH BYTES INSIDE A BODY ARE CODE
+----------------------------------
+Only the ones that sit on a real instruction boundary -- see
+``_true_boundaries()``.
+
+The bound above is necessary and not sufficient. ``objdump -d`` decodes a
+section as one linear byte stream, and a body can contain a byte that no
+instruction starts at: alignment padding after an unconditional jump, usually a
+single ``0x00``. objdump consumes it as the first byte of the next instruction
+and emits several MISFRAMED instructions, built from the tails and heads of
+real ones, before it lands on a real boundary again. Some of those decode as
+calls, and a call's target on both ports is PC-relative, so it moves with the
+link: in one build it points into the middle of a function and is reported
+unresolved, in the next it lands exactly on some unrelated function's entry and
+becomes a followed edge.
+
+That is what made newlib's ``__lshift`` appear to call ``esp_task_wdt_deinit``
+and put a fabricated 96 bytes on eight of twelve tasks -- every one whose chain
+runs through ``printf`` float formatting -- in a build whose source touched none
+of them (#401). The padding is *inside* the symbol size, so the #271 bound
+cannot see it.
+
+What IS provable is the framing, from nothing objdump has not already printed.
+Every in-body branch target is a boundary the hardware guarantees, and an
+instruction's length comes from its first byte on both ports, so re-framing
+forward from a branch target says exactly which of objdump's addresses are
+real. An address that is not yields no call edge and no literal.
+
+Reachability would be the wrong test, and was tried first: objdump's own
+listing is what is wrong, so a branch target inside a desynchronised window is
+an address the listing never framed, and "unreachable" then condemns most of
+the image -- measured at 3,388 real calls dropped, against 5 fabricated ones.
+
+The defect is the Xtensa image's and not the ESP32-P4's. Xtensa mixes 2- and
+3-byte instructions at byte granularity, so a pad of one or two bytes vanishes
+into the next decode; RISC-V instructions are 2-byte aligned and their length
+comes from the first halfword, so padding takes whole instruction slots and a
+linear sweep cannot lose alignment. The check runs on both arms regardless --
+it is what shows the RISC-V arm has nothing to report.
+
+Misframed decodes are counted in the coverage report, and any that decoded as a
+direct call onto a real entry -- the fabricated edges -- are listed by name.
+
 WHAT IT CANNOT SEE, AND SAYS SO
 -------------------------------
 - Indirect calls (``callx*`` on Xtensa through a register that was not loaded
@@ -73,6 +116,10 @@ WHAT IT CANNOT SEE, AND SAYS SO
   cost is not part of a call chain and is not counted here.
 - Recursion. A cycle in the call graph is cut and reported; the total for a
   chain through a cut edge is a lower bound.
+- The real instructions inside a desynchronised window. They are known to be
+  there -- the re-framing finds their boundaries -- but objdump never printed
+  them, so their frames and calls are not read. Counted, and the same
+  direction as every other gap here: a chain can be missed, never invented.
 - Tail calls (shown as ``tail-j``) are counted as if both frames were live at
   once. A real tail call releases the caller's frame first, so a chain through
   one is an over-estimate -- the safe direction for sizing, but not exact.
@@ -167,11 +214,19 @@ def parse_imm(text: str) -> int:
 
 
 def split_insn(line: str):
-    """(pc, mnemonic, operands) for an objdump instruction line, else None.
+    """(pc, length, mnemonic, operands, raw bytes) for an objdump instruction line.
+
+    None when the line is not an instruction.
 
     objdump separates address, raw bytes, mnemonic and operands with tabs, and
     prints the raw bytes as one unspaced blob whose width varies with the
     instruction length. Splitting on tabs is the only stable read of that.
+
+    The blob is returned as well as its width: `Image._read_body()` reads the
+    bytes back out of it to re-frame a body from a known instruction boundary,
+    which is how a misframed decode is told from a real one (#401). A blob that
+    is not an even number of hex digits is not a length we can trust, and the
+    line is rejected rather than rounded.
     """
     parts = line.split("\t")
     if len(parts) < 3:
@@ -183,11 +238,14 @@ def split_insn(line: str):
         pc = int(head[:-1], 16)
     except ValueError:
         return None
+    raw = parts[1].strip()
+    if not raw or len(raw) % 2 or not all(c in "0123456789abcdefABCDEF" for c in raw):
+        return None
     mnem = parts[2].strip()
     if not mnem:
         return None
     ops = parts[3].strip() if len(parts) > 3 else ""
-    return pc, mnem, ops
+    return pc, len(raw) // 2, mnem, ops, raw.lower()
 
 
 class Function:
@@ -221,6 +279,16 @@ class Image:
         # a function's last instruction from the literal pool behind it.
         self.sizes: dict[int, int] = self._read_symbol_sizes(objdump)
         self.unsized: set[int] = set()
+        # Addresses objdump decoded inside a body that are not real
+        # instruction boundaries -- see _true_boundaries(). Counted for the
+        # coverage report; `suppressed_calls` names the ones that decoded as a
+        # direct call onto a real function entry, which is the fabricated edge
+        # this walk no longer follows (#401). `unvalidated_bodies` are the
+        # bodies whose framing could not be checked at all.
+        self.misframed_insns: int = 0
+        self.misframed_funcs: set[str] = set()
+        self.unvalidated_bodies: set[str] = set()
+        self.suppressed_calls: list[tuple[str, int, int, str | None]] = []
         self._disassemble(objdump)
         self._starts = sorted(self.funcs)
         self._drop_internal_branches()
@@ -299,19 +367,28 @@ class Image:
         return sizes
 
     def _disassemble(self, objdump: Path) -> None:
+        """Read the listing into one Function per symbol, body by body.
+
+        Each body is buffered and then handed to `_read_body()` whole, rather
+        than folded in as the lines arrive. That is not a style choice: the
+        framing check `_read_body()` performs needs every instruction in the
+        body before it can say which of them are real, and an instruction's own
+        branch target can lie either side of it.
+        """
         cur: Function | None = None
         cur_end: int | None = None
         srcline: str | None = None
-        pending_lit: dict[str, int] = {}   # xtensa: reg -> literal address
-        pending_auipc: dict[str, tuple[int, int]] = {}  # riscv: reg -> (pc, imm)
-        prologue_left = 0
+        body: list[tuple[int, int, str, str, str | None, str]] = []
 
         for line in self._run([str(objdump), "-d", "-l", "-C", str(self.elf)]):
             if not line:
                 continue
             m = FUNC_HEADER_RE.match(line)
             if m:
+                if cur is not None:
+                    self._read_body(cur, cur_end, body)
                 cur = Function(int(m.group(1), 16), m.group(2))
+                body = []
                 # The definition site is the first line marker AFTER the header;
                 # the one before it belongs to the previous function.
                 srcline = None
@@ -326,12 +403,6 @@ class Image:
                     # these are the bodies that can still absorb a literal pool.
                     cur_end = None
                     self.unsized.add(cur.addr)
-                pending_lit.clear()
-                pending_auipc.clear()
-                # A stack adjustment always sits in the prologue. Bounding the
-                # window keeps a mid-function `addi sp,sp,-N` (an alloca, or the
-                # epilogue's restore) out of the frame figure.
-                prologue_left = 24
                 continue
             sm = SRCLINE_RE.match(line)
             if sm:
@@ -342,41 +413,357 @@ class Image:
             im = split_insn(line)
             if im is None or cur is None:
                 continue
-            pc, mnem, ops = im
+            pc, nbytes, mnem, ops, raw = im
             if cur_end is not None and pc >= cur_end:
                 # Past this symbol's real extent: its literal pool, alignment
                 # padding, or an unsymbolised region. Whatever objdump made of
                 # those bytes is not this function's code, and a word that
                 # happens to decode as a call to a real entry is the edge that
                 # made this walk irreproducible across relinks (#271).
-                pending_lit.clear()
-                pending_auipc.clear()
                 continue
-            if mnem.startswith("."):
+            body.append((pc, nbytes, mnem, ops, srcline, raw))
+        if cur is not None:
+            self._read_body(cur, cur_end, body)
+
+    # Instruction length from the first byte, per ISA. Both encodings answer
+    # that question from byte 0 alone, which is what lets a body be re-framed
+    # from a known boundary without a second disassembler:
+    #
+    #   Xtensa code density: op0 = byte0 & 0xF. 0x8..0xD are the narrow
+    #     (2-byte) opcodes; everything else is 3 bytes. The ESP32's LX6 core
+    #     has no FLIX, so there is no 4-byte form to miss.
+    #   RISC-V: bits 1:0 != 0b11 is a 16-bit compressed instruction; otherwise
+    #     32 bits (the 48- and 64-bit forms need bits 4:2 == 0b111, which
+    #     RV32IMAFC does not emit).
+    #
+    # Assumed nowhere: `_read_body()` checks this rule against objdump's own
+    # byte count for EVERY instruction it lists, and declines to validate a
+    # body where the two ever disagree.
+    @staticmethod
+    def _xtensa_insn_len(byte0: int) -> int:
+        return 2 if 0x8 <= (byte0 & 0xF) <= 0xD else 3
+
+    @staticmethod
+    def _riscv_insn_len(byte0: int) -> int:
+        return 2 if (byte0 & 0x3) != 0x3 else 4
+
+    def _insn_len(self, byte0: int) -> int:
+        return (self._xtensa_insn_len(byte0) if self.arch == "xtensa"
+                else self._riscv_insn_len(byte0))
+
+    # Mnemonics after which execution does not continue at the next address,
+    # so the byte that follows one may be padding that no instruction starts
+    # at. `_true_boundaries()` steps a re-framing run over that padding.
+    XTENSA_UNCOND = ("j", "j.l", "jx", "ret", "ret.n", "retw", "retw.n",
+                     "ill", "ill.n", "rfe", "rfi", "rfwo", "rfwu", "rfde")
+    RISCV_UNCOND = ("j", "c.j", "tail", "ret", "c.ret", "jr", "c.jr",
+                    "mret", "sret", "uret", "unimp", "c.unimp")
+
+    # Alignment padding after an unconditional transfer, in bytes. Three
+    # covers the 4-byte case the assembler emits; measured cases in the
+    # artoo-esp32 image use one (`__lshift` at 0x401a8283, `_onRx` at
+    # 0x400e770f) and two (`__lshift` at 0x401a81e3).
+    #
+    # Xtensa only, and that is not a shortcut. Xtensa mixes 2- and 3-byte
+    # instructions at byte granularity, so a pad of one or two bytes is
+    # absorbed into the decode of whatever follows and the sweep loses
+    # alignment. RISC-V instructions are 2-byte aligned (IALIGN=16) and their
+    # length comes from the first halfword, so padding occupies whole
+    # instruction slots -- 0x0000 and `c.nop` are both one -- and a linear
+    # sweep cannot lose alignment. There is nothing there to step over, and
+    # skipping the zero half of a `c.nop` would be the tool inventing a
+    # desynchronisation the encoding forbids.
+    MAX_PAD_BYTES = 3
+
+    # Rounds of the anchor fixpoint in `_framing()`. Each round can only drop
+    # anchors, so it always settles; the cap is there so a pathological body
+    # cannot spend the run, and a body that has not settled is reported as
+    # unvalidated rather than half-judged.
+    ANCHOR_ROUNDS = 8
+
+    def _is_uncond(self, mnem: str) -> bool:
+        return mnem in (self.XTENSA_UNCOND if self.arch == "xtensa"
+                        else self.RISCV_UNCOND)
+
+    def _is_in_body_target(self, mnem: str, ops: str, lo: int, hi: int) -> int | None:
+        """The in-body address this instruction branches or jumps to, or None.
+
+        Only branches and jumps count, not calls: a call's target is another
+        function, and what this is collecting is addresses that must be real
+        instruction boundaries INSIDE this body -- see `_anchors()`.
+        """
+        if self.arch == "xtensa":
+            branchy = (mnem in ("j", "j.l") or mnem.startswith("loop")
+                       or (mnem.startswith("b") and not mnem.startswith("break")))
+        else:
+            branchy = mnem in ("j", "c.j") or mnem.startswith(("b", "c.b"))
+        if not branchy:
+            return None
+        t = TARGET_RE.search(ops)
+        if not t:
+            return None
+        addr = int(t.group(1), 16)
+        return addr if lo <= addr < hi else None
+
+    def _anchors(self, entry: int, lo: int, hi: int,
+                 insns: dict[int, tuple[int, str, str]],
+                 among: set[int] | None = None) -> set[int]:
+        """Addresses inside this body claimed to be instruction boundaries.
+
+        The entry, plus every in-body branch or jump target objdump resolved.
+        A branch target is a boundary by construction -- the hardware will
+        start executing an instruction there -- but only if the instruction
+        naming it is itself real. `among` restricts the collection to
+        instructions at those addresses, which is what makes the fixpoint in
+        `_framing()` possible.
+        """
+        found = {entry}
+        for pc, (_nbytes, mnem, ops) in insns.items():
+            if among is not None and pc not in among:
+                continue
+            target = self._is_in_body_target(mnem, ops, lo, hi)
+            if target is not None:
+                found.add(target)
+        return found
+
+    def _framing(self, entry: int, hi: int,
+                 insns: dict[int, tuple[int, str, str]],
+                 body_bytes: dict[int, int]) -> set[int] | None:
+        """The body's real instruction boundaries, or None if not settled.
+
+        A misframed instruction can name an in-body target of its own, and that
+        bogus anchor is not harmless: it seeds a re-framing run from an address
+        that is not a boundary, and every real instruction until the next
+        anchor is then condemned. Measured in `HTTPClient::setCookie`, where a
+        phantom `blti` named 0x400e2305 and took a real `call8
+        String::indexOf` down with it.
+
+        So the two are solved together, by a fixpoint: frame with every
+        candidate anchor, keep only the anchors named by instructions the
+        framing says are real, and repeat. Each round can only remove anchors,
+        which can only lengthen a run, so it settles -- and it settles on the
+        anchors named by correctly framed instructions, which are exactly the
+        ones the hardware guarantees.
+        """
+        anchors = self._anchors(entry, entry, hi, insns)
+        for _ in range(self.ANCHOR_ROUNDS):
+            real = self._true_boundaries(sorted(anchors), hi, body_bytes, insns)
+            if real is None:
+                return None
+            kept = self._anchors(entry, entry, hi, insns, among=real)
+            if kept == anchors:
+                return real
+            anchors = kept
+        return None
+
+    def _true_boundaries(self, anchors: list[int], hi: int,
+                         body_bytes: dict[int, int],
+                         insns: dict[int, tuple[int, str, str]]) -> set[int] | None:
+        """Every real instruction boundary in this body, or None if unknowable.
+
+        WHY THIS EXISTS (#401)
+        ----------------------
+        `objdump -d` decodes a section as one linear byte stream. Where that
+        stream contains a byte no instruction starts at -- alignment padding
+        after an unconditional jump -- the decoder cannot know, consumes it as
+        the first byte of the next instruction, and emits several MISFRAMED
+        instructions, built from the tails and heads of real ones, before it
+        lands on a real boundary again. Some of those decode as calls.
+
+        Measured in the artoo-esp32 image, inside newlib's `__lshift`::
+
+            401a8280:  86 03 00      j     401a8292     <- real
+            401a8283:  00                                <- one byte of padding
+            401a8284:  82 c3 15      addi  a8, a3, 21    <- real; a branch target
+            401a8287:  80 80 60      neg   a8, a8        <- real
+
+        read linearly from the jump as::
+
+            401a8283:  c3 82 00      movf  a8, a2, b0    <- phantom
+            401a8286:  15 80 80      call4 <an entry>    <- phantom CALL
+            401a8289:  60 8a 8c      lsi   f6, a10, 0x230
+
+        A call's target is PC-relative on both ports, so the phantom's target
+        moves with the link. In one build it points into the middle of a
+        function and is reported unresolved; in the next it lands exactly on
+        some unrelated function's entry and becomes a followed edge. That is
+        how `__lshift` came to "call" `esp_task_wdt_deinit` and put a
+        fabricated 96 bytes on eight of twelve tasks -- every one whose chain
+        runs through `printf` float formatting -- in a build whose source
+        touched none of them (#401).
+
+        The #271 symbol-size bound cannot see this: the padding is INSIDE
+        `[addr, addr + size)`.
+
+        HOW
+        ---
+        Re-frame the body forward from each anchor, using `_insn_len()`. An
+        anchor is a boundary the hardware proves, and framing forward from a
+        real boundary stays correct until the next padding. Each anchor's run
+        covers up to the next anchor; the union is the body's real boundary
+        set, and an address objdump printed that is not in it is not code.
+
+        On Xtensa a run also steps over the padding after an unconditional
+        transfer, which is where the desync starts and the one place objdump
+        cannot help -- it framed the pad as the head of an instruction. The pad
+        is zero bytes, so stepping over zeros there recovers the real boundary
+        without needing a branch to point at it. An address some branch DOES
+        point at is a boundary by construction, so it ends the skip; that is
+        what keeps a real instruction whose first byte happens to be zero from
+        being stepped over. `MAX_PAD_BYTES` says why this is Xtensa's alone.
+
+        Returns None when the body carries no bytes to re-frame from, which
+        leaves the caller validating nothing rather than suppressing
+        everything.
+        """
+        if not anchors or not body_bytes:
+            return None
+        anchor_set = set(anchors)
+        real: set[int] = set()
+        for i, start in enumerate(anchors):
+            limit = anchors[i + 1] if i + 1 < len(anchors) else hi
+            pc = start
+            while pc < limit:
+                byte0 = body_bytes.get(pc)
+                if byte0 is None:
+                    # The listing did not cover this address, so the run cannot
+                    # be continued. Stopping loses boundaries; inventing them
+                    # would lose the point.
+                    break
+                real.add(pc)
+                step = self._insn_len(byte0)
+                here = insns.get(pc)
+                if (self.arch != "xtensa" or here is None
+                        or not self._is_uncond(here[1])):
+                    pc += step
+                    continue
+                pc += step
+                skipped = 0
+                while (skipped < self.MAX_PAD_BYTES and pc < limit
+                       and pc not in anchor_set and body_bytes.get(pc) == 0):
+                    pc += 1
+                    skipped += 1
+        return real
+
+    def _read_body(self, fn: Function, end: int | None,
+                   body: list[tuple[int, int, str, str, str | None, str]]) -> None:
+        """Fold one buffered body into `fn`, on real instruction boundaries only.
+
+        A body is buffered and read whole rather than folded in as its lines
+        arrive, because `_true_boundaries()` needs every instruction in it
+        before it can say which of them are real: an instruction's own branch
+        target can lie either side of it.
+        """
+        insns: dict[int, tuple[int, str, str]] = {}
+        order: list[int] = []
+        srclines: dict[int, str | None] = {}
+        body_bytes: dict[int, int] = {}
+        length_rule_holds = True
+        for pc, nbytes, mnem, ops, srcline, raw in body:
+            if pc in insns:
+                # objdump prints each address once; a duplicate would mean the
+                # listing was not read in address order, and silently keeping
+                # the second would make the framing arithmetic wrong.
+                continue
+            insns[pc] = (nbytes, mnem, ops)
+            srclines[pc] = srcline
+            order.append(pc)
+            # objdump prints an instruction's raw bytes most-significant first,
+            # so the byte AT pc is the last hex pair. Verified against
+            # `objdump -s` on the artoo-esp32 image: `15c382` is the three
+            # bytes 82 c3 15.
+            octets = [int(raw[i:i + 2], 16) for i in range(0, len(raw), 2)][::-1]
+            for offset, value in enumerate(octets):
+                body_bytes[pc + offset] = value
+            if not mnem.startswith(".") and self._insn_len(octets[0]) != nbytes:
+                length_rule_holds = False
+
+        hi = end if end is not None else (max(order) + insns[max(order)][0]
+                                          if order else fn.addr)
+        real = None
+        if order and length_rule_holds and fn.addr in insns:
+            real = self._framing(fn.addr, hi, insns, body_bytes)
+        if real is None:
+            # No basis to validate this body's framing, so validate none of it
+            # and say so. Suppressing on a guess would be the same class of
+            # fault as inventing an edge, pointed the other way.
+            self.unvalidated_bodies.add(fn.name)
+
+        pending_lit: dict[str, int] = {}   # xtensa: reg -> literal address
+        pending_auipc: dict[str, tuple[int, int]] = {}  # riscv: reg -> (pc, imm)
+        # A stack adjustment always sits in the prologue. Bounding the window
+        # keeps a mid-function `addi sp,sp,-N` (an alloca, or the epilogue's
+        # restore) out of the frame figure.
+        prologue_left = 24
+
+        for pc in order:
+            nbytes, mnem, ops = insns[pc]
+            misframed = real is not None and pc not in real
+            if mnem.startswith(".") or misframed:
                 # `.byte`, `.short`, `.word`: objdump saying "these bytes are
-                # data", inside the body. Counting them as decoded instructions
-                # would let a body that is ENTIRELY data report decoded > 0 and
-                # so escape the `undecoded` label -- and a frame of 0 then reads
-                # as "leaf" rather than "not read", which silently drops the
-                # whole subtree under it. Clearing the tracked registers is the
-                # same safe direction as everywhere else here: it can turn a
-                # resolvable call into a reported gap, never the reverse.
+                # data", inside the body. A misframed decode is the same thing
+                # by a different route -- bytes that are not an instruction.
+                #
+                # Neither counts towards `decoded`: a body objdump renders
+                # ENTIRELY as data would otherwise report decoded > 0, escape
+                # the `undecoded` label, and have its frame of 0 read as "leaf"
+                # rather than "not read" - which drops the whole subtree beneath
+                # it without saying so.
+                #
+                # Clearing the tracked registers is the same safe direction as
+                # everywhere else here: it can turn a resolvable call into a
+                # reported gap, never the reverse. A misframed window hides real
+                # instructions nobody read -- one sits at 0x401c481c, which
+                # objdump never printed a line for -- and any of them may have
+                # written the register a later `callx8` reads. It costs depth:
+                # `tlsf_walk_pool -> default_walker` (tlsf.c:214) is loaded by an
+                # `l32r` before the window and called after it, and that edge is
+                # now an indirect-call gap rather than a resolved callee.
+                if misframed:
+                    self._note_misframed(fn, pc, mnem, ops, srclines[pc])
                 pending_lit.clear()
                 pending_auipc.clear()
                 continue
-            cur.decoded += 1
+            fn.decoded += 1
             if prologue_left > 0:
                 if self._ends_prologue(mnem, ops):
                     prologue_left = 0
                 else:
                     prologue_left -= 1
-                    self._maybe_frame(cur, mnem, ops)
+                    self._maybe_frame(fn, mnem, ops)
             if self.arch == "xtensa":
                 self._invalidate(XTENSA_NON_WRITING, r"a\d+", mnem, ops, pending_lit)
-                self._xtensa_flow(cur, pc, mnem, ops, srcline, pending_lit)
+                self._xtensa_flow(fn, pc, mnem, ops, srclines[pc], pending_lit)
             else:
                 self._invalidate(RISCV_NON_WRITING, r"\w+", mnem, ops, pending_auipc)
-                self._riscv_flow(cur, pc, mnem, ops, srcline, pending_auipc)
+                self._riscv_flow(fn, pc, mnem, ops, srclines[pc], pending_auipc)
+
+    def _note_misframed(self, fn: Function, pc: int, mnem: str, ops: str,
+                        srcline: str | None) -> None:
+        """Record a decoded address that is not a real instruction boundary.
+
+        Dropping these silently would trade one dishonest number for another:
+        the coverage section says what this walk cannot see, and a misframed
+        decode is exactly that. A phantom that decoded as a DIRECT call landing
+        on a real function entry is listed by name, because that one is an edge
+        the walk would have followed and reported as real (#401).
+
+        A data directive is not a misframe -- it is objdump correctly saying
+        "these bytes are not code" -- so it is not counted here even when the
+        framing puts it off a boundary, which padding always does.
+        """
+        if mnem.startswith("."):
+            return
+        self.misframed_insns += 1
+        self.misframed_funcs.add(fn.name)
+        is_call = ((mnem.startswith("call") and not mnem.startswith("callx"))
+                   if self.arch == "xtensa" else mnem in ("jal", "c.jal"))
+        if not is_call:
+            return
+        t = TARGET_RE.search(ops)
+        if t and int(t.group(1), 16) in self.sizes:
+            self.suppressed_calls.append(
+                (fn.name, pc, int(t.group(1), 16), srcline))
 
     @staticmethod
     def _invalidate(non_writing, reg_pat, mnem, ops, tracked: dict) -> None:
@@ -855,6 +1242,19 @@ def main(argv=None) -> int:
     ind = [(f.name, len(f.indirect)) for f in img.funcs.values() if f.indirect]
     print(f"  indirect call sites: {sum(n for _, n in ind)} across {len(ind)} functions")
     print(f"  jumps into another function's interior, not followed: {len(img.interior_jumps)}")
+    print(f"  misframed decodes (objdump resumed inside an instruction after"
+          f" in-body padding), not code: {img.misframed_insns}"
+          f" across {len(img.misframed_funcs)} functions"
+          f"; {len(img.unvalidated_bodies)} bodies could not be framing-checked")
+    if img.suppressed_calls:
+        print(f"    of those, {len(img.suppressed_calls)} decoded as a direct call"
+              f" landing on a real function entry -- fabricated edges this walk"
+              f" did NOT follow (#401):")
+        for name, pc, target, srcline in sorted(img.suppressed_calls)[:10]:
+            owner = img.funcs.get(target)
+            where = f" <- {srcline}" if srcline else ""
+            print(f"      {name} @0x{pc:08x} -> 0x{target:08x}"
+                  f" {owner.name if owner else '?'}{where}")
     undec = [f for f in img.funcs.values() if f.frame_kind == "undecoded"]
     print(f"  function bodies objdump emitted as data, frame unknown: {len(undec)}"
           f" of {len(img.funcs)}")
