@@ -1,8 +1,9 @@
 # Every surface follows one Surface Anatomy, drawn as the inside of the droid
 
 Status: accepted (2026-09-13, issue #395; identity direction continued by the
-operator on 2026-09-14). Describes the **target**; the first mockups exist
-locally and none of it ships yet.
+operator on 2026-09-14; **amended 2026-09-16** - see *Amendment: health signals
+read as droid LEDs*). Describes the **target**; the first mockups exist locally
+and none of it ships yet.
 
 ## Context
 
@@ -66,6 +67,45 @@ rather than retrofitted; D1's copy sweep and D2's guard then run once over
 aligned pages. The sweep is the one slice permitted to edit shared stylesheet
 rules and runs alone among UI slices in the files it holds.
 
+## Amendment (2026-09-16): health signals read as droid LEDs
+
+The Decision above says *"the droid's blue as the single accent"* and *"amber
+and red stay reserved for state"*, and states that it does not reopen #327. On
+seeing the mockups the operator reversed the colour half of that, on the Status
+Plate first and then for health generally:
+
+> "I dont like the blue color choise of the footer signal lights [...] for the
+> health signals overall we should not limit to only the blue theme colors,
+> instead use the typical red, green, grey, orange colors. having it be like
+> droid leds with actual colors actually make sense and is star wars theme
+> correct" - and, confirming the reading: *"green representing good and working
+> makes much more sense than the blue color"*.
+
+So **#327's two-colour rule is superseded for health**, and `CONTEXT.md` gains
+**Health Signal** beside a rewritten **Status Colour**: green nominal, amber
+degraded and actionable, red stopped or refused, grey not reporting. A chosen
+posture - a speed preset, a sleep state, a control mode - still takes no colour,
+which is the Status Plate's existing *values, not exceptions*.
+
+**Blue stops carrying state entirely** and returns to interaction alone:
+selection, the row shown, the primary act, the focus ring. This is the part of
+the amendment that is not a loosening. Before it, blue meant both *you picked
+this* and *this is alive* - one hue with two meanings, which is the overload
+#327 was written to prevent - so restoring blue to one job tightens the rule
+#327 stated while changing the palette it chose.
+
+What the amendment does **not** touch: **Availability Family** is still told
+apart by treatment and never by hue, so a roadmap card, a `checking` state and
+a refusal take no colour; the palette is still dark only; a colour literal
+outside `:root` is still a defect. The instrument-panel identity is unchanged -
+an instrument panel is exactly where lit indicators belong, and a droid's own
+LEDs are the least generic thing on it.
+
+Cost accepted: the palette grows from two state colours to four, and green is a
+new token to keep legible on the dark ground (it must read as text, not only as
+a 7 px dot). The failure to watch for is a green that means *we did not check*;
+**Health Signal** answers it by making a thing never asked read grey.
+
 ## Considered options
 
 - **Keep going and retrofit at the end of Wave 2 or Wave 3.** Cheapest to plan;
@@ -90,6 +130,10 @@ rules and runs alone among UI slices in the files it holds.
 ## Consequences
 
 - `CONTEXT.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
+- Per the 2026-09-16 amendment, `CONTEXT.md` also gains **Health Signal** and a
+  rewritten **Status Colour**; the sweep ticket (#399) owns landing the tokens
+  in `data/style.css`, and every brief that describes a status indicator in
+  blue is repaired at its next refresh.
 - A prototype ticket under #175 owns the mockup pass and carries the anatomy's
   pattern library with its citations, so an implementer does not re-derive it;
   the sweep ticket is minted from the approved mockup and inherits it.
