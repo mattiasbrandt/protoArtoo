@@ -35,10 +35,35 @@
     if (staleBanner) staleBanner.style.display = statusIsStale ? "" : "none";
     if (rerender && lastStatus) renderHealth(lastStatus);
   };
-  const snapshotWebControl = document.getElementById("snapshot-web-control");
+  // The Controls section head's subtitle: a state, in three words, read off the
+  // same frame the controls under it render from (ADR 0066). Web control and
+  // the estop are not here - both are Status Plate cells, and the plate is on
+  // every surface, so repeating them would be one fact said twice (#324).
   const snapshotMode = document.getElementById("snapshot-mode");
-  const snapshotEstop = document.getElementById("snapshot-estop");
   const snapshotMood = document.getElementById("snapshot-mood");
+  const snapshotSleep = document.getElementById("snapshot-sleep");
+  const opmodeNow = document.getElementById("opmode-now");
+  const moodNow = document.getElementById("mood-now");
+  const sleepNow = document.getElementById("sleep-now");
+  const healthSummary = document.getElementById("health-summary");
+  const componentSummary = document.getElementById("component-summary");
+  const consoleDisclosure = document.getElementById("console-disclosure");
+  const sleepToggleLabel = document.getElementById("sleep-toggle-label");
+
+  // The identity plate and the two readouts the Status Plate leaves off. Every
+  // value here comes out of the /api/status frame this surface already reads
+  // or the /api/config payload it already fetches for the log level, so the
+  // plate costs the controller nothing it was not already being asked.
+  const buildDesign = document.getElementById("build-design");
+  const buildDesignDetail = document.getElementById("build-design-detail");
+  const buildFirmware = document.getElementById("build-firmware");
+  const buildFirmwareDetail = document.getElementById("build-firmware-detail");
+  const buildUptime = document.getElementById("build-uptime");
+  const buildUptimeDetail = document.getElementById("build-uptime-detail");
+  const readoutHeap = document.getElementById("readout-heap");
+  const readoutHeapDetail = document.getElementById("readout-heap-detail");
+  const readoutWifi = document.getElementById("readout-wifi");
+  const readoutWifiDetail = document.getElementById("readout-wifi-detail");
 
   let lastStatus = null;
   let statusIsStale = false;
@@ -68,38 +93,37 @@
     off: "OFF",
   };
 
+  // The name, and only the name. Fifteen rows that all wore one of four emoji
+  // said nothing the word beside them did not (ADR 0066), and the three that
+  // shared an arm glyph were not even the same kind of thing.
   const COMPONENT_LABELS = [
-    ["arm1", "🦾", "Utility Arm 1"],
-    ["arm2", "🦾", "Utility Arm 2"],
-    ["aux1", "🦾", "AUX 1"],
-    ["aux2", "🦾", "AUX 2"],
-    ["aux3", "🦾", "AUX 3"],
-    ["domeEsc", "🔄", "Dome ESC"],
-    ["rcCh1", "🕹️", "RC Channel 1"],
-    ["rcCh2", "🕹️", "RC Channel 2"],
-    ["rcCh3", "🕹️", "RC Channel 3"],
-    ["rcCh4", "🕹️", "RC Channel 4"],
-    ["rcCh5", "🕹️", "RC Channel 5"],
-    ["rcCh6", "🕹️", "RC Channel 6"],
-    ["drive", "🔌", "Drive"],
-    ["audio", "🔊", "Audio"],
-    ["protoR2link", "🔌", "protoR2link"],
+    ["arm1", "Utility Arm 1"],
+    ["arm2", "Utility Arm 2"],
+    ["aux1", "AUX 1"],
+    ["aux2", "AUX 2"],
+    ["aux3", "AUX 3"],
+    ["domeEsc", "Dome ESC"],
+    ["rcCh1", "RC Channel 1"],
+    ["rcCh2", "RC Channel 2"],
+    ["rcCh3", "RC Channel 3"],
+    ["rcCh4", "RC Channel 4"],
+    ["rcCh5", "RC Channel 5"],
+    ["rcCh6", "RC Channel 6"],
+    ["drive", "Drive"],
+    ["audio", "Audio"],
+    ["protoR2link", "protoR2link"],
   ];
 
   const MOOD_LABELS = {
-    0: "Idle 😐",
-    10: "Quiet 🤐",
-    11: "Full-Awake 😄",
-    13: "Mid-Awake 😐",
-    14: "Awake+ 🤩",
+    0: "Idle",
+    10: "Quiet",
+    11: "Full-Awake",
+    13: "Mid-Awake",
+    14: "Awake+",
   };
 
-  const PILL_CLASS_MAP = {
-    ok: "pill-ok",
-    warn: "pill-warn",
-    error: "pill-error",
-    info: "pill-info",
-  };
+  const COMPONENT_ENABLED_TEXT = "Enabled";
+  const COMPONENT_DISABLED_TEXT = "Disabled";
 
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
@@ -140,9 +164,15 @@
   const setSleepUi = (sleeping) => {
     isSleeping = !!sleeping;
     if (sleepToggle) {
-      sleepToggle.textContent = isSleeping ? "💤 Wake" : "💤 Sleep";
-      sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
-      sleepToggle.classList.toggle("danger", isSleeping);
+      // Only the label moves: the icon beside it is an element, and writing
+      // textContent over the button would take it with the word.
+      if (sleepToggleLabel) sleepToggleLabel.textContent = isSleeping ? "Wake" : "Sleep";
+      sleepToggle.title = isSleeping ? "Wake the droid's cosmetic subsystems" : "Park the droid's cosmetic subsystems";
+      // Waking a sleeping droid is the one primary act on this surface, so the
+      // button takes the interaction blue while the droid is asleep and is a
+      // plain control the rest of the time. It used to take `danger` AND
+      // `accent` together, which painted it red - and red is reserved for
+      // something stopped or refused (#327), which a parked droid is not.
       sleepToggle.classList.toggle("accent", isSleeping);
       sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
     }
@@ -160,8 +190,12 @@
     el.className = `indicator ${state}`;
     const textEl = INDICATOR_TEXT[id] ? document.getElementById(INDICATOR_TEXT[id]) : null;
     if (textEl) {
+      // The evaluator's reason, not its state: the signal light beside it
+      // already says ok / degraded / faulted / not reporting, and "OK: Frames
+      // ok" says one of those twice. The state label is the fallback for an
+      // evaluator that returned no reason, so a signal is never wordless.
       const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
-      textEl.textContent = reason ? `${label}: ${reason}` : label;
+      textEl.textContent = reason || label;
 
       if (detail) {
         textEl.title = detail;
@@ -181,6 +215,23 @@
 
     const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
     signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
+    renderHealthSummary(signals);
+  };
+
+  // The section head's subtitle is a count (ADR 0066), and it counts the states
+  // the evaluators actually returned rather than restating how many rows the
+  // markup has. A state with nothing in it is left out, so "7 signals - 5 ok"
+  // never has to say "0 fail" to be complete.
+  const HEALTH_SUMMARY_WORDS = { ok: "ok", warn: "degraded", fail: "faulted", off: "not reporting" };
+
+  const renderHealthSummary = (signals) => {
+    if (!healthSummary) return;
+    const counted = new Map();
+    signals.forEach(({ state }) => counted.set(state, (counted.get(state) || 0) + 1));
+    const parts = Object.keys(HEALTH_SUMMARY_WORDS)
+      .filter((state) => counted.get(state))
+      .map((state) => `${counted.get(state)} ${HEALTH_SUMMARY_WORDS[state]}`);
+    healthSummary.textContent = [`${signals.length} signals`, ...parts].join(" \u00b7 ");
   };
 
   let renderedComponentIds = null;
@@ -197,6 +248,9 @@
     }
 
     componentStatusCard.classList.remove("hidden");
+    if (componentSummary) {
+      componentSummary.textContent = `${active.length} ${active.length === 1 ? "component" : "components"} the controller reports`;
+    }
 
     // Build signature: component IDs + flags that affect transport lines
     const transportFlags = [
@@ -208,13 +262,13 @@
     // Rebuild only if component IDs or transport flags changed
     if (signature !== renderedComponentIds) {
       renderedComponentIds = signature;
-      const items = active.map(([key, icon, label]) => {
+      const items = active.map(([key, label]) => {
         const entry = payload[key];
         let state = entry ? "enabled" : "disabled";
-        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
         if (entry && typeof entry === "object") {
           state = entry.state || "enabled";
-          detail = entry.detail || "✅ Enabled";
+          detail = entry.detail || COMPONENT_ENABLED_TEXT;
         }
         const stateText = String(state).replace(/_/g, " ");
         const safeState = window.PAUtils.escapeHtml(stateText);
@@ -234,7 +288,7 @@
         }
         return `
         <div class="status-item" id="comp-${key}">
-          <dt>${icon} ${label}</dt>
+          <dt>${label}</dt>
           <dd id="state-${key}">${safeState}</dd>
           <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>${transportLine}
         </div>`;
@@ -245,10 +299,10 @@
       active.forEach(([key]) => {
         const entry = payload[key];
         let state = entry ? "enabled" : "disabled";
-        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
         if (entry && typeof entry === "object") {
           state = entry.state || "enabled";
-          detail = entry.detail || "✅ Enabled";
+          detail = entry.detail || COMPONENT_ENABLED_TEXT;
         }
         const stateText = String(state).replace(/_/g, " ");
         const safeState = window.PAUtils.escapeHtml(stateText);
@@ -283,33 +337,143 @@
     });
   };
 
-  const setStatusPill = (el, text, state = "info", compact = true) => {
-    if (!el) return;
-    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
-    el.textContent = text;
-    el.className = `${sizeClass} ${PILL_CLASS_MAP[state] || PILL_CLASS_MAP.info}`;
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
   };
 
+  // The Controls section head's subtitle, and the same three words beside the
+  // control each of them belongs to. Three postures the operator chose, so
+  // none of them takes a colour: a chosen posture is a readout, not a symptom
+  // (#327 "Status Colour", as amended 2026-09-16).
+  //
+  // Web control and the estop used to be here as two more pills. Both are
+  // Status Plate cells (CONTROL, ESTOP), the plate is on every surface, and
+  // #324's whole argument is that one fact belongs in one place - so they are
+  // read there and not restated here.
   const renderMissionSnapshot = (payload) => {
-    const isStationary = !!payload.stationary;
+    const modeText = payload.stationary ? "Stationary" : "Driving";
     const moodText = MOOD_LABELS[payload.activeMood] || `Mood ${payload.activeMood || 0}`;
+    const sleepText = payload.sleepMode ? "asleep" : "awake";
 
-    setStatusPill(
-      snapshotWebControl,
-      payload.webControlEnabled ? "🕹️ Web control: Enabled" : "🕹️ Web control: Disabled",
-      payload.webControlEnabled ? "ok" : "warn",
+    setText(snapshotMode, modeText);
+    setText(snapshotMood, moodText);
+    setText(snapshotSleep, sleepText);
+    setText(opmodeNow, modeText);
+    setText(moodNow, moodText);
+    setText(sleepNow, sleepText);
+  };
+
+  // ---------------------------------------------------------------------------
+  // This droid, and the two readouts the Status Plate leaves off
+  //
+  // Both render from the /api/status frame this surface already has. Nothing
+  // here asks the controller for anything of its own: the plate's rule is that
+  // telemetry belongs to the Dashboard (#324), not that the Dashboard may go
+  // and fetch more of it.
+  // ---------------------------------------------------------------------------
+  const KB = 1024;
+
+  const kilobytes = (bytes) => {
+    const value = Number(bytes);
+    return Number.isFinite(value) && value >= 0 ? Math.round(value / KB) : null;
+  };
+
+  // hh:mm:ss, which is what a builder reads an uptime as. Days are spelled out
+  // rather than rolled into the hours, because "73:04:11" is not a number
+  // anyone converts in their head.
+  const uptimeText = (ms) => {
+    const total = Number(ms);
+    if (!Number.isFinite(total) || total < 0) return null;
+    const seconds = Math.floor(total / 1000);
+    const days = Math.floor(seconds / 86400);
+    const clock = [Math.floor((seconds % 86400) / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+      .map((part) => String(part).padStart(2, "0"))
+      .join(":");
+    return days > 0 ? `${days}d ${clock}` : clock;
+  };
+
+  const renderIdentityPlate = (payload) => {
+    const firmware = String(payload.firmwareVersion || "").trim();
+    const assets = String(payload.fsVersion || "").trim();
+    setText(buildFirmware, firmware || "Not reported");
+    // Firmware and web assets are built and flashed separately, so the one
+    // thing worth saying about the pair is whether they came from the same
+    // build. A mismatch is how a surface ends up talking to an API that moved.
+    setText(
+      buildFirmwareDetail,
+      !firmware || !assets
+        ? ""
+        : firmware === assets
+          ? `web assets ${assets} - match`
+          : `web assets ${assets} - does not match the firmware`,
     );
-    setStatusPill(
-      snapshotMode,
-      isStationary ? "🧭 Mode: Stationary" : "🧭 Mode: Driving",
-      isStationary ? "warn" : "ok",
+
+    const uptime = uptimeText(payload.uptimeMs);
+    setText(buildUptime, uptime || "Not reported");
+    const reason = String(payload.resetReason || "").trim();
+    setText(buildUptimeDetail, reason ? `since a ${reason.toLowerCase()} reset` : "");
+  };
+
+  // The Droid Build, from the /api/config payload the log level already
+  // fetched - droid_build.js's own documented "a page holding a config payload
+  // calls adopt() with it and spends no request at all".
+  const renderDroidBuild = (build) => {
+    if (!buildDesign) return;
+    const designs = (window.DroidParts && window.DroidParts.designs) || [];
+    const nameOf = (half) => {
+      const design = designs.find((candidate) => candidate.id === half.design);
+      if (!design) return half.design || "";
+      const variant = (design.variants || []).find((candidate) => candidate.id === half.variant);
+      return variant ? `${design.label} ${variant.label.toLowerCase()}` : design.label;
+    };
+    if (!build) {
+      setText(buildDesign, "Not answered yet");
+      setText(buildDesignDetail, "");
+      return;
+    }
+    const dome = nameOf(build.dome);
+    const body = nameOf(build.body);
+    setText(buildDesign, dome === body ? dome : `${dome} dome, ${body} body`);
+    const fitted = Array.isArray(build.fitted) ? build.fitted.length : 0;
+    buildDesignDetail.innerHTML =
+      `${fitted} ${fitted === 1 ? "part" : "parts"} fitted. ` +
+      window.PAUi.setupActionHtml("Change it");
+  };
+
+  const renderReadouts = (payload) => {
+    const free = kilobytes(payload.heapFree);
+    if (readoutHeap) {
+      readoutHeap.innerHTML = free === null
+        ? "Not reported"
+        : `${free}<small>kB</small>`;
+    }
+    // The largest allocatable block, not the total, because that is the number
+    // the Health signal beside it judges memory on and the one the device's
+    // admission control sheds requests against (data/health_signals.js). A
+    // builder looking at plenty free and a red Memory light has to be able to
+    // see why from here.
+    const largest = kilobytes(payload.heapLargest8bit);
+    setText(
+      readoutHeapDetail,
+      largest === null ? "" : `largest single piece ${largest} kB - which is what Health judges memory on`,
     );
-    setStatusPill(
-      snapshotEstop,
-      payload.estop ? "🛑 Estop: latched" : "🛑 Estop: clear",
-      payload.estop ? "error" : "ok",
+
+    // wifiRssi is only set while the droid is joined to a network as a station;
+    // it is zero in every other case (deriveWiFiConnectivityFields,
+    // src/web/api_status_serializers.cpp). A readout may only print what
+    // something measured, so zero prints as nothing measured rather than as a
+    // very strong signal.
+    const rssi = Number(payload.wifiRssi);
+    const joined = Number.isFinite(rssi) && rssi !== 0;
+    if (readoutWifi) {
+      readoutWifi.innerHTML = joined ? `${rssi}<small>dBm</small>` : "--";
+    }
+    setText(
+      readoutWifiDetail,
+      joined
+        ? "to the network this droid joined"
+        : "nothing measured this: the droid is not joined to a network",
     );
-    setStatusPill(snapshotMood, `🎬 Mood: ${moodText}`, "info");
   };
 
   const applyStatus = (payload) => {
@@ -319,6 +483,8 @@
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
+    renderIdentityPlate(payload);
+    renderReadouts(payload);
     renderOpMode(payload);
     renderActiveMood(payload);
     setEstopUi(!!payload.estop);
@@ -695,11 +861,13 @@
     applyLogHistory(historyLines);
   };
 
+  // The four levels wore the same emoji, so it told an operator which of the
+  // four they were on exactly never (ADR 0066). The word does that.
   const LOG_LEVELS = {
-    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Loss of function only" },
-    2: { label: "Warning", icon: "🪵", cls: "pill-info", hint: "Faults + safety warnings" },
-    3: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
-    4: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
+    1: { label: "Error", cls: "pill-error", hint: "Loss of function only" },
+    2: { label: "Warning", cls: "pill-info", hint: "Faults + safety warnings" },
+    3: { label: "Info", cls: "pill-info", hint: "Boot + service health" },
+    4: { label: "Debug", cls: "pill-warn", hint: "Verbose" },
   };
   let currentLogLevel = null;
   let logLevelPending = false;
@@ -708,14 +876,14 @@
     if (!logLevelPill) return;
     const info = LOG_LEVELS[level];
     if (!info) {
-      logLevelPill.textContent = "🪵 ...";
-      logLevelPill.title = "Log level unknown — click to retry";
+      logLevelPill.textContent = "...";
+      logLevelPill.title = "Log level unknown - click to retry";
       logLevelPill.setAttribute("aria-label", "Log level unknown. Click to retry.");
       return;
     }
     logLevelPill.className = `status-pill status-pill-compact ${info.cls}`;
-    logLevelPill.textContent = `${info.icon} ${info.label}`;
-    logLevelPill.title = `Log level: ${info.label} (${info.hint}) — click to cycle`;
+    logLevelPill.textContent = info.label;
+    logLevelPill.title = `Log level: ${info.label} (${info.hint}) - click to cycle`;
     logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
   };
 
@@ -723,6 +891,12 @@
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
     const api = handle ?? window.PAApi;
     const result = await api.get("/api/config", { cache: "no-store" });
+    // The identity plate's Droid Build row rides this payload rather than
+    // fetching one of its own: droid_build.js's adopt() takes a config the page
+    // already holds, and the controller sheds connections under load, so a
+    // second GET of the same document would cost a client slot to learn what
+    // this one already said.
+    renderDroidBuild(window.DroidBuild?.adopt(result.data) || null);
     const level = Number(result.data?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
@@ -1239,6 +1413,18 @@
       if (!match) return;
       setMood(match[1]);
     });
+  });
+
+  // The Console is a disclosure and starts closed, so while it is closed the
+  // log has no layout at all and scrollHeight is 0 - every stick-to-bottom
+  // while it was shut left scrollTop at 0. Opening it therefore has to put the
+  // newest line back under the operator's eye, which is the whole reason the
+  // log sticks to the bottom in the first place.
+  consoleDisclosure?.addEventListener("toggle", () => {
+    if (!consoleDisclosure.open || !logConsole) return;
+    if (hasActiveLogSelection()) return;
+    logConsole.scrollTop = logConsole.scrollHeight;
+    logPaused?.classList.remove("visible");
   });
 
   estopClear?.addEventListener("click", clearEstop);

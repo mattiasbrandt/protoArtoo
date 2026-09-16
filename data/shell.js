@@ -702,7 +702,11 @@
              name is the part of that corner that is the builder's own anyway. -->
         <a href="#${DEFAULT_PAGE}" class="topbar-brand">
           <div>
-            <h1 data-identity-name>protoartoo</h1>
+            <!-- The droid's name is not a heading: it is the same corner on
+                 every screen, and the one <h1> a document gets belongs to the
+                 surface being shown. It was an <h1> while the nav was a strip
+                 above a page that had no title of its own. -->
+            <span class="brand-name" data-identity-name>protoartoo</span>
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>

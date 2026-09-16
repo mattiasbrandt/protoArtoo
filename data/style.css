@@ -371,9 +371,13 @@ code {
   color: var(--text);
 }
 
-.topbar-brand h1 {
+.brand-name {
+  display: block;
+  color: var(--text);
   font-size: var(--fs-h2);
+  font-weight: 600;
   line-height: 1.1;
+  letter-spacing: -0.01em;
 }
 
 /* Where the operator is, in the shell's own words: the surface's name, read
@@ -779,7 +783,7 @@ nav > a {
 }
 
 /* A disclosure: the one motion that answers an act. */
-details.disclose {
+.disclose {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-plate);
@@ -787,7 +791,8 @@ details.disclose {
   margin-bottom: var(--space-lg);
 }
 
-details.disclose > summary {
+.disclose > summary,
+.disclose > .dome-control-header {
   display: flex;
   align-items: center;
   gap: var(--space-md);
@@ -797,12 +802,13 @@ details.disclose > summary {
   list-style: none;
 }
 
-details.disclose > summary::-webkit-details-marker {
+.disclose > summary::-webkit-details-marker {
   display: none;
 }
 
-details.disclose > summary h2,
-details.disclose > summary h3 {
+.disclose > summary h2,
+.disclose > summary h3,
+.disclose > .dome-control-header h2 {
   margin: 0;
   color: var(--text-faint);
   font-family: var(--font-mono);
@@ -813,23 +819,26 @@ details.disclose > summary h3 {
   text-transform: uppercase;
 }
 
-details.disclose > summary .sub {
+.disclose > summary .sub,
+.disclose > .dome-control-header .sub {
   margin-left: auto;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--fs-sect);
 }
 
-details.disclose > summary svg.i {
+.disclose > summary svg.i,
+.disclose > .dome-control-header svg.i {
   color: var(--text-faint);
   transition: transform 0.15s ease;
 }
 
-details.disclose[open] > summary svg.i.chev {
+.disclose[open] > summary svg.i.chev,
+.disclose > .dome-control-header[aria-expanded="true"] svg.i.chev {
   transform: rotate(90deg);
 }
 
-details.disclose > .disclose-body {
+.disclose > .disclose-body {
   padding: var(--space-lg);
   border-top: 1px solid var(--border);
 }
@@ -936,7 +945,13 @@ details.disclose > .disclose-body {
 .health-grid {
   display: grid;
   gap: var(--space-2xs);
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 240 px, not the 150 the #398 reference uses: its Health plate is half a
+     row wide and gets three columns, this one is the full width of the surface
+     and would get seven. Measured in a browser at 1440 px - at seven columns
+     "RC Receiver" and "File System" both wrapped to two lines and the grid
+     went ragged, which is the same wrap the reference's own note records at
+     its own width. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 
 .drive-grid {
@@ -948,11 +963,25 @@ details.disclose > .disclose-body {
 }
 
 .status-item {
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
+  background: var(--well);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  transition: border-color 0.2s ease;
+  border-radius: var(--radius-plate);
+  padding: var(--space-md);
+}
+
+.status-item dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-item dd {
+  margin-top: 2px;
+  font-size: var(--fs-body);
+  font-weight: 600;
 }
 
 .health-item {
@@ -1038,17 +1067,6 @@ details.disclose > .disclose-body {
   opacity: 0.4;
 }
 
-
-.status-item dt {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  margin-bottom: 6px;
-}
-
-.status-item dd {
-  font-weight: 700;
-  font-size: 1rem;
-}
 
 .button-row {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -2101,8 +2119,13 @@ input.input-narrow:focus {
   padding: var(--space-md);
 }
 
+/* Inline, not a block: the entries are joined with a newline so that selecting
+   the log and copying it yields one line per entry, and under the pre-wrap the
+   console is painted with, that newline BETWEEN two blocks renders as a blank
+   line of its own - the log came out double-spaced. Inline spans take their
+   line break from the newline that is already there. */
 .log-line {
-  display: block;
+  display: inline;
 }
 
 .log-line-error {
@@ -3259,157 +3282,6 @@ body[data-page="servo"] .input-narrow {
 }
 
 
-/* ---------------------------------------------------------------------------
-   The frame's breakpoints (ADR 0066).
-
-   1100 px: the rail becomes a top strip and the Dashboard's bay goes to two
-   columns. 900 px: the bays stack and the Status Plate folds to two rows of
-   four. 1440 and 820 - the two widths #399 asks every surface to render at -
-   both land inside a stable layout rather than on a boundary.
-   --------------------------------------------------------------------------- */
-@media (max-width: 1100px) {
-  body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-  }
-
-  .topbar-brand {
-    border-right: 0;
-  }
-
-  .topbar-where {
-    display: none;
-  }
-
-  #shell-nav,
-  #shell-content {
-    grid-column: 1;
-  }
-
-  #shell-nav {
-    grid-row: 2;
-  }
-
-  #shell-content {
-    grid-row: 3;
-    padding: var(--space-lg) var(--space-lg) var(--space-2xl);
-  }
-
-  nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2xs) var(--space-lg);
-    padding: var(--space-sm) var(--space-lg);
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  nav a {
-    min-height: 32px;
-    padding: 0 var(--space-sm);
-    gap: var(--space-sm);
-  }
-
-  .nav-group {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2xs);
-  }
-
-  .nav-group-head {
-    padding: 0 var(--space-sm) 0 0;
-  }
-
-  .nav-group-hint {
-    display: none;
-  }
-
-  .nav-group-links {
-    display: flex;
-    flex-wrap: wrap;
-  }
-
-  .rail-foot {
-    display: none;
-  }
-
-  .dash-top {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .dash-top > section:last-child {
-    grid-column: 1 / -1;
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-
-  .dash-top > section:last-child .readouts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .dash-top > section:last-child .readout {
-    border-bottom: 0;
-    padding: 0;
-  }
-}
-
-@media (max-width: 900px) {
-  :root {
-    /* Two rows of four cells instead of one row of eight. */
-    --plate-h: 100px;
-  }
-
-  /* The estop's two lines go before the button does: a review of what a press
-     would do is worth less than the press itself. */
-  .shell-estop-lines,
-  .shell-estop-feedback {
-    display: none;
-  }
-
-  .bay {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .bay > section + section {
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-
-  .dash-top,
-  .dash-top > section:last-child .readouts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .status-plate {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .status-plate-region .status-plate > *:nth-child(5) {
-    border-left: 0;
-  }
-
-  .status-plate > * {
-    border-top: 1px solid var(--border);
-  }
-
-  .status-plate > *:nth-child(-n + 4) {
-    border-top: 0;
-  }
-
-  .status-plate-region {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .status-plate-fresh {
-    padding: var(--space-2xs) var(--space-md);
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-}
 
 
 .mono {
@@ -6031,50 +5903,28 @@ label.sound-search-field {
 }
 
 /* Dome Control Card (Home Page) */
+/* The Dome Control disclosure is a <div> with a <button>, not a <details>,
+   because dome_control.js renders the dome drawing lazily on the first expand
+   and owns this header's aria-expanded. The shape is the anatomy's disclosure
+   (above); what is left here is the reset that keeps a <button> from being
+   dressed as one. */
 .dome-control-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   width: 100%;
-  padding: 0;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
-  font-size: inherit;
-  font-weight: inherit;
   color: inherit;
-  min-height: auto;
-  box-shadow: none;
-  transition: opacity 0.2s ease;
-}
-
-.dome-control-header:hover {
-  opacity: 0.8;
 }
 
 .dome-control-header:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.dome-control-toggle {
-  display: inline-block;
-  transition: transform 0.2s ease;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-}
-
-.dome-control-header[aria-expanded="true"] .dome-control-toggle {
-  transform: rotate(180deg);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .dome-control-body {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: var(--space-lg);
 }
 
 .dome-control-body.hidden {
@@ -6573,6 +6423,164 @@ label.sound-search-field {
 .outputs-bar.is-stale .outputs-now,
 .outputs-bar.is-stale .outputs-tick {
   display: none;
+}
+
+/* The frame's breakpoints sit here, at the foot of the stylesheet, rather
+   than beside the frame they override: several surfaces declare their own
+   grid at the same specificity further down the file, and a media block
+   written next to the base rule loses to every one of them. Measured at
+   820 px, where .dash-top's three-column base rule outranked both blocks
+   below and the Dashboard stayed in two columns past its own breakpoint. */
+/* ---------------------------------------------------------------------------
+   The frame's breakpoints (ADR 0066).
+
+   1100 px: the rail becomes a top strip and the Dashboard's bay goes to two
+   columns. 900 px: the bays stack and the Status Plate folds to two rows of
+   four. 1440 and 820 - the two widths #399 asks every surface to render at -
+   both land inside a stable layout rather than on a boundary.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .topbar-brand {
+    border-right: 0;
+  }
+
+  .topbar-where {
+    display: none;
+  }
+
+  #shell-nav,
+  #shell-content {
+    grid-column: 1;
+  }
+
+  #shell-nav {
+    grid-row: 2;
+  }
+
+  #shell-content {
+    grid-row: 3;
+    padding: var(--space-lg) var(--space-lg) var(--space-2xl);
+  }
+
+  nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs) var(--space-lg);
+    padding: var(--space-sm) var(--space-lg);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  nav a {
+    min-height: 32px;
+    padding: 0 var(--space-sm);
+    gap: var(--space-sm);
+  }
+
+  .nav-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+  }
+
+  .nav-group-head {
+    padding: 0 var(--space-sm) 0 0;
+  }
+
+  .nav-group-hint {
+    display: none;
+  }
+
+  .nav-group-links {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .rail-foot {
+    display: none;
+  }
+
+  .dash-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dash-top > section:last-child {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dash-top > section:last-child .readouts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-top > section:last-child .readout {
+    border-bottom: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    /* Two rows of four cells instead of one row of eight. */
+    --plate-h: 100px;
+  }
+
+  /* The estop's two lines go before the button does: a review of what a press
+     would do is worth less than the press itself. */
+  .shell-estop-lines,
+  .shell-estop-feedback {
+    display: none;
+  }
+
+  .bay {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bay > section + section {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dash-top,
+  .dash-top > section:last-child .readouts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .status-plate {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .status-plate-region .status-plate > *:nth-child(5) {
+    border-left: 0;
+  }
+
+  .status-plate > * {
+    border-top: 1px solid var(--border);
+  }
+
+  .status-plate > *:nth-child(-n + 4) {
+    border-top: 0;
+  }
+
+  .status-plate-region {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .status-plate-fresh {
+    padding: var(--space-2xs) var(--space-md);
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* ---------------------------------------------------------------------------
