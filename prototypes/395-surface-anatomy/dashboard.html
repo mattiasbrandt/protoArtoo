@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard - artoo</title>
+  <link rel="stylesheet" href="anatomy.css">
+  <!-- #398 mockup: the Operator Shell's chrome with Dashboard, drawn to the
+       Surface Anatomy (ADR 0066). Opens from a file; talks to nothing. The
+       values are fictional, the controls and copy are Dashboard's. -->
+</head>
+<body data-page="home">
+  <script>window.PA_STATE = { page: "home", mode: "Driving", mood: "Mid-Awake", build: "MrBaddeley MK4" };</script>
+  <header id="shell-top"></header>
+
+  <div class="frame">
+    <nav id="shell-nav"></nav>
+
+    <main>
+      <!-- Title, then the question it answers; the page's own acts beside it. -->
+      <div class="title">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="question">What is the droid doing right now, and is it well?</p>
+        </div>
+        <div class="acts">
+          <button class="btn" type="button" aria-pressed="false">
+            <svg class="i" aria-hidden="true"><use href="#i-power-sleep"/></svg>Sleep
+          </button>
+          <button class="btn" type="button" disabled>Clear estop</button>
+          <span class="why">only while the estop is latched</span>
+          <button class="btn btn-quiet" type="button">
+            <svg class="i" aria-hidden="true"><use href="#i-restart"/></svg>Restart the controller
+          </button>
+        </div>
+      </div>
+
+      <!-- One bay, three plates, divided by seams. -->
+      <div class="bay dash-top">
+        <section>
+          <div class="sect"><h2>This droid</h2><span class="sub">artoo · artoo.local</span></div>
+          <div class="identity">
+            <!-- Original line drawing (Codex study, 2026-09-14): the kind of
+                 thing, not a photo of yours. Blue is the droid's own colour;
+                 the body reads in the secondary ink. -->
+            <svg class="droid" viewBox="0 0 260 350" role="img" aria-label="Line drawing of an R2-series astromech">
+              <path class="k2" d="M62 104a68 68 0 0 1 136 0v20H62z"/>
+              <path class="k" d="M73 66l25 17 13-42M137 37l-1 45h35l-9-37M65 98h131v20H65z"/>
+              <path class="k2" d="M68 125h124v161H68z"/>
+              <path class="k2" d="M68 276h124v16H68z"/>
+              <rect class="k" x="86" y="134" width="89" height="13" rx="2"/>
+              <rect class="k" x="86" y="155" width="89" height="12" rx="2"/>
+              <path class="k" d="M115 180h28v68h-28z"/>
+              <path class="k2" d="M120 192h18m-18 10h18m-18 10h18m-18 10h18m-18 10h18"/>
+              <rect class="k2" x="77" y="178" width="26" height="80" rx="2"/>
+              <rect class="k2" x="155" y="178" width="26" height="80" rx="2"/>
+              <path class="k2" d="M81 181v73m77-73v73M115 258h29v19h-29z"/>
+              <rect class="k" x="113" y="62" width="39" height="31" rx="2"/>
+              <circle class="d" cx="132" cy="76" r="11"/>
+              <circle class="f" cx="138" cy="71" r="3"/>
+              <rect class="d" x="78" y="101" width="26" height="9"/>
+              <rect class="f" x="81" y="103" width="18" height="3"/>
+              <circle class="d" cx="166" cy="107" r="10"/>
+              <path class="k2" d="M45 134h21v32H45zm149 0h21v32h-21z"/>
+              <path class="k2" d="M31 137q14-17 25 0l-1 112 12 60H27l7-62zM205 137q14-17 25 0l-3 111 7 61h-40l12-60z"/>
+              <path class="k" d="M38 151h11v77H38zm174 0h11v77h-11zM30 272h29v26H30zm171 0h28v26h-28z"/>
+              <path class="k2" d="M25 305h41l10 26H13zM194 305h40l14 26h-63zM116 290h29v28h-29zM110 315h43l10 17H99z"/>
+              <path class="k" d="M15 324h58v9H13zm172 0h59l3 9h-64zm-85 2h58v8h-58z"/>
+              <path class="k2" d="M38 306v13m13-13v13m157-13v13m13-13v13"/>
+            </svg>
+            <div class="idtag"><span>R2-D2 · MK4</span><span>drawing, not your droid</span></div>
+          </div>
+          <dl class="build">
+            <dt>Droid Build</dt>
+            <dd>MrBaddeley MK4 · complex dome · complex body
+              <span class="hint">46 parts seeded, 10 fitted, 4 on an output. Change it on <a href="parts.html">Parts</a>.</span>
+            </dd>
+          </dl>
+        </section>
+
+        <section>
+          <div class="sect"><h2>Controls</h2><span class="sub">Driving · Mid-Awake · awake</span></div>
+          <div class="ctl">
+            <h3>Operation mode <span class="now">Driving</span></h3>
+            <div class="seg seg-wide" role="group" aria-label="Operation mode">
+              <button type="button" aria-pressed="true">Driving</button>
+              <button type="button" aria-pressed="false">Stationary</button>
+            </div>
+            <p class="hint">Stationary locks the feet. The dome and sound keep working, so a droid on a stand still performs.</p>
+          </div>
+          <div class="ctl">
+            <h3>Mood <span class="now">Mid-Awake</span></h3>
+            <div class="moods" role="group" aria-label="Mood">
+              <button class="btn" type="button" aria-pressed="false">Quiet</button>
+              <button class="btn" type="button" aria-pressed="true">Mid-Awake</button>
+              <button class="btn" type="button" aria-pressed="false">Full-Awake</button>
+              <button class="btn" type="button" aria-pressed="false">Awake+</button>
+            </div>
+            <p class="hint">Mid-Awake: sound chatter on, holoprojectors parked. Quiet stops the chatter and switches the holos off; Awake+ moves them with their lights on.</p>
+          </div>
+          <div class="ctl">
+            <h3>Sleep <span class="now">awake</span></h3>
+            <p class="prose">Sleep parks the cosmetics: lights, panels and chatter. Drive and the estop stay awake, so a sleeping droid can still be stopped and still be driven home.</p>
+          </div>
+        </section>
+
+        <section>
+          <div class="sect"><h2>Readouts</h2><span class="sub">what the plate leaves off</span></div>
+          <dl class="readouts">
+            <div class="readout"><dt>Uptime</dt><dd>00:42:18</dd><span class="hint">since a power-on reset</span></div>
+            <div class="readout"><dt>Memory free</dt><dd>173<small>kB</small></dd><span class="hint">lowest since boot 151 kB</span></div>
+            <div class="readout"><dt>WiFi signal</dt><dd>-54<small>dBm</small></dd><span class="hint">workshop · 10.0.0.22</span></div>
+            <div class="readout"><dt>Firmware</dt><dd>v1.3.0</dd><span class="hint">web assets fs-v1.3.0 · match</span></div>
+          </dl>
+        </section>
+      </div>
+
+      <div class="dash-bottom">
+        <div class="panel">
+          <div class="sect"><h2>Health</h2><span class="sub">7 signals · all ok</span></div>
+          <div class="health" role="list">
+            <div class="health-item" role="listitem"><span class="dot live"></span>RC Receiver<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>WiFi<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>File System<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>Memory<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>protoR2link<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>Sound<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot live"></span>Dome ESC<span class="state">OK</span></div>
+          </div>
+          <p class="feedback">Frames arriving on both receivers. The sound module answered 2 s ago.</p>
+        </div>
+
+        <div class="panel">
+          <div class="sect"><h2>Perform from the stand</h2><span class="sub">planned · a later wave</span></div>
+          <div class="perform planned" aria-disabled="true">
+            <button class="btn" type="button" disabled><span>Cantina</span><span class="hint">CH5 up</span></button>
+            <button class="btn" type="button" disabled><span>Scream</span><span class="hint">CH6</span></button>
+            <button class="btn" type="button" disabled><span>Leia</span><span class="hint">CH5 down</span></button>
+          </div>
+          <div class="perform-acts planned">
+            <button class="btn" type="button" disabled>Stop the run</button>
+            <button class="btn" type="button" disabled>Stand down</button>
+          </div>
+          <p class="hint">Not built yet. The Sequences you mapped to RC channels will be big targets here, with a stop and the Stand Down Sequence always in reach. Nothing to do here until then.</p>
+        </div>
+      </div>
+
+      <div class="stack-lg">
+        <details class="disclose">
+          <summary>
+            <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+            <h2>Dome panels</h2>
+            <span class="sub">14 panels · 8 the dome drives · all closed</span>
+          </summary>
+          <div>
+            <p class="prose">Open and close the dome's panels from here, one at a time or all together. The drawing follows what the dome's own board reports, not where a panel really is.</p>
+          </div>
+        </details>
+
+        <details class="disclose">
+          <summary>
+            <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+            <h2>Controller Console</h2>
+            <span class="sub">live logs · Warning and above · 3 lines in the last minute</span>
+          </summary>
+          <div>
+            <pre class="log">[RC] SBUS1 linked
+[DOME] protoR2link heartbeat ok
+[AUDIO] mood set to 13 (Mid-Awake)</pre>
+            <div class="log-cmd">
+              <span aria-hidden="true">&gt;</span>
+              <input type="text" aria-label="Console command" placeholder="type a command and press Enter">
+            </div>
+            <p class="hint">Type <b>help</b> for the list. The Console answers here and in the serial log alike.</p>
+          </div>
+        </details>
+      </div>
+
+      <p class="feedback">Mood set to Mid-Awake at 17:02:11. Nothing waiting on a restart.</p>
+    </main>
+  </div>
+
+  <div id="shell-status"></div>
+  <script src="chrome.js"></script>
+</body>
+</html>
