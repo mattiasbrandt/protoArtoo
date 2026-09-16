@@ -5804,3 +5804,142 @@ label.sound-search-field {
 .outputs-bar.is-stale .outputs-tick {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Parts (#364): the calibration dial
+
+   A panel below the output-first table, never a modal: the builder is looking
+   at the droid, not at the page, and a modal would cover the table they are
+   calibrating against (the reference project puts its dial in the same place,
+   r2d2-astromech-simulator v1.79.0).
+
+   Its own block, added beside the Parts rules rather than editing them: the
+   Surface Anatomy sweep (#395, ADR 0066) re-draws this whole destination
+   later, and a slice that restyled shared rules on the way would have to be
+   unpicked. No emoji on any control here, per that same decision - every one
+   of them is the word #291 settled.
+
+   The slider is the dial. It is the one control that must never be rebuilt
+   under the pointer, which is a rule in data/parts.js rather than here; what
+   this adds is that it is wide enough to drive a part with at the bench.
+   --------------------------------------------------------------------------- */
+.outputs-acts {
+  white-space: nowrap;
+}
+
+.outputs-acts .btn {
+  min-height: 36px;
+  margin-right: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-sm);
+}
+
+.outputs-acts .btn[hidden] {
+  display: none;
+}
+
+.outputs-row.is-held th {
+  border-left: 2px solid var(--accent);
+}
+
+.cal-panel {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--well);
+}
+
+.cal-panel[hidden] {
+  display: none;
+}
+
+.cal-panel h4 {
+  margin-bottom: var(--space-xs);
+  color: var(--silver-bright);
+}
+
+.cal-band {
+  margin-bottom: var(--space-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.cal-drive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+/* The dial itself. flex-basis keeps it the widest thing in the row, so a drag
+   covers the band in a usable number of pixels. */
+.cal-slider {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+}
+
+.cal-readout {
+  min-width: 6rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.cal-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.cal-acts .btn {
+  min-height: 36px;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-sm);
+}
+
+/* An explanation for a control that moves something is visible text at the
+   entrance, never hover-only: a tablet at the bench has no hover (ADR 0059). */
+.cal-hint {
+  margin-right: var(--space-sm);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+/* A narrowing that is on. Not a Status Colour -- #327 reserves those for state
+   -- so it reads as a pressed control rather than as a warning. */
+.cal-acts .btn.is-on {
+  border-color: var(--accent);
+  color: var(--silver-bright);
+}
+
+.cal-ends {
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.cal-note {
+  min-height: 1.2em;
+  font-size: var(--fs-sm);
+}
+
+.cal-note.success {
+  color: var(--success);
+}
+
+.cal-note.warning {
+  color: var(--warning);
+}
+
+.cal-note.error {
+  color: var(--danger);
+}
+
+.cal-resume[hidden] {
+  display: none;
+}

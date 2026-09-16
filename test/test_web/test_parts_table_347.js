@@ -148,6 +148,17 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
         return { ok: true, status: 200, data: {} };
       },
       messageFor: (error) => error.message,
+      // The shipped shape (data/web_api.js): disabled plus aria-disabled, which
+      // is what the shell's ignored-input notice looks for on a press. Every
+      // control on Parts that asks the droid to move something is gated through
+      // it, so a host without it is not the host the page ships against.
+      gateControls: (elements, enabled) => {
+        elements.forEach((el) => {
+          if (!el) return;
+          el.disabled = !enabled;
+          el.setAttribute("aria-disabled", enabled ? "false" : "true");
+        });
+      },
     },
     PAUtils: {
       // mini_dom decodes no entities, so escaping here would put "&amp;" in the
@@ -157,6 +168,22 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
         if (!el) return;
         el.textContent = text;
         el.className = level ? `feedback ${level}` : "feedback";
+      },
+      // The shipped PAUtils exports this (data/web_api.js) and the calibration
+      // dial coalesces its hold commands through it, so the mock carries it
+      // too - with REAL timers, because a debounce stubbed to call straight
+      // through would make "a drag sends one hold, not twenty" true by
+      // construction (test/test_web/README.md).
+      debounce: (fn, ms) => {
+        let timer = null;
+        return (...args) => {
+          if (timer !== null) clearTimeout(timer);
+          timer = setTimeout(() => {
+            fn(...args);
+            timer = null;
+          }, ms);
+          timer.unref?.();
+        };
       },
     },
   };

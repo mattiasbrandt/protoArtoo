@@ -189,6 +189,22 @@ const bootParts = async ({ outputs = freshOutputs() } = {}) => {
         el.textContent = text;
         el.className = level ? `feedback ${level}` : "feedback";
       },
+      // The shipped PAUtils exports this (data/web_api.js) and the calibration
+      // dial coalesces its hold commands through it, so the mock carries it
+      // too - with REAL timers, because a debounce stubbed to call straight
+      // through would make "a drag sends one hold, not twenty" true by
+      // construction (test/test_web/README.md).
+      debounce: (fn, ms) => {
+        let timer = null;
+        return (...args) => {
+          if (timer !== null) clearTimeout(timer);
+          timer = setTimeout(() => {
+            fn(...args);
+            timer = null;
+          }, ms);
+          timer.unref?.();
+        };
+      },
     },
   };
 
