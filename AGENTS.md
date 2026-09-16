@@ -581,7 +581,12 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
   must get every sentence on first read.
 - Avoid internal planning language in operator-facing text
 - Keep copy focused on device state, controls, and diagnostics
-- Prefer symbols and related emoji over verbose text labels where meaning is clear at a glance — reduces visual clutter and aids quick scanning
+- Operator surfaces carry no emoji (operator decision 2026-09-13 on #395, ADR 0066).
+  A heading, a nav entry or a card is text plus, where a glyph earns its place, an
+  icon from the project's own small SVG set that inherits text colour and keeps
+  its label alongside. State chips stay verb-free text labels. The earlier rule
+  preferring emoji over verbose labels is retired; it produced the generic look
+  the **Surface Anatomy** (`CONTEXT.md`) replaces.
 
 ## Change Hygiene
 
