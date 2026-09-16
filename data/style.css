@@ -59,10 +59,18 @@
   --border: #223041;
   --border-strong: #2f4157;
 
-  /* Three inks: text, secondary text, the dim voice. */
+  /* Three inks: text, secondary text, the dim voice.
+
+     --text-faint is the #398 reference's third ink lightened from its #6b7b8f,
+     and that is a measurement rather than a preference: the reference measured
+     contrast for the signal lights and not for its inks, and #6b7b8f reads
+     4.13:1 on --surface - under WCAG AA's 4.5:1 for normal text, which the
+     10 px .hint voice and the mono section titles it paints are. #7b8ba0 is
+     the same hue and saturation a shade up, and reads 5.14:1 on --surface,
+     5.71:1 on --well and 5.53:1 on --bg (measured 2026-09-17). */
   --text: #e4eaf2;
   --text-dim: #a5b3c4;
-  --text-faint: #6b7b8f;
+  --text-faint: #7b8ba0;
 
   /* The droid's blue - the interaction accent, and interaction only. It used
      to light a live Status Plate cell as well, which made one hue mean both
