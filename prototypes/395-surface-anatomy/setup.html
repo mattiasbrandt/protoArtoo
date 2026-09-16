@@ -284,7 +284,7 @@
             <p class="question">What is protoArtoo running on?</p>
           </div>
         </div>
-        <p class="prose">This one is not a question. The controller reads the board off the image it is running, so the answer is here to be checked against what is in front of you, not to be picked.</p>
+        <p class="prose">This one is not a question. Check it against the board in front of you.</p>
 
         <div class="panel">
           <div class="sect"><h2>Body Controller</h2><span class="sub">Component Registry · 2 boards · this image carries one</span></div>
@@ -320,7 +320,7 @@
             <p class="question">Where does the droid get its voice?</p>
           </div>
         </div>
-        <p class="prose">Pick the module on the sound lead. Your sounds stay on its card; this tells the body how to ask for them.</p>
+        <p class="prose">Say which sound module the droid is built with. The sounds themselves live on the module; this only decides how the controller asks for them.</p>
 
         <div class="panel">
           <div class="sect"><h2>Sound modules</h2><span class="sub">Component Registry · 3 supported · 1 roadmap</span></div>
@@ -350,7 +350,7 @@
               <div class="card-art" data-product="dfplayer_mini"></div>
               <span class="pill">roadmap</span>
               <h3>DFPlayer Mini</h3>
-              <p>Not built yet. Nothing to do here.</p>
+              <p>We intend to carry it. Not yet.</p>
             </article>
             <button class="card card-text" type="button" aria-pressed="false">
               <span class="pill">your answer</span>
@@ -371,7 +371,7 @@
                is a software bit-bang precisely because the shared controller's
                TX is committed to the dome (include/config.h:143-150). -->
           <div class="note note-info consequence">
-            <b>This picks which module the body talks to, not which sounds it has.</b> Those stay on the module's card. Takes effect after the controller restarts; the finish step says when.
+            <b>This picks which module the controller talks to, not which sounds it has.</b> Those live on the module itself. Takes effect after the controller restarts; the finish step says when.
             <span data-board-only="artoo_esp32">This board has one serial port left over and two things that want it, so while the dome is talking the module cannot be asked what is playing and the plate says so: <b>SOUND LINK · DOME HAS BUS</b>. Playing a sound is never held up.</span>
             <span data-board-only="firebeetle2">This board has a serial port to spare, so the module can be asked what is playing whatever the dome is doing.</span>
           </div>

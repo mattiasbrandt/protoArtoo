@@ -6,9 +6,9 @@
 // positions and one freshness statement. The topbar additionally carries the
 // mockup's board switch, which is a review control rather than product chrome;
 // board.js owns it and says why the shipped image has none. Each page carries
-// only its own body;
-// this file paints the frame around it, the way data/shell.js does for the
-// shipped surfaces. Nothing here talks to a controller: PA_STATE is fictional.
+// only its own body; this file paints the frame around it, the way
+// data/shell.js does for the shipped surfaces. Nothing here talks to a
+// controller: PA_STATE is fictional.
 //
 // Icons: an inline SVG <symbol> sprite injected once per document, so a page
 // opened from file:// can <use> it (an external sprite cannot be reached
@@ -88,9 +88,17 @@
   ];
   const surfaceName = (page) => (SURFACES[page] || ["Setup"])[0];
 
-  // Original artwork, not MDI: the brandmark and the line-drawn droid come
-  // from the Codex study of 2026-09-14 and are kept (coordinator call 2).
-  const brandmark = `<svg viewBox="0 0 40 44" aria-hidden="true"><path fill="currentColor" d="M8 15a12 12 0 0 1 24 0v3H8zM8 21h24v20H8zM2 21h4v23H2zm32 0h4v23h-4z"/><path fill="var(--plate)" d="M12 24h16v3H12zm0 6h16v3H12zm6 6h4v3h-4z"/><circle fill="var(--plate)" cx="22" cy="11" r="4"/></svg>`;
+  // No brandmark. The Codex study's one was carried here and the operator
+  // dropped it on 2026-09-16, for two reasons worth keeping written down:
+  // ADR 0066's identity is the INSIDE of the droid, an instrument panel, and a
+  // portrait of the droid seen from outside, sitting in the top-left logo slot,
+  // is the generic-web-app convention this revamp exists to leave; and it did
+  // not survive its own size, drawn on a 40x44 viewBox and rendered at 26x30,
+  // which put its 3-unit body slots and 4-unit dome eye at about 2 px of mud.
+  // The droid's name carries that corner instead - the part that is the
+  // builder's own anyway. The line-drawn droid on Dashboard stays: it is the
+  // surface's subject at full size, not a mark. (The Dashboard drawing is
+  // original artwork from the Codex study of 2026-09-14, not MDI.)
 
   // The board switch. NOT product chrome: the shipped image carries one asset
   // set, chosen at build time, and has nothing to flip (board.js says where).
@@ -115,7 +123,6 @@
     top.className = "topbar";
     top.innerHTML = `
       <a class="brand" href="dashboard.html">
-        ${brandmark}
         <span><span class="brand-name">${state.droidName}</span><br><span class="brand-sub">R2-D2 Body Controller</span></span>
       </a>
       <div class="topbar-mid"><span>${surfaceName(state.page)}</span><span>/</span><b>${state.build || "MrBaddeley MK4"}</b></div>
@@ -151,17 +158,23 @@
   // --- Status Plate ---------------------------------------------------------
   // Eight cells in the order data/shell.js fixes them (#324): what bites
   // fastest first. Values, never exceptions; a chosen posture takes no colour.
+  // `ok` is the green signal light and an empty class is an LED that is not
+  // lit - which is what CONTROL, SLEEP and SPD carry, because a posture the
+  // operator chose is a readout rather than a health claim (data/shell.js:402).
+  // The shipped plate has no amber state anywhere in its vocabulary: every
+  // chip reader returns live, stopped or no class at all (data/shell.js:405,
+  // 414-470, 541), so no cell here is `warn` either.
   const status = document.getElementById("shell-status");
   if (status) {
     const chips = [
-      ["estop", "ESTOP", state.estop ? ["stopped", "LATCHED"] : ["live", "CLEAR"], null, "Cuts drive now"],
-      ["drive", "DRIVE", state.estop ? ["stopped", "STOPPED"] : ["live", "ARMED"], "drive"],
-      ["rclink", "RC LINK", ["live", "OK"], "rc"],
+      ["estop", "ESTOP", state.estop ? ["stopped", "LATCHED"] : ["ok", "CLEAR"], null, "Cuts drive now"],
+      ["drive", "DRIVE", state.estop ? ["stopped", "STOPPED"] : ["ok", "ARMED"], "drive"],
+      ["rclink", "RC LINK", ["ok", "OK"], "rc"],
       ["control", "CONTROL", ["", "OFF"], "drive"],
       ["sleep", "SLEEP", ["", state.sleep ? "ON" : "OFF"], "home"],
       ["spd", "SPD", ["", "600"], "drive"],
-      ["domelink", "DOME LINK", ["live", "OK"], "dome"],
-      ["soundlink", "SOUND LINK", ["live", "OK"], "sound"],
+      ["domelink", "DOME LINK", ["ok", "OK"], "dome"],
+      ["soundlink", "SOUND LINK", ["ok", "OK"], "sound"],
     ];
     const cell = ([id, label, [cls, value], page, affordance]) => {
       const inner = `<span class="chip-label">${label}</span><span class="chip-value"><span class="dot ${cls}"></span>${value}</span>`;
