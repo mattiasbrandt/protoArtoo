@@ -184,7 +184,20 @@ struct ServoOutputRow {
     uint16_t close_us;    // Endpoint Pair, directional
     uint16_t throw_ms;    // Motion Profile: how long a full throw takes
     uint16_t accel_ms;    // Motion Profile: how long it spends getting up to speed
-    uint16_t release_ms;  // Output Release: hold after arrival, 0 = never
+    // Output Release: how long this output holds after ARRIVING, 0 = never.
+    // Stored, defaulted, validated and serialised -- and read by nothing:
+    // ServoTask does not schedule a release from arrival today, so the field is
+    // a builder's recorded intention and not yet a behaviour (#364 measured
+    // this; ADR 0043 describes the target).
+    //
+    // WHOEVER BUILDS IT: a release must not fire on an output the calibration
+    // dial is holding. That is ADR 0064's suppression, and it is the whole
+    // reason the dial exists -- a release fires exactly when the builder has
+    // stopped moving a Part in order to look at it, and a struggling servo is
+    // only audible while it is being driven. The bit to test is the hold in
+    // src/tasks/servo_task.cpp; the two bounds there are what replaces the
+    // release for as long as the dial has the output.
+    uint16_t release_ms;
     ServoEasing easing;   // Motion Profile: the shape of the move
     ServoBootBehaviour boot;        // what this output does at power-up
     ServoComponentType component;   // what is fitted; governs the clamp

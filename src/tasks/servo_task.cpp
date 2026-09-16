@@ -554,6 +554,13 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // The drive itself is driveArmTo()'s, like every other command: through the
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
 // where the profile cannot plan one.
+//
+// ADR 0064 also says Output Release is SUPPRESSED while a dial holds an output.
+// Nothing is suppressed here, because nothing schedules one: `release_ms` is
+// stored on the row and read by no code (measured at #364). The suppression is
+// owed by whoever builds the release, and include/servo_output_row.h says so at
+// the field. What this function does provide is the bit to test: an output with
+// `hold.held` set is one a release must leave alone.
 // -----------------------------------------------------------------------------
 static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source) {
     if (armId >= kArmCount) {
