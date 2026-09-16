@@ -101,10 +101,22 @@ outside `:root` is still a defect. The instrument-panel identity is unchanged -
 an instrument panel is exactly where lit indicators belong, and a droid's own
 LEDs are the least generic thing on it.
 
-Cost accepted: the palette grows from two state colours to four, and green is a
-new token to keep legible on the dark ground (it must read as text, not only as
-a 7 px dot). The failure to watch for is a green that means *we did not check*;
-**Health Signal** answers it by making a thing never asked read grey.
+The cost is smaller than it first looked, because **the shipped stylesheet was
+already doing this and the written decision had drifted away from it.**
+`data/style.css` carries `--success` `#54c87a`, `--warning` `#e8a832`, `--danger`
+`#e85454` and a dim `--text-dim`, wired to `.indicator.ok` / `.warn` / `.fail` /
+`.off` as a glowing traffic-light grid, with a comment already arguing amber's
+place on a health signal; `data/health_signals.js` derives exactly those four
+states. So #327's *"colour carries exactly two meanings"* described neither the
+operator's intent nor the code, and the mockups' blue indicator dots were a
+regression against what ships rather than a proposal. This amendment brings the
+written model back to the stylesheet, and the sweep reuses those tokens and
+class names rather than minting a second green.
+
+The failure to watch for is a green that means *we did not check*; **Health
+Signal** answers it by making a thing never asked read grey, which is the one
+thing `health_signals.js` does not currently distinguish - it folds unknown into
+`warn`.
 
 ## Considered options
 
