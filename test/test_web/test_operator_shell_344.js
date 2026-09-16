@@ -513,7 +513,7 @@ test("the shell document carries a content region and no surface of its own", ()
   const parsed = new MiniDOMParser().parseFromString(readData("index.html"));
   assert.deepEqual(
     parsed.body.children.map((child) => child.id),
-    ["shell-top", "shell-content", "shell-status"],
+    ["shell-top", "shell-nav", "shell-content", "shell-status"],
     "index.html is the frame; a surface's markup lives in the file that owns it",
   );
 });

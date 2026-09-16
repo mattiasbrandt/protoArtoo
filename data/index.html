@@ -19,10 +19,18 @@
        them to the bootstrap when that surface is first opened, so a builder who
        never visits Sequences never pays for seq.js.
 
+       The four regions are the frame (ADR 0066): the topbar across the top, the
+       nav rail down the left, the work area beside it, and the Status Plate
+       fixed to the foot of the viewport. They are empty here and filled by
+       shell.js; they are elements rather than nodes the shell creates because
+       the rail has to sit BETWEEN the topbar and the work area, and a document
+       that declares its own frame is one a reader can see the shape of.
+
        data-page is the current surface's identifier, kept up to date by the
        shell; the value here is only what a frame with nothing mounted says. -->
   <body data-page="home">
     <div id="shell-top"></div>
+    <nav id="shell-nav"></nav>
     <div id="shell-content"></div>
     <div id="shell-status"></div>
 

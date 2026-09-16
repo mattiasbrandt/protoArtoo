@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 97f3ee16..d83dad10 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -452,7 +452,7 @@
+     // admission control sheds requests against (data/health_signals.js). A
+     // builder looking at plenty free and a red Memory light has to be able to
+     // see why from here.
+-    const largest = kilobytes(payload.heapLargest8bit);
++    const largest = kilobytes(payload.heapLargestBlock);
+     setText(
+       readoutHeapDetail,
+       largest === null ? "" : `largest single piece ${largest} kB - which is what Health judges memory on`,

@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index f6f423a4..67fd3933 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -657,7 +657,7 @@
+   // its own -- it is a second reading of the word beside it, not a replacement
+   // for one (ADR 0066).
+   const navLink = (surface) =>
+-    `<a href="#${surface.page}" data-surface-link="${surface.page}">${icon(surface.icon)}${surface.name}</a>`;
++    `<a href="#${surface.page}" data-surface-link="${surface.page}">${icon("view-dashboard-outline")}${surface.name}</a>`;
+ 
+   // The divider between groups is drawn rather than stored: the group's own
+   // rule in data/style.css carries it, so retiring a group is deleting a row

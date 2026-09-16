@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 97f3ee16..bc78506b 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -195,7 +195,7 @@
+       // ok" says one of those twice. The state label is the fallback for an
+       // evaluator that returned no reason, so a signal is never wordless.
+       const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
+-      textEl.textContent = reason || label;
++      textEl.textContent = reason ? `${label}: ${reason}` : label;
+ 
+       if (detail) {
+         textEl.title = detail;

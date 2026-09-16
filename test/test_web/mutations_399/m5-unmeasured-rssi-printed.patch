@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 97f3ee16..fd960400 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -464,7 +464,7 @@
+     // something measured, so zero prints as nothing measured rather than as a
+     // very strong signal.
+     const rssi = Number(payload.wifiRssi);
+-    const joined = Number.isFinite(rssi) && rssi !== 0;
++    const joined = Number.isFinite(rssi);
+     if (readoutWifi) {
+       readoutWifi.innerHTML = joined ? `${rssi}<small>dBm</small>` : "--";
+     }

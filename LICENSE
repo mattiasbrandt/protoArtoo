@@ -48,6 +48,13 @@ over what its author owns, so for the avoidance of doubt:
      grant above. Provenance per image is recorded in
      docs/product-image-provenance.md.
 
+  5. ICONS on the operator UI are Material Design Icons 7.4.47
+     (Pictogrammers), taken as unmodified SVG path data from @mdi/svg and
+     inlined as a sprite in data/shell.js. They are distributed under the
+     Apache License 2.0 and remain under it, not under the MIT grant above.
+     The package's notice, the licence link and the list of paths this
+     firmware carries are in docs/icon-set-provenance.md.
+
 Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This
 is a non-commercial fan project by a hobbyist droid builder, with no
 affiliation with, connection to, or endorsement from Lucasfilm or The Walt
