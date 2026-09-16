@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard - artoo</title>
   <link rel="stylesheet" href="anatomy.css">
+  <!-- Which board this mockup is showing, from ?board=. In the head so the
+       answer is stamped on <html> before the first frame. -->
+  <script src="board.js"></script>
   <!-- #398 mockup: the Operator Shell's chrome with Dashboard, drawn to the
        Surface Anatomy (ADR 0066). Opens from a file; talks to nothing. The
        values are fictional, the controls and copy are Dashboard's. -->
@@ -39,42 +42,42 @@
       <div class="bay dash-top">
         <section>
           <div class="sect"><h2>This droid</h2><span class="sub">artoo · artoo.local</span></div>
-          <div class="identity">
-            <!-- Original line drawing (Codex study, 2026-09-14): the kind of
-                 thing, not a photo of yours. Blue is the droid's own colour;
-                 the body reads in the secondary ink. -->
-            <svg class="droid" viewBox="0 0 260 350" role="img" aria-label="Line drawing of an R2-series astromech">
-              <path class="k2" d="M62 104a68 68 0 0 1 136 0v20H62z"/>
-              <path class="k" d="M73 66l25 17 13-42M137 37l-1 45h35l-9-37M65 98h131v20H65z"/>
-              <path class="k2" d="M68 125h124v161H68z"/>
-              <path class="k2" d="M68 276h124v16H68z"/>
-              <rect class="k" x="86" y="134" width="89" height="13" rx="2"/>
-              <rect class="k" x="86" y="155" width="89" height="12" rx="2"/>
-              <path class="k" d="M115 180h28v68h-28z"/>
-              <path class="k2" d="M120 192h18m-18 10h18m-18 10h18m-18 10h18m-18 10h18"/>
-              <rect class="k2" x="77" y="178" width="26" height="80" rx="2"/>
-              <rect class="k2" x="155" y="178" width="26" height="80" rx="2"/>
-              <path class="k2" d="M81 181v73m77-73v73M115 258h29v19h-29z"/>
-              <rect class="k" x="113" y="62" width="39" height="31" rx="2"/>
-              <circle class="d" cx="132" cy="76" r="11"/>
-              <circle class="f" cx="138" cy="71" r="3"/>
-              <rect class="d" x="78" y="101" width="26" height="9"/>
-              <rect class="f" x="81" y="103" width="18" height="3"/>
-              <circle class="d" cx="166" cy="107" r="10"/>
-              <path class="k2" d="M45 134h21v32H45zm149 0h21v32h-21z"/>
-              <path class="k2" d="M31 137q14-17 25 0l-1 112 12 60H27l7-62zM205 137q14-17 25 0l-3 111 7 61h-40l12-60z"/>
-              <path class="k" d="M38 151h11v77H38zm174 0h11v77h-11zM30 272h29v26H30zm171 0h28v26h-28z"/>
-              <path class="k2" d="M25 305h41l10 26H13zM194 305h40l14 26h-63zM116 290h29v28h-29zM110 315h43l10 17H99z"/>
-              <path class="k" d="M15 324h58v9H13zm172 0h59l3 9h-64zm-85 2h58v8h-58z"/>
-              <path class="k2" d="M38 306v13m13-13v13m157-13v13m13-13v13"/>
-            </svg>
-            <div class="idtag"><span>R2-D2 · MK4</span><span>drawing, not your droid</span></div>
-          </div>
+          <!-- No picture. `data/dashboard.html` has never held one, and
+               CONTEXT.md "Body View" puts a recognisable droid silhouette in
+               its _Avoid_ list on purpose: the real drawing of the droid is an
+               arrangement, not a likeness (#317, ADR 0063), so a photo-real
+               outline on the surface a builder most expects the real thing
+               teaches the wrong model of what the Body View will be. The Body
+               View is C4's and is not built (operator, 2026-09-16).
+
+               What an instrument panel does with identity is print it. Four
+               facts, in the order a builder checks them before believing
+               anything else on the page: what the droid is, what is running it,
+               which firmware, and how long that firmware has been up. Firmware
+               and Uptime moved here from Readouts rather than being repeated -
+               they are what this controller IS, and Readouts keeps what it is
+               doing. -->
           <dl class="build">
-            <dt>Droid Build</dt>
-            <dd>MrBaddeley MK4 · complex dome · complex body
-              <span class="hint">46 parts seeded, 10 fitted, 4 on an output. Change it on <a href="parts.html">Parts</a>.</span>
-            </dd>
+            <div>
+              <dt>Droid Build</dt>
+              <dd>MrBaddeley MK4 · complex dome · complex body
+                <span class="hint">46 parts seeded, 10 fitted, 4 on an output. Change it on <a href="parts.html">Parts</a>.</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Body Controller</dt>
+              <dd><span data-board-only="artoo_esp32">Artoo PCB (artoo.uk)</span><span data-board-only="firebeetle2">FireBeetle 2 (ESP32-P4)</span>
+                <span class="hint">Read from the running image, not a setting. Five body outputs, ARM1 to AUX3.</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Firmware</dt>
+              <dd>v1.3.0<span class="hint">web assets fs-v1.3.0 · match</span></dd>
+            </div>
+            <div>
+              <dt>Uptime</dt>
+              <dd>00:42:18<span class="hint">since a power-on reset</span></dd>
+            </div>
           </dl>
         </section>
 
@@ -100,34 +103,48 @@
           </div>
           <div class="ctl">
             <h3>Sleep <span class="now">awake</span></h3>
-            <p class="prose">Sleep parks the cosmetics: lights, panels and chatter. Drive and the estop stay awake, so a sleeping droid can still be stopped and still be driven home.</p>
+            <!-- A readout, not a control: the Sleep act is up in the title's
+                 .acts row, so the explanation belongs at that entrance and not
+                 here (ADR 0059). Hence .hint, like both siblings above it, and
+                 hence no consequence clause - but the fact that drive and the
+                 estop stay awake survives the cut, because a builder has to
+                 know a sleeping droid can still be stopped. -->
+            <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
           </div>
         </section>
 
         <section>
           <div class="sect"><h2>Readouts</h2><span class="sub">what the plate leaves off</span></div>
           <dl class="readouts">
-            <div class="readout"><dt>Uptime</dt><dd>00:42:18</dd><span class="hint">since a power-on reset</span></div>
-            <div class="readout"><dt>Memory free</dt><dd>173<small>kB</small></dd><span class="hint">lowest since boot 151 kB</span></div>
+            <div class="readout"><dt>Memory free</dt><dd>173<small>kB</small></dd><span class="hint">largest single piece 14.2 kB - which is what Health is low about</span></div>
             <div class="readout"><dt>WiFi signal</dt><dd>-54<small>dBm</small></dd><span class="hint">workshop · 10.0.0.22</span></div>
-            <div class="readout"><dt>Firmware</dt><dd>v1.3.0</dd><span class="hint">web assets fs-v1.3.0 · match</span></div>
           </dl>
         </section>
       </div>
 
       <div class="dash-bottom">
         <div class="panel">
-          <div class="sect"><h2>Health</h2><span class="sub">7 signals · all ok</span></div>
+          <div class="sect"><h2>Health</h2><span class="sub">7 signals · 5 ok · 1 low · 1 off</span></div>
+          <!-- Each signal light carries the state and the word its evaluator
+               really reports (data/health_signals.js): ok / warn / fail / off,
+               with the reason beside it rather than a bare OK. Memory is the
+               one worth showing degraded, because it is the one signal whose
+               health disagrees with the readout beside it on purpose: the
+               evaluator keys on the largest allocatable block, not on free
+               heap, since that is what the device's admission control sheds
+               requests against (health_signals.js:86-100). Plenty free and a
+               small largest block is fragmentation, and it is the state a
+               builder needs to be able to read. -->
           <div class="health" role="list">
-            <div class="health-item" role="listitem"><span class="dot live"></span>RC Receiver<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>WiFi<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>File System<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>Memory<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>protoR2link<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>Sound<span class="state">OK</span></div>
-            <div class="health-item" role="listitem"><span class="dot live"></span>Dome ESC<span class="state">OK</span></div>
+            <div class="health-item" role="listitem"><span class="dot ok"></span>RC Receiver<span class="state">Frames ok</span></div>
+            <div class="health-item" role="listitem"><span class="dot ok"></span>WiFi<span class="state">Connected</span></div>
+            <div class="health-item" role="listitem"><span class="dot ok"></span>File System<span class="state">Mounted</span></div>
+            <div class="health-item" role="listitem"><span class="dot warn"></span>Memory<span class="state">Low</span></div>
+            <div class="health-item" role="listitem"><span class="dot ok"></span>protoR2link<span class="state">Connected</span></div>
+            <div class="health-item" role="listitem"><span class="dot ok"></span>Sound<span class="state">Idle</span></div>
+            <div class="health-item" role="listitem"><span class="dot unknown"></span>Dome ESC<span class="state">Disabled</span></div>
           </div>
-          <p class="feedback">Frames arriving on both receivers. The sound module answered 2 s ago.</p>
+          <p class="feedback">Frames arriving on both receivers; the sound module answered 2 s ago. Memory has been low since 16:58 - 173 kB free, but the largest single piece a new job can take is 14.2 kB. Nothing has stopped.</p>
         </div>
 
         <div class="panel">

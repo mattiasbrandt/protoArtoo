@@ -2,10 +2,13 @@
    #398 - the Surface Anatomy, drawn as the inside of the droid (ADR 0066).
 
    One stylesheet for the three mockups. Tokens are declared once in :root and
-   nothing below the token block names a colour literal (#327, CONTEXT.md
-   "Status Colour"). Amber and red carry exactly one meaning each and appear
-   at two sites: the estop and the calibration panel's uncalibrated border.
-   The droid's blue is the only accent. Every other colour is a ground, a
+   nothing below the token block names a colour literal (#327). Colour does two
+   jobs and they never mix. INTERACTION is the droid's blue, and only the blue:
+   selection, the row shown, the primary act, the focus ring. A SIGNAL LIGHT is
+   a droid LED and takes a real LED colour - green nominal, amber degraded, red
+   stopped, a dim dot not reporting (operator, 2026-09-16, which amends
+   CONTEXT.md "Status Colour" as written). Nothing that reports a state is
+   blue, and nothing you can press is green. Every other colour is a ground, a
    plate, a seam or an ink.
 
    Numbers the research does not give are decided here and written into the
@@ -30,15 +33,43 @@
   --ink-2: #a5b3c4;
   --ink-3: #6b7b8f;
 
-  /* The droid's blue - the single accent: selection, the row shown, a live
-     chip, the primary act. --blue-deep is the filled face of a primary button. */
+  /* The droid's blue - the interaction accent, and interaction only: selection,
+     the row shown, the primary act, the focus ring. It used to light a live
+     plate cell too, which made one hue mean both "you chose this" and "this is
+     alive" - the exact doubling #327 exists to stop. The signal lights below
+     took that job. --blue-deep is the filled face of a primary button. */
   --blue: #4d8fe8;
   --blue-deep: #1d4f93;
 
-  /* Reserved (CONTEXT.md "Status Colour"). Amber: you can do something about
-     this, and should. Red: something is stopped or refused. */
+  /* The signal lights. A health signal is a droid LED and takes a real LED
+     colour (operator, 2026-09-16), which is the one thing that overrides
+     CONTEXT.md "Status Colour" as written. Four states and no more: green is
+     nominal, amber is degraded and you can do something about it, red is
+     stopped or refused, and a dim dot is not reporting - never asked, not
+     fitted, switched off. A chosen posture (SPD, SLEEP, CONTROL) still takes
+     no colour at all: it is a readout, not a health signal.
+     There is no second orange. Amber already IS the orange, and its existing
+     meaning is what a degraded LED says; a --orange beside it would be one hue
+     under two names.
+     Measured on 2026-09-16, as text rather than as a 7 px dot: --green reads
+     7.49:1 on --plate, 8.31:1 on --well and 8.05:1 on --ground, so it clears
+     4.5:1 everywhere this palette puts it (--amber is 7.99:1 on --plate, --red
+     4.76:1, so the three sit at a comparable weight).
+     This does NOT reach CONTEXT.md "Availability Family": WHY a thing is
+     unusable is still treatment and never hue. This is how it is doing now,
+     which is a different axis. */
+  --green: #3fbe6e;
   --amber: #e2a13a;
   --red: #e05555;
+
+  /* The ground the default asset set's photographs are cut out on. Not a
+     choice: measured off the outer two-pixel frame of all twenty pictures in
+     data/asset-sets/default on 2026-09-16, and every one of them is exactly
+     this. The art plate takes it when the picture is a photograph, so a 4:3
+     picture in a wider plate does not read as a lighter slab inside it. (The
+     legacy sprite's own fallback says #0c1525, one off in blue; it is the
+     drawings' backdrop and nothing here paints with it.) */
+  --photo-ground: #0c1524;
 
   /* Neutral endpoints for translucent lifts and shadows; never painted straight. */
   --lift: #ffffff;
@@ -132,7 +163,8 @@ svg.i { width: 16px; height: 16px; flex: none; fill: currentColor; }
   top: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr) auto;
+  /* brand | surface and build | the mockup's board switch | the estop */
+  grid-template-columns: var(--rail) minmax(0, 1fr) auto auto;
   align-items: center;
   min-height: var(--topbar-h);
   background: var(--plate);
@@ -148,7 +180,6 @@ svg.i { width: 16px; height: 16px; flex: none; fill: currentColor; }
   border-right: 1px solid var(--line);
   color: var(--ink);
 }
-.brand svg { width: 26px; height: 30px; flex: none; color: var(--blue); }
 .brand-name { font: 600 var(--fs-h2) / 1.1 var(--sans); letter-spacing: -0.01em; }
 .brand-sub { font: 9px / 1.4 var(--mono); color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
 
@@ -163,8 +194,57 @@ svg.i { width: 16px; height: 16px; flex: none; fill: currentColor; }
 }
 .topbar-mid b { color: var(--ink-2); font-weight: 500; }
 
-.estop-wrap {
+/* The board switch: a review control, not product chrome. It is dashed and
+   labelled so it is never read as part of the look being judged - the shipped
+   image carries one asset set, picked at build time, and flips nothing
+   (board.js). The two small lines name the set and what it holds, so the
+   control explains itself without a hover (docs/ui-copy-voice.md rule 12). */
+.boardswitch {
   grid-column: 3;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  margin: 0 var(--s3);
+  padding: 2px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  background: var(--well);
+}
+.bs-label {
+  display: grid;
+  align-content: center;
+  padding: 0 var(--s2);
+  font: 600 var(--fs-hint) / 1.3 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bs-label small { font-weight: 400; letter-spacing: 0.1em; }
+.boardswitch a {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r);
+  color: var(--ink-3);
+  font: 500 12px / 1.2 var(--sans);
+  white-space: nowrap;
+}
+.boardswitch a small { font: var(--fs-hint) / 1.3 var(--mono); letter-spacing: 0.06em; }
+.boardswitch a:hover { background: var(--plate-2); color: var(--ink-2); }
+.boardswitch a[aria-current="true"] {
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+  box-shadow: inset 0 -2px 0 var(--blue);
+  color: var(--ink);
+}
+
+/* Copy that genuinely differs on the two boards is written out per board and
+   the other one is removed, so both readings are legible in the source. */
+html[data-board="artoo_esp32"] [data-board-only="firebeetle2"],
+html[data-board="firebeetle2"] [data-board-only="artoo_esp32"] { display: none; }
+
+.estop-wrap {
+  grid-column: 4;
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -550,23 +630,11 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 /* ---------------------------------------------------------------------------
    Dashboard pieces
    --------------------------------------------------------------------------- */
-.identity {
-  position: relative;
-  background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 28px 28px;
-  background-position: -1px -1px;
-  border-radius: var(--r);
-  padding: var(--s3);
-}
-.identity svg.droid { display: block; width: 100%; height: 300px; color: var(--blue); }
-.identity svg.droid .k { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
-.identity svg.droid .k2 { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
-.identity svg.droid .f { fill: color-mix(in srgb, var(--blue) 18%, transparent); stroke: currentColor; stroke-width: 1.4; }
-.identity svg.droid .d { fill: var(--plate-2); stroke: var(--ink-2); stroke-width: 1.2; }
-.idtag { display: flex; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); font: var(--fs-hint) / 1.6 var(--mono); color: var(--ink-3); }
-.build { margin-top: var(--s4); }
+/* The identity plate is a readout: a label, a value, and the one line that
+   says where the value comes from. No picture - see dashboard.html for why. */
+.build > div { padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+.build > div:first-child { padding-top: 0; }
+.build > div:last-child { border-bottom: 0; padding-bottom: 0; }
 .build dt { font: 600 var(--fs-hint) / 1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
 .build dd { margin-top: 2px; font-size: var(--fs-body); }
 .build dd .hint { display: block; margin-top: 2px; }
@@ -588,10 +656,23 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .readout .hint { margin-top: 2px; }
 
 .health { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); }
-.health-item { display: flex; align-items: center; gap: var(--s2); min-height: var(--row); padding: 0 var(--s3); background: var(--well); border: 1px solid var(--line); border-radius: var(--r); font-size: var(--fs-cell); }
-.health-item .state { margin-left: auto; font: 500 var(--fs-hint) / 1 var(--mono); letter-spacing: 0.1em; color: var(--ink-2); }
+/* 8 px of side padding and a 4 px gap, not 12 and 8: a signal now carries the
+   word its evaluator reports rather than a bare OK, and at three columns the
+   longest pair ("RC Receiver" with "Frames ok") was over and wrapped to two
+   lines, which made the grid's rows ragged. The margin is deliberately more
+   than the two pixels it took to stop the wrap here: `system-ui` resolves to
+   different faces in different browsers, and the same row wrapped in one
+   Chromium and not in another at the same width. */
+.health-item { display: flex; align-items: center; gap: var(--s1); min-height: var(--row); padding: 0 var(--s2); background: var(--well); border: 1px solid var(--line); border-radius: var(--r); font-size: var(--fs-cell); }
+.health-item .state { margin-left: auto; font: 500 var(--fs-hint) / 1 var(--mono); letter-spacing: 0.1em; color: var(--ink-2); white-space: nowrap; }
+/* Signal lights. Bare, or `.unknown`, is an LED that is not lit: not
+   reporting, never asked, not fitted - and the same dim dot a chosen posture
+   takes, because neither is a health claim. A lit one glows, which is what
+   makes it read as an LED rather than as a coloured pixel. */
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); opacity: 0.5; flex: none; }
-.dot.live { background: var(--blue); opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--blue) 60%, transparent); }
+.dot.unknown { background: var(--ink-3); opacity: 0.5; }
+.dot.ok { background: var(--green); opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--green) 60%, transparent); }
+.dot.warn { background: var(--amber); opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--amber) 60%, transparent); }
 .dot.stopped { background: var(--red); opacity: 1; }
 
 .perform { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
@@ -649,6 +730,31 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .card[aria-pressed="true"] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--plate)); }
 .card-art { height: 96px; display: grid; place-items: center; background: var(--well); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink-2); }
 .card-art svg { width: 100%; height: 100%; padding: var(--s1); }
+/* The plate behind a photograph is painted the photograph's own ground, so
+   only the seam shows. Ours are cut out on a dark navy #0c1524 (measured at
+   every corner of all twenty, 2026-09-16), which sits between --well and
+   --plate, so the reference project's "a photo on a dark plate reads as a
+   bright slab in a hole" does not apply to this set: what it needs is the
+   plate's ground to match and the seam to stay. board.js stamps the set on
+   <html>; on the legacy set every picture is a drawing that inherits the
+   card's colour, and the plate keeps the well. */
+html[data-asset-set="default"] .card-art { background: var(--photo-ground); }
+/* align-self: stretch is load-bearing. .card-art centres its item, which
+   leaves a replaced element's percentage height unresolved, so the picture
+   lays out at its own 4:3 from the card's width and spills 47 px past the
+   plate onto the pill below it (measured 2026-09-16). Stretching the item
+   gives the height something to resolve against and object-fit letterboxes
+   inside it. */
+.card-art img {
+  display: block;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--s1);
+  object-fit: contain;
+}
 .card[aria-pressed="true"] .card-art { color: var(--blue); }
 .card h3 { font: 600 var(--fs-cell) / 1.35 var(--sans); }
 .card p { font: 12px / 1.5 var(--sans); color: var(--ink-2); }
@@ -658,6 +764,18 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
    date, no version - and takes the settled dim (#327, Availability Family). */
 .card-settled { opacity: var(--avail-dim-settled); border-style: dashed; }
 .card-settled:hover { opacity: 1; }
+
+/* The Body Controller card, which is also where the board picture lives. One
+   card, never a choice: the Component Registry gates its two products on
+   PA_BOARD, so the image carries exactly one of them. The plate is 300 x 225,
+   the asset set's own 4:3, so a photograph fills it exactly and the drawing
+   sits on the same frame. */
+.boardcard { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start; }
+.boardshot { flex: none; width: 300px; height: 225px; }
+.boardcard-text { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--s2); align-content: start; }
+.boardcard-text .pill { justify-self: start; }
+.boardcard-text h3 { font: 600 var(--fs-h2) / 1.3 var(--sans); }
+.boardcard-text p { font: var(--fs-body) / 1.55 var(--sans); color: var(--ink-2); max-width: var(--measure); }
 .consequence { margin-top: var(--s4); }
 .wizard-acts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
 .wizard-acts .spacer { flex: 1; }
@@ -706,7 +824,7 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
 .chip:hover { background: color-mix(in srgb, var(--lift) 5%, transparent); }
 .chip-label { font: 600 9px / 1.2 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
 .chip-value { display: flex; align-items: center; gap: var(--s2); font: 600 12px / 1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chip.live .chip-value { color: var(--ink); }
+.chip.ok .chip-value { color: var(--ink); }
 .chip.stopped .chip-value { color: var(--red); }
 .chip-estop .chip-value { color: var(--ink-2); }
 .plate-fresh { display: grid; align-content: center; gap: 2px; padding: var(--s2) var(--s3); font: var(--fs-hint) / 1.4 var(--mono); color: var(--ink-3); }
@@ -717,7 +835,7 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
    plate folds to two rows of four.
    --------------------------------------------------------------------------- */
 @media (max-width: 1100px) {
-  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .brand { border-right: 0; }
   .topbar-mid { display: none; }
   .frame { grid-template-columns: minmax(0, 1fr); }
@@ -753,15 +871,22 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
   .dash-top { grid-template-columns: minmax(0, 1fr); }
   .dash-top > section + section { border-left: 0; border-top: 1px solid var(--line); }
   .dash-bottom { grid-template-columns: minmax(0, 1fr); }
-  .identity svg.droid { height: 220px; }
   .capture { grid-template-columns: minmax(0, 1fr); }
   .plate { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .plate > *:nth-child(5) { border-left: 0; }
   .plate > * { border-top: 1px solid var(--line); }
   .plate > *:nth-child(-n + 4) { border-top: 0; }
   .plate-fresh { grid-column: 1 / -1; padding: var(--s1) var(--s3); }
+  .boardshot { width: 100%; height: auto; aspect-ratio: 4 / 3; max-width: 300px; }
   .receipt > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
   .tbl .pos { min-width: 120px; }
+}
+
+/* Narrower than the two widths #398 asks for, the board switch gives up its
+   label and its set lines rather than pushing the estop off the topbar. It is
+   a review control; the estop is not. */
+@media (max-width: 700px) {
+  .bs-label, .boardswitch a small { display: none; }
 }
 
 @media (max-width: 600px) {
@@ -780,6 +905,8 @@ details.disclose > div { padding: var(--s4); border-top: 1px solid var(--line); 
           --line: var(--paper-line); --line-2: var(--paper-line); --ink: var(--paper-ink); --ink-2: var(--paper-ink); --ink-3: var(--paper-ink); }
   body { padding-bottom: 0; }
   .topbar, .rail, .steps, .plate-region, .acts, .calactions, .bulk, .wizard-acts { display: none !important; }
+  /* The board switch goes with the chrome; a printed sheet is one board's. */
+  .boardswitch { display: none !important; }
   .frame { display: block; }
   main { max-width: none; padding: 0; }
   .panel, .bay, .tbl tr, .card { break-inside: avoid; }
