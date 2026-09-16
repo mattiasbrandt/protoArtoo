@@ -95,7 +95,9 @@ The defect is the Xtensa image's and not the ESP32-P4's. Xtensa mixes 2- and
 into the next decode; RISC-V instructions are 2-byte aligned and their length
 comes from the first halfword, so padding takes whole instruction slots and a
 linear sweep cannot lose alignment. The check runs on both arms regardless --
-it is what shows the RISC-V arm has nothing to report.
+it is what shows the RISC-V arm has nothing to report, and on the firebeetle2
+image it reports exactly that: no suppressed edge, and a walk byte-identical to
+the one before this check existed.
 
 Misframed decodes are counted in the coverage report, and any that decoded as a
 direct call onto a real entry -- the fabricated edges -- are listed by name.
@@ -731,7 +733,15 @@ class Image:
                 # `l32r` before the window and called after it, and that edge is
                 # now an indirect-call gap rather than a resolved callee.
                 if misframed:
-                    self._note_misframed(fn, pc, mnem, ops, srclines[pc])
+                    # All-zero bytes off a boundary are the alignment padding
+                    # itself, not a decode that went wrong. Counting them would
+                    # inflate the desynchronisation figure with the thing that
+                    # causes it: on the ESP32-P4 image, whose encoding cannot
+                    # desynchronise at all, every one of the twelve is a `unimp`
+                    # pad slot inside a crypto register helper.
+                    padding = all(body_bytes.get(pc + i) == 0
+                                  for i in range(nbytes))
+                    self._note_misframed(fn, pc, mnem, ops, srclines[pc], padding)
                 pending_lit.clear()
                 pending_auipc.clear()
                 continue
@@ -750,7 +760,7 @@ class Image:
                 self._riscv_flow(fn, pc, mnem, ops, srclines[pc], pending_auipc)
 
     def _note_misframed(self, fn: Function, pc: int, mnem: str, ops: str,
-                        srcline: str | None) -> None:
+                        srcline: str | None, padding: bool = False) -> None:
         """Record a decoded address that is not a real instruction boundary.
 
         Dropping these silently would trade one dishonest number for another:
@@ -761,9 +771,11 @@ class Image:
 
         A data directive is not a misframe -- it is objdump correctly saying
         "these bytes are not code" -- so it is not counted here even when the
-        framing puts it off a boundary, which padding always does.
+        framing puts it off a boundary, which padding always does. Neither is
+        `padding`: an all-zero word off a boundary is the alignment fill, and
+        counting it would report the cause as one of its own symptoms.
         """
-        if mnem.startswith("."):
+        if padding or mnem.startswith("."):
             return
         self.misframed_insns += 1
         self.misframed_funcs.add(fn.name)
