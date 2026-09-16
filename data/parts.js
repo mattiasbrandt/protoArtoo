@@ -1027,10 +1027,20 @@
     window.clearInterval(holdTimer);
     holdTimer = null;
   };
+  // The keepalive refreshes the hold only while the droid still says it HAS the
+  // Output. The moment one of the firmware's two bounds lets go, this stops
+  // asking and waits for the builder to press.
+  //
+  // Without that, the ceiling would not exist. It releases the Output and drops
+  // the hold; the very next command takes the Output afresh and starts the
+  // ceiling over, so a page that kept asking would silently hold a servo for as
+  // long as the tab was open -- which is the one thing ADR 0064 says the page
+  // must not be able to do. Resuming is one press, and this is what makes that
+  // sentence true rather than decorative.
   const startKeepalive = () => {
     stopKeepalive();
     holdTimer = window.setInterval(() => {
-      if (dial !== null && !dial.sweeping) sendHold();
+      if (dial !== null && dial.holding && !dial.sweeping) sendHold();
     }, HOLD_KEEPALIVE_MS);
   };
 
@@ -1065,6 +1075,9 @@
       safe: false,
       ends: false,
       sweeping: false,
+      // The droid has the Output as far as this page knows. Cleared when an
+      // answer says it let go, so the keepalive stops asking for it.
+      holding: true,
     };
     dialPanel.hidden = false;
     setNote("");
@@ -1134,6 +1147,7 @@
       if (dial === null || !dial.sweeping) return;
       dial.us = target;
       paint();
+      dial.holding = true;
       if (!(await sendHold())) break;
       await new Promise((resolve) => window.setTimeout(resolve, SWEEP_DWELL_MS));
     }
@@ -1189,6 +1203,10 @@
     // The Output has gone limp under the dial: one of the firmware's two
     // bounds, or the estop. The panel says which, and one press takes it back.
     const limp = output.commandedUs === null;
+    // The droid has let go. Stop asking for it: the next hold would take the
+    // Output afresh and restart both bounds, which is the builder's press to
+    // make, not this page's to make for them.
+    if (limp) dial.holding = false;
     dialResume.hidden = !limp;
     if (limp && !dial.sweeping) {
       setNote(`${LIMP_SAID[output.limp] || LIMP_SAID.off}. Press take it again to hold it once more.`, "warning");
@@ -1281,7 +1299,8 @@
     }
     if (button === dialResume) {
       // One press re-takes the Output, which restarts both firmware bounds.
-      sendHold();
+      dial.holding = true;
+      started(sendHold());
       setNote("Holding it again.", "success");
       return;
     }

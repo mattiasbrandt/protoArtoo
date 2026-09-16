@@ -302,6 +302,35 @@ test("an Output the dial is holding says so, and each way of going limp reads di
   assert.equal(env.text("ledc:3", "outputs-release"), "Limp - the estop let go");
 });
 
+// The bound that would not exist if this page kept asking. A firmware release
+// drops the hold, so the very next hold command takes the Output afresh and
+// starts the ceiling over -- a page that kept its keepalive running would hold
+// a servo for as long as the tab was open, which is the one thing ADR 0064 says
+// a page must not be able to do.
+test("once the droid has let go, the page stops asking and waits to be told to resume", async () => {
+  const env = await bootParts();
+  env.pressCalibrate("ledc:0");
+  await sleep(20);
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+
+  // Still held: a tick refreshes it, which is what keeps the short expiry away.
+  const held = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, held + 1);
+
+  // The ten minutes ran out.
+  env.wentLimp("ledc:0", "ceiling");
+  await env.frame();
+
+  const after = env.holds().length;
+  keepalive.fn();
+  keepalive.fn();
+  await sleep(40);
+  assert.equal(env.holds().length, after, "the page does not take the Output back on its own");
+  assert.equal(env.text("ledc:0", "outputs-release"), "Went limp - ten minutes is the most a dial holds");
+});
+
 test("one press takes the Output back after it has gone limp", async () => {
   const env = await bootParts();
   env.pressCalibrate("ledc:0");
@@ -316,6 +345,14 @@ test("one press takes the Output back after it has gone limp", async () => {
   await sleep(40);
   assert.equal(env.holds().length, before + 1, "one press re-takes it, which restarts both bounds");
   assert.match(env.dialNote(), /Holding it again/);
+
+  // And the keepalive is asking again, so the short expiry stays away while the
+  // builder carries on.
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  const resumed = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, resumed + 1);
 });
 
 test("pulses off during a Find by Moving run ends the run at once and says which happened", async () => {
