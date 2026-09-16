@@ -343,15 +343,27 @@ test("the Controls subtitle and each control's own readout say the same three th
 });
 
 test("the three postures are read independently of one another", async () => {
-  // A droid that is driving, quiet and awake shares no value between the three,
-  // so a renderer that read one field for two of them is visible here.
-  const env = dashboard({ stationary: false, activeMood: 14, sleepMode: false });
-  await env.runSection("app-initial-status");
-  await env.settle();
+  // The two booleans are set AGAINST each other on purpose. Mode and sleep are
+  // both booleans on the same frame, and a renderer that read one of them for
+  // both is invisible while they agree - which they do on an ordinary droid
+  // most of the time. A droid parked on a stand but wide awake is the state
+  // that tells them apart.
+  const standing = dashboard({ stationary: true, activeMood: 14, sleepMode: false });
+  await standing.runSection("app-initial-status");
+  await standing.settle();
 
-  assert.equal(env.element("snapshot-mode").textContent, "Driving");
-  assert.equal(env.element("snapshot-mood").textContent, "Awake+");
-  assert.equal(env.element("snapshot-sleep").textContent, "awake");
+  assert.equal(standing.element("snapshot-mode").textContent, "Stationary");
+  assert.equal(standing.element("snapshot-mood").textContent, "Awake+");
+  assert.equal(standing.element("snapshot-sleep").textContent, "awake");
+
+  // And the other way round: driving, and asleep. Sleep parks the lights and
+  // the chatter; drive and the estop stay awake, so this is a real state.
+  const driving = dashboard({ stationary: false, activeMood: 10, sleepMode: true });
+  await driving.runSection("app-initial-status");
+  await driving.settle();
+
+  assert.equal(driving.element("snapshot-mode").textContent, "Driving");
+  assert.equal(driving.element("snapshot-sleep").textContent, "asleep");
 });
 
 test("the memory readout prints the block the Health signal beside it judges memory on", async () => {
