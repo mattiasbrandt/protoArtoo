@@ -475,10 +475,15 @@ class Image:
     # desynchronisation the encoding forbids.
     MAX_PAD_BYTES = 3
 
-    # Rounds of the anchor fixpoint in `_framing()`. Each round can only drop
-    # anchors, so it always settles; the cap is there so a pathological body
-    # cannot spend the run, and a body that has not settled is reported as
-    # unvalidated rather than half-judged.
+    # Rounds of the anchor fixpoint in `_framing()`. The cap is what
+    # guarantees termination, and that is not belt-and-braces: a round can ADD
+    # anchors as well as drop them, because dropping one lengthens the run
+    # before it and that can make instructions real which were not, and those
+    # name anchors of their own. Measured on the artoo-esp32 image, the
+    # unsized region objdump calls `softUartRxIsr()-0x1028` oscillates between
+    # 88 and 92 anchors and never settles; `_stext` settles at round 5. A body
+    # that has not settled is reported as unvalidated and keeps every edge
+    # objdump gave it, rather than being half-judged.
     ANCHOR_ROUNDS = 8
 
     def _is_uncond(self, mnem: str) -> bool:
@@ -540,10 +545,16 @@ class Image:
 
         So the two are solved together, by a fixpoint: frame with every
         candidate anchor, keep only the anchors named by instructions the
-        framing says are real, and repeat. Each round can only remove anchors,
-        which can only lengthen a run, so it settles -- and it settles on the
+        framing says are real, and repeat. Where it settles, it settles on the
         anchors named by correctly framed instructions, which are exactly the
         ones the hardware guarantees.
+
+        It is NOT monotone, and assuming it was is a mistake this comment used
+        to carry: dropping an anchor lengthens the run before it, which can
+        make instructions real that were not, and those name anchors of their
+        own. Two of the artoo-esp32 image's 7,019 bodies do not settle inside
+        `ANCHOR_ROUNDS`, both unsized pseudo-symbols; they return None here and
+        keep every edge.
         """
         anchors = self._anchors(entry, entry, hi, insns)
         for _ in range(self.ANCHOR_ROUNDS):

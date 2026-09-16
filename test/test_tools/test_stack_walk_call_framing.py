@@ -227,6 +227,30 @@ class LengthRuleIsCheckedNotAssumed(unittest.TestCase):
                 f"the length rule disagrees with objdump on {mnem!r}",
             )
 
+    def test_a_body_whose_anchors_never_settle_is_not_validated(self):
+        """The fixpoint is not monotone, so it can fail to settle.
+
+        Dropping an anchor lengthens the run before it, which can make
+        instructions real that were not, and those name anchors of their own.
+        On the artoo-esp32 image two of 7,019 bodies oscillate rather than
+        settle, both unsized pseudo-symbols. The round cap is what terminates
+        them, and what matters is where they land: unvalidated, with every edge
+        kept. Forced here by allowing no rounds at all, rather than by
+        contriving a body that oscillates.
+        """
+
+        class NoRoundsImage(FakeImage):
+            ANCHOR_ROUNDS = 0
+
+        image = build_image(NoRoundsImage)
+        self.assertIn("shifter", image.unvalidated_bodies)
+        self.assertEqual(image.misframed_insns, 0)
+        self.assertIn(
+            VICTIM_ADDR, [t for t, _, _ in image.funcs[FN_ADDR].calls],
+            "a body whose framing never settled must keep every edge objdump "
+            "gave it; half-judging one is a guess, not a measurement",
+        )
+
     def test_a_body_whose_lengths_disagree_is_not_validated(self):
         class WrongLengthImage(FakeImage):
             # `movi.n` is a 2-byte opcode; claiming four bytes for it is a
