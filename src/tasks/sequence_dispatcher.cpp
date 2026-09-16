@@ -263,16 +263,6 @@ static void clearSuppression() {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-// Whether a run is in progress, for ServoTask's park at estop and Sleep Mode.
-// Separate from the suppression flag above on purpose: DomeLinkTask also writes
-// that one for a sequence the dome is running, and a dome-side sequence moved
-// nothing on the body.
-static void setRunActive(bool active) {
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.seqRunActive = active;
-    taskEXIT_CRITICAL(&robotStateMux);
-}
-
 void sequenceDispatcherTask(void* /*pvParameters*/) {
     esp_task_wdt_add(NULL);
 
@@ -350,7 +340,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     activeName[sizeof(activeName) - 1] = '\0';
                     retryLogged = false;
                     setSuppression(now + entry->suppressMs);
-                    setRunActive(true);
                     PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
                                 commandSourceToString(req.src),
                                 entry->name, (unsigned)entry->suppressMs);
@@ -375,7 +364,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             seqEvidenceEnd(SEQ_RUN_ESTOP, "estop", now, bodyQueueFullCount());
             seqStoreReleaseRun();  // reclaim any Learned-run buffers
             clearSuppression();
-            setRunActive(false);
             activeName[0] = '\0';
         }
         if (!estopActive && prevEstop) {
@@ -413,7 +401,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             seqEvidenceEnd(SEQ_RUN_ABORTED, "web stop", now, bodyQueueFullCount());
             seqStoreReleaseRun();  // reclaim any Learned-run buffers
             clearSuppression();
-            setRunActive(false);
             activeName[0] = '\0';
         }
 
@@ -432,7 +419,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 seqEvidenceEnd(SEQ_RUN_RECONNECT, "dome reconnect", now, bodyQueueFullCount());
                 seqStoreReleaseRun();  // reclaim any Learned-run buffers
                 clearSuppression();
-                setRunActive(false);
                 activeName[0] = '\0';
             }
             resyncCloseIdx = 0;
@@ -487,7 +473,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 seqEvidenceEnd(SEQ_RUN_COMPLETED, "", now, bodyQueueFullCount());
                 seqStoreReleaseRun();  // reclaim any Learned-run buffers now idle
                 clearSuppression();
-                setRunActive(false);
                 activeName[0] = '\0';
             }
         }
@@ -502,7 +487,6 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             taskEXIT_CRITICAL(&robotStateMux);
             if (until != 0 && millis() >= until) {
                 clearSuppression();
-                setRunActive(false);
             }
         }
 

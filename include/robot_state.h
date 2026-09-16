@@ -129,7 +129,53 @@ enum ServoCommandType : uint8_t {
     // computed from the width on the pin (include/servo_nudge.h), so no source
     // can ask for a big one. One output per command; 255 is refused.
     SERVO_CMD_NUDGE,
+    // The calibration dial's hold (ADR 0064, #364): drive one output to
+    // positionUs and keep the dial's hold on it. The first HOLD takes the
+    // Output and starts the ten-minute ceiling; every HOLD after it refreshes
+    // the short expiry and nothing else, so a page can keep a hold alive but
+    // never past the ceiling (include/servo_hold.h). One output per command;
+    // 255 is refused.
+    SERVO_CMD_HOLD,
+    // Pulses off (ADR 0043, ADR 0064, #364): take the pulse off the pin. The
+    // output goes limp where it is -- nothing is commanded -- and any move,
+    // nudge or hold on it ends. 255 releases ARM1 and ARM2, as the other
+    // broadcasts do.
+    SERVO_CMD_RELEASE,
 };
+
+// Why an output has no pulse on it (#364). Read only while
+// ServoCommandedPosition::pulsing is false: a pulsing output's reason is
+// whatever was last recorded and is not handed on. SERVO_LIMP_OFF is 0 so a
+// zero-filled mirror -- an output nothing has driven since boot -- reads as
+// exactly that.
+enum ServoLimpReason : uint8_t {
+    SERVO_LIMP_OFF = 0,   // no pulse since boot: switched off, or never driven
+    SERVO_LIMP_RELEASED,  // pulses off: a release command let go of it
+    SERVO_LIMP_EXPIRED,   // the dial's hold commands stopped arriving (SERVO_HOLD_EXPIRY_MS)
+    SERVO_LIMP_CEILING,   // the dial held it for SERVO_HOLD_CEILING_MS
+    SERVO_LIMP_ESTOP,     // the estop released every output (ADR 0043)
+    SERVO_LIMP_SLEEP,     // Sleep Mode released every output (ADR 0043)
+};
+
+// The token a surface reads for it: GET /api/servo/outputs' `limp` value and
+// the Console's, one spelling.
+inline const char* servoLimpReasonToString(ServoLimpReason reason) {
+    switch (reason) {
+        case SERVO_LIMP_RELEASED:
+            return "pulses-off";
+        case SERVO_LIMP_EXPIRED:
+            return "expiry";
+        case SERVO_LIMP_CEILING:
+            return "ceiling";
+        case SERVO_LIMP_ESTOP:
+            return "estop";
+        case SERVO_LIMP_SLEEP:
+            return "sleep";
+        case SERVO_LIMP_OFF:
+        default:
+            return "off";
+    }
+}
 
 struct ServoCommand {
     uint8_t armId;          // 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3, 255=broadcast (ARM1+ARM2)
@@ -156,6 +202,12 @@ struct ServoCommandedPosition {
     // Wraps, and that is fine: a reader compares it with what it read before
     // it asked, never with an absolute.
     uint8_t nudgesDone;
+    // Whether the calibration dial has this output (#364, ADR 0064): both of
+    // its firmware bounds are armed, and the pulse stays on until one fires,
+    // the builder lets go, or the halt edge releases it.
+    bool held;
+    // Why there is no pulse, read only while `pulsing` is false.
+    ServoLimpReason limp;
 };
 
 // -----------------------------------------------------------------------------
@@ -277,8 +329,6 @@ struct RobotState {
     // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask writes; DomeLinkTask writes for coordination) ---
     bool domeSeqActive;    // true while a dome sequence is running (written by SequenceDispatcherTask and DomeLinkTask)
     uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis() (written by SequenceDispatcherTask and DomeLinkTask)
-    bool seqRunActive;     // true while the Sequence Coordinator has a run in progress, start to end or abort
-                           // (written by SequenceDispatcherTask only; ServoTask reads it to park what a run moved)
 
     // --- Zone 9: Shared telemetry / documented handshake flags (multi-writer by design) ---
     uint32_t queueOverflowCount;  // shared telemetry counter, incremented by many tasks

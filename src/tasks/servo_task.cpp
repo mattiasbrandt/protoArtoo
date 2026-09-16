@@ -2,7 +2,8 @@
 // src/tasks/servo_task.cpp
 //
 // ServoTask  --  LEDC PWM control for utility arm servos and spare servo outputs.
-// Handles open, close, position and nudge commands, from every source, for:
+// Handles open, close, position, nudge, hold and release commands, from every
+// source, for:
 //   - ARM1 (Top/Left utility arm, GPIO 23)
 //   - ARM2 (Bottom/Right utility arm, GPIO 5)
 //   - AUX1-3 (Spare servo outputs, GPIO 19/18/32)
@@ -20,6 +21,7 @@
 #include "robot_state.h"
 #include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
 #include "servo_helpers.h"
+#include "servo_hold.h"         // the dial's hold and its two bounds (ADR 0064)
 #include "servo_motion_ramp.h"  // a move planned in time from the Output's profile (ADR 0052)
 #include "servo_nudge.h"        // the bounded pair a Find by Moving nudge visits (ADR 0050)
 #include "servo_output_row.h"  // the addressed rows an endpoint lives on (ADR 0041)
@@ -43,8 +45,11 @@ static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
 // it, so it is only trusted once this task has written something there:
 // `known` is false until then, and a move from an unknown position is a jump.
 //
-// `seqMoved` marks an output a sequence was the last thing to command, which is
-// what the park below acts on. Any other source commanding the output clears it.
+// `hold` is the calibration dial's hold on the output (ADR 0064, #364): while
+// it stands the pulse stays on until one of its two bounds fires, the builder
+// lets go, or the halt edge releases it. `limp` is why there is no pulse, read
+// only while `known` is false, so a surface can say "pulses off" and "the
+// estop let go" differently.
 //
 // A Find by Moving nudge (ADR 0050, #363) is one more kind of move on this
 // state, not a second machine beside it. `nudgeLeg` is which of its legs is in
@@ -67,7 +72,8 @@ static struct {
     uint16_t commandedUs;
     bool known;
     bool moving;
-    bool seqMoved;
+    ServoHoldState hold;
+    ServoLimpReason limp;
     ServoMotionRamp ramp;
     uint8_t nudgeLeg;          // 1..SERVO_NUDGE_LEG_COUNT while a nudge is in progress, else 0
     bool nudgeDwelling;        // the leg has arrived and the output is resting there
@@ -161,13 +167,13 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 // ends, or `nowUs` again when nothing is moving, so the two marks a surface
 // draws close up exactly when the move does. `pulsing` is `known`: an output
 // only becomes known by this task putting a pulse on it -- the neutral pulse at
-// init, or a write -- and nothing in this firmware takes a pulse away once it
-// has started. Whoever brings Output Release or pulses-off (ADR 0043, ADR 0064)
-// clears it there.
+// init, or a write -- and only releaseArm() takes one away (pulses off, a hold
+// bound, or the halt edge; ADR 0043, ADR 0064), which is where `known` is
+// cleared and `limp` says why.
 //
-// Called at every place one of the three changes: a write, a ramp planned, a
-// move abandoned, and init. It is a copy into robotState under robotStateMux,
-// like every robotState write, and allocates nothing.
+// Called at every place one of them changes: a write, a ramp planned, a move
+// abandoned, a hold taken, a release, and init. It is a copy into robotState
+// under robotStateMux, like every robotState write, and allocates nothing.
 // -----------------------------------------------------------------------------
 static void publishCommanded(uint8_t armId) {
     const ServoCommandedPosition commanded = {
@@ -175,6 +181,8 @@ static void publishCommanded(uint8_t armId) {
         s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs,
         s_arm[armId].known,
         s_arm[armId].nudgesDone,
+        s_arm[armId].hold.held,
+        s_arm[armId].limp,
     };
     taskENTER_CRITICAL(&robotStateMux);
     robotState.servoCommanded[armId] = commanded;
@@ -231,26 +239,6 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
 }
 
 // -----------------------------------------------------------------------------
-// setArmPosition()
-// Snap a single arm to a pulse width: the straight-through write, with any move
-// in progress on that arm abandoned first.
-// armId: 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3
-//
-// A command that should move at the Output's own pace goes through driveArmTo()
-// instead. This one exists for the paths that must not ease: the park below,
-// and a move the profile cannot plan.
-// -----------------------------------------------------------------------------
-static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
-    uint8_t channel = LEDC_CH_MAX;
-    uint16_t commandedUs = 0;
-    if (!resolveArmPulse(armId, pulseUs, &channel, &commandedUs)) {
-        return;
-    }
-    endMove(armId);
-    writeArmPulse(armId, channel, commandedUs);
-}
-
-// -----------------------------------------------------------------------------
 // driveArmTo()
 // Send an arm to a pulse width at the pace its Output's Motion Profile sets.
 //
@@ -258,7 +246,9 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 // duration, so a Body Step, an RC toggle and a browser move cannot disagree
 // about how long a door takes (ADR 0049, ADR 0052). Where the profile cannot
 // plan a move -- no row, an unmeasured output, no known starting point -- the
-// arm snaps, which is exactly what every move did before the profile existed.
+// arm snaps, which is exactly what every move did before the profile existed,
+// and is also the first move after a release (#364): a released output is no
+// longer `known`, so there is no position to ramp from.
 //
 // The profile arrives as four values, not as the row they sit in: like the
 // clamp and the Endpoint Pair, it is answered by address out of the live table,
@@ -370,18 +360,18 @@ static void beginNudgeLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
     publishCommanded(armId);
 }
 
-// A SERVO_CMD_NUDGE that got past processCommand()'s gates. True when a nudge
-// started. Refused -- false, nothing moved -- with the count still bumped so a
-// run waiting on it steps on, when there is no width on the pin to nudge about
-// or that width is outside the cautious band.
-static bool beginNudge(uint8_t armId, CommandSource source) {
+// A SERVO_CMD_NUDGE that got past processCommand()'s gates. Refused, with
+// nothing moved and the count still bumped so a run waiting on it steps on,
+// when there is no width on the pin to nudge about or that width is outside
+// the cautious band.
+static void beginNudge(uint8_t armId, CommandSource source) {
     // One output per nudge, always: a run nudges the spare outputs one at a
     // time so the builder can say which one moved, and the ARM1+ARM2 broadcast
     // would move two in one press.
     if (armId >= kArmCount) {
         PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one arm, not %d", commandSourceToString(source),
                     armId);
-        return false;
+        return;
     }
     ServoNudgePlan plan = {};
     if (!s_arm[armId].known ||
@@ -390,7 +380,7 @@ static bool beginNudge(uint8_t armId, CommandSource source) {
                     s_arm[armId].known ? "it sits outside the cautious band" : "no pulse on it yet");
         s_arm[armId].nudgesDone++;
         publishCommanded(armId);
-        return false;
+        return;
     }
     // Whatever the arm was doing is over, a nudge in progress included: this
     // one starts from the width on the pin now.
@@ -399,7 +389,6 @@ static bool beginNudge(uint8_t armId, CommandSource source) {
     PA_LOG_INFO(TAG, "[%s] Arm%d nudged %u/%u us about %u us", commandSourceToString(source),
                 armId + 1, (unsigned)plan.hiUs, (unsigned)plan.loUs, (unsigned)plan.homeUs);
     beginNudgeLeg(armId, 1, millis());
-    return true;
 }
 
 // One frame of a nudge in progress: wait out a dwell, then start the next leg;
@@ -444,12 +433,13 @@ static void updateMotion() {
 // stopAllMoves()
 // End every move in progress where it has got to, commanding nothing further.
 //
-// Estop and Sleep Mode land here the moment either is entered. A ramp that kept
-// running would be the droid still moving after it was told to stop, so the pin
-// keeps the last width a frame wrote and nothing eases on. Commanding no new
-// position is the half of ADR 0043 this can already honour; releasing the
-// output is the other half, and whoever brings the release replaces this rather
-// than adding to it.
+// Estop and Sleep Mode land here the moment either is entered, and
+// releaseAllOutputs() below runs straight after to take the pulses off
+// (ADR 0043). A ramp that kept running would be the droid still moving after
+// it was told to stop, so the pin keeps the last width a frame wrote and
+// nothing eases on. The release ends a move on every output it touches too:
+// what this adds is that the moves end first, and the log line naming what was
+// in progress when the stop arrived.
 // -----------------------------------------------------------------------------
 static void stopAllMoves(const char* reason) {
     bool stopped = false;
@@ -497,45 +487,116 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 }
 
 // -----------------------------------------------------------------------------
-// parkSequenceMovedOutputs()
-// Put every output a running sequence moved at its close position.
+// releaseArm()
+// Take the pulse off one output: pulses off (ADR 0043, ADR 0064, #364).
 //
-// Estop and Sleep Mode land here, and only while a sequence run is in progress:
-// the body routines :SE30..:SE36 were parked closed at estop and sleep when
-// ServoTask ran them itself, and they are sequences now (ADR 0049), so the same
-// promise holds for every run -- not for a door somebody opened by hand, and not
-// for one a routine deliberately left open after it finished.
+// The one place a pulse comes off a pin, whoever asks -- the builder's pulses
+// off, one of the dial's two bounds, or the halt edge -- so a released output
+// means one thing everywhere on the droid: nothing is driven, the servo goes
+// limp where it is, and its resting position is whatever gravity and friction
+// decide. Nothing is commanded first: driving to a known position before
+// letting go is exactly the option ADR 0064 refused, since it moves a part
+// while by definition nobody is watching it.
 //
-// This path SNAPS, and it must keep snapping. A Servo Output's Motion Profile
-// (ADR 0052) gives it a ramp, and a ramp opens a gap between the commanded
-// position and where the servo actually is -- so easing into a safe state
-// leaves the droid somewhere nobody asked for while it eases. setArmPosition()
-// writes the endpoint straight through and abandons any move in progress
-// (ADR 0041, ADR 0043).
-//
-// Both ADRs are cited as decisions this snap has to survive, NOT as behaviour
-// this function implements -- and ADR 0043 in particular is not implemented at
-// this call site. It decides that estop and Sleep Mode RELEASE every servo
-// output and command no position; what happens below is the opposite, a drive
-// to `close` with PWM held. The ADR says as much itself ("the code at
-// 939ed705 implements none of it yet"), and whoever brings the release here
-// replaces this park rather than adding to it.
+// Any move, nudge or hold on the output ends here too. A nudge cut short is
+// counted as ended (endNudge), so a discovery run waiting on it steps on. The
+// output stops being `known`: the next command to it starts from a position
+// nobody can vouch for, so it snaps, exactly as the first move after boot does.
 // -----------------------------------------------------------------------------
-static void parkSequenceMovedOutputs(const char* reason) {
-    bool parked = false;
+static void releaseArm(uint8_t armId, ServoLimpReason reason) {
+    if (armId >= kArmCount || !isArmEnabled(armId)) {
+        return;
+    }
+    const uint8_t channel = armIdToLedcChannel(armId);
+    if (channel >= LEDC_CH_MAX) {
+        return;
+    }
+    endMove(armId);
+    servoHoldEnd(&s_arm[armId].hold);
+    ledcPwmRelease(channel);
+    s_arm[armId].known = false;
+    s_arm[armId].limp = reason;
+    publishCommanded(armId);
+}
+
+// -----------------------------------------------------------------------------
+// releaseAllOutputs()
+// Estop and Sleep Mode release every enabled output and command no position
+// (ADR 0043). This replaced the park that used to drive what a running
+// sequence had moved to its close position: a held drive is the 2026-05-21
+// grind, and closing many outputs at once is the documented brownout, so a
+// stop lets go of everything instead of choosing a position for anything.
+//
+// Every enabled output, not only the ones a move was in progress on: a door
+// somebody opened by hand a minute ago is being driven just as much as one a
+// routine was closing, and the stop has to reach it too.
+// -----------------------------------------------------------------------------
+static void releaseAllOutputs(ServoLimpReason reason) {
     for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        if (!s_arm[armId].seqMoved) {
+        releaseArm(armId, reason);
+    }
+    PA_LOG_INFO(TAG, "Every output released - %s",
+                reason == SERVO_LIMP_ESTOP ? "estop" : "sleep mode");
+}
+
+// -----------------------------------------------------------------------------
+// holdArm()
+// The calibration dial's hold (ADR 0064, #364): drive one output to a width and
+// keep the pulse on it until the builder lets go or a bound fires.
+//
+// The first hold takes the output and starts both bounds; every hold after it
+// refreshes the short expiry and nothing else (include/servo_hold.h), so the
+// page that sends one a second keeps the hold alive and can never push it past
+// the ceiling. A hold at the width the output is already going to -- the page's
+// keepalive -- is a refresh and no move at all: replanning a ramp part way
+// through, once a second, would restart the move the builder is watching.
+//
+// The drive itself is driveArmTo()'s, like every other command: through the
+// component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
+// where the profile cannot plan one.
+// -----------------------------------------------------------------------------
+static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source) {
+    if (armId >= kArmCount) {
+        PA_LOG_WARN(TAG, "[%s] Hold rejected - takes one arm, not %d", commandSourceToString(source),
+                    armId);
+        return;
+    }
+    const bool taken = servoHoldCommand(&s_arm[armId].hold, millis());
+    if (taken) {
+        PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
+                    armId + 1, (unsigned)positionUs);
+    }
+    const uint16_t goingToUs =
+        s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs;
+    if (s_arm[armId].known && goingToUs == positionUs) {
+        // Nothing to drive; the mirror still has to learn the hold was taken.
+        if (taken) {
+            publishCommanded(armId);
+        }
+        return;
+    }
+    driveArmTo(armId, positionUs);
+}
+
+// -----------------------------------------------------------------------------
+// expireHolds()
+// One frame of the dial's two bounds (ADR 0064): an output whose hold commands
+// have stopped arriving, or that has been held for the most a dial may, is
+// released here and the reason recorded, so the surface can say which one it
+// was and offer to take the output again.
+// -----------------------------------------------------------------------------
+static void expireHolds() {
+    const uint32_t now = millis();
+    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+        const ServoHoldBound bound = servoHoldBoundHit(s_arm[armId].hold, now, SERVO_HOLD_EXPIRY_MS,
+                                                       SERVO_HOLD_CEILING_MS);
+        if (bound == SERVO_HOLD_BOUND_NONE) {
             continue;
         }
-        uint16_t openUs = 0;
-        uint16_t closeUs = SERVO_PULSE_NEUTRAL_US;
-        getOpenClosePositions(armId, openUs, closeUs);
-        setArmPosition(armId, closeUs);
-        s_arm[armId].seqMoved = false;
-        parked = true;
-    }
-    if (parked) {
-        PA_LOG_INFO(TAG, "Outputs a sequence was moving parked closed - %s", reason);
+        const bool ceiling = bound == SERVO_HOLD_BOUND_CEILING;
+        releaseArm(armId, ceiling ? SERVO_LIMP_CEILING : SERVO_LIMP_EXPIRED);
+        PA_LOG_WARN(TAG, "Arm%d released - %s", armId + 1,
+                    ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
     }
 }
 
@@ -607,7 +668,7 @@ static void processCommand(const ServoCommand& cmd) {
             if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
                 PA_LOG_WARN(TAG, "[%s] Invalid position %d us - rejected",
                             commandSourceToString(cmd.source), cmd.positionUs);
-                return;  // moved nothing, so it changes nothing below
+                return;
             }
             if (cmd.armId == 255) {
                 driveArmTo(0, cmd.positionUs);
@@ -622,20 +683,30 @@ static void processCommand(const ServoCommand& cmd) {
         case SERVO_CMD_NUDGE:
             // No width to validate: the command carries none, and the pair is
             // computed from the pin (include/servo_nudge.h).
-            if (!beginNudge(cmd.armId, cmd.source)) {
-                return;  // moved nothing, so it changes nothing below
+            beginNudge(cmd.armId, cmd.source);
+            break;
+
+        case SERVO_CMD_HOLD:
+            // The same width rule as a position; the hold is what differs.
+            if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
+                PA_LOG_WARN(TAG, "[%s] Invalid hold position %d us - rejected",
+                            commandSourceToString(cmd.source), cmd.positionUs);
+                return;
+            }
+            holdArm(cmd.armId, cmd.positionUs, cmd.source);
+            break;
+
+        case SERVO_CMD_RELEASE:
+            if (cmd.armId == 255) {
+                releaseArm(0, SERVO_LIMP_RELEASED);
+                releaseArm(1, SERVO_LIMP_RELEASED);
+                PA_LOG_INFO(TAG, "[%s] Both arms released - pulses off", commandSourceToString(cmd.source));
+            } else {
+                releaseArm(cmd.armId, SERVO_LIMP_RELEASED);
+                PA_LOG_INFO(TAG, "[%s] Arm%d released - pulses off", commandSourceToString(cmd.source),
+                            cmd.armId + 1);
             }
             break;
-    }
-
-    // Record who moved the output last, for the park. Only a command that got
-    // this far counts: a rejected one moved nothing.
-    const bool fromSequence = cmd.source == SRC_SEQ;
-    if (cmd.armId == 255) {
-        s_arm[0].seqMoved = fromSequence;
-        s_arm[1].seqMoved = fromSequence;
-    } else if (cmd.armId < kArmCount) {
-        s_arm[cmd.armId].seqMoved = fromSequence;
     }
 }
 
@@ -738,7 +809,6 @@ void servoTask(void* pvParameters) {
     ServoCommand cmd;
     bool hwmLogged = false;
     bool halted = false;
-    bool runActiveBeforeHalt = false;
 
     while (true) {
         if (!hwmLogged) {
@@ -748,39 +818,22 @@ void servoTask(void* pvParameters) {
         }
 
         // Entering estop or Sleep Mode stops every move where it is, before a
-        // command or a frame can carry one further, and parks what a running
-        // sequence moved. On the edge only: a direct command is still accepted
-        // in Sleep Mode, and it must be able to move.
-        //
-        // The three flags are read in one critical section, and "a run was in
-        // progress" is taken from the last frame BEFORE the halt. The Sequence
-        // Coordinator ends the run when it sees estop, so reading the run flag
-        // on the halt frame itself could find it already cleared and skip the
-        // park; a frame that still saw no halt cannot have seen that either.
+        // command or a frame can carry one further, and then releases every
+        // enabled output (ADR 0043): nothing is driven, so nothing can grind
+        // and nothing can brown out. On the edge only: a direct command is
+        // still accepted in Sleep Mode, and it must be able to move. Both
+        // flags are read in one critical section so the reason recorded is the
+        // one that fired.
         taskENTER_CRITICAL(&robotStateMux);
-        const bool haltNow = robotState.estop || robotState.sleepMode;
-        const bool runActive = robotState.seqRunActive;
+        const bool estopNow = robotState.estop;
+        const bool sleepNow = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
+        const bool haltNow = estopNow || sleepNow;
         if (haltNow && !halted) {
             stopAllMoves("estop or sleep mode entered");
-            if (runActiveBeforeHalt || runActive) {
-                parkSequenceMovedOutputs("estop or sleep mode entered");
-            }
-        }
-        if (!haltNow) {
-            runActiveBeforeHalt = runActive;
+            releaseAllOutputs(estopNow ? SERVO_LIMP_ESTOP : SERVO_LIMP_SLEEP);
         }
         halted = haltNow;
-
-        // Once no run is in progress, nothing a finished run moved is the park's
-        // any more: a routine that left a door open meant to, and the next run
-        // must not close it at estop. Cleared before this frame's commands, so a
-        // move from a run that starts in this frame is still recorded.
-        if (!runActive) {
-            for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-                s_arm[armId].seqMoved = false;
-            }
-        }
 
         // Process any pending commands (non-blocking)
         while (xQueueReceive(servoCmdQueue, &cmd, 0) == pdTRUE) {
@@ -789,6 +842,10 @@ void servoTask(void* pvParameters) {
 
         // Advance every move in progress by one frame
         updateMotion();
+
+        // Then the dial's two bounds, after this frame's commands have had
+        // their say: a hold refreshed this frame is not an expired one.
+        expireHolds();
 
         // Feed watchdog
         esp_task_wdt_reset();

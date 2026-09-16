@@ -179,6 +179,36 @@ bool ledcPwmSetNeutral(uint8_t channel) {
 }
 
 // -----------------------------------------------------------------------------
+// ledcPwmRelease()
+// Duty 0 and nothing else: no clamp, because there is no width to clamp, and
+// no neutral, because a release commands no position (ADR 0043). Same mask
+// rule as the write above.
+// -----------------------------------------------------------------------------
+bool ledcPwmRelease(uint8_t channel) {
+    if (channel >= LEDC_CH_MAX) {
+        return false;
+    }
+
+    if (!(s_configuredMask & (1 << channel))) {
+        return false;
+    }
+
+    esp_err_t err = ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)channel, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Release failed for channel %d: %d", channel, err);
+        return false;
+    }
+
+    err = ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)channel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Release update failed for channel %d: %d", channel, err);
+        return false;
+    }
+
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // ledcPwmInitNeutralPositions()
 // Set only configured channels to neutral.
 // Skips channels outside the enabled mask.
