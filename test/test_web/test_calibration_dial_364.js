@@ -38,7 +38,12 @@ test("an Output that can be driven carries the acts; a light and an unnamed row 
 });
 
 test("opening the dial takes the Output at the width it is already standing at, so nothing moves", async () => {
-  const env = await bootParts();
+  // Standing at 1750, deliberately NOT the middle of its 1000-2000 band: a dial
+  // that opened at the middle would move the part the moment it was opened, and
+  // on a droid that is a panel swinging while somebody has their hands in it.
+  const outputs = freshOutputs();
+  outputs[0] = output("ledc:0", "ARM1", { commandedUs: 1750, targetUs: 1750 });
+  const env = await bootParts({ outputs });
   env.pressCalibrate("ledc:0");
   await sleep(20);
 
@@ -46,10 +51,21 @@ test("opening the dial takes the Output at the width it is already standing at, 
   assert.match(env.dialText("cal-title"), /Calibrating ARM1/);
   assert.deepEqual(
     env.holds().map((post) => post.form),
-    [{ arm: "arm1", action: "hold", positionUs: "1500" }],
+    [{ arm: "arm1", action: "hold", positionUs: "1750" }],
     "the first hold is at the width the droid said the Output was already holding",
   );
-  assert.equal(env.dialText("cal-readout"), "1500 µs");
+  assert.equal(env.dialText("cal-readout"), "1750 µs");
+  assert.equal(env.slider().value, "1750");
+});
+
+test("an Output with no pulse has no position to start from, so the dial starts mid-band", async () => {
+  const env = await bootParts();
+  // AUX3 is switched off: commandedUs is null, and the middle of its band is
+  // the only honest guess at where to begin.
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+
+  assert.deepEqual(env.holds().map((post) => post.form.positionUs), ["1500"]);
 });
 
 test("the dial opens at the row's own component band and says which band and why", async () => {
