@@ -1,5 +1,5 @@
 diff --git i/data/servo.js w/data/servo.js
-index f8b3c410..0a818e97 100644
+index f8b3c410..bdf90f75 100644
 --- i/data/servo.js
 +++ w/data/servo.js
 @@ -425,7 +425,7 @@
@@ -7,7 +7,7 @@ index f8b3c410..0a818e97 100644
      // PASurface.poll()'s to report; catching it here would mark the surface
      // current on a refresh that never landed (#360).
 -    window.PASurface.poll(refreshStatusOnce, {
-+    window.PageBootstrap.createBackgroundPoll(refreshStatusOnce, {
++    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
        cadenceMs: 1000,
        runOnStart: true,
        refreshOnReturn: true,

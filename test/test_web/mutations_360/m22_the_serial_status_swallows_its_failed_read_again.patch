@@ -1,0 +1,12 @@
+diff --git i/data/setup.js w/data/setup.js
+index e0d5a2e9..c98af01a 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1276,7 +1276,6 @@
+       renderSerialStatus(result.data);
+     } catch (error) {
+       setFeedbackState(serialStatusLine, "Status unavailable", "error");
+-      throw error;
+     }
+   };
+ 

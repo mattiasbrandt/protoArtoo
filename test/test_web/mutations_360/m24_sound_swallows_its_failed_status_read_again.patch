@@ -1,5 +1,5 @@
 diff --git i/data/sound.js w/data/sound.js
-index 7e6fc40f..1b3cb5a7 100644
+index 7e6fc40f..f62f823f 100644
 --- i/data/sound.js
 +++ w/data/sound.js
 @@ -2146,7 +2146,7 @@
@@ -7,7 +7,7 @@ index 7e6fc40f..1b3cb5a7 100644
      // to PASurface.poll(), which retries next cycle and keeps the surface
      // showing what it last read rather than reporting it as current (#360).
 -    window.PASurface.poll(refreshStatusOnce, {
-+    window.PageBootstrap.createBackgroundPoll(refreshStatusOnce, {
++    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
        cadenceMs: 2000,
        runOnStart: true,
        refreshOnReturn: true,
