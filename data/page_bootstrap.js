@@ -545,6 +545,12 @@
   // reference stops the packet clock whenever it clamps an output, for exactly
   // this reason -- a live-looking zero is worse than a stale value
   // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:896-901).
+  //
+  // A read already on the wire when the operator left still clears the mark
+  // when it lands, and that is the intent rather than a hole: stopping a poll
+  // does not cancel a request, the answer renders into the nodes the shell
+  // kept, and the surface really is showing a reading taken since. It is only
+  // a refresh that never answered that has to leave the mark up (#360).
   const markSurfaceFresh = (entry) => {
     if (!entry.stale) return;
     entry.stale = false;
