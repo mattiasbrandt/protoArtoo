@@ -21,9 +21,7 @@
 
 #include "../../../include/audio_chirp.h"
 #include "../../../include/audio_serial_io.h"
-#include "../../../include/dome_link.h"
-
-extern DomeUartOwner g_test_dome_uart_owner;
+#include "../../../include/dome_uart_test_hooks.h"
 
 // The 13 Bank 2-6 directories on this card: twelve Bank 2 pages and 3A_system.
 static const char* kGmanSdBankLines =

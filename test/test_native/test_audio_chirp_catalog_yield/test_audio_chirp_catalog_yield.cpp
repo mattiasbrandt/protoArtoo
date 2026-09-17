@@ -13,9 +13,7 @@
 
 #include "../../../include/audio_chirp.h"
 #include "../../../include/audio_serial_io.h"
-#include "../../../include/dome_link.h"
-
-extern DomeUartOwner g_test_dome_uart_owner;
+#include "../../../include/dome_uart_test_hooks.h"
 
 struct ScriptedChirpIO {
     static constexpr int TX_BUF = 256;

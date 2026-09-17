@@ -17,11 +17,10 @@
 
 #include "../../../include/audio_serial_io.h"
 #include "../../../include/audio_chirp.h"
-#include "../../../include/dome_link.h"
-
-// Seam declared in native_test_stubs.cpp — set DOME_UART_DOME to simulate
-// DomeLink holding UART2; reset to DOME_UART_NONE in tearDown.
-extern DomeUartOwner g_test_dome_uart_owner;
+// Seam defined in native_test_stubs.cpp, declared in this header - set
+// DOME_UART_DOME to simulate DomeLink holding UART2; reset to DOME_UART_NONE
+// in tearDown.
+#include "../../../include/dome_uart_test_hooks.h"
 
 // =============================================================================
 // Minimal recording IO

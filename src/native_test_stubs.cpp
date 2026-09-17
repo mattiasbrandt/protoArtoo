@@ -94,7 +94,7 @@ bool saveConfigToNvs() {
 // so audio_chirp.cpp's UART2 ownership guard can be exercised in tests.
 // Default: DOME_UART_NONE (no owner). Tests set g_test_dome_uart_owner in
 // setUp() and reset it in tearDown().
-#include "dome_link.h"
+#include "dome_uart_test_hooks.h"  // declares the global this section defines
 DomeUartOwner g_test_dome_uart_owner = DOME_UART_NONE;
 bool domeUartOwnedBy(DomeUartOwner owner) {
     return g_test_dome_uart_owner == owner;
