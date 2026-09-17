@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 05559681..2bf9fa14 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1372,7 +1372,7 @@
+   // ---------------------------------------------------------------------------
+   const centreAll = async () => {
+     if (outputs === null) return;
+-    const lights = outputs.filter(isLightRow).length;
++    const lights = 0;
+     const going = outputs.length - lights;
+     try {
+       await window.PAApi.postForm("/api/servo/centre", {}, { timeoutMs: 4000 });
