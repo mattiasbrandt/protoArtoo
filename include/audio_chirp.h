@@ -89,6 +89,9 @@ class AudioDriverChirp : public AudioDriver {
 
     // Catalog interface implementations (overrides).
     bool refreshCatalog() override;
+    AudioCatalogRefreshOutcome lastCatalogRefreshOutcome() const override {
+        return m_lastRefreshOutcome;
+    }
     void getCatalogCompleteness(AudioCatalogCompleteness& out) const override;
     bool getSoundListChecksum(uint32_t* out) const override;
     uint16_t getCatalogEntryCount() const override;
@@ -130,6 +133,7 @@ class AudioDriverChirp : public AudioDriver {
     // directories, pages or file contents, so a same-name move between pages
     // keeps it; that is a limit to state, not a reason to withhold the warning
     // the module does offer (#397 work item 4).
+    AudioCatalogRefreshOutcome m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
     uint32_t m_soundListChecksum = 0;
     // Whether the last manifest read carried a checksum at all. A checksum of
     // zero is a value; an absent one is not, and the two must not be confused.

@@ -747,7 +747,22 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
     sendCommand(cmd);
 }
 
+// -----------------------------------------------------------------------------
+// refreshCatalog()
+// GMAN for the bank summary, then one GNME per sound.
+//
+// The walk is long: up to AUDIO_CATALOG_MAX_ENTRIES names, each with its own
+// CHIRP_GNME_WAIT_MS deadline, so a card whose names go unanswered occupies the
+// calling task for minutes. cooperativeCatalogYield() lets the rest of Core 0
+// run, but it does not give the caller its own command queue back, so a Stop
+// stayed queued until the whole catalog had been walked. The interrupt
+// predicate is asked once per sound -- one 450 ms increment, never the whole
+// walk -- and an interrupted walk leaves the catalog NOT ready: its entry array
+// has already been overwritten in place, so there is no earlier catalog left to
+// keep and a half-walked one must not be served as a refreshed one.
+// -----------------------------------------------------------------------------
 bool AudioDriverChirp::refreshCatalog() {
+    m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
     if (domeUartOwnedBy(DOME_UART_DOME)) {
         return false;
     }
@@ -755,6 +770,12 @@ bool AudioDriverChirp::refreshCatalog() {
 
     if (!loadManifestBanks(2500u, false)) {
         m_catalogReady = false;
+        return false;
+    }
+    if (catalogInterruptRequested()) {
+        m_catalogReady = false;
+        m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Interrupted;
+        PA_LOG_INFO(TAG, "catalog refresh interrupted before the name walk started");
         return false;
     }
 
@@ -781,6 +802,14 @@ bool AudioDriverChirp::refreshCatalog() {
     for (uint8_t bankIdx = 0; bankIdx < m_catalogBankCount; ++bankIdx) {
         const AudioCatalogBank& bank = m_catalogBanks[bankIdx];
         for (uint16_t soundIndex = 1; soundIndex <= bank.count; ++soundIndex) {
+            if (catalogInterruptRequested()) {
+                m_catalogReady = false;
+                m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Interrupted;
+                PA_LOG_INFO(TAG,
+                            "catalog refresh interrupted after %u entries (bank %u index %u)",
+                            (unsigned)m_catalogCount, (unsigned)bank.bank, (unsigned)soundIndex);
+                return false;
+            }
             if (m_catalogCount >= m_catalogCapacity) {
                 // Usable, and not the whole card: everything from here on is
                 // absent from the catalog with no row to say so. Recorded so
@@ -789,6 +818,7 @@ bool AudioDriverChirp::refreshCatalog() {
                 PA_LOG_WARN(TAG, "catalog entry cap reached (%u)",
                             (unsigned)m_catalogCapacity);
                 m_catalogReady = true;
+                m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Complete;
                 return true;
             }
 
@@ -859,6 +889,7 @@ bool AudioDriverChirp::refreshCatalog() {
     }
 
     m_catalogReady = true;
+    m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Complete;
     PA_LOG_INFO(TAG, "catalog refresh done: banks=%u entries=%u missing_names=%u manifest=%s",
                 (unsigned)m_catalogBankCount, (unsigned)m_catalogCount,
                 (unsigned)m_missingNameCount,

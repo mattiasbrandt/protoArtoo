@@ -92,6 +92,24 @@ struct AudioCatalogCompleteness {
 };
 
 // -----------------------------------------------------------------------------
+// AudioCatalogRefreshOutcome  --  why the last refreshCatalog() ended.
+//
+// Kept beside refreshCatalog()'s bool rather than replacing it: every caller
+// already reads "did the catalog get refreshed" correctly, and the reason is a
+// second question only the one caller that has to report it needs to ask.
+// -----------------------------------------------------------------------------
+enum class AudioCatalogRefreshOutcome : uint8_t {
+    Complete = 0,  // the walk ran to the end of the last bank
+    Failed,        // no manifest came back, or entry storage could not be had
+    Interrupted,   // a stop or sleep entry cut the walk short
+};
+
+// Asked periodically during a long catalog walk. Returning true stops the walk
+// at the next bounded increment. Runs on the task that called refreshCatalog(),
+// so it must not write the audio TX path and must not block.
+using AudioCatalogInterruptFn = bool (*)(void* ctx);
+
+// -----------------------------------------------------------------------------
 // AudioModuleState  --  live state returned by queryModuleState().
 // Populated from live UART RX queries; reflects what the module actually reports.
 // -----------------------------------------------------------------------------
@@ -194,10 +212,25 @@ class AudioDriver {
     // Drivers without catalog support return false/0/nullptr; these defaults apply to all.
 
     // Refresh the catalog from the hardware module (blocking, Core 0 only).
-    // Returns true on success, false on timeout or error.
+    // Returns true only when the walk ran to the end; false on timeout, error
+    // or interruption. Why it ended is lastCatalogRefreshOutcome().
     // Default returns false (no catalog support).
     virtual bool refreshCatalog() {
         return false;
+    }
+
+    // Why the last refreshCatalog() ended. Read straight after the call.
+    virtual AudioCatalogRefreshOutcome lastCatalogRefreshOutcome() const {
+        return AudioCatalogRefreshOutcome::Failed;
+    }
+
+    // Install the predicate a long catalog walk asks whether to stop. Set once,
+    // by the task that owns refreshCatalog(); passing nullptr removes it. A
+    // full walk is up to 300 names at 450 ms each, which is minutes of a task
+    // that also has to answer Stop and enter sleep (#397 work item 13).
+    void setCatalogInterrupt(AudioCatalogInterruptFn fn, void* ctx) {
+        m_catalogInterrupt = fn;
+        m_catalogInterruptCtx = ctx;
     }
 
     // Query whether the catalog is ready (has been loaded and populated).
@@ -248,4 +281,16 @@ class AudioDriver {
         (void)out;
         return false;
     }
+
+   protected:
+    // True when whoever asked for the catalog wants the walk to stop now.
+    // Cheap and side-effect free when no predicate is installed, which is every
+    // build that never wires one.
+    bool catalogInterruptRequested() const {
+        return m_catalogInterrupt != nullptr && m_catalogInterrupt(m_catalogInterruptCtx);
+    }
+
+   private:
+    AudioCatalogInterruptFn m_catalogInterrupt = nullptr;
+    void* m_catalogInterruptCtx = nullptr;
 };
