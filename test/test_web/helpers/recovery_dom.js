@@ -105,6 +105,11 @@ export class MockElement {
     this.attributes = new Map();
     this.eventListeners = [];
     this.ownerDocument = ownerDocument;
+    // A real node knows what it hangs off, and the recovery view reads it:
+    // the view is drawn inside the Operator Shell's work area and takes that
+    // area's other children out of the tab order (ADR 0048, #359), which it
+    // reaches through backdrop.parentElement.
+    this.parentElement = null;
     // Counted so a test can tell "focus was moved here" apart from "focus was
     // moved here again".
     this.focusCount = 0;
@@ -131,11 +136,18 @@ export class MockElement {
   appendChild(child) {
     if (!child) return child;
     if (!this.children.includes(child)) this.children.push(child);
+    child.parentElement = this;
     return child;
   }
 
   replaceChildren(...children) {
+    this.children.forEach((child) => {
+      if (child.parentElement === this) child.parentElement = null;
+    });
     this.children = children.filter(Boolean);
+    this.children.forEach((child) => {
+      child.parentElement = this;
+    });
   }
 
   // Depth-first, document order - the order the browser would return.
@@ -235,6 +247,34 @@ export const loadRecoveryView = () => {
     RecoveryView: window.PARecoveryView,
     backdrop: () => document.getElementById("page-recovery-backdrop"),
   };
+};
+
+// Builds the Operator Shell's frame around a loaded recovery view: the four
+// regions index.html declares, with one surface node already attached inside
+// the work area the way shell.js attaches it before a surface's markup
+// arrives. The recovery view resolves its host at render time, so a frame
+// built after loadRecoveryView() is the frame it finds.
+export const shellFrame = (document, { surfaces = 1 } = {}) => {
+  const region = (id, tag = "div") => {
+    const node = document.createElement(tag);
+    node.setAttribute("id", id);
+    document.body.appendChild(node);
+    return node;
+  };
+  const top = region("shell-top");
+  const nav = region("shell-nav", "nav");
+  const content = region("shell-content");
+  const status = region("shell-status");
+
+  const mounted = [];
+  for (let i = 0; i < surfaces; i += 1) {
+    const surface = document.createElement("div");
+    surface.className = "surface";
+    surface.dataset.surface = `surface-${i}`;
+    content.appendChild(surface);
+    mounted.push(surface);
+  }
+  return { top, nav, content, status, surfaces: mounted };
 };
 
 // The step the recovery fixtures block on. A required resource is used rather

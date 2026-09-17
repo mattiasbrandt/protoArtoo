@@ -234,8 +234,8 @@ test("Issue #115 regression: ensureBackdrop() upgrades kernel-created backdrop",
 
   assert.strictEqual(
     backdrop.getAttribute("aria-modal"),
-    "true",
-    "ensureBackdrop() must add aria-modal='true'"
+    null,
+    "ensureBackdrop() must not claim modality: the chrome outside it stays live (#359)"
   );
 
   assert.ok(
@@ -265,11 +265,13 @@ test("Issue #115 regression: ensureBackdrop() upgrades kernel-created backdrop",
     "announcer must have aria-atomic='false' to avoid over-announcement"
   );
 
-  // Verify the Tab handler is attached (idempotency check)
-  assert.strictEqual(
-    backdrop.dataset.tabHandlerAttached,
-    "true",
-    "keydown handler should be marked as attached"
+  // Verify no key handler was installed: containment is the surface's `inert`
+  // since #359, and a handler here would be a focus trap holding focus away
+  // from the Latching Estop on the chrome.
+  assert.deepStrictEqual(
+    backdrop.eventListeners.filter((listener) => listener.event === "keydown"),
+    [],
+    "ensureBackdrop() must install no keydown handler"
   );
 
   // Call render again to verify idempotency
@@ -360,21 +362,21 @@ test("Issue #115 regression: ensureBackdrop() is idempotent", (t) => {
   assert.ok(backdrop1, "backdrop should exist after first render");
   const announcer1 = backdrop1.querySelector(".recovery-countdown-announcer");
   assert.ok(announcer1, "announcer should exist after first render");
-  const handlersAttached1 = backdrop1.dataset.tabHandlerAttached;
+  const handlersAttached1 = backdrop1.eventListeners.length;
 
   RecoveryView.render(current);
   const backdrop2 = mockDocument.getElementById("page-recovery-backdrop");
   assert.ok(backdrop2, "backdrop should exist after second render");
   const announcer2 = backdrop2.querySelector(".recovery-countdown-announcer");
   assert.ok(announcer2, "announcer should exist after second render");
-  const handlersAttached2 = backdrop2.dataset.tabHandlerAttached;
+  const handlersAttached2 = backdrop2.eventListeners.length;
 
   RecoveryView.render(current);
   const backdrop3 = mockDocument.getElementById("page-recovery-backdrop");
   assert.ok(backdrop3, "backdrop should exist after third render");
   const announcer3 = backdrop3.querySelector(".recovery-countdown-announcer");
   assert.ok(announcer3, "announcer should exist after third render");
-  const handlersAttached3 = backdrop3.dataset.tabHandlerAttached;
+  const handlersAttached3 = backdrop3.eventListeners.length;
 
   // Verify the same element is returned each time
   assert.strictEqual(
@@ -400,15 +402,15 @@ test("Issue #115 regression: ensureBackdrop() is idempotent", (t) => {
     "announcer should be the same after third render"
   );
 
-  // Verify handlers are only attached once
-  assert.strictEqual(handlersAttached1, "true");
-  assert.strictEqual(handlersAttached2, "true");
-  assert.strictEqual(handlersAttached3, "true");
-
-  // Verify handler attachment marker is consistent
+  // Verify repeated renders install no listeners at all. This used to read a
+  // marker proving the Tab trap was attached exactly once; the trap is gone
+  // (#359) and what idempotency means here is that nothing accumulates.
+  assert.strictEqual(handlersAttached1, 0);
+  assert.strictEqual(handlersAttached2, 0);
+  assert.strictEqual(handlersAttached3, 0);
   assert.strictEqual(
-    backdrop3.dataset.tabHandlerAttached,
-    "true",
-    "handler attachment marker should remain consistent"
+    backdrop3.eventListeners.length,
+    0,
+    "a third render must not have added a listener either"
   );
 });

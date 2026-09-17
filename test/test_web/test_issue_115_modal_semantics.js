@@ -1,10 +1,16 @@
 // =============================================================================
 // test/test_web/test_issue_115_modal_semantics.js
 //
-// Modal and live-region semantics of the recovery overlay (issue #115): the
+// Dialog and live-region semantics of the recovery overlay (issue #115): the
 // backdrop must present as a dialog, and the countdown must be announced
 // through a separate polite live region so a screen reader hears the seconds
 // tick without the whole panel being re-read every second.
+//
+// It is a dialog and not a MODAL one, since #359. aria-modal="true" tells a
+// screen reader that everything outside the dialog is inert, and outside this
+// one is the chrome carrying the Latching Estop, which ADR 0048 keeps live for
+// exactly the surface that failed to load. What is really inert is the
+// surface, and the view says so on the surface.
 //
 // All assertions read attributes off the element the shipped code built.
 // Earlier versions wrapped those assertions in `if (backdrop) { if (announcer)
@@ -32,11 +38,10 @@ const announcerOf = (backdrop) => {
   return announcer;
 };
 
-test("The overlay presents as a modal dialog", (t) => {
+test("The overlay presents as a dialog", (t) => {
   const { backdrop } = showOverlay();
 
   assert.equal(backdrop.getAttribute("role"), "dialog");
-  assert.equal(backdrop.getAttribute("aria-modal"), "true");
   assert.equal(
     backdrop.getAttribute("aria-label"),
     "Page recovery overlay",
@@ -46,6 +51,16 @@ test("The overlay presents as a modal dialog", (t) => {
     backdrop.getAttribute("tabindex"),
     "-1",
     "the backdrop must be programmatically focusable without becoming a Tab stop"
+  );
+});
+
+test("The overlay does not claim the rest of the page is inert", (t) => {
+  const { backdrop } = showOverlay();
+
+  assert.equal(
+    backdrop.getAttribute("aria-modal"),
+    null,
+    "aria-modal would hide the chrome's Latching Estop from a screen reader (#359)"
   );
 });
 
@@ -147,7 +162,11 @@ test("Dialog semantics are applied once and stay applied across renders", (t) =>
 
   assert.equal(env.backdrop(), backdrop, "the overlay must be reused, not rebuilt per render");
   assert.equal(backdrop.getAttribute("role"), "dialog");
-  assert.equal(backdrop.getAttribute("aria-modal"), "true");
+  assert.equal(
+    backdrop.getAttribute("aria-label"),
+    "Page recovery overlay",
+    "the accessible name must survive a hide and a second appearance"
+  );
   assert.equal(
     backdrop.querySelectorAll(".recovery-countdown-announcer").length,
     1,
