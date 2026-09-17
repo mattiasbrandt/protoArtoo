@@ -1,0 +1,13 @@
+diff --git i/data/body_view.js w/data/body_view.js
+index 5111539a..cefb6028 100644
+--- i/data/body_view.js
++++ w/data/body_view.js
+@@ -437,7 +437,7 @@
+             // not draw has a defect, and letting it fall through quietly would
+             // draw the part as "the droid has not said yet", which is a
+             // different claim about the droid.
+-            console.error(`[body-view] ${markerId} was given the unknown mark ${token}`);
++            token = MARKS.UNKNOWN;
+           }
+           token = MARKS.UNKNOWN;
+         }

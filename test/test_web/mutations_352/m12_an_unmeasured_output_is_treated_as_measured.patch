@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 5e699921..dd226ff1 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1594,7 +1594,7 @@
+   // be reached from here at all - the same bound the calibration dial keeps.
+   const travelOutputFor = (partId) => {
+     const output = outputs === null ? null : outputOf(outputs, partId);
+-    if (!output || output.name === "" || isLightRow(output) || !output.calibrated) return null;
++    if (!output || output.name === "" || isLightRow(output)) return null;
+     return output;
+   };
+ 

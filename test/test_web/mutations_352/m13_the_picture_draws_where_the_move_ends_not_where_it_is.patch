@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 5e699921..adc181ef 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1566,7 +1566,7 @@
+       };
+     }
+     const span = output.openUs - output.closeUs;
+-    const at = span === 0 ? 0 : (output.commandedUs - output.closeUs) / span;
++    const at = span === 0 ? 0 : (output.targetUs - output.closeUs) / span;
+     const shut = at <= 0.02;
+     const wide = at >= 0.98;
+     const told = wide ? "told to open" : shut ? "told to close" : "part way through its travel";

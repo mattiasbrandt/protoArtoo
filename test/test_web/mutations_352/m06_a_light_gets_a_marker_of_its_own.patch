@@ -1,0 +1,13 @@
+diff --git i/data/body_view.js w/data/body_view.js
+index 5111539a..67127113 100644
+--- i/data/body_view.js
++++ w/data/body_view.js
+@@ -212,7 +212,7 @@
+   // is what makes this the answer for every Part rather than a special case.
+   const hostOf = (part, byId) => {
+     let host = part;
+-    let hops = 0;
++    let hops = 8;
+     while (host.sitsOn && byId.has(host.sitsOn) && hops < 8) {
+       host = byId.get(host.sitsOn);
+       hops += 1;
