@@ -110,10 +110,11 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 4000,
-          "product_bytes": 4000,
-          "profiler_bytes": 4000,
-          "rule": "applied"
+          "chain_bytes": 4016,
+          "product_bytes": 4016,
+          "profiler_bytes": 4016,
+          "rule": "applied",
+          "note": "driveArmTo -> resolveArmPulse -> paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail, 3632 B below a 384 B root frame. Re-derived 2026-09-17 from 4000, and the growth is C1d's (#364, 075cf487) rather than #365's: that slice rewrote servo_task.cpp including resolveArmPulse and re-derived no chain, its gate builds artoo_esp32 only, and this arm was last walked 2026-09-13 (a20b306d). #365 ran the both-chip walk its own re-derivation owed and found it."
         }
       }
     },
