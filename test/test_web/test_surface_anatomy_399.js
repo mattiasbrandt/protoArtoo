@@ -439,11 +439,14 @@ test("the firmware row says whether the web assets came from the same build", as
 test("the Health section head counts the states the evaluators actually returned", async () => {
   // Driven through the shipped health_signals.js, so this counts what the
   // Dashboard really shows rather than what a fixture says it shows.
+  // One frame carrying all four states. Amber comes from memory because that
+  // is where amber is left after #402: a reading the controller did send, that
+  // the builder can act on. Not-joined WiFi is grey now, not degraded.
   const env = dashboard({
-    wifiConnected: false,          // -> warn
-    littleFsReady: true,           // -> ok
-    heapLargest8bit: 8000,         // -> fail
-    domeEnabled: false,            // -> off
+    heapLargest8bit: 13000,        // -> warn (between the warn and fail floors)
+    littleFsReady: false,          // -> fail
+    wifiConnected: false,          // -> off (not joined)
+    domeEnabled: false,            // -> off (not fitted)
   });
   await env.runSection("app-initial-status");
   await env.settle();
@@ -452,7 +455,7 @@ test("the Health section head counts the states the evaluators actually returned
   assert.match(summary, /^7 signals/, "the count of rows comes first");
   assert.match(summary, /1 degraded/, "and each state the evaluators returned is counted");
   assert.match(summary, /1 faulted/);
-  assert.match(summary, /1 not reporting/);
+  assert.match(summary, /2 not reporting/);
   assert.doesNotMatch(summary, /0 /, "a state with nothing in it is left out rather than written as zero");
 });
 

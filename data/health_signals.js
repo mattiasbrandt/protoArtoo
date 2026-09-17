@@ -2,9 +2,15 @@
 // data/health_signals.js
 //
 // Shared health indicator derivation for the dashboard traffic-light grid.
-// - Explicit state semantics: off=disabled, warn=degraded/unknown, fail=hard fault
+// - Explicit state semantics (CONTEXT.md "Status Colour"): ok=nominal,
+//   warn=degraded and the builder can do something about it, fail=hard fault,
+//   off=not reporting, never asked, not fitted
+// - A reading we do not have is off, never warn: amber promises a next move,
+//   and "we have not heard" offers none (#402)
+// - Staleness is not a health state. A stale row keeps the state the
+//   controller last reported; the Status Plate carries the one freshness
+//   statement for the whole surface (CONTEXT.md "Health Signal", _Avoid_)
 // - Exposes concise operator summary plus richer backend tooltip detail
-// - Supports stale-data override without mutating transport payloads
 // =============================================================================
 (() => {
   const INDICATOR_STATE_LABELS = Object.freeze({
@@ -26,15 +32,6 @@
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const boolText = (value) => (value === true ? "true" : value === false ? "false" : "unknown");
   const healthSignal = (state, reason = "", detail = reason) => ({ state, reason, detail });
-
-  const applyStaleHealth = (signal, stale) => {
-    if (!stale || signal.state === "off") return signal;
-    return healthSignal(
-      "warn",
-      "Stale data",
-      "Status stream interrupted; showing last known values"
-    );
-  };
 
   const evaluateSbus = (payload) => {
     const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
@@ -66,17 +63,31 @@
     );
   };
 
+  // An AP-only droid is a normal droid, so "not joined" is not "degraded" -
+  // and a payload that never carried these keys is one we have not heard from.
+  // Both read off. There is no warn branch here on purpose: the payload
+  // carries no measure of a join that exists and is unhealthy (wifiRssi is 0
+  // whenever the station is not connected - deriveWiFiConnectivityFields,
+  // src/web/api_status_serializers.cpp), and no threshold is defined for it.
   const evaluateWifi = (payload) => {
+    const reported = hasOwnKey(payload, "wifiConnected") || hasOwnKey(payload, "wifiClientConnected");
     const connected = payload.wifiConnected === true || payload.wifiClientConnected === true;
     const wifiRssi = Number(payload.wifiRssi);
     const rssiText = Number.isFinite(wifiRssi) ? `${wifiRssi} dBm` : "unknown";
     const detail = `wifiConnected=${boolText(payload.wifiConnected)}, wifiClientConnected=${boolText(payload.wifiClientConnected)}, wifiRssi=${rssiText}`;
-    return connected ? healthSignal("ok", "Connected", detail) : healthSignal("warn", "Disconnected", detail);
+    if (connected) return healthSignal("ok", "Connected", detail);
+    if (reported) return healthSignal("off", "Not joined", detail);
+    return healthSignal("off", "Not reporting", detail);
   };
 
+  // A payload that never carried littleFsReady has not told us the mount
+  // failed; it has told us nothing. Red is "stopped or refused", and claiming
+  // it for a key we were never sent is the same defect as claiming amber.
   const evaluateFilesystem = (payload) => {
-    const ready = payload.littleFsReady === true;
-    return ready
+    if (!hasOwnKey(payload, "littleFsReady")) {
+      return healthSignal("off", "Not reporting", "littleFsReady absent from payload");
+    }
+    return payload.littleFsReady === true
       ? healthSignal("ok", "Mounted", "littleFsReady=true")
       : healthSignal("fail", "Not ready", `littleFsReady=${boolText(payload.littleFsReady)}`);
   };
@@ -102,9 +113,10 @@
     }
 
     // Older firmware without heapLargest8bit: fall back to total free heap.
+    // Neither number present is a reading we do not have, not a low one.
     if (!Number.isFinite(heapBytes) || heapBytes < 0) {
       return healthSignal(
-        "warn",
+        "off",
         "No data",
         `heapFree=${String(payload.heapFree ?? "missing")} (expected non-negative bytes)`
       );
@@ -152,17 +164,21 @@
     if (linkState === "lost") {
       return healthSignal("fail", "Heartbeat lost", `state=lost, detail=${linkDetail}`);
     }
+    // Never seen: the link is enabled and the dome has never answered, which
+    // is not reporting rather than degraded - a droid with no dome board
+    // fitted reads exactly this, and it is not worth getting up for. "lost"
+    // above stays a hard fault: that one WAS heard and then stopped.
     if (linkState === "not_seen") {
-      return healthSignal("warn", "Not seen", `state=not_seen, detail=${linkDetail}`);
+      return healthSignal("off", "Not seen", `state=not_seen, detail=${linkDetail}`);
     }
     if (typeof linkState === "string" && linkState.length > 0) {
       return healthSignal(
-        "warn",
+        "off",
         `Unknown (${linkState})`,
         `state=${linkState}, detail=${linkDetail}`
       );
     }
-    return healthSignal("warn", "No status", `state=missing, detail=${linkDetail}`);
+    return healthSignal("off", "No status", `state=missing, detail=${linkDetail}`);
   };
 
   const evaluateSound = (payload) => {
@@ -171,7 +187,7 @@
     }
     if (!payload.audio || typeof payload.audio !== "object") {
       return healthSignal(
-        "warn",
+        "off",
         "Invalid payload",
         `audio type=${typeof payload.audio} (expected object)`
       );
@@ -186,8 +202,11 @@
       ? payload.audio.rx_detail
       : soundDetail;
 
+    // DomeLink owns the UART, so the module cannot be asked. That is the
+    // definition of not reporting; it is still not a module failure, which is
+    // why this branch sits above the link_ok=false hard fault below.
     if (soundRxStatus === "blocked_by_dome_uart") {
-      return healthSignal("warn", "Status unavailable", soundRxDetail);
+      return healthSignal("off", "Status unavailable", soundRxDetail);
     }
 
     if (payload.audio.link_ok === false) {
@@ -206,12 +225,12 @@
     }
     if (typeof soundState === "string" && soundState.length > 0) {
       return healthSignal(
-        "warn",
+        "off",
         `Unknown (${soundState})`,
         `state=${soundState}, detail=${soundDetail}`
       );
     }
-    return healthSignal("warn", "No state", `state=missing, detail=${soundDetail}`);
+    return healthSignal("off", "No state", `state=missing, detail=${soundDetail}`);
   };
 
   const evaluateDomeEsc = (payload) => {
@@ -235,15 +254,18 @@
     if (domeState === "idle") {
       return healthSignal("ok", "Idle", `domeEnabled=true, state=idle, detail=${domeDetail}`);
     }
+    // A state we have no branch for is one we do not understand, which is not
+    // reporting rather than degraded. The state string stays in the detail so
+    // the tooltip still says what arrived.
     if (typeof domeState === "string" && domeState.length > 0) {
       return healthSignal(
-        "warn",
+        "off",
         `Unknown (${domeState})`,
         `domeEnabled=true, state=${domeState}, detail=${domeDetail}`
       );
     }
     return healthSignal(
-      "warn",
+      "off",
       "No status",
       "domeEnabled=true, dome block missing state"
     );
@@ -259,16 +281,14 @@
     "h-dome-esc": evaluateDomeEsc,
   });
 
-  const deriveHealthSignals = (payload, options = {}) => {
-    const stale = options && options.stale === true;
+  const deriveHealthSignals = (payload) => {
     const safePayload = payload && typeof payload === "object" ? payload : {};
 
     return Object.entries(HEALTH_EVALUATORS).map(([id, evaluate]) => {
       const signal = evaluate(safePayload);
-      const normalized = signal && typeof signal === "object"
+      const resolved = signal && typeof signal === "object"
         ? signal
-        : healthSignal("warn", "Invalid state", "Health evaluator returned invalid shape");
-      const resolved = applyStaleHealth(normalized, stale);
+        : healthSignal("off", "Invalid state", "Health evaluator returned invalid shape");
       return {
         id,
         state: resolved.state,

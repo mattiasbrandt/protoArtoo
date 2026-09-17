@@ -29,11 +29,12 @@
   const topbarReboot = document.getElementById("topbar-reboot");
   const rebootFeedback = document.getElementById("reboot-feedback");
   const staleBanner = document.getElementById('status-stale-banner');
-  const setStale = (stale, options = {}) => {
-    const rerender = options.rerender !== false;
-    statusIsStale = stale === true;
-    if (staleBanner) staleBanner.style.display = statusIsStale ? "" : "none";
-    if (rerender && lastStatus) renderHealth(lastStatus);
+  // Staleness is this surface's one banner, beside the Status Plate's one
+  // freshness line. It is never a health state: a stale row keeps the state
+  // the controller last reported and says nothing about its age (CONTEXT.md
+  // "Health Signal", _Avoid_; #402).
+  const setStale = (stale) => {
+    if (staleBanner) staleBanner.style.display = stale === true ? "" : "none";
   };
   // The Controls section head's subtitle: a state, in three words, read off the
   // same frame the controls under it render from (ADR 0066). Web control and
@@ -66,7 +67,6 @@
   const readoutWifiDetail = document.getElementById("readout-wifi-detail");
 
   let lastStatus = null;
-  let statusIsStale = false;
   let modePending = false;
   let moodPending = false;
   let pollFailCount = 0;
@@ -208,12 +208,12 @@
   const renderHealth = (payload) => {
     if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
       Object.keys(INDICATOR_TEXT).forEach((id) => {
-        setIndicator(id, "warn", "Health model missing", "health_signals.js failed to load");
+        setIndicator(id, "off", "Health model missing", "health_signals.js failed to load");
       });
       return;
     }
 
-    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
+    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload);
     signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
     renderHealthSummary(signals);
   };
@@ -481,7 +481,7 @@
   const applyStatus = (payload) => {
     lastStatus = payload;
     pollFailCount = 0;
-    setStale(false, { rerender: false });
+    setStale(false);
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
