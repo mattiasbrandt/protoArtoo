@@ -203,7 +203,9 @@ support address and a phone number, and states a **one-year replacement warranty
 - **[`src/drivers/ledc_pwm.cpp`](../../src/drivers/ledc_pwm.cpp)** and
   **[`include/ledc_pwm.h`](../../include/ledc_pwm.h)** -- the LEDC timer at
   **50 Hz / 16-bit**, the per-channel clamp that holds `LEDC_CH_DOME` to
-  **1000-2000 us**, `pulseUsToDuty()`, and `ledcPwmEmergencyStop()`.
+  **1000-2000 us**, `pulseUsToDuty()`, and `ledcPwmRelease()` -- which takes the
+  pulse off a channel entirely and is deliberately **not** used on the dome
+  (Section 12.3).
 - **[`include/config.h`](../../include/config.h)** -- `PIN_DOME_ESC` (**25** on
   artoo-esp32 at `:204`, **48** on firebeetle2 at `:324`, with the `VDD_IO_5` LDO
   caution).
@@ -955,7 +957,6 @@ It is called on:
 | **Command timeout** | Neutral after **500 ms** with no fresh command |
 | **Sequence step expiry** | Neutral when the step's `durationMs` elapses |
 | **Random move expiry** | Neutral at the end of each idle move |
-| **Emergency stop** (`ledcPwmEmergencyStop`) | Every configured channel to 1500 us, bypassing clamp and log |
 | **Dome disabled at boot** | Task never spawned; the channel holds whatever `ledcPwmInit()` left |
 
 > [!IMPORTANT]
@@ -964,6 +965,14 @@ It is called on:
 > that needs clearing (Section 10.1) -- while a steady 1500 us stream is a happy,
 > armed, stopped controller. The 500 ms command timeout exists so that a
 > controller that stops talking produces a **stop**, not a held throttle.
+>
+> **A servo output goes the other way, and that is not a contradiction.** ADR 0043
+> has ServoTask *release* every enabled servo output on the estop and Sleep Mode
+> edge -- `ledcPwmRelease()`, duty 0, no pulse at all -- because a held drive
+> grinds a fought part and driving many outputs at once is the documented
+> brownout. An ESC reads no pulse as a fault; a servo reads it as "stop holding".
+> The two rules answer different hardware, and the dome is deliberately outside
+> the release path.
 
 ### 12.4 The random idle machine
 
