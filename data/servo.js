@@ -17,11 +17,13 @@
 (() => {
   const armControlsCard      = document.getElementById("arm-controls-card");
   const armControlsContainer = document.getElementById("arm-controls-container");
+  const armControlsSummary   = document.getElementById("arm-controls-summary");
   const noArmsCard           = document.getElementById("no-arms-card");
   const armFeedback          = document.getElementById("arm-feedback");
 
   const auxControlsCard      = document.getElementById("aux-controls-card");
   const auxControlsContainer = document.getElementById("aux-controls-container");
+  const auxControlsSummary   = document.getElementById("aux-controls-summary");
   const auxFeedback          = document.getElementById("aux-feedback");
 
   const servoTestCard        = document.getElementById("servo-test-card");
@@ -89,7 +91,7 @@
       await window.PAApi.postForm("/api/servo",
         { arm, action: "position", positionUs: String(pulseUs) },
         { timeoutMs: 3000 });
-      setFeedback(fb, `▶ Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
+      setFeedback(fb, `Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       setFeedback(fb, `Test ${label} failed: ${window.PAApi.messageFor(error)}`, "error");
     }
@@ -105,12 +107,19 @@
 
   let renderedArmIds = null;
 
+  // The section head's subtitle, which is a count rather than a tagline
+  // (ADR 0066, docs/ui-copy-voice.md rule 8). It counts the arms the droid
+  // answered for, so it cannot disagree with the rows under it.
+  const armSummary = (count) =>
+    count === 0 ? "none switched on" : `${count} of ${ARM_DEFS.length} switched on`;
+
   const renderArmControls = (payload) => {
     const enabled = ARM_DEFS.filter((a) => a.id in payload);
     const ids = enabled.map((a) => a.id).join(",");
 
     if (noArmsCard)      noArmsCard.classList.toggle("hidden", enabled.length > 0);
     if (armControlsCard) armControlsCard.classList.toggle("hidden", enabled.length === 0);
+    if (armControlsSummary) armControlsSummary.textContent = armSummary(enabled.length);
 
     if (enabled.length === 0) return;
 
@@ -121,10 +130,12 @@
         return `
           <div class="arm-control-row" id="row-${arm.id}">
             <span class="arm-name">${arm.name}</span>
-            <span class="arm-position text-dim" id="pos-${arm.id}">${detail}</span>
-            <button class="btn" data-arm="${arm.id}" data-action="open"  type="button">📂 Open</button>
-            <button class="btn" data-arm="${arm.id}" data-action="close" type="button">📁 Close</button>
-            <button class="btn" data-arm="${arm.id}" data-action="stop"  type="button">⏹️ Stop</button>
+            <span class="arm-position" id="pos-${arm.id}">${detail}</span>
+            <span class="arm-acts">
+              <button class="btn" data-arm="${arm.id}" data-action="open"  type="button">Open</button>
+              <button class="btn" data-arm="${arm.id}" data-action="close" type="button">Close</button>
+              <button class="btn" data-arm="${arm.id}" data-action="stop"  type="button">Stop</button>
+            </span>
           </div>`;
       }).join("");
 
@@ -158,7 +169,7 @@
   const buildAuxLedRow = (aux) => `
     <div class="arm-control-row" id="row-${aux.id}">
       <span class="arm-name">${aux.name}</span>
-      <span class="arm-position text-dim">💡 LED strip (${setupActionText("configure")})</span>
+      <span class="arm-position">LED strip &middot; ${setupActionText("configure")}</span>
     </div>`;
 
   const buildAuxServoRow = (aux, detail, typeLabel) => {
@@ -166,10 +177,12 @@
     return `
       <div class="arm-control-row" id="row-${aux.id}">
         <span class="arm-name">${aux.name}</span>
-        <span class="arm-position text-dim" id="pos-${aux.id}">${descriptor}</span>
-        <button class="btn" data-arm="${aux.id}" data-action="open" type="button">📂 Open</button>
-        <button class="btn" data-arm="${aux.id}" data-action="close" type="button">📁 Close</button>
-        <button class="btn" data-arm="${aux.id}" data-action="stop" type="button">⏹️ Stop</button>
+        <span class="arm-position" id="pos-${aux.id}">${descriptor}</span>
+        <span class="arm-acts">
+          <button class="btn" data-arm="${aux.id}" data-action="open" type="button">Open</button>
+          <button class="btn" data-arm="${aux.id}" data-action="close" type="button">Close</button>
+          <button class="btn" data-arm="${aux.id}" data-action="stop" type="button">Stop</button>
+        </span>
       </div>`;
   };
 
@@ -185,16 +198,29 @@
 
   let renderedAuxIds = null;
 
+  // The AUX section head's subtitle. Two counts, because they are two different
+  // facts a builder needs: how many AUX lines are switched on at all, and how
+  // many of those carry something this page can drive. An LED strip is switched
+  // on and has no position, so the second count is smaller on purpose.
+  const auxSummary = (enabled) => {
+    if (enabled.length === 0) return "none switched on";
+    const drivable = enabled.filter((aux) => isServoType(auxTypes[aux.id])).length;
+    return `${enabled.length} of ${AUX_DEFS.length} switched on · ${drivable} ${
+      drivable === 1 ? "drives a servo" : "drive a servo"
+    }`;
+  };
+
   const renderAuxControls = (payload) => {
     const enabled = AUX_DEFS.filter((a) => auxConfigured[a.id] || (a.id in payload));
     if (auxControlsCard) auxControlsCard.classList.remove("hidden");
+    if (auxControlsSummary) auxControlsSummary.textContent = auxSummary(enabled);
     if (!auxControlsContainer) return;
     bindAuxActionDelegation();
 
     if (enabled.length === 0) {
       renderedAuxIds = "none";
       auxControlsContainer.innerHTML =
-        `<div class="desc">${setupActionHtml("Enable AUX outputs")} to show controls here.</div>`;
+        `<p class="prose"><b>No AUX output is switched on.</b> ${setupActionHtml("Switch one on")} and its controls appear here.</p>`;
       return;
     }
 
@@ -212,7 +238,8 @@
 
       auxControlsContainer.innerHTML = rows.length > 0
         ? rows.join("")
-        : "<div class=\"desc\">AUX outputs are enabled, but none are configured as controllable servo or LED strip outputs.</div>";
+        : "<p class=\"prose\"><b>Nothing here to drive.</b> The AUX outputs that are switched on have nothing recorded on them, " +
+          "so this page has no servo to move and no strip to name.</p>";
       return;
     }
 

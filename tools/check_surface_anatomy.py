@@ -84,8 +84,6 @@ PENDING = {
     "parts.js": "#399 slice 2 (the Configure group)",
     "setup.html": "#399 slice 2 (the Configure group)",
     "setup.js": "#399 slice 2 (the Configure group)",
-    "servo.html": "#399 slice 2 (the Configure group)",
-    "servo.js": "#399 slice 2 (the Configure group)",
     "drive.html": "#399 slice 3 (the Drive and Perform group)",
     "drive.js": "#399 slice 3 (the Drive and Perform group)",
     "dome.html": "#399 slice 3 (the Drive and Perform group)",

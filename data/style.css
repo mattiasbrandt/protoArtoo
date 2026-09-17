@@ -1350,23 +1350,20 @@ input[type="number"]::-webkit-inner-spin-button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 30%, transparent);
 }
 
-/* Compact number input for inline use (e.g. test position field in button rows) */
+/* A compact number box, inline in a row of acts: the typed pulse width on
+   Servos. It keeps a 44 px target, which is the bench tablet's floor, and takes
+   the frame's own focus ring rather than a second spelling of one. */
 input.input-narrow {
-  width: 120px;
-  padding: 10px 12px;
+  width: 108px;
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   font: inherit;
-  font-size: 0.95rem;
-  min-height: 44px;
+  font-size: var(--fs-cell);
   transition: border-color 0.2s ease;
-}
-input.input-narrow:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .field-checkbox {
@@ -2763,13 +2760,26 @@ body.sleep-mode-active {
   margin-left: 6px;
 }
 
-/* Arm Control Row */
+/* ---------------------------------------------------------------------------
+   Servos (ADR 0066, #399 slice 2, #400)
+
+   One row shape for every output this page offers: what it is, what is on it,
+   and the acts, beside the thing they act on. The arm and AUX rows are written
+   by data/servo.js and the test rows are in data/servo.html; they are the same
+   row because they are the same kind of thing, and a builder should not have to
+   learn the page twice.
+
+   --row tall and divided by a seam, which is the table density the anatomy uses
+   everywhere else, so a list of outputs here reads at the same rhythm as a list
+   of outputs on Parts.
+   --------------------------------------------------------------------------- */
 .arm-control-row {
   display: grid;
-  grid-template-columns: minmax(92px, 120px) minmax(180px, 1fr) repeat(3, max-content);
+  grid-template-columns: minmax(92px, 140px) minmax(140px, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  gap: var(--space-md);
+  min-height: var(--row);
+  padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2778,51 +2788,37 @@ body.sleep-mode-active {
 }
 
 .arm-name {
-  min-width: 70px;
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--silver-bright);
+  font-size: var(--fs-cell);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .arm-position {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
   color: var(--text-dim);
-  min-width: 100px;
 }
 
-body[data-page="servo"] .arm-control-row .btn {
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
-}
-
-body[data-page="servo"] .button-row {
-  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-body[data-page="servo"] .input-narrow {
-  width: 108px;
-  min-height: 36px;
-  padding: 6px 8px;
-  font-size: 0.88rem;
+/* The acts, at the far end of the row they act on. They wrap onto their own
+   line before they squeeze, because a half-width button is not a target. */
+.arm-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
 }
 
 @media (max-width: 1100px) {
-  body[data-page="servo"] .arm-control-row {
+  .arm-control-row {
     grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
   }
 
-  body[data-page="servo"] .arm-control-row .btn {
-    justify-self: start;
+  .arm-acts {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
-}
-
-.section-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 16px 0;
 }
 
 /* RC Toolbar and Grids */
