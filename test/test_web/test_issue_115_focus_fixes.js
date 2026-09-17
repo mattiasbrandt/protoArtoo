@@ -4,14 +4,19 @@
 // Focus management for the recovery overlay (issue #115):
 //   1. focus is saved once, on the hidden->visible transition
 //   2. focus moves into the overlay when it appears, and back out when it goes
-//   3. Tab is contained inside the overlay and wraps at both ends
+//   3. keyboard reach stops at the failed surface and nowhere else
+//
+// (3) was "Tab is contained inside the overlay and wraps at both ends" until
+// #359. The wrap was a focus trap, and a trap around the panel is also a trap
+// away from the Latching Estop the Operator Shell renders on the chrome -- the
+// one control an operator reaches for when a surface will not load. ADR 0048
+// had already put this view inside the work area; the containment moved with
+// it, onto the surface, as `inert`. #115's concern is unchanged: Tab must not
+// wander into a page that is not there.
 //
 // Every assertion here observes what the shipped code in data/page_bootstrap.js
-// DID: which element ended up focused, whether the keydown was consumed, what
-// the announcer says. The Tab tests run the real keydown handler that
-// ensureBackdrop() installs, so breaking its `event.key !== "Tab"` guard fails
-// this file (issue #146 - the previous version asserted on source text and
-// sailed straight through that mutation).
+// DID: which element ended up focused, which node it took out of the tab order,
+// what the announcer says.
 // =============================================================================
 
 import { test } from "node:test";
@@ -20,10 +25,9 @@ import assert from "node:assert";
 import {
   MockElement,
   loadRecoveryView,
+  shellFrame,
   stateShowingRecovery,
   stateHidingRecovery,
-  keyEvent,
-  dispatchEvent,
 } from "./helpers/recovery_dom.js";
 
 // Puts the overlay on screen and hands back the live backdrop plus the
@@ -37,146 +41,131 @@ const showOverlay = () => {
   return { ...env, state, backdrop };
 };
 
-const FOCUSABLE_QUERY =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
-// Adds a control of the given tag inside the overlay. The shipped handler
-// re-queries the backdrop on every keydown, so appending here is exactly what
-// a panel with more than one control looks like at event time.
-const addControl = (document, backdrop, tag, attributes = {}) => {
-  const node = document.createElement(tag);
-  Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, value));
-  backdrop.appendChild(node);
-  return node;
+// Puts the overlay on screen inside the shell's frame, which is where it is
+// drawn in the product: the work area holds the surface, the chrome sits
+// around it. Hands back the frame so a test can read what the view did to it.
+const showOverlayInShell = ({ surfaces = 1 } = {}) => {
+  const env = loadRecoveryView();
+  const frame = shellFrame(env.document, { surfaces });
+  const state = stateShowingRecovery(env.Core);
+  env.RecoveryView.render(state);
+  const backdrop = env.backdrop();
+  assert.ok(backdrop, "render must mount the recovery backdrop");
+  return { ...env, frame, state, backdrop };
 };
 
 // -----------------------------------------------------------------------------
 // Keyboard containment
+//
+// The failed surface leaves the tab order; nothing else does.
 // -----------------------------------------------------------------------------
 
-test("Tab from the last focusable in the overlay wraps to the first", (t) => {
-  const { document, backdrop } = showOverlay();
-  addControl(document, backdrop, "input");
+test("The surface the view is reporting on leaves the tab order", (t) => {
+  const { frame } = showOverlayInShell();
 
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
-  assert.ok(focusables.length >= 2, "the panel must hold at least two controls to wrap between");
-
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  document.activeElement = last;
-  // The overlay already focused the Retry now button when it opened, so count
-  // the move this keydown causes rather than the total.
-  const firstFocusesBefore = first.focusCount;
-
-  const event = dispatchEvent(backdrop, "keydown", keyEvent("Tab"));
-
-  assert.equal(event.defaultPrevented, true, "Tab on the last control must be consumed");
-  assert.equal(document.activeElement, first, "focus must wrap to the first control");
-  assert.equal(first.focusCount, firstFocusesBefore + 1, "the wrap must move focus exactly once");
+  assert.equal(
+    frame.surfaces[0].inert,
+    true,
+    "Tab must not wander into a page that is not there (#115)"
+  );
 });
 
-test("Shift+Tab from the first focusable in the overlay wraps to the last", (t) => {
-  const { document, backdrop } = showOverlay();
-  addControl(document, backdrop, "input");
+test("The chrome around the work area stays in the tab order", (t) => {
+  const { frame } = showOverlayInShell();
 
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  document.activeElement = first;
-
-  const event = dispatchEvent(backdrop, "keydown", keyEvent("Tab", { shiftKey: true }));
-
-  assert.equal(event.defaultPrevented, true, "Shift+Tab on the first control must be consumed");
-  assert.equal(document.activeElement, last, "focus must wrap to the last control");
-  assert.equal(last.focusCount, 1, "the last control must be focused exactly once");
-});
-
-test("Tab from a control in the middle of the overlay is left to the browser", (t) => {
-  const { document, backdrop } = showOverlay();
-  const middle = addControl(document, backdrop, "input");
-  addControl(document, backdrop, "select");
-
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
-  assert.notEqual(focusables[focusables.length - 1], middle, "the fixture must not sit on an edge");
-  document.activeElement = middle;
-
-  const event = dispatchEvent(backdrop, "keydown", keyEvent("Tab"));
-
-  assert.equal(event.defaultPrevented, false, "a non-edge Tab must not be consumed");
-  assert.equal(document.activeElement, middle, "the handler must not move focus itself");
-});
-
-test("Keys other than Tab pass through the overlay untouched", (t) => {
-  const { document, backdrop } = showOverlay();
-  addControl(document, backdrop, "input");
-
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
-  const last = focusables[focusables.length - 1];
-  document.activeElement = last;
-
-  for (const key of ["Enter", "Escape", "a", "ArrowDown"]) {
-    const event = dispatchEvent(backdrop, "keydown", keyEvent(key));
-    assert.equal(event.defaultPrevented, false, `${key} must not be consumed by the Tab handler`);
-    assert.equal(document.activeElement, last, `${key} must not move focus`);
+  // The topbar carries the Latching Estop and the plate carries its ESTOP
+  // cell. A surface that cannot load is exactly when an operator reaches for
+  // one of them (#359, ADR 0048).
+  for (const [name, node] of [
+    ["the topbar", frame.top],
+    ["the nav rail", frame.nav],
+    ["the Status Plate", frame.status],
+  ]) {
+    assert.ok(!node.inert, `${name} must stay reachable while a surface is failing to load`);
   }
 });
 
-test("Tab containment holds for button, input, select, textarea and [tabindex]", (t) => {
-  const { document, backdrop } = showOverlay();
+test("The view is mounted inside the work area, not over the whole page", (t) => {
+  const { frame, backdrop } = showOverlayInShell();
 
-  // One of each kind the containment query claims to cover. If any kind is
-  // dropped from the query, the element order below changes and the wrap
-  // target changes with it.
-  const input = addControl(document, backdrop, "input");
-  const select = addControl(document, backdrop, "select");
-  const textarea = addControl(document, backdrop, "textarea");
-  const tabbableDiv = addControl(document, backdrop, "div", { tabindex: "0" });
+  assert.equal(
+    backdrop.parentElement,
+    frame.content,
+    "the Page Recovery View renders inside the content region (ADR 0048)"
+  );
+});
 
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
+test("The surface comes back into the tab order when the view goes", (t) => {
+  const env = loadRecoveryView();
+  const frame = shellFrame(env.document);
+  const showing = stateShowingRecovery(env.Core);
+  env.RecoveryView.render(showing);
+  assert.equal(frame.surfaces[0].inert, true, "the fixture must start with the view up");
+
+  env.RecoveryView.render(stateHidingRecovery(env.Core, showing));
+
+  assert.equal(frame.surfaces[0].inert, false, "a settled page must be usable again");
+});
+
+test("A surface that mounts while the view is already up leaves the tab order too", (t) => {
+  const env = loadRecoveryView();
+  const frame = shellFrame(env.document);
+  const showing = stateShowingRecovery(env.Core);
+  env.RecoveryView.render(showing);
+
+  // The shell attaches a surface's node before its markup arrives, so this is
+  // the ordinary first-load path rather than an edge case.
+  const arriving = env.document.createElement("div");
+  arriving.className = "surface";
+  frame.content.appendChild(arriving);
+  env.RecoveryView.render(showing);
+
+  assert.equal(arriving.inert, true, "a surface mounted under the view must not be tabbable");
+});
+
+test("A surface the shell detached while the view was up is not left inert", (t) => {
+  const env = loadRecoveryView();
+  const frame = shellFrame(env.document);
+  const showing = stateShowingRecovery(env.Core);
+  env.RecoveryView.render(showing);
+  const left = frame.surfaces[0];
+  assert.equal(left.inert, true, "the fixture must start with the leaving surface inert");
+
+  // The chrome is live under this view, so the operator can navigate: the
+  // shell detaches what they left and attaches what they opened. A surface
+  // released only by walking the work area's current children would come back
+  // dead.
+  const opened = env.document.createElement("div");
+  opened.className = "surface";
+  frame.content.replaceChildren(opened, env.backdrop());
+  env.RecoveryView.render(showing);
+  env.RecoveryView.render(stateHidingRecovery(env.Core, showing));
+
+  assert.equal(left.inert, false, "the surface the operator left must be usable on return");
+  assert.equal(opened.inert, false, "and so must the one they opened");
+});
+
+test("The view intercepts no keystroke, so Tab out of the panel is the browser's", (t) => {
+  const { backdrop } = showOverlayInShell();
+
+  const keyHandlers = backdrop.eventListeners.filter((listener) => listener.event === "keydown");
   assert.deepEqual(
-    focusables.slice(-4),
-    [input, select, textarea, tabbableDiv],
-    "every focusable kind must be inside the containment query"
+    keyHandlers,
+    [],
+    "a key handler here is a focus trap, and a trap holds focus away from the estop"
   );
-
-  document.activeElement = tabbableDiv;
-  const forward = dispatchEvent(backdrop, "keydown", keyEvent("Tab"));
-  assert.equal(forward.defaultPrevented, true, "Tab from the last kind must be consumed");
-  assert.equal(document.activeElement, focusables[0], "Tab must wrap to the first control");
-
-  document.activeElement = focusables[0];
-  const backward = dispatchEvent(backdrop, "keydown", keyEvent("Tab", { shiftKey: true }));
-  assert.equal(backward.defaultPrevented, true, "Shift+Tab from the first control must be consumed");
-  assert.equal(document.activeElement, tabbableDiv, "Shift+Tab must wrap to the last control");
 });
 
-test("An element with tabindex=-1 is not a Tab stop inside the overlay", (t) => {
-  const { document, backdrop } = showOverlay();
-  const skipped = addControl(document, backdrop, "div", { tabindex: "-1" });
+test("Nothing outside the work area is ever taken out of the tab order", (t) => {
+  // No frame at all: a document whose body is the host has no chrome to keep
+  // live, and marking its children would take the whole page out.
+  const env = loadRecoveryView();
+  const sibling = env.document.createElement("div");
+  env.document.body.appendChild(sibling);
 
-  const focusables = backdrop.querySelectorAll(FOCUSABLE_QUERY);
-  assert.ok(
-    !focusables.includes(skipped),
-    "tabindex=-1 is programmatic focus only and must be excluded from the cycle"
-  );
+  env.RecoveryView.render(stateShowingRecovery(env.Core));
 
-  document.activeElement = focusables[focusables.length - 1];
-  dispatchEvent(backdrop, "keydown", keyEvent("Tab"));
-  assert.equal(skipped.focusCount, 0, "a tabindex=-1 element must never be a wrap target");
-});
-
-test("Tab with no focusable content keeps focus on the backdrop", (t) => {
-  const { document, backdrop } = showOverlay();
-
-  // The loading state clears the panel; there is nothing to Tab to, and Tab
-  // must still not escape the modal.
-  backdrop.replaceChildren();
-  document.activeElement = document.body;
-
-  const event = dispatchEvent(backdrop, "keydown", keyEvent("Tab"));
-
-  assert.equal(event.defaultPrevented, true, "Tab must not escape an empty overlay");
-  assert.equal(document.activeElement, backdrop, "focus must fall back to the backdrop");
+  assert.ok(!sibling.inert, "the body's children are not a surface and must not be marked");
 });
 
 // -----------------------------------------------------------------------------

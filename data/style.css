@@ -258,8 +258,15 @@ body {
      z-index is a stacking context and the estop's own 1300 inside it would
      otherwise only rank against its siblings here. The overlay is a posture
      the droid is in, not a dialog, and it must never cover the control that
-     ends that posture (#330). The Page Recovery View sits at 10001 and does
-     cover it; that is a modal dialog and is not this rule's decision. */
+     ends that posture (#330).
+
+     Nothing a surface renders outranks this any more, whatever number it
+     declares: #shell-content is a stacking context, so a surface's overlays
+     are ranked inside it and this region is ranked outside it (#359). The
+     Page Recovery View used to sit at 10001 and cover the estop; the comment
+     here called that a modal dialog's decision and not this rule's. It was
+     nobody's decision -- ADR 0048 had already put that view inside the work
+     area -- and it is now where the ADR put it. */
   z-index: 1300;
 }
 
@@ -274,6 +281,23 @@ body {
   min-width: 0;
   max-width: 1320px;
   padding: var(--space-xl) var(--gutter) var(--space-2xl);
+  /* The work area is a stacking context, and that one line is the whole
+     mechanism behind "a dialog may cover the surface, never the chrome"
+     (ADR 0048, #359). Everything a surface renders is drawn inside it -- the
+     Dashboard's sleep overlay, the Sequences modal, the Page Recovery View --
+     so no z-index a surface declares can reach over #shell-top or
+     #shell-status, or over the Latching Estop they carry. The alternative was
+     a z-index arms race between the chrome and each new overlay, which is how
+     the estop ended up underneath two of them.
+
+     It is also the containing block the Page Recovery View positions itself
+     against, which is what keeps that view inside the work area at every
+     breakpoint without the view restating where the frame puts it.
+
+     A surface that needs to escape the work area does not exist, and must not
+     be given a way out: the estop is the reason. */
+  position: relative;
+  z-index: 0;
 }
 
 #shell-status {
@@ -2629,9 +2653,14 @@ textarea:disabled {
      takes pointer events and whose own panel says "Drive and safety controls
      remain active" - true of the droid, and it must be true of the screen
      too. This is a posture the droid is in, not a dialog: hiding the chrome
-     never hides the estop (#330). The Page Recovery View and the Sequences
-     modal sit higher still and do cover it; both are modal dialogs, and
-     changing that is not this control's decision to take. */
+     never hides the estop (#330).
+
+     The Page Recovery View and the Sequences modal used to sit higher still
+     and cover this control. They no longer can: both are rendered by a
+     surface, and #shell-content is a stacking context, so neither is ranked
+     against the chrome at all (#359). This number is what settles the sleep
+     overlay, which is the one scrim the Dashboard raises from inside the
+     topbar's own region. */
   position: relative;
   z-index: 1300;
 }
@@ -3152,8 +3181,9 @@ body.sleep-mode-active {
      why nor press the ESTOP cell. #shell-status, which is the fixed region
      this sits in, declares the same rank so the stacking context it creates
      does not trap this one below the overlay. The Page Recovery View and the
-     Sequences modal still sit higher and do cover it; both are modal dialogs,
-     and that is not this plate's decision to take. */
+     Sequences modal used to sit higher and cover the plate as well; they are
+     rendered by a surface and #shell-content is now a stacking context, so
+     neither is ranked against the chrome any more (#359). */
   position: relative;
   z-index: 1300;
   /* The eight cells, then the compartment holding the plate's one freshness
@@ -5111,7 +5141,13 @@ body[data-page="setup"] .status-item .hint {
   flex-wrap: wrap;
 }
 
-/* Modal styles */
+/* Modal styles.
+
+   The number below ranks this dialog against the Sequences surface and
+   against nothing else: it is rendered inside #shell-content, which is a
+   stacking context, so a dialog covers the surface it belongs to and never
+   the chrome or the Latching Estop on it (ADR 0048, #359). Raising it does
+   not change that, and neither would lowering it. */
 .seq-modal {
   position: fixed;
   top: 0;

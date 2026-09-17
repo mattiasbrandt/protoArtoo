@@ -492,7 +492,12 @@
     renderReadouts(payload);
     renderOpMode(payload);
     renderActiveMood(payload);
-    setEstopUi(!!payload.estop);
+    // One place decides a latch, and it is not this one: data/shell.js's
+    // estopIsLatched, published as window.PAEstop (#346, #359). The truthy
+    // read this replaces answered a different question - a frame missing the
+    // field could not say "latched", and must not be allowed to say "clear"
+    // either.
+    setEstopUi(window.PAEstop.isLatched(payload));
     setSleepUi(!!payload.sleepMode);
   };
 
@@ -544,7 +549,7 @@
       showFeedback(estopFeedback, "Estop clear", "success");
     } catch (error) {
       showFeedback(estopFeedback, `Clearing estop failed: ${window.PAApi.messageFor(error)}`, "error");
-      if (lastStatus) setEstopUi(!!lastStatus.estop);
+      if (lastStatus) setEstopUi(window.PAEstop.isLatched(lastStatus));
     } finally {
       estopClearPending = false;
       renderEstopClear();
@@ -1492,6 +1497,18 @@
     );
   };
 
+  // The state to paint before the droid has said anything. It has to be
+  // written BEFORE the subscribe below: PAStatusStream hands a new subscriber
+  // the frame it already holds, synchronously, and the Operator Shell seeds
+  // that frame from its own boot read (ADR 0048). Running these two after the
+  // subscription overwrote a seeded LATCHED with "clear", which disabled Clear
+  // on a droid that was stopped -- and loadInitialStatus() skips its fetch
+  // when a cached frame exists, so nothing repaired it until the droid emitted
+  // a status, which a quiet latched droid never does. The shell's own copy
+  // sends the operator here to clear it.
+  setEstopUi(false);
+  setSleepUi(false);
+
   startPageLoad();
 
   if (window.PAStatusStream?.isSupported()) {
@@ -1532,6 +1549,4 @@
       fallbackPoll.stop();
     });
   }
-  setEstopUi(false);
-  setSleepUi(false);
 })();

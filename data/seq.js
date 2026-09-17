@@ -203,18 +203,58 @@
 
   // =========================================================================
   // Helper: Toggle modal visibility
+  //
+  // A dialog covers the surface it belongs to and never the chrome around it.
+  // The Operator Shell renders the Latching Estop on that chrome and keeps it
+  // live for exactly the moments a dialog is up (ADR 0048, #359), so these
+  // dialogs carry no aria-modal: that attribute is the claim that everything
+  // outside the dialog is inert, and STOP is outside it. What is really inert
+  // while a dialog is open is the surface, and that is what is marked here --
+  // the same move the Page Recovery View makes (data/page_bootstrap.js,
+  // holdSurfacesInert).
+  //
+  // The surface's OTHER top-level nodes rather than the surface itself: both
+  // dialogs are children of it, and inert is inherited, so a descendant
+  // cannot opt back in.
   // =========================================================================
+  const topLevelOf = (modal) => {
+    const surface = modal?.parentElement;
+    return surface && surface.children ? [...surface.children] : [];
+  };
+
+  const surfaceBehind = (modal) =>
+    topLevelOf(modal).filter((node) => !node.classList.contains("seq-modal"));
+
+  const anotherDialogIsOpen = (modal) =>
+    topLevelOf(modal).some(
+      (node) =>
+        node !== modal &&
+        node.classList.contains("seq-modal") &&
+        !node.classList.contains("hidden")
+    );
+
   const showModal = (modal) => {
     if (modal) {
       modal.classList.remove("hidden");
-      // Focus trap: focus first focusable element
+      surfaceBehind(modal).forEach((node) => {
+        node.inert = true;
+      });
+      // Focus the first control in the dialog. Not a trap: Tab leaves it for
+      // the chrome, which is where STOP is.
       const focusable = modal.querySelector("button, input, [tabindex]");
       if (focusable) focusable.focus();
     }
   };
 
   const hideModal = (modal) => {
-    if (modal) modal.classList.add("hidden");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    // The other dialog may still be up; the surface comes back only when the
+    // last one closes.
+    if (anotherDialogIsOpen(modal)) return;
+    surfaceBehind(modal).forEach((node) => {
+      node.inert = false;
+    });
   };
 
   // =========================================================================

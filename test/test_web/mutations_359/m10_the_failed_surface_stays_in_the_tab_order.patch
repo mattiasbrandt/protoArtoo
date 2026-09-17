@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index 3cfd610c..e0e1ff28 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -1070,7 +1070,7 @@
+     // Every render, not only the transition: the shell attaches the surface's
+     // node before its markup arrives, so a surface that mounted while the view
+     // was already up would otherwise keep its controls in the tab order.
+-    holdSurfacesInert(backdrop);
++    void holdSurfacesInert;
+ 
+     const signature = signatureOf(view);
+     if (signature !== lastSignature) {

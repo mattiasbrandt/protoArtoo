@@ -186,6 +186,14 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       subscribe: () => () => {},
       getLastStatus: () => null,
     },
+    // The Operator Shell publishes this and every surface reads it, so a
+    // surface run on its own needs it the way it needs PAApi or PABootstrap
+    // (data/shell.js, estopIsLatched). It is stated here rather than lifted,
+    // because shell.js is an IIFE that needs a whole frame to evaluate -- and
+    // test_shell_estop_359.js holds this copy to the shipped one by booting
+    // the real shell and comparing both against the same frames, so the pair
+    // cannot drift silently.
+    PAEstop: { isLatched: (status) => status.estop === true },
     setInterval: (fn, ms) => addTimer(intervals, fn, ms),
     clearInterval: (id) => cleared.intervals.push(id),
     setTimeout: (fn, ms) => addTimer(timeouts, fn, ms),

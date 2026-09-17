@@ -1,0 +1,13 @@
+diff --git i/data/_recovery_kernel.html w/data/_recovery_kernel.html
+index 432d0dd4..3083b048 100644
+--- i/data/_recovery_kernel.html
++++ w/data/_recovery_kernel.html
+@@ -51,7 +51,7 @@
+       /* The block stops at the same edge. A child combinator so the dim
+          applies once, not once per nesting level - 0.4 four deep renders at
+          0.0256, the bug #117 fixed. */
+-      body.recovery-active #shell-content > *:not(#page-recovery-backdrop) {
++      body.recovery-active > *:not(#page-recovery-backdrop) {
+         opacity: 0.4;
+         pointer-events: none;
+       }

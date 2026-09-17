@@ -514,6 +514,17 @@
   // (#346).
   const estopIsLatched = (status) => status.estop === true;
 
+  // Published, because two readers of one fact drift and Wave 1 has already
+  // proved it: Foot Drive and the Dashboard each decided a latch their own way
+  // (`!!payload.estop` and a truthy read) while this file decided it here
+  // (#346, #359). They call this. Exposed rather than moved somewhere shared:
+  // the decision belongs to the frame that holds the status, and a fourth file
+  // holding one predicate would be a new drift surface, not a cure for the old
+  // one. A surface only ever runs inside this shell, so it is always here by
+  // the time one asks.
+  window.PAEstop = window.PAEstop || {};
+  window.PAEstop.isLatched = estopIsLatched;
+
   // The inputs OTHER than the estop that make DriveTask emit zero frames
   // (src/drive_arbiter.cpp, failsafeIsActive() || webTimedOut). Split out
   // rather than folded into feetAreHeld() because the notice needs exactly

@@ -366,8 +366,12 @@
   };
 
   const renderStatus = (payload) => {
-    estopLatched = !!payload.estop;
-    if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
+    // The shell decides what a frame says about the latch, for every reader
+    // (data/shell.js estopIsLatched, published as window.PAEstop). This page
+    // used to answer it with `!!payload.estop`, which is a different question:
+    // a field that did not arrive must not answer it at all (#346, #359).
+    estopLatched = window.PAEstop.isLatched(payload);
+    if (clearEstopButton) clearEstopButton.disabled = !estopLatched;
     webControlEnabled = !!payload.webControlEnabled;
     updateDriveControlsEnabled();
     if (statusFailsafeLabel) statusFailsafeLabel.textContent = formatFailsafeSource(payload.failsafeSource);

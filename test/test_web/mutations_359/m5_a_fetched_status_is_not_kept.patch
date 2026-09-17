@@ -1,14 +1,15 @@
 diff --git i/data/status_stream.js w/data/status_stream.js
-index 5b66abf5..639de3fc 100644
+index 07ee85bd..9186dec9 100644
 --- i/data/status_stream.js
 +++ w/data/status_stream.js
-@@ -131,8 +131,7 @@
-     // instead of one per consumer.
-     seed(status) {
-       if (!status || typeof status !== "object") return;
--      lastStatus = status;
--      emit("status", lastStatus);
-+      emit("status", status);
-     },
-     isSupported() {
-       return typeof EventSource !== "undefined";
+@@ -67,9 +67,8 @@
+       emit("status_error", new Error("The controller could not report its status"));
+       return false;
+     }
+-    lastStatus = payload;
+     lastStatusAt = Date.now();
+-    emit("status", lastStatus, { cached: false, receivedAt: lastStatusAt });
++    emit("status", payload, { cached: false, receivedAt: lastStatusAt });
+     return true;
+   };
+ 

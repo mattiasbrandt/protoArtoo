@@ -1,0 +1,13 @@
+diff --git i/data/drive.js w/data/drive.js
+index 26a58fea..7ab83db8 100644
+--- i/data/drive.js
++++ w/data/drive.js
+@@ -370,7 +370,7 @@
+     // (data/shell.js estopIsLatched, published as window.PAEstop). This page
+     // used to answer it with `!!payload.estop`, which is a different question:
+     // a field that did not arrive must not answer it at all (#346, #359).
+-    estopLatched = window.PAEstop.isLatched(payload);
++    estopLatched = !!payload.estop;
+     if (clearEstopButton) clearEstopButton.disabled = !estopLatched;
+     webControlEnabled = !!payload.webControlEnabled;
+     updateDriveControlsEnabled();

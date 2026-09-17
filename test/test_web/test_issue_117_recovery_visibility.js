@@ -1,9 +1,20 @@
 // =============================================================================
 // test/test_web/test_issue_117_recovery_visibility.js
 //
-// Recovery overlay visibility (issue #117): the overlay must sit above every
-// other overlay, the page behind it must be dimmed exactly once rather than
-// once per nesting level, and competing overlays must be suppressed outright.
+// Recovery overlay visibility (issue #117): the overlay must not be hidden
+// behind the page it is reporting on, the page behind it must be dimmed
+// exactly once rather than once per nesting level, and competing overlays must
+// be suppressed outright.
+//
+// Rewritten for #359. The first version read "the overlay must sit above every
+// other overlay" and compared its z-index against every z-index in the
+// stylesheet, the Operator Shell's chrome included - so it required the Page
+// Recovery View to cover the Latching Estop, and the suite enforced the hole
+// the reopened #359 was about. ADR 0048 had already decided the other way:
+// this view renders INSIDE the content region, and the chips and the estop
+// stay live behind a surface that failed to load. #117's own concern survives
+// unchanged, and is the first section below: nothing the failed surface
+// renders may come out on top of the panel reporting on it.
 //
 // These are CSS invariants. There is no JavaScript to execute and no layout
 // engine here, so the tests parse the shipped stylesheet into rules and assert
@@ -99,6 +110,29 @@ const recoveryScopedSelectors = () =>
       .map((selector) => ({ selector, declarations: rule.declarations }))
   );
 
+// The Operator Shell's frame: the regions that are NOT a surface, and that
+// carry the Latching Estop between them. Nothing about them is ranked against
+// the recovery view -- they are outside the work area's stacking context -- so
+// they are excluded from the comparison rather than compared and excused.
+const CHROME_SELECTORS = new Set([
+  "#shell-top",
+  "#shell-status",
+  "#shell-content",
+  ".shell-estop",
+  ".status-plate-region",
+]);
+
+const declaredZIndexes = () =>
+  pageRules
+    .filter((rule) => rule.declarations.has("z-index"))
+    .flatMap((rule) =>
+      rule.selectors.map((selector) => ({
+        selector,
+        zIndex: Number.parseInt(rule.declarations.get("z-index"), 10),
+      }))
+    )
+    .filter(({ zIndex }) => Number.isFinite(zIndex));
+
 // -----------------------------------------------------------------------------
 // Stacking order
 // -----------------------------------------------------------------------------
@@ -110,21 +144,16 @@ test("The recovery overlay declares a stacking order at all", (t) => {
   assert.ok(Number.isFinite(recoveryZIndex), `z-index must be a number, got ${recoveryZIndex}`);
 });
 
-test("The recovery overlay outranks every other overlay on the page", (t) => {
+test("The recovery overlay outranks everything a surface can render", (t) => {
   const recoveryZIndex = zIndexOf(kernelRules, "#page-recovery-backdrop");
 
   // Any rule in the page stylesheet that creates a stacking context is a
   // candidate to cover the overlay, so compare against all of them rather than
-  // a hand-listed few.
-  const competitors = pageRules
-    .filter((rule) => rule.declarations.has("z-index"))
-    .flatMap((rule) =>
-      rule.selectors.map((selector) => ({
-        selector,
-        zIndex: Number.parseInt(rule.declarations.get("z-index"), 10),
-      }))
-    )
-    .filter(({ zIndex }) => Number.isFinite(zIndex));
+  // a hand-listed few -- except the chrome, which is not inside the work area
+  // and is covered by the rule below instead.
+  const competitors = declaredZIndexes().filter(
+    ({ selector }) => !CHROME_SELECTORS.has(selector)
+  );
 
   assert.ok(competitors.length > 0, "the page stylesheet must declare some stacking order to compare against");
 
@@ -132,6 +161,48 @@ test("The recovery overlay outranks every other overlay on the page", (t) => {
     assert.ok(
       recoveryZIndex > zIndex,
       `recovery overlay (${recoveryZIndex}) must outrank ${selector} (${zIndex})`
+    );
+  }
+});
+
+test("The work area is a stacking context, so a surface cannot reach the chrome", (t) => {
+  // This is the mechanism that makes the exclusion above sound: everything a
+  // surface renders -- the sleep overlay, the Sequences modal, this view --
+  // is ranked inside #shell-content and against nothing outside it (ADR 0048,
+  // #359). Without it, any of them could cover the Latching Estop by picking a
+  // bigger number, which is how the estop ended up underneath two of them.
+  const position = declaredValue(pageRules, "#shell-content", "position");
+  const zIndex = zIndexOf(pageRules, "#shell-content");
+
+  assert.ok(
+    position && position !== "static",
+    `the work area must be positioned to establish a stacking context, got "${position}"`
+  );
+  assert.ok(
+    Number.isFinite(zIndex),
+    `the work area must declare a numeric z-index, got "${zIndex}"`
+  );
+});
+
+test("The recovery overlay is positioned against the work area, not the viewport", (t) => {
+  assert.equal(
+    declaredValue(kernelRules, "#page-recovery-backdrop", "position"),
+    "absolute",
+    "position: fixed would put the view back over the whole screen (ADR 0048)"
+  );
+});
+
+test("The chrome outranks the surface it frames", (t) => {
+  // The estop rides #shell-top and #shell-status; the work area they frame is
+  // the context everything else is ranked in. Both must therefore sit above
+  // it, or a surface would paint over the control this frame exists to carry.
+  const contentZIndex = zIndexOf(pageRules, "#shell-content");
+
+  for (const region of ["#shell-top", "#shell-status"]) {
+    const rank = zIndexOf(pageRules, region);
+    assert.ok(
+      Number.isFinite(rank) && rank > contentZIndex,
+      `${region} (${rank}) must outrank the work area (${contentZIndex})`
     );
   }
 });
@@ -155,15 +226,54 @@ test("The dim rule targets direct children, so opacity cannot compound", (t) => 
 
   // A descendant combinator would apply the same opacity again at every
   // nesting level - 0.4 four levels deep renders at 0.0256, effectively
-  // invisible, which is the bug this issue fixed.
-  const afterBody = dim.selector.slice("body.recovery-active".length).trim();
-  assert.ok(
-    afterBody.startsWith(">"),
-    `the dim rule must use a child combinator, got "${dim.selector}"`
+  // invisible, which is the bug this issue fixed. The rule is anchored on the
+  // work area since #359, so the level that must not compound is the one below
+  // #shell-content rather than the one below <body>.
+  const [, below] = dim.selector.split(">");
+  assert.ok(below, `the dim rule must use a child combinator, got "${dim.selector}"`);
+  assert.equal(
+    dim.selector.split(">").length,
+    2,
+    `the dim rule must use exactly one child combinator, got "${dim.selector}"`
   );
   assert.ok(
-    !/\s/.test(afterBody.slice(1).trim()),
-    `the dim rule must not descend past the first level, got "${dim.selector}"`
+    !/\s/.test(below.trim()),
+    `the dim rule must not descend past that level, got "${dim.selector}"`
+  );
+});
+
+test("The dim and the block stop at the edge of the work area", (t) => {
+  const [dim] = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
+
+  assert.ok(
+    dim.selector.includes("#shell-content"),
+    `the dim must be scoped to the work area (ADR 0048), got "${dim.selector}"`
+  );
+  assert.equal(
+    dim.declarations.get("pointer-events"),
+    "none",
+    "the surface behind the panel must not take a press either"
+  );
+});
+
+test("Nothing about recovery reaches the chrome that carries the estop", (t) => {
+  // The defect the reopened #359 was about: a rule reading
+  // `body.recovery-active > *:not(#page-recovery-backdrop)` matched #shell-top
+  // and #shell-status, so the press and the Tab were eaten before stacking
+  // order mattered - on every first surface load, not only on a fault.
+  const reaching = recoveryScopedSelectors().filter(({ selector }) => {
+    const afterBody = selector.slice("body.recovery-active".length).trim();
+    const bodyChildren = afterBody.startsWith(">");
+    const namesChrome = [...CHROME_SELECTORS].some(
+      (chrome) => chrome !== "#shell-content" && selector.includes(chrome)
+    );
+    return bodyChildren || namesChrome;
+  });
+
+  assert.deepEqual(
+    reaching.map(({ selector }) => selector),
+    [],
+    "a recovery rule that matches a body child dims and disables the Latching Estop"
   );
 });
 

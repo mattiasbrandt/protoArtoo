@@ -906,6 +906,50 @@
   let focusedBeforeOverlay = null;
   let overlayIsVisible = false;
 
+  // Where the view is drawn: the Operator Shell's work area, so the chrome
+  // around it -- and the Latching Estop on it -- stays lit and stays pressable
+  // while a surface is failing to load (ADR 0048). The inline kernel in
+  // data/_recovery_kernel.html reads the same element, so whichever of the two
+  // creates the backdrop, it lands in the same place. A build with no work
+  // area has no frame to keep live either, and the body is the honest fallback
+  // rather than nowhere to render at all.
+  const recoveryHost = () => document.getElementById("shell-content") || document.body;
+
+  // The surfaces this view has taken out of the tab order, so they can be put
+  // back even after the shell has detached them. The operator can navigate
+  // while recovery is up -- that is the point of keeping the chrome live -- and
+  // a surface left inert on the way out would come back dead.
+  const inertSurfaces = new Set();
+
+  // While the view is up, the surface underneath is unreachable: by pointer
+  // through the kernel's rule, and by keyboard through this.
+  //
+  // `inert` is what replaced the Tab trap this view used to run. A trap holds
+  // focus inside the panel, which also held it away from the Latching Estop on
+  // the chrome -- and a surface that cannot load is exactly the moment an
+  // operator reaches for that control (#359). Marking the failed surface keeps
+  // #115's concern, that Tab must not wander into a page which is not there,
+  // without reaching past the work area to do it.
+  //
+  // Re-applied on every visible render because the surface's markup arrives
+  // while the view is up: the shell attaches an empty node, then fills it.
+  const holdSurfacesInert = (backdrop) => {
+    const host = backdrop.parentElement;
+    if (!host || host === document.body) return;
+    for (const child of host.children) {
+      if (child === backdrop) continue;
+      child.inert = true;
+      inertSurfaces.add(child);
+    }
+  };
+
+  const releaseSurfaces = () => {
+    inertSurfaces.forEach((node) => {
+      node.inert = false;
+    });
+    inertSurfaces.clear();
+  };
+
   const ensureBackdrop = () => {
     let backdrop = document.getElementById(BACKDROP_ID);
     let isNewElement = false;
@@ -914,16 +958,21 @@
       // Create the element if it doesn't exist
       backdrop = el("div", "recovery-backdrop");
       backdrop.id = BACKDROP_ID;
-      document.body.appendChild(backdrop);
+      recoveryHost().appendChild(backdrop);
       isNewElement = true;
     }
 
     // Upgrade (or maintain) dialog semantics. Whether the element came from the
     // kernel or was just created, after this function it must always have:
-    // role="dialog", aria-modal="true", aria-label, tabindex, an announcer child,
-    // and a Tab handler. This is idempotent -- calling it multiple times is safe.
+    // role="dialog", aria-label, tabindex and an announcer child. This is
+    // idempotent -- calling it multiple times is safe.
+    //
+    // Deliberately NOT aria-modal. A modal dialog tells a screen reader that
+    // everything outside it is inert, and the chrome outside this one carries
+    // the Latching Estop, which ADR 0048 keeps live precisely for the surface
+    // that failed to load. What is actually inert is the surface, and
+    // holdSurfacesInert() below says so on the element it is true of.
     backdrop.setAttribute("role", "dialog");
-    backdrop.setAttribute("aria-modal", "true");
     backdrop.setAttribute("aria-label", "Page recovery overlay");
     backdrop.setAttribute("tabindex", "-1");
 
@@ -944,43 +993,11 @@
       backdrop.appendChild(announcer);
     }
 
-    // Attach keyboard containment handler if not already present.
-    // Identify by a marker on the backdrop so we never attach it twice.
-    if (!backdrop.dataset.tabHandlerAttached) {
-      backdrop.addEventListener("keydown", (event) => {
-        if (event.key !== "Tab") return;
-
-        const focusableElements = backdrop.querySelectorAll(
-          "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
-        );
-
-        // If there are no focusable children (e.g., loading state), keep focus
-        // on the backdrop itself and prevent Tab from escaping.
-        if (focusableElements.length === 0) {
-          event.preventDefault();
-          backdrop.focus();
-          return;
-        }
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (event.shiftKey) {
-          // Shift+Tab: cycle backwards
-          if (document.activeElement === firstElement) {
-            event.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          // Tab: cycle forwards
-          if (document.activeElement === lastElement) {
-            event.preventDefault();
-            firstElement.focus();
-          }
-        }
-      });
-      backdrop.dataset.tabHandlerAttached = "true";
-    }
+    // No Tab handler. This view used to contain Tab inside the panel and wrap
+    // it at both ends; containment now lives on the surface, as `inert`, for
+    // the reason holdSurfacesInert() gives. Tab out of the panel reaches the
+    // topbar's STOP and the Status Plate's ESTOP cell and nothing in between,
+    // which is the containment #115 asked for and the reach #359 asked for.
 
     return backdrop;
   };
@@ -1024,6 +1041,7 @@
     if (!view.visible) {
       backdrop.classList.remove("active");
       document.body.classList.remove("recovery-active");
+      releaseSurfaces();
       // Preserve the announcer but clear the panel content
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       if (announcer) {
@@ -1048,6 +1066,11 @@
       backdrop.classList.add("active");
       document.body.classList.add("recovery-active");
     }
+
+    // Every render, not only the transition: the shell attaches the surface's
+    // node before its markup arrives, so a surface that mounted while the view
+    // was already up would otherwise keep its controls in the tab order.
+    holdSurfacesInert(backdrop);
 
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
