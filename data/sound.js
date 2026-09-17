@@ -306,9 +306,18 @@
   // whatever the backend can do, while only a backend that is safe to query
   // while playing gets asked every two seconds. skipWhen is what keeps those
   // two apart in one poll -- it gates the cadence tick and not the refresh.
+  //
+  // updateModuleStatus() rethrows after writing "Fetch error" onto the module
+  // line, and that rejection is left to PASurface.poll(): it reports the
+  // failure and leaves Sound showing what it last read. Catching it here would
+  // say the screen is current when the module never answered (#360).
+  //
+  // Called through an arrow, not handed over by name: this poll is created
+  // above the const that defines updateModuleStatus, so naming it here reads
+  // it before it exists.
   let moduleStatusCadenceWanted = false;
   const moduleStatusPoll = window.PASurface.poll(
-    () => updateModuleStatus().catch(() => {}),
+    () => updateModuleStatus(),
     { cadenceMs: 2000, skipWhen: () => !moduleStatusCadenceWanted, refreshOnReturn: true }
   );
   moduleStatusPoll.start();
@@ -2134,10 +2143,10 @@
     }
   } else {
     // Owned by this surface: the shell stops it when the operator leaves Sound
-    // and starts it again on the way back (ADR 0048, #360).
-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
-      // Retry next cycle.
-    }), {
+    // and starts it again on the way back (ADR 0048, #360). A failed read goes
+    // to PASurface.poll(), which retries next cycle and keeps the surface
+    // showing what it last read rather than reporting it as current (#360).
+    window.PASurface.poll(refreshStatusOnce, {
       cadenceMs: 2000,
       runOnStart: true,
       refreshOnReturn: true,

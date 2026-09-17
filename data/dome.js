@@ -292,14 +292,13 @@
     }
   };
 
+  // Failure is the caller's, not this function's: the surface poll below has
+  // to be able to tell a read that landed from one that did not, and a catch
+  // here would tell it every read landed (#360).
   const refreshStatus = async () => {
     if (!window.PAApi) return;
-    try {
-      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-      renderStatusFrame(result.data);
-    } catch {
-      // Keep pending/last-known UI state when status is temporarily unavailable.
-    }
+    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+    renderStatusFrame(result.data);
   };
 
   const validateRndDomeConfig = () => {
@@ -381,6 +380,9 @@
       renderStatusFrame(payload);
     });
     if (!window.PAStatusStream.getLastStatus()) {
+      // Keep pending/last-known UI state when status is temporarily
+      // unavailable: the stream is what this page reads from, and this one-shot
+      // is only for the gap before its first frame.
       refreshStatus().catch(() => {});
     }
   } else {
@@ -388,8 +390,10 @@
     // and starts it again on the way back, so a screen nobody is reading is not
     // competing for the controller's three-client budget (ADR 0048, #360). The
     // hidden-tab pause and the refresh on returning to the tab are the poll's
-    // own, rather than three hand-rolled pieces at this site.
-    window.PASurface.poll(() => refreshStatus().catch(() => {}), {
+    // own, rather than three hand-rolled pieces at this site. So is the failed
+    // read: PASurface.poll() catches it, which is what keeps a refresh that
+    // never landed from reporting the screen as current (#360).
+    window.PASurface.poll(refreshStatus, {
       cadenceMs: 5000,
       runOnStart: true,
       refreshOnReturn: true,

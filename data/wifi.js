@@ -571,11 +571,11 @@
   // Owned by this surface: the shell stops it when the operator leaves WiFi and
   // starts it again on the way back (ADR 0048, #360). The hidden-tab pause and
   // the refresh on returning to the tab are the poll's own, so the separate
-  // visibilitychange handler this page used to carry is gone.
+  // visibilitychange handler this page used to carry is gone. So is the failed
+  // read: reporting it is PASurface.poll()'s, and catching it here is what used
+  // to tell WiFi its diagnostics were current when nothing had answered (#360).
   const diagnosticsPoll = window.PASurface.poll(
-    () => loadWifiDiagnostics().catch((error) => {
-      console.warn("[wifi] diagnostics poll failed:", error);
-    }),
+    () => loadWifiDiagnostics(),
     { cadenceMs: POLL_INTERVAL_MS, refreshOnReturn: true }
   );
 

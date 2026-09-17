@@ -561,22 +561,37 @@
   // Create it in the surface's script body. That is the only moment the shell
   // guarantees is inside the surface's own mount, and it costs nothing: the
   // poll does not run until start().
+  //
+  // THE CONTRACT WITH attempt(): hand back a promise, and let it reject when
+  // the surface did not get an answer. A promise that fulfils is the only
+  // thing that clears the stale mark.
+  //
+  // THE REJECTION IS CAUGHT HERE, and that is why no polling site may catch
+  // its own. Every site used to, because a background refresh has nobody to
+  // hand a rejection to and an unhandled one is console noise -- but catching
+  // it there flattens the failure into a fulfilled promise, and the surface
+  // was then marked fresh by a refresh that never landed: "Showing what this
+  // screen last read" came down over values from before the operator left
+  // (#360, reopened 2026-09-17). One swallow in one place keeps the console
+  // quiet AND keeps the note up; a swallow at each site cannot do both.
   const createSurfacePoll = (attempt, options = {}) => {
     const entry = { owner: showingSurface, wanted: false, running: false, stale: false };
     entry.poll = createBackgroundPoll(() => {
       const result = attempt();
-      // Fresh the moment the surface has answered again. Guarded rather than
-      // assumed thenable: several polling sites hand back nothing at all. A
-      // rejected attempt deliberately does not clear the mark -- the values on
-      // screen are still the ones from before.
-      if (result && typeof result.then === "function") {
-        return result.then((value) => {
+      // Something that is not a promise never said it asked, so it cannot be
+      // read as having been answered: the mark stays up.
+      if (!result || typeof result.then !== "function") return result;
+      return result.then(
+        (value) => {
           markSurfaceFresh(entry);
           return value;
-        });
-      }
-      markSurfaceFresh(entry);
-      return result;
+        },
+        (error) => {
+          // Reported, never rethrown, and deliberately NOT marked fresh: what
+          // is on screen is still the reading from before.
+          console.warn(`[surface] ${entry.owner || "page"} refresh failed:`, error);
+        },
+      );
     }, options);
     surfacePolls.add(entry);
     return {
