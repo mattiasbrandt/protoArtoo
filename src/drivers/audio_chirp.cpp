@@ -490,9 +490,10 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
         }
         cooperativeCatalogYield();
         if (frame != ChirpFrame::Complete) {
-            // Bytes on the wire, but not a manifest frame. Counted as link
-            // activity -- the module is plainly alive -- and never parsed.
-            rxBytes += 1;
+            // Bytes on the wire, but not a manifest frame. Counted as its own
+            // kind of link activity -- the module is plainly alive -- rather
+            // than added to rxBytes, which counts the bytes of frames that were
+            // actually read and would be a lie about a line nobody measured.
             ++oversizedLines;
             continue;
         }
@@ -555,12 +556,12 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     }
 
     if (!gotValidGmanLine) {
-        if (rxBytes == 0) {
+        if (rxBytes == 0 && oversizedLines == 0) {
             PA_LOG_WARN(TAG,
                         "No CHIRP RX bytes during GMAN query. Verify CHIRP TX -> PIN_AUDIO_RX, common GND, and baud=9600.");
         } else {
             PA_LOG_WARN(TAG,
-                        "CHIRP RX activity seen (%u bytes, %u over-long lines) but no valid GMAN frame.",
+                        "CHIRP RX activity seen (%u bytes in frames, %u over-long lines) but no valid GMAN frame.",
                         (unsigned)rxBytes, (unsigned)oversizedLines);
         }
         // No usable bank summary (no module, contested UART2, or garbled RX).
@@ -1188,8 +1189,10 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
                 continue;
             }
             if (frame != ChirpFrame::Complete) {
-                rxBytes += 1;
-                ++unparsableLines;  // longer than any STAT reply the module prints
+                // Longer than any STAT reply the module prints. Counted as an
+                // unparsable line rather than added to rxBytes, which counts
+                // the bytes of frames that were read.
+                ++unparsableLines;
                 continue;
             }
             rxBytes += (uint32_t)strlen(line);
@@ -1241,12 +1244,12 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     if (!out.linkOk) {
         uint32_t now = millis();
         if ((uint32_t)(now - s_lastNoRspDiagMs) > 5000u) {
-            if (rxBytes == 0) {
+            if (rxBytes == 0 && unparsableLines == 0) {
                 PA_LOG_WARN(TAG,
                             "No CHIRP RX bytes during STAT query. Verify return path CHIRP TX->S2 RX and shared GND.");
             } else {
                 PA_LOG_WARN(TAG,
-                            "CHIRP RX activity seen (%u bytes) but no valid STAT line (%u unparsable lines).",
+                            "CHIRP RX activity seen (%u bytes in frames) but no valid STAT line (%u unparsable lines).",
                             (unsigned)rxBytes, (unsigned)unparsableLines);
             }
             s_lastNoRspDiagMs = now;
