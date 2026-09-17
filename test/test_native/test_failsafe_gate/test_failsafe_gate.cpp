@@ -10,6 +10,7 @@
 #include <cstring>
 #include <unity.h>
 
+#include "commanded_modes_test_hooks.h"  // g_test_status_broadcast_count
 #include "failsafe_gate.h"
 #include "robot_state.h"
 
@@ -17,12 +18,13 @@
 extern RobotState robotState;
 extern portMUX_TYPE robotStateMux;
 
-// requestStatusBroadcastNow() counts here in the native build
+// requestStatusBroadcastNow() counts in the native build
 // (src/native_test_stubs.cpp), which is how the tests below observe that a
-// failsafe edge asked the event stream to publish. The counter is reset inside
-// each test rather than in setUp(): tearDown() clears every layer, and those
-// clears are edges too.
-extern unsigned g_test_status_broadcast_count;
+// failsafe edge asked the event stream to publish. It is read through the
+// header above rather than a local `extern`, so the declaration and every use
+// stay compiler-checked against one another. The counter is reset inside each
+// test rather than in setUp(): tearDown() clears every layer, and those clears
+// are edges too.
 
 void setUp() {
     // Reset mocks before each test
