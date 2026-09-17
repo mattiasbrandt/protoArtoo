@@ -41,11 +41,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <string.h>
+#include "audio_catalog_gate.h"
 #include "audio_config_map.h"
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
 #include "audio_sound_member.h"
 #include "audio_task_step.h"
+#include "chirp_binding_keys.h"
 #include "config.h"
 #include "config_nvsio.h"
 #include "config_cache.h"
@@ -56,6 +58,14 @@
 #include "web_server.h"
 
 static const char* TAG = "AudioTask";
+
+// How long a refresh waits for a catalog reader to leave before giving up. A
+// GET /api/audio/catalog response is bounded by one chunked send, so 1.5 s is
+// far past a healthy one; giving up rather than waiting is what stops a wedged
+// client from holding the catalog hostage, and the refresh reports itself
+// blocked instead of replacing storage a reader is still walking (#397 item 9).
+static constexpr uint32_t AUDIO_CATALOG_READER_DRAIN_MS = 1500u;
+static constexpr uint32_t AUDIO_CATALOG_READER_DRAIN_STEP_MS = 10u;
 
 // The driver the boot-resolved Sound Component Member runs on. setup() bound it
 // before this task existed (include/audio_sound_member.h), so it is already
@@ -272,6 +282,10 @@ bool audioQueueStop(CommandSource src) {
     AudioCommand msg{};
     msg.type = AUDIO_CMD_STOP;
     msg.source = src;
+    // Noted before the send so a catalog walk cannot miss a stop that lands
+    // between the two. Over-noting costs an interrupted refresh; under-noting
+    // costs the operator a stop that waits out the whole walk.
+    audioCatalogInterruptNoteStop();
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         static uint32_t lastWarnMs = 0;
         uint32_t nowMs = millis();
@@ -294,6 +308,7 @@ bool audioQueueTrackStop(CommandSource src) {
     AudioCommand msg{};
     msg.type = AUDIO_CMD_TRACK_STOP;
     msg.source = src;
+    audioCatalogInterruptNoteStop();
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         static uint32_t lastWarnMs = 0;
         uint32_t nowMs = millis();
@@ -564,6 +579,118 @@ static void writeModuleState(const AudioModuleState& ms, AudioRxStatus rxStatus)
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
+// -----------------------------------------------------------------------------
+// Catalog refresh, and everything that has to happen around one.
+// -----------------------------------------------------------------------------
+
+// The sound-list baseline the builder last saved beside the bindings. Absent is
+// a distinct answer from zero -- zero is a checksum the module can really send
+// -- so this probes for the key rather than reading through a default (#397 D4).
+static AudioSoundListIdentity readSavedSoundListBaseline() {
+    AudioSoundListIdentity saved{};
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, true)) {
+        return saved;
+    }
+    if (prefs.isKey(CHIRP_SOUND_LIST_CHECKSUM_KEY)) {
+        saved.observed = true;
+        saved.checksum = prefs.getUInt(CHIRP_SOUND_LIST_CHECKSUM_KEY, 0);
+    }
+    prefs.end();
+    return saved;
+}
+
+// What the driver observed about the card at its last manifest read, published
+// where the web handlers can see it and compared against that baseline. Called
+// at boot and after every refresh, which is the comparison timing #397 D4 sets.
+static void publishCatalogObservation() {
+    AudioCatalogObservation observation{};
+    driver()->getCatalogCompleteness(observation.completeness);
+    uint32_t checksum = 0;
+    observation.identity.observed = driver()->getSoundListChecksum(&checksum);
+    observation.identity.checksum = checksum;
+    audioCatalogObservationPublish(observation);
+    audioBindingWarningEvaluate(readSavedSoundListBaseline(), observation.identity);
+}
+
+// Captured when a walk starts; the predicate below compares against it. A stop
+// is counted by the enqueue helpers rather than looked for at the queue head,
+// because a stop queued behind a play is exactly the case a head peek misses.
+static uint32_t s_catalogWalkStopCount = 0;
+
+static bool catalogWalkShouldStop(void* /*ctx*/) {
+    bool sleeping;
+    taskENTER_CRITICAL(&robotStateMux);
+    sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return audioCatalogInterruptFired(s_catalogWalkStopCount, sleeping);
+}
+
+static void runCatalogRefresh(CommandSource source) {
+    const uint32_t requestId = audioCatalogRefreshBegin();
+
+    // Shut the gate first, then wait for readers already inside: a
+    // GET /api/audio/catalog response walks the driver's arrays once per HTTP
+    // chunk, and refreshCatalog() deletes and replaces the entry allocation.
+    audioCatalogGateClose();
+    uint32_t waitedMs = 0;
+    while (audioCatalogReadersInside() > 0 && waitedMs < AUDIO_CATALOG_READER_DRAIN_MS) {
+        vTaskDelay(pdMS_TO_TICKS(AUDIO_CATALOG_READER_DRAIN_STEP_MS));
+        waitedMs += AUDIO_CATALOG_READER_DRAIN_STEP_MS;
+    }
+    if (audioCatalogReadersInside() > 0) {
+        audioCatalogGateOpen();
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
+        PA_LOG_WARN(TAG, "[%s] catalog refresh skipped: a catalog read is still in flight",
+                    commandSourceToString(source));
+        return;
+    }
+
+    if (!audioUartClaim()) {
+        audioCatalogGateOpen();
+        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
+        PA_LOG_INFO(TAG, "[%s] catalog refresh skipped: DomeLink using UART",
+                    commandSourceToString(source));
+        return;
+    }
+
+    s_catalogWalkStopCount = audioCatalogInterruptStopCount();
+    driver()->setCatalogInterrupt(catalogWalkShouldStop, nullptr);
+    // The bool says only "did it work"; the outcome below says why it did not,
+    // which is the difference between reporting failed and reporting interrupted.
+    (void)driver()->refreshCatalog();
+    const AudioCatalogRefreshOutcome outcome = driver()->lastCatalogRefreshOutcome();
+    driver()->setCatalogInterrupt(nullptr, nullptr);
+    audioUartRelease();
+    publishCatalogObservation();
+    audioCatalogGateOpen();
+
+    AudioCatalogRefreshState settled = AudioCatalogRefreshState::Failed;
+    const char* what = "FAILED";
+    switch (outcome) {
+        case AudioCatalogRefreshOutcome::Complete:
+            settled = AudioCatalogRefreshState::Completed;
+            what = "OK";
+            setAudioRxStatus(AUDIO_RX_AVAILABLE);
+            break;
+        case AudioCatalogRefreshOutcome::Interrupted:
+            settled = AudioCatalogRefreshState::Interrupted;
+            what = "interrupted";
+            // The module answered its manifest and the walk stopped because we
+            // asked it to, which says nothing about RX -- leave that status as
+            // whatever last actually measured it.
+            break;
+        case AudioCatalogRefreshOutcome::Failed:
+        default:
+            setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
+            break;
+    }
+    audioCatalogRefreshSettled(requestId, settled);
+    PA_LOG_INFO(TAG, "[%s] catalog refresh %s (request=%lu)", commandSourceToString(source), what,
+                (unsigned long)requestId);
+}
+
 // Play-state from unsolicited finish bytes. Does not take the dome UART (#396).
 static void pumpUnsolicitedRx() {
     driver()->serviceRx();
@@ -704,6 +831,11 @@ void audioTask(void* pvParameters) {
                 PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
                             ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
                             (unsigned)ms.totalTracks);
+                if (catalogCapable) {
+                    // begin() already read the manifest, so the boot half of
+                    // "compare at boot and refresh" happens here.
+                    publishCatalogObservation();
+                }
             }
         }
 
@@ -734,16 +866,7 @@ void audioTask(void* pvParameters) {
                 pumpUnsolicitedRx();
             }
             if (ca.refreshCatalog) {
-                bool acquired = audioUartClaim();
-                bool ok = acquired && driver()->refreshCatalog();
-                if (acquired) {
-                    audioUartRelease();
-                    setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
-                } else {
-                    setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
-                }
-                PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
-                            ok ? "OK" : (acquired ? "FAILED" : "skipped: DomeLink using UART"));
+                runCatalogRefresh(cmd.source);
             }
             if (ca.refreshBindings) {
                 bool ok = refreshChirpBindingCacheFromNvs();

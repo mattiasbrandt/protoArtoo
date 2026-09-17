@@ -26,6 +26,7 @@
 #include <cstring>
 
 #include "api_audio.h"
+#include "audio_catalog_gate.h"
 #include "audio_driver.h"
 #include "audio_test_hooks.h"  // g_test_audio_queue_ok/play_track/volume/stop/query/dollar -
                                 // shared with test_console_module.cpp's #221 remainder
@@ -94,6 +95,7 @@ void setSleeping(bool sleeping) {
 
 void setUp() {
     resetBackend();
+    audioCatalogGateResetForTest();
     robotState = RobotState{};
     ConfigSnapshot snap = {};
     configCacheApply(snap);
@@ -523,7 +525,14 @@ void test_catalog_get_reports_an_unready_catalog_as_empty_arrays() {
     g_test_audio_catalog_ready = false;
     callGet(handleAudioCatalogGet, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_EQUAL_STRING("{\"ready\":false,\"banks\":[],\"entries\":[]}", backend.sentBody);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"ready\":false,\"busy\":false,\"complete\":false,"
+        "\"limits\":{\"manifest_incomplete\":true,\"missing_names\":0,"
+        "\"entry_cap_reached\":false},"
+        "\"refresh\":{\"request\":0,\"active\":0,\"settled\":0,\"state\":\"none\"},"
+        "\"bindings\":{\"sound_list_changed\":false,\"sound_list_checked\":false},"
+        "\"banks\":[],\"entries\":[]}",
+        backend.sentBody);
 }
 
 void test_catalog_get_serializes_banks_and_entries() {
@@ -551,10 +560,110 @@ void test_catalog_get_serializes_banks_and_entries() {
     TEST_ASSERT_TRUE(backend.sentChunked);
     TEST_ASSERT_TRUE(bodyIsComplete());
     TEST_ASSERT_EQUAL_STRING(
-        "{\"ready\":true,"
+        "{\"ready\":true,\"busy\":false,\"complete\":false,"
+        "\"limits\":{\"manifest_incomplete\":true,\"missing_names\":0,"
+        "\"entry_cap_reached\":false},"
+        "\"refresh\":{\"request\":0,\"active\":0,\"settled\":0,\"state\":\"none\"},"
+        "\"bindings\":{\"sound_list_changed\":false,\"sound_list_checked\":false},"
         "\"banks\":[{\"bank\":1,\"page\":\"A\",\"dir\":\"01 Chatter\",\"count\":2}],"
         "\"entries\":[{\"bank\":1,\"page\":\"A\",\"index\":1,\"name\":\"beep\"}]}",
         backend.sentBody);
+}
+
+// The lease must be returned on every path, including the many-chunk one: a
+// leaked lease blocks every later refresh for good.
+//
+// That the lease SPANS the send is the other half of the same invariant, and
+// the host backend has no hook inside the chunk loop to sample it from -- a
+// hook added to the shared harness for this one assertion would be the harness
+// accommodating the code. What the tests here can prove is that the handler
+// consults the gate at all (the busy case below), and that it lets go
+// afterwards; the bracketing itself is one acquire and one release either side
+// of sendChunked() in handleAudioCatalogGet, and the overlap it protects
+// against is exercised at the gate in test_audio_catalog_gate.
+void test_catalog_get_returns_its_reader_lease() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    for (uint16_t i = 0; i < 16; ++i) {
+        g_test_audio_catalog_entries[i] = AudioCatalogEntry{};
+        g_test_audio_catalog_entries[i].bank = 1;
+        g_test_audio_catalog_entries[i].index = (uint16_t)(i + 1);
+        snprintf(g_test_audio_catalog_entries[i].name,
+                 sizeof(g_test_audio_catalog_entries[i].name), "entry-%u-padding-padding",
+                 (unsigned)i);
+    }
+    g_test_audio_catalog_entry_count = 16;
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+        0, audioCatalogReadersInside(),
+        "a lease the handler never returns blocks every later refresh for good");
+}
+
+// A reader refused while a refresh holds the gate has learned nothing about the
+// catalog. Saying "not ready" alone would read as "the catalog is gone" and
+// blank a listing that is still perfectly good.
+void test_catalog_get_reports_busy_rather_than_an_empty_catalog_during_a_refresh() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    audioCatalogGateClose();
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"busy\":true"));
+    TEST_ASSERT_TRUE_MESSAGE(bodyContains("\"ready\":false"),
+                             "nothing was read, so nothing may be claimed about the catalog");
+    audioCatalogGateOpen();
+}
+
+void test_catalog_get_reports_what_the_last_discovery_could_not_see() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioCatalogObservation observation{};
+    observation.completeness.manifestComplete = false;
+    observation.completeness.missingNameCount = 3;
+    observation.completeness.entryCapReached = true;
+    audioCatalogObservationPublish(observation);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"complete\":false"));
+    TEST_ASSERT_TRUE(bodyContains("\"manifest_incomplete\":true"));
+    TEST_ASSERT_TRUE(bodyContains("\"missing_names\":3"));
+    TEST_ASSERT_TRUE(bodyContains("\"entry_cap_reached\":true"));
+}
+
+void test_catalog_get_reports_a_complete_catalog_as_complete() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioCatalogObservation observation{};
+    observation.completeness.manifestComplete = true;
+    audioCatalogObservationPublish(observation);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"complete\":true"));
+}
+
+void test_catalog_get_carries_the_saved_bindings_warning() {
+    setCatalogSupported(true);
+    g_test_audio_catalog_ready = true;
+    AudioSoundListIdentity saved{};
+    saved.observed = true;
+    saved.checksum = 11u;
+    AudioSoundListIdentity observed{};
+    observed.observed = true;
+    observed.checksum = 22u;
+    audioBindingWarningEvaluate(saved, observed);
+
+    callGet(handleAudioCatalogGet, nullptr, 0);
+
+    TEST_ASSERT_TRUE(bodyContains("\"sound_list_changed\":true"));
+    TEST_ASSERT_TRUE(bodyContains("\"sound_list_checked\":true"));
 }
 
 // A body longer than one host chunk is where an offset-split bug would show.
@@ -622,6 +731,39 @@ void test_catalog_refresh_post_enqueues_on_a_catalog_backend() {
     callPost(handleAudioCatalogRefreshPost, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_refresh_catalog_calls);
+}
+
+// The answer names the request, so a caller can tell ITS refresh completing
+// from an older catalog that merely happens to still be ready.
+void test_catalog_refresh_post_names_the_request_it_accepted() {
+    setCatalogSupported(true);
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_TRUE(bodyContains("\"request\":1"));
+
+    resetBackend();
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_TRUE_MESSAGE(bodyContains("\"request\":2"),
+                             "a second ask is a second request, not the first one again");
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_UINT32(2u, ledger.requestId);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, ledger.settledId,
+                                     "accepting a command onto the queue settles nothing");
+}
+
+// Nothing will ever run a refresh the queue refused, so it settles here rather
+// than leaving a caller polling for a completion that cannot arrive.
+void test_a_refused_refresh_settles_as_blocked() {
+    setCatalogSupported(true);
+    g_test_audio_queue_ok = false;
+    callPost(handleAudioCatalogRefreshPost, nullptr, 0);
+    TEST_ASSERT_EQUAL_INT(503, backend.sentCode);
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_UINT32(1u, ledger.settledId);
+    TEST_ASSERT_EQUAL_INT(AudioCatalogRefreshState::Blocked, ledger.settledState);
 }
 
 void test_catalog_refresh_post_is_not_found_without_a_catalog_backend() {
@@ -726,11 +868,18 @@ int main() {
     RUN_TEST(test_catalog_get_is_not_found_without_a_catalog_backend);
     RUN_TEST(test_catalog_get_reports_an_unready_catalog_as_empty_arrays);
     RUN_TEST(test_catalog_get_serializes_banks_and_entries);
+    RUN_TEST(test_catalog_get_returns_its_reader_lease);
+    RUN_TEST(test_catalog_get_reports_busy_rather_than_an_empty_catalog_during_a_refresh);
+    RUN_TEST(test_catalog_get_reports_what_the_last_discovery_could_not_see);
+    RUN_TEST(test_catalog_get_reports_a_complete_catalog_as_complete);
+    RUN_TEST(test_catalog_get_carries_the_saved_bindings_warning);
     RUN_TEST(test_catalog_get_survives_a_body_spanning_many_chunks);
     RUN_TEST(test_catalog_get_filters_by_bank);
     RUN_TEST(test_catalog_get_rejects_a_bank_outside_one_to_six);
 
     RUN_TEST(test_catalog_refresh_post_enqueues_on_a_catalog_backend);
+    RUN_TEST(test_catalog_refresh_post_names_the_request_it_accepted);
+    RUN_TEST(test_a_refused_refresh_settles_as_blocked);
     RUN_TEST(test_catalog_refresh_post_is_not_found_without_a_catalog_backend);
 
     RUN_TEST(test_play_banked_post_queues_bank_page_index);

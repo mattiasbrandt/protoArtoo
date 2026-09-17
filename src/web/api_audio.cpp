@@ -52,6 +52,7 @@
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "audio_catalog_gate.h"
 #include "audio_task.h"
 #include "chirp_binding_keys.h"
 #include "config.h"
@@ -107,6 +108,28 @@ bool unpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut, uint16
     *bankOut = bank;
     *pageOut = page;
     *indexOut = index;
+    return true;
+}
+
+// The builder just saved an assignment against the card as it reads today, so
+// today's sound list becomes the baseline the change warning is measured from,
+// and whatever the warning was about is now the state they chose.
+//
+// Nothing observed means nothing to baseline: the previous baseline and any
+// warning already up both stand, because a manifest that could not be read is
+// not evidence that the card is unchanged (#397 D4). Returns false in that
+// case and on a failed write; neither fails the save, which is the builder's
+// assignment and landed either way.
+bool saveSoundListBaseline(Preferences& prefs) {
+    AudioCatalogObservation observation{};
+    audioCatalogObservationRead(&observation);
+    if (!observation.identity.observed) {
+        return false;
+    }
+    if (prefs.putUInt(CHIRP_SOUND_LIST_CHECKSUM_KEY, observation.identity.checksum) == 0) {
+        return false;
+    }
+    audioBindingWarningClear();
     return true;
 }
 
@@ -303,23 +326,82 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
 // -----------------------------------------------------------------------------
 // GET /api/audio/catalog producer state.
 //
-// The bank/entry arrays are borrowed from the driver's cache, exactly as the
-// async handler borrowed them: a refresh that lands mid-send would swap the
-// backing allocation underneath. That exposure predates this port and is not
-// widened by it - audio_chirp.cpp marks the cache empty before reallocating.
+// The bank/entry arrays are borrowed from the driver's cache and re-walked once
+// per HTTP chunk while the body goes out, so their lifetime has to outlast the
+// send. It is the catalog gate that makes that true (include/audio_catalog_gate.h):
+// the handler holds a reader lease across sendChunked(), and a refresh cannot
+// replace the allocation while one is out. The lease is a counter taken and
+// released under a short critical section of its own -- no lock is held while
+// the body is on the wire.
 // -----------------------------------------------------------------------------
 uint8_t s_catalogBankFilter = 0;
 bool s_catalogReady = false;
+bool s_catalogBusy = false;
 const AudioCatalogBank* s_catalogBanks = nullptr;
 uint8_t s_catalogBankCount = 0;
 const AudioCatalogEntry* s_catalogEntries = nullptr;
 uint16_t s_catalogEntryCount = 0;
+AudioCatalogObservation s_catalogObservation{};
+AudioCatalogRefreshLedger s_catalogLedger{};
+AudioBindingWarning s_catalogBindingWarning{};
+
+const char* catalogRefreshStateToken(AudioCatalogRefreshState state) {
+    switch (state) {
+        case AudioCatalogRefreshState::Queued:      return "queued";
+        case AudioCatalogRefreshState::Running:     return "running";
+        case AudioCatalogRefreshState::Completed:   return "completed";
+        case AudioCatalogRefreshState::Blocked:     return "blocked";
+        case AudioCatalogRefreshState::Failed:      return "failed";
+        case AudioCatalogRefreshState::Interrupted: return "interrupted";
+        case AudioCatalogRefreshState::None:
+        default:                                    return "none";
+    }
+}
 
 size_t fillCatalogResponse(uint8_t* out, size_t capacity, size_t offset) {
     JsonSliceWriter writer(out, capacity, offset);
 
     writer.append("{\"ready\":");
     writer.append(s_catalogReady ? "true" : "false");
+
+    // Busy is not "no catalog": a reader refused while a refresh holds the gate
+    // has learned nothing about the catalog, and a page that overwrote its rows
+    // on this answer would blank a listing that is still perfectly good.
+    writer.append(",\"busy\":");
+    writer.append(s_catalogBusy ? "true" : "false");
+
+    // What the last discovery could not see. A ready catalog is usable; these
+    // say whether it is also whole.
+    const AudioCatalogCompleteness& limits = s_catalogObservation.completeness;
+    const bool complete = s_catalogReady && limits.manifestComplete &&
+                          limits.missingNameCount == 0 && !limits.entryCapReached;
+    writer.append(",\"complete\":");
+    writer.append(complete ? "true" : "false");
+    writer.append(",\"limits\":{\"manifest_incomplete\":");
+    writer.append(limits.manifestComplete ? "false" : "true");
+    writer.append(",\"missing_names\":");
+    writer.appendUint(limits.missingNameCount);
+    writer.append(",\"entry_cap_reached\":");
+    writer.append(limits.entryCapReached ? "true" : "false");
+    writer.append('}');
+
+    // Which refresh the caller is watching, and how it ended. Queue acceptance
+    // and refresh completion are different events (#397 work item 10).
+    writer.append(",\"refresh\":{\"request\":");
+    writer.appendUint(s_catalogLedger.requestId);
+    writer.append(",\"active\":");
+    writer.appendUint(s_catalogLedger.activeId);
+    writer.append(",\"settled\":");
+    writer.appendUint(s_catalogLedger.settledId);
+    writer.append(",\"state\":");
+    writer.appendJsonString(catalogRefreshStateToken(s_catalogLedger.settledState));
+    writer.append('}');
+
+    writer.append(",\"bindings\":{\"sound_list_changed\":");
+    writer.append(s_catalogBindingWarning.soundListChanged ? "true" : "false");
+    writer.append(",\"sound_list_checked\":");
+    writer.append(s_catalogBindingWarning.soundListChecked ? "true" : "false");
+    writer.append('}');
 
     writer.append(",\"banks\":[");
     if (s_catalogReady && s_catalogBanks != nullptr) {
@@ -505,6 +587,10 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
         if (wroteTrack && chirpBindingKey != nullptr) {
             uint32_t chirpPacked = useBanked ? packChirpBinding(t, bank, page) : 0;
             wroteChirp = prefs.putUInt(chirpBindingKey, chirpPacked) > 0;
+            if (wroteChirp && !saveSoundListBaseline(prefs)) {
+                PA_LOG_DEBUG(TAG,
+                             "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");
+            }
         }
 
         if (wroteTrack && !wroteChirp) {
@@ -599,6 +685,10 @@ AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
             wroteBinding = prefs.putUInt(categoryNvsKey, packedBinding) > 0;
         } else if (wroteConfig && clearBinding) {
             wroteBinding = prefs.putUInt(categoryNvsKey, 0) > 0;
+        }
+        if (wroteBinding && (hasBankedParams || clearBinding) && !saveSoundListBaseline(prefs)) {
+            PA_LOG_DEBUG(TAG,
+                         "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");
         }
         if (wroteConfig && !wroteBinding) {
             // CHIRP write failed: restore robotState and re-save old config.
@@ -767,32 +857,71 @@ void handleAudioCatalogGet(WebRequest& req) {
     }
 
     s_catalogBankFilter = bankFilter;
-    s_catalogReady = audioIsCatalogReady();
     s_catalogBankCount = 0;
     s_catalogEntryCount = 0;
-    s_catalogBanks = audioGetCatalogBanks(&s_catalogBankCount);
-    s_catalogEntries = audioGetCatalogEntries(&s_catalogEntryCount);
+    s_catalogBanks = nullptr;
+    s_catalogEntries = nullptr;
+    s_catalogReady = false;
 
-    if (!req.sendChunked("application/json", fillCatalogResponse)) {
+    // The refresh ledger and the last observation are the gate's own state, not
+    // the driver's storage, so they are readable whether or not this reader
+    // gets in -- which is what lets a refused read still say "still running"
+    // instead of looking like a catalog that vanished.
+    audioCatalogObservationRead(&s_catalogObservation);
+    audioCatalogRefreshLedgerRead(&s_catalogLedger);
+    audioBindingWarningRead(&s_catalogBindingWarning);
+
+    // Everything below borrows the driver's arrays and is walked once per chunk
+    // as the body goes out, so the lease has to span the whole send.
+    const bool leased = audioCatalogReaderAcquire();
+    s_catalogBusy = !leased;
+    if (leased) {
+        s_catalogReady = audioIsCatalogReady();
+        s_catalogBanks = audioGetCatalogBanks(&s_catalogBankCount);
+        s_catalogEntries = audioGetCatalogEntries(&s_catalogEntryCount);
+    }
+
+    const bool sent = req.sendChunked("application/json", fillCatalogResponse);
+    if (leased) {
+        audioCatalogReaderRelease();
+    }
+    if (!sent) {
         webSendJsonError(req, 500, "response stream alloc failed");
         return;
     }
-    PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/catalog ready=%s entries=%u bank=%u",
-                 s_catalogReady ? "true" : "false", (unsigned)s_catalogEntryCount,
-                 (unsigned)bankFilter);
+    PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/catalog ready=%s busy=%s entries=%u bank=%u",
+                 s_catalogReady ? "true" : "false", s_catalogBusy ? "true" : "false",
+                 (unsigned)s_catalogEntryCount, (unsigned)bankFilter);
 }
 
+// Accepting a refresh onto the audio command queue is not the same event as
+// that refresh finishing, and this answer says only the first. The request
+// number it returns is what GET /api/audio/catalog's "refresh" block is
+// reporting on, so a caller can tell ITS refresh completing from an older
+// catalog that merely happens to still be ready (#397 work item 10).
 void handleAudioCatalogRefreshPost(WebRequest& req) {
     if (!audioCatalogSupported()) {
         webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
+    const uint32_t requestId = audioCatalogRefreshRequested();
     if (!audioQueueRefreshCatalog(SRC_WEB_API)) {
+        // Nothing will ever run this one, so settle it here rather than leaving
+        // a caller polling for a completion that cannot arrive.
+        audioCatalogRefreshSettled(requestId, AudioCatalogRefreshState::Blocked);
         webSendJsonError(req, 503, "audio command queue full");
         return;
     }
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued");
-    req.send(200, "application/json", "{\"ok\":true}");
+    char body[48];
+    const int needed = snprintf(body, sizeof(body), "{\"ok\":true,\"request\":%lu}",
+                                (unsigned long)requestId);
+    if (needed < 0 || (size_t)needed >= sizeof(body)) {
+        webSendJsonError(req, 500, "catalog refresh response overflow");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued request=%lu",
+                (unsigned long)requestId);
+    req.send(200, "application/json", body);
 }
 
 // Play a CHIRP entry by bank/page/index for quick validation from Sound UI.
