@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 4fcb7ca7..5dec88a1 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -34,7 +34,7 @@
+   // the controller last reported and says nothing about its age (CONTEXT.md
+   // "Health Signal", _Avoid_; #402).
+   const setStale = (stale) => {
+-    if (staleBanner) staleBanner.style.display = stale === true ? "" : "none";
++    if (staleBanner) staleBanner.style.display = "none";
+   };
+   // The Controls section head's subtitle: a state, in three words, read off the
+   // same frame the controls under it render from (ADR 0066). Web control and

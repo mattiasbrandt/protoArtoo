@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 4fcb7ca7..e053e91a 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -208,7 +208,7 @@
+   const renderHealth = (payload) => {
+     if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
+       Object.keys(INDICATOR_TEXT).forEach((id) => {
+-        setIndicator(id, "off", "Health model missing", "health_signals.js failed to load");
++        setIndicator(id, "warn", "Health model missing", "health_signals.js failed to load");
+       });
+       return;
+     }
