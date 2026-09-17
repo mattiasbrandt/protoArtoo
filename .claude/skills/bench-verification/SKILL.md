@@ -108,6 +108,66 @@ hardware it needs in the ticket's own words**, what it proves, and whether it
 already ran. Treat that inventory as a claim and spot-check the two or three
 load-bearing comments yourself before building on it.
 
+### Separate the decision tickets from the build tickets FIRST
+
+An epic's children are not all build work. On #175, **51 of 77 closed children
+were decision tickets** - titled as questions (*"How deep does the servo output
+model go?"*, *"Where does each operator surface live?"*). They built nothing and
+have no bench-verifiable criteria.
+
+Harvesting them produces two specific errors, both measured:
+
+- **A false "created by" attribution.** A gathering pass credited
+  `data/setup.html`'s split into Configuration and Maintenance to the decision
+  ticket that *decided* it - while the split had never been executed at all.
+- **A criterion that cannot be met.** A decision being recorded is not the same
+  as a decision being carried out. **Check the repo shows it before writing a
+  criterion that assumes it**, or the bench day inherits a check nobody can pass.
+
+So: list the children, split them by shape, and harvest only the tickets that
+shipped something.
+
+### Three controls that make a delegated harvest trustworthy
+
+A gathering subagent given *"work through the closed children"* will sample, and
+a sampled harvest reads exactly like a complete one. All three of these are
+cheap:
+
+1. **Pass the explicit list of ticket numbers.** Never let the agent derive its
+   own set - that is how a repo-wide sweep comes back dressed as an epic sweep.
+2. **Require per-ticket accounting.** Demand a heading for every ticket in the
+   list, printing *"none"* where there is nothing, plus a `TICKETS READ: <n>`
+   line at the end. Absence of a heading is then visible.
+3. **Cross-check the count against the tracker before using a word of it.** A
+   first pass on #175 reported 68 closed children where the tracker said 77;
+   that single number was the tell that the rest could not be trusted.
+
+### Class 1 is the class that gets under-harvested — judge it with a checklist
+
+It is the most valuable class and the most judgement-heavy, so an agent asked
+for it vaguely returns three or four entries for a whole epic. Give it the
+property list instead. **`mini_dom` has no CSS engine, no layout, no real
+pointer and no real event dispatch**, so a criterion asserting any of these is
+Class 1 by construction:
+
+- layout, position, spacing, overlap, z-order, what covers what
+- a control being visible, hidden, reachable, clickable, disabled, greyed, focusable
+- colour, contrast, treatment, icon, visual state
+- a count or a piece of text shown in a heading or a label
+- pointer, hover or drag behaviour
+- re-render and repaint behaviour: *"updates in place"*, *"never drops the
+  current selection"*, *"no full re-render while a control is under the pointer"*
+- what a person reads, is told, is announced or is warned about
+- real persistence across a real reboot, real NVS, real flash, real heap figures
+
+One worked example, so the bar is concrete. **C1a #347** closed with eleven
+criteria ticked, of which five are Class 1: *"counts in the headings"*, *"a
+displacement is announced before it happens"*, *"a Part with no Output reads
+`- not wired -`"*, *"no row is hidden, in any state"*, and *"per-frame updates
+touch only values; no full re-render occurs while a control is under the
+pointer"*. That last one is a performance property as much as a UX one, and
+needs a real pointer. A harvest that returns nothing for #347 has failed.
+
 Then harvest the four classes of point that actually matter:
 
 | Class | Where it comes from | Why it earns attention |
