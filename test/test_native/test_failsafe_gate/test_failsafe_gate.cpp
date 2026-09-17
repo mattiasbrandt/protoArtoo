@@ -21,7 +21,7 @@ extern portMUX_TYPE robotStateMux;
 // requestStatusBroadcastNow() counts in the native build
 // (src/native_test_stubs.cpp), which is how the tests below observe that a
 // failsafe edge asked the event stream to publish. It is read through the
-// header above rather than a local `extern`, so the declaration and every use
+// header above rather than re-declared here, so the declaration and every use
 // stay compiler-checked against one another. The counter is reset inside each
 // test rather than in setUp(): tearDown() clears every layer, and those clears
 // are edges too.
