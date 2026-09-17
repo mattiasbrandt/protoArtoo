@@ -46,6 +46,13 @@ static uint32_t s_lastNoRspDiagMs = 0;
 static constexpr uint32_t CHIRP_GNME_WAIT_MS = 450u;
 static constexpr uint32_t CHIRP_GNME_READLINE_MS = 120u;
 static constexpr uint8_t CHIRP_RX_DRAIN_YIELD_BYTES = 32u;
+// LIST is a whole console dump -- roughly 25 lines, ~1 s of it at 9600 baud --
+// and all of it has to be consumed here, so the budget is per-dump rather than
+// per-line. Two silent read windows in a row mean the module has stopped
+// sending: LIST is written in one pass, so there are no 100 ms gaps inside it.
+static constexpr uint32_t CHIRP_LIST_REPLY_MS = 1500u;
+static constexpr uint32_t CHIRP_LIST_READLINE_MS = 100u;
+static constexpr uint8_t CHIRP_LIST_QUIET_WINDOWS = 2u;
 
 // Production IO adapters
 static void chirpWriteByte(uint8_t b)    { softUartTxByte(b); }
@@ -276,6 +283,65 @@ bool AudioDriverChirp::ensureEntryStorage(uint16_t needed) {
     return m_catalog != nullptr;
 }
 
+// -----------------------------------------------------------------------------
+// queryBank1CountFromList()
+// Bank 1's sound count, read back from the module's LIST dump.
+//
+// GMAN's reply is queued (CHIRP serial_commands.cpp sendSerialResponse ->
+// serial_queue.cpp queueSerial2Message) into a ring of SERIAL2_QUEUE_SIZE 16
+// slots -- 15 usable -- that drops the OLDEST message when it is full.
+// handleGman() enqueues sdBankCount + 4 lines back to back, so a card with 13
+// Bank 2-6 directories enqueues 17 and loses the first two: MDAT and BANK:1.
+// BANK:1 is the only line that carries Bank 1's count, which is what the Sound
+// page shows as Total tracks.
+//
+// LIST is the way back in: handleList() writes it with serial.println() and
+// serial.printf() straight to the UART, bypassing that queue entirely, and its
+// Bank 1 section opens with "Sounds: <n>". Only that one line is read. LIST is
+// a console convenience rather than a second manifest protocol -- its headings
+// are free to change, and it prints neither Bank 1's directory nor its active
+// page -- so nothing else here is parsed out of it.
+// -----------------------------------------------------------------------------
+uint16_t AudioDriverChirp::queryBank1CountFromList() {
+    sendCommand("LIST");
+    cooperativeCatalogYield();
+
+    uint16_t count = 0;
+    uint8_t quietWindows = 0;
+    char line[96];
+    const uint32_t startMs = m_io.millisNow();
+
+    while ((uint32_t)(m_io.millisNow() - startMs) < CHIRP_LIST_REPLY_MS) {
+        uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_LIST_READLINE_MS);
+        cooperativeCatalogYield();
+        if (n == 0) {
+            // n == 0 is either an empty line -- handleList() opens with
+            // println("\n=== Bank 1 (Flash) ===\n"), so the first line of the
+            // dump is empty -- or a window in which nothing arrived. Only the
+            // second ends the dump, so check the reader rather than the line.
+            if (m_io.rxAvailable() == 0 && ++quietWindows >= CHIRP_LIST_QUIET_WINDOWS) {
+                break;
+            }
+            continue;
+        }
+        quietWindows = 0;
+
+        if (count == 0 && strncmp(line, "Sounds:", 7) == 0) {
+            char* end = nullptr;
+            unsigned long parsed = strtoul(line + 7, &end, 10);
+            if (end != line + 7 && parsed <= 65535u) {
+                count = (uint16_t)parsed;
+            }
+        }
+        // Keep reading past the count. The rest of the dump -- up to ten Bank 1
+        // names and one line per SD bank -- is already on its way, and leaving
+        // it in the buffer would spend the first GNME reply windows on it and
+        // cost those entries their names.
+    }
+
+    return count;
+}
+
 bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks) {
     if (!ensureBankStorage()) {
         return false;
@@ -298,6 +364,10 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
     uint16_t droppedBankLines = 0;
+    bool sawBank1 = false;
+    bool sawMend = false;
+    bool sawMdat = false;
+    uint16_t declaredBankCount = 0;  // MDAT's count: Bank 1 plus every SD bank
     // Value-initialize catalog banks to respect declared defaults (page = 'A', etc.)
     for (uint8_t i = 0; i < AUDIO_CATALOG_MAX_BANKS; ++i) {
         m_catalogBanks[i] = AudioCatalogBank{};
@@ -319,6 +389,20 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
         }
         gotValidGmanLine = true;
 
+        if (strncmp(line, "MDAT:", 5) == 0) {
+            // MDAT:<sdBankCount + 1> -- how many BANK rows handleGman() is
+            // about to send, counting Bank 1. It is also the FIRST line it
+            // enqueues, so it is the first one the module's reply queue drops:
+            // seeing it at all is what lets the completeness check below be
+            // more than a guess.
+            char* mdatEnd = nullptr;
+            unsigned long declared = strtoul(line + 5, &mdatEnd, 10);
+            if (mdatEnd != line + 5 && declared <= 255u) {
+                sawMdat = true;
+                declaredBankCount = (uint16_t)declared;
+            }
+        }
+
         if (strncmp(line, "BANK:", 5) == 0) {
             AudioCatalogBank bank{};
             if (parseBankLine(line, &bank)) {
@@ -329,11 +413,13 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
                 }
                 if (bank.bank == 1) {
                     bank1Count = bank.count;
+                    sawBank1 = true;
                 }
             }
         }
 
         if (strcmp(line, "MEND") == 0) {
+            sawMend = true;
             break;
         }
     }
@@ -356,6 +442,55 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
         PA_LOG_WARN(TAG,
                     "GMAN reported more banks/pages than supported (max=%u). Ignoring %u extra BANK lines.",
                     (unsigned)AUDIO_CATALOG_MAX_BANKS, (unsigned)droppedBankLines);
+    }
+
+    // The manifest answered, but without the one line that carries Bank 1's
+    // count -- the second casualty of the module's 15-slot reply queue on a
+    // card with 13 or more Bank 2-6 directories. Left alone, Total tracks
+    // reads 0 and the catalog walk never asks Bank 1 for a single name, on a
+    // card and a link that are both healthy. LIST can still answer, so ask it.
+    // Only on this path: it costs up to CHIRP_LIST_REPLY_MS, including at boot.
+    bool bank1Recovered = false;
+    if (!sawBank1) {
+        const uint16_t recovered = queryBank1CountFromList();
+        if (recovered > 0 && catalogBankCount < AUDIO_CATALOG_MAX_BANKS) {
+            // Insert at the front so the bank order stays 1,2,3... for the
+            // catalog walk and for the Sound page's bank tabs.
+            for (uint8_t i = catalogBankCount; i > 0; --i) {
+                m_catalogBanks[i] = m_catalogBanks[i - 1];
+            }
+            m_catalogBanks[0] = AudioCatalogBank{};
+            m_catalogBanks[0].bank = 1;
+            m_catalogBanks[0].count = recovered;
+            // dirName stays empty and page keeps its declared 'A' default as a
+            // WIRE PLACEHOLDER, not as an observation: LIST prints neither Bank
+            // 1's directory nor its active page, and handleGnme() and
+            // handlePlay() both ignore the page they are given when bank == 1
+            // (CHIRP serial_commands.cpp), so 'A' asks the right question of
+            // the module without claiming the card's active page is A. A
+            // GNME:1,%c,%u built from a NUL page would truncate at the page,
+            // which is why the placeholder is a letter. Never present it as an
+            // observed page; the empty dirName is what says "not observed".
+            ++catalogBankCount;
+            bank1Count = recovered;
+            bank1Recovered = true;
+        }
+    }
+
+    // Complete means every bank the module said it would send arrived. A
+    // recovered Bank 1 count is not that proof: MDAT went missing before
+    // BANK:1 did, so on a truncated reply there is no declared total left to
+    // check the rows against, and a dropped SD row would look identical.
+    m_manifestComplete = sawMend && sawMdat && (catalogBankCount == declaredBankCount);
+    if (!m_manifestComplete) {
+        PA_LOG_WARN(TAG,
+                    "GMAN manifest incomplete: %u BANK rows, MDAT %s, MEND %s, Bank 1 count %s. "
+                    "The module's 15-slot reply queue drops its oldest line, so a card with 13 or "
+                    "more Bank 2-6 directories loses MDAT and BANK:1.",
+                    (unsigned)catalogBankCount,
+                    sawMdat ? "seen" : "lost", sawMend ? "seen" : "lost",
+                    sawBank1 ? "from BANK:1"
+                             : (bank1Recovered ? "recovered from LIST" : "unavailable"));
     }
 
     m_catalogBankCount = catalogBankCount;
@@ -560,9 +695,10 @@ bool AudioDriverChirp::refreshCatalog() {
     }
 
     m_catalogReady = true;
-    PA_LOG_INFO(TAG, "catalog refresh complete: banks=%u entries=%u missing_names=%u",
+    PA_LOG_INFO(TAG, "catalog refresh done: banks=%u entries=%u missing_names=%u manifest=%s",
                 (unsigned)m_catalogBankCount, (unsigned)m_catalogCount,
-                (unsigned)missingNameCount);
+                (unsigned)missingNameCount,
+                m_manifestComplete ? "complete" : "INCOMPLETE");
     return true;
 }
 

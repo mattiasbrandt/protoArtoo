@@ -86,6 +86,12 @@ class AudioDriverChirp : public AudioDriver {
     bool m_linkOk = false;
     uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
     bool m_catalogReady = false;
+    // Whether the last GMAN reply accounted for every bank the module meant to
+    // send. False after a truncated manifest, including one this driver
+    // recovered Bank 1's count for: a recovered count is not proof that no
+    // other BANK row was dropped, and a catalog that cannot be shown complete
+    // must not be described as complete (#397 work item 1).
+    bool m_manifestComplete = false;
     uint16_t m_catalogCount = 0;
     uint16_t m_catalogCapacity = 0;  // allocated m_catalog entry count (right-sized)
     uint8_t m_catalogBankCount = 0;
@@ -98,6 +104,12 @@ class AudioDriverChirp : public AudioDriver {
     AudioCatalogBank* m_catalogBanks = nullptr;
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
+
+    // Bank 1's sound count read back from the module's LIST dump, or 0 when the
+    // dump did not carry it. Only called when GMAN arrived without its BANK:1
+    // line, which is what a card with 13 or more Bank 2-6 directories does to
+    // it; see loadManifestBanks().
+    uint16_t queryBank1CountFromList();
 
     // Split, lazy catalog allocation (heap-exhaustion fix). The bank summary
     // array (~2.3 KB) is needed by the boot/link path; the per-track entry array
