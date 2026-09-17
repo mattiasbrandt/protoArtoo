@@ -380,9 +380,17 @@ test("playing is not a health state: only the link keeps green", () => {
   assert.equal(rule("disabled")[1], "--text-dim");
 });
 
+// Read rather than executed, deliberately, and the one test here that is. The
+// permissive DOM stub's classList is a no-op, so which class name the renderer
+// writes is not observable through it, and the claim IS the class name: .active
+// is what .seg lights, .accent is the anatomy's primary act and this surface
+// had two of them. The stylesheet rule is asserted beside it so the class that
+// is written is a class that lights something.
 test("the two workspaces are one segmented control, not two primary acts", () => {
   const source = readData("sound.js");
   const html = readData("sound.html");
+  const css = readData("style.css");
+  assert.match(css, /\.seg > button\.active,/);
   assert.match(source, /button\.classList\.toggle\("active", active\)/);
   assert.doesNotMatch(source, /button\.classList\.toggle\("accent", active\)/);
   assert.match(html, /<div class="seg" role="group" aria-label="Sound workspace">/);

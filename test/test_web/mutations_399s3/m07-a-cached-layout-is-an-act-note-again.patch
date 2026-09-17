@@ -1,0 +1,13 @@
+diff --git i/data/dome_control.js w/data/dome_control.js
+index d3c08e37..12aac38d 100644
+--- i/data/dome_control.js
++++ w/data/dome_control.js
+@@ -425,7 +425,7 @@
+       if (source === 'live') {
+         // No banner for live
+       } else if (source === 'cached') {
+-        banner = '<div class="note dome-source-banner">Last known layout — drawn from what the dome said the last time it answered, not from the dome in front of you.</div>';
++        banner = '<div class="note note-act dome-source-banner">Last known layout — drawn from what the dome said the last time it answered, not from the dome in front of you.</div>';
+       } else if (source === 'unsupported') {
+         banner = '<div class="note note-act dome-source-banner">Unsupported layout schema — showing the built-in map instead.</div>';
+       } else if (source === 'stated-design') {

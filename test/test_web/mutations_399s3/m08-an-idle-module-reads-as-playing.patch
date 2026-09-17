@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index d37599b1..a50e690f 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -463,7 +463,7 @@
+           soundStateBadge.textContent = "Paused";
+           soundStateBadge.dataset.state = "idle";
+         } else {
+-          soundStateBadge.textContent = "Idle";
++          soundStateBadge.textContent = "Playing";
+           soundStateBadge.dataset.state = "idle";
+         }
+       }

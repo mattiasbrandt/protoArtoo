@@ -1,0 +1,13 @@
+diff --git i/data/dome_control.js w/data/dome_control.js
+index d3c08e37..d1a638af 100644
+--- i/data/dome_control.js
++++ w/data/dome_control.js
+@@ -179,7 +179,7 @@
+             // Show advisory for non-selectable panel
+             const advisory = buildAdvisory(elementId, model);
+             if (advisory) {
+-              showFeedback(advisory, 'warning');
++              showFeedback(advisory, 'warn');
+             }
+             return;
+           }
