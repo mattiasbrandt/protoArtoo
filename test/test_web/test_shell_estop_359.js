@@ -412,6 +412,67 @@ const apiFor = (calls, status) => ({
   gateControls: () => {},
 });
 
+// The shipped stream module, run on its own, so a test that is about who reads
+// a seeded frame first is not written against a hand-made model of the reader.
+// EventSource is stubbed inert: isSupported() asks whether the browser has the
+// constructor, and the Dashboard takes the polling path when it does not -- the
+// path where this defect cannot happen.
+const loadStatusStream = () => {
+  const context = {
+    window: {
+      addEventListener: () => {},
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    },
+    document: { visibilityState: "visible", addEventListener: () => {} },
+    EventSource: class {
+      constructor(url) {
+        this.url = url;
+      }
+      close() {}
+    },
+    Math,
+    JSON,
+    console: { warn: () => {} },
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(statusStreamSrc, context);
+  return context.window.PAStatusStream;
+};
+
+test("the Dashboard's Clear is live when the session's status already says latched", async () => {
+  // The Operator Shell does one /api/status read at boot and hands it to the
+  // stream (ADR 0048). A droid that is already stopped when the operator opens
+  // the Dashboard is that read's answer.
+  const stream = loadStatusStream();
+  stream.seed({ estop: true, sleepMode: false });
+
+  const calls = [];
+  const env = loadPageModule("app.js", {
+    overrides: { PAApi: apiFor(calls, { estop: true }), PAStatusStream: stream },
+  });
+  await env.settle();
+
+  assert.equal(
+    env.element("estop-clear").disabled,
+    false,
+    "the droid is latched and this is one of the two screens that can release it",
+  );
+
+  // And nothing was going to repair it later: the fetch that would have found
+  // the latch is skipped precisely because the session already holds a frame,
+  // and the droid pushes a status only when one changes -- which a stopped
+  // droid nobody is touching never does.
+  await env.runSection("app-initial-status", {});
+  await env.settle();
+  assert.deepEqual(
+    calls.filter((call) => call.path === "/api/status"),
+    [],
+    "the seeded frame is the only status this session gets until something moves",
+  );
+});
+
 test("the Dashboard keeps the release, and its button is dead while there is no latch to release", async () => {
   const calls = [];
   const status = { estop: false };
