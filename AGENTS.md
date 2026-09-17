@@ -515,7 +515,9 @@ locally when specifically investigating a static analysis issue.
 `python3 tools/slice_verify.py --base <base-ref>` with the `--fenced` pathspecs,
 `--mutations` patches and any waiver flag the coordinator's brief names, and paste
 its full block verbatim — provenance lines included — into the issue status
-comment. The coordinator re-runs the same command and compares blocks; divergence
+comment. The coordinator checks that block's provenance against the branch -
+cheap, and per slice - and runs the gate itself **once per wave, on the merged
+tree**, rather than re-running it behind every slice. Divergence at either point
 marks the slice unverified. Waiver flags are coordinator-granted only. Contract,
 evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 

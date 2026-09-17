@@ -10,9 +10,26 @@ counts as evidence.
 and the `--mutations` patches the coordinator's brief specifies) and paste its
 full block verbatim into the issue status comment — including the opening
 provenance lines (blob hashes of both verifier scripts, HEAD sha, DIRTY
-marker, merge-base, diff size, toolchain). The coordinator re-runs the same
-command on the branch and compares blocks, provenance lines included;
-divergence marks the slice unverified. The gate runs the native suite, the web
+marker, merge-base, diff size, toolchain). The coordinator does not re-run the
+gate behind every slice. Per slice it checks the block's **provenance against
+the branch** - HEAD sha against the tip, merge-base, diff size, both script
+blob hashes against the files on disk, the DIRTY marker against a clean tree,
+every changed web production JS file present in the mutation table, and no
+waiver ACK it did not grant - which takes seconds and catches a block that is
+not of this branch. The gate itself is run **once per wave, on the merged
+tree**, with the union of the wave's fences: that run is the anti-fabrication
+net, and it has to happen anyway because line numbers and stragglers move on
+merge. Divergence at either point marks the slice unverified, and a failed
+provenance check is the trigger to re-run the full gate on that one slice.
+
+**Why it changed (2026-09-17).** Across epic #175 the coordinator re-ran the
+full gate behind **18** accepted slices and found **0** divergences, while each
+re-run cost a second copy of the most expensive thing in the repo - the
+mutation stage alone runs the whole web suite once per patch, 28 times on a
+slice like #346 - serialised behind a machine-wide build lock. Every rejection
+that epic produced came from reading the production diff, which is step 0 of
+the critic protocol and costs nothing. The duplicate was buying a check that
+the merged-tree run already performs. The gate runs the native suite, the web
 suite (`make test-web` semantics: process exit code and `# cancelled` decide,
 never the TAP `# fail` line), the mutation stage, the firmware build, drift
 and diff checks, and fails on deleted test files or a shrinking test total. A

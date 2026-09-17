@@ -140,18 +140,39 @@ reporting passes that never ran. In the worker's worktree, personally:
    through an epic that claimed to consolidate polling. Both were invisible
    to a green gate.
 
-1. Re-run the slice gate with the worker's exact invocation, including any
-   `--fenced` pathspecs and the worker's `--mutations` patches from your
-   brief: `python3 tools/slice_verify.py --base <base> [--fenced ...]
-   [--mutations <patches>]`. Its block must match the worker's pasted block
-   character for character, provenance lines included - both script hashes
-   (`gate` and `mut`), HEAD sha, DIRTY marker, merge-base, diff size;
-   divergence marks the slice unverified (AGENTS.md "Worker slice gate"). The
-   gate runs both suites, the mutation stage, the build, and the diff checks;
-   `--json` on both runs makes the comparison diffable. Any waiver ACK in a
-   worker's block that you did not sanction - `--expect-gate-edit`,
-   `--expect-no-new-tests`, `--expect-no-mutations` - is an automatic
-   reject. Then every remaining acceptance check.
+1. **Check the block's provenance against the branch - do not re-run the gate
+   behind every slice.** Read the worker's pasted block and verify, in its
+   worktree, that it is a block *of this branch*:
+
+   ```
+   git rev-parse HEAD                      # == the block's HEAD sha
+   git merge-base <base> HEAD              # == the block's merge-base
+   git diff --shortstat <base>...HEAD      # == the block's diff size
+   git hash-object tools/slice_verify.py tools/mutation_verify.py
+                                           # == the block's gate and mut hashes
+   git status --porcelain                  # clean but for data/*version.json
+   ```
+
+   Then read the block itself: every changed web production JS file appears in
+   the mutation table, every row KILLED, and **no waiver ACK you did not grant**
+   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations` - an
+   unsanctioned ACK is an automatic reject). Any of those disagreeing is the
+   trigger to re-run the full gate on that one slice, with the worker's exact
+   invocation, and compare character for character.
+
+   **The gate itself you run ONCE PER WAVE, on the merged tree**, with the
+   union of the wave's fences - the run Integration already requires, because
+   line numbers and stragglers move on merge. That run is the anti-fabrication
+   net for every slice in the wave.
+
+   **Why, so nobody restores the duplicate.** Measured on #175, 2026-09-17: the
+   coordinator re-ran the full gate behind **18** accepted slices and found **0**
+   divergences. Each re-run was a second copy of the most expensive thing in the
+   repo - the mutation stage runs the whole web suite once per patch, 28 times
+   on a slice like #346 - serialised behind a machine-wide build lock, while
+   every rejection that epic produced came from step 0, which costs nothing.
+   Spend the iteration on the production diff, not on a second identical block.
+   Then every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
    against the pre-fix commit for bug fixes. Mutation coverage is proven by
    the gate re-run in step 1 - the mutation row passes only when every patch
@@ -202,8 +223,10 @@ reporting passes that never ran. In the worker's worktree, personally:
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
-review completes. After the final merge, re-run the merged-tree test suite
-and any epic-level acceptance sweeps - line numbers and stragglers move.
+review completes. After the final merge, **run the slice gate on the merged
+tree** with the union of the wave's fences, plus any epic-level acceptance
+sweeps - line numbers and stragglers move, and this is the run that stands
+behind every slice in the wave (critic protocol step 1).
 Nothing is pushed to origin until the operator explicitly says so.
 
 ## Device verification (serialized - coordinator + operator, never workers)
