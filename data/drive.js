@@ -117,7 +117,9 @@
   };
 
   const updatePresetHighlight = () => {
-    if (!presetButtons.length) return;
+    // No early-out on an empty button list. The section head reports the LIMIT
+    // the droid is on, which exists whether or not the three preset buttons
+    // rendered, and forEach over an empty list is already a no-op.
     const slow = parsePresetNumber(speedPresetSlow?.value);
     const normal = parsePresetNumber(speedPresetNormal?.value);
     const turbo = parsePresetNumber(speedPresetTurbo?.value);
