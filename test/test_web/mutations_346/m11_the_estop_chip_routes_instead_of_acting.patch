@@ -1,7 +1,8 @@
 diff --git a/data/shell.js b/data/shell.js
+index 9843a3d4..62c88912 100644
 --- a/data/shell.js
 +++ b/data/shell.js
-@@ -407,8 +407,7 @@
+@@ -549,8 +549,7 @@
      {
        id: "estop",
        label: "ESTOP",
@@ -10,4 +11,4 @@ diff --git a/data/shell.js b/data/shell.js
 +      page: "drive",
        affordance: "Cuts drive now",
        read: (status) =>
-         status.estop === true ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
+         estopIsLatched(status) ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
