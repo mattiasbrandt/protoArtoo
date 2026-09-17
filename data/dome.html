@@ -57,7 +57,7 @@
         <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
         via the ISD Go mobile app over Bluetooth. These settings only adjust the pulse width range.
       </div>
-      <form id="esc-form" class="form-grid dome-settings-grid mt-16">
+      <form id="esc-form" class="form-grid settings-grid mt-16">
         <label class="field">
           <span>Neutral Pulse (µs)</span>
           <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1"
@@ -89,7 +89,7 @@
     <div class="card">
       <h3>🎲 Random Dome Movement</h3>
       <div class="desc">Autonomous idle dome rotation when no RC or web command is active.</div>
-      <form id="rnd-dome-form" class="form-grid dome-settings-grid mt-16">
+      <form id="rnd-dome-form" class="form-grid settings-grid mt-16">
         <label class="field field-full">
           <span>Enable random movement</span>
           <input id="dome-rnd-enable" name="domeEscRndEnable" type="checkbox"

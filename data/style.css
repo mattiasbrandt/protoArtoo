@@ -891,7 +891,8 @@ body[data-page="servo"] .card > * + *,
 body[data-page="parts"] .card > * + *,
 body[data-page="parts"] .outputs-section > * + *,
 body[data-page="setup"] .card > * + *,
-body[data-page="setup"] #feature-form > * + * {
+body[data-page="setup"] #feature-form > * + *,
+body[data-page="drive"] .card > * + * {
   margin-top: var(--space-md);
 }
 
@@ -1115,60 +1116,47 @@ body[data-page="setup"] #feature-form > * + * {
   display: none;
 }
 
+/* Foot Drive's two consent acts, side by side and no wider than they need to
+   be. Two columns rather than the three that were here: the third was the
+   estop release, which sits on its own row further down, so the grid was
+   reserving a column for a button that had already left it. */
 .drive-safety-actions {
-  grid-template-columns: repeat(3, max-content);
+  grid-template-columns: repeat(2, max-content);
   justify-content: flex-start;
-  gap: 10px;
-}
-.drive-control-hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.drive-control-hints .status-pill {
-  margin: 0;
+  gap: var(--space-md);
 }
 
-/* Drive preset controls */
-.drive-preset-section {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
-  padding: 12px;
-}
+/* ---------------------------------------------------------------------------
+   Foot Drive (ADR 0066, #399 slice 3).
 
-.drive-preset-heading {
-  margin: 0 0 8px;
-  font-size: 1rem;
-  color: var(--silver-bright);
-}
+   Three speed presets a press apart, the two bars the controller is driving
+   the wheels with, what the wheel controller sends back, the pad, and the
+   settings the presets are cut from.
+   --------------------------------------------------------------------------- */
 
+/* The three presets, as one group of answers to one question. The plate they
+   sat on is gone: a bordered box inside a card is a plate inside a plate, and
+   the .sect head above them already says what they are. */
 .drive-preset-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 10px;
+  gap: var(--space-md);
 }
 
 .drive-preset-card {
   min-width: 0;
   width: 100%;
-  min-height: 96px;
-  padding: 14px 12px;
-}
-
-.drive-preset-card .rc-mode-icon {
-  font-size: 2.1rem;
-  margin-bottom: 6px;
+  min-height: 84px;
+  padding: var(--space-md);
 }
 
 .drive-preset-card .rc-mode-title {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
-.drive-preset-card .rc-mode-desc {
-  font-size: 0.82rem;
-}
-
+/* The chosen preset is lit by the interaction blue and by nothing else: it is
+   what the builder picked, so it takes the "you chose this" treatment and not
+   a signal colour (CONTEXT.md "Status Colour"). */
 .drive-preset-card.preset-active,
 .drive-preset-card.selected {
   border-color: var(--accent-bright);
@@ -1189,9 +1177,10 @@ body[data-page="setup"] #feature-form > * + * {
 
 .preset-limit-value {
   display: block;
-  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
-  margin-top: 4px;
+  margin-top: var(--space-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1200,11 +1189,16 @@ body[data-page="setup"] #feature-form > * + * {
   color: var(--accent-bright);
 }
 
-/* Live drive output vertical sliders */
+/* The two bars the controller is driving the wheels with. A readout, never a
+   control: nothing here is draggable, because nothing on this droid reads a
+   wheel back and a bar you could move would promise that it did. */
 .drive-sliders-row {
   display: flex;
-  justify-content: space-around;
-  gap: var(--space-xl);
+  /* Centred with a fixed gap, not space-around: two bars are one reading of
+     one droid, and spread to the far ends of an 880 px plate they read as two
+     unrelated instruments. Found in a browser at 1440 px. */
+  justify-content: center;
+  gap: var(--space-2xl);
   padding: var(--space-lg) 0 var(--space-sm);
 }
 
@@ -1212,15 +1206,18 @@ body[data-page="setup"] #feature-form > * + * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
 }
 
+/* 160px and 28px are drive.js's own VSLIDER_TRACK_H and the thumb it centres
+   in the track, so they are not free numbers the ladder may round: the script
+   positions the thumb in pixels against exactly this height. */
 .drive-vslider-track {
   position: relative;
   width: 28px;
   height: 160px;
   background: var(--surface-alt);
-  border-radius: 14px;
+  border-radius: var(--radius-pill);
 }
 
 .drive-vslider-fill {
@@ -1229,7 +1226,7 @@ body[data-page="setup"] #feature-form > * + * {
   right: 0;
   background: var(--accent-bright);
   opacity: 0.35;
-  border-radius: 14px;
+  border-radius: var(--radius-pill);
 }
 
 .drive-vslider-thumb {
@@ -1239,42 +1236,46 @@ body[data-page="setup"] #feature-form > * + * {
   width: 24px;
   height: 24px;
   background: var(--accent-bright);
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 45%, transparent);
   transition: top 0.08s ease;
 }
 
 .drive-vslider-label {
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .drive-vslider-value {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
   font-variant-numeric: tabular-nums;
   min-width: 3ch;
   text-align: center;
-  color: var(--silver-bright);
+  color: var(--text);
 }
 
-/* Safety card compact status strip */
-.safety-status-strip {
+/* The estop release, and the one line saying when it is not refused. It sits
+   apart from the two consent acts above it because it is a different question:
+   those say whether a browser may drive, this one un-latches a stop. */
+.recovery-row {
   display: flex;
-  gap: 16px;
+  align-items: center;
   flex-wrap: wrap;
-  margin-top: 10px;
-  font-size: 0.8rem;
-  color: var(--text-dim);
+  gap: var(--space-md);
 }
 
-/* Drive settings slider readout */
+/* The number a drive slider is sitting on, beside it rather than under it. */
 .drive-readout {
   text-align: center;
-  font-size: 0.88rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
   font-variant-numeric: tabular-nums;
-  color: var(--silver-bright);
+  color: var(--text);
 }
 
 .form-grid {
@@ -1282,24 +1283,29 @@ body[data-page="setup"] #feature-form > * + * {
   gap: 16px;
 }
 
-.dome-settings-grid {
+/* A settings form, in two columns of the width a setting actually needs. It was
+   .dome-settings-grid and is now shared with Foot Drive, which had the same
+   form running the full 880 px of the surface: a three-digit timeout in a
+   700 px box is a second spelling of the same layout, and one class is the
+   anatomy's answer to two. */
+.settings-grid {
   grid-template-columns: repeat(2, minmax(220px, 320px));
   justify-content: start;
-  column-gap: 20px;
+  column-gap: var(--space-xl);
 }
 
-.dome-settings-grid .field {
+.settings-grid .field {
   max-width: 280px;
 }
 
-.dome-settings-grid .field input.compact-number {
+.settings-grid .field input.compact-number {
   width: 170px;
   justify-self: start;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.dome-settings-grid .button-row {
+.settings-grid .button-row {
   grid-column: 1 / -1;
   max-width: 220px;
   grid-template-columns: minmax(0, 220px);
@@ -1312,10 +1318,12 @@ body[data-page="setup"] #feature-form > * + * {
   font-size: 0.9rem;
 }
 
-/* Drive page: shown when slow/normal/turbo limits collide. */
+/* Foot Drive: the one line explaining the three preset sliders, and the
+   refusal shown when two of them collide. Both span the whole form rather than
+   sitting in one of its two columns. */
+.preset-hint,
 .preset-distinct-hint {
   grid-column: 1 / -1;
-  margin-top: -6px;
 }
 
 .field input[type="number"],
@@ -1944,8 +1952,9 @@ input.input-narrow {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* D-Pad Drive Controls */
-/* D-pad: CSS grid guarantees the cross layout at all viewport widths */
+/* Foot Drive's pad. CSS grid guarantees the cross layout at every width: the
+   arrangement is half of what says which way each button goes, and the word
+   under each arrow is the other half. */
 .dpad-grid {
   display: grid;
   grid-template-areas:
@@ -1954,7 +1963,7 @@ input.input-narrow {
     ".   rev  .";
   grid-template-columns: 80px 80px 80px;
   grid-template-rows: 80px 80px 80px;
-  gap: 8px;
+  gap: var(--space-sm);
   margin: 0 auto;
   width: fit-content;
 }
@@ -1965,47 +1974,37 @@ input.input-narrow {
 .dpad-grid .dpad-btn:nth-child(4) { grid-area: rgt; }
 .dpad-grid .dpad-btn:nth-child(5) { grid-area: rev; }
 
-/* Legacy flex layout kept for backward compatibility */
-.dpad-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: 264px;
-  margin: 0 auto;
-}
-
-.dpad-row {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-
 .dpad-btn {
+  flex-direction: column;
+  gap: var(--space-2xs);
   width: 80px;
   height: 80px;
   min-width: 80px;
   min-height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  border-radius: 12px;
+  border-radius: var(--radius-xs);
   padding: 0;
 }
 
-.dpad-btn.stop {
-  width: 80px;
-  height: 80px;
-  font-size: 1.8rem;
-  background: var(--danger-bg);
-  border-color: var(--danger);
-  color: var(--danger);
+/* Bigger than the 16 px an icon takes in a line of text, because here it is the
+   thing being aimed at rather than a mark beside a word. */
+.dpad-icon {
+  width: 22px;
+  height: 22px;
 }
 
-.dpad-btn.stop:hover {
-  background: var(--danger);
-  color: var(--white);
+/* Forward and reverse are the horizontal arrow turned a quarter: the sprite
+   carries arrow-left and arrow-right and no vertical pair, and this stylesheet
+   already turns a chevron the same way for a disclosure. */
+.dpad-up { transform: rotate(-90deg); }
+.dpad-down { transform: rotate(90deg); }
+
+/* The centre. It wears the shared .btn danger face rather than a second
+   spelling of it, and it carries no icon at all: the one stop-circle in this
+   product is the Latching Estop in the topbar, and a second one on a pad would
+   read as a safety control that this is not. */
+.dpad-stop {
+  width: 80px;
+  height: 80px;
 }
 
 .dpad-btn:active,
@@ -2014,10 +2013,15 @@ input.input-narrow {
   box-shadow: var(--elev-inset);
 }
 
-/* Dome Slider with Center Marker */
+/* A slider and its track. The only sliders left on it are Foot Drive's four
+   speed limits, and the centre marker this rule used to draw came off with the
+   dome slider it was drawn for: those run 0 to 600 with no neutral in the
+   middle, so a lit tick at half scale marked a value that does not exist. The
+   dome's own bidirectional readout keeps its centre line, at
+   .dome-live-center, where there really is a stop in the middle. */
 .slider-container {
   position: relative;
-  padding: 0 12px;
+  padding: 0 var(--space-md);
 }
 
 .slider-container input[type="range"] {
@@ -2025,16 +2029,8 @@ input.input-narrow {
   height: 8px;
   -webkit-appearance: none;
   appearance: none;
-  background: linear-gradient(
-    to right,
-    var(--surface-alt) 0%,
-    var(--surface-alt) calc(50% - 2px),
-    var(--accent) calc(50% - 2px),
-    var(--accent) calc(50% + 2px),
-    var(--surface-alt) calc(50% + 2px),
-    var(--surface-alt) 100%
-  );
-  border-radius: 4px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
   outline: none;
   cursor: pointer;
 }
@@ -2045,7 +2041,7 @@ input.input-narrow {
   width: 24px;
   height: 24px;
   background: var(--accent-bright);
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   cursor: pointer;
   box-shadow: var(--elev-1);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -2060,7 +2056,7 @@ input.input-narrow {
   width: 24px;
   height: 24px;
   background: var(--accent-bright);
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   cursor: pointer;
   border: none;
   box-shadow: var(--elev-1);
