@@ -1,0 +1,15 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..5cefe5b4 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1629,8 +1629,8 @@
+     }
+     catalogStale = !outcome.ok && catalogReady;
+     renderCatalogLimits();
+-    showFeedback(catalogFeedback, outcome.text, outcome.ok);
+-    return outcome.ok;
++    showFeedback(catalogFeedback, CATALOG_REFRESH_OUTCOMES.completed.text, true);
++    return true;
+   };
+ 
+   const refreshCatalog = async () => {

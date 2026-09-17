@@ -1,0 +1,16 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..e721d48e 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1117,9 +1117,9 @@
+       if (catalogManifestIncomplete) {
+         sentences.push("Some banks did not arrive from the module, so this is not the whole card.");
+       }
+-      if (catalogMissingNames === 1) {
++      if (false) {
+         sentences.push("One sound came back without a name and is listed by its index.");
+-      } else if (catalogMissingNames > 1) {
++      } else if (false) {
+         sentences.push(`${catalogMissingNames} sounds came back without a name and are listed by their index.`);
+       }
+       if (catalogEntryCapReached) {
