@@ -156,8 +156,11 @@
         // before. Guided Setup, the first-run takeover that leaves the nav for
         // good (#351), is a different thing and is never in a group.
         "setup",
-        // Servos stays beside Parts. What becomes of it now that Parts carries
-        // the output-to-part mapping is proposed on #347 and not yet decided.
+        // Servos stays beside Parts, and stays a page. The question #347 said
+        // to put once the dial landed was put when it did (#364), and the
+        // operator answered it on 2026-09-16: take out its calibration form,
+        // keep the page. It now holds only what it is actually for -- driving
+        // an arm, driving an AUX servo -- and an end is set on Parts (#400).
         "servo",
         "parts",
         "wiring", // dormant until C2a (#350)
