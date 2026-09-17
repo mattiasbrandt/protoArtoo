@@ -26,21 +26,13 @@
       /* The wash over whatever failed. Not a token either: --scrim is the
          sleep overlay's.
 
-         Drawn over the work area and nowhere else (ADR 0048): this view
-         reports on the surface that failed, and the topbar, the nav rail and
-         the Status Plate are not that surface. The Latching Estop rides the
-         chrome, and a surface that cannot load is exactly the moment an
-         operator reaches for it (#359), so the wash stops at the edge of
-         #shell-content. Positioned against that element rather than against
-         the viewport, so it follows the work area at every breakpoint without
-         this file restating where the frame puts it - the rail becomes a strip
-         at 1100 px and the plate grows a second row at 900 px, and neither
-         number appears here.
-
-         min-height because the work area holds nothing at all during a first
-         surface load, which is when this panel is most often up: without it
-         the wash is a strip of padding and the panel hangs out of the bottom
-         of it. */
+         Over the work area and nowhere else (ADR 0048): the topbar and the
+         Status Plate are not the surface that failed, and the Latching Estop
+         rides them. Absolute against #shell-content rather than fixed to the
+         viewport, so it follows the work area at every breakpoint without
+         this file knowing any of them. min-height because the work area is
+         empty during a first surface load, which is when this is most often
+         up. */
       #page-recovery-backdrop {
         position: absolute;
         inset: 0;
@@ -56,28 +48,24 @@
         line-height: 1.5;
       }
       #page-recovery-backdrop.active { display: flex; }
-      /* Interaction blocking stops at the edge of the work area, for the
-         reason the wash does. A child combinator so the dim applies once
-         rather than once per nesting level - 0.4 four levels deep renders at
-         0.0256, which is the bug #117 fixed. */
+      /* The block stops at the same edge. A child combinator so the dim
+         applies once, not once per nesting level - 0.4 four deep renders at
+         0.0256, the bug #117 fixed. */
       body.recovery-active #shell-content > *:not(#page-recovery-backdrop) {
         opacity: 0.4;
         pointer-events: none;
       }
-      /* These two are position: fixed, so they escape the work area's
-         geometry and would cover a panel that no longer spans the viewport.
-         Suppressed outright rather than restacked. */
+      /* Both are position: fixed, so they escape the work area and would
+         cover a panel that no longer spans the viewport. */
       body.recovery-active .sleep-overlay,
       body.recovery-active .seq-modal {
         visibility: hidden;
         pointer-events: none;
       }
       /* An instrument plate: chamfer, seam, and .card's hair of light.
-
-         Sticky, because the work area is as tall as the surface that failed
-         and a panel sitting at the top of it can be a screen away from where
-         the operator has scrolled to. 76px is --topbar-h (60) plus --space-lg
-         (16), so it rides just under the topbar wherever they are. */
+         Sticky because the work area is as tall as the surface that failed,
+         so a panel pinned to its top can be a screen away from where the
+         operator scrolled to. 76px is --topbar-h (60) + --space-lg (16). */
       #page-recovery-backdrop .recovery-panel {
         position: sticky;
         top: 76px;
@@ -279,13 +267,11 @@
         // attempts, say so rather than sitting on a spinner.
         var TAKEOVER_DEADLINE_MS = 10000;
 
-        // Where the view is drawn: the Operator Shell's work area, so the
-        // chrome around it -- and the Latching Estop on it -- stays lit and
-        // stays pressable while a surface is failing to load (ADR 0048).
-        // page_bootstrap.js reads the same element when it has to create the
-        // backdrop itself, so both entrances land in the same place. A build
-        // with no work area has no frame to keep live either, and the body is
-        // the honest fallback rather than nowhere to render at all.
+        // The Operator Shell's work area, so the chrome around it -- and the
+        // Latching Estop on it -- stays pressable while a surface is failing
+        // to load (ADR 0048). page_bootstrap.js reads the same element, so
+        // both entrances land in the same place; a build with no work area has
+        // no frame to keep live, and the body is the honest fallback.
         function host() {
           return document.getElementById("shell-content") || document.body;
         }
