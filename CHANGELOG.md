@@ -26,6 +26,19 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **A Wiring screen that says what this droid will actually drive.** A new
+  destination beside Parts, and it is a reference: it writes nothing and no
+  button on it reaches the droid. It reads the loom off the Body Controller that
+  answered it - one wire per thing that board talks to, with the port it leaves
+  from - and then every part in one of four groups: driven, wired but switched
+  off, nothing drives it, and outputs with nothing on the end. Each group says
+  how many are in it, a group with nothing in it is not there at all, and every
+  row that is not driven says why on the row and where to go and fix it. A fresh
+  droid reads honestly empty: nothing driven, 42 parts waiting for an output,
+  five spare outputs. It draws signal and ground and never power distribution,
+  it says so on the page and on every picture, and the shared rail is explained
+  rather than drawn. Nothing on it is kept by hand, so it cannot go stale
+  against the firmware the way a wiring document does.
 - **Put the whole droid back to centre with one press.** Parts has a Back to
   centre button above the outputs table. Every output goes to the centre you
   recorded for it — its own centre, not a fixed middle — and the droid does them

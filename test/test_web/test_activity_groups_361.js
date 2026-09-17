@@ -227,8 +227,8 @@ test("each group offers the surfaces its rows name, in the order they are writte
   assert.deepEqual(members.perform, ["seq", "sound", "dome"]);
   assert.deepEqual(
     members.configure,
-    ["setup", "servo", "parts"],
-    "Droid Build and Wiring are declared and dormant, so only the three that exist are drawn -- Parts woke with #347",
+    ["setup", "servo", "parts", "wiring"],
+    "Droid Build is declared and dormant, so only the four that exist are drawn -- Parts woke with #347, Wiring with #350",
   );
   assert.deepEqual(members.maintain, ["wifi", "firmware"], "Maintenance is dormant until it exists");
 });
@@ -236,7 +236,7 @@ test("each group offers the surfaces its rows name, in the order they are writte
 test("a member row naming a surface this build does not have draws nothing at all", async () => {
   const env = await boot();
   const offered = env.document.querySelectorAll("[data-surface-link]").map((link) => link.dataset.surfaceLink);
-  ["droidbuild", "wiring", "maintenance"].forEach((page) => {
+  ["droidbuild", "maintenance"].forEach((page) => {
     assert.equal(
       offered.includes(page),
       false,
@@ -394,7 +394,7 @@ test("no other surface was renamed, and every name still comes from SURFACES", a
   const names = env.document.querySelectorAll("[data-surface-link]").map((link) => link.textContent.trim());
   assert.deepEqual(
     [...new Set(names)].sort(),
-    ["Dashboard", "Dome", "Firmware", "Foot Drive", "Parts", "RC Control", "Sequences", "Servos", "Setup", "Sound", "WiFi"],
-    "one rename, the other nine surfaces untouched, and Parts added under its own name (#347)",
+    ["Dashboard", "Dome", "Firmware", "Foot Drive", "Parts", "RC Control", "Sequences", "Servos", "Setup", "Sound", "WiFi", "Wiring"],
+    "one rename, the other nine surfaces untouched, Parts added under its own name (#347) and Wiring under its own (#350)",
   );
 });
