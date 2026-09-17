@@ -10,29 +10,21 @@
      because a bare markup tag has none and the controller sheds connections
      in the opening burst by design.
 
-     THE LITERALS BELOW ARE DELIBERATE, AND THEY ARE THE ONLY ONES IN THE
-     PRODUCT THAT ARE. Everywhere else a colour literal outside :root is a
-     defect and test_style_token_layer.js fails the build over it; here a
-     var(--...) would resolve to nothing in the one situation this file exists
-     for, which is /style.css having failed to load. So the anatomy's tokens
-     are copied in BY HAND and each one is named beside its value. That means
-     this file is the one place a palette decision has to be applied twice,
-     and the pair has already disagreed once: when data/style.css repointed
-     .indicator.info to the unlit dot (#399, ADR 0066), the copy here stayed
-     blue, so a loading page showed a grey dot where the stylesheet painted it
-     and a blue one where this file did. Move a token in data/style.css, move
-     it here.
-
-     A rule of this file, not a suggestion: nothing here reports a state in
-     blue. CONTEXT.md "Status Colour" gives the blue to interaction alone -
-     here that is the Retry now button and nothing else - and a page still
-     finding out reads unlit, exactly as the Status Plate's own freshness
-     state does.
+     THE LITERALS BELOW ARE DELIBERATE, and this is the only file in the
+     product where one is (docs/ui-copy-voice.md rule 21). A var() would
+     resolve to nothing in exactly the case this file exists for, so the
+     anatomy's tokens are copied in by hand and each is named beside its
+     value. Move a token in data/style.css, move it here: the pair has already
+     disagreed once, when .indicator.info was repointed to the unlit dot
+     (#399, ADR 0066) and the copy here stayed blue. Nothing here reports a
+     state in blue - the Retry now button is the only interaction on the panel
+     - and a page still finding out reads unlit, as the Status Plate's own
+     freshness state does. test_surface_anatomy_399s4.js holds the pair to it.
 
      Edit here only -- pages carry the directive, never a copy. -->
     <style>
-      /* The wash behind the panel. Not a token in the stylesheet either: it is
-         a scrim over whatever failed, and --scrim is the sleep overlay's. */
+      /* The wash over whatever failed. Not a token either: --scrim is the
+         sleep overlay's. */
       #page-recovery-backdrop {
         position: fixed;
         inset: 0;
@@ -41,8 +33,7 @@
         align-items: center;
         justify-content: center;
         z-index: 10001;
-        /* The anatomy's own stack: system faces only, because a page opened
-           with no stylesheet has no webfont either (ADR 0066). */
+        /* System faces only: a page with no stylesheet has no webfont. */
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
         font-size: 14px;                            /* --fs-body */
         line-height: 1.5;
@@ -57,8 +48,7 @@
         visibility: hidden;
         pointer-events: none;
       }
-      /* An instrument plate: the chamfer, the seam all round and the hair of
-         light along the top edge that .card draws with an inset shadow. */
+      /* An instrument plate: chamfer, seam, and .card's hair of light. */
       #page-recovery-backdrop .recovery-panel {
         background: rgb(16, 24, 34);                /* --surface  #101822 */
         border: 1px solid rgb(34, 48, 65);          /* --border   #223041 */
@@ -78,9 +68,8 @@
         gap: 8px;                                   /* --space-sm */
         margin-bottom: 8px;
       }
-      /* The controller said no, out loud. Amber is right here and nowhere else
-         on this panel: a refusal is something the builder can act on, and the
-         act is the Retry now button underneath. */
+      /* The controller said no. Amber, because a refusal is something the
+         builder can act on and the act is the button underneath. */
       #page-recovery-backdrop .recovery-refused-banner {
         display: flex;
         align-items: center;
@@ -93,12 +82,10 @@
         font-weight: 600;
         letter-spacing: 0.16em;
       }
-      /* A signal light, and the same four meanings data/style.css gives one:
-         unlit for a thing nobody has answered yet, amber for degraded, red for
-         stopped or refused. Unlit is the default, so "loading" - which is the
-         Status Plate's own "still finding out" - needs no class of its own to
-         read correctly, and .info is spelled out anyway because
-         page_bootstrap.js writes it. */
+      /* A signal light, with the meanings data/style.css gives one: unlit for
+         a thing nobody has answered yet, amber degraded, red stopped. Unlit is
+         the default, and .info is spelled out because page_bootstrap.js
+         writes it for the loading state. */
       #page-recovery-backdrop .indicator {
         width: 7px;
         height: 7px;
@@ -134,16 +121,15 @@
         font-size: 13px;                            /* --fs-cell */
         margin-top: 4px;                            /* --space-2xs */
       }
-      /* Which step the page is on. It was the blue, which made a state read in
-         the interaction accent; the step is a readout, so it takes the mono
-         voice and the dim ink every other readout on this product takes. */
+      /* Which step the page is on. A readout, so the mono voice and the dim
+         ink - it was the blue, which made a state read as an accent. */
       #page-recovery-backdrop .recovery-step {
         color: rgb(165, 179, 196);                  /* --text-dim */
         font-size: 11px;                            /* --fs-sect */
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
         margin: 12px 0 0;                           /* --space-md */
       }
-      /* A recessed well, the way every readout plate on this product is. */
+      /* A recessed well, as every readout plate on this product is. */
       #page-recovery-backdrop .recovery-countdown-panel {
         background: rgb(6, 10, 16);                 /* --well  #060a10 */
         border: 1px solid rgb(34, 48, 65);          /* --border */
@@ -155,10 +141,9 @@
         align-items: center;
         gap: 4px;                                   /* --space-2xs */
       }
-      /* The seconds to the next attempt. It was amber, and a countdown is not
-         a thing the builder can act on - the retry is already running, which
-         is the same argument #324 makes for the Status Plate's freshness line
-         never being amber. So it is a mono readout in the ink. */
+      /* The seconds to the next attempt: a mono readout in the ink. It was
+         amber, and there is nothing to act on - the retry is already running,
+         which is #324's argument for the plate's freshness line. */
       #page-recovery-backdrop .recovery-countdown-value {
         font-size: 28px;                            /* --fs-readout */
         font-weight: 600;
@@ -187,10 +172,8 @@
         margin-top: 16px;                           /* --space-lg */
         justify-content: center;
       }
-      /* The one thing on this panel the builder presses, so the one thing that
-         is blue. The same face .btn.accent wears: the accent as a ground, the
-         accent proper as the edge, a button's corner rather than a plate's,
-         and the 36 px floor. */
+      /* The one thing pressed here, so the one thing blue: .btn.accent's own
+         face, a button's corner rather than a plate's, and the 36 px floor. */
       #page-recovery-backdrop .btn {
         display: inline-flex;
         align-items: center;
@@ -213,7 +196,7 @@
         outline-offset: 2px;
       }
       /* Motion rather than colour: the page is working, which is not a state
-         anything on this droid is in. */
+         the droid is in. */
       #page-recovery-backdrop .recovery-spinner {
         display: inline-block;
         width: 10px;
