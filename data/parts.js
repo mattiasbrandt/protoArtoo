@@ -47,6 +47,12 @@
 // driven while they look and listen. The rules of that hold are with the code,
 // below the run - and the two bounds that end it are the firmware's, not this
 // page's.
+//
+// The whole droid goes back to centre on one press (#318, #365), and THE DROID
+// PACES IT. This page sends one request and holds no pace at all: the Sequence
+// Coordinator expands it into one Output at a time, no closer together than the
+// Cadence Floor, because a safe pace held here is one a hand-edited or imported
+// client could walk around. The rules are with the code, below the dial.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
