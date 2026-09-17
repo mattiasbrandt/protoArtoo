@@ -128,8 +128,24 @@ void tearDown() {
 // GET /api/audio
 // -----------------------------------------------------------------------------
 
+void test_audio_get_refuses_to_send_a_truncated_status_body() {
+    // Nothing the firmware carries today overruns the response buffer, so the
+    // guard is reached through the driver-name seam: an answer that cannot be
+    // completed must be an error, never JSON that stops mid-string under 200.
+    static char longName[400];
+    memset(longName, 'x', sizeof(longName) - 1);
+    longName[sizeof(longName) - 1] = '\0';
+    g_test_audio_driver_name = longName;
+    g_test_audio_capabilities = 0x3F;
+
+    callGet(handleAudioGet, nullptr, 0);
+
+    TEST_ASSERT_EQUAL_INT(500, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("audio status response overflow"));
+}
+
 void test_audio_get_reports_module_status() {
-    g_test_audio_driver_name = "CHIRP";
+    g_test_audio_driver_name = "CHIRP Audio Trigger";
     g_test_audio_capabilities = AudioDriver::AUDIO_CAP_STATUS_QUERY;
     robotState.audio_module_link_ok = true;
     robotState.audio_module_play_state = 1;
@@ -140,8 +156,9 @@ void test_audio_get_reports_module_status() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
-    TEST_ASSERT_TRUE(bodyContains("\"driver\":\"CHIRP\""));
+    TEST_ASSERT_TRUE(bodyContains("\"driver\":\"CHIRP Audio Trigger\""));
     TEST_ASSERT_TRUE(bodyContains("\"rx_status\":\"available\""));
+    TEST_ASSERT_EQUAL_CHAR('}', backend.sentBody[strlen(backend.sentBody) - 1]);
 }
 
 // -----------------------------------------------------------------------------
@@ -671,6 +688,7 @@ int main() {
     UNITY_BEGIN();
 
     RUN_TEST(test_audio_get_reports_module_status);
+    RUN_TEST(test_audio_get_refuses_to_send_a_truncated_status_body);
 
     RUN_TEST(test_audio_post_without_action_is_rejected);
     RUN_TEST(test_audio_post_unknown_action_is_rejected);

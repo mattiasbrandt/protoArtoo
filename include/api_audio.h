@@ -71,10 +71,28 @@ struct AudioStatusSnapshot {
 // thread-safe: yes (owns its own short critical section)
 void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 
+// The capacity GET /api/audio's body needs in the worst case, so the answer is
+// never a truncated document sent with HTTP 200 (#397 work item 8).
+//
+// Derivation: the template's 158 fixed bytes plus the longest value every field
+// can carry today -- the full product name "CHIRP Audio Trigger" (19),
+// capabilities 255 (3), "false" twice (10), "unknown" play state (7), "unknown"
+// device (8), three 65535 counters (15), the "blocked_by_dome_uart" token (20)
+// and its detail "Status unavailable: DomeLink is using UART" (41). That is 281
+// bytes plus the terminator, against the 256-byte buffer this endpoint used to
+// carry: the blocked-RX answer for a CHIRP lost its closing brace at 257 bytes
+// and, once the Driver row carried the full product name, was cut inside the
+// detail string at 271.
+//
+// 320 leaves room for one more field rather than sitting on the exact figure,
+// and formatAudioStatusJson() reports what it actually needed, so an overrun is
+// caught by its caller instead of being sent.
+static constexpr size_t AUDIO_STATUS_JSON_BUF_SIZE = 320;
+
 // Format JSON response for audio status endpoint.
 // Pure function - no globals, no Arduino, no FreeRTOS.
 // params: buf          - output buffer (must not be null)
-//         bufSize      - size of buf in bytes (256 bytes sufficient with RX diagnostics)
+//         bufSize      - size of buf in bytes (AUDIO_STATUS_JSON_BUF_SIZE always fits)
 //         driverName   - driver name string e.g. "DY-SV5W" (must not be null)
 //         capabilities - AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
 //         linkOk       - true if module responded to at least one UART query
@@ -86,12 +104,18 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 //         missingTrack - last track the module said was not on the card (0 if none)
 //         rxStatus     - compact RX diagnostic string (must not be null)
 //         rxDetail     - operator-readable RX diagnostic (must not be null)
+// returns: snprintf semantics -- the length the complete JSON needs, excluding
+//          the terminator. A value >= bufSize means buf holds a TRUNCATED and
+//          therefore invalid document, and the caller must not send it; the
+//          returned length is what the buffer should have been. Returning the
+//          requirement rather than a bare bool is what lets a test state the
+//          capacity this response needs instead of restating the template.
 // thread-safe: yes (pure function, no globals)
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
-                           uint8_t capabilities, bool linkOk, bool active,
-                           uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack, uint16_t missingTrack,
-                           const char* rxStatus, const char* rxDetail);
+int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
+                          uint8_t capabilities, bool linkOk, bool active,
+                          uint8_t playState, uint8_t device, uint16_t totalTracks,
+                          uint16_t currentTrack, uint16_t missingTrack,
+                          const char* rxStatus, const char* rxDetail);
 
 // Commit Steps (ADR 0036 criterion 1): the handler-owned post-apply side
 // effects for each of the three audio write Apply Cores, extracted so a
