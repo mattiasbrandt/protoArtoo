@@ -146,12 +146,23 @@ reporting passes that never ran. In the worker's worktree, personally:
 
    ```
    git rev-parse HEAD                      # == the block's HEAD sha
-   git merge-base <base> HEAD              # == the block's merge-base
+   git rev-parse <base>                    # == the block's merge-base TOO
    git diff --shortstat <base>...HEAD      # == the block's diff size
    git hash-object tools/slice_verify.py tools/mutation_verify.py
                                            # == the block's gate and mut hashes
    git status --porcelain                  # clean but for data/*version.json
    ```
+
+   **The second line is `rev-parse <base>`, not `merge-base <base> HEAD`, and
+   the difference is the whole check.** A slice whose base moved under it still
+   has an internally consistent block: its own `merge-base` and the one you
+   compute both name the OLD tip, so they agree and the slice passes while
+   being verified against a tree that no longer exists. Compare the block's
+   merge-base to the base's CURRENT tip. When they differ the slice is against
+   a stale base: the worker merges `<base>` and re-runs the gate on the merged
+   tree, and that block is the one you accept. This is not hypothetical - it
+   happened twice on #175 in one evening, and one of those slices was repairing
+   a defect introduced by the very merge it did not have.
 
    Then read the block itself: every changed web production JS file appears in
    the mutation table, every row KILLED, and **no waiver ACK you did not grant**

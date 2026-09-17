@@ -12,8 +12,12 @@ full block verbatim into the issue status comment — including the opening
 provenance lines (blob hashes of both verifier scripts, HEAD sha, DIRTY
 marker, merge-base, diff size, toolchain). The coordinator does not re-run the
 gate behind every slice. Per slice it checks the block's **provenance against
-the branch** - HEAD sha against the tip, merge-base, diff size, both script
-blob hashes against the files on disk, the DIRTY marker against a clean tree,
+the branch** - HEAD sha against the tip, **the block's merge-base against the
+base's current tip** (`git rev-parse <base>`, never `git merge-base <base>
+HEAD`: a slice whose base moved under it is internally consistent and would
+otherwise pass, verified against a tree that no longer exists), diff size, both
+script blob hashes against the files on disk, the DIRTY marker against a clean
+tree,
 every changed web production JS file present in the mutation table, and no
 waiver ACK it did not grant - which takes seconds and catches a block that is
 not of this branch. The gate itself is run **once per wave, on the merged
