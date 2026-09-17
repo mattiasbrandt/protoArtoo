@@ -128,6 +128,13 @@ class MiniElement {
     return this.childNodes.filter((node) => node.nodeType === 1);
   }
 
+  // A real node knows what it hangs off, and shipped code reads it: a
+  // Sequences dialog finds the surface it covers through its parent, to take
+  // that surface out of the tab order while it is open (#359).
+  get parentElement() {
+    return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null;
+  }
+
   get textContent() {
     return this.childNodes.map((node) => node.textContent).join("");
   }
@@ -219,6 +226,12 @@ class MiniElement {
 
   // Runs the handlers this element registered, the way a real interaction
   // would. Used by tests to drive a control rather than calling internals.
+  // Focus, tracked on the document the way a browser tracks it, so a test can
+  // ask what ended up focused rather than trust that something did.
+  focus() {
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
+
   fire(type, event = {}) {
     this.listeners.filter((l) => l.type === type).forEach(({ handler }) => handler(event));
   }
@@ -251,12 +264,18 @@ class MiniFragment {
 }
 
 // ---------------------------------------------------------------------------
-// Selectors: attribute presence, attribute equality, tag, id and class, and a
-// tag with one attribute. That is every selector the shipped shell and
-// bootstrap use; anything else throws rather than quietly matching nothing.
+// Selectors: attribute presence, attribute equality, tag, id and class, a tag
+// with one attribute, and a comma list of any of those. That is every selector
+// the shipped shell, bootstrap and surfaces use; anything else throws rather
+// than quietly matching nothing.
 // ---------------------------------------------------------------------------
 const matchesSelector = (element, selector) => {
   const trimmed = String(selector).trim();
+  // A comma list matches any of its members -- "button, input, [tabindex]" is
+  // what a dialog asks for when it looks for the first control to focus.
+  if (trimmed.includes(",")) {
+    return trimmed.split(",").some((part) => matchesSelector(element, part));
+  }
   let match = /^([a-zA-Z]*)\[([a-zA-Z-]+)(?:="([^"]*)")?\]$/.exec(trimmed);
   if (match) {
     const [, tag, attribute, value] = match;
@@ -365,6 +384,7 @@ export class MiniDocument {
     this.hidden = false;
     this.visibilityState = "visible";
     this.title = "";
+    this.activeElement = this.body;
   }
 
   createElement(tagName) {
