@@ -367,6 +367,13 @@ static ServoOutputTable servoOutputCache = {};
 // behaviour branches on it.
 static DroidBuildConfig droidBuildCache = {};
 
+// Guided Setup's record, live (#351).
+//
+// Filled by configLoadGuidedSetup() from main's boot path, like the Droid Build
+// above. Nothing on a real-time path reads it: it exists so a surface can tell a
+// category the builder DECLARED not fitted from one they were never asked about.
+static GuidedSetupConfig guidedSetupCache = {};
+
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
@@ -415,6 +422,29 @@ void configCacheReadDroidBuild(DroidBuildConfig* out) {
 void configCacheApplyDroidBuild(const DroidBuildConfig& build) {
     taskENTER_CRITICAL(&configCacheMux);
     droidBuildCache = build;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// Guided Setup's record, whole, for the same reason the Droid Build above is
+// handed out whole: its readers draw a screen rather than drive a motor.
+void configCacheReadGuidedSetup(GuidedSetupConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = guidedSetupCache;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// The one runtime write onto the guided Setup record, from the Commit Step. The
+// Apply Core has already refused a run state this image cannot name and dropped
+// any step key whose form it cannot accept, so there is nothing to check here
+// and, as with the Droid Build, nothing to merge: the record arrives whole.
+// Nothing on the boot path may call it - configLoadGuidedSetup() has read the
+// stored record there, and pushing over the top would undo it.
+void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided) {
+    taskENTER_CRITICAL(&configCacheMux);
+    guidedSetupCache = guided;
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
@@ -1044,6 +1074,20 @@ bool configSaveDroidBuild(Preferences& prefs) {
     DroidBuildConfig build = {};
     configCacheReadDroidBuild(&build);
     return configSerializeDroidBuild(build, writer);
+}
+
+void configLoadGuidedSetup(Preferences& prefs, GuidedSetupRepairReport* report) {
+    PrefsReader reader(prefs);
+    // Straight into the live copy, like the Droid Build above: it runs once from
+    // setup(), before anything that reads it exists.
+    configDeserializeGuidedSetup(reader, &guidedSetupCache, report);
+}
+
+bool configSaveGuidedSetup(Preferences& prefs) {
+    PrefsWriter writer(prefs);
+    GuidedSetupConfig guided = {};
+    configCacheReadGuidedSetup(&guided);
+    return configSerializeGuidedSetup(guided, writer);
 }
 
 bool configSaveServoOutputs(Preferences& prefs) {
