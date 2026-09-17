@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+index ca9d5200..50b5c085 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1118,7 +1118,7 @@
+     // keeping them beside "the droid could not report its status" is the whole
+     // of "values, not exceptions" under a failure: a plate that blanks or
+     // resets cannot be told from one that has stopped updating (#324).
+-    if (!isVerifiedStatus(payload)) {
++    if (!payload || typeof payload !== "object") {
+       notePlateRefreshFailed("frame");
+       return;
+     }

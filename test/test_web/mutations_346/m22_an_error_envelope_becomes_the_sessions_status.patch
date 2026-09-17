@@ -1,0 +1,13 @@
+diff --git a/data/status_stream.js b/data/status_stream.js
+index 4cb0a2df..9976adc8 100644
+--- a/data/status_stream.js
++++ b/data/status_stream.js
+@@ -57,7 +57,7 @@
+   // keeps it out of the session's cache, where it would otherwise be handed to
+   // every page that asks later and replayed on every reconnect (#346).
+   const isStatusFrame = (payload) =>
+-    !!payload && typeof payload === "object" && payload.ok !== false;
++    !!payload && typeof payload === "object";
+ 
+   // The session's status, replaced. Returns whether the frame was taken, so a
+   // caller can tell "the droid reported" from "the droid answered and could

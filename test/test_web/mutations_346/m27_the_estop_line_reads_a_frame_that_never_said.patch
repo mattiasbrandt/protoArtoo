@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+index ca9d5200..c5d2fbf9 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -981,7 +981,7 @@
+   // same rule #402 settled for the Dashboard's health signals). The line keeps
+   // what the droid last said instead, which is a fact rather than a guess.
+   const applyEstopStatus = (payload) => {
+-    if (!hasKey(payload, "estop")) return;
++    if (!payload || typeof payload !== "object") return;
+     estopLatched = !!payload.estop;
+     renderEstopState();
+   };

@@ -1,11 +1,12 @@
 diff --git a/data/shell.js b/data/shell.js
+index ca9d5200..f5cb8f26 100644
 --- a/data/shell.js
 +++ b/data/shell.js
-@@ -1163,6 +1163,7 @@
-       if (eventType === "status") notePlateStatus(payload);
-       else if (eventType === "stream_error") {
-         plateStreamBroken = true;
-+        paintPlate(null);
-         renderPlateFreshness();
-       }
-     });
+@@ -909,6 +909,7 @@
+   // resync read, and a frame that is not one a reading may be made from.
+   const notePlateRefreshFailed = (reason) => {
+     plateNotHearing = reason;
++    paintPlate(null);
+     renderPlateFreshness();
+   };
+ 
