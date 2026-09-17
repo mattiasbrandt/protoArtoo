@@ -337,9 +337,12 @@ test("a question that has not been on screen renders hollow, and the one that ha
   const env = boot();
   await env.runSection();
 
+  // Filled and hollow, both out of Geometric Shapes: a check mark is a
+  // pictograph and an operator surface carries none (ADR 0066,
+  // tools/check_surface_anatomy.py).
   const opening = env.chips();
   assert.equal(opening.length, 9, "the rail draws every step in the run");
-  assert.equal(opening[0].tick, "✓", "the question on screen has been asked");
+  assert.equal(opening[0].tick, "●", "the question on screen has been asked");
   assert.equal(opening[1].tick, null, "the board is not a question, so it carries no mark at all");
   assert.deepEqual(
     opening.slice(2).map((chip) => chip.tick),
@@ -353,7 +356,7 @@ test("a question that has not been on screen renders hollow, and the one that ha
 
   env.click("wizard-next");
   env.click("wizard-next");
-  assert.equal(env.chips()[2].tick, "✓", "a question that has now been on screen is ticked");
+  assert.equal(env.chips()[2].tick, "●", "a question that has now been on screen is filled in");
   assert.equal(env.chips()[3].tick, "○", "the one after it has not");
 });
 

@@ -49,8 +49,8 @@ the patch releases, whose notes live on their own GitHub Release.
   The run remembers which questions it actually put in front of you. Every
   component starts switched off, so an untouched question reads "not fitted" —
   a statement about your droid you never made. A question you have not been
-  asked yet is drawn with a hollow mark instead of a tick, and what it shows is
-  labelled as the default rather than as your answer.
+  asked yet is drawn with a hollow mark rather than a filled one, and what it
+  shows is labelled as the default rather than as your answer.
 
   Setup is a one-off. Reaching the last question finishes the run, and so does
   pressing Stop here at any point: the droid keeps whatever you answered, and

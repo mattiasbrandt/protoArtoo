@@ -2179,9 +2179,17 @@ const BOARD_LABELS = {
         // Hollow until the question has actually been on screen. The answer
         // below still shows either way, because the default is a real value -
         // it has just not been looked at.
+        //
+        // One shape in two states, and both out of Geometric Shapes on purpose:
+        // a check mark is U+2713, inside the Dingbats block, and an operator
+        // surface carries no pictograph (ADR 0066, and
+        // tools/check_surface_anatomy.py enforces it). The project's own SVG
+        // sprite has no tick to borrow either, and adding one means editing
+        // data/shell.js. Filled against hollow says the same thing, restyles
+        // with the text around it, and needs nobody's permission.
         const tick = document.createElement("span");
         tick.className = seen ? "wizard-tick" : "wizard-tick is-unseen";
-        tick.textContent = seen ? "✓" : "○";
+        tick.textContent = seen ? "●" : "○";
         label.appendChild(tick);
       }
       const title = document.createElement("span");
@@ -2213,7 +2221,7 @@ const BOARD_LABELS = {
     // has been on screen, because then it explains nothing.
     show(legend, anyUnseen);
     if (legend && anyUnseen) {
-      legend.textContent = "A hollow mark is a question you have not been asked yet — what it shows is the default, not your answer.";
+      legend.textContent = "A filled mark is an answer you gave. A hollow one is a question you have not been asked yet, showing the default.";
     }
   };
 
