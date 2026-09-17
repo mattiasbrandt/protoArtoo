@@ -1097,6 +1097,34 @@ test("a missing safety field reads as unknown, and never as clear", async () => 
   assert.notEqual(env.freshnessState(), "live");
 });
 
+test("an error envelope never becomes the session's status", async () => {
+  // Refused by the transport rather than by each reader, because the session's
+  // cache is what every page that asks later is answered from -- pages this
+  // shell cannot reach into. A reader-side guard alone would protect the plate
+  // and leave the envelope sitting in the cache, to be handed to the Dashboard
+  // and replayed on every reconnect for the rest of the session.
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true });
+  await sleep(5);
+
+  env.pushRaw(OVERFLOW_ENVELOPE);
+  await sleep(5);
+
+  const cached = env.window.PAStatusStream.getLastStatus();
+  assert.equal(cached.estop, true, "the session still holds the last frame the droid built");
+  assert.equal(cached.ok, undefined, "and not the envelope saying it could not build one");
+
+  const handed = [];
+  env.window.PAStatusStream.subscribe((eventType, payload) => {
+    if (eventType === "status") handed.push(payload);
+  });
+  assert.deepEqual(
+    handed.map((frame) => frame.estop),
+    [true],
+    "and a reader that subscribes afterwards is answered from it, not from the envelope",
+  );
+});
+
 test("the estop's own state line refuses a frame that never mentioned the estop", async () => {
   // The Latching Estop reads the same stream and had the same hole:
   // `!!payload.estop` on a frame with no estop key is "Estop: clear" beside a
@@ -1108,9 +1136,18 @@ test("the estop's own state line refuses a frame that never mentioned the estop"
   await sleep(5);
   assert.equal(stateLine(), "Estop: latched");
 
+  // Not the envelope: the transport refuses that one before any reader sees
+  // it, so an envelope alone would leave this guard unexercised. This frame
+  // parses, carries no `ok:false`, and simply does not mention the estop.
+  const silent = { ...HEALTHY };
+  delete silent.estop;
+  env.pushRaw(JSON.stringify(silent));
+  await sleep(5);
+  assert.equal(stateLine(), "Estop: latched", "a frame that says nothing does not release a latch");
+
   env.pushRaw(OVERFLOW_ENVELOPE);
   await sleep(5);
-  assert.equal(stateLine(), "Estop: latched", "an envelope that says nothing does not release a latch");
+  assert.equal(stateLine(), "Estop: latched", "and neither does an envelope");
 });
 
 test("a replayed cache is not confirmed connectivity", async () => {
