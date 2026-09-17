@@ -1,17 +1,30 @@
 diff --git i/data/app.js w/data/app.js
-index 562fc93a..7461f00d 100644
+index 562fc93a..3d43edc5 100644
 --- i/data/app.js
 +++ w/data/app.js
-@@ -1501,11 +1501,10 @@
-   // when a cached frame exists, so nothing repaired it until the droid emitted
-   // a status, which a quiet latched droid never does. The shell's own copy
-   // sends the operator here to clear it.
-+  startPageLoad();
-   setEstopUi(false);
-   setSleepUi(false);
+@@ -1492,18 +1492,6 @@
+     );
+   };
  
--  startPageLoad();
+-  // The state to paint before the droid has said anything. It has to be
+-  // written BEFORE the subscribe below: PAStatusStream hands a new subscriber
+-  // the frame it already holds, synchronously, and the Operator Shell seeds
+-  // that frame from its own boot read (ADR 0048). Running these two after the
+-  // subscription overwrote a seeded LATCHED with "clear", which disabled Clear
+-  // on a droid that was stopped -- and loadInitialStatus() skips its fetch
+-  // when a cached frame exists, so nothing repaired it until the droid emitted
+-  // a status, which a quiet latched droid never does. The shell's own copy
+-  // sends the operator here to clear it.
+-  setEstopUi(false);
+-  setSleepUi(false);
 -
+   startPageLoad();
+ 
    if (window.PAStatusStream?.isSupported()) {
-     window.PAStatusStream.subscribe((eventType, payload) => {
-       if (eventType === "status") {
+@@ -1544,4 +1532,6 @@
+       fallbackPoll.stop();
+     });
+   }
++  setEstopUi(false);
++  setSleepUi(false);
+ })();
