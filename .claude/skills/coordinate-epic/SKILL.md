@@ -329,12 +329,48 @@ on the hash, and a clean slice reads as tampered.
 When another coordinator works the same repo, agree these and record them on
 your epic so they outlive the session: the build lock above; a post on your
 epic before either side touches shared build configuration (`platformio.ini`,
-framework envelope, budgets); announced device sessions; and each epic's
+framework envelope, budgets); announced device sessions; who owns the palace
+writer lease, since a writable `mempalace serve` or a direct `mine` takes
+writes from everyone else for its lifetime; and each epic's
 integration branch left where the other's baseline expects it, with the
 measured merge surface recorded on the ticket that owns it.
 
 After any window where the other side built unlocked, verify rather than
 assume: clean-rebuild your base and symbol-check every merged slice.
+
+## MemPalace under parallel workers (one writer, machine-wide)
+
+The user-level daemon holds the palace's single writer lease for its whole
+lifetime, and the lease is palace-wide, so it binds every worktree: a worker's
+`add_drawer`, `update_drawer`, `diary_write` or `kg_add` is refused with
+-32001 "Peer MCP writer active". Reads and the logstream tools work normally.
+Verified 2026-09-17 - this is the steady state, not an incident.
+
+- **Never budget on a worker persisting anything.** What must survive the epic
+  goes where AGENTS.md already puts the durable record - the sub-issue, its
+  pinned comment, `CONTEXT.md`, `docs/adr/` - and that is your job at
+  acceptance.
+- **A refused write is the AGENTS.md "skip it and say so once" clause**,
+  extended from a failing `mempalace_status` to a refused write. A worker that
+  retries it, shells out to the CLI, or works around it has left its slice.
+- **Hook auto-save still works** - it routes through the daemon's queue, not
+  the worker's MCP server. It needs nothing from you.
+- **Never run `mempalace mine`, `sweep` or `repair` by hand during an epic.**
+  A direct writer collides with the lease, and `repair --archive-existing` is
+  what leaves `palace.pre-rebuild-*` behind; this palace carries three.
+
+**Worker sessions are not free RAM.** No index is shared: a session that runs
+one vector search cold-loads its own copy - 1.4 GB measured here - and holds it
+for `MEMPALACE_MCP_IDLE_HOURS`, default 8. Ten panes plus their node processes
+is how this box OOM-killed a Claude session at 8.3 GB on 2026-09-11. Closing a
+slice's pane promptly (see Integration) returns that memory.
+
+**Worktree wings fragment memory.** Auto-save derives the wing from cwd and
+only folds a worktree into its project for `<project>/.claude/worktrees/<wt>`;
+`epic_worktree.py` makes `../wt-<issue>`, a sibling, so every worker mints
+`wing_wt_<issue>`. Measured 2026-09-17: 65 such wings, 220 drawers, invisible
+to the `--wing protoArtoo` search this repo's protocol prescribes. So search
+unscoped, and never read a wing-scoped miss as "no prior art".
 
 ## Reporting
 
