@@ -141,6 +141,15 @@ enum ServoCommandType : uint8_t {
     // nudge or hold on it ends. 255 releases ARM1 and ARM2, as the other
     // broadcasts do.
     SERVO_CMD_RELEASE,
+    // A Part run through its travel and back (ADR 0063, #352): out to the
+    // recorded open end, across to the recorded close end, and back to the
+    // width it started from, run to completion by ServoTask itself. The same
+    // three-leg motion as a nudge over a different pair -- it carries no
+    // target either, because the ends come off the Output's row
+    // (include/servo_travel.h) and no source may name a width for it. Refused
+    // on an Output nobody has measured, which has no recorded travel to run.
+    // One output per command; 255 is refused.
+    SERVO_CMD_TRAVEL,
 };
 
 // Why an output has no pulse on it (#364). Read only while

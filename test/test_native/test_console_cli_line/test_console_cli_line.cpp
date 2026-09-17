@@ -186,7 +186,8 @@ void tearDown() {}
 // shape, taking action back to 120 and status to 25; #363 added
 // servo.action.nudge, taking action to 121; #364 added servo.action.hold and
 // servo.action.release, taking action to 123; #365 added
-// servo.action.centre-all, taking action to 124.
+// servo.action.centre-all, taking action to 124; #352 added
+// servo.action.travel, taking action to 125.
 // -----------------------------------------------------------------------------
 
 void test_operations_type_action_filters_through_the_real_adapter_path() {
@@ -195,8 +196,8 @@ void test_operations_type_action_filters_through_the_real_adapter_path() {
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(124, g_itemCount,
-        "operations type=action must list exactly the 124 action entries when "
+    TEST_ASSERT_EQUAL_INT_MESSAGE(125, g_itemCount,
+        "operations type=action must list exactly the 125 action entries when "
         "typed as one line through the real embedded-cli parser and "
         "consoleBuildCommandLine() - not when the module is called directly "
         "with a hand-built \"operations type=action\" string");
@@ -233,7 +234,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(200, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all
+    TEST_ASSERT_EQUAL_INT(201, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel
 }
 
 // help <op> must still work through the same real path (the reconstruction

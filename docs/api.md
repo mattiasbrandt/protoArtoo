@@ -475,7 +475,7 @@ Queues servo command.
 
 - Body fields:
 - `arm`: `arm1|arm2|aux1|aux2|aux3|both`
-- `action`: `open|close|stop|position|nudge|hold|release`
+- `action`: `open|close|stop|position|nudge|travel|hold|release`
 - `positionUs`: required when `action=position` or `action=hold`; range `500..2500`
 - `action=nudge` (Find by Moving, ADR 0050): a small twitch about wherever
   the output is right now — up 100 µs, down 100 µs, and back to where it
@@ -487,6 +487,19 @@ Queues servo command.
   pulse on it, or sitting outside that band, is not nudged, and an estop ends
   a nudge where it is. `arm=both` is refused. `GET /api/servo/outputs`'s
   `nudgesDone` says when a nudge has ended.
+- `action=travel` (a body view's press, ADR 0063): run the Part on this
+  output through its recorded travel and back — out to the end recorded as
+  **open**, across to the end recorded as **close**, and back to the width the
+  output started from. It carries no width: the two ends come off the output's
+  own row, so nothing sent here can name a position. The controller runs the
+  whole out-and-back itself and rests about 0.6 s at each end, so the part
+  comes back even if the browser that asked has gone. Refused, with nothing
+  moved, on an output with no pulse on it, on one no row describes, and on one
+  whose `calibrated` is false — an unmeasured row's two ends are whatever it
+  was stored with, so travelling to them would be a move of hundreds of
+  microseconds on a linkage nobody has measured. `arm=both` is refused: a press
+  is about one part. Nothing counts it — `nudgesDone` is a Find by Moving run's
+  clock and a travel is nobody's, so a travel leaves it alone.
 - `action=hold` (the calibration dial, ADR 0064): drive the output to
   `positionUs` and **keep driving it there**, so you can look at the part and
   listen to the servo while it is still being held. An ordinary move lets go
@@ -510,8 +523,8 @@ Queues servo command.
 - Errors:
 - `400` `{"ok":false,"error":"Missing arm or action parameter"}`
 - `400` `{"ok":false,"error":"Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both"}`
-- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, hold, or release"}`
-- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}` (and the same sentence naming `hold`)
+- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, travel, hold, or release"}`
+- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}` (and the same sentence naming `hold` and `travel`)
 - `400` missing/invalid `positionUs`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 

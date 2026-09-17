@@ -2370,6 +2370,34 @@ entries:
     required: true
   nvs_key: null
   executor: servoCmdQueue
+- name: servo.action.travel
+  display_name: Travel
+  description: 'Run the part on this output through its recorded travel and back - out to the end recorded as open, across to the end recorded as close, and back to the width it started from - so you can watch one part move by pointing at it (ADR 0063). It carries no width: the two ends come off the output''s own row, so nothing sent here can name a position. The controller runs the whole out-and-back itself and rests about 0.6 s at each end, so the part comes back even if the browser that asked has gone. Refused, with nothing moved, on an output with no pulse on it, on one no row describes, and on one nobody has measured - an unmeasured row''s two ends are whatever it was stored with, so travelling to them would be a move of hundreds of microseconds on a linkage nobody has measured. One output per travel; target=both is refused. An estop ends it where it is.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/robot_state.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: target
+    type: string
+    range:
+    - arm1
+    - arm2
+    - aux1
+    - aux2
+    - aux3
+    required: true
+  nvs_key: null
+  executor: servoCmdQueue
 - name: servo.action.hold
   display_name: Hold
   description: 'Drive a servo to a pulse width and KEEP driving it there, so you can look at the part and listen to the servo while it is still being held (the calibration dial, ADR 0064). Ordinary moves let go once they arrive; this one does not. The controller bounds the hold in two ways you cannot extend from here: it lets go about three seconds after the last hold command stops arriving, and it lets go ten minutes after the first one whatever keeps arriving. Either way the output goes limp where it is and GET /api/servo/outputs says which bound it was. Send one a second to keep a hold alive; send it again after it lets go to take the output back, which restarts both bounds. One output per hold - target=both is refused.

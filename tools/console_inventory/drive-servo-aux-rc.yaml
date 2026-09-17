@@ -640,6 +640,32 @@ rows:
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#363, ADR 0050). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask computes the +-100 us pair inside SERVO_BAND_STD from the pin. target=both refused with 400 at the route and at ServoTask. Queue guarded.
+- name: servo.action.travel
+  type: action
+  registry_api_path: /api/servo
+  registry_cpp_enum: null
+  registry_cpp_file: include/robot_state.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_params:
+  - name: target
+    type: string
+    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    required: true
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/tasks/servo_task.cpp:809 - SERVO_CMD_TRAVEL case in processCommand() -> beginTravel(); the two ends from include/servo_travel.h
+  executor_or_core: servoCmdQueue
+  missing_metadata: []
+  notes: Web-API (#352, ADR 0063). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask reads the Endpoint Pair off the Output's row, so no source can name a position. Refused on an output with no pulse, on one no row describes, and on one whose calibrated bit is unset. target=both refused with 400 at the route and at ServoTask. Does not touch nudgesDone. Queue guarded.
 - name: servo.action.hold
   type: action
   registry_api_path: /api/servo
