@@ -686,7 +686,8 @@ AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
         } else if (wroteConfig && clearBinding) {
             wroteBinding = prefs.putUInt(categoryNvsKey, 0) > 0;
         }
-        if (wroteBinding && (hasBankedParams || clearBinding) && !saveSoundListBaseline(prefs)) {
+        if (wroteConfig && wroteBinding && (hasBankedParams || clearBinding) &&
+            !saveSoundListBaseline(prefs)) {
             PA_LOG_DEBUG(TAG,
                          "[AUDIO] sound-list baseline not saved (nothing observed, or NVS refused)");
         }

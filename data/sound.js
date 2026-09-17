@@ -1676,7 +1676,13 @@
         // enqueued on top of the one still walking the card.
       }
 
-      showFeedback(catalogFeedback, "Catalog refresh is still running. Open Sound again in a moment.", false);
+      showFeedback(
+        catalogFeedback,
+        catalogRefreshStatus.active === requestId
+          ? "Catalog refresh is still running. Open Sound again in a moment."
+          : "Catalog refresh has not started yet. Open Sound again in a moment.",
+        false
+      );
       return false;
     } catch (error) {
       showFeedback(catalogFeedback, `Catalog refresh failed: ${getApiErrorMessage(error)}`, false);
