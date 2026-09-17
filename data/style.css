@@ -7087,3 +7087,205 @@ body[data-page="setup"] .status-item .hint {
   flex: 1 1 18ch;
   margin: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   The body view: a picture of the droid, and the panel beside it (#352,
+   ADR 0063)
+
+   COLOUR IS NOT SPENT HERE. #327 reserves colour for two meanings - amber for
+   "you can act on this", red for "stopped or refused" - and where a door is, is
+   neither. So a part that is open is drawn OPEN: the leaf swings, and the
+   picture carries the position in shape. Blue appears for exactly one job,
+   which is the job it has everywhere else on the surface - selection, the thing
+   shown, the focus ring (CONTEXT.md "Status Colour", amended 2026-09-16).
+
+   A TREATMENT REMOVES WHAT ITS STATE CANNOT PROMISE. The leaf is the part's
+   position, and it is drawn only where there is a recorded travel for it to be
+   a position within: `has-position` is the whole of that rule here. An
+   undriven, limp or unmeasured part does not get a dimmed leaf, a zero-swing
+   leaf or an em dash - it gets no leaf, because every one of those still reads
+   as a claim about where the part is, and nothing on this droid reads a servo
+   back (data/droid_part_kind.js has the same rule for a light's travel).
+
+   The three dimmed states use the ladder --avail-dim-* declares, and hover and
+   focus-within lift them back up: a builder still has to be able to inspect a
+   thing they cannot act on.
+
+   Everything here is its own block on the token layer #341 landed. No shared
+   rule is edited and no colour literal appears outside :root.
+   --------------------------------------------------------------------------- */
+.bodyview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-lg);
+}
+
+.bodyview-drawing {
+  flex: 1 1 26rem;
+  min-width: 0;
+}
+
+.bodyview-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bodyview-face-plate {
+  fill: var(--well);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.bodyview-face-label,
+.bodyview-said {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  fill: var(--text-faint);
+}
+
+.bodyview-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  fill: var(--text-dim);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* The footprint: where the part is. Always drawn, because a part on the droid
+   is on the picture whatever drives it or does not. */
+.bodyview-footprint {
+  fill: var(--surface-alt);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+/* The leaf: how far open the controller has told the part to be. Hidden until
+   the marker has a position at all - see the rule above. */
+/* No `transform-box` here, deliberately. An SVG transform attribute is the CSS
+   transform property in SVG2, so `transform-box: fill-box` would re-read the
+   rotation origin this renderer passes - the leaf's own corner, in user space -
+   as an offset from the leaf's bounding box, and every swung leaf would draw
+   detached from the marker it belongs to. Measured in a browser 2026-09-17; it
+   is invisible to a DOM test, which has no CSS engine. */
+.bodyview-leaf {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2;
+  display: none;
+  pointer-events: none;
+}
+
+.bodyview-marker.has-position .bodyview-leaf {
+  display: block;
+}
+
+.bodyview-marker {
+  cursor: pointer;
+}
+
+.bodyview-marker.is-undriven .bodyview-footprint,
+.bodyview-marker.is-unmeasured .bodyview-footprint {
+  fill: none;
+  stroke-dasharray: 4 3;
+}
+
+.bodyview-marker.is-undriven,
+.bodyview-marker.is-unmeasured {
+  opacity: var(--avail-dim-elsewhere);
+}
+
+.bodyview-marker.is-unknown {
+  opacity: var(--avail-dim-finding);
+}
+
+.bodyview-marker.is-limp .bodyview-footprint {
+  stroke-dasharray: 1 3;
+}
+
+/* A dimmed thing still has to be readable: hover and focus lift it back. */
+.bodyview-marker:hover,
+.bodyview-marker:focus-within,
+.bodyview-marker:focus-visible {
+  opacity: 1;
+}
+
+.bodyview-marker:focus-visible .bodyview-footprint {
+  stroke: var(--accent-bright);
+  stroke-width: 2;
+}
+
+/* Part Kind is a treatment, never a hue (ADR 0063's correction to CONTEXT.md).
+   A light has no travel, so its marker is drawn as a fixture rather than as
+   something that swings, and it never carries a leaf. */
+.bodyview-marker.partkind-light .bodyview-footprint {
+  stroke-dasharray: 2 2;
+  rx: 8;
+}
+
+.bodyview-marker.partkind-light .bodyview-leaf {
+  display: none;
+}
+
+/* Selection. Blue and only blue, doing the one job it has on every surface. */
+.bodyview-marker.is-selected .bodyview-footprint {
+  fill: var(--accent-dim);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.bodyview-marker.is-selected .bodyview-label {
+  fill: var(--text);
+}
+
+/* The panel: the acts, named beside the thing they act on. */
+.bodyview-panel {
+  flex: 0 1 20rem;
+  min-width: 14rem;
+  padding: var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+}
+
+.bodyview-panel-title {
+  font-size: var(--fs-h2);
+  margin-bottom: var(--space-sm);
+}
+
+.bodyview-panel-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-cell);
+  margin-bottom: var(--space-md);
+}
+
+.bodyview-panel-facts dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  align-self: center;
+}
+
+.bodyview-panel-facts dd {
+  color: var(--text-dim);
+}
+
+.bodyview-panel-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.bodyview-panel-why {
+  margin-top: var(--space-sm);
+  font-size: var(--fs-hint);
+  color: var(--text-faint);
+}
