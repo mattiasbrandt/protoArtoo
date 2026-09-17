@@ -73,7 +73,7 @@ image does not carry - `wrench-outline`, `arrow-left`, `arrow-right`,
 `play-outline` and `pause`. A slice that needs one copies its path in beside the
 others rather than fetching a package to read it again.
 
-`connection` was the first one a slice took that way: Wiring (#350) is the
+`connection` is the first of those six a slice has needed. Wiring (#350) is the
 destination the prototype's own nav row named `connection`, so landing that
 surface was one path copied in and no package fetched.
 
