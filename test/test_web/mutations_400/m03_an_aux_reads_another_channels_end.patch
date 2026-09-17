@@ -1,0 +1,14 @@
+diff --git i/data/servo.js w/data/servo.js
+index bec211e0..98db76a4 100644
+--- i/data/servo.js
++++ w/data/servo.js
+@@ -347,7 +347,8 @@
+   wireTestBtn("aux1-open-test-btn",  "aux1", () => endpoints.aux1Open,  auxFeedback);
+   wireTestBtn("aux1-close-test-btn", "aux1", () => endpoints.aux1Close, auxFeedback);
+   wireTestBtn("aux2-test-btn",       "aux2", () => aux2TestUs?.value || 1500, auxFeedback);
+-  wireTestBtn("aux2-open-test-btn",  "aux2", () => endpoints.aux2Open,  auxFeedback);
++  wireTestBtn("aux2-open-test-btn",  "aux2", () => endpoints.aux1Open,  auxFeedback);
++
+   wireTestBtn("aux2-close-test-btn", "aux2", () => endpoints.aux2Close, auxFeedback);
+   wireTestBtn("aux3-test-btn",       "aux3", () => aux3TestUs?.value || 1500, auxFeedback);
+   wireTestBtn("aux3-open-test-btn",  "aux3", () => endpoints.aux3Open,  auxFeedback);

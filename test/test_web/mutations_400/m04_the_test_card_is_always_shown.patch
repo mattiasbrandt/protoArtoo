@@ -1,0 +1,14 @@
+diff --git i/data/servo.js w/data/servo.js
+index bec211e0..6dddcfba 100644
+--- i/data/servo.js
++++ w/data/servo.js
+@@ -244,7 +244,8 @@
+ 
+     const anyTestable = arm1Present || arm2Present || aux1Servo || aux2Servo || aux3Servo;
+ 
+-    if (servoTestCard)   servoTestCard.classList.toggle("hidden", !anyTestable);
++    if (servoTestCard)   servoTestCard.classList.toggle("hidden", false);
++
+     if (arm1TestSection) arm1TestSection.classList.toggle("hidden", !arm1Present);
+     if (arm2TestSection) arm2TestSection.classList.toggle("hidden", !arm2Present);
+     if (aux1TestSection) aux1TestSection.classList.toggle("hidden", !aux1Servo);

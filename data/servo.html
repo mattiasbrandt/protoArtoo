@@ -42,36 +42,30 @@
       <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
-    <!-- Servo Calibration (ARM1 / ARM2 / AUX servo channels) -->
-    <div class="card hidden" id="servo-calib-card">
-      <h3>⚙️ Servo Calibration</h3>
+    <!-- Test a servo (ARM1 / ARM2 / AUX servo channels)
+         The typed endpoint form that stood here until #400 is gone: an end is
+         set on Parts now, by driving the part and pressing the button for that
+         end, and this page keeps only what moves a part. Test Open and Test
+         Close therefore drive to the ends the droid has RECORDED, read from
+         /api/config, rather than to a number typed on this page -- so what they
+         show is what the droid will actually do when something says open. -->
+    <div class="card hidden" id="servo-test-card">
+      <h3>Test a servo</h3>
       <div class="desc">
-        Set the open and close pulse widths (µs) for each servo output. MG996R standard range is
-        1000–2000 µs; MG90S micro servo range is 500–2500 µs. Use the test buttons to move the
-        servo live while adjusting, changes auto-save immediately as you adjust.
+        Move one servo now, without changing anything. Open and close ends are set in
+        <a class="setup-link" href="/parts.html">Parts</a>: press Calibrate on the output that
+        drives the part and drive it to each end.
       </div>
 
       <div class="caution-banner" role="alert">
         ⚠️ Test buttons move real hardware. Ensure arms and panels are clear before testing.
       </div>
 
-      <form id="calib-form" class="mt-16">
+      <div class="mt-16">
 
-        <!-- ARM1 calibration (shown only when ARM1 enabled) -->
-        <div class="hidden" id="arm1-calib-section">
+        <!-- ARM1 (shown only when ARM1 enabled) -->
+        <div class="hidden" id="arm1-test-section">
           <div class="section-label">Utility Arm 1 — ARM1</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="arm1-open-us" name="arm1OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM1 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="arm1-close-us" name="arm1CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM1 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
-            </label>
-          </div>
           <div class="field mt-8">
             <span>Test position (µs)</span>
             <div class="button-row mt-4">
@@ -88,21 +82,9 @@
           <div class="section-divider"></div>
         </div>
 
-        <!-- ARM2 calibration (shown only when ARM2 enabled) -->
-        <div class="hidden" id="arm2-calib-section">
+        <!-- ARM2 (shown only when ARM2 enabled) -->
+        <div class="hidden" id="arm2-test-section">
           <div class="section-label">Utility Arm 2 — ARM2</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="arm2-open-us" name="arm2OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM2 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="arm2-close-us" name="arm2CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to ARM2 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
-            </label>
-          </div>
           <div class="field mt-8">
             <span>Test position (µs)</span>
             <div class="button-row mt-4">
@@ -119,21 +101,9 @@
           <div class="section-divider"></div>
         </div>
 
-        <!-- AUX1 calibration (shown only when AUX1 enabled and type is a servo) -->
-        <div class="hidden" id="aux1-calib-section">
+        <!-- AUX1 (shown only when AUX1 enabled and type is a servo) -->
+        <div class="hidden" id="aux1-test-section">
           <div class="section-label">AUX Output 1 — AUX1</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux1-open-us" name="aux1OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX1 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux1-close-us" name="aux1CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX1 when commanded to close.">
-            </label>
-          </div>
           <div class="field mt-8">
             <span>Test position (µs)</span>
             <div class="button-row mt-4">
@@ -148,21 +118,9 @@
           <div class="section-divider"></div>
         </div>
 
-        <!-- AUX2 calibration (shown only when AUX2 enabled and type is a servo) -->
-        <div class="hidden" id="aux2-calib-section">
+        <!-- AUX2 (shown only when AUX2 enabled and type is a servo) -->
+        <div class="hidden" id="aux2-test-section">
           <div class="section-label">AUX Output 2 — AUX2</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux2-open-us" name="aux2OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX2 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux2-close-us" name="aux2CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX2 when commanded to close.">
-            </label>
-          </div>
           <div class="field mt-8">
             <span>Test position (µs)</span>
             <div class="button-row mt-4">
@@ -177,21 +135,9 @@
           <div class="section-divider"></div>
         </div>
 
-        <!-- AUX3 calibration (shown only when AUX3 enabled and type is a servo) -->
-        <div class="hidden" id="aux3-calib-section">
+        <!-- AUX3 (shown only when AUX3 enabled and type is a servo) -->
+        <div class="hidden" id="aux3-test-section">
           <div class="section-label">AUX Output 3 — AUX3</div>
-          <div class="form-grid">
-            <label class="field">
-              <span>Open position (µs)</span>
-              <input id="aux3-open-us" name="aux3OpenUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX3 when commanded to open.">
-            </label>
-            <label class="field">
-              <span>Close position (µs)</span>
-              <input id="aux3-close-us" name="aux3CloseUs" type="number" min="500" max="2500" step="10"
-                title="Pulse width sent to AUX3 when commanded to close.">
-            </label>
-          </div>
           <div class="field mt-8">
             <span>Test position (µs)</span>
             <div class="button-row mt-4">
@@ -206,10 +152,10 @@
           <div class="section-divider"></div>
         </div>
 
-        <div class="button-row mt-8">
-          <button class="btn" type="button" id="reload-calib-btn">🔄 Reload</button>
-        </div>
-      </form>
+      </div>
+      <!-- Still the calibration line, on a card that no longer sets one: Test
+           Open and Test Close drive to the ends read from /api/config, so
+           whether that read landed is exactly what a builder needs told here. -->
       <div id="calib-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading calibration...</div>
     </div>
 
