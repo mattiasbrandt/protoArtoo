@@ -1527,17 +1527,18 @@
     // Plate's own freshness line is what tells the operator the readings have
     // aged, and the bootstrap owns the retry; the failure count this used to
     // keep existed only to raise the banner this surface no longer carries.
-    const refreshFromFallback = () =>
-      refreshStatusOnce().catch((error) => {
-        console.warn("[dashboard] status poll failed:", error);
-      });
-
+    //
     // Owned by this surface: the shell stops it when the operator leaves the
     // Dashboard and starts it again on the way back (ADR 0048, #360). The
     // beforeunload teardown below stays -- it is the other end of the same
     // poll's life, and a closing tab is not a navigation the shell sees.
+    //
+    // The reporting is PASurface.poll()'s, which is why nothing is caught
+    // here: a catch at this site would hand the registry a fulfilled promise
+    // for a read that never landed, and the Dashboard would come back saying
+    // it was current (#360).
     const fallbackPoll = window.PASurface.poll(
-      refreshFromFallback,
+      refreshStatusOnce,
       {
         cadenceMs: 3000,
         refreshOnReturn: true,

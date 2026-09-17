@@ -1701,11 +1701,13 @@
   // which used to be a document-level visibilitychange handler that kept firing
   // long after the operator had left RC behind.
   //
-  // The catch is this caller's, not the loader's: loadRcDiagnostics() rethrows
-  // so the bootstrap's section can see a failure and retry it, but a background
+  // loadRcDiagnostics() rethrows so the bootstrap's section can see a failure
+  // and retry it, and the rejection is left to PASurface.poll(): a background
   // refresh has already said so in the editor feedback line and has nobody to
-  // hand a rejection to.
-  window.PASurface.poll(() => loadRcDiagnostics().catch(() => {}), {
+  // hand a rejection to, but it is the registry that has to hear it. Catching
+  // it here is what used to tell RC its diagnostics were current when nothing
+  // had answered (#360).
+  window.PASurface.poll(loadRcDiagnostics, {
     cadenceMs: hasRcStream ? 0 : 1000,
     refreshOnReturn: true,
   }).start();

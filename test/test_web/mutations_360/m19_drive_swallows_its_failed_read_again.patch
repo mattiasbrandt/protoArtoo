@@ -1,5 +1,5 @@
 diff --git i/data/drive.js w/data/drive.js
-index fc545af3..1b300f34 100644
+index fc545af3..3f31e5a7 100644
 --- i/data/drive.js
 +++ w/data/drive.js
 @@ -517,7 +517,7 @@
@@ -7,7 +7,7 @@ index fc545af3..1b300f34 100644
      // the surface showing what it last read, where a catch at this site would
      // report a refresh that never landed as current (#360).
 -    window.PASurface.poll(refreshStatusOnce, {
-+    window.PageBootstrap.createBackgroundPoll(refreshStatusOnce, {
++    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
        cadenceMs: 2000,
        runOnStart: true,
        refreshOnReturn: true,

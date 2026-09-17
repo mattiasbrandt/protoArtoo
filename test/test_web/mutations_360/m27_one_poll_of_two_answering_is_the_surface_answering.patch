@@ -1,0 +1,12 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index 10754691..0bf8f97d 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -579,7 +579,6 @@
+     // while its audio module has answered nothing is not Sound answering, and
+     // taking the note down there says current over values that are not: the
+     // same untruth, in the same direction, as the swallow above (#360).
+-    if (surfaceIsStale(entry.owner)) return;
+     if (typeof window.dispatchEvent !== "function") return;
+     window.dispatchEvent(new CustomEvent("pa:surface-fresh", { detail: { surface: entry.owner } }));
+   };

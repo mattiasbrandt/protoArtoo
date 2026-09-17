@@ -540,14 +540,46 @@
     else entry.poll.stop();
   };
 
+  // True while a surface has polling that stopped when the operator left it and
+  // has not answered since.
+  //
+  // It answers for a SURFACE, not for one poll of it: Sound owns two (the
+  // status fallback and the audio module's own) and Setup owns two (the serial
+  // fallback and the memory profiler). A surface is current only when
+  // everything it asks for has answered, so one poll of two is not an answer
+  // from the surface (#360).
+  //
+  // Only polling the surface still WANTS counts. A poll the surface turned off
+  // itself -- the way the memory profiler does when the manifest says it is not
+  // in this build -- is not waiting for an answer, so it must not hold the
+  // note up for a surface that is otherwise current.
+  const surfaceIsStale = (page) => {
+    for (const entry of surfacePolls) {
+      if (entry.owner === page && entry.stale && entry.wanted) return true;
+    }
+    return false;
+  };
+
   // A poll that was stopped for being off screen is stale until it answers
   // again: what is on the surface is from before the operator left it. The
   // reference stops the packet clock whenever it clamps an output, for exactly
   // this reason -- a live-looking zero is worse than a stale value
   // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:896-901).
+  //
+  // A read already on the wire when the operator left still clears the mark
+  // when it lands, and that is the intent rather than a hole: stopping a poll
+  // does not cancel a request, the answer renders into the nodes the shell
+  // kept, and the surface really is showing a reading taken since. It is only
+  // a refresh that never answered that has to leave the mark up (#360).
   const markSurfaceFresh = (entry) => {
     if (!entry.stale) return;
     entry.stale = false;
+    // The note belongs to the surface, so it comes down only when the surface
+    // has answered -- every poll it still wants. Sound's status read landing
+    // while its audio module has answered nothing is not Sound answering, and
+    // taking the note down there says current over values that are not: the
+    // same untruth, in the same direction, as the swallow above (#360).
+    if (surfaceIsStale(entry.owner)) return;
     if (typeof window.dispatchEvent !== "function") return;
     window.dispatchEvent(new CustomEvent("pa:surface-fresh", { detail: { surface: entry.owner } }));
   };
@@ -561,22 +593,37 @@
   // Create it in the surface's script body. That is the only moment the shell
   // guarantees is inside the surface's own mount, and it costs nothing: the
   // poll does not run until start().
+  //
+  // THE CONTRACT WITH attempt(): hand back a promise, and let it reject when
+  // the surface did not get an answer. A promise that fulfils is the only
+  // thing that clears the stale mark.
+  //
+  // THE REJECTION IS CAUGHT HERE, and that is why no polling site may catch
+  // its own. Every site used to, because a background refresh has nobody to
+  // hand a rejection to and an unhandled one is console noise -- but catching
+  // it there flattens the failure into a fulfilled promise, and the surface
+  // was then marked fresh by a refresh that never landed: "Showing what this
+  // screen last read" came down over values from before the operator left
+  // (#360, reopened 2026-09-17). One swallow in one place keeps the console
+  // quiet AND keeps the note up; a swallow at each site cannot do both.
   const createSurfacePoll = (attempt, options = {}) => {
     const entry = { owner: showingSurface, wanted: false, running: false, stale: false };
     entry.poll = createBackgroundPoll(() => {
       const result = attempt();
-      // Fresh the moment the surface has answered again. Guarded rather than
-      // assumed thenable: several polling sites hand back nothing at all. A
-      // rejected attempt deliberately does not clear the mark -- the values on
-      // screen are still the ones from before.
-      if (result && typeof result.then === "function") {
-        return result.then((value) => {
+      // Something that is not a promise never said it asked, so it cannot be
+      // read as having been answered: the mark stays up.
+      if (!result || typeof result.then !== "function") return result;
+      return result.then(
+        (value) => {
           markSurfaceFresh(entry);
           return value;
-        });
-      }
-      markSurfaceFresh(entry);
-      return result;
+        },
+        (error) => {
+          // Reported, never rethrown, and deliberately NOT marked fresh: what
+          // is on screen is still the reading from before.
+          console.warn(`[surface] ${entry.owner || "page"} refresh failed:`, error);
+        },
+      );
     }, options);
     surfacePolls.add(entry);
     return {
@@ -606,15 +653,6 @@
       syncSurfacePoll(entry);
       if (wasRunning && !entry.running) entry.stale = true;
     });
-  };
-
-  // True while a surface has polling that stopped when the operator left it and
-  // has not answered since.
-  const surfaceIsStale = (page) => {
-    for (const entry of surfacePolls) {
-      if (entry.owner === page && entry.stale) return true;
-    }
-    return false;
   };
 
   // A surface can hold its own unmount open: decide() returns true while it

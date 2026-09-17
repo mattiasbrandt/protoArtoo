@@ -1,13 +1,13 @@
 diff --git i/data/dome.js w/data/dome.js
-index 8339ee8d..b937594f 100644
+index 21188691..be23c988 100644
 --- i/data/dome.js
 +++ w/data/dome.js
-@@ -378,7 +378,7 @@
-     // competing for the controller's three-client budget (ADR 0048, #360). The
-     // hidden-tab pause and the refresh on returning to the tab are the poll's
-     // own, rather than three hand-rolled pieces at this site.
--    window.PASurface.poll(() => refreshStatus().catch(() => {}), {
-+    window.PageBootstrap.createBackgroundPoll(() => refreshStatus().catch(() => {}), {
+@@ -393,7 +393,7 @@
+     // own, rather than three hand-rolled pieces at this site. So is the failed
+     // read: PASurface.poll() catches it, which is what keeps a refresh that
+     // never landed from reporting the screen as current (#360).
+-    window.PASurface.poll(refreshStatus, {
++    window.PageBootstrap.createBackgroundPoll(refreshStatus, {
        cadenceMs: 5000,
        runOnStart: true,
        refreshOnReturn: true,

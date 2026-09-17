@@ -1,0 +1,12 @@
+diff --git i/data/setup.js w/data/setup.js
+index e0d5a2e9..622db8c9 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1751,7 +1751,6 @@
+         feedback.textContent = `Memory readings unavailable: ${window.PAApi.messageFor(error)}`;
+         feedback.className = "feedback warning";
+       }
+-      throw error;
+     }
+   }
+ 

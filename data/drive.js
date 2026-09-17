@@ -513,9 +513,11 @@
     // and starts it again on the way back (ADR 0048, #360). This is a READ of
     // the droid's status; the hold loop above is a command loop and is
     // deliberately not owned by the shell -- see startHoldLoop().
-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {
-      // Retry next cycle.
-    }), {
+    //
+    // A failed read is not caught here: PASurface.poll() reports it and leaves
+    // the surface showing what it last read, where a catch at this site would
+    // report a refresh that never landed as current (#360).
+    window.PASurface.poll(refreshStatusOnce, {
       cadenceMs: 2000,
       runOnStart: true,
       refreshOnReturn: true,

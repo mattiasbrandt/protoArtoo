@@ -422,8 +422,10 @@
   } else {
     // Fallback: poll every 1 s, suspended while the tab is hidden and while the
     // operator is reading another surface -- the shell stops it on the way out
-    // and starts it again on the way back (ADR 0048, #360).
-    window.PASurface.poll(() => refreshStatusOnce().catch(() => {}), {
+    // and starts it again on the way back (ADR 0048, #360). A failed read is
+    // PASurface.poll()'s to report; catching it here would mark the surface
+    // current on a refresh that never landed (#360).
+    window.PASurface.poll(refreshStatusOnce, {
       cadenceMs: 1000,
       runOnStart: true,
       refreshOnReturn: true,

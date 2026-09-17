@@ -1,5 +1,5 @@
 diff --git i/data/rc.js w/data/rc.js
-index 6073498c..c824ba4e 100644
+index 6073498c..63fa366e 100644
 --- i/data/rc.js
 +++ w/data/rc.js
 @@ -1707,7 +1707,7 @@
@@ -7,7 +7,7 @@ index 6073498c..c824ba4e 100644
    // it here is what used to tell RC its diagnostics were current when nothing
    // had answered (#360).
 -  window.PASurface.poll(loadRcDiagnostics, {
-+  window.PageBootstrap.createBackgroundPoll(loadRcDiagnostics, {
++  window.PASurface.poll(() => loadRcDiagnostics().catch(() => {}), {
      cadenceMs: hasRcStream ? 0 : 1000,
      refreshOnReturn: true,
    }).start();

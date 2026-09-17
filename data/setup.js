@@ -1266,14 +1266,17 @@
     setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
   };
 
+  // Says so on the status line, then rethrows: the surface poll below has to be
+  // able to tell a read that landed from one that did not, and swallowing here
+  // would tell it every read landed (#360).
   const refreshSerialStatus = async () => {
     if (!window.PAApi) return;
     try {
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
       renderSerialStatus(result.data);
     } catch (error) {
-      console.warn("[setup] refreshSerialStatus failed:", error);
       setFeedbackState(serialStatusLine, "Status unavailable", "error");
+      throw error;
     }
   };
 
@@ -1282,15 +1285,19 @@
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType === "status") renderSerialStatus(payload);
     });
-    // One-shot fetch if SSE hasn't delivered a status frame yet.
+    // One-shot fetch if SSE hasn't delivered a status frame yet. The status
+    // line already carries the failure; the stream is what this page reads
+    // from after it.
     if (!window.PAStatusStream.getLastStatus()) {
       refreshSerialStatus().catch(() => {});
     }
   } else {
     // Fallback: poll every 5 s, suspended while the tab is hidden and while the
     // operator is reading another surface -- the shell stops it on the way out
-    // and starts it again on the way back (ADR 0048, #360).
-    window.PASurface.poll(() => refreshSerialStatus().catch(() => {}), {
+    // and starts it again on the way back (ADR 0048, #360). The failed read is
+    // PASurface.poll()'s to report, so that a refresh that never landed does
+    // not take the "showing what this screen last read" note down (#360).
+    window.PASurface.poll(refreshSerialStatus, {
       cadenceMs: 5000,
       runOnStart: true,
       refreshOnReturn: true,
@@ -1728,6 +1735,9 @@
     }
   }
 
+  // Says so in the feedback line, then rethrows. The rethrow is what the poll
+  // below reads: a profiler reading nobody could take must not come back from
+  // the surface registry as a fresh one (#360).
   async function refreshProfiler() {
     try {
       const result = await window.PAApi.get("/api/profiler");
@@ -1741,6 +1751,7 @@
         feedback.textContent = `Memory readings unavailable: ${window.PAApi.messageFor(error)}`;
         feedback.className = "feedback warning";
       }
+      throw error;
     }
   }
 

@@ -1,13 +1,13 @@
 diff --git i/data/wifi.js w/data/wifi.js
-index 034f6120..25ef0d16 100644
+index 034f6120..283da02b 100644
 --- i/data/wifi.js
 +++ w/data/wifi.js
-@@ -574,7 +574,7 @@
-   // visibilitychange handler this page used to carry is gone. So is the failed
+@@ -575,7 +575,7 @@
    // read: reporting it is PASurface.poll()'s, and catching it here is what used
    // to tell WiFi its diagnostics were current when nothing had answered (#360).
--  const diagnosticsPoll = window.PASurface.poll(
-+  const diagnosticsPoll = window.PageBootstrap.createBackgroundPoll(
-     () => loadWifiDiagnostics(),
+   const diagnosticsPoll = window.PASurface.poll(
+-    () => loadWifiDiagnostics(),
++    () => loadWifiDiagnostics().catch(() => {}),
      { cadenceMs: POLL_INTERVAL_MS, refreshOnReturn: true }
    );
+ 
