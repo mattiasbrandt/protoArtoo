@@ -171,6 +171,22 @@ static bool parseBankLine(const char* line, AudioCatalogBank* out) {
     return true;
 }
 
+// What a NAME reply that carried no page field reports as its page. The module
+// omits the page in EVERY Bank 1 reply -- handleGnme() answers
+// "NAME:1,,<index>,<basename>.wav" and ignores the page it was asked for when
+// bank == 1 (CHIRP serial_commands.cpp) -- so this says "the reply named no
+// page" and lets the catalog walk associate it with the bank being walked.
+// Inventing 'A' here is what made the walk reject every name on a card whose
+// Bank 1 page is B, at 450 ms of dead time per sound.
+static constexpr char CHIRP_PAGE_OMITTED = '\0';
+
+// "INVALID" is handleGnme()'s out-of-range answer, not a track called INVALID:
+// it prints "NAME:%d,%c,%d,INVALID" when getSDFile() finds nothing at that
+// index. Treat it as a missing name so the entry falls back to index_N.
+static bool isMissingNameToken(const char* name) {
+    return strcmp(name, "INVALID") == 0;
+}
+
 static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uint16_t* indexOut,
                           char* nameOut, size_t nameLen) {
     if (line == nullptr || bankOut == nullptr || pageOut == nullptr || indexOut == nullptr ||
@@ -195,9 +211,10 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
     char emptyPageName[48] = {0};
     if (sscanf(namePrefix, "NAME:%lu,,%lu,%47[^\r\n]", &bankEmptyPage, &indexEmptyPage,
                emptyPageName) == 3) {
-        if (bankEmptyPage <= 255u && indexEmptyPage <= 65535u && emptyPageName[0] != '\0') {
+        if (bankEmptyPage <= 255u && indexEmptyPage <= 65535u && emptyPageName[0] != '\0' &&
+            !isMissingNameToken(emptyPageName)) {
             *bankOut = (uint8_t)bankEmptyPage;
-            *pageOut = 'A';
+            *pageOut = CHIRP_PAGE_OMITTED;
             *indexOut = (uint16_t)indexEmptyPage;
             strncpy(nameOut, emptyPageName, nameLen - 1);
             nameOut[nameLen - 1] = '\0';
@@ -214,9 +231,11 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
         ++p;
     }
 
-    char pageVal = 'A';
+    char pageVal = CHIRP_PAGE_OMITTED;
     if (*p == ',') {
-        // Bank 1 NAME frames use empty page field: NAME:1,,<index>,<name>
+        // Bank 1 NAME frames carry no page field: NAME:1,,<index>,<name>. This
+        // branch only sees that form when the name was too long for the sscanf
+        // above; either way the page stays unnamed rather than becoming 'A'.
         ++p;
     } else if (*p != '\0' && p[1] == ',' && isalpha((unsigned char)*p)) {
         pageVal = normalizePage(*p);
@@ -243,6 +262,9 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
 
     strncpy(nameOut, p, nameLen - 1);
     nameOut[nameLen - 1] = '\0';
+    if (isMissingNameToken(nameOut)) {
+        return false;
+    }
 
     *bankOut = (uint8_t)bankVal;
     *pageOut = pageVal;
@@ -668,13 +690,24 @@ bool AudioDriverChirp::refreshCatalog() {
                                    sizeof(fileName))) {
                     continue;
                 }
-                if (respBank != bank.bank || respPage != bank.page || respIndex != soundIndex) {
+                // A reply that named no page belongs to the bank we asked
+                // about, and only bank 1 ever omits it: a genuinely pageless SD
+                // directory has numeric page 0, which handleGnme() prints as a
+                // stray comma ("NAME:2,,,3,file") that parseNameLine() rejects
+                // outright. That form is addressed by page 0 in the module and
+                // by no page here, so tolerating it would not make the sound
+                // playable -- it stays rejected.
+                const bool pageMatches = (respPage == bank.page) ||
+                                         (respPage == CHIRP_PAGE_OMITTED && bank.bank == 1);
+                if (respBank != bank.bank || !pageMatches || respIndex != soundIndex) {
                     continue;
                 }
 
                 AudioCatalogEntry& entry = m_catalog[m_catalogCount++];
                 entry.bank = respBank;
-                entry.page = respPage;
+                // The bank's own page, not the reply's: an omitted page is the
+                // page we were walking, whatever letter that is.
+                entry.page = bank.page;
                 entry.index = respIndex;
                 strncpy(entry.name, fileName, sizeof(entry.name) - 1);
                 entry.name[sizeof(entry.name) - 1] = '\0';

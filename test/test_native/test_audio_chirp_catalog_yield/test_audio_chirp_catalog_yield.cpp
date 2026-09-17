@@ -48,12 +48,16 @@ struct ScriptedChirpIO {
 
     void finishCommand() {
         cmdBuf[cmdLen] = '\0';
+        // The module's real wire format: MDAT carries a bank count, and a Bank
+        // 1 NAME reply carries no page field at all (CHIRP serial_commands.cpp
+        // handleGman/handleGnme). A fixture with "NAME:1,A,..." in it cannot
+        // catch the page handling this driver depends on.
         if (strcmp(cmdBuf, "GMAN") == 0) {
-            appendRx("MDAT:CHIRP\nBANK:1,001A,2\nMEND\n");
+            appendRx("MDAT:1\nBANK:1,1A_general,2\nMSUM:2712847316\nMEND\n");
         } else if (strcmp(cmdBuf, "GNME:1,A,1") == 0) {
-            appendRx("NAME:1,A,1,first.wav\n");
+            appendRx("NAME:1,,1,first.wav\n");
         } else if (strcmp(cmdBuf, "GNME:1,A,2") == 0) {
-            appendRx("NAME:1,A,2,second.wav\n");
+            appendRx("NAME:1,,2,second.wav\n");
         }
         cmdLen = 0;
         memset(cmdBuf, 0, sizeof(cmdBuf));
@@ -120,14 +124,14 @@ void test_chirp_catalog_refresh_yields_with_immediate_rx() {
 
 void test_chirp_unparsed_bank_slots_retain_page_default() {
     // Regression test for issue #196: unparsed bank slots should retain page='A' default.
-    // The memset() at audio_chirp.cpp:294 discarded this, leaving unparsed slots with page='\0'.
+    // The memset() in loadManifestBanks() discarded this, leaving unparsed slots with page='\0'.
     // Value-initialization restores the declared default.
 
     AudioDriverChirp drv;
     drv.setIO(makeScriptedIO());
 
     // Refresh catalog (calls loadManifestBanks internally, which clears and populates m_catalogBanks)
-    // The scripted IO in finishCommand() returns a manifest with only 1 bank: BANK:1,001A,2
+    // The scripted IO in finishCommand() returns a manifest with only 1 bank: BANK:1,1A_general,2
     TEST_ASSERT_TRUE(drv.refreshCatalog());
 
     // Get the banks array
@@ -138,7 +142,7 @@ void test_chirp_unparsed_bank_slots_retain_page_default() {
     TEST_ASSERT_EQUAL_UINT8(1, parsedCount);
 
     // Check that the parsed bank has the correct page value derived from dirName
-    // BANK:1,001A,2 -> page = 'A' (from "001A")
+    // BANK:1,1A_general,2 -> page = 'A' (from "1A_general")
     TEST_ASSERT_EQUAL_CHAR('A', banks[0].page);
 
     // The key assertion: unparsed slots (beyond parsedCount) should have page='A' (the default)
