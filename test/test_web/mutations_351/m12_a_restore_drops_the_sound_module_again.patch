@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 12d38200..87e1d82b 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1469,7 +1469,7 @@ const BOARD_LABELS = {
+     // The Sound Component Member: which module is actually fitted. The saved
+     // choice, not `activeMember`, which is the one the droid booted with and is
+     // not a setting anybody chose (src/web/api_config.cpp).
+-    if (components.audio?.member !== undefined) p.set('soundMember', components.audio.member);
++    if (components.audio?.member !== undefined) p.set('soundMember', components.audio.activeMember);
+ 
+     // The Droid Build (ADR 0047). Each half goes as a PAIR, because a variant
+     // means nothing against another design and the controller refuses a request

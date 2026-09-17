@@ -1,0 +1,12 @@
+diff --git i/data/setup.js w/data/setup.js
+index 12d38200..014d76e3 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1479,7 +1479,6 @@ const BOARD_LABELS = {
+     const build = cfg?.droidBuild || {};
+     if (build.domeDesign !== undefined && build.domeVariant !== undefined) {
+       p.set('domeDesign', build.domeDesign);
+-      p.set('domeVariant', build.domeVariant);
+     }
+     if (build.bodyDesign !== undefined && build.bodyVariant !== undefined) {
+       p.set('bodyDesign', build.bodyDesign);
