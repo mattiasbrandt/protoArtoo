@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..d9ba1952 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -196,7 +196,7 @@
+     const index = new Map();
+     Object.keys(components || {}).forEach((key) => {
+       const entry = components[key];
+-      if (entry && typeof entry === "object") index.set(key.toLowerCase(), entry);
++      if (entry && typeof entry === "object") index.set(key, entry);
+     });
+     return index;
+   };

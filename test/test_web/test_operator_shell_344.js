@@ -450,13 +450,13 @@ test("the nav offers every surface, addressed by hash so the fragment never reac
   const links = env.document.querySelectorAll("[data-surface-link]");
   assert.deepEqual(
     [...new Set(links.map((link) => link.dataset.surfaceLink))].sort(),
-    ["dome", "drive", "firmware", "home", "parts", "rc", "seq", "servo", "setup", "sound", "wifi"],
+    ["dome", "drive", "firmware", "home", "parts", "rc", "seq", "servo", "setup", "sound", "wifi", "wiring"],
     "every surface the shell knows is offered somewhere in the nav",
   );
   assert.equal(
     links.length,
-    13,
-    "thirteen entries for eleven surfaces: Sound and Dome are in two Activity Groups each (#361)",
+    14,
+    "fourteen entries for twelve surfaces: Sound and Dome are in two Activity Groups each (#361)",
   );
   links.forEach((link) => {
     assert.equal(
@@ -503,7 +503,7 @@ const registry = [...shellSrc.matchAll(/\{ page: "([a-z]+)", doc: "\/([a-z]+\.ht
   .map(([, page, file]) => ({ page, file }));
 
 test("the shell knows every surface, and every surface is a file that exists", () => {
-  assert.equal(registry.length, 11, "eleven surfaces");
+  assert.equal(registry.length, 12, "twelve surfaces");
   registry.forEach(({ file }) => {
     assert.doesNotThrow(() => readData(file), `${file} is served`);
   });

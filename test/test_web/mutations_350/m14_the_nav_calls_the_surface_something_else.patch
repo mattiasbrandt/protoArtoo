@@ -1,0 +1,13 @@
+diff --git i/data/shell.js w/data/shell.js
+index de374347..1a524356 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -50,7 +50,7 @@
+     // Wiring sits beside Parts in Configure and answers the neighbouring
+     // question - where does this lead go (CONTEXT.md "Wiring"). The member row
+     // in the Configure group below has been waiting for this one since #288.
+-    { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Wiring", aliases: [] },
++    { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Loom", aliases: [] },
+     { page: "seq", doc: "/seq.html", icon: "timeline-outline", name: "Sequences", aliases: ["sequences"] },
+     { page: "rc", doc: "/rc.html", icon: "controller-classic-outline", name: "RC Control", aliases: [] },
+     // Today's Setup is the surface a droid is configured from, which is what

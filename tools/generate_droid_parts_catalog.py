@@ -1096,13 +1096,20 @@ def generate_browser_module(catalog, output_path=None):
  * a Common Addition, and `control: null` says the row declares no control path
  * at all, which is a dome fixture rather than a part waiting to be wired.
  *
- * NOTHING IN THE BROWSER READS `control` (#375). Every record below carries
- * it and no page or module consults it. Parts (data/parts.js, #347), the first
- * surface to draw a Part row, answers what drives each Part from the Servo
- * Output rows the droid reports (GET /api/servo/outputs) - the truth of a
- * build in progress - and never from this field, which says what path a Part
- * CAN be driven through on the design, not what drives it on this droid. Said
- * out loud because a field nothing consults reads as shipped otherwise.
+ * `control` HAS EXACTLY ONE READER IN THE BROWSER, AND IT IS NOT ASKING WHAT
+ * DRIVES A PART. Wiring (data/wiring.js, #350) reads it to bound its own
+ * promise: a Part whose control path is `dome-link` is the Dome Controller's to
+ * move and not this image's, and a Part that declares no path at all is driven
+ * by nothing, so neither is a row on a sheet that says what THIS image will
+ * drive. That is the question the field answers - what path a Part CAN be
+ * driven through on the design.
+ *
+ * What drives a Part on THIS droid is a different question and is still never
+ * this field (#375): Parts (data/parts.js, #347) and Wiring alike answer it
+ * from the Servo Output rows the droid reports (GET /api/servo/outputs), which
+ * is the truth of a build in progress. A page that reached for `control` to
+ * decide whether something moves would be reading a drawing instead of a
+ * droid.
  *
  * A variant whose complement is unknown carries `seeds: null`, never `[]`, so
  * reaching for it throws instead of quietly seeding an empty droid. `own`
