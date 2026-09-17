@@ -44,6 +44,7 @@
   const presetValueSlow = document.getElementById("preset-value-slow");
   const presetValueNormal = document.getElementById("preset-value-normal");
   const presetValueTurbo = document.getElementById("preset-value-turbo");
+  const presetSummary = document.getElementById("preset-summary");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
   const configFeedback = document.getElementById("config-feedback");
   const presetFeedback = document.getElementById("preset-feedback");
@@ -73,10 +74,13 @@
     6: "Watchdog reset",
   };
 
+  // The preset's operator-facing name. It was a snail, a bare word and a
+  // lightning bolt, which is three treatments for three answers to one
+  // question; an operator surface carries no emoji at all (ADR 0066).
   const PRESET_LABELS = {
-    slow: "🐌 Slow",
+    slow: "Slow",
     normal: "Normal",
-    turbo: "⚡ Turbo",
+    turbo: "Turbo",
   };
 
   const formatFailsafeSource = (source) => {
@@ -99,8 +103,23 @@
     return null;
   };
 
+  // The Speed preset section's subtitle: which limit the droid is actually
+  // sitting on, computed from what it answered rather than typed into the
+  // markup (ADR 0066, docs/ui-copy-voice.md rule 8). A preset is a chosen
+  // posture, so this is a word and a number and never a colour (CONTEXT.md
+  // "Status Colour"). A limit that matches no preset says so instead of
+  // rounding itself to the nearest one, because the buttons above would then
+  // disagree with the head.
+  const presetSummaryText = (activePreset) => {
+    if (currentSpeedLimitMax === null) return "finding out";
+    if (!activePreset) return `limit ${currentSpeedLimitMax} · no preset matches`;
+    return `${PRESET_LABELS[activePreset]} · limit ${currentSpeedLimitMax}`;
+  };
+
   const updatePresetHighlight = () => {
-    if (!presetButtons.length) return;
+    // No early-out on an empty button list. The section head reports the LIMIT
+    // the droid is on, which exists whether or not the three preset buttons
+    // rendered, and forEach over an empty list is already a no-op.
     const slow = parsePresetNumber(speedPresetSlow?.value);
     const normal = parsePresetNumber(speedPresetNormal?.value);
     const turbo = parsePresetNumber(speedPresetTurbo?.value);
@@ -118,6 +137,8 @@
       button.classList.toggle("selected", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
+
+    if (presetSummary) presetSummary.textContent = presetSummaryText(activePreset);
   };
 
   const presetsAreDistinct = () => {
@@ -318,9 +339,13 @@
       Number.isFinite(speedR) && Number.isFinite(speedL);
     if (!hasTelemetry) {
       if (hbNoData) {
+        // An empty state says why it is empty and offers the act that ends it.
+        // Which of the two it is matters: one is a wheel controller that has
+        // not spoken yet, the other is a droid whose feet were never switched
+        // on, and only the second has anything for the builder to do.
         hbNoData.textContent = driveHardwareEnabled
-          ? "Waiting for complete drive telemetry…"
-          : `Drive not enabled — ${s1EnableInSetup}.`;
+          ? "Nothing from the wheel controller yet. It reports once it is powered and talking to this board."
+          : `The feet are switched off, so there is no wheel controller to hear from — ${s1EnableInSetup}.`;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";

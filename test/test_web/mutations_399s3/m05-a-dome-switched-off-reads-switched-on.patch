@@ -1,0 +1,13 @@
+diff --git i/data/dome.js w/data/dome.js
+index 2f63593a..ad0c8391 100644
+--- i/data/dome.js
++++ w/data/dome.js
+@@ -121,7 +121,7 @@
+ 
+     setText(
+       domeHardwareState,
+-      domeHardwareEnabled ? "switched on" : "switched off in Setup",
++      "switched on",
+     );
+ 
+     if (!webControlStatusKnown) {

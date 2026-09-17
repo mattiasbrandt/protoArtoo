@@ -179,7 +179,7 @@
             // Show advisory for non-selectable panel
             const advisory = buildAdvisory(elementId, model);
             if (advisory) {
-              showFeedback(advisory, 'warn');
+              showFeedback(advisory, 'warning');
             }
             return;
           }
@@ -291,18 +291,21 @@
       const severity = elem.severity;
       if (!severity) return null; // Element is available
 
+      // No warning glyph in front of the sentence: an operator surface carries
+      // no pictograph (ADR 0066), and the amber the feedback line takes is the
+      // second reading the sentence already gives on its own.
       let message = '';
       if (severity === 'disabled') {
         const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
-        message = `⚠ ${elementId} is disabled${reason} — dome may ignore this command`;
+        message = `${elementId} is disabled${reason} — the dome may ignore this command`;
       } else if (severity === 'inactive') {
-        message = `⚠ ${elementId} is not currently active — dome may ignore this command`;
+        message = `${elementId} is not currently active — the dome may ignore this command`;
       } else if (severity === 'unverified') {
-        message = `⚠ ${elementId} availability unverified — dome state is unknown`;
+        message = `${elementId} availability unverified — the dome state is unknown`;
       } else if (severity === 'unmapped') {
-        message = `⚠ ${elementId} is unmapped — cannot actuate`;
+        message = `${elementId} is unmapped — cannot actuate`;
       } else {
-        message = `⚠ ${elementId} is not available`;
+        message = `${elementId} is not available`;
       }
 
       return message;
@@ -341,8 +344,8 @@
               <option value="">Choose sequence...</option>
               ${merged.map((seq) => `<option value="${window.PAUtils.escapeAttr(seq.name)}">${window.PAUtils.escapeHtml(seq.name)}</option>`).join('')}
             </select>
-            <button id="dome-seq-play" class="btn" aria-label="Play selected sequence" title="Send sequence to droid">▶ Play</button>
-            <button id="dome-seq-stop" class="btn" aria-label="Stop running sequence" title="Abort sequence">⏹ Stop</button>
+            <button id="dome-seq-play" class="btn" title="Send sequence to droid">Play</button>
+            <button id="dome-seq-stop" class="btn" title="Abort sequence">Stop</button>
           </div>
         `;
 
@@ -357,7 +360,7 @@
           playBtn.addEventListener('click', async () => {
             const seqName = selector.value;
             if (!seqName) {
-              showFeedback('Choose a sequence first', 'warn');
+              showFeedback('Choose a sequence first', 'warning');
               return;
             }
 
@@ -413,13 +416,18 @@
     }
 
     function renderSourceBanner(source, model) {
+      // The two treatments are the anatomy's own note voices rather than a
+      // second spelling of them: a provenance line takes the plain note, and a
+      // dome the builder can go and plug in takes the amber "act on this" one.
+      // The cached banner used to be blue, and blue reports no state at all
+      // (CONTEXT.md "Status Colour").
       let banner = '';
       if (source === 'live') {
         // No banner for live
       } else if (source === 'cached') {
-        banner = '<div class="dome-source-banner info">📦 Last known layout (runtime unverified)</div>';
+        banner = '<div class="note dome-source-banner">Last known layout — drawn from what the dome said the last time it answered, not from the dome in front of you.</div>';
       } else if (source === 'unsupported') {
-        banner = '<div class="dome-source-banner warn">⚠ Unsupported layout schema — showing built-in fallback</div>';
+        banner = '<div class="note note-act dome-source-banner">Unsupported layout schema — showing the built-in map instead.</div>';
       } else if (source === 'stated-design') {
         // Tier 3 with a dome the built-in drawing is not of. Two different
         // jobs for the builder, so two different sentences: one is "we have no
@@ -427,10 +435,10 @@
         // carries at all" — and the second is the one somebody has to go and
         // read out of the design files (ADR 0047).
         banner = model?.complementKnown === false
-          ? '<div class="dome-source-banner warn">🔌 Dome not reachable — this build does not know which panels that dome design carries</div>'
-          : '<div class="dome-source-banner warn">🔌 Dome not reachable — no built-in map for the dome design you stated</div>';
+          ? '<div class="note note-act dome-source-banner">Dome not reachable — and this build does not know which panels that dome design carries.</div>'
+          : '<div class="note note-act dome-source-banner">Dome not reachable — there is no built-in map for the dome design you stated.</div>';
       } else if (source === 'vendored') {
-        banner = '<div class="dome-source-banner warn">🔌 Dome not reachable — showing MK4 built-in layout</div>';
+        banner = '<div class="note note-act dome-source-banner">Dome not reachable — showing MK4 built-in layout.</div>';
       }
       return banner;
     }

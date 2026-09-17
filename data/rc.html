@@ -15,140 +15,149 @@
     <script>window.PAShellDelegate = true; location.replace("/#rc");</script>
   </head>
   <body data-page="rc">
-    <div id="shell-top"></div>
 
-
-    <!-- Receiver Type (shown first: this choice defines everything else on this page) -->
-    <!-- No RC inputs notice (hidden when any RC channel is enabled) -->
-    <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🕹️ RC Source Inactive</h3>
-      <div class="desc">No RC source is active for the current receiver type and routing.</div>
-      <div class="desc disabled-reason">Enable the applicable RC input in <a class="setup-link" href="/setup.html">Setup</a>, or select the intended receiver type and routing below, then restart the controller.</div>
-      <div class="desc">Mapping edits remain available.</div>
+    <!-- The title, and the question this surface answers (ADR 0066). Every act
+         here is named beside the thing it acts on, so the title carries none. -->
+    <div class="title">
+      <div>
+        <h1>RC Control</h1>
+        <p class="question">Which stick, switch or dial on the transmitter does what on this droid?</p>
+      </div>
     </div>
 
-    <div class="card">
-      <h3>📡 Receiver Type</h3>
+    <!-- No RC source is live. An Availability Family "change it here"
+         (CONTEXT.md), told apart by treatment and never by hue: the mapping
+         half of this page keeps working, so the card says that too.
 
-      <div class="info-note mt-12" role="note">
+         The three sentences below are #166's, word for word, and they stay word
+         for word: test_issue_166_staged_rc_settings.js pins each of them, and a
+         sweep that is about layout and pictographs does not get to weaken a
+         claim another ticket paid for. The first draft of this card said
+         "Nothing is arriving from a receiver", which drops the clause that
+         carries the whole diagnosis - the source is inactive FOR THE RECEIVER
+         TYPE AND ROUTING you picked, which is the thing to go and change. -->
+    <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <div class="sect"><h2>RC input</h2><span class="sub">no source is live</span></div>
+      <p class="prose"><b>No RC source is active for the current receiver type and routing.</b> Enable the applicable RC input in <a class="setup-link" href="/setup.html">Setup</a>, or select the intended receiver type and routing below, then restart the controller. Mapping edits remain available.</p>
+    </div>
+
+    <!-- The receiver type comes first: it decides what every other card on this
+         page is even about. -->
+    <div class="card">
+      <div class="sect"><h2>Receiver type</h2><span class="sub" id="rc-mode-summary">finding out</span></div>
+      <p class="prose">What is plugged into the controller's RC inputs. Pick the one you actually fitted: the channel list, the live column and the mapping editor below all follow this choice.</p>
+      <!-- #166's two sentences, word for word, and pinned as such. -->
+      <div class="note note-info" role="note">
         Receiver type and single-SBUS routing save immediately and apply after controller restart. Channel mapping changes apply when saved.
       </div>
 
-      <div class="rc-mode-grid mt-16">
+      <div class="rc-mode-grid" role="group" aria-label="Receiver type">
         <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-icon">🎮</div>
           <div class="rc-mode-title">Standard PWM</div>
-          <div class="rc-mode-desc">6 individual PWM channels from a standard RC receiver</div>
+          <div class="rc-mode-desc">Six separate PWM leads from an ordinary receiver</div>
         </div>
         <div class="rc-mode-card" data-mode="single_sbus" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-icon">📻</div>
           <div class="rc-mode-title">Single SBUS</div>
-          <div class="rc-mode-desc">One SBUS receiver on CH1 (up to 18 channels)</div>
+          <div class="rc-mode-desc">One SBUS receiver on one lead, up to 18 channels</div>
         </div>
         <div class="rc-mode-card" data-mode="dual_sbus" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-icon">📡</div>
           <div class="rc-mode-title">Dual SBUS</div>
-          <div class="rc-mode-desc">Two SBUS receivers — receiver #1 for drive, receiver #2 for dome and aux</div>
+          <div class="rc-mode-desc">Two SBUS receivers — the first drives the feet, the second the dome and AUX</div>
         </div>
       </div>
 
-
-
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
-      <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
-        <label for="sbus-recv-sel">Single SBUS receiver</label>
-        <select id="sbus-recv-sel" aria-describedby="sbus-recv-feedback" title="Select which physical SBUS input is treated as the primary receiver.">
-          <option value="false">SBUS1 / CH1</option>
-          <option value="true">SBUS2 / CH2</option>
-        </select>
-        <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="single-sbus-recv-section" class="hidden" aria-hidden="true">
+        <label class="field" for="sbus-recv-sel">
+          <span>Which input the receiver is on</span>
+          <select id="sbus-recv-sel" class="compact-number" aria-describedby="sbus-recv-feedback">
+            <option value="false">SBUS1 / CH1</option>
+            <option value="true">SBUS2 / CH2</option>
+          </select>
+        </label>
+        <div id="sbus-recv-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
 
-
-      <div id="rc-mode-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
-      
-      <div class="mt-16">
-        <button id="rc-reset-defaults" class="btn" type="button">↺ Reset defaults</button>
-      </div>
+      <div id="rc-mode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
     </div>
 
-    <!-- Binding Summary Table -->
+    <!-- What is bound to what, in one table -->
     <div class="card">
-      <h3>📋 Binding Summary</h3>
-      
-      <table class="rc-summary-table mt-16">
+      <div class="sect"><h2>Bindings</h2><span class="sub" id="rc-summary-count" role="status" aria-live="polite">finding out</span></div>
+      <table class="rc-summary-table">
         <thead>
           <tr>
-            <th>Action</th>
-            <th>CH</th>
-            <th>Live</th>
+            <th scope="col">Action</th>
+            <th scope="col">Channel</th>
+            <th scope="col">Live</th>
           </tr>
         </thead>
         <tbody id="rc-summary-body">
           <tr><td colspan="3">Loading bindings...</td></tr>
         </tbody>
       </table>
+      <div class="button-row button-row-compact">
+        <button id="rc-reset-defaults" class="btn" type="button">Clear all mappings</button>
+      </div>
+      <p class="hint">Clearing takes every binding off at once and asks first. A channel with nothing on it still arrives; it just does not do anything.</p>
     </div>
 
-    <!-- Live Monitor strip (source health + selected slot live data) -->
+    <!-- The live column: what the transmitter is sending right now, and whether
+         each receiver is being heard at all. -->
     <div class="card">
       <div class="rc-live-monitor-layout">
         <div>
-          <h4 class="rc-panel-title">📈 Live Monitor</h4>
+          <div class="sect"><h3>Live monitor</h3><span class="sub">the channel you have selected</span></div>
           <div id="rc-live-preview-content">
           </div>
         </div>
         <div>
-          <h4 class="rc-panel-title">📡 Source Health</h4>
-          <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
+          <div class="sect"><h3>Source health</h3><span class="sub">three inputs, and how old each one is</span></div>
+          <div id="rc-preview-source-health" class="rc-source-grid"></div>
         </div>
       </div>
     </div>
 
-    <!-- Two-panel Editor -->
+    <!-- Pick a channel on the left, say what it does on the right -->
     <div class="card">
       <div class="rc-mapper-grid">
-        <!-- Channel List (left) -->
+        <!-- Channel list (left) -->
         <div class="rc-channel-list">
-          <h4 class="rc-panel-title">📻 Channels</h4>
+          <div class="sect"><h3>Channels</h3><span class="sub">pick one to map it</span></div>
           <div class="rc-learn-bar">
-            <button id="rc-learn-btn" class="btn" type="button">🔍 Detect channel</button>
+            <button id="rc-learn-btn" class="btn" type="button">Detect channel</button>
           </div>
           <div id="rc-learn-banner" class="rc-learn-banner" hidden>
-            <div class="rc-learn-banner-icon">🔍</div>
             <div>
               <div class="rc-learn-banner-title">Keep all controls neutral, then press a switch or button</div>
               <div id="rc-learn-status" class="rc-learn-banner-status" role="status" aria-live="polite" aria-atomic="true">Listening…</div>
             </div>
-            <button id="rc-learn-stop" class="btn btn-sm" type="button">✕ Stop</button>
+            <button id="rc-learn-stop" class="btn btn-sm" type="button">Stop</button>
           </div>
           <div id="rc-channel-items">
           </div>
         </div>
 
-        <!-- Editor Panel (right) -->
+        <!-- Editor panel (right) -->
         <div class="rc-editor-panel">
-          <h4 class="rc-panel-title">🛠️ Mapping Editor</h4>
-          <div class="desc rc-panel-desc">Adjust the selected channel mapping, then apply to save.</div>
+          <div class="sect"><h3>Mapping editor</h3><span class="sub rc-dirty-state" id="rc-editor-dirty" data-state="clean">Saved</span></div>
+          <p class="hint">Change what the selected channel does, then apply. Nothing reaches the droid until you do.</p>
           <div id="rc-editor-content">
           </div>
-          
-          <div class="rc-editor-status-row mt-20" role="status" aria-live="polite" aria-atomic="true">
-            <span id="rc-editor-dirty" class="rc-dirty-state" data-state="clean">Saved</span>
+
+          <div class="rc-editor-status-row" role="status" aria-live="polite" aria-atomic="true">
             <span id="rc-editor-saved-at" class="rc-saved-at">Last saved: —</span>
           </div>
 
-          <div class="button-row rc-editor-actions mt-12">
-            <button id="rc-editor-apply" class="btn accent" type="button" disabled>💾 Apply & Save</button>
-            <button id="rc-editor-revert" class="btn" type="button" disabled>↩ Revert Draft</button>
+          <div class="button-row button-row-compact rc-editor-actions">
+            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply and save</button>
+            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert draft</button>
           </div>
 
-          <div id="rc-editor-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div id="rc-editor-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
       </div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

@@ -1,0 +1,14 @@
+diff --git i/data/dome.js w/data/dome.js
+index 2f63593a..38b1678c 100644
+--- i/data/dome.js
++++ w/data/dome.js
+@@ -105,7 +105,8 @@
+     } else if (percent > 0) {
+       setText(domeRotationState, "Forward");
+     } else {
+-      setText(domeRotationState, "Reverse");
++      domeRotationState.className = "status-pill pill-warn";
++      setText(domeRotationState, `Reverse ${Math.abs(percent)}%`);
+     }
+   };
+ 

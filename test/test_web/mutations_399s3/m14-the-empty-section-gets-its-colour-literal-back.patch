@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index 246c7ff9..19e9c624 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -261,7 +261,7 @@
+         html += sequences.map((seq) => renderSeqCard(seq)).join("");
+       } else {
+         html += '<h3 class="seq-section-heading">Your sequences</h3>';
+-        html += '<p class="prose seq-section-empty"><b>Nothing of your own yet.</b> Tune one of the factory sequences below and it lands here.</p>';
++        html += '<div style="color: #999;">No custom or retrained sequences yet</div>';
+       }
+ 
+       // "Factory sequences" section

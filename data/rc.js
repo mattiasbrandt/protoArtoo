@@ -24,6 +24,7 @@
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
+  const rcModeSummary = document.getElementById("rc-mode-summary");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
   
@@ -33,6 +34,7 @@
   let sbusRecvFeedbackTimer = null;
   let confirmedSbusRecvValue = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
+  const rcSummaryCount = document.getElementById("rc-summary-count");
   
   const rcChannelItems = document.getElementById("rc-channel-items");
   const rcLivePreviewContent = document.getElementById("rc-live-preview-content");
@@ -395,11 +397,11 @@
       sbusRecvFeedbackTimer = null;
     }
     sbusRecvFeedback.textContent = message;
-    sbusRecvFeedback.className = variant ? `feedback mt-8 ${variant}` : "feedback mt-8";
+    sbusRecvFeedback.className = variant ? `feedback ${variant}` : "feedback";
     if (clearAfterMs > 0) {
       sbusRecvFeedbackTimer = window.setTimeout(() => {
         sbusRecvFeedback.textContent = "";
-        sbusRecvFeedback.className = "feedback mt-8";
+        sbusRecvFeedback.className = "feedback";
         sbusRecvFeedbackTimer = null;
       }, clearAfterMs);
     }
@@ -408,13 +410,13 @@
   const setModeFeedback = (message, variant = '') => {
     if (!rcModeFeedback) return;
     rcModeFeedback.textContent = message;
-    rcModeFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+    rcModeFeedback.className = variant ? `feedback ${variant}` : 'feedback';
   };
 
   const setEditorFeedback = (message, variant = '') => {
     if (!rcEditorFeedback) return;
     rcEditorFeedback.textContent = message;
-    rcEditorFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+    rcEditorFeedback.className = variant ? `feedback ${variant}` : 'feedback';
   };
 
   const setRcInputsEnabled = (enabled) => {
@@ -424,7 +426,7 @@
     if (rcLearnBtn) {
       rcLearnBtn.disabled = !enabled;
       rcLearnBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
-      if (!enabled) rcLearnBtn.textContent = "🔍 Detect channel";
+      if (!enabled) rcLearnBtn.textContent = "Detect channel";
     }
     if (rcLearnStop) {
       rcLearnStop.disabled = !enabled;
@@ -517,9 +519,9 @@
   };
 
   const MODE_LABEL = {
-    standard_pwm: "🎮 Standard PWM",
-    single_sbus: "📻 Single SBUS",
-    dual_sbus: "📡 Dual SBUS",
+    standard_pwm: "Standard PWM",
+    single_sbus: "Single SBUS",
+    dual_sbus: "Dual SBUS",
   };
 
   const modeLabel = (mode) => MODE_LABEL[mode] || mode;
@@ -592,7 +594,9 @@
     const pressed = isOneShotActionToken(token)
       ? consumeTriggerPulse(channelKey, pressedLevel)
       : pressedLevel;
-    return pressed ? '<span aria-label="Pressed">● PRESSED</span>' : '<span aria-label="Released">○ Released</span>';
+    return pressed
+      ? '<span class="rc-trigger-state"><span class="indicator ok" aria-hidden="true"></span>Pressed</span>'
+      : '<span class="rc-trigger-state"><span class="indicator" aria-hidden="true"></span>Released</span>';
   };
 
   const renderSourceHealth = () => {
@@ -604,10 +608,19 @@
       const enabled = Boolean(src.enabled);
       const linked = Boolean(src.linked);
       const age = Number(src.ageMs || 0);
+      // A receiver being heard or not is a Health Signal, so it reads as a
+      // droid LED and the colour IS the reading (CONTEXT.md "Health Signal"):
+      // linked is nominal, waiting is degraded and something the builder can
+      // act on, and a source nobody switched on is unlit rather than green.
+      // These three rows used to be three words on three plain plates, with
+      // two dead [data-state] rules in the stylesheet that nothing ever set.
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
-      return `<div class="rc-source-card rc-source-card-compact">
-        <div class="rc-source-card-title">${window.PAUtils.escapeHtml(name.toUpperCase())}</div>
-        <div class="rc-source-card-meta">${state} · age ${age}ms</div>
+      const lamp = !enabled ? "off" : linked ? "ok" : "warn";
+      const reading = !enabled ? "not switched on" : `${state} · ${age}ms old`;
+      return `<div class="health-item">
+        <div class="indicator ${lamp}" aria-hidden="true"></div>
+        <span>${window.PAUtils.escapeHtml(name.toUpperCase())}</span>
+        <span class="indicator-text">${window.PAUtils.escapeHtml(reading)}</span>
       </div>`;
     }).join("");
   };
@@ -629,14 +642,26 @@
     });
   };
 
+  // The Bindings head's subtitle, counted from the map the table is drawn from
+  // rather than typed into the markup (ADR 0066, docs/ui-copy-voice.md rule 8).
+  const setSummaryCount = (count) => {
+    if (!rcSummaryCount) return;
+    rcSummaryCount.textContent = count === 0
+      ? "nothing mapped yet"
+      : `${count} ${count === 1 ? "channel" : "channels"} mapped`;
+  };
+
   const renderSummaryTable = () => {
     if (!rcSummaryBody) return;
     const rows = asMapArray()
       .slice()
       .sort((a, b) => (a.source === b.source ? a.channel - b.channel : a.source.localeCompare(b.source)));
 
+    setSummaryCount(rows.length);
+
     if (!rows.length) {
-      rcSummaryBody.innerHTML = '<tr><td colspan="3" class="desc">No channels mapped yet.</td></tr>';
+      rcSummaryBody.innerHTML =
+        '<tr><td colspan="3"><b>No channel does anything yet.</b> Pick one below and say what it should do.</td></tr>';
       return;
     }
 
@@ -748,7 +773,8 @@
     renderSourceHealth();
 
     if (!selectedChannel) {
-      rcLivePreviewContent.innerHTML = '';
+      rcLivePreviewContent.innerHTML =
+        '<p class="prose"><b>No channel is selected.</b> Pick one in the list below and what it is sending shows up here.</p>';
       return;
     }
 
@@ -820,15 +846,15 @@
 
     return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${window.PAUtils.escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
       <button type="button" class="rc-action-select-btn" data-action-select="${window.PAUtils.escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
-        <span class="rc-action-radio" aria-hidden="true">${selected ? '●' : '○'}</span>
+        <span class="rc-action-radio" aria-hidden="true"></span>
         <span class="rc-action-main">
           <span class="rc-action-label">${window.PAUtils.escapeHtml(item.label)}</span>
           <span class="rc-action-desc">${window.PAUtils.escapeHtml(item.description || 'No description available.')}</span>
         </span>
       </button>
       <span class="rc-action-side">
-        ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
-        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
+        ${showSafetyPill ? '<span class="rc-action-safety-pill">Safety critical</span>' : ''}
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>Try it</button>` : ''}
         <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${window.PAUtils.escapeHtml(item.token)}">${window.PAUtils.escapeHtml(feedbackText || '')}</span>
       </span>
     </div>`;
@@ -850,7 +876,7 @@
     const hasMatches = recentItems.length > 0 || groups.length > 0;
     const recentBlock = recentItems.length > 0
       ? `<details class="rc-action-group rc-action-group-recent" open>
-          <summary>🕘 Recently used</summary>
+          <summary>Recently used</summary>
           <div class="rc-action-group-rows">${recentItems.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
         </details>`
       : '';
@@ -858,7 +884,7 @@
     return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
       <div class="rc-action-search-row">
         <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
-        <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'}>✕</button>
+        <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'} aria-label="Clear the search">Clear</button>
       </div>
       ${recentBlock}
       ${groups.map(({ name, items }) => {
@@ -908,11 +934,11 @@
 
     rcEditorContent.innerHTML = `
       <h4 class="rc-editor-title">Edit ${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
-      <div class="desc mt-4">Source: <strong>${window.PAUtils.escapeHtml(sourceLabel(source))}</strong> · CH <strong>${window.PAUtils.escapeHtml(String(channel))}</strong></div>
-      <label class="rc-action-label-head mt-8">Action</label>
+      <p class="hint">Source <b>${window.PAUtils.escapeHtml(sourceLabel(source))}</b> &middot; channel <b>${window.PAUtils.escapeHtml(String(channel))}</b></p>
+      <label class="rc-action-label-head">Action</label>
       <input data-field="target" type="hidden" value="${window.PAUtils.escapeHtml(displayToken)}">
       ${renderActionPicker(displayToken, actionPickerQuery)}
-      <div class="mt-8"><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
+      <div><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
       <div data-cond="seq" class="rc-editor-cond ${displayToken === 'seq' ? 'block' : 'hidden'}">
         <label>Marcduino Sequence
           <select data-field="payload">
@@ -957,8 +983,8 @@
         const selected = rowToken === selectedToken;
         row.classList.toggle('selected', selected);
         row.setAttribute('aria-selected', selected ? 'true' : 'false');
-        const radio = row.querySelector('.rc-action-radio');
-        if (radio) radio.textContent = selected ? '●' : '○';
+        // The radio is drawn by the stylesheet off the row's own .selected
+        // class, so there is nothing to write here any more.
       });
 
       const picker = rcEditorContent.querySelector('.rc-action-picker');
@@ -1165,19 +1191,29 @@
       await loadMappings();
       setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, 'success');
     } catch (error) {
-      setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, 'error');
+      setModeFeedback(window.PAApi.messageFor(error), 'error');
     }
   };
 
   debouncedSaveRcMode = window.PAUtils.debounce(saveRcMode, 250);
 
-  const switchRcMode = (mode) => {
-    if (rcInputModeHidden) rcInputModeHidden.value = mode;
+  // Which receiver this page is about, painted in one place: the card that is
+  // lit, and the section head that names it. loadRcMode's success path used to
+  // carry its own copy of the card loop, so on a droid that answered
+  // "single_sbus" the cards said Single SBUS and the head still said Standard
+  // PWM. Found in a browser at 1440 px.
+  const paintModeSelection = (mode) => {
     rcModeCards.forEach((card) => {
       const selected = card.dataset.mode === mode;
       card.classList.toggle('selected', selected);
       card.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
+    if (rcModeSummary) rcModeSummary.textContent = modeLabel(mode);
+  };
+
+  const switchRcMode = (mode) => {
+    if (rcInputModeHidden) rcInputModeHidden.value = mode;
+    paintModeSelection(mode);
     updateRecvSel(mode);
     selectedChannel = null;
     document.querySelectorAll('.rc-channel-item').forEach((el) => el.classList.remove('active'));
@@ -1217,11 +1253,7 @@
       const data = result.data;
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
-      rcModeCards.forEach((card) => {
-        const selected = card.dataset.mode === mode;
-        card.classList.toggle('selected', selected);
-        card.setAttribute('aria-pressed', selected ? 'true' : 'false');
-      });
+      paintModeSelection(mode);
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
       confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);
@@ -1388,7 +1420,7 @@
     learnBaseline = rcSnapshot;
     learnHit = null;
     learnStartMs = Date.now();
-    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detecting…';
+    if (rcLearnBtn) rcLearnBtn.textContent = 'Detecting…';
     if (rcLearnBanner) rcLearnBanner.hidden = false;
     updateLearnBanner();
     applyLearnHighlight();
@@ -1398,7 +1430,7 @@
     learnActive = false;
     learnBaseline = null;
     learnHit = null;
-    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detect channel';
+    if (rcLearnBtn) rcLearnBtn.textContent = 'Detect channel';
     if (rcLearnBanner) rcLearnBanner.hidden = true;
     applyLearnHighlight();
   };
@@ -1510,7 +1542,7 @@
       const serverMap = Array.isArray(result.data?.map) ? result.data.map : Object.values(nextMap);
       channelMap = modeMapFromArray(serverMap);
       const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback(`✓ Saved at ${savedAt}`, 'success');
+      setEditorFeedback(`Saved at ${savedAt}`, 'success');
       markEditorClean(savedAt);
       renderSummaryTable();
       renderChannelList();
@@ -1537,7 +1569,7 @@
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
       channelMap = {};
       const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback('✓ Cleared all mappings', 'success');
+      setEditorFeedback('Cleared all mappings', 'success');
       markEditorClean(savedAt);
       renderSummaryTable();
       renderChannelList();

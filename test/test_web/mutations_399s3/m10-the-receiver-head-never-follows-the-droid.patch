@@ -1,0 +1,13 @@
+diff --git i/data/rc.js w/data/rc.js
+index 9d97ec52..89394203 100644
+--- i/data/rc.js
++++ w/data/rc.js
+@@ -1208,7 +1208,7 @@
+       card.classList.toggle('selected', selected);
+       card.setAttribute('aria-pressed', selected ? 'true' : 'false');
+     });
+-    if (rcModeSummary) rcModeSummary.textContent = modeLabel(mode);
++    if (rcModeSummary) rcModeSummary.textContent = modeLabel("standard_pwm");
+   };
+ 
+   const switchRcMode = (mode) => {

@@ -1,0 +1,13 @@
+diff --git i/data/rc.js w/data/rc.js
+index 9d97ec52..b2d9a9e5 100644
+--- i/data/rc.js
++++ w/data/rc.js
+@@ -615,7 +615,7 @@
+       // These three rows used to be three words on three plain plates, with
+       // two dead [data-state] rules in the stylesheet that nothing ever set.
+       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
+-      const lamp = !enabled ? "off" : linked ? "ok" : "warn";
++      const lamp = !enabled ? "ok" : linked ? "ok" : "warn";
+       const reading = !enabled ? "not switched on" : `${state} · ${age}ms old`;
+       return `<div class="health-item">
+         <div class="indicator ${lamp}" aria-hidden="true"></div>

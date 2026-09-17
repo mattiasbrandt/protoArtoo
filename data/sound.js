@@ -117,7 +117,7 @@
     snd_cat_whis_lo: ["whistle"],
   };
   const MOOD_MAP_MOODS = [
-    { key: "quiet", label: "Quiet 🤐" },
+    { key: "quiet", label: "Quiet" },
     { key: "mid", label: "Mid-Awake" },
     { key: "full", label: "Full-Awake" },
     { key: "awakeplus", label: "Awake+" },
@@ -210,7 +210,6 @@
   const modStatusTable = document.getElementById("mod-status-table");
   const modPollSection = document.getElementById("mod-poll-section");
   const modQueryNote = document.getElementById("mod-query-note");
-  const modNoQueryNotice = document.getElementById("mod-no-query-notice");
   const btnPoll = document.getElementById("btn-poll-status");
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
@@ -252,9 +251,13 @@
     element.classList.toggle("hidden", !visible);
   };
 
+  // The two workspaces are two answers to one question, so they are one
+  // segmented control and the chosen one takes .seg's own lit face. It used to
+  // take .btn.accent, which is the anatomy's PRIMARY ACT - the one filled
+  // control on a surface - and this page had two of them.
   const setModeButtonState = (button, active) => {
     if (!button) return;
-    button.classList.toggle("accent", active);
+    button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   };
 
@@ -380,7 +383,6 @@
     setElementVisible(modPollSection, showManualPoll);
     setElementVisible(btnPoll, showManualPoll);
     setElementVisible(modStatusTable, supportsStatusQuery);
-    if (modNoQueryNotice) setElementVisible(modNoQueryNotice, !supportsStatusQuery);
 
     if (!modQueryNote) return;
     if (!supportsStatusQuery) {
@@ -455,13 +457,13 @@
           soundStateBadge.textContent = "No module response";
           soundStateBadge.dataset.state = "error";
         } else if (d.play_state === "playing") {
-          soundStateBadge.textContent = "🔊 Playing";
+          soundStateBadge.textContent = "Playing";
           soundStateBadge.dataset.state = "playing";
         } else if (d.play_state === "paused") {
-          soundStateBadge.textContent = "⏸ Paused";
+          soundStateBadge.textContent = "Paused";
           soundStateBadge.dataset.state = "idle";
         } else {
-          soundStateBadge.textContent = "✅ Idle";
+          soundStateBadge.textContent = "Idle";
           soundStateBadge.dataset.state = "idle";
         }
       }
@@ -1042,8 +1044,8 @@
 
     if (catalogSuggestBtn) {
       catalogSuggestBtn.textContent = suggestionCount > 0
-        ? `🧭 Apply suggestions (${suggestionCount})`
-        : "🧭 Apply suggestions";
+        ? `Apply suggestions (${suggestionCount})`
+        : "Apply suggestions";
       const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
       catalogSuggestBtn.disabled = !enabled;
       catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
@@ -1113,7 +1115,7 @@
     setElementVisible(catalogSelectCol, bulkVisible);
 
     if (catalogBulkToggleBtn) {
-      catalogBulkToggleBtn.textContent = bulkVisible ? "✕ Done" : "☑ Bulk";
+      catalogBulkToggleBtn.textContent = bulkVisible ? "Done" : "Bulk";
       catalogBulkToggleBtn.setAttribute("aria-pressed", bulkVisible ? "true" : "false");
       catalogBulkToggleBtn.disabled = !catalogSupported || catalogRefreshInFlight || !soundHardwareEnabled;
       catalogBulkToggleBtn.setAttribute("aria-disabled", catalogBulkToggleBtn.disabled ? "true" : "false");
@@ -1326,7 +1328,7 @@
       actionRow.className = "sound-action-row";
 
       const mapButton = createActionButton({
-        label: "💾 Map",
+        label: "Map",
         title: "Save mapping to selected target",
         ariaLabel: `Map ${entry.name || entry.index} to selected target`,
         className: "btn sound-btn-compact",
@@ -1354,7 +1356,7 @@
       clearButton.setAttribute("aria-disabled", clearButton.disabled ? "true" : "false");
 
       const playButton = createActionButton({
-        label: "▶ Play",
+        label: "Play",
         title: "Play this catalog entry",
         ariaLabel: `Play catalog entry ${entry.name || entry.index}`,
         className: "btn sound-btn-play",
@@ -1669,7 +1671,7 @@
         namedDirtyTrackers.set(sound.key, dirtyTracker);
 
         const saveButton = createActionButton({
-          label: "💾 Save",
+          label: "Save",
           title: "Save track number",
           ariaLabel: `Save ${sound.label} track number`,
           className: "btn sound-btn-compact",
@@ -1689,7 +1691,7 @@
       }
 
       const playButton = createActionButton({
-        label: "▶ Play",
+        label: "Play",
         title: sound.playMode === "track"
           ? `Play configured track for ${sound.label}`
           : `Play ${sound.cmd}`,
@@ -1787,7 +1789,7 @@
       categoryDirtyTrackers.set(category.loKey, dirtyTracker);
 
       const saveButton = createActionButton({
-        label: "💾 Save",
+        label: "Save",
         title: "Save category range",
         ariaLabel: `Save ${category.label} range`,
         className: "btn sound-btn-compact",
@@ -1810,7 +1812,7 @@
       });
 
       const playButton = createActionButton({
-        label: "▶ Play",
+        label: "Play",
         title: `Play random ${category.label} track`,
         ariaLabel: `Play ${category.label}`,
         className: "btn sound-btn-play",
@@ -1922,7 +1924,7 @@
       systemDirtyTrackers.set(sound.key, dirtyTracker);
 
       const saveButton = createActionButton({
-        label: "💾 Save",
+        label: "Save",
         title: "Save track number",
         ariaLabel: `Save ${sound.label} track number`,
         className: "btn sound-btn-compact",
@@ -1938,7 +1940,7 @@
       });
 
       const playButton = createActionButton({
-        label: "▶ Play",
+        label: "Play",
         title: `Play configured track for ${sound.label}`,
         ariaLabel: `Play ${sound.label}`,
         className: "btn sound-btn-play",

@@ -1,0 +1,13 @@
+diff --git i/data/rc.js w/data/rc.js
+index 9d97ec52..540deca6 100644
+--- i/data/rc.js
++++ w/data/rc.js
+@@ -648,7 +648,7 @@
+     if (!rcSummaryCount) return;
+     rcSummaryCount.textContent = count === 0
+       ? "nothing mapped yet"
+-      : `${count} ${count === 1 ? "channel" : "channels"} mapped`;
++      : `1 channel mapped`;
+   };
+ 
+   const renderSummaryTable = () => {
