@@ -1,0 +1,13 @@
+diff --git i/data/health_signals.js w/data/health_signals.js
+index 52bb348e..4bdef070 100644
+--- i/data/health_signals.js
++++ w/data/health_signals.js
+@@ -116,7 +116,7 @@
+     // Neither number present is a reading we do not have, not a low one.
+     if (!Number.isFinite(heapBytes) || heapBytes < 0) {
+       return healthSignal(
+-        "off",
++        "warn",
+         "No data",
+         `heapFree=${String(payload.heapFree ?? "missing")} (expected non-negative bytes)`
+       );
