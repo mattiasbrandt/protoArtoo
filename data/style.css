@@ -43,9 +43,10 @@
        three: --text, --text-dim, --text-faint.
      --space-3xs (2px), --space-xs (6px)  the pre-anatomy ladder's finer steps.
        The anatomy's ladder is 4 / 8 / 12 / 16 / 24 / 32.
-     --radius-sm, --radius-md, --radius-lg   the pre-anatomy corners. An
-       instrument plate is chamfered (--radius-plate), not rounded, and a button
-       keeps --radius-xs so it still reads as a button.
+     --radius-sm, --radius-lg   the pre-anatomy corners. An instrument plate is
+       chamfered (--radius-plate), not rounded, and a button keeps --radius-xs
+       so it still reads as a button. --radius-md went with slice 2, which was
+       its last reader.
    --------------------------------------------------------------------------- */
 :root {
   /* Grounds and plates, darkest to lightest: the inside of the body shell, an
@@ -160,7 +161,6 @@
   --radius-plate: 2px;
   --radius-xs: 3px;
   --radius-sm: 4px;
-  --radius-md: 8px;
   --radius-lg: 12px;
   --radius-pill: 999px;
   --radius-round: 50%;
@@ -880,6 +880,21 @@ nav > a {
   border-left: 2px solid var(--warning);
 }
 
+/* What a swept card puts between its own parts: one step of the ladder, so the
+   head, the prose, the work area and the feedback line are spaced by a token
+   rather than by a .mt-12 utility carrying a second spelling of --space-md.
+
+   Scoped to the surfaces #399 has swept rather than written on .card itself,
+   because the surfaces whose slice has not come yet still space themselves with
+   those utilities and must not move under a slice that is not sweeping them. */
+body[data-page="servo"] .card > * + *,
+body[data-page="parts"] .card > * + *,
+body[data-page="parts"] .outputs-section > * + *,
+body[data-page="setup"] .card > * + *,
+body[data-page="setup"] #feature-form > * + * {
+  margin-top: var(--space-md);
+}
+
 /* .card.disabled-card is the whole-page form of "off": a page whose component
    is switched off in Setup. It is an Availability Family member and wears the
    "change it here" treatment declared with the other three, further down. */
@@ -1088,6 +1103,16 @@ nav > a {
 .button-row.button-row-compact .btn {
   min-width: 0;
   padding-inline: 14px;
+}
+
+/* A .button-row is display:grid, and an author rule beats the browser's own
+   [hidden] whatever the specificity - the same trap .parts-find[hidden] and
+   .rc-learn-banner[hidden] already had to say out loud. Setup's restore act
+   was on screen, enabled, before any backup file had been chosen, and pressing
+   it returned silently on its own parsedBackup guard: a control that is
+   present and does nothing. Found in a browser at 1440 px. */
+.button-row[hidden] {
+  display: none;
 }
 
 .drive-safety-actions {
@@ -1350,23 +1375,20 @@ input[type="number"]::-webkit-inner-spin-button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 30%, transparent);
 }
 
-/* Compact number input for inline use (e.g. test position field in button rows) */
+/* A compact number box, inline in a row of acts: the typed pulse width on
+   Servos. It keeps a 44 px target, which is the bench tablet's floor, and takes
+   the frame's own focus ring rather than a second spelling of one. */
 input.input-narrow {
-  width: 120px;
-  padding: 10px 12px;
+  width: 108px;
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   font: inherit;
-  font-size: 0.95rem;
-  min-height: 44px;
+  font-size: var(--fs-cell);
   transition: border-color 0.2s ease;
-}
-input.input-narrow:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .field-checkbox {
@@ -1435,23 +1457,28 @@ input.input-narrow:focus {
 }
 
 .toggle-label {
-  font-size: 0.9rem;
-  color: var(--silver-bright);
+  font-size: var(--fs-cell);
+  color: var(--text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
+/* What is recorded as fitted to this component - a product name off the
+   Component Registry. It is a KIND of thing, not a state, so it is the
+   anatomy's engraved label rather than a coloured badge. */
 .component-badge {
   display: inline-block;
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: var(--radius-xs);
-  padding: var(--space-3xs) var(--space-xs);
-  font-size: 0.75rem;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  padding: 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 500;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -1466,7 +1493,8 @@ input.input-narrow:focus {
 }
 
 .toggle-status {
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
   margin-left: auto;
 }
@@ -1538,11 +1566,19 @@ input.input-narrow:focus {
   transition: border-color 0.18s ease, background-image 0.18s ease, opacity 0.18s ease;
 }
 
-/* Available, and running. Green is not one of the two reserved colours and is
-   not being spent on a way of saying no - it marks the states that are a yes. */
+/* Switched on, and this image can offer it. It is the brightest of the four
+   rails and nothing else: a component the builder ticked is a CHOSEN POSTURE
+   and takes no colour at all, and an Availability Family is told apart by
+   treatment, never by hue (CONTEXT.md "Status Colour", "Availability Family").
+
+   This rail was --success until #399 slice 2. Green was defensible while #327
+   reserved only amber and red; the operator's 2026-09-16 amendment made green
+   a Status Colour meaning "nominal - clear, armed, linked, reporting", which is
+   a reading of how a thing is DOING, and a switch nobody has asked the droid
+   about is not that. */
 .feature-availability-row.feature-state-on {
-  border-left-color: var(--success);
-  background-image: linear-gradient(90deg, color-mix(in srgb, var(--success) 11%, transparent), transparent 44%);
+  border-left-color: var(--text);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--lift) 9%, transparent), transparent 44%);
 }
 
 /* change it here — the switch is on a protoArtoo page and the builder can
@@ -1610,8 +1646,10 @@ input.input-narrow:focus {
   letter-spacing: 0.025em;
 }
 
+/* The word "On" is the value of a setting, so it reads in the ink tier the
+   value of a setting reads in. It was --success; see the rail above. */
 .feature-state-on {
-  color: var(--success);
+  color: var(--text);
 }
 
 /* Every way of saying no reads in the quiet text tier. The words already
@@ -1636,8 +1674,8 @@ input.input-narrow:focus {
   flex-basis: 100%;
   margin: 0 0 var(--space-2xs) 64px;
   color: var(--text-dim);
-  font-size: 0.8rem;
-  line-height: 1.35;
+  font-size: var(--fs-hint);
+  line-height: 1.6;
 }
 
 .feature-availability-reason[hidden] {
@@ -1667,7 +1705,7 @@ input.input-narrow:focus {
 }
 
 .feature-availability-panel.feature-state-on {
-  border-left-color: var(--success);
+  border-left-color: var(--text);
 }
 
 .feature-availability-panel.feature-state-not-in-this-build,
@@ -1690,22 +1728,28 @@ input.input-narrow:focus {
   opacity: var(--avail-dim-finding);
 }
 
+/* The section head and the availability rail on one line: what this panel is,
+   and whether this image can run it at all. */
 .feature-availability-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: var(--space-lg);
+}
+
+.feature-availability-header > .sect {
+  flex: 1 1 auto;
 }
 
 .feature-availability-rail {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
   flex-shrink: 0;
-  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
+  padding: var(--space-2xs) var(--space-sm) var(--space-2xs) var(--space-md);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--well) 48%, transparent);
+  border-radius: var(--radius-plate);
+  background: var(--well);
 }
 
 .feature-availability-status {
@@ -1749,11 +1793,13 @@ input.input-narrow:focus {
   transition: background 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-/* Available features: compile-time present (included) and runtime enabled (on) */
+/* Available features: compile-time present (included) and runtime enabled (on).
+   A lit bulb rather than a green one - this lamp says the feature is HERE, which
+   is an Availability Family answer and is told apart by treatment. */
 .feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp,
 .feature-availability-lamp-indicator.feature-state-included .feature-availability-lamp {
-  background: var(--success);
-  box-shadow: 0 0 9px color-mix(in srgb, var(--success) 55%, transparent);
+  background: var(--text);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--text) 45%, transparent);
 }
 
 /* change it elsewhere: an empty socket rather than a dark bulb, so the row
@@ -1801,13 +1847,13 @@ input.input-narrow:focus {
 .type-segmented {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2xs);
   flex-wrap: wrap;
   justify-content: flex-end;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--lift) 3%, transparent);
+  padding: var(--space-2xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--well);
   min-height: 44px;
 }
 
@@ -1815,11 +1861,11 @@ input.input-narrow:focus {
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-dim);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: var(--radius-plate);
+  padding: var(--space-sm) var(--space-md);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--fs-cell);
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
   min-height: 34px;
@@ -1827,14 +1873,18 @@ input.input-narrow:focus {
 }
 
 .type-segmented .seg-option:hover {
-  color: var(--silver-bright);
+  color: var(--text);
   background: color-mix(in srgb, var(--lift) 5%, transparent);
 }
 
+/* The option chosen, lit by the interaction accent the way every other
+   segmented control on the droid lights one (.seg > button.active). It was
+   --success, which made an answer the builder gave read as a health signal and
+   put a green on something you can press. */
 .type-segmented .seg-option.is-active {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
-  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .type-segmented .seg-option:focus-visible {
@@ -1857,13 +1907,13 @@ input.input-narrow:focus {
 }
 
 .type-select {
-  padding: 6px 10px;
+  padding: var(--space-sm) var(--space-md);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   color: var(--text);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-cell);
   cursor: pointer;
   min-width: 150px;
   min-height: 44px;
@@ -2763,13 +2813,26 @@ body.sleep-mode-active {
   margin-left: 6px;
 }
 
-/* Arm Control Row */
+/* ---------------------------------------------------------------------------
+   Servos (ADR 0066, #399 slice 2, #400)
+
+   One row shape for every output this page offers: what it is, what is on it,
+   and the acts, beside the thing they act on. The arm and AUX rows are written
+   by data/servo.js and the test rows are in data/servo.html; they are the same
+   row because they are the same kind of thing, and a builder should not have to
+   learn the page twice.
+
+   --row tall and divided by a seam, which is the table density the anatomy uses
+   everywhere else, so a list of outputs here reads at the same rhythm as a list
+   of outputs on Parts.
+   --------------------------------------------------------------------------- */
 .arm-control-row {
   display: grid;
-  grid-template-columns: minmax(92px, 120px) minmax(180px, 1fr) repeat(3, max-content);
+  grid-template-columns: minmax(92px, 140px) minmax(140px, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  gap: var(--space-md);
+  min-height: var(--row);
+  padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2778,51 +2841,37 @@ body.sleep-mode-active {
 }
 
 .arm-name {
-  min-width: 70px;
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--silver-bright);
+  font-size: var(--fs-cell);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .arm-position {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  line-height: 1.6;
   color: var(--text-dim);
-  min-width: 100px;
 }
 
-body[data-page="servo"] .arm-control-row .btn {
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
-}
-
-body[data-page="servo"] .button-row {
-  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-body[data-page="servo"] .input-narrow {
-  width: 108px;
-  min-height: 36px;
-  padding: 6px 8px;
-  font-size: 0.88rem;
+/* The acts, at the far end of the row they act on. They wrap onto their own
+   line before they squeeze, because a half-width button is not a target. */
+.arm-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
 }
 
 @media (max-width: 1100px) {
-  body[data-page="servo"] .arm-control-row {
+  .arm-control-row {
     grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
   }
 
-  body[data-page="servo"] .arm-control-row .btn {
-    justify-self: start;
+  .arm-acts {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
-}
-
-.section-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 16px 0;
 }
 
 /* RC Toolbar and Grids */
@@ -3765,56 +3814,190 @@ label.sound-search-field {
   }
 }
 
-/* Setup page small layout helpers */
+/* ---------------------------------------------------------------------------
+   Setup (ADR 0066, #399 slice 2)
+
+   The surface a droid is declared on and the controller is looked over from,
+   drawn to the anatomy: a card per question, a section head over each with a
+   count or a purpose beside it, and every state on this page carried by a
+   signal light rather than painted onto the text beside it.
+   --------------------------------------------------------------------------- */
 .s2-driver-label {
-  font-size: 0.8rem;
+  margin-left: var(--space-sm);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
-  margin-left: 8px;
 }
 
+/* The save state and the line that says what just happened, on one row: they
+   report the same act and reading them apart was reading it twice. */
 .setup-toolbar {
   display: flex;
-  gap: 10px;
+  gap: var(--space-md);
   align-items: center;
   flex-wrap: wrap;
 }
 
-.identity-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.identity-header h3 {
-  margin: 0;
-  white-space: nowrap;
-}
-
 .identity-feedback {
   min-height: 20px;
-  text-align: right;
 }
 
 .identity-grid {
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(270px, 1fr) minmax(96px, 112px);
-  gap: 12px;
+  gap: var(--space-md);
   align-items: center;
 }
 
 .identity-checkbox {
   align-self: end;
   min-height: 44px;
-  color: var(--silver-bright);
+  color: var(--text-dim);
 }
 
 .identity-save-button {
   align-self: end;
   min-height: 44px;
-  padding-inline: 14px;
+  padding-inline: var(--space-lg);
   white-space: nowrap;
+}
+
+/* The serial lanes report a SENTENCE rather than a word - "Connected (UART, hb
+   rx 812 / tx 810)" is four times the length of the Dashboard's "Mounted" - so
+   these rows take a wider column and let the reading wrap. Found in a browser
+   at 1440 px, where the S3 reading ran off the right-hand edge of its plate
+   against the shared rule's white-space: nowrap. */
+body[data-page="setup"] .health-grid {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+body[data-page="setup"] .health-item {
+  height: auto;
+  padding-block: var(--space-2xs);
+}
+
+body[data-page="setup"] .indicator-text {
+  white-space: normal;
+  text-align: right;
+}
+
+/* A readout whose state is a light: the light sits with the value, the way a
+   Status Plate cell carries its own, and the value stays ink. */
+body[data-page="setup"] .status-item dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+body[data-page="setup"] .status-item .hint {
+  display: block;
+  margin-top: var(--space-2xs);
+}
+
+/* Where an LED strip is routed, and what it is showing. The swatch is the one
+   thing on this surface that paints a colour from data: it is the strip's own
+   live colour, not a state, so it is set from the frame rather than tokened. */
+.led-route {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/* A count from 1 to 255 needs no more box than this. */
+.led-route .field {
+  max-width: 180px;
+}
+
+.led-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.led-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  background: var(--well);
+}
+
+/* The parts a restore may write, each its own tick. */
+.restore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-sm) var(--space-lg);
+}
+
+/* The Memory Profiler's own tables and its fragmentation bar. Both carried
+   hard-coded colours until this slice: Material's green, amber and red on the
+   bar and on a status cell, and a #444 rule under every heading. */
+.prof-bar-wrap {
+  height: 16px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  overflow: hidden;
+}
+
+.prof-bar {
+  width: 0;
+  height: 100%;
+  background: var(--text-dim);
+  transition: width 0.4s ease, background 0.4s ease;
+}
+
+.prof-bar.is-ok {
+  background: var(--success);
+}
+
+.prof-bar.is-warn {
+  background: var(--warning);
+}
+
+.prof-bar.is-fail {
+  background: var(--danger);
+}
+
+.prof-table-wrap {
+  overflow-x: auto;
+}
+
+.prof-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cell);
+}
+
+.prof-table th {
+  text-align: left;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.prof-table td {
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.prof-table th.num,
+.prof-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The state cell: its light first, then the word the profiler reported. */
+.prof-table td.num .indicator {
+  display: inline-block;
+  margin-right: var(--space-sm);
+  vertical-align: middle;
 }
 
 /* RC mapper class-based dynamic markup */
@@ -4658,7 +4841,7 @@ label.sound-search-field {
 /* ---- Board image on setup page ---- */
 .board-image-wrap {
   text-align: center;
-  padding: 12px 0 4px;
+  padding: var(--space-md) 0 var(--space-2xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4668,7 +4851,7 @@ label.sound-search-field {
 .board-image-wrap img {
   max-width: 100%;
   max-height: 260px;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
   object-fit: contain;
 }
@@ -4685,7 +4868,7 @@ label.sound-search-field {
   width: min(100%, 346px);
   height: auto;
   aspect-ratio: 4 / 3;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
   color: var(--text);
 }
@@ -4698,25 +4881,28 @@ label.sound-search-field {
   max-width: 100%;
   max-height: 260px;
   min-height: 100px;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--surface-alt) 0%, var(--surface) 100%);
-  gap: 8px;
-  padding: 12px;
+  background: var(--well);
+  gap: var(--space-sm);
+  padding: var(--space-md);
 }
 
 .board-placeholder.hidden {
   display: none;
 }
 
+/* An empty picture plate is a board-shaped hole, and the icon says which shape
+   it is: the sprite's own chip, inheriting the text colour, with the sentence
+   under it as its label (ADR 0066). It was a 48 px emoji keyboard glyph. */
 .board-placeholder-icon {
-  font-size: 48px;
-  line-height: 1;
-  opacity: 0.8;
+  width: 32px;
+  height: 32px;
+  color: var(--text-faint);
 }
 
 .board-placeholder-text {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text-dim);
   text-align: center;
   max-width: 240px;
@@ -6158,12 +6344,6 @@ label.sound-search-field {
    Output is dimmed rather than coloured, because a build in progress is not a
    fault.
    --------------------------------------------------------------------------- */
-.parts-summary {
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-  margin-block: var(--space-sm);
-}
-
 .parts-table-wrap {
   overflow-x: auto;
 }
@@ -6174,30 +6354,65 @@ label.sound-search-field {
   font-size: var(--fs-cell);
 }
 
+/* The column heads are engraved labels, in the same mono uppercase voice as a
+   section head: a table on an instrument panel is read by its markings. */
 .parts-table thead th {
   text-align: left;
-  color: var(--text-dim);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
   font-weight: 600;
-  padding: var(--space-xs) var(--space-sm);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: var(--space-sm);
   border-bottom: 1px solid var(--border);
 }
 
+/* A group heading is a heading, not a target: the anatomy's shorter row
+   (32 px against the 40 px a row gets). */
 .parts-group th {
+  height: 32px;
   text-align: left;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-family: var(--font-mono);
   font-size: var(--fs-sect);
-  color: var(--silver);
-  padding: var(--space-lg) var(--space-sm) var(--space-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--well);
+  padding: var(--space-2xs) var(--space-sm);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .parts-row th,
 .parts-row td {
+  height: var(--row);
   text-align: left;
   font-weight: 400;
   vertical-align: middle;
   padding: var(--space-2xs) var(--space-sm);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+/* The name column stays put while the table scrolls sideways, so the row a
+   builder is acting on never leaves the screen (ADR 0066,
+   docs/ui-copy-voice.md rule 4's own example). It needs a ground of its own:
+   a transparent sticky cell shows the cells passing underneath it. */
+.parts-row th[scope="row"] {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+/* The acts, in their own column at the end of the row (ADR 0066: the acts are
+   named beside the thing they act on). Narrow, so the answer columns get the
+   width. */
+.parts-table .parts-acts {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .parts-shorthand,
@@ -6211,10 +6426,12 @@ label.sound-search-field {
   font-family: var(--font-mono);
 }
 
+/* A Part Kind is carried by treatment and never by colour: a dashed engraving
+   round the word, chamfered like every other plate on the surface. */
 .parts-kind {
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-xs);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-plate);
+  padding: 0 var(--space-2xs);
 }
 
 .parts-gang {
@@ -6227,19 +6444,26 @@ label.sound-search-field {
   display: none;
 }
 
+/* The picker is a control INSIDE a --row-tall line, so it is the row that is
+   the bench's target rather than the control: a 44 px picker with a button
+   stacked under it made a 93 px row, measured in a browser at 1440 px. The
+   measure keeps the widest option text ("AUX1 - Left body door, Right body
+   door") readable without the cell becoming a form field across the table. */
 .parts-output {
   width: 100%;
-  min-height: 44px;
-  padding: var(--space-xs) var(--space-sm);
+  max-width: 44ch;
+  min-height: 30px;
+  padding: 0 var(--space-sm);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xs);
   font: inherit;
+  font-size: var(--fs-cell);
 }
 
 .parts-output:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -6259,9 +6483,9 @@ label.sound-search-field {
   max-width: 32rem;
   padding: var(--space-lg);
   color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
   box-shadow: var(--elev-3);
 }
 
@@ -6269,8 +6493,11 @@ label.sound-search-field {
   background: color-mix(in srgb, var(--scrim) 70%, transparent);
 }
 
+/* A dialog's title is a question and its buttons are verbs (pattern 10), so the
+   title is read as the surface's own voice rather than as another engraving. */
 .parts-move-dialog h4 {
-  color: var(--silver-bright);
+  color: var(--text);
+  font-size: var(--fs-h2);
   margin-bottom: var(--space-sm);
 }
 
@@ -6304,24 +6531,22 @@ label.sound-search-field {
   margin-top: var(--space-xl);
 }
 
-.outputs-section h4 {
-  color: var(--silver-bright);
-  margin-bottom: var(--space-xs);
-}
-
+/* The three honesty tiers (#293) ARE this section's subtitle: a heading carries
+   a count, and putting them anywhere else would mean a total above them
+   restating what they already add up to. They read as one line and wrap as a
+   block at the narrow breakpoint rather than each taking a pill of its own -
+   an engraved count is not a badge. */
 .outputs-tiers {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: var(--space-xs) var(--space-sm);
-  margin-block: var(--space-sm);
-  font-size: var(--fs-cell);
-  color: var(--text-dim);
+  justify-content: flex-end;
+  gap: 0 var(--space-sm);
 }
 
-.outputs-tier {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-sm);
+.outputs-tier + .outputs-tier::before {
+  content: "·";
+  margin-right: var(--space-sm);
+  color: var(--text-faint);
 }
 
 .outputs-address {
@@ -6398,12 +6623,10 @@ label.sound-search-field {
    back until the droid has answered again (the freshness-stamp pattern,
    r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894).
    --------------------------------------------------------------------------- */
-.parts-find {
-  margin-top: var(--space-2xs);
-  min-height: 36px;
-  padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-cell);
-}
+/* An act inside a table row is the anatomy's own small control (.btn-sm), so
+   this rule keeps only what is particular to this one: nothing but its
+   [hidden] behaviour, below. Slice 1's shared .btn sets the rest, and C1c's
+   copy of the 36 px floor and --fs-cell was a second spelling of both. */
 
 .parts-find[hidden] {
   display: none;
@@ -6423,9 +6646,7 @@ label.sound-search-field {
 }
 
 .parts-find-run .btn {
-  min-height: 36px;
-  padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-cell);
+  padding: var(--space-2xs) var(--space-md);
 }
 
 .outputs-bar.is-stale .outputs-now,
@@ -6462,10 +6683,7 @@ label.sound-search-field {
 }
 
 .outputs-acts .btn {
-  min-height: 36px;
   margin-right: var(--space-2xs);
-  padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-cell);
 }
 
 .outputs-acts .btn[hidden] {
@@ -6534,9 +6752,7 @@ label.sound-search-field {
 }
 
 .cal-acts .btn {
-  min-height: 36px;
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-cell);
 }
 
 /* An explanation for a control that moves something is visible text at the
@@ -6815,9 +7031,7 @@ label.sound-search-field {
 }
 
 .outputs-bulk .btn {
-  min-height: 36px;
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-cell);
 }
 
 .outputs-bulk .feedback {

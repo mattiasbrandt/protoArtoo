@@ -1,0 +1,13 @@
+diff --git i/data/servo.js w/data/servo.js
+index 4c0ffb75..b16467f5 100644
+--- i/data/servo.js
++++ w/data/servo.js
+@@ -111,7 +111,7 @@
+   // (ADR 0066, docs/ui-copy-voice.md rule 8). It counts the arms the droid
+   // answered for, so it cannot disagree with the rows under it.
+   const armSummary = (count) =>
+-    count === 0 ? "none switched on" : `${count} of ${ARM_DEFS.length} switched on`;
++    count === 0 ? "none switched on" : `2 of ${ARM_DEFS.length} switched on`;
+ 
+   const renderArmControls = (payload) => {
+     const enabled = ARM_DEFS.filter((a) => a.id in payload);

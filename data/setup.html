@@ -15,7 +15,6 @@
     <script>window.PAShellDelegate = true; location.replace("/#setup");</script>
   </head>
   <body data-page="setup">
-    <div id="shell-top"></div>
 
     <!-- The asset set's product drawings (ADR 0065). The legacy set inlines a
          symbol per product here and the board picture below draws one; the
@@ -24,25 +23,38 @@
          surface's body, and the drawings must be in the document to be drawn. -->
     <!-- PA:INCLUDE _product_art.html -->
 
-    <div class="board-image-wrap" id="board-image-panel">
-      <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
-      <img id="board-image" alt="" title="">
-      <div id="board-image-placeholder" class="board-placeholder">
-        <div class="board-placeholder-icon">🎛️</div>
-        <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
+    <!-- The title, and the question this surface answers (ADR 0066). Every act
+         on this page is named beside the thing it acts on, so the title carries
+         none of its own. -->
+    <div class="title">
+      <div>
+        <h1>Setup</h1>
+        <p class="question">What is this droid made of, and how is the controller holding up?</p>
+      </div>
+    </div>
+
+    <!-- The board this image is running on. One card, never two: the Component
+         Registry gates the two Body Controllers on PA_BOARD, so an image
+         carries exactly one of them and the other is not offered or mentioned. -->
+    <div class="card">
+      <div class="sect"><h2>Body Controller</h2><span class="sub">this image carries one board</span></div>
+      <div class="board-image-wrap" id="board-image-panel">
+        <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
+        <img id="board-image" alt="" title="">
+        <div id="board-image-placeholder" class="board-placeholder">
+          <svg class="i board-placeholder-icon" aria-hidden="true" focusable="false"><use href="#i-chip"/></svg>
+          <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h3>🔧 Hardware Components</h3>
-      <div class="setup-toolbar mt-16">
-        <span id="setup-enabled-summary" class="status-pill pill-ok">✅ 0 enabled</span>
-        <span id="setup-save-summary" class="status-pill pill-info">💾 Auto-save ready</span>
-      </div>
-      <form id="feature-form" class="mt-16">
+      <div class="sect"><h2>Hardware components</h2><span class="sub" id="setup-enabled-summary">finding out</span></div>
+      <p class="prose">Say what is actually bolted to this droid. A component switched off is a component the controller never talks to, so the surfaces that use it say what is missing rather than failing quietly.</p>
+      <form id="feature-form">
 
-        <div class="section-label">Drive</div>
-        <div class="info-note" role="note">
+        <div class="sect"><h3>Foot Drive</h3><span class="sub">what moves the feet</span></div>
+        <div class="note note-info" role="note">
           <span>Leave this off and the droid is a statue — the sticks move, the wheels don't.</span>
           <span id="label-desc-enable_drive" class="component-label-desc"> Wire it to <strong id="label-enable_drive"></strong>.</span>
         </div>
@@ -50,13 +62,13 @@
           <label class="toggle-switch">
             <input type="checkbox" id="enable-drive" name="enableDrive">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Drive <span class="component-badge" id="badge-enable_drive"></span></span>
+            <span class="toggle-label">Foot Drive <span class="component-badge" id="badge-enable_drive"></span></span>
             <span class="toggle-status" id="status-drive">Off</span>
           </label>
         </div>
 
-        <div class="section-label">Dome Rotation</div>
-        <div class="info-note" role="note">
+        <div class="sect"><h3>Dome rotation</h3><span class="sub">what turns the dome</span></div>
+        <div class="note note-info" role="note">
           <span>Off, the dome sits still through every sequence, however the show is written.</span>
           <span id="label-desc-enable_dome_esc" class="component-label-desc"> Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
         </div>
@@ -69,8 +81,8 @@
           </label>
         </div>
 
-        <div class="section-label">protoR2link</div>
-        <div class="info-note" role="note">
+        <div class="sect"><h3>protoR2link</h3><span class="sub">the link to the dome's own board</span></div>
+        <div class="note note-info" role="note">
           <span>Carries light, panel and sound cues up to the dome's own board. Off, the body still drives — the dome just stops listening.</span>
           <span id="label-desc-enable_protor2link" class="component-label-desc"> Wire it to <strong id="label-enable_protor2link"></strong>.</span>
         </div>
@@ -83,8 +95,8 @@
           </label>
         </div>
 
-        <div class="section-label">Audio</div>
-        <div class="info-note" role="note">
+        <div class="sect"><h3>Audio</h3><span class="sub">the droid's voice</span></div>
+        <div class="note note-info" role="note">
           <span>Your droid's voice. Off, sequences still run start to finish, in silence.</span>
           <span id="label-desc-enable_audio" class="component-label-desc"> Wire it to <strong id="label-enable_audio"></strong>.</span>
         </div>
@@ -98,10 +110,8 @@
           </label>
         </div>
 
-        <div class="section-label">Utility Arms</div>
-        <div class="info-note" role="note">
-          One servo per arm. Tick the arms you have fitted.
-        </div>
+        <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
+        <p class="hint">Tick the arms you have fitted, and say which servo is on each one. The type decides the widths the controller will drive that output between.</p>
         <div class="component-row" data-feature-entry="system.config.enable_arm1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
@@ -135,10 +145,8 @@
           </select>
         </div>
 
-        <div class="section-label">AUX Outputs</div>
-        <div class="info-note" role="note">
-          Spare outputs for whatever you have on them — a servo, a light, a smoke unit.
-        </div>
+        <div class="sect"><h3>AUX outputs</h3><span class="sub">3 spare lines</span></div>
+        <p class="hint">Spare outputs for whatever you have on them — a servo, a light, a smoke unit. Only one AUX line at a time can carry an LED strip.</p>
         <div class="component-row" data-feature-entry="system.config.enable_aux1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
@@ -200,8 +208,8 @@
           </select>
         </div>
 
-        <div class="section-label">RC Receiver Channels</div>
-        <div class="info-note" role="note">
+        <div class="sect"><h3>RC Receiver Channels</h3><span class="sub">6 channels, applied after a restart</span></div>
+        <div class="note note-info" role="note">
           <div>Tick the channels you actually have wired to the receiver.</div>
           <div>RC input changes save immediately and apply after controller restart.</div>
         </div>
@@ -253,65 +261,61 @@
             <span class="toggle-status" id="status-rc-ch6">Off</span>
           </label>
         </div>
-
-        <div class="info-note" role="note" aria-label="RC receiver mode note">
-          <div>In Stationary mode, Dual SBUS is usually unnecessary — Single SBUS or Standard PWM is recommended.</div>
-        </div>
+        <p class="hint">In Stationary mode, Dual SBUS is usually unnecessary — Single SBUS or Standard PWM is the lighter answer.</p>
 
       </form>
-      <div id="feature-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
+      <div class="setup-toolbar">
+        <span id="setup-save-summary" class="status-pill">Auto-save ready</span>
+        <div id="feature-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
+      </div>
     </div>
 
     <!-- LED Strip -->
     <div class="card">
-      <h3>💡 LED Strip</h3>
-      <div class="desc">Configure AUX LED strip routing and live output preview. Route is set by enabling AUX1/AUX2/AUX3 and selecting LED strip as that AUX component type.</div>
-      <div class="component-row mt-16">
-        <label class="toggle-switch" for="aux-led-count" title="LED strip count for the routed AUX LED output">
-          <span class="toggle-label">LED strip count</span>
-          <span class="toggle-status" id="aux-led-route-status">Not routed</span>
+      <div class="sect"><h2>LED strip</h2><span class="sub" id="aux-led-route-status">Not routed</span></div>
+      <p class="prose">A strip is routed by switching on AUX 1, AUX 2 or AUX 3 above and recording <b>LED strip</b> as what is on it. One AUX line carries the strip; the rest stay servo outputs.</p>
+      <div class="led-route">
+        <label class="field" for="aux-led-count">
+          <span>LED strip count</span>
+          <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="LED strip count">
         </label>
-        <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="LED strip count">
-        <span id="aux-led-route-badge" class="status-pill pill-info status-pill-compact">🔗 Not routed</span>
+        <span id="aux-led-route-badge" class="status-pill status-pill-compact">Not routed</span>
       </div>
-      <div class="mt-12" aria-live="polite" aria-atomic="true">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
-          <span id="aux-led-preview-text" class="desc"></span>
-        </div>
-        <div id="aux-led-preview-note" class="desc mt-6"></div>
+      <div class="led-preview" aria-live="polite" aria-atomic="true">
+        <span id="aux-led-swatch" class="led-swatch"></span>
+        <span id="aux-led-preview-text" class="hint"></span>
       </div>
+      <p id="aux-led-preview-note" class="hint"></p>
     </div>
 
     <!-- Serial Connection Status -->
     <div class="card">
-      <h3>🔌 Serial Status</h3>
-      <div class="status-grid mt-16">
-        <dl>
-          <div class="status-item">
-            <dt>S1 — Drive</dt>
-            <dd id="serial-s1-state">...</dd>
-            <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
-          </div>
-          <div class="status-item">
-            <dt>S2 — Audio</dt>
-            <dd id="serial-s2-state">...</dd>
-            <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
-          </div>
-          <div class="status-item">
-            <dt>S3 — protoR2link</dt>
-            <dd id="serial-s3-state">...</dd>
-            <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
-          </div>
-        </dl>
+      <div class="sect"><h2>Serial links</h2><span class="sub">three lanes off this controller</span></div>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="indicator" id="serial-s1-light"></div>
+          <span>S1 &middot; Foot Drive</span>
+          <span class="indicator-text" id="serial-s1-state">...</span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s2-light"></div>
+          <span>S2 &middot; Audio</span>
+          <span class="indicator-text" id="serial-s2-state">...</span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s3-light"></div>
+          <span>S3 &middot; protoR2link</span>
+          <span class="indicator-text" id="serial-s3-state">...</span>
+        </div>
       </div>
-      <div id="serial-status-line" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      <p class="hint">S1 is UART1 at 115200 baud, S2 the sound serial at 9600 (which pins it uses depends on the module), S3 UART2 at 9600.</p>
+      <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Diagnostics -->
     <div class="card">
-      <h3>🩺 Diagnostics</h3>
-      <form id="diag-form" class="form-grid mt-16">
+      <div class="sect"><h2>Diagnostics</h2><span class="sub">what the controller is using right now</span></div>
+      <form id="diag-form" class="form-grid">
         <label class="field" for="log-level-select">
           <span>Log verbosity</span>
           <select id="log-level-select" name="logLevel">
@@ -322,43 +326,38 @@
           </select>
         </label>
       </form>
-      <p class="desc mt-16">Applies immediately to what gets logged. The log history depth (16–48 lines) follows the saved level after the next restart.</p>
-      <div class="status-grid mt-16">
-        <dl>
+      <p class="hint">A new level applies to what gets logged at once. How deep the log history goes (16–48 lines) follows the saved level after the next restart.</p>
+      <dl class="status-grid">
           <div class="status-item">
             <dt>Uptime</dt>
-            <dd id="diag-uptime">...</dd>
-            <div class="desc mt-6">Controller runtime since boot</div>
+            <dd><span id="diag-uptime">...</span></dd>
+            <span class="hint">Controller runtime since boot</span>
           </div>
           <div class="status-item">
-            <dt>Memory Free</dt>
-            <dd id="diag-heap-free">...</dd>
-            <div class="desc mt-6">Current free heap</div>
+            <dt>Memory free</dt>
+            <dd><span class="indicator" id="diag-heap-free-light"></span><span id="diag-heap-free">...</span></dd>
+            <span class="hint">Current free heap</span>
           </div>
           <div class="status-item">
-            <dt>Memory Min (since boot)</dt>
-            <dd id="diag-heap-min">...</dd>
-            <div class="desc mt-6">Low-water mark</div>
+            <dt>Memory min since boot</dt>
+            <dd><span class="indicator" id="diag-heap-min-light"></span><span id="diag-heap-min">...</span></dd>
+            <span class="hint">Low-water mark</span>
           </div>
           <div class="status-item">
-            <dt>Largest Block</dt>
-            <dd id="diag-heap-largest">...</dd>
-            <div class="desc mt-6">Fragmentation indicator</div>
+            <dt>Largest block</dt>
+            <dd><span class="indicator" id="diag-heap-largest-light"></span><span id="diag-heap-largest">...</span></dd>
+            <span class="hint">Fragmentation indicator</span>
           </div>
-        </dl>
-      </div>
-      <div id="diag-memory-note" class="desc mt-12">Memory Min is the lowest free heap seen since boot (historical low-water mark).</div>
-      <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      </dl>
+      <p id="diag-memory-note" class="hint">Memory Min is the lowest free heap seen since boot (historical low-water mark).</p>
+      <div id="diag-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Memory Profiler availability is declared by /api/identity. -->
     <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
          data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
       <div class="feature-availability-header">
-        <div>
-          <h3>🔬 Memory Profiler</h3>
-          <div class="desc">Shows where controller memory is being used and how much room remains.</div>
-        </div>
+        <div class="sect"><h2>Memory profiler</h2><span class="sub">where controller memory is going</span></div>
         <div class="feature-availability-rail">
           <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
           <div id="profiler-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
@@ -370,145 +369,125 @@
 
       <div id="profiler-content" class="feature-availability-content" inert aria-hidden="true">
 
-      <div class="mt-16">
-        <div class="desc"><strong>Fragmentation</strong></div>
-        <div id="prof-frag-bar-wrap" style="margin-top:6px;background:#333;border-radius:4px;height:16px;overflow:hidden">
-          <div id="prof-frag-bar" style="height:100%;width:0%;background:#4caf50;transition:width .4s"></div>
+        <div class="sect"><h3>Fragmentation</h3><span class="sub">1 - largest block over free</span></div>
+        <div class="prof-bar-wrap" id="prof-frag-bar-wrap">
+          <div id="prof-frag-bar" class="prof-bar"></div>
         </div>
-        <div id="prof-frag-label" class="desc mt-6"></div>
-      </div>
+        <p id="prof-frag-label" class="hint"></p>
 
-      <div class="status-grid mt-16">
-        <dl>
-          <div class="status-item">
-            <dt>Heap Free</dt>
-            <dd id="prof-heap-free">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Heap Min</dt>
-            <dd id="prof-heap-min">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Largest Block</dt>
-            <dd id="prof-heap-largest">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Frag Ratio</dt>
-            <dd id="prof-frag-ratio">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Alloc Blocks</dt>
-            <dd id="prof-alloc-blocks">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Free Blocks</dt>
-            <dd id="prof-free-blocks">...</dd>
-          </div>
-          <div class="status-item">
-            <dt>Failed Allocs</dt>
-            <dd id="prof-failed-allocs">...</dd>
-          </div>
+        <dl class="status-grid">
+            <div class="status-item">
+              <dt>Heap free</dt>
+              <dd id="prof-heap-free">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Heap min</dt>
+              <dd id="prof-heap-min">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Largest block</dt>
+              <dd id="prof-heap-largest">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Frag ratio</dt>
+              <dd id="prof-frag-ratio">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Alloc blocks</dt>
+              <dd id="prof-alloc-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Free blocks</dt>
+              <dd id="prof-free-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Failed allocs</dt>
+              <dd id="prof-failed-allocs">...</dd>
+            </div>
         </dl>
-      </div>
 
-      <div class="mt-16">
-        <div class="desc"><strong>Task Stack HWM</strong> — minimum free stack remaining per task</div>
-        <table id="prof-hwm-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">HWM (bytes)</th>
-              <th style="text-align:center;padding:4px 8px;border-bottom:1px solid #444">Status</th>
-            </tr>
-          </thead>
-          <tbody id="prof-hwm-tbody"></tbody>
-        </table>
-      </div>
+        <div class="sect"><h3>Task stack headroom</h3><span class="sub">least free stack each task has had</span></div>
+        <div class="prof-table-wrap">
+          <table id="prof-hwm-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col" class="num">Headroom</th>
+                <th scope="col" class="num">State</th>
+              </tr>
+            </thead>
+            <tbody id="prof-hwm-tbody"></tbody>
+          </table>
+        </div>
 
-      <div id="prof-task-heap-section" class="mt-16" hidden>
-        <div class="desc"><strong>Task Heap Allocations</strong> — per-task heap usage (Tier 2)</div>
-        <table id="prof-heap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Current</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Peak</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Count</th>
-            </tr>
-          </thead>
-          <tbody id="prof-heap-tbody"></tbody>
-        </table>
-      </div>
+        <div id="prof-task-heap-section" hidden>
+          <div class="sect"><h3>Task heap</h3><span class="sub">per-task heap use, where the build records it</span></div>
+          <div class="prof-table-wrap">
+            <table id="prof-heap-table" class="prof-table">
+              <thead>
+                <tr>
+                  <th scope="col">Task</th>
+                  <th scope="col" class="num">Current</th>
+                  <th scope="col" class="num">Peak</th>
+                  <th scope="col" class="num">Count</th>
+                </tr>
+              </thead>
+              <tbody id="prof-heap-tbody"></tbody>
+            </table>
+          </div>
+        </div>
 
-      <div class="mt-16">
-        <div class="desc"><strong>Mode Snapshots</strong> — local low-water mark per mode window (heap_caps_monitor_local_minimum_free_size)</div>
-        <div id="prof-current-window" class="desc mt-6" style="color:#ff9800" hidden></div>
-        <table id="prof-snap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Window Label</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Min During</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Largest Block</th>
-              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Opened T+ms</th>
-            </tr>
-          </thead>
-          <tbody id="prof-snap-tbody"></tbody>
-        </table>
-      </div>
-      <div id="profiler-feedback" class="feedback mt-12" role="status" aria-live="polite"></div>
+        <div class="sect"><h3>Mode snapshots</h3><span class="sub">the low-water mark inside each window</span></div>
+        <p id="prof-current-window" class="hint" hidden></p>
+        <div class="prof-table-wrap">
+          <table id="prof-snap-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Window</th>
+                <th scope="col" class="num">Min during</th>
+                <th scope="col" class="num">Largest block</th>
+                <th scope="col" class="num">Opened T+ms</th>
+              </tr>
+            </thead>
+            <tbody id="prof-snap-tbody"></tbody>
+          </table>
+        </div>
+        <div id="profiler-feedback" class="feedback" role="status" aria-live="polite"></div>
       </div>
     </div>
 
     <!-- Backup & Restore -->
     <div class="card">
-      <h3>💾 Backup &amp; Restore</h3>
-      <div class="desc">Save all your droid settings to a file on your computer, or restore from a previous backup.</div>
+      <div class="sect"><h2>Backup</h2><span class="sub">a copy on your computer</span></div>
+      <p class="prose">Save what you made on this controller to a file, or put a saved file back. A restore <b>replaces</b> the parts you tick and never merges into them, so what you end up with is what the file holds.</p>
 
-      <div class="button-row button-row-compact mt-16">
-        <button id="backup-download-btn" class="btn" type="button">Download Backup</button>
+      <div class="button-row button-row-compact">
+        <button id="backup-download-btn" class="btn" type="button">Download backup</button>
+        <button id="backup-file-trigger" class="btn" type="button">Choose a file to restore</button>
       </div>
+      <input type="file" id="backup-file-input" accept=".json" hidden aria-label="Select backup file">
 
-      <div class="section-label mt-16">Restore from file</div>
-      <input type="file" id="backup-file-input" accept=".json" style="display:none" aria-label="Select backup file">
-      <div class="button-row button-row-compact mt-8">
-        <button id="backup-file-trigger" class="btn" type="button">Choose File</button>
-      </div>
+      <div id="backup-summary" class="hint" hidden></div>
 
-      <div id="backup-summary" class="desc mt-12" hidden></div>
-
-      <div id="restore-sections" class="mt-12" hidden>
-        <div class="component-row">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="restore-chk-config"> Core config
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="restore-chk-rc-map"> RC mappings
-          </label>
-        </div>
-        <div class="component-row mt-6">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="restore-chk-audio-tracks"> Audio tracks
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="restore-chk-mood-map"> Audio mood map
-          </label>
+      <div id="restore-sections" hidden>
+        <div class="restore-grid">
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-config"> <span>Core config</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-rc-map"> <span>RC mappings</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-audio-tracks"> <span>Audio tracks</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-mood-map"> <span>Audio mood map</span></label>
         </div>
       </div>
 
-      <div id="restore-btn-row" class="button-row button-row-compact mt-12" hidden>
-        <button id="backup-restore-btn" class="btn" type="button">Restore selected</button>
+      <div id="restore-btn-row" class="button-row button-row-compact" hidden>
+        <button id="backup-restore-btn" class="btn" type="button">Restore the ticked parts</button>
       </div>
 
-      <div id="backup-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="backup-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <div class="card">
-      <div class="identity-header">
-        <h3>🤖 Droid Identity</h3>
-        <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        <div id="identity-actions" class="mt-8"></div>
-        <div id="identity-diagnosis" class="desc mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
-      </div>
+      <div class="sect"><h2>Droid identity</h2><span class="sub">what this droid answers to</span></div>
+      <p class="prose">The name is the droid's, not the browser's: it is stored on the controller, so a second computer or a cleared cache meets the same droid.</p>
       <div class="identity-grid">
         <label class="field" for="droid-name-input">
           <span>Droid name</span>
@@ -518,21 +497,22 @@
           <input type="checkbox" id="mdns-use-name">
           <span>Use as network hostname (mDNS)</span>
         </label>
-        <button id="identity-save-button" class="btn identity-save-button" type="button">💾 Save</button>
+        <button id="identity-save-button" class="btn identity-save-button" type="button">Save</button>
       </div>
+      <div id="identity-actions"></div>
+      <div id="identity-diagnosis" class="hint" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- System Controls -->
     <div class="card">
-      <h3>🔄 System</h3>
-      <div class="desc">Restart the controller to apply certain hardware configuration changes. The web interface will be unavailable for ~10 seconds during reboot.</div>
-      <div class="button-row button-row-compact mt-16">
-        <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
+      <div class="sect"><h2>Restart</h2><span class="sub">about ten seconds off the air</span></div>
+      <p class="prose">Some hardware answers only take effect when the controller starts again. Restarting cuts every output and reopens the page's connection; nothing you have saved is lost.</p>
+      <div class="button-row button-row-compact">
+        <button id="reboot-button" class="btn danger" type="button">Restart the controller</button>
       </div>
-      <div id="reboot-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

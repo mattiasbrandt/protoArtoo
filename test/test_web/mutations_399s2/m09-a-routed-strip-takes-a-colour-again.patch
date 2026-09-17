@@ -1,0 +1,14 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..98539b02 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -642,6 +642,9 @@
+     }
+     if (auxLedRouteBadge) {
+       auxLedRouteBadge.textContent = hasRgb ? AUX_RGB_LABEL_BY_KEY[rgbKey] : "Not routed";
++      auxLedRouteBadge.className = hasRgb
++        ? "status-pill pill-ok status-pill-compact"
++        : "status-pill pill-info status-pill-compact";
+     }
+   };
+ 

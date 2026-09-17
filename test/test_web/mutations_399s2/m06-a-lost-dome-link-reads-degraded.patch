@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..da0eb991 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1212,7 +1212,7 @@
+         setLight(serialS3Light, "ok");
+       } else if (dl.state === "lost") {
+         serialS3.textContent = `Lost (${transport}) — last seen ${dl.last_rx_ms} ms ago`;
+-        setLight(serialS3Light, "fail");
++        setLight(serialS3Light, "warn");
+       } else {
+         serialS3.textContent = `Waiting for dome heartbeat (${transport})`;
+         setLight(serialS3Light, "warn");

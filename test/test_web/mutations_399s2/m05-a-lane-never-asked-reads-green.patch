@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..7164bc17 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1190,7 +1190,7 @@
+     if (serialS1) {
+       serialS1.textContent = !d.drive ? "Disabled"
+         : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
+-      setLight(serialS1Light, d.drive ? "ok" : "off");
++      setLight(serialS1Light, "ok");
+     }
+     if (serialS2) {
+       serialS2.textContent = !d.audio ? "Disabled"

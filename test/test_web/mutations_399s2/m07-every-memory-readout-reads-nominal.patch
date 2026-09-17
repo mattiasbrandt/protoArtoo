@@ -1,0 +1,14 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..4fc45dc2 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1236,8 +1236,7 @@
+ 
+     // The same four states as before, on the same thresholds. "na" is the
+     // firmware that reports no largest block at all - never asked, so grey.
+-    const lampForState = (state) =>
+-      state === "critical" ? "fail" : state === "watch" ? "warn" : state === "na" ? "off" : "ok";
++    const lampForState = (_state) => "ok";
+ 
+     if (diagHeapFree) {
+       const word = heapFreeState === "critical" ? "Critical" : heapFreeState === "watch" ? "Watch" : "Good";

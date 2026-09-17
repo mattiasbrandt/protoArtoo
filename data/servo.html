@@ -15,31 +15,43 @@
     <script>window.PAShellDelegate = true; location.replace("/#servo");</script>
   </head>
   <body data-page="servo">
-    <div id="shell-top"></div>
 
+    <!-- The title, and the question this surface answers (ADR 0066). The acts
+         are all on the rows they act on, so the title carries none. -->
+    <div class="title">
+      <div>
+        <h1>Servos</h1>
+        <p class="question">Which arm or AUX output do you want to move right now?</p>
+        <!-- A moved thing leaves a forwarding address. The typed calibration
+             form stood on this page until #400 took it off: an end is set by
+             driving the part, on the surface that knows which part an output
+             drives. -->
+        <p class="forward">Open and close ends are set in <a href="/parts.html">Parts</a> now: press Calibrate on the output that drives the part, and drive it to each end.</p>
+      </div>
+    </div>
 
     <!-- Arm Controls (ARM1 / ARM2 only) -->
     <div class="card hidden" id="arm-controls-card">
-      <h3>🎮 Arm Controls</h3>
-      <div class="desc">Open, close, or stop each utility arm. Commands are sent immediately.</div>
-      <div id="arm-controls-container" class="mt-12"></div>
-      <div id="arm-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+      <div class="sect"><h2>Utility arms</h2><span class="sub" id="arm-controls-summary">finding out</span></div>
+      <div id="arm-controls-container"></div>
+      <p class="hint">Each press leaves for the droid as you make it. Open and Close drive to the ends recorded on Parts; Stop takes the pulse off and leaves the arm limp where it is.</p>
+      <div id="arm-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
-    <!-- No arms enabled notice -->
+    <!-- No arm switched on. An empty state says why it is empty and offers the
+         act that ends it; the card wears the "change it here" Availability
+         Family treatment, because the switch is one screen away. -->
     <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🦾 Servo Hardware Disabled</h3>
-      <div class="desc">Servo control buttons are unavailable because no arm servos are enabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> ARM1 and/or ARM2</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable at least one arm servo to restore arm controls.</div>
+      <div class="sect"><h2>Utility arms</h2><span class="sub">none switched on</span></div>
+      <p class="prose"><b>No arm servo is switched on.</b> Switch on ARM1, ARM2 or both in <a class="setup-link" href="/setup.html">Setup</a>, and the arm controls come back here.</p>
     </div>
 
     <!-- AUX (AUX1 / AUX2 / AUX3) -->
     <div class="card" id="aux-controls-card">
-      <h3>🔌 AUX</h3>
-      <div class="desc">Controls for enabled AUX outputs. 💡 LED strip options are configured in <a class="setup-link" href="/setup.html">Setup</a>.</div>
-      <div id="aux-controls-container" class="mt-12"></div>
-      <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+      <div class="sect"><h2>AUX outputs</h2><span class="sub" id="aux-controls-summary">finding out</span></div>
+      <div id="aux-controls-container"></div>
+      <p class="hint">What is on each AUX line - a servo, an LED strip, nothing - is said in <a class="setup-link" href="/setup.html">Setup</a>. An AUX line carrying an LED strip has no position to drive, so it carries no buttons.</p>
+      <div id="aux-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
     <!-- Test a servo (ARM1 / ARM2 / AUX servo channels)
@@ -50,116 +62,83 @@
          /api/config, rather than to a number typed on this page -- so what they
          show is what the droid will actually do when something says open. -->
     <div class="card hidden" id="servo-test-card">
-      <h3>Test a servo</h3>
-      <div class="desc">
-        Move one servo now, without changing anything. Open and close ends are set in
-        <a class="setup-link" href="/parts.html">Parts</a>: press Calibrate on the output that
-        drives the part and drive it to each end.
+      <div class="sect"><h2>Test a servo</h2><span class="sub">one output at a time, changing nothing</span></div>
+
+      <div class="note note-act">
+        <b>Every button here moves real hardware.</b> Check the arms and panels are clear of hands and scenery before you press one.
       </div>
 
-      <div class="caution-banner" role="alert">
-        ⚠️ Test buttons move real hardware. Ensure arms and panels are clear before testing.
+      <!-- ARM1 (shown only when ARM1 enabled) -->
+      <div class="arm-control-row hidden" id="arm1-test-section">
+        <span class="arm-name">Utility Arm 1</span>
+        <span class="arm-position">ARM1 &middot; type a width, or drive to a recorded end</span>
+        <span class="arm-acts">
+          <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
+            aria-label="ARM1 test pulse width in microseconds" class="input-narrow">
+          <button class="btn" type="button" id="arm1-test-btn">Test ARM1</button>
+          <button class="btn" type="button" id="arm1-open-test-btn">Test Open</button>
+          <button class="btn" type="button" id="arm1-close-test-btn">Test Close</button>
+        </span>
       </div>
 
-      <div class="mt-16">
-
-        <!-- ARM1 (shown only when ARM1 enabled) -->
-        <div class="hidden" id="arm1-test-section">
-          <div class="section-label">Utility Arm 1 — ARM1</div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="ARM1 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="arm1-test-btn" title="Send test position to ARM1">
-                ▶ Test ARM1
-              </button>
-              <button class="btn" type="button" id="arm1-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="arm1-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- ARM2 (shown only when ARM2 enabled) -->
-        <div class="hidden" id="arm2-test-section">
-          <div class="section-label">Utility Arm 2 — ARM2</div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="ARM2 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="arm2-test-btn" title="Send test position to ARM2">
-                ▶ Test ARM2
-              </button>
-              <button class="btn" type="button" id="arm2-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="arm2-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX1 (shown only when AUX1 enabled and type is a servo) -->
-        <div class="hidden" id="aux1-test-section">
-          <div class="section-label">AUX Output 1 — AUX1</div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX1 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux1-test-btn">▶ Test AUX1</button>
-              <button class="btn" type="button" id="aux1-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux1-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX2 (shown only when AUX2 enabled and type is a servo) -->
-        <div class="hidden" id="aux2-test-section">
-          <div class="section-label">AUX Output 2 — AUX2</div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX2 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux2-test-btn">▶ Test AUX2</button>
-              <button class="btn" type="button" id="aux2-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux2-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
-        <!-- AUX3 (shown only when AUX3 enabled and type is a servo) -->
-        <div class="hidden" id="aux3-test-section">
-          <div class="section-label">AUX Output 3 — AUX3</div>
-          <div class="field mt-8">
-            <span>Test position (µs)</span>
-            <div class="button-row mt-4">
-              <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
-                title="Move the servo to this pulse width immediately without saving."
-                aria-label="AUX3 test pulse width microseconds" class="input-narrow">
-              <button class="btn" type="button" id="aux3-test-btn">▶ Test AUX3</button>
-              <button class="btn" type="button" id="aux3-open-test-btn">▶ Test Open</button>
-              <button class="btn" type="button" id="aux3-close-test-btn">▶ Test Close</button>
-            </div>
-          </div>
-          <div class="section-divider"></div>
-        </div>
-
+      <!-- ARM2 (shown only when ARM2 enabled) -->
+      <div class="arm-control-row hidden" id="arm2-test-section">
+        <span class="arm-name">Utility Arm 2</span>
+        <span class="arm-position">ARM2 &middot; type a width, or drive to a recorded end</span>
+        <span class="arm-acts">
+          <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
+            aria-label="ARM2 test pulse width in microseconds" class="input-narrow">
+          <button class="btn" type="button" id="arm2-test-btn">Test ARM2</button>
+          <button class="btn" type="button" id="arm2-open-test-btn">Test Open</button>
+          <button class="btn" type="button" id="arm2-close-test-btn">Test Close</button>
+        </span>
       </div>
+
+      <!-- AUX1 (shown only when AUX1 enabled and type is a servo) -->
+      <div class="arm-control-row hidden" id="aux1-test-section">
+        <span class="arm-name">AUX 1</span>
+        <span class="arm-position">AUX1 &middot; type a width, or drive to a recorded end</span>
+        <span class="arm-acts">
+          <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
+            aria-label="AUX1 test pulse width in microseconds" class="input-narrow">
+          <button class="btn" type="button" id="aux1-test-btn">Test AUX1</button>
+          <button class="btn" type="button" id="aux1-open-test-btn">Test Open</button>
+          <button class="btn" type="button" id="aux1-close-test-btn">Test Close</button>
+        </span>
+      </div>
+
+      <!-- AUX2 (shown only when AUX2 enabled and type is a servo) -->
+      <div class="arm-control-row hidden" id="aux2-test-section">
+        <span class="arm-name">AUX 2</span>
+        <span class="arm-position">AUX2 &middot; type a width, or drive to a recorded end</span>
+        <span class="arm-acts">
+          <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
+            aria-label="AUX2 test pulse width in microseconds" class="input-narrow">
+          <button class="btn" type="button" id="aux2-test-btn">Test AUX2</button>
+          <button class="btn" type="button" id="aux2-open-test-btn">Test Open</button>
+          <button class="btn" type="button" id="aux2-close-test-btn">Test Close</button>
+        </span>
+      </div>
+
+      <!-- AUX3 (shown only when AUX3 enabled and type is a servo) -->
+      <div class="arm-control-row hidden" id="aux3-test-section">
+        <span class="arm-name">AUX 3</span>
+        <span class="arm-position">AUX3 &middot; type a width, or drive to a recorded end</span>
+        <span class="arm-acts">
+          <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
+            aria-label="AUX3 test pulse width in microseconds" class="input-narrow">
+          <button class="btn" type="button" id="aux3-test-btn">Test AUX3</button>
+          <button class="btn" type="button" id="aux3-open-test-btn">Test Open</button>
+          <button class="btn" type="button" id="aux3-close-test-btn">Test Close</button>
+        </span>
+      </div>
+
+      <p class="hint">A typed width is sent as it stands and is not recorded anywhere: nothing on this page writes a calibration.</p>
       <!-- Still the calibration line, on a card that no longer sets one: Test
            Open and Test Close drive to the ends read from /api/config, so
            whether that read landed is exactly what a builder needs told here. -->
-      <div id="calib-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading calibration...</div>
+      <div id="calib-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading calibration...</div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

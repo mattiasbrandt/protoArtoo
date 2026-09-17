@@ -10,14 +10,34 @@
     <script>window.PAShellDelegate = true; location.replace("/#parts");</script>
   </head>
   <body data-page="parts">
-    <div id="shell-top"></div>
 
+    <!-- The title, and the question this surface answers (ADR 0066). Every act
+         on this page is named beside the row it acts on, so the title carries
+         none of its own. -->
+    <div class="title">
+      <div>
+        <h1>Parts</h1>
+        <p class="question">Which output moves each part, and what does each output move?</p>
+        <!-- A moved thing leaves a forwarding address. The typed calibration
+             form left Servos under #400: an end is set by driving the part,
+             which is a thing only this surface knows how to ask for. -->
+        <p class="forward">Looking for the typed calibration that was on <a href="/servo.html">Servos</a>? An end is set here now: press Calibrate on the output that drives the part.</p>
+      </div>
+    </div>
+
+    <!-- Both projections of the one mapping, on one plate: they are two ways of
+         reading the same table (CONTEXT.md "Parts"), and two cards would be two
+         surfaces that can disagree. The output-first table, its acts and the
+         calibration dial are written into this card by data/parts.js. -->
     <div class="card">
-      <h3>🧩 Parts</h3>
-      <p class="desc">Every part on your droid, and the output that drives it. Pick an output to wire a part. A part is only ever on one output, so picking a new one moves it, and this page asks before it takes a part off the output it is on. One output can drive several parts that always move together, like two doors on one lead. A part nothing drives yet has a Find by moving button: the droid twitches each spare output a little, one at a time, about wherever it sits, and you press That one when the part moves. Stop ends the run at any moment, and the estop ends it too. To set a part's ends, press Calibrate on the output that drives it: you drive the part until it looks right and press the button for the end you are setting, and the part keeps being driven while you look and listen, so you can hear a servo fighting its linkage. Pulses off makes an output limp at once, wherever it happens to be.</p>
-      <p class="parts-summary" id="parts-summary" role="status" aria-live="polite">Finding out what drives each part...</p>
+      <div class="sect">
+        <h2>Parts</h2>
+        <span class="sub" id="parts-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
+      </div>
+      <p class="prose">Pick an output to wire a part. A part is only ever on one output, so picking a new one <b>moves</b> it, and this page asks first before it takes a part off the output it is on. One output can drive several parts that always move together, like two doors on one lead.</p>
+      <p class="hint">A part nothing drives yet carries <b>Find by moving</b>: the droid twitches each spare output a little, one at a time, about wherever it sits, and you press That one when the part moves. Stop ends the run at any moment, and so does the estop.</p>
       <div class="parts-table-wrap" id="parts-table"></div>
-      <p class="feedback mt-12" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p class="feedback" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>
 
     <dialog class="parts-move-dialog" id="parts-move-dialog" role="alertdialog" aria-labelledby="parts-move-title" aria-describedby="parts-move-body">
@@ -29,6 +49,5 @@
       </div>
     </dialog>
 
-    <div id="shell-status"></div>
   </body>
 </html>

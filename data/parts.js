@@ -200,18 +200,24 @@
   const outputsSection = document.createElement("section");
   outputsSection.className = "outputs-section";
   outputsSection.innerHTML =
-    `<h4>🔌 What each output drives</h4>` +
-    `<p class="desc">Every output on the controller, in the order the leads plug in, with every part on it - ` +
-    `a lead split to two doors names both. Pick a part in a row to put it on that output; if the part is on ` +
-    `another output, this page asks before it moves it. The bar is where the controller is driving that servo ` +
-    `right now and the tick is where the move ends, so the gap between them is the move still to go. Both are ` +
-    `what the controller told the servo, not a reading: nothing on this droid can feel where a servo really is, ` +
-    `so a jammed one shows exactly what a free one does. The table asks the droid once a second while this page ` +
-    `is open. Back to centre sends every output to the centre you recorded for it - the droid does them one at a ` +
-    `time, so it takes a moment, and the estop stops it.</p>` +
-    `<p class="outputs-tiers" role="status" aria-live="polite">` +
+    // The section head, whose subtitle is the three tier counts and nothing
+    // else (ADR 0066): a heading carries a count and never appears bare, and
+    // the counts live in one place rather than beside a total that restates
+    // them. #293's honesty tiers are what a builder counts this table by.
+    `<div class="sect"><h2>Outputs</h2>` +
+    `<span class="sub outputs-tiers" role="status" aria-live="polite">` +
     TIERS.map((tier) => `<span class="outputs-tier" data-tier="${tier.id}">${tier.label} — finding out</span>`).join("") +
-    `</p>` +
+    `</span></div>` +
+    `<p class="prose">Every output on the controller, in the order the leads plug in, with every part on it - ` +
+    `a lead split to two doors names both. Pick a part in a row to put it on that output; if the part is on ` +
+    `another output, this page asks before it moves it.</p>` +
+    // Rule 7 of the maker voice, at the entrance: what the two marks are, and
+    // what they are not. Nothing on this droid reads a servo back.
+    `<p class="hint">The bar is where the controller is driving that servo right now and the tick is where the ` +
+    `move ends, so the gap between them is the move still to go. Both are what the controller told the servo, ` +
+    `not a reading: nothing on this droid can feel where a servo really is, so a jammed one shows exactly what ` +
+    `a free one does. Both tables read the droid once a second while this page is open, and <b>pulses off</b> ` +
+    `makes an output limp at once, wherever it happens to be.</p>` +
     // Back to centre, and its one line of answer. The button starts refused for
     // the reason every act on this page does: it must not run on a guess about
     // the estop, and the droid has not said yet.
@@ -247,6 +253,10 @@
   // The Find by Moving button starts refused: a run must not start on a guess
   // about the estop, and the droid has not said yet. The first status frame
   // gates it, the way the shell's own plate says "finding out" until then.
+  //
+  // The act sits in its own column, beside the thing it acts on, rather than
+  // under the picker in the same cell: two controls stacked in one cell made a
+  // 93 px row out of the anatomy's 40 px one, measured in a browser at 1440 px.
   const rowHtml = (part) => {
     const kind = kinds ? kinds.treatmentClass(part) : "";
     const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
@@ -256,18 +266,20 @@
       `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
       `<span class="parts-gang"></span></th>` +
       `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
-      `<option value="${NO_OUTPUT}">Finding out...</option></select>` +
-      `<button class="btn parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
-      `disabled aria-disabled="true">🔍 Find by moving</button></td></tr>`
+      `<option value="${NO_OUTPUT}">Finding out...</option></select></td>` +
+      `<td class="parts-acts">` +
+      `<button class="btn btn-sm parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
+      `disabled aria-disabled="true">Find by moving</button></td></tr>`
     );
   };
 
   tableRegion.innerHTML =
-    `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Driven by</th></tr></thead>` +
+    `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Driven by</th>` +
+    `<th scope="col" class="parts-acts">On this part</th></tr></thead>` +
     groupParts(catalog.parts)
       .map(
         (group) =>
-          `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="2" scope="colgroup">` +
+          `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="3" scope="colgroup">` +
           `${esc(groupHeading(group))}</th></tr>${group.parts.map(rowHtml).join("")}</tbody>`
       )
       .join("") +
@@ -314,9 +326,9 @@
       // The acts, beside what they act on. Both start refused: neither may run
       // on a guess about the estop, and the droid has not said yet.
       `<td class="outputs-acts">` +
-      `<button class="btn outputs-calibrate" type="button" ` +
+      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
       `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
-      `<button class="btn outputs-off" type="button" ` +
+      `<button class="btn btn-sm outputs-off" type="button" ` +
       `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
       `</td></tr>`
     );
@@ -657,8 +669,8 @@
   runPanel.className = "parts-find-run";
   runPanel.innerHTML =
     `<span class="parts-find-text" role="status" aria-live="polite"></span>` +
-    `<button class="btn accent parts-find-that" type="button">🎯 That one</button>` +
-    `<button class="btn parts-find-stop" type="button">✕ Stop</button>`;
+    `<button class="btn accent parts-find-that" type="button">That one</button>` +
+    `<button class="btn parts-find-stop" type="button">Stop</button>`;
   const runText = runPanel.querySelector(".parts-find-text");
 
   // The Outputs a run steps through: nothing on them, a pulse on them (an

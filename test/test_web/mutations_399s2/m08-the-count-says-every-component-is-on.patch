@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..8a0faede 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -727,7 +727,7 @@
+   const updateEnabledSummary = () => {
+     if (!setupEnabledSummary) return;
+     const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);
+-    const enabledCount = toggles.filter((toggle) => toggle.input.checked).length;
++    const enabledCount = toggles.length;
+     const total = toggles.length;
+     setupEnabledSummary.textContent = `${enabledCount} of ${total} switched on`;
+   };
