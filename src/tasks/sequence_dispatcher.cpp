@@ -568,7 +568,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                             estopActive ? "estop active" : "sleep mode active");
             } else {
                 sequenceBulkCentreStart(&centreRun, now, (uint8_t)centreSrc);
-                PA_LOG_INFO(TAG, "[%s] back to centre - %u outputs, at least %u ms apart",
+                // Rows, not outputs going back: how many of them have anything
+                // to centre is only known row by row, and the line at the end
+                // of the sweep is where that split is reported.
+                PA_LOG_INFO(TAG, "[%s] back to centre - %u rows, at least %u ms apart",
                             commandSourceToString(centreSrc),
                             (unsigned)configCacheServoOutputCount(),
                             (unsigned)SEQ_CADENCE_FLOOR_MS);

@@ -784,8 +784,18 @@ constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7296;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7296 -> 9120 -> 9216
 constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 4064;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 5120
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4576;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4576 -> 5720 -> 6144
+// Re-derived 2026-09-17 (#365): 4576 -> 4656. sequenceDispatcherTask()'s OWN
+// frame went 544 -> 624 B when the bulk centre landed. centreOneOutput() is a
+// single-caller static and the compiler inlines it, so the 70-byte
+// ServoOutputRow it reads -- one row at a time, as each Output's turn comes --
+// is reserved on the task's root frame rather than on a callee's. The 4032 B
+// below the root is unchanged, and on THIS chip it is a different branch from
+// the Xtensa arm's: drainBestEffort -> dispatchAction -> dispatchBodyMove ->
+// paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail, the USB-CDC
+// drop path #256 recorded. The rule lands on the step the stack already is, so
+// the allocation does not move; the floor holds by 1488 B.
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4656;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4656 -> 5820 -> 6144
 constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8320;
 constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8320 -> 10400 -> 10752
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5776;
@@ -857,8 +867,17 @@ constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 // deeper image for the same reason. A floor that fails is not the margin
 // question #248 declined; it is an overrun, so the rule is paid.
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4336;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4336 -> 5420 -> 5632
+// Re-derived 2026-09-17 (#365): 4336 -> 4416, the same +80 B as the ESP32-P4
+// arm and from the same cause -- sequenceDispatcherTask()'s own frame goes
+// 528 -> 608 B because the inlined centreOneOutput()'s 70-byte ServoOutputRow
+// lands on it (70 B at Xtensa's 16-byte stack alignment is exactly 80). The
+// 3808 B below the root is unchanged: it is still seqStorePrepare ->
+// protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use
+// heap/log-mutex tail (#250), and the bulk centre's own branch is nowhere near
+// it. The rule lands on the step the stack already is; the floor holds by
+// 1216 B.
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4416;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4416 -> 5520 -> 5632
 // Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
 // consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
 // handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
