@@ -141,6 +141,11 @@ cheap:
 3. **Cross-check the count against the tracker before using a word of it.** A
    first pass on #175 reported 68 closed children where the tracker said 77;
    that single number was the tell that the rest could not be trusted.
+4. **Give the harvest a capable model.** This is reading comprehension against a
+   judgement bar, not retrieval. The #175 pass that returned four Class 1
+   criteria for a whole epic ran on the default small subagent model; the same
+   prompt on a larger one is a different job. Set the model explicitly rather
+   than inheriting whatever the default is.
 
 ### Class 1 is the class that gets under-harvested — judge it with a checklist
 
