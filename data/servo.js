@@ -1,12 +1,16 @@
 // =============================================================================
 // servo.js
 //
-// Servos page controller — arm servo controls, AUX output controls, and
-// servo calibration (ARM1/ARM2 and AUX servo channels).
+// Servos page controller — arm servo controls, AUX output controls, and the
+// per-output test controls (ARM1/ARM2 and AUX servo channels).
 // SSE-first status delivery (consume `status` events from PAStatusStream),
 // with visibility-aware fallback polling when SSE is unavailable.
 // Sends open/close/stop/position commands via POST /api/servo.
-// Loads and saves calibration via GET/POST /api/config (auto-save on change).
+// READS calibration via GET /api/config and never writes it: an end is set on
+// Parts, by driving the part and pressing the button for that end, and this
+// page's Test Open and Test Close drive to the ends the droid recorded there
+// (#400). The `calib` names below are kept because reading the calibration is
+// still exactly what they do.
 // Component types (mg996r/mg90s/rgb/none) are read from /api/config to render
 // type-appropriate controls per AUX channel.
 // =============================================================================
@@ -20,34 +24,40 @@
   const auxControlsContainer = document.getElementById("aux-controls-container");
   const auxFeedback          = document.getElementById("aux-feedback");
 
-  const servoCalibCard       = document.getElementById("servo-calib-card");
-  const arm1CalibSection     = document.getElementById("arm1-calib-section");
-  const arm2CalibSection     = document.getElementById("arm2-calib-section");
-  const aux1CalibSection     = document.getElementById("aux1-calib-section");
-  const aux2CalibSection     = document.getElementById("aux2-calib-section");
-  const aux3CalibSection     = document.getElementById("aux3-calib-section");
+  const servoTestCard        = document.getElementById("servo-test-card");
+  const arm1TestSection      = document.getElementById("arm1-test-section");
+  const arm2TestSection      = document.getElementById("arm2-test-section");
+  const aux1TestSection      = document.getElementById("aux1-test-section");
+  const aux2TestSection      = document.getElementById("aux2-test-section");
+  const aux3TestSection      = document.getElementById("aux3-test-section");
 
-  const arm1OpenUs           = document.getElementById("arm1-open-us");
-  const arm1CloseUs          = document.getElementById("arm1-close-us");
-  const arm2OpenUs           = document.getElementById("arm2-open-us");
-  const arm2CloseUs          = document.getElementById("arm2-close-us");
-  const aux1OpenUs           = document.getElementById("aux1-open-us");
-  const aux1CloseUs          = document.getElementById("aux1-close-us");
-  const aux2OpenUs           = document.getElementById("aux2-open-us");
-  const aux2CloseUs          = document.getElementById("aux2-close-us");
-  const aux3OpenUs           = document.getElementById("aux3-open-us");
-  const aux3CloseUs          = document.getElementById("aux3-close-us");
   const arm1TestUs           = document.getElementById("arm1-test-us");
   const arm2TestUs           = document.getElementById("arm2-test-us");
   const aux1TestUs           = document.getElementById("aux1-test-us");
   const aux2TestUs           = document.getElementById("aux2-test-us");
   const aux3TestUs           = document.getElementById("aux3-test-us");
   const calibFeedback        = document.getElementById("calib-feedback");
-  const reloadCalibBtn       = document.getElementById("reload-calib-btn");
 
   // Component types loaded from /api/config — determines AUX rendering
   let auxTypes = { aux1: "none", aux2: "none", aux3: "none" };
   let auxConfigured = { aux1: false, aux2: false, aux3: false };
+
+  // The recorded ends, read from /api/config and never written from here. Test
+  // Open and Test Close drive to these, so what a builder sees is what the
+  // droid will really do when something says open -- not whatever number a box
+  // on this page happened to be holding.
+  //
+  // The defaults stand in when a field is absent, which is a real answer rather
+  // than a missing one: addServoOutputFields() leaves an Output Address with no
+  // live row OUT of the document instead of inventing a number, and names this
+  // fallback as the reason it may (src/web/api_config.cpp:624).
+  const endpoints = {
+    arm1Open: 2000, arm1Close: 1000,
+    arm2Open: 2000, arm2Close: 1000,
+    aux1Open: 2000, aux1Close: 1000,
+    aux2Open: 2000, aux2Close: 1000,
+    aux3Open: 2000, aux3Close: 1000,
+  };
 
 
   // -------------------------------------------------------------------------
@@ -218,9 +228,9 @@
   };
 
   // -------------------------------------------------------------------------
-  // renderCalibSections() — show/hide calibration sections per enabled state + type
+  // renderTestSections() — show/hide test sections per enabled state + type
   // -------------------------------------------------------------------------
-  const renderCalibSections = (payload) => {
+  const renderTestSections = (payload) => {
     const arm1Present = "arm1" in payload;
     const arm2Present = "arm2" in payload;
     const aux1Present = auxConfigured.aux1 || ("aux1" in payload);
@@ -232,14 +242,14 @@
     const aux2Servo = aux2Present && isServoType(auxTypes.aux2);
     const aux3Servo = aux3Present && isServoType(auxTypes.aux3);
 
-    const anyCalib = arm1Present || arm2Present || aux1Servo || aux2Servo || aux3Servo;
+    const anyTestable = arm1Present || arm2Present || aux1Servo || aux2Servo || aux3Servo;
 
-    if (servoCalibCard)   servoCalibCard.classList.toggle("hidden", !anyCalib);
-    if (arm1CalibSection) arm1CalibSection.classList.toggle("hidden", !arm1Present);
-    if (arm2CalibSection) arm2CalibSection.classList.toggle("hidden", !arm2Present);
-    if (aux1CalibSection) aux1CalibSection.classList.toggle("hidden", !aux1Servo);
-    if (aux2CalibSection) aux2CalibSection.classList.toggle("hidden", !aux2Servo);
-    if (aux3CalibSection) aux3CalibSection.classList.toggle("hidden", !aux3Servo);
+    if (servoTestCard)   servoTestCard.classList.toggle("hidden", !anyTestable);
+    if (arm1TestSection) arm1TestSection.classList.toggle("hidden", !arm1Present);
+    if (arm2TestSection) arm2TestSection.classList.toggle("hidden", !arm2Present);
+    if (aux1TestSection) aux1TestSection.classList.toggle("hidden", !aux1Servo);
+    if (aux2TestSection) aux2TestSection.classList.toggle("hidden", !aux2Servo);
+    if (aux3TestSection) aux3TestSection.classList.toggle("hidden", !aux3Servo);
   };
 
   // -------------------------------------------------------------------------
@@ -251,7 +261,7 @@
     lastPayload = payload;
     renderArmControls(payload);
     renderAuxControls(payload);
-    renderCalibSections(payload);
+    renderTestSections(payload);
   };
 
   const refreshStatusOnce = async () => {
@@ -261,7 +271,7 @@
   };
 
   // -------------------------------------------------------------------------
-  // Calibration load / auto-save
+  // Calibration load — read only
   // -------------------------------------------------------------------------
   const setCalibFeedback = (text, cls = "") => {
     if (!calibFeedback) return;
@@ -277,19 +287,19 @@
       const result = await api.get("/api/config");
       const cfg = result.data;
 
-      // Arm calibration
-      if (arm1OpenUs)  arm1OpenUs.value  = cfg.arm1OpenUs  ?? 2000;
-      if (arm1CloseUs) arm1CloseUs.value = cfg.arm1CloseUs ?? 1000;
-      if (arm2OpenUs)  arm2OpenUs.value  = cfg.arm2OpenUs  ?? 2000;
-      if (arm2CloseUs) arm2CloseUs.value = cfg.arm2CloseUs ?? 1000;
+      // Arm ends
+      endpoints.arm1Open  = cfg.arm1OpenUs  ?? 2000;
+      endpoints.arm1Close = cfg.arm1CloseUs ?? 1000;
+      endpoints.arm2Open  = cfg.arm2OpenUs  ?? 2000;
+      endpoints.arm2Close = cfg.arm2CloseUs ?? 1000;
 
-      // AUX calibration
-      if (aux1OpenUs)  aux1OpenUs.value  = cfg.aux1OpenUs  ?? 2000;
-      if (aux1CloseUs) aux1CloseUs.value = cfg.aux1CloseUs ?? 1000;
-      if (aux2OpenUs)  aux2OpenUs.value  = cfg.aux2OpenUs  ?? 2000;
-      if (aux2CloseUs) aux2CloseUs.value = cfg.aux2CloseUs ?? 1000;
-      if (aux3OpenUs)  aux3OpenUs.value  = cfg.aux3OpenUs  ?? 2000;
-      if (aux3CloseUs) aux3CloseUs.value = cfg.aux3CloseUs ?? 1000;
+      // AUX ends
+      endpoints.aux1Open  = cfg.aux1OpenUs  ?? 2000;
+      endpoints.aux1Close = cfg.aux1CloseUs ?? 1000;
+      endpoints.aux2Open  = cfg.aux2OpenUs  ?? 2000;
+      endpoints.aux2Close = cfg.aux2CloseUs ?? 1000;
+      endpoints.aux3Open  = cfg.aux3OpenUs  ?? 2000;
+      endpoints.aux3Close = cfg.aux3CloseUs ?? 1000;
 
       // Pre-populate test inputs at neutral
       if (arm1TestUs) arm1TestUs.value = 1500;
@@ -307,7 +317,7 @@
       auxConfigured.aux3 = Boolean(components.aux3?.enabled);
       // Re-render AUX controls now that types are known
       renderAuxControls(lastPayload || {});
-      renderCalibSections(lastPayload || {});
+      renderTestSections(lastPayload || {});
 
       setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
@@ -317,56 +327,9 @@
     }
   };
 
-  // Auto-save calibration
-  const saveCalib = async () => {
-    if (!window.PAApi) return;
-    setCalibFeedback("Saving...");
-    try {
-      const body = new URLSearchParams();
-      if (arm1OpenUs  && !arm1CalibSection?.classList.contains("hidden")) {
-        body.set("arm1OpenUs",  arm1OpenUs.value);
-        body.set("arm1CloseUs", arm1CloseUs.value);
-      }
-      if (arm2OpenUs  && !arm2CalibSection?.classList.contains("hidden")) {
-        body.set("arm2OpenUs",  arm2OpenUs.value);
-        body.set("arm2CloseUs", arm2CloseUs.value);
-      }
-      if (aux1OpenUs  && !aux1CalibSection?.classList.contains("hidden")) {
-        body.set("aux1OpenUs",  aux1OpenUs.value);
-        body.set("aux1CloseUs", aux1CloseUs.value);
-      }
-      if (aux2OpenUs  && !aux2CalibSection?.classList.contains("hidden")) {
-        body.set("aux2OpenUs",  aux2OpenUs.value);
-        body.set("aux2CloseUs", aux2CloseUs.value);
-      }
-      if (aux3OpenUs  && !aux3CalibSection?.classList.contains("hidden")) {
-        body.set("aux3OpenUs",  aux3OpenUs.value);
-        body.set("aux3CloseUs", aux3CloseUs.value);
-      }
-      await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      setCalibFeedback(`Saved at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (error) {
-      console.error("[servo] saveCalib failed:", error);
-      setCalibFeedback(`Save failed: ${window.PAApi.messageFor(error)}`, "error");
-    }
-  };
-
-  const debouncedSave = window.PAUtils.debounce(saveCalib, 500);
-
-  // Attach auto-save listeners to all calibration inputs
-  const calibInputs = [arm1OpenUs, arm1CloseUs, arm2OpenUs, arm2CloseUs,
-                       aux1OpenUs, aux1CloseUs, aux2OpenUs, aux2CloseUs,
-                       aux3OpenUs, aux3CloseUs];
-  calibInputs.forEach((input) => {
-    if (input) {
-      input.addEventListener("input", debouncedSave);
-    }
-  });
-
-  if (reloadCalibBtn) reloadCalibBtn.addEventListener("click", loadCalib);
-
   // -------------------------------------------------------------------------
-  // Test buttons — send SERVO_CMD_POSITION immediately (does not save)
+  // Test buttons — send SERVO_CMD_POSITION immediately. Test Open and Test
+  // Close drive to the ends `endpoints` holds; nothing on this page writes one.
   // -------------------------------------------------------------------------
   const wireTestBtn = (btnId, armId, getUs, fb) => {
     const btn = document.getElementById(btnId);
@@ -374,21 +337,21 @@
       postServoPosition(armId, Number(getUs()), fb || armFeedback));
   };
 
-  wireTestBtn("arm1-test-btn",       "arm1", () => arm1TestUs?.value  || 1500);
-  wireTestBtn("arm1-open-test-btn",  "arm1", () => arm1OpenUs?.value  || 2000);
-  wireTestBtn("arm1-close-test-btn", "arm1", () => arm1CloseUs?.value || 1000);
-  wireTestBtn("arm2-test-btn",       "arm2", () => arm2TestUs?.value  || 1500);
-  wireTestBtn("arm2-open-test-btn",  "arm2", () => arm2OpenUs?.value  || 2000);
-  wireTestBtn("arm2-close-test-btn", "arm2", () => arm2CloseUs?.value || 1000);
-  wireTestBtn("aux1-test-btn",       "aux1", () => aux1TestUs?.value  || 1500, auxFeedback);
-  wireTestBtn("aux1-open-test-btn",  "aux1", () => aux1OpenUs?.value  || 2000, auxFeedback);
-  wireTestBtn("aux1-close-test-btn", "aux1", () => aux1CloseUs?.value || 1000, auxFeedback);
-  wireTestBtn("aux2-test-btn",       "aux2", () => aux2TestUs?.value  || 1500, auxFeedback);
-  wireTestBtn("aux2-open-test-btn",  "aux2", () => aux2OpenUs?.value  || 2000, auxFeedback);
-  wireTestBtn("aux2-close-test-btn", "aux2", () => aux2CloseUs?.value || 1000, auxFeedback);
-  wireTestBtn("aux3-test-btn",       "aux3", () => aux3TestUs?.value  || 1500, auxFeedback);
-  wireTestBtn("aux3-open-test-btn",  "aux3", () => aux3OpenUs?.value  || 2000, auxFeedback);
-  wireTestBtn("aux3-close-test-btn", "aux3", () => aux3CloseUs?.value || 1000, auxFeedback);
+  wireTestBtn("arm1-test-btn",       "arm1", () => arm1TestUs?.value || 1500);
+  wireTestBtn("arm1-open-test-btn",  "arm1", () => endpoints.arm1Open);
+  wireTestBtn("arm1-close-test-btn", "arm1", () => endpoints.arm1Close);
+  wireTestBtn("arm2-test-btn",       "arm2", () => arm2TestUs?.value || 1500);
+  wireTestBtn("arm2-open-test-btn",  "arm2", () => endpoints.arm2Open);
+  wireTestBtn("arm2-close-test-btn", "arm2", () => endpoints.arm2Close);
+  wireTestBtn("aux1-test-btn",       "aux1", () => aux1TestUs?.value || 1500, auxFeedback);
+  wireTestBtn("aux1-open-test-btn",  "aux1", () => endpoints.aux1Open,  auxFeedback);
+  wireTestBtn("aux1-close-test-btn", "aux1", () => endpoints.aux1Close, auxFeedback);
+  wireTestBtn("aux2-test-btn",       "aux2", () => aux2TestUs?.value || 1500, auxFeedback);
+  wireTestBtn("aux2-open-test-btn",  "aux2", () => endpoints.aux2Open,  auxFeedback);
+  wireTestBtn("aux2-close-test-btn", "aux2", () => endpoints.aux2Close, auxFeedback);
+  wireTestBtn("aux3-test-btn",       "aux3", () => aux3TestUs?.value || 1500, auxFeedback);
+  wireTestBtn("aux3-open-test-btn",  "aux3", () => endpoints.aux3Open,  auxFeedback);
+  wireTestBtn("aux3-close-test-btn", "aux3", () => endpoints.aux3Close, auxFeedback);
 
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
