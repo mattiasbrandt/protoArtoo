@@ -327,8 +327,7 @@
         </label>
       </form>
       <p class="hint">A new level applies to what gets logged at once. How deep the log history goes (16–48 lines) follows the saved level after the next restart.</p>
-      <div class="status-grid">
-        <dl>
+      <dl class="status-grid">
           <div class="status-item">
             <dt>Uptime</dt>
             <dd><span id="diag-uptime">...</span></dd>
@@ -349,8 +348,7 @@
             <dd><span class="indicator" id="diag-heap-largest-light"></span><span id="diag-heap-largest">...</span></dd>
             <span class="hint">Fragmentation indicator</span>
           </div>
-        </dl>
-      </div>
+      </dl>
       <p id="diag-memory-note" class="hint">Memory Min is the lowest free heap seen since boot (historical low-water mark).</p>
       <div id="diag-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -377,8 +375,7 @@
         </div>
         <p id="prof-frag-label" class="hint"></p>
 
-        <div class="status-grid">
-          <dl>
+        <dl class="status-grid">
             <div class="status-item">
               <dt>Heap free</dt>
               <dd id="prof-heap-free">...</dd>
@@ -407,8 +404,7 @@
               <dt>Failed allocs</dt>
               <dd id="prof-failed-allocs">...</dd>
             </div>
-          </dl>
-        </div>
+        </dl>
 
         <div class="sect"><h3>Task stack headroom</h3><span class="sub">least free stack each task has had</span></div>
         <div class="prof-table-wrap">
@@ -483,7 +479,7 @@
       </div>
 
       <div id="restore-btn-row" class="button-row button-row-compact" hidden>
-        <button id="backup-restore-btn" class="btn accent" type="button">Restore the ticked parts</button>
+        <button id="backup-restore-btn" class="btn" type="button">Restore the ticked parts</button>
       </div>
 
       <div id="backup-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -501,7 +497,7 @@
           <input type="checkbox" id="mdns-use-name">
           <span>Use as network hostname (mDNS)</span>
         </label>
-        <button id="identity-save-button" class="btn accent identity-save-button" type="button">Save</button>
+        <button id="identity-save-button" class="btn identity-save-button" type="button">Save</button>
       </div>
       <div id="identity-actions"></div>
       <div id="identity-diagnosis" class="hint" role="status" aria-live="polite" aria-atomic="true"></div>

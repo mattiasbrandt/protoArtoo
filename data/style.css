@@ -890,7 +890,8 @@ nav > a {
 body[data-page="servo"] .card > * + *,
 body[data-page="parts"] .card > * + *,
 body[data-page="parts"] .outputs-section > * + *,
-body[data-page="setup"] .card > * + * {
+body[data-page="setup"] .card > * + *,
+body[data-page="setup"] #feature-form > * + * {
   margin-top: var(--space-md);
 }
 
@@ -1102,6 +1103,16 @@ body[data-page="setup"] .card > * + * {
 .button-row.button-row-compact .btn {
   min-width: 0;
   padding-inline: 14px;
+}
+
+/* A .button-row is display:grid, and an author rule beats the browser's own
+   [hidden] whatever the specificity - the same trap .parts-find[hidden] and
+   .rc-learn-banner[hidden] already had to say out loud. Setup's restore act
+   was on screen, enabled, before any backup file had been chosen, and pressing
+   it returned silently on its own parsedBackup guard: a control that is
+   present and does nothing. Found in a browser at 1440 px. */
+.button-row[hidden] {
+  display: none;
 }
 
 .drive-safety-actions {
@@ -2837,7 +2848,7 @@ body.sleep-mode-active {
 
 .arm-position {
   font-family: var(--font-mono);
-  font-size: var(--fs-hint);
+  font-size: var(--fs-sect);
   line-height: 1.6;
   color: var(--text-dim);
 }
@@ -3850,6 +3861,25 @@ label.sound-search-field {
   white-space: nowrap;
 }
 
+/* The serial lanes report a SENTENCE rather than a word - "Connected (UART, hb
+   rx 812 / tx 810)" is four times the length of the Dashboard's "Mounted" - so
+   these rows take a wider column and let the reading wrap. Found in a browser
+   at 1440 px, where the S3 reading ran off the right-hand edge of its plate
+   against the shared rule's white-space: nowrap. */
+body[data-page="setup"] .health-grid {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+body[data-page="setup"] .health-item {
+  height: auto;
+  padding-block: var(--space-2xs);
+}
+
+body[data-page="setup"] .indicator-text {
+  white-space: normal;
+  text-align: right;
+}
+
 /* A readout whose state is a light: the light sits with the value, the way a
    Status Plate cell carries its own, and the value stays ink. */
 body[data-page="setup"] .status-item dd {
@@ -3871,6 +3901,11 @@ body[data-page="setup"] .status-item .hint {
   align-items: flex-end;
   gap: var(--space-md);
   flex-wrap: wrap;
+}
+
+/* A count from 1 to 255 needs no more box than this. */
+.led-route .field {
+  max-width: 180px;
 }
 
 .led-preview {
@@ -6371,6 +6406,15 @@ body[data-page="setup"] .status-item .hint {
   background: var(--surface);
 }
 
+/* The acts, in their own column at the end of the row (ADR 0066: the acts are
+   named beside the thing they act on). Narrow, so the answer columns get the
+   width. */
+.parts-table .parts-acts {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .parts-shorthand,
 .parts-kind {
   margin-left: var(--space-xs);
@@ -6400,10 +6444,16 @@ body[data-page="setup"] .status-item .hint {
   display: none;
 }
 
+/* The picker is a control INSIDE a --row-tall line, so it is the row that is
+   the bench's target rather than the control: a 44 px picker with a button
+   stacked under it made a 93 px row, measured in a browser at 1440 px. The
+   measure keeps the widest option text ("AUX1 - Left body door, Right body
+   door") readable without the cell becoming a form field across the table. */
 .parts-output {
   width: 100%;
-  min-height: 44px;
-  padding: var(--space-sm);
+  max-width: 44ch;
+  min-height: 30px;
+  padding: 0 var(--space-sm);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
@@ -6573,13 +6623,10 @@ body[data-page="setup"] .status-item .hint {
    back until the droid has answered again (the freshness-stamp pattern,
    r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894).
    --------------------------------------------------------------------------- */
-/* The tighter padding is the only thing an act inside a table row needs of its
-   own: slice 1's shared .btn already sets the 36 px floor and --fs-cell, and
-   restating them here was a second spelling of both (#399 slice 2). */
-.parts-find {
-  margin-top: var(--space-2xs);
-  padding: var(--space-2xs) var(--space-sm);
-}
+/* An act inside a table row is the anatomy's own small control (.btn-sm), so
+   this rule keeps only what is particular to this one: nothing but its
+   [hidden] behaviour, below. Slice 1's shared .btn sets the rest, and C1c's
+   copy of the 36 px floor and --fs-cell was a second spelling of both. */
 
 .parts-find[hidden] {
   display: none;
@@ -6599,7 +6646,7 @@ body[data-page="setup"] .status-item .hint {
 }
 
 .parts-find-run .btn {
-  padding: var(--space-2xs) var(--space-sm);
+  padding: var(--space-2xs) var(--space-md);
 }
 
 .outputs-bar.is-stale .outputs-now,
@@ -6637,7 +6684,6 @@ body[data-page="setup"] .status-item .hint {
 
 .outputs-acts .btn {
   margin-right: var(--space-2xs);
-  padding: var(--space-2xs) var(--space-sm);
 }
 
 .outputs-acts .btn[hidden] {

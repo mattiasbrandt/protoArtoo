@@ -253,6 +253,9 @@
   // The Find by Moving button starts refused: a run must not start on a guess
   // about the estop, and the droid has not said yet. The first status frame
   // gates it, the way the shell's own plate says "finding out" until then.
+  // The act sits in its own column, beside the thing it acts on, rather than
+  // under the picker in the same cell: two controls stacked in one cell made a
+  // 93 px row out of the anatomy's 40 px one, measured in a browser at 1440 px.
   const rowHtml = (part) => {
     const kind = kinds ? kinds.treatmentClass(part) : "";
     const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
@@ -262,18 +265,20 @@
       `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
       `<span class="parts-gang"></span></th>` +
       `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
-      `<option value="${NO_OUTPUT}">Finding out...</option></select>` +
-      `<button class="btn parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
+      `<option value="${NO_OUTPUT}">Finding out...</option></select></td>` +
+      `<td class="parts-acts">` +
+      `<button class="btn btn-sm parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
       `disabled aria-disabled="true">Find by moving</button></td></tr>`
     );
   };
 
   tableRegion.innerHTML =
-    `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Driven by</th></tr></thead>` +
+    `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Driven by</th>` +
+    `<th scope="col" class="parts-acts">On this part</th></tr></thead>` +
     groupParts(catalog.parts)
       .map(
         (group) =>
-          `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="2" scope="colgroup">` +
+          `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="3" scope="colgroup">` +
           `${esc(groupHeading(group))}</th></tr>${group.parts.map(rowHtml).join("")}</tbody>`
       )
       .join("") +
@@ -320,9 +325,9 @@
       // The acts, beside what they act on. Both start refused: neither may run
       // on a guess about the estop, and the droid has not said yet.
       `<td class="outputs-acts">` +
-      `<button class="btn outputs-calibrate" type="button" ` +
+      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
       `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
-      `<button class="btn outputs-off" type="button" ` +
+      `<button class="btn btn-sm outputs-off" type="button" ` +
       `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
       `</td></tr>`
     );
