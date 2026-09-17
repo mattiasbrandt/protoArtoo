@@ -36,7 +36,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 
 | Domain | Primary target | Compatibility direction |
 |---|---|---|
-| Body controller | Artoo Controller PCB family (v1.x), ESP32 D1 Mini form factor | keep board-profile logic extensible where safe |
+| Body controller | Artoo Controller PCB family (v1.x), dual-header ESP32 clone form factor | keep board-profile logic extensible where safe |
 | Drive subsystem | hoverboard integrations accepting Gen2.x-style UART frames at 115200 baud | protocol-contract compatibility over vendor lock |
 | Dome integration | bidirectional serial coordination with AstroPixelsPlus-class dome stacks | explicit command/status ownership boundaries |
 | Audio subsystem | body-side ownership; DY-SV5W as primary module | CHIRP Audio Trigger and SparkFun MP3 Trigger via driver abstraction |
@@ -117,7 +117,7 @@ Audio and body-dome baseline:
 - dome link behavior supports coordinated command routing with explicit responsibility boundaries
 
 Hardware support baseline:
-- target profile remains Artoo PCB + ESP32 D1 Mini form factor
+- target profile remains Artoo PCB + dual-header ESP32 clone form factor
 - drive integration on the artoo-esp32 Board Variant remains hoverboard UART contract based, forced by that PCB's fixed wiring (one UART, no spare); other Board Variants may default to a different drive backend where their wiring allows it (ADR 0029)
 - component-level compatibility remains contract-driven and documented
 

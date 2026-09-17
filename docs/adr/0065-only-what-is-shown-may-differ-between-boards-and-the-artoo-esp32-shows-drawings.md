@@ -40,7 +40,7 @@ both still carry size comments that predate the UI's growth.
 sentence — *"ESP32-P4 Target support does not relax the current requirement"* — and
 the operator reopened it on 2026-09-11. A larger-flash module is not the way out:
 the ESP32 is socketed on the Artoo PCB and Espressif ships WROOM-32E in N8 and N16,
-but no D1-Mini32-footprint board with more than 4 MB fits it. That was researched
+but no board with that footprint and more than 4 MB fits it. That was researched
 before this ticket and is closed (operator, 2026-09-11). **The 4 MB board is
 permanent**, so every lever here is a software one.
 

@@ -2,7 +2,7 @@
 
 protoArtoo is adding a second controller family: the ESP32-P4 (first board:
 DFRobot FireBeetle 2 ESP32-P4), alongside the fully supported artoo-esp32
-(the classic-generation ESP32 D1 Mini clone on the artoo.uk Artoo Controller
+(the classic-generation dual-header ESP32 board clone on the artoo.uk Artoo Controller
 PCB). The P4 work must not weld itself to one development board: a P4-based
 controller is a category, and the FireBeetle 2 is one member of it.
 

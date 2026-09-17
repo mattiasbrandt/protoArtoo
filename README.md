@@ -58,7 +58,7 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 - **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk)).
   This is the board to build a droid on today, and the one this project develops
   against day to day.
-  Requires the **dual-header ESP32 D1 Mini clone** (`wemos_d1_mini32`) — the elongated
+  Requires the **dual-header ESP32 board clone** (PlatformIO board id `wemos_d1_mini32`) — the elongated
   ~68 mm board with dual-row headers (~40 pins). This is a Chinese third-party clone,
   not an official Wemos/LOLIN board. No other ESP32 board fits the PCB socket.
 - **DFRobot FireBeetle 2 ESP32-P4** (DFR1172) with the DFR1237 IO shield — a second

@@ -60,7 +60,7 @@ Body Controller (protoArtoo on Artoo PCB)
 
 ## Physical Topology
 
-- Body board: Artoo Controller PCB v1.1/v1.2 with ESP32 D1 Mini form factor module.
+- Body board: Artoo Controller PCB v1.1/v1.2 with a dual-header ESP32 clone module.
 - Dome board: AstroPixelsPlus-class ESP32 controller.
 - Body-dome interconnect: slip ring carrying at least TX, RX, and shared GND for serial.
 - Motion peripherals:

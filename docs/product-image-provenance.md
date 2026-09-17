@@ -16,7 +16,7 @@ Encoded 400x300 WebP, dark ground `#0c1525`, at most 8 KiB
 
 | File | Product | Status | Source | Licence |
 |---|---|---|---|---|
-| `artoo_pcb.webp` | Artoo PCB (artoo.uk) | supported | Operator-supplied product photograph of Steve Wagg's Artoo Controller v1.1 with an ESP32 D1 Mini seated. The board design is Steve's (LICENSE item 2, https://artoo.uk). | Used with the hardware this firmware already credits. |
+| `artoo_pcb.webp` | Artoo PCB (artoo.uk) | supported | Operator-supplied product photograph of Steve Wagg's Artoo Controller v1.1 with its ESP32 clone fitted. The board design is Steve's (LICENSE item 2, https://artoo.uk). | Used with the hardware this firmware already credits. |
 | `firebeetle2.webp` | FireBeetle 2 (ESP32-P4) | supported | Operator-supplied DFRobot product photograph of the FireBeetle 2 ESP32-P4 and its carrier. | Manufacturer product image, used to identify the board. |
 | `hotrc_ds650.webp` | HotRC DS-650 | supported | Operator-supplied listing photograph of a pistol-grip RC radio (branded Havcybin on this shot) with a HotRC F-06A in frame. The registry row is the HotRC DS-650. | Manufacturer / listing photograph, used to identify the class of RC radio. |
 | `rc_transmitter_pwm.webp` | RC Receiver - PWM | supported | Operator-supplied product photograph of a HotRC F-06A PWM receiver. The photograph is of the box in the droid, which is what protoArtoo reads. | Manufacturer product image, used to identify the receiver. |

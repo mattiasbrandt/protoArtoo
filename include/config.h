@@ -128,7 +128,7 @@ constexpr uint8_t PA_PIN_UNASSIGNED = 0xFF;
 
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
 // ────────────────────────────────────────────────────────────────────────────
-// artoo-esp32: artoo.uk Artoo Controller PCB on classic ESP32 D1 Mini clone
+// artoo-esp32: artoo.uk Artoo Controller PCB on a classic-generation dual-header ESP32 board clone
 // All pins confirmed by PCB continuity trace on 2026-03-12 (PCB v1.2).
 // See docs/pin_map.md for full trace results and revision notes.
 // ────────────────────────────────────────────────────────────────────────────

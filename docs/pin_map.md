@@ -48,10 +48,10 @@ This document is the canonical hardware mapping reference for both boards.
 Two primary targets are supported:
 
 **1. Artoo-esp32** (`PA_BOARD_ARTOO_ESP32`)
-- Artoo Controller PCB (v1.1–v1.2, purpose-built for the dual-header ESP32 D1 Mini clone)
-- Board identifier in PlatformIO: `wemos_d1_mini32`
-- This is a third-party clone — not an official Wemos/LOLIN product — sold under names such as "ESP32 D1 Mini", "D1 Mini32", or "Wemos D1 Mini ESP32".
-- Dual-row headers on both long sides (~40 pins total), with inner rows matching the original ESP8266 D1 Mini shield footprint.
+- Artoo Controller PCB (v1.1–v1.2, purpose-built for the dual-header ESP32 board clone)
+- Board identifier in PlatformIO: `wemos_d1_mini32` — a **toolchain string**, not the board's name.
+- **The board carries no branding and no model name.** It is a generic third-party ESP32 clone, not an official Wemos/LOLIN product, and naming it after one is wrong: it has its own **custom GPIO header layout** (operator, 2026-09-17).
+- Dual-row headers on both long sides (~40 pins total). **Read the pin assignment from this table, never from another board's pinout.**
 
 **2. FireBeetle 2** (`PA_BOARD_FIREBEETLE2`)
 - DFRobot FireBeetle 2 ESP32-P4 board (`DFR1172`) + IO Expansion shield (`DFR1237`)
