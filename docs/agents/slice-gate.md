@@ -24,7 +24,12 @@ not of this branch. The gate itself is run **once per wave, on the merged
 tree**, with the union of the wave's fences: that run is the anti-fabrication
 net, and it has to happen anyway because line numbers and stragglers move on
 merge. Divergence at either point marks the slice unverified, and a failed
-provenance check is the trigger to re-run the full gate on that one slice.
+provenance check is the trigger to re-run the full gate on that one slice. The
+merge-base check is the exception that is judged rather than failed: when the
+base moved under a slice, the coordinator intersects what landed with what the
+slice touches - no overlap and the per-wave merged-tree run is its proof, an
+overlap (or merged work that is this slice's own subject) and the worker merges
+and re-gates.
 
 **Why it changed (2026-09-17).** Across epic #175 the coordinator re-ran the
 full gate behind **18** accepted slices and found **0** divergences, while each

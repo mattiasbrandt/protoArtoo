@@ -158,11 +158,30 @@ reporting passes that never ran. In the worker's worktree, personally:
    has an internally consistent block: its own `merge-base` and the one you
    compute both name the OLD tip, so they agree and the slice passes while
    being verified against a tree that no longer exists. Compare the block's
-   merge-base to the base's CURRENT tip. When they differ the slice is against
-   a stale base: the worker merges `<base>` and re-runs the gate on the merged
-   tree, and that block is the one you accept. This is not hypothetical - it
-   happened twice on #175 in one evening, and one of those slices was repairing
-   a defect introduced by the very merge it did not have.
+   merge-base to the base's CURRENT tip. This is not hypothetical - it happened
+   three times on #175 in one evening, and one of those slices was repairing a
+   defect introduced by the very merge it did not have.
+
+   When they differ, **what it costs depends on what landed in between**, and
+   you decide that rather than reflexively sending the slice back:
+
+   ```
+   comm -12 <(git diff --name-only <block merge-base>..<base> | sort) \
+            <(git -C <worktree> diff --name-only <block merge-base>...HEAD | sort)
+   ```
+
+   - **No overlap** - merge it, and let the per-wave gate run on the merged tree
+     be its proof. The slice's own block is honest about the tree it was built
+     on, and its test-total arithmetic against the older base still shows the
+     tests it added.
+   - **Overlap, or the merged work is the subject of this slice** - the worker
+     merges `<base>` and re-runs the gate, and that block is the one you accept.
+     #346's reopen is the case in point: it branched before a merge whose change
+     *was* its own third finding, so no file-level overlap would have saved it.
+
+   A blanket re-gate on every moved tip buys back the duplicate cost this
+   protocol just removed, once per merge - and serial integration moves the tip
+   by definition.
 
    Then read the block itself: every changed web production JS file appears in
    the mutation table, every row KILLED, and **no waiver ACK you did not grant**
