@@ -2103,9 +2103,16 @@ const BOARD_LABELS = {
     show(head, phase === "running");
     show(foot, phase === "running");
 
+    // Only a run that is actually on screen has a current step. While the
+    // controller is still being asked, there is no step to show and no card to
+    // show it in - and saying that once here is what keeps the two loops below
+    // from each having to remember it.
     const hosts = stepHosts();
-    const currentHost = hosts.find((host) => host.dataset.setupStep === STEPS[current]?.key);
-    const currentCard = phase === "running" && currentHost ? cardFor(currentHost) : null;
+    const currentHost =
+      phase === "running"
+        ? hosts.find((host) => host.dataset.setupStep === STEPS[current]?.key)
+        : null;
+    const currentCard = currentHost ? cardFor(currentHost) : null;
 
     cards().forEach((card) => {
       if (card === checking || card === head || card === foot) return;
