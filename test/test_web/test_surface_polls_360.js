@@ -198,6 +198,76 @@ test("a poll that hands back nothing at all has not answered either", async () =
   );
 });
 
+test("a surface with two polls is not current until both have answered", async () => {
+  const env = makeRegistry();
+  env.surface.showing("sound");
+  let moduleAnswers = false;
+  const status = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 1000 });
+  const module = env.surface.poll(
+    () => (moduleAnswers ? Promise.resolve({}) : Promise.reject(new Error("the module did not answer"))),
+    { cadenceMs: 2000 },
+  );
+  status.start();
+  module.start();
+
+  env.surface.showing("setup");
+  assert.equal(env.surface.isStale("sound"), true, "leaving Sound stops both of the polls it owns");
+
+  env.surface.showing("sound");
+  const [statusTimer, moduleTimer] = env.live();
+  env.fire(statusTimer);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("sound"),
+    true,
+    "the status read answered and the module has not, so Sound is not current",
+  );
+  assert.equal(
+    env.events.filter((event) => event.type === "pa:surface-fresh").length,
+    0,
+    "and the shell is not told to take the note down",
+  );
+
+  env.fire(moduleTimer);
+  await sleep(0);
+  assert.equal(env.surface.isStale("sound"), true, "a refresh that failed is still not an answer");
+
+  moduleAnswers = true;
+  env.fire(moduleTimer);
+  await sleep(0);
+
+  assert.equal(env.surface.isStale("sound"), false, "everything Sound asks for has answered");
+  const fresh = env.events.filter((event) => event.type === "pa:surface-fresh");
+  assert.equal(fresh.length, 1, "told once, when the surface answered -- not once per poll");
+  assert.equal(fresh[0].detail.surface, "sound");
+});
+
+test("a poll the surface turned off does not hold the note up", async () => {
+  const env = makeRegistry();
+  env.surface.showing("setup");
+  const serial = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
+  const profiler = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
+  serial.start();
+  profiler.start();
+
+  env.surface.showing("rc");
+  env.surface.showing("setup");
+  // What the memory profiler does when the manifest says it is not in this
+  // build: the surface stops asking. It is not waiting for an answer, so it
+  // must not pin the note up on a surface that is otherwise current.
+  profiler.stop();
+
+  env.fire(env.live()[0]);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("setup"),
+    false,
+    "the only poll Setup still wants has answered, so Setup is current",
+  );
+});
+
 test("a surface that stopped its own poll has not been left, and is not stale", () => {
   const env = makeRegistry();
   env.surface.showing("setup");
@@ -791,6 +861,41 @@ test("a returned surface whose refresh fails keeps saying what it is showing", a
     /Showing what this screen last read/,
     "nothing answered, so the note stays up over the values from before",
   );
+});
+
+test("a surface with two polls keeps its note up until both have answered", async () => {
+  const env = await boot();
+  let moduleAnswers = false;
+  const status = surfacePoll(env, () => Promise.resolve({}), { runOnStart: true });
+  const module = surfacePoll(
+    env,
+    () => (moduleAnswers
+      ? Promise.resolve({})
+      : Promise.reject(new Error("the module did not answer"))),
+    { runOnStart: true },
+  );
+  // Both first reads land while the operator is still on the screen.
+  await sleep(10);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  env.navigate("#home");
+  await sleep(140);
+
+  // Both asked again on the way back in. One answered; the other did not.
+  assert.ok(status.calls.count > 1 && module.calls.count > 1, "both polls asked again");
+  assert.match(
+    env.noteText() || "",
+    /Showing what this screen last read/,
+    "one poll of two answering is not the surface answering",
+  );
+
+  moduleAnswers = true;
+  await sleep(1100);
+
+  assert.equal(env.noteText(), null, "and the note goes once everything the surface asks for has answered");
+  status.handle.stop();
+  module.handle.stop();
 });
 
 test("the estop's own poll is chrome: navigating never stops it", async () => {
