@@ -110,10 +110,11 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 4000,
-          "product_bytes": 4000,
-          "profiler_bytes": 4000,
-          "rule": "applied"
+          "chain_bytes": 4016,
+          "product_bytes": 4016,
+          "profiler_bytes": 4016,
+          "rule": "applied",
+          "note": "driveArmTo -> resolveArmPulse -> paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail, 3632 B below a 384 B root frame. Re-derived 2026-09-17 from 4000, and the growth is C1d's (#364, 075cf487) rather than #365's: that slice rewrote servo_task.cpp including resolveArmPulse and re-derived no chain, its gate builds artoo_esp32 only, and this arm was last walked 2026-09-13 (a20b306d). #365 ran the both-chip walk its own re-derivation owed and found it."
         }
       }
     },
@@ -287,11 +288,11 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 4336,
-          "product_bytes": 4336,
-          "profiler_bytes": 4336,
+          "chain_bytes": 4416,
+          "product_bytes": 4416,
+          "profiler_bytes": 4416,
           "rule": "applied",
-          "note": "The depth is the Learned Sequence load on this task's own stack: seqStorePrepare -> protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use heap/log-mutex tail (#250)."
+          "note": "The depth is the Learned Sequence load on this task's own stack: seqStorePrepare -> protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use heap/log-mutex tail (#250), 3808 B below a 608 B root frame. Re-derived 2026-09-17 (#365) from 4336: the root frame grew 528 -> 608 B because centreOneOutput() is a single-caller static the compiler inlines, so the bulk centre's 70-byte ServoOutputRow is reserved there (80 B at Xtensa's 16-byte stack alignment). The chain below the root did not move."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -299,10 +300,11 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 4576,
-          "product_bytes": 4576,
-          "profiler_bytes": 4576,
-          "rule": "applied"
+          "chain_bytes": 4656,
+          "product_bytes": 4656,
+          "profiler_bytes": 4656,
+          "rule": "applied",
+          "note": "A different deepest branch from the Xtensa arm: drainBestEffort -> dispatchAction -> dispatchBodyMove -> paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail (#256's USB-CDC drop path), 4032 B below a 624 B root frame. Re-derived 2026-09-17 (#365) from 4576: the same +80 B root-frame growth as the Xtensa arm, from the same inlined centreOneOutput() row."
         }
       }
     },

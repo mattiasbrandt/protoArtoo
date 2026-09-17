@@ -36,3 +36,17 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
                                        CommandSource source);
 
 void handleServoPost(WebRequest& req);
+
+// POST /api/servo/centre - put every Servo Output back to its recorded centre
+// (#318, #365). One press from the output-first table, and the droid paces the
+// sweep itself: the Sequence Coordinator expands it into one Output move at a
+// time, no closer together than the Cadence Floor
+// (include/sequence_bulk_centre.h), so the convenience cannot brown out the
+// shared servo rail.
+//
+// Its own route rather than an action on POST /api/servo, because it takes no
+// arm and queues no servo command: it signals the Coordinator through a
+// transient flag and the expansion is the Coordinator's, which is the whole
+// reason the pace cannot be walked around from a browser. The body is empty;
+// there is nothing for a caller to decide.
+void handleServoCentrePost(WebRequest& req);

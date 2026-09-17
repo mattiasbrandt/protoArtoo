@@ -221,19 +221,3 @@ void ledcPwmInitNeutralPositions() {
     }
     ESP_LOGI(TAG, "Configured channels set to neutral");
 }
-
-// -----------------------------------------------------------------------------
-// ledcPwmEmergencyStop()
-// Bypasses clamp/log path  --  writes neutral duty directly for minimum latency.
-// Sets only configured channels to neutral; skips channels outside the mask.
-// -----------------------------------------------------------------------------
-void ledcPwmEmergencyStop() {
-    uint32_t duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);
-    for (int i = 0; i < LEDC_CH_MAX; i++) {
-        if (s_configuredMask & (1 << i)) {
-            ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)i, duty);
-            ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)i);
-        }
-    }
-    ESP_LOGW(TAG, "EMERGENCY STOP - all configured channels neutral");
-}

@@ -1020,6 +1020,39 @@ void test_an_unknown_servo_action_names_every_action_there_is() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "release"));
 }
 
+// POST /api/servo/centre carries no body and queues no servo command: it signals
+// the Sequence Coordinator, which owns the expansion and its pace (#318, #365).
+// What the handler must do is set the flag with the source that asked, so the
+// sweep's log line names the surface the press came from.
+void test_back_to_centre_signals_the_coordinator() {
+    robotState.bulkCentreRequest = SRC_NONE;
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
+// No arm, no action, no width. A request that carries any of them is not
+// refused and not read: the operator's press is the whole of what this route
+// takes, and there is nothing about the sweep for a caller to decide.
+void test_back_to_centre_takes_no_parameters() {
+    robotState.bulkCentreRequest = SRC_NONE;
+    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "open"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
 // -----------------------------------------------------------------------------
 // AUX LED
 // -----------------------------------------------------------------------------
@@ -1169,6 +1202,8 @@ int main(int, char**) {
     RUN_TEST(test_servo_release_takes_an_arm_and_no_width);
     RUN_TEST(test_servo_release_accepts_the_broadcast_arm);
     RUN_TEST(test_an_unknown_servo_action_names_every_action_there_is);
+    RUN_TEST(test_back_to_centre_signals_the_coordinator);
+    RUN_TEST(test_back_to_centre_takes_no_parameters);
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);

@@ -107,6 +107,7 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     cleared: [],
     nudgeFails: null, // set to an Error to make the next POST /api/servo fail
     configFails: null, // the same for the next POST /api/config
+    centreFails: null, // the same for the next POST /api/servo/centre
   };
 
   const windowListeners = new Map();
@@ -194,6 +195,19 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
           }
           // The firmware queues the nudge and answers at once; the nudge
           // itself ends later, when the test bumps nudgesDone.
+          return { ok: true, status: 200, data: { ok: true } };
+        }
+        if (path === "/api/servo/centre") {
+          // The controller takes the press and answers at once. The sweep
+          // itself is the Sequence Coordinator's - one Output per turn, no
+          // closer together than the Cadence Floor - and reaches this page only
+          // as commanded positions moving on a later read, which is what
+          // env.centred() stands in for.
+          if (env.centreFails) {
+            const error = env.centreFails;
+            env.centreFails = null;
+            throw error;
+          }
           return { ok: true, status: 200, data: { ok: true } };
         }
         if (path === "/api/config") {
@@ -396,6 +410,22 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   env.releases = () => env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "release");
   env.captures = () => env.posts.filter((post) => post.path === "/api/config" && post.form.captureOutput);
   env.reverses = () => env.posts.filter((post) => post.path === "/api/config" && post.form.reverseOutput);
+  // Back to centre (#365): the act above the rows, its one line of answer, and
+  // the requests it made. One request per press and no more - the pace is the
+  // controller's, so a page that sent a second one would be pacing.
+  env.centreButton = () => document.querySelector(".outputs-centre");
+  env.centreSaid = () => document.querySelector(".outputs-bulk").querySelector(".feedback").textContent;
+  env.centreSaidLevel = () => document.querySelector(".outputs-bulk").querySelector(".feedback").className;
+  env.pressCentre = () => env.centreButton().fire("click", {});
+  env.centreRequests = () => env.posts.filter((post) => post.path === "/api/servo/centre");
+  // The controller has driven one Output to its recorded centre, the way the
+  // sweep does: the next read of the outputs shows it there.
+  env.centred = (address) => {
+    const row = env.outputs.find((each) => each.address === address);
+    row.commandedUs = row.centreUs;
+    row.targetUs = row.centreUs;
+    row.limp = "off";
+  };
   env.dial = () => document.querySelector(".cal-panel");
   env.dialOpen = () => env.dial().hidden === false;
   env.dialNote = () => env.dial().querySelector(".cal-note").textContent;

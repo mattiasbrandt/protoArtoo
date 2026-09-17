@@ -1,7 +1,14 @@
 // =============================================================================
 // include/sequence_body_step.h
 //
-// What a Body Step resolves to on the droid in front of it (ADR 0049, #349).
+// What a body move resolves to on the droid in front of it (ADR 0049, #349).
+//
+// Two of them, and they share every rule but one. A Body Step names a Part and
+// resolves along that Part's Endpoint Pair (sequenceBodyStepPlan). A bulk
+// centre names an Output and resolves to that Output's recorded centre
+// (sequenceBodyCentrePlan, #365). Both hand back the same plan, both go through
+// the same component clamp, and both end as the same ServoCommand, which is how
+// "no new motion path" is true by construction rather than by inspection.
 //
 // A Body Step names a Part; an Output Address is where the lead plugs in. The
 // Sequence Coordinator joins the two at dispatch, every time, from the Servo
@@ -116,6 +123,52 @@ inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
 
     plan.armId = armId;
     plan.targetUs = seqBodyTargetUs(*row, (SeqBodyShape)act.bodyShape, act.bodyHowFar);
+    plan.drive = true;
+    return plan;
+}
+
+// -----------------------------------------------------------------------------
+// sequenceBodyCentrePlan()
+// The whole decision for one Output of a bulk centre (#318, #365).
+//
+// "Back to centre" names the row's THIRD recorded position. `centre_us` is
+// stored and is deliberately not derived from the other two, so a builder who
+// pressed Set CENTER off-middle gets the number they set, not the midpoint of
+// their Endpoint Pair (include/servo_output_row.h, CONTEXT.md "Endpoint Pair").
+//
+// That is why this is its own plan rather than a fourth Move Shape. The three
+// shapes an authored Body Step carries -- open, close, flutter -- all resolve
+// ALONG the pair through seqBodyTargetUs() above, and none of them can name a
+// third position. A fourth shape would change the vocabulary CONTEXT.md fixes
+// at three, the wire codec that spells it, and what Protocol Check accepts on
+// save. A bulk centre is generated at run time and never authored, so it needs
+// no word in an authoring vocabulary.
+//
+// Everything else is sequenceBodyStepPlan()'s and stays shared: the same plan
+// struct, the same Availability Reason for an address this image cannot drive,
+// the same component clamp every door onto a row goes through (ADR 0041), and
+// the same ServoCommand the Coordinator queues afterwards. There is no second
+// motion path.
+//
+// Whether the row has anything to centre at all is a separate question, asked
+// first by the run that generates these (include/sequence_bulk_centre.h).
+// -----------------------------------------------------------------------------
+inline SeqBodyStepPlan sequenceBodyCentrePlan(const ServoOutputRow& row) {
+    SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, 0, 0 };
+
+    // Same clause, same reason, same words as the body step above: an Output
+    // addressed to a driver this image does not carry, or to an LEDC channel
+    // that is not a servo output, cannot be commanded and saying "not in this
+    // build" is the honest answer rather than silence.
+    uint8_t armId = 0;
+    if (row.driver != SERVO_DRIVER_LEDC ||
+        !servo_ledc_channel_to_arm_id(row.channel, &armId)) {
+        plan.reason = CONSOLE_REASON_NOT_IN_THIS_BUILD;
+        return plan;
+    }
+
+    plan.armId = armId;
+    plan.targetUs = servoOutputClampPulse(row, row.centre_us);
     plan.drive = true;
     return plan;
 }

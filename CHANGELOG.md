@@ -26,6 +26,17 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Put the whole droid back to centre with one press.** Parts has a Back to
+  centre button above the outputs table. Every output goes to the centre you
+  recorded for it — its own centre, not a fixed middle — and the droid does them
+  one at a time, leaving at least 450 ms between them, so a whole body moving at
+  once cannot brown out the servos. An output that takes longer than that to
+  travel holds the next one off until it has finished. Outputs driving only
+  lights are skipped, and the page says how many: a light has no centre. The
+  estop, sleep mode, a sequence starting and Stop each end it where it has got
+  to, and the estop lets go of every output as it does. It is on the Controller
+  Console too, as `servo.action.centre-all`. That 450 ms is the pace measured on
+  the dome, standing in until the body's own has been measured.
 - **The numbered body buttons do what their names say.** `:SE30` to `:SE36`
   used to run the same open-and-close on the two utility arms, whichever one
   you pressed. Each is now its own routine, taken from the body sequences

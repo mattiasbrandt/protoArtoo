@@ -2,8 +2,10 @@
 // src/web/api_servo.cpp
 //
 // Servo control API endpoint
-//   POST /api/servo  - Control arm servos
-//                      (open/close/position/stop/nudge/hold/release)
+//   POST /api/servo         - Control arm servos
+//                             (open/close/position/stop/nudge/hold/release)
+//   POST /api/servo/centre  - Put every Servo Output back to centre, paced by
+//                             the Sequence Coordinator (#318, #365)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The command goes onto servoCmdQueue with a zero wait, so
@@ -183,5 +185,35 @@ void handleServoPost(WebRequest& req) {
     }
 
     PA_LOG_INFO(TAG, "[WEB] Servo command queued: arm=%s, action=%s", arm, action);
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =============================================================================
+// POST /api/servo/centre  --  put every Servo Output back to centre (#318, #365)
+//
+// One operator standing at the bench chooses this, which is what makes it
+// legitimate: it is never emitted automatically. What arrives here is the whole
+// of their press. The EXPANSION -- which Outputs, in what order, how far apart
+// -- belongs to the Sequence Coordinator and is not in this handler, in the
+// request, or in the browser that sent it, because a safe pace a page held is
+// one a hand-edited or imported client could walk around (CONTEXT.md "Cadence
+// Floor", "Sequence Coordinator").
+//
+// So the handler validates nothing and queues no servo command. It sets the
+// transient flag the Coordinator reads on its next tick -- the same shape
+// POST /api/seq/stop uses -- and answers. Idempotent: a second press while a
+// sweep is in flight restarts it rather than queueing a second one.
+//
+// The Coordinator refuses to start under a latched estop or in Sleep Mode and
+// says so in the log, exactly as ServoTask refuses an ordinary servo command
+// there. This route does not duplicate that judgement, which would put the
+// same rule in two places and let them disagree.
+// =============================================================================
+void handleServoCentrePost(WebRequest& req) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.bulkCentreRequest = SRC_WEB_API;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    PA_LOG_INFO(TAG, "[WEB] back to centre requested");
     req.send(200, "application/json", "{\"ok\":true}");
 }

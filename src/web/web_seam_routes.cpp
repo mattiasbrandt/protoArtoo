@@ -103,6 +103,13 @@ void webRegisterSeamRoutes() {
 
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
     webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
+    // Order does NOT decide between this and the shorter /api/servo above it,
+    // unlike the /api/audio pair further up. PsychicHttp matches with
+    // httpd_uri_match_wildcard(), and a template carrying neither `*` nor `?`
+    // takes the `len != exact_match_chars` branch -- an exact comparison, so a
+    // prefix cannot swallow a longer path (checked in the vendored
+    // esp_http_server's httpd_uri.c, 2026-09-17).
+    webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost);
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
     webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost);

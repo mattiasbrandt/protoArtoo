@@ -541,6 +541,47 @@ curl -s -X POST http://artoo.local/api/servo \
 {"ok":true}
 ```
 
+### POST /api/servo/centre
+
+Puts every Servo Output back to the centre position recorded on its own row —
+one press, and the controller paces the sweep itself.
+
+- Body fields: **none**. The sweep covers every output there is, so there is no
+  target to name, and how it is paced is not a caller's to set: the controller
+  expands the one request into one output at a time and holds at least **450 ms**
+  between them, so a whole body going back at once cannot brown out the shared
+  servo rail. An output whose row takes longer than that to travel holds the
+  next one off until it has finished.
+- Each output goes to **its own recorded centre** (`centreUs` in
+  `GET /api/servo/outputs`), which is a position a builder sets with Set CENTER
+  and is not the middle of its two ends — and not the fixed 1500 µs
+  `action=stop` on `POST /api/servo` drives one output to.
+- A row recorded as an LED strip is skipped: a light has no centre to go back to.
+- Any estop, Sleep Mode, a running sequence starting, or `POST /api/seq/stop`
+  ends the sweep where it has got to. Outputs already sent stay where they were
+  sent; nothing is driven anywhere as the sweep ends. An estop also releases
+  every output on its own edge, so the parts go limp rather than holding.
+- Pressing again while a sweep is in flight restarts it rather than running a
+  second one alongside.
+- The controller refuses to start one under a latched estop or in Sleep Mode.
+  The request is still answered `200`; the refusal is in the controller log,
+  the same way an ordinary servo command refused under estop is.
+- Success: `200` `{"ok":true}`
+- The same act is on the Controller Console as `servo.action.centre-all`, which
+  takes no arguments either.
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/servo/centre
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
 ### GET /api/servo/outputs
 
 Every live Servo Output row, the Parts each one drives, and where each has been

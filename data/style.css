@@ -6796,3 +6796,31 @@ label.sound-search-field {
     display: block !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Back to centre, on the output-first table (#365)
+
+   The act sits above the rows it acts on, with its one line of answer beside
+   it: a button and a sentence on one line, wrapping to two on a narrow bench
+   tablet rather than squeezing either. The sentence is a .feedback, so it takes
+   the three outcome colours every other answer on this page takes, and nothing
+   here redefines them.
+   --------------------------------------------------------------------------- */
+.outputs-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  margin-block: var(--space-sm);
+}
+
+.outputs-bulk .btn {
+  min-height: 36px;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-cell);
+}
+
+.outputs-bulk .feedback {
+  flex: 1 1 18ch;
+  margin: 0;
+}

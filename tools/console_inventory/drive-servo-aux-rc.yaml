@@ -22,7 +22,7 @@
 base_commit: f0b0dbc
 ticket: 211
 domains: [drive, servo, aux, rc]
-row_count: 36
+row_count: 37
 rows:
 - name: aux.action.led-color
   type: action
@@ -698,6 +698,30 @@ rows:
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#364, ADR 0043). No width - a release commands no position, so the part ends wherever gravity and friction leave it. releaseArm() is also what the estop and Sleep Mode edge calls for every enabled output (releaseAllOutputs() at servo_task.cpp:534), replacing the park D4 built. target=both releases ARM1+ARM2 only, like the other broadcasts. Queue guarded.
+- name: servo.action.centre-all
+  type: action
+  registry_api_path: /api/servo/centre
+  registry_cpp_enum: null
+  registry_cpp_file: include/sequence_bulk_centre.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_params: []
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:112 - webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost)
+  - include/api_servo.h:52 - void handleServoCentrePost(WebRequest& req)
+  - src/web/api_servo.cpp:212 - void handleServoCentrePost(WebRequest& req) {
+  - src/web/api_servo.cpp:214 - robotState.bulkCentreRequest = SRC_WEB_API
+  - src/tasks/sequence_dispatcher.cpp:570 - sequenceBulkCentreStart() on the Coordinator's next tick
+  - src/tasks/sequence_dispatcher.cpp:582 - centreOneOutput(), one Output per turn
+  - include/sequence_bulk_centre.h:66 - SEQ_CADENCE_FLOOR_MS, the pace the sweep holds
+  executor_or_core: robotState.bulkCentreRequest
+  missing_metadata: []
+  notes: Web-API and Console (#318, #365). A transient flag, like dome.action.sequence-stop - no queue send in the handler, so no queue-full answer. The expansion is the Sequence Coordinator's: one Servo Output per turn, spaced by the Output's own throw time floored at the Cadence Floor, rows with no travel skipped. Estop, Sleep Mode, a web stop and a sequence starting each end the sweep where it got to.
 - name: servo.action.stop
   type: action
   registry_api_path: /api/servo

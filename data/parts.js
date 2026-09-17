@@ -47,6 +47,12 @@
 // driven while they look and listen. The rules of that hold are with the code,
 // below the run - and the two bounds that end it are the firmware's, not this
 // page's.
+//
+// The whole droid goes back to centre on one press (#318, #365), and THE DROID
+// PACES IT. This page sends one request and holds no pace at all: the Sequence
+// Coordinator expands it into one Output at a time, no closer together than the
+// Cadence Floor, because a safe pace held here is one a hand-edited or imported
+// client could walk around. The rules are with the code, below the dial.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -201,14 +207,39 @@
     `right now and the tick is where the move ends, so the gap between them is the move still to go. Both are ` +
     `what the controller told the servo, not a reading: nothing on this droid can feel where a servo really is, ` +
     `so a jammed one shows exactly what a free one does. The table asks the droid once a second while this page ` +
-    `is open.</p>` +
+    `is open. Back to centre sends every output to the centre you recorded for it - the droid does them one at a ` +
+    `time, so it takes a moment, and the estop stops it.</p>` +
     `<p class="outputs-tiers" role="status" aria-live="polite">` +
     TIERS.map((tier) => `<span class="outputs-tier" data-tier="${tier.id}">${tier.label} — finding out</span>`).join("") +
-    `</p><div class="parts-table-wrap" id="outputs-table"></div>`;
+    `</p>` +
+    // Back to centre, and its one line of answer. The button starts refused for
+    // the reason every act on this page does: it must not run on a guess about
+    // the estop, and the droid has not said yet.
+    `<div class="outputs-bulk">` +
+    `<button class="btn outputs-centre" type="button" ` +
+    `aria-label="Put every output back to the centre recorded for it" disabled aria-disabled="true">` +
+    `back to centre</button>` +
+    `<p class="feedback" role="status" aria-live="polite">Every output goes back to the centre you ` +
+    `recorded for it, one at a time, so the whole droid moving at once cannot brown out the servos.</p>` +
+    `</div>` +
+    `<div class="parts-table-wrap" id="outputs-table"></div>`;
   tableRegion.parentNode.appendChild(outputsSection);
   if (feedback) tableRegion.parentNode.appendChild(feedback);
   const outputsRegion = outputsSection.querySelector("#outputs-table");
   const tierNodes = new Map(Array.from(outputsSection.querySelectorAll("[data-tier]"), (node) => [node.dataset.tier, node]));
+  // Back to centre and its one line of answer. Resolved here, with the rest of
+  // the section's nodes, rather than beside the act far below: PAStatusStream
+  // replays the last status to a new subscriber SYNCHRONOUSLY, so a frame that
+  // has already arrived reaches the estop handler while this file is still
+  // running - and a const declared after that handler would be in its temporal
+  // dead zone, thrown, and swallowed by the stream's own listener guard.
+  const centreBulk = outputsSection.querySelector(".outputs-bulk");
+  const centreButton = centreBulk.querySelector(".outputs-centre");
+  // The sentence is a plain .feedback so it takes the three outcome colours
+  // every other answer on this page takes, and showFeedback() rewrites its
+  // whole class list - so it is found once, here, and held, rather than looked
+  // up again after the first answer has replaced the class it was found by.
+  const centreSaid = centreBulk.querySelector(".feedback");
 
   // ---------------------------------------------------------------------------
   // Built once
@@ -1223,6 +1254,10 @@
     const live = estopLatched === false;
     window.PAApi.gateControls(Array.from(outputRows.values(), (row) => row.calibrate), live);
     window.PAApi.gateControls(Array.from(outputRows.values(), (row) => row.off), live);
+    // Back to centre is an act on every Output at once, so it is refused for
+    // the same one fact as the acts on a single row. The controller refuses it
+    // too; this is so nothing is offered that the droid will not take.
+    window.PAApi.gateControls([centreButton], live);
     window.PAApi.gateControls(Array.from(dialPanel.querySelectorAll("button")), live);
     window.PAApi.gateControls([dialSlider], live);
   };
@@ -1236,6 +1271,22 @@
     if (payload.estop === true && dial !== null) {
       dial.sweeping = false;
       setNote("The estop let go of every output. Clear it, then press take it again.", "error");
+    }
+    // And it ends a back-to-centre sweep, wherever it had got to (#365). Every
+    // enabled Output has just been released, so NO row's commanded mark is
+    // current any longer - the droid is driving none of them, and where each
+    // part came to rest is whatever gravity and friction decided. Held back
+    // rather than guessed at, until the droid answers again (after
+    // r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894, which
+    // stops its own packet clock the moment a clamp fires so the HUD cannot go
+    // on reading live).
+    if (payload.estop === true && outputs !== null) {
+      outputs.forEach((output) => markNotCurrent(output.address));
+      window.PAUtils.showFeedback(
+        centreSaid,
+        "The estop let go of every output. Nothing is being driven, so nothing is going back to centre.",
+        "error"
+      );
     }
   });
 
@@ -1305,6 +1356,52 @@
       return;
     }
     if (button.classList.contains("cal-done")) closeDial();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Back to centre (#318, #365)
+  //
+  // One press, one request, and the droid paces the sweep itself. NOTHING about
+  // the pace is on this side: the controller expands the press into one Output
+  // at a time and holds the Cadence Floor between them, because a safe pace this
+  // page held is one a hand-edited or imported client could walk around. So
+  // there is no timer here, no queue, and no progress model - the bench feed's
+  // once-a-second read shows the bars moving, exactly as it does for a move made
+  // any other way.
+  //
+  // The line counts from the rows this page already has, with the signal the row
+  // already carries: a row whose every Part is a light has no centre to go back
+  // to, and the controller skips it for the same reason (isLightRow here; the
+  // component recorded on the row, firmware side). isLightRow rather than
+  // isDriveable, because the sweep does not go through POST /api/servo and so
+  // does not need a row to have a name the servo route takes as its arm.
+  // ---------------------------------------------------------------------------
+  const centreAll = async () => {
+    if (outputs === null) return;
+    const lights = outputs.filter(isLightRow).length;
+    const going = outputs.length - lights;
+    try {
+      await window.PAApi.postForm("/api/servo/centre", {}, { timeoutMs: 4000 });
+    } catch (error) {
+      window.PAUtils.showFeedback(
+        centreSaid,
+        `Nothing is going back to centre: ${window.PAApi.messageFor(error)}`,
+        "error"
+      );
+      return;
+    }
+    const said =
+      `${going} ${going === 1 ? "output is" : "outputs are"} going back to centre, one at a time.` +
+      (lights ? ` ${lights} skipped — a light has no centre.` : "");
+    window.PAUtils.showFeedback(centreSaid, said, "success");
+    refresh();
+  };
+
+  centreButton.addEventListener("click", () => {
+    // A browser delivers no click to a disabled button; this is the rule
+    // itself, the way both tables state it for their own acts.
+    if (centreButton.disabled) return;
+    started(centreAll());
   });
 
   // ---------------------------------------------------------------------------

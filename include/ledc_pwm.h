@@ -181,8 +181,15 @@ bool ledcPwmSetNeutral(uint8_t channel);
 // where it is. The channel stays configured, so the next
 // ledcPwmSetPulseWidth() puts a pulse back. Returns false silently if the
 // channel is not in the configured mask, false with a log if the LEDC write
-// fails. The opposite of ledcPwmEmergencyStop(), which DRIVES every channel to
-// neutral; a release commands nothing.
+// fails.
+//
+// This is what a halt does to a servo output: ServoTask releases every enabled
+// one on the estop and Sleep Mode edge and commands no position at all, because
+// a held drive grinds a fought part and driving many outputs at once is the
+// documented brownout. The dome ESC is the deliberate exception and is not
+// released: a floating signal line reads as Receiver Lost to an ESC70, so
+// dome_task.cpp drives it to its CONFIGURED neutral instead
+// (setDomeNeutral(), docs/spec-sheets/isdt-esc70-dome-esc.md s.12.3).
 bool ledcPwmRelease(uint8_t channel);
 
 // Get the GPIO pin associated with a channel. Returns 0 if channel invalid.
@@ -191,7 +198,3 @@ uint8_t getChannelGpio(uint8_t channel);
 // Initialize all outputs to neutral position.
 // Call after ledcPwmInit() to ensure servos/ESC start in a known state.
 void ledcPwmInitNeutralPositions();
-
-// Emergency stop  --  set all channels to neutral immediately.
-// Safe to call from any context; does not log.
-void ledcPwmEmergencyStop();
