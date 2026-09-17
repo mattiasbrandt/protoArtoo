@@ -312,8 +312,8 @@ The expected controller web workload: primarily one visible Firefox tab, with a 
 _Avoid_: treating mobile Safari as the common client, testing only Chromium, requiring operators to keep exactly one tab, unbounded browser concurrency
 
 **Supported ESP32 Board**:
-The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB — canonically the **artoo-esp32** build target. Firmware and web reliability must work within this board's memory limits; ESP32-P4 Target support does not relax that. **What the filesystem carries is a separate question**, reopened on 2026-09-11: only what is *shown* may differ between boards, so a board with room carries the **default** asset set where this one carries the **legacy** set, and nothing a builder can do differs either way (ADR 0065).
-_Avoid_: official Wemos board, temporary development board, waiting for newer hardware, treating a filesystem difference as a difference in what a droid can do
+The dual-header ESP32 board clone required by the current Artoo Controller PCB — canonically the **artoo-esp32** build target. Firmware and web reliability must work within this board's memory limits; ESP32-P4 Target support does not relax that. **What the filesystem carries is a separate question**, reopened on 2026-09-11: only what is *shown* may differ between boards, so a board with room carries the **default** asset set where this one carries the **legacy** set, and nothing a builder can do differs either way (ADR 0065).
+_Avoid_: official Wemos board, **"D1 Mini" or any other product name** (the board carries no branding and no model name; it is a generic clone with a custom GPIO header layout - operator, 2026-09-17), temporary development board, waiting for newer hardware, treating a filesystem difference as a difference in what a droid can do
 
 **Web Server Library**:
 A replaceable implementation choice, not a compatibility promise. It may be patched or replaced when needed to provide Page Load Recovery and protect memory on the Supported ESP32 Board.
@@ -631,7 +631,7 @@ A rare long-lived branch (`epic/<name>`) holding all work of one multi-ticket ep
 _Avoid_: phase branch, dev branch, per-ticket PRs inside an epic
 
 **artoo-esp32**:
-The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target. It carries the **legacy** asset set, which is named for what the set holds and never for the board: **this target is not a legacy board**, and calling it one is still wrong (ADR 0065).
+The canonical name for the build target pairing the classic-generation dual-header ESP32 board clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target. It carries the **legacy** asset set, which is named for what the set holds and never for the board: **this target is not a legacy board**, and calling it one is still wrong (ADR 0065).
 _Avoid_: classic, legacy board, clone build, legacy as a name for the target itself rather than for its asset set
 
 **ESP32-P4 Target**:
