@@ -1,0 +1,12 @@
+diff --git a/data/shell.js b/data/shell.js
+index ca9d5200..2275f9d1 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1067,7 +1067,6 @@
+               // place that can say the droid has stopped answering. Leaving it
+               // in the console left the plate reading "live" through any
+               // number of refused polls (#346).
+-              notePlateRefreshFailed("link");
+               return false;
+             }
+           ),

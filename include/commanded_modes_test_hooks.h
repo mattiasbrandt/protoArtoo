@@ -43,5 +43,6 @@ extern unsigned g_test_applied_mood;
 
 // requestStatusBroadcastNow() (src/web/web_server.h) - configCommitApplied()
 // and the Commanded Mode direct executors (#226) both call this on a
-// successful, state-changing write.
+// successful, state-changing write, and every edge of the failsafe mask calls
+// it too (src/failsafe_gate.cpp, #346).
 extern unsigned g_test_status_broadcast_count;

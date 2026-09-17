@@ -463,6 +463,73 @@
   const hasKey = (payload, key) =>
     payload !== null && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, key);
 
+  // The fields a chip reads with no unknown branch of its own. Each is tested
+  // for `=== true`, so a frame that does not carry one does not read as
+  // "unknown" -- it reads as the OTHER value, and for the four failsafe
+  // mirrors that value is "nothing is holding the feet". A Codex review fed
+  // the controller's own error shape through the shipped stream and got
+  // LATCHED -> CLEAR, DRIVE -> OFF, CONTROL -> OFF, over "just now" (#346).
+  //
+  // They are read here rather than defended one chip at a time because that is
+  // the honest shape of it: the plate makes ONE reading of ONE frame, so the
+  // frame is either one a reading may be made from or it is not. A chip-level
+  // guard would also be unreachable, and an unreachable guard is a comfort
+  // rather than a check.
+  //
+  // All six come from the first unconditional chunk of buildStatusJson()
+  // (src/web/web_server.cpp), so a real frame from any firmware that has ever
+  // shipped carries all six or none of them.
+  const VERIFIABLE_STATUS_FIELDS = [
+    "estop",
+    "sbusHwFailsafe",
+    "sbusSignalLost",
+    "webDriveExpired",
+    "webControlEnabled",
+    "sleepMode",
+  ];
+
+  // A frame the droid built, complete enough to read. The envelope half of the
+  // question is the transport's (data/status_stream.js, isStatusFrame): an
+  // {"ok":false} payload never reaches a subscriber as a status at all, so it
+  // is not re-tested here.
+  const isVerifiedStatus = (payload) =>
+    payload !== null &&
+    typeof payload === "object" &&
+    VERIFIABLE_STATUS_FIELDS.every((field) => hasKey(payload, field));
+
+  // ---------------------------------------------------------------------------
+  // Is it latched, and are the feet held: asked once each
+  //
+  // Wave 1 answers the first question four different ways -- `=== true` on the
+  // plate, `!!payload.estop` in this file's own chrome and on Foot Drive,
+  // truthy on Dashboard -- and the set of things that hold the feet was
+  // hand-copied between the DRIVE chip and the notice's row for the same
+  // thing. Two readers of one fact drift, and a set copied by hand drifts the
+  // moment a fifth input can hold the feet and only one copy hears about it.
+  // So the shell asks once, here, and the chip, the chrome's state line and
+  // the notice all read the answer.
+  //
+  // `=== true` and never truthiness: a field that did not arrive must not
+  // answer this question at all, which is what isVerifiedStatus() above is for
+  // (#346).
+  const estopIsLatched = (status) => status.estop === true;
+
+  // The inputs OTHER than the estop that make DriveTask emit zero frames
+  // (src/drive_arbiter.cpp, failsafeIsActive() || webTimedOut). Split out
+  // rather than folded into feetAreHeld() because the notice needs exactly
+  // this half: the estop has a row of its own that names the more specific
+  // reason, and that row must not be shadowed by the general one.
+  const feetHeldBesidesEstop = (status) =>
+    status.sbusHwFailsafe === true ||
+    status.sbusSignalLost === true ||
+    status.webDriveExpired === true;
+
+  // Everything that can hold the feet, the estop included. The DRIVE chip
+  // reads this: a chip that watched one of the five would sit dark while the
+  // droid was held still, which is the reference's shipped Bug 2 exactly
+  // (r2d2-astromech-simulator v1.79.0, src/js/app/hud.js:203).
+  const feetAreHeld = (status) => estopIsLatched(status) || feetHeldBesidesEstop(status);
+
   // The two RC receivers. rcCh3..rcCh6 are further channels of the same
   // receiver and only ever report "ready" or "standby", so they carry no link
   // state at all; rcCh1 is the drive receiver except in single_sbus + useCh2,
@@ -486,33 +553,24 @@
       page: null,
       affordance: "Cuts drive now",
       read: (status) =>
-        status.estop === true ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
+        estopIsLatched(status) ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
     },
     {
       id: "drive",
       label: "DRIVE",
       page: "drive",
-      // Every input that can hold the feet at zero is read here, and there are
-      // five: the operator's latch and the watchdog-reset latch (which the
-      // firmware merges into `estop`), the receiver's hardware failsafe bit,
-      // the SBUS watchdog, and the web-drive timeout. Any one of them makes
-      // DriveTask emit zero frames (src/drive_arbiter.cpp, failsafeIsActive()
-      // || webTimedOut), so a chip reading one of the five would sit dark
-      // while the droid was held still -- which is the reference's shipped
-      // Bug 2 exactly: one clock guarded two channels and the summary chip
-      // tested one of them (r2d2-astromech-simulator, src/js/app/hud.js:203).
+      // Every input that can hold the feet at zero, and there are five: the
+      // operator's latch and the watchdog-reset latch (which the firmware
+      // merges into `estop`), the receiver's hardware failsafe bit, the SBUS
+      // watchdog, and the web-drive timeout. feetAreHeld() above is where that
+      // set is written down, once.
       //
       // `failsafeSource` is deliberately NOT one of the five: the firmware
       // never resets it when a layer clears (src/failsafe_gate.cpp,
       // failsafeClear), so it names the last reason rather than a live one.
       read: (status) => {
         if (!hasKey(status, "drive")) return chipState("", "OFF");
-        const held =
-          status.estop === true ||
-          status.sbusHwFailsafe === true ||
-          status.sbusSignalLost === true ||
-          status.webDriveExpired === true;
-        return held ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
+        return feetAreHeld(status) ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
       },
     },
     {
@@ -536,10 +594,12 @@
         // Standard PWM inputs: the firmware publishes whether they are enabled
         // and nothing whatever about whether pulses are arriving -- PWM loss
         // submits a zero frame and triggers no failsafe layer and no key
-        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip
-        // names the kind of input and claims no link, because a chip may only
-        // print what something measured.
-        if (states.includes("ready")) return chipState("", "PWM");
+        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip says
+        // it is not measuring, because a chip may only print what something
+        // measured. It said "PWM" until the operator settled the wording on
+        // 2026-09-17: that named a mode, and a mode reads like a thing that is
+        // fine. Uncoloured either way -- nothing is wrong, we just do not know.
+        if (states.includes("ready")) return chipState("", "UNMEASURED");
         return chipState("", states.length > 0 ? "STANDBY" : "OFF");
       },
     },
@@ -582,17 +642,19 @@
       label: "DOME LINK",
       page: "dome",
       // The heartbeat state, and the UART owner, which is the second half.
-      // The dome shares UART2 with the sound module, and while sound holds it
-      // the heartbeat cannot arrive at all -- the firmware reports that as an
-      // ordinary "lost", so a chip reading only the state would say the dome
-      // link died when the truth is that nobody can ask.
+      // The dome shares a serial line with the sound module, and while sound
+      // holds it the heartbeat cannot arrive at all -- the firmware reports
+      // that as an ordinary "lost", so a chip reading only the state would say
+      // the dome link died when the truth is that nobody can ask. It said
+      // "SOUND HAS BUS" until the operator settled the wording on 2026-09-17:
+      // that named a UART to a maker who never wired one by that name.
       read: (status) => {
         const link = status.dome_link;
         const linkState = link !== null && typeof link === "object" ? link.state : undefined;
         if (linkState === "connected") return chipState("live", "OK");
         if (linkState === "disabled") return chipState("", "OFF");
         if (link !== null && typeof link === "object" && link.uart_owner === "audio") {
-          return chipState("", "SOUND HAS BUS");
+          return chipState("", "HELD BY SOUND");
         }
         if (linkState === "lost") return chipState("stopped", "LOST");
         if (linkState === "not_seen") return chipState("", "NO HEARTBEAT");
@@ -604,15 +666,15 @@
       label: "SOUND LINK",
       page: "sound",
       // link_ok is half the condition. A false link_ok means either the
-      // module did not answer or the dome owns the UART and nobody could ask,
-      // and only rx_status tells the two apart (src/drivers/audio_chirp.cpp,
-      // classifyRxStatus). Reading link_ok alone reports a dead module for a
-      // bus that is merely busy.
+      // module did not answer or the dome owns the shared serial line and
+      // nobody could ask, and only rx_status tells the two apart
+      // (src/drivers/audio_chirp.cpp, classifyRxStatus). Reading link_ok alone
+      // reports a dead module for a line that is merely busy.
       read: (status) => {
         if (!hasKey(status, "audio")) return chipState("", "OFF");
         const audio = status.audio;
         if (audio === null || typeof audio !== "object") return chipState("", CHIP_UNKNOWN);
-        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "DOME HAS BUS");
+        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "HELD BY DOME");
         if (audio.link_ok === true) return chipState("live", "OK");
         if (audio.rx_status === "no_response") return chipState("stopped", "NO ANSWER");
         return chipState("", CHIP_UNKNOWN);
@@ -802,6 +864,82 @@
     `;
   }
 
+  // ---------------------------------------------------------------------------
+  // The Status Plate's ONE freshness state
+  //
+  // Not one per chip: everything on the plate arrives on one stream, so its age
+  // is one fact and saying it eight times repeats that fact seven times (#324).
+  //
+  // It sits here, above everything that writes it, because that is the defect
+  // this block exists to close. It used to be a single boolean set in exactly
+  // one place -- the `stream_error` branch of the SSE subscription -- and a
+  // browser with no EventSource never reaches that branch at all, so a
+  // fallback poll could be refused all afternoon while the plate read "live".
+  // There are three ways to stop hearing a verified reading and they are three
+  // CALLS into one writer, so the next one is a call rather than a new flag.
+  //
+  // The age is read from the browser's own clock, not from the droid's
+  // uptimeMs, and that is the point: the droid's clock is the thing that stops
+  // advancing exactly when this readout starts to matter. It is the other half
+  // of the reference's "wall clock, not simulated time" rule
+  // (r2d2-astromech-simulator v1.79.0, src/js/input/pad-ui.js:165).
+  // ---------------------------------------------------------------------------
+  const plateRegion = document.getElementById("status-plate-region");
+  const plateFreshness = document.getElementById("status-plate-freshness");
+
+  // The last frame the shell verified, and when it ARRIVED -- which the
+  // transport supplies, so a frame handed out again on a reconnect keeps the
+  // age it was measured at rather than claiming a reading nobody took, at
+  // precisely the moment #324 says an operator meets a stale plate most often.
+  let plateFrame = null;
+  let plateFrameAt = 0;
+
+  // Why the plate is not showing a verified reading, or null while it is.
+  // "link": nothing is arriving -- the stream dropped, or the fallback poll
+  // was refused. "frame": something arrived and was not a reading -- the
+  // controller could not build a status, or the frame did not carry the fields
+  // a reading is made from. The two are told apart on screen because the
+  // operator's next move differs: one is waiting, the other is a droid that
+  // answered.
+  let plateNotHearing = null;
+
+  const plateAgeText = (elapsedMs) => {
+    if (elapsedMs < 1500) return "just now";
+    const seconds = Math.round(elapsedMs / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}min ago`;
+    return "over an hour ago";
+  };
+
+  const renderPlateFreshness = () => {
+    if (!plateRegion || !plateFreshness) return;
+    if (plateFrame === null) {
+      plateRegion.dataset.freshness = "finding-out";
+      plateFreshness.textContent = "Still finding out what the droid is doing.";
+      return;
+    }
+    const heard = `Last heard from the droid ${plateAgeText(Date.now() - plateFrameAt)}.`;
+    // Never amber, and the values are never blanked: the operator cannot act
+    // on a reconnect that is already running, and a blank plate would be the
+    // presentation they meet most often (#324, #327).
+    plateRegion.dataset.freshness = plateNotHearing === null ? "live" : "finding-out";
+    if (plateNotHearing === "frame") {
+      plateFreshness.textContent = `${heard} The droid could not report its status - these are the values it last sent.`;
+      return;
+    }
+    plateFreshness.textContent =
+      plateNotHearing === "link" ? `${heard} Reconnecting - these are the values it last sent.` : heard;
+  };
+
+  // The one writer. Every path that can leave the plate without a verified
+  // reading calls it: the stream dropping, a refused fallback poll, a failed
+  // resync read, and a frame that is not one a reading may be made from.
+  const notePlateRefreshFailed = (reason) => {
+    plateNotHearing = reason;
+    renderPlateFreshness();
+  };
+
   applyIdentityName(identityName);
 
   // Register identity load with the bootstrap if available; otherwise run it directly.
@@ -864,9 +1002,15 @@
       : "shell-estop-feedback feedback compact-feedback";
   };
 
+  // A reading is made from a field that arrived, and from nothing else.
+  // `!!payload.estop` on a frame that never mentioned the estop is "Estop:
+  // clear" printed beside a release control the same frame has disabled -- the
+  // plate's own defect, in the one control that matters most (#346, and the
+  // same rule #402 settled for the Dashboard's health signals). The line keeps
+  // what the droid last said instead, which is a fact rather than a guess.
   const applyEstopStatus = (payload) => {
-    if (!payload || typeof payload !== "object") return;
-    estopLatched = !!payload.estop;
+    if (!hasKey(payload, "estop")) return;
+    estopLatched = estopIsLatched(payload);
     renderEstopState();
   };
 
@@ -882,9 +1026,16 @@
     else applyEstopStatus(result.data);
   };
 
-  // The device pushes a status event on a change and on nothing else, so a
-  // client that connects to a quiet droid is told nothing at all. This is the
-  // read that closes that gap; every later change arrives on the stream.
+  // The device pushes a status event when something calls
+  // requestStatusBroadcastNow() and at no other time -- a state change, or a
+  // client being admitted to the stream (src/web/api_events.cpp). Naming the
+  // mechanism rather than saying "on a change" matters: the old wording is
+  // what would send the next reader looking for a poll that does not exist,
+  // instead of for the call site that does (#346).
+  //
+  // This read still closes the boot gap on its own account: the shell asks
+  // once so the chrome has a frame even before the stream is up, and every
+  // later change arrives on the stream.
   const loadInitialStatus = async ({ handle = null } = {}) => {
     if (window.PAStatusStream?.getLastStatus?.()) {
       applyEstopStatus(window.PAStatusStream.getLastStatus());
@@ -947,6 +1098,11 @@
             () => true,
             (error) => {
               console.warn("[shell] estop status poll failed:", error);
+              // On this path there is no stream to drop, so this is the only
+              // place that can say the droid has stopped answering. Leaving it
+              // in the console left the plate reading "live" through any
+              // number of refused polls (#346).
+              notePlateRefreshFailed("link");
               return false;
             }
           ),
@@ -971,8 +1127,6 @@
   // node on a node that was written at boot, which is the same discipline the
   // nav and the estop above already keep.
   // ---------------------------------------------------------------------------
-  const plateRegion = document.getElementById("status-plate-region");
-  const plateFreshness = document.getElementById("status-plate-freshness");
   const plateCells = new Map();
   PLATE_CHIPS.forEach((chip) => {
     const node = document.getElementById(`chip-${chip.id}`);
@@ -994,61 +1148,23 @@
     });
   };
 
-  // The plate's ONE freshness state. Not one per chip: everything on it
-  // arrives on one stream, so its age is one fact and saying it eight times
-  // repeats that fact seven times (#324).
-  //
-  // The age is read from the browser's own clock, not from the droid's
-  // uptimeMs, and that is the point: the droid's clock is the thing that stops
-  // advancing exactly when this readout starts to matter. It is the other half
-  // of the reference's "wall clock, not simulated time" rule
-  // (src/js/input/pad-ui.js:165).
-  //
-  // Only a frame the session has not seen before restamps the age. The stream
-  // re-emits its cached frame when it reconnects and when a hidden tab becomes
-  // visible again (data/status_stream.js), and stamping those as new would
-  // have the plate claim a measurement nobody took -- at precisely the moment
-  // #324 says an operator meets a stale plate most often, which is switching
-  // back to the tab to look at it.
-  let plateFrame = null;
-  let plateFrameAt = 0;
-  let plateStreamBroken = false;
-
-  const plateAgeText = (elapsedMs) => {
-    if (elapsedMs < 1500) return "just now";
-    const seconds = Math.round(elapsedMs / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return `${minutes}min ago`;
-    return "over an hour ago";
-  };
-
-  const renderPlateFreshness = () => {
-    if (!plateRegion || !plateFreshness) return;
-    if (plateFrame === null) {
-      plateRegion.dataset.freshness = "finding-out";
-      plateFreshness.textContent = "Still finding out what the droid is doing.";
+  const notePlateStatus = (payload, meta) => {
+    // Not a reading. The values on screen are the last ones that WERE, and
+    // keeping them beside "the droid could not report its status" is the whole
+    // of "values, not exceptions" under a failure: a plate that blanks or
+    // resets cannot be told from one that has stopped updating (#324).
+    if (!isVerifiedStatus(payload)) {
+      notePlateRefreshFailed("frame");
       return;
     }
-    const heard = `Last heard from the droid ${plateAgeText(Date.now() - plateFrameAt)}.`;
-    // Never amber, and the values are never blanked: the operator cannot act
-    // on a reconnect that is already running, and a blank plate would be the
-    // presentation they meet most often (#324, #327).
-    plateRegion.dataset.freshness = plateStreamBroken ? "finding-out" : "live";
-    plateFreshness.textContent = plateStreamBroken
-      ? `${heard} Reconnecting - these are the values it last sent.`
-      : heard;
-  };
-
-  const notePlateStatus = (payload) => {
-    if (!payload || typeof payload !== "object") return;
-    if (payload !== plateFrame) {
-      plateFrame = payload;
-      plateFrameAt = Date.now();
-    }
-    // A frame arriving at all is the stream working, whether it is new or the
-    // cached one replayed on reconnect.
-    plateStreamBroken = false;
+    plateFrame = payload;
+    // The transport says when this frame arrived, so a replay keeps the age of
+    // the measurement instead of taking the age of the replay.
+    plateFrameAt = typeof meta?.receivedAt === "number" ? meta.receivedAt : Date.now();
+    // Only a frame the droid has just sent is evidence that we are hearing it.
+    // A replay is the session's own cache handed back -- it proves the browser
+    // still has a copy, which is not the same claim and was the one being made.
+    if (!meta?.cached) plateNotHearing = null;
     paintPlate(payload);
     renderPlateFreshness();
     releaseSettledCauses(payload);
@@ -1106,19 +1222,17 @@
       chip: "estop",
       page: "drive",
       says: "The estop is latched",
-      active: (status) => status.estop === true,
+      active: estopIsLatched,
     },
     {
       id: "feet",
       chip: "drive",
       says: "The feet are not armed",
-      // The same enumeration the DRIVE chip makes, minus the estop, which has
-      // its own row above and would otherwise shadow it.
-      active: (status) =>
-        !hasKey(status, "drive") ||
-        status.sbusHwFailsafe === true ||
-        status.sbusSignalLost === true ||
-        status.webDriveExpired === true,
+      // The same set the DRIVE chip reads, minus the estop, which has its own
+      // row above and names the more specific reason. Read from the shared
+      // predicate rather than copied out again, so a sixth way to hold the
+      // feet cannot land in the chip and miss this row.
+      active: (status) => !hasKey(status, "drive") || feetHeldBesidesEstop(status),
     },
     {
       id: "stationary",
@@ -1280,11 +1394,26 @@
   // exists.
   // ---------------------------------------------------------------------------
   if (plateRegion) {
-    window.PAStatusStream?.subscribe((eventType, payload) => {
-      if (eventType === "status") notePlateStatus(payload);
-      else if (eventType === "stream_error") {
-        plateStreamBroken = true;
-        renderPlateFreshness();
+    window.PAStatusStream?.subscribe((eventType, payload, meta) => {
+      if (eventType === "status") notePlateStatus(payload, meta);
+      // The controller answered and could not build a status, or sent one this
+      // browser could not parse. Either way a refresh was attempted and
+      // produced no reading.
+      else if (eventType === "status_error") notePlateRefreshFailed("frame");
+      else if (eventType === "stream_error") notePlateRefreshFailed("link");
+      else if (eventType === "stream_resync") {
+        // The stream came back. What it replays is the frame from before it
+        // went away, so the only way to learn what happened while we were not
+        // listening is to have the state re-sent. The controller now does that
+        // itself on admission (src/web/api_events.cpp), which covers every
+        // page on the stream; this asks as well, because it is the shell that
+        // knows a resync is outstanding and the two answers are the same
+        // frame. The session's one status read, reused: no second reader, and
+        // no second route.
+        readStatusOnce().catch((error) => {
+          console.warn("[shell] status resync after reconnect failed:", error);
+          notePlateRefreshFailed("link");
+        });
       }
     });
 

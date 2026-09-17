@@ -294,9 +294,12 @@ ManualCommandResult executeManualCommand(const char* raw) {
             failsafeTrigger(FailsafeLayer::ESTOP);
             return ManualCommandResult::Applied;
 
+        // Both estop commands leave the publish to the gate, which asks on the
+        // edge (src/failsafe_gate.cpp, #346). MC_ESTOP never asked here at all,
+        // so a latch entered this way used to reach no browser; now both do,
+        // and neither publishes a command that changed nothing.
         case MC_CLEAR_ESTOP:
             failsafeClearEstop();
-            requestStatusBroadcastNow();
             return ManualCommandResult::Applied;
 
         case MC_ENABLE_WEB_CONTROL:

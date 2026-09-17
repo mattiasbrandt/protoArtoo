@@ -68,7 +68,7 @@ const HEALTHY = Object.freeze({
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const boot = async ({ status = null } = {}) => {
+const boot = async ({ status = null, stream = true } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -85,6 +85,13 @@ const boot = async ({ status = null } = {}) => {
     // null means the boot read never answers, which is how a session with no
     // frame at all is reached.
     status,
+    // Set true to make every later /api/status read refuse. The fallback poll
+    // is the only reader on a browser with no EventSource, so a refusal there
+    // is the whole of "nothing is arriving" on that path.
+    statusFails: false,
+    // Every interval the code under test registers, so a 3-second poll can be
+    // driven in a millisecond instead of waited for.
+    intervals: [],
   };
 
   const windowListeners = new Map();
@@ -96,6 +103,7 @@ const boot = async ({ status = null } = {}) => {
     },
     clearTimeout: (id) => clearTimeout(id),
     setInterval: (fn, ms) => {
+      env.intervals.push({ fn, ms });
       const timer = setInterval(fn, ms);
       timer.unref?.();
       return timer;
@@ -135,6 +143,7 @@ const boot = async ({ status = null } = {}) => {
         env.requests.push(path);
         if (path === "/api/identity") return { data: IDENTITY };
         if (path === "/api/status") {
+          if (env.statusFails) throw new Error("Network unreachable");
           if (env.status === null) await new Promise(() => {});
           return { data: { ...env.status } };
         }
@@ -206,7 +215,6 @@ const boot = async ({ status = null } = {}) => {
     Math,
     Event: FakeEvent,
     CustomEvent: FakeCustomEvent,
-    EventSource: FakeEventSource,
     DOMParser: class {
       parseFromString(html, type) {
         return new MiniDOMParser().parseFromString(html, type);
@@ -217,6 +225,10 @@ const boot = async ({ status = null } = {}) => {
     setInterval,
     clearInterval,
   };
+  // A browser without EventSource takes the shell's fallback poll instead of
+  // the stream. Leaving the global off entirely is what `typeof EventSource
+  // === "undefined"` actually reads (data/status_stream.js).
+  if (stream) context.EventSource = FakeEventSource;
   context.globalThis = context;
 
   const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc };
@@ -245,6 +257,13 @@ const boot = async ({ status = null } = {}) => {
   // same object every subscriber was handed before.
   env.reopenStream = () => env.source()?.onopen?.();
   env.breakStream = () => env.source()?.onerror?.();
+  // A frame exactly as the controller sends it, text and all -- the only way
+  // to deliver something that is not a status object at all.
+  env.pushRaw = (text) => env.source()?.deliver("status", { data: text });
+  // Run every interval registered at this cadence, once. The shell's fallback
+  // poll is the 3000 ms one (ESTOP_POLL_MS, data/shell.js).
+  env.fireInterval = (ms) => env.intervals.filter((entry) => entry.ms === ms).forEach((entry) => entry.fn());
+  env.statusReads = () => env.requests.filter((path) => path === "/api/status").length;
 
   env.chips = () => env.document.querySelectorAll("[data-chip]");
   env.chip = (id) => env.document.getElementById(`chip-${id}`);
@@ -422,7 +441,7 @@ test("RC LINK reads the hardware failsafe bit as well as the frames", async () =
   // something measured.
   env.pushStatus({ rcCh1: { state: "ready" } });
   await sleep(5);
-  assert.equal(env.chipValue("rclink"), "PWM");
+  assert.equal(env.chipValue("rclink"), "UNMEASURED");
 });
 
 test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
@@ -435,7 +454,7 @@ test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
   // chip reading only the state says the link died when nobody could ask.
   env.pushStatus({ dome_link: { state: "lost", uart_owner: "audio" } });
   await sleep(5);
-  assert.equal(env.chipValue("domelink"), "SOUND HAS BUS");
+  assert.equal(env.chipValue("domelink"), "HELD BY SOUND");
   assert.equal(env.chipClass("domelink"), "status-chip", "a busy bus is not a stopped link");
 
   env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
@@ -447,7 +466,7 @@ test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
   // a bus the dome is holding, and only rx_status tells them apart.
   env.pushStatus({ audio: { link_ok: false, rx_status: "blocked_by_dome_uart" } });
   await sleep(5);
-  assert.equal(env.chipValue("soundlink"), "DOME HAS BUS");
+  assert.equal(env.chipValue("soundlink"), "HELD BY DOME");
   assert.equal(env.chipClass("soundlink"), "status-chip");
 
   env.pushStatus({ audio: { link_ok: false, rx_status: "no_response" } });
@@ -990,4 +1009,212 @@ test("a press on a refused control the browser hides from hit testing is still h
   env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 150, clientY: 40 });
   assert.equal(noticeShown(env), true, "the control under the pointer is the one that was refused");
   assert.match(noticeText(env), /has not consented to browser control/);
+});
+
+// ---------------------------------------------------------------------------
+// A frame the shell has not verified (#346 reopened)
+//
+// Three ways the plate came to report a state nobody confirmed, all failing in
+// the direction that reads SAFE on a droid that is not:
+//
+//   1. the controller never said a failsafe latched (fixed in the firmware,
+//      test/test_native/test_failsafe_gate),
+//   2. the browser painted an error envelope as a droid with nothing wrong,
+//   3. the browser never noticed that nothing had arrived at all, because the
+//      one thing that could say so was an SSE event branch and the fallback
+//      path has no SSE.
+//
+// The browser half of the answer is one rule: a frame is read only if the
+// droid built it, and the freshness state is written by every path that can
+// fail rather than by one of them.
+// ---------------------------------------------------------------------------
+
+// Written out here rather than read from shell.js: this is the contract, and a
+// list the test read from the code under test would agree with any change to
+// it. Every one of these is a field a chip reads with no unknown branch of its
+// own, so its absence would resolve to a VALUE -- and for four of the six that
+// value is "nothing is holding the feet".
+const REQUIRED_SAFETY_FIELDS = [
+  "estop",
+  "sbusHwFailsafe",
+  "sbusSignalLost",
+  "webDriveExpired",
+  "webControlEnabled",
+  "sleepMode",
+];
+
+// The bytes buildStatusJson() actually sends when it cannot build a payload
+// (src/web/web_server.cpp), over the same "status" event as a real frame.
+const OVERFLOW_ENVELOPE = '{"ok":false,"error":"status payload overflow"}';
+
+test("an error envelope is not a status frame, and never clears a latch", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true, webControlEnabled: false });
+  await sleep(5);
+  assert.equal(env.chipValue("estop"), "LATCHED");
+
+  env.pushRaw(OVERFLOW_ENVELOPE);
+  await sleep(5);
+
+  assert.equal(env.chipValue("estop"), "LATCHED", "the droid is still latched; only the report failed");
+  assert.equal(env.chipValue("control"), "OFF");
+  assert.notEqual(env.freshnessState(), "live", "a refresh that produced nothing is not a working readout");
+  assert.match(env.freshness(), /could not report/, "and it says which of the two failed");
+});
+
+test("a frame missing the fields a safety reading is made from is not read as safe", async () => {
+  // Not the envelope shape: a truncated or older frame that parses perfectly
+  // and simply does not carry the key. Reading one gives `undefined === true`
+  // -> false -> "nothing is stopping the droid", which is the whole defect.
+  for (const field of REQUIRED_SAFETY_FIELDS) {
+    const env = await boot({ status: { ...HEALTHY } });
+    env.pushStatus({ estop: true });
+    await sleep(5);
+    assert.equal(env.chipValue("estop"), "LATCHED", `${field}: the latch was on screen first`);
+
+    const thin = { ...HEALTHY, estop: true };
+    delete thin[field];
+    env.pushRaw(JSON.stringify(thin));
+    await sleep(5);
+
+    assert.equal(env.chipValue("estop"), "LATCHED", `dropping ${field} must not repaint the plate`);
+    assert.notEqual(env.freshnessState(), "live", `dropping ${field} must not read as a good frame`);
+  }
+});
+
+test("a missing safety field reads as unknown, and never as clear", async () => {
+  // With no earlier frame to keep, an unverifiable one leaves the plate saying
+  // it has not heard -- grey, per CONTEXT.md "Status Colour", where grey is
+  // "not reporting, never asked". Green here would be a droid reporting itself
+  // healthy on a frame that never mentioned its estop.
+  const withoutEstop = { ...HEALTHY };
+  delete withoutEstop.estop;
+  const env = await boot({ status: withoutEstop });
+
+  assert.equal(env.chipValue("estop"), "FINDING OUT");
+  assert.notEqual(env.chipValue("estop"), "CLEAR");
+  assert.equal(env.chipClass("estop"), "status-chip", "and it takes no colour at all");
+  assert.notEqual(env.freshnessState(), "live");
+});
+
+test("an error envelope never becomes the session's status", async () => {
+  // Refused by the transport rather than by each reader, because the session's
+  // cache is what every page that asks later is answered from -- pages this
+  // shell cannot reach into. A reader-side guard alone would protect the plate
+  // and leave the envelope sitting in the cache, to be handed to the Dashboard
+  // and replayed on every reconnect for the rest of the session.
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true });
+  await sleep(5);
+
+  env.pushRaw(OVERFLOW_ENVELOPE);
+  await sleep(5);
+
+  const cached = env.window.PAStatusStream.getLastStatus();
+  assert.equal(cached.estop, true, "the session still holds the last frame the droid built");
+  assert.equal(cached.ok, undefined, "and not the envelope saying it could not build one");
+
+  const handed = [];
+  env.window.PAStatusStream.subscribe((eventType, payload) => {
+    if (eventType === "status") handed.push(payload);
+  });
+  assert.deepEqual(
+    handed.map((frame) => frame.estop),
+    [true],
+    "and a reader that subscribes afterwards is answered from it, not from the envelope",
+  );
+});
+
+test("the estop's own state line refuses a frame that never mentioned the estop", async () => {
+  // The Latching Estop reads the same stream and had the same hole:
+  // `!!payload.estop` on a frame with no estop key is "Estop: clear" beside a
+  // release control the same frame disables.
+  const env = await boot({ status: { ...HEALTHY } });
+  const stateLine = () => env.document.getElementById("shell-estop-state")?.textContent;
+
+  env.pushStatus({ estop: true });
+  await sleep(5);
+  assert.equal(stateLine(), "Estop: latched");
+
+  // Not the envelope: the transport refuses that one before any reader sees
+  // it, so an envelope alone would leave this guard unexercised. This frame
+  // parses, carries no `ok:false`, and simply does not mention the estop.
+  const silent = { ...HEALTHY };
+  delete silent.estop;
+  env.pushRaw(JSON.stringify(silent));
+  await sleep(5);
+  assert.equal(stateLine(), "Estop: latched", "a frame that says nothing does not release a latch");
+
+  env.pushRaw(OVERFLOW_ENVELOPE);
+  await sleep(5);
+  assert.equal(stateLine(), "Estop: latched", "and neither does an envelope");
+});
+
+test("a replayed cache is not confirmed connectivity", async () => {
+  // The stream re-emits the frame it already holds the moment it reconnects.
+  // Treating that as the link working again put the plate back on "live" with
+  // values nobody had re-measured.
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true });
+  await sleep(5);
+
+  env.breakStream();
+  assert.notEqual(env.freshnessState(), "live");
+
+  env.reopenStream();
+  assert.notEqual(
+    env.freshnessState(),
+    "live",
+    "the cached frame came back, not the droid: nothing has been confirmed yet",
+  );
+  assert.equal(env.chipValue("estop"), "LATCHED", "and the values are still kept");
+});
+
+test("a reconnect asks the droid rather than trusting the cache", async () => {
+  const env = await boot({ status: { ...HEALTHY, estop: true } });
+  const before = env.statusReads();
+
+  env.breakStream();
+  env.reopenStream();
+  await sleep(20);
+
+  assert.equal(env.statusReads(), before + 1, "a reconnect resynchronises from buildStatusJson()");
+  assert.equal(env.freshnessState(), "live", "and the answer to that read is confirmed connectivity");
+});
+
+test("a failed fallback poll reaches the plate, not only the console", async () => {
+  // No EventSource: the shell's background poll is the only reader, and its
+  // failure branch used to console.warn and nothing else. The one flag that
+  // could say "not hearing" was written inside an SSE event branch that cannot
+  // fire on this path at all.
+  const env = await boot({ status: { ...HEALTHY, estop: true }, stream: false });
+  assert.equal(env.freshnessState(), "live", "the boot read answered, so the plate starts confirmed");
+  assert.equal(env.chipValue("estop"), "LATCHED");
+
+  env.statusFails = true;
+  env.fireInterval(3000);
+  await sleep(20);
+
+  assert.notEqual(env.freshnessState(), "live", "a poll that is refused is the link not answering");
+  assert.equal(env.chipValue("estop"), "LATCHED", "the values are kept here too");
+});
+
+test("the plate stops reading live from every path that can fail, not one", async () => {
+  // The three failures are three calls into one writer. Asserted together
+  // because "whatever replaces the flag is set by every path that can fail" is
+  // the requirement, and a per-path test passes while two of three are wired.
+  const dropped = await boot({ status: { ...HEALTHY } });
+  dropped.breakStream();
+  assert.notEqual(dropped.freshnessState(), "live", "the stream dropped");
+
+  const refused = await boot({ status: { ...HEALTHY } });
+  refused.pushRaw(OVERFLOW_ENVELOPE);
+  await sleep(5);
+  assert.notEqual(refused.freshnessState(), "live", "the droid could not report");
+
+  const polled = await boot({ status: { ...HEALTHY }, stream: false });
+  polled.statusFails = true;
+  polled.fireInterval(3000);
+  await sleep(20);
+  assert.notEqual(polled.freshnessState(), "live", "the fallback poll was refused");
 });
