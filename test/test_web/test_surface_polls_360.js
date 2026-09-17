@@ -448,6 +448,40 @@ test("wifi.js: the diagnostics poll it starts on settling stops when the operato
   assert.ok(env.cleared.intervals.includes(poll.id), "and it stops when WiFi is not the surface on screen");
 });
 
+test("wifi.js: a refresh that fails leaves WiFi showing what it last read", async () => {
+  let answering = true;
+  const env = loadPageModule("wifi.js", {
+    respond: (path) => {
+      if (!answering) throw new ApiError("the controller did not answer");
+      return path === "/api/wifi" ? { wifi: { mode: "client", staSsid: "bench" } } : {};
+    },
+    overrides: { PAAssetsReady: true },
+  });
+  await env.settle();
+  env.emit("window", "pa:bootstrap-change", {
+    detail: {
+      sections: [{ name: "wifi-config", status: "done" }],
+      resourcesReady: true,
+      sectionsStable: true,
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.showing("some-other-surface");
+  assert.equal(env.window.PASurface.isStale(null), true, "WiFi is left showing what it last read");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the diagnostics read never landed, so WiFi must not report itself as current",
+  );
+});
+
 test("setup.js: the memory profiler stops asking when the operator reads another surface", async () => {
   const env = loadPageModule("setup.js", {
     respond: (path) => (path === "/api/profiler"
