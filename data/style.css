@@ -6,37 +6,93 @@
    defect. That rule is mechanical rather than aspirational because the project
    this UI learns from shipped two such literals - a modal backdrop and a button
    ground, both hard-coded dark - and neither was caught until a second theme
-   put them on a light card.
+   put them on a light card. test_style_token_layer.js enforces it by walking
+   the parsed stylesheet, which is why the tools/ checker beside it does not.
 
-   Two colours are reserved and carry exactly one meaning each
-   (CONTEXT.md "Status Colour"):
+   The identity is the INSIDE of the droid, an instrument panel (ADR 0066,
+   CONTEXT.md "Surface Anatomy"). Colour does two jobs here and they never mix:
 
+     INTERACTION is the droid's blue, and only the blue - selection, the row
+     shown, the primary act, the focus ring.
+
+     A SIGNAL LIGHT is a droid LED and takes a real LED colour. Green nominal,
+     amber degraded and you can do something about it, red stopped or refused,
+     and the dim ink for a thing that is not reporting (operator, 2026-09-16,
+     which amends CONTEXT.md "Status Colour" as it was written). Nothing that
+     reports a state is blue, and nothing you can press is green.
+
+     --success   clear, armed, linked, mounted, reporting
      --warning   you can do something about this, and should
      --danger    something is stopped or refused
+     --text-dim  never asked, not fitted, switched off
 
-   Nothing else colours for state. A thing the builder cannot change is never
-   amber, and neither is a transient unknown - that exclusion is the whole
-   point, because "not normal" is the broad rule that had four different states
-   sharing one amber hatch. Every remaining spend of either colour restates at
-   its own site why that case qualifies.
+   A chosen posture - a speed preset, a sleep state, a control mode - takes no
+   colour at all: it is a readout, not a symptom. And none of this reaches
+   CONTEXT.md "Availability Family": WHY a thing is unusable is still told by
+   treatment and never by hue, which is a different axis from how it is doing.
+
+   Everything else is a ground, a plate, a seam or an ink.
+
+   THE RETIRING SPELLINGS. #399 sweeps thirteen surfaces in four slices and the
+   first one lands this block, so three groups of tokens are still read by rules
+   the sweep has not reached. Each is named here rather than left to be guessed
+   at, and the slice that sweeps a surface deletes the ones it was the last
+   reader of:
+
+     --silver, --silver-bright, --white   the pre-anatomy inks. The anatomy has
+       three: --text, --text-dim, --text-faint.
+     --space-3xs (2px), --space-xs (6px)  the pre-anatomy ladder's finer steps.
+       The anatomy's ladder is 4 / 8 / 12 / 16 / 24 / 32.
+     --radius-sm, --radius-md, --radius-lg   the pre-anatomy corners. An
+       instrument plate is chamfered (--radius-plate), not rounded, and a button
+       keeps --radius-xs so it still reads as a button.
    --------------------------------------------------------------------------- */
 :root {
-  --bg: #0c1525;
-  --surface: #152238;
-  --surface-alt: #1a2d4a;
-  --border: #2a4a7a;
-  --accent: #4a90d9;
+  /* Grounds and plates, darkest to lightest: the inside of the body shell, an
+     instrument plate, a raised plate face, and the recess a lamp sits in. */
+  --bg: #0a0f16;
+  --surface: #101822;
+  --surface-alt: #16202d;
+  --well: #060a10;
+
+  /* The dome's panel lines. Every seam on every surface is one of these two. */
+  --border: #223041;
+  --border-strong: #2f4157;
+
+  /* Three inks: text, secondary text, the dim voice.
+
+     --text-faint is the #398 reference's third ink lightened from its #6b7b8f,
+     and that is a measurement rather than a preference: the reference measured
+     contrast for the signal lights and not for its inks, and #6b7b8f reads
+     4.13:1 on --surface - under WCAG AA's 4.5:1 for normal text, which the
+     10 px .hint voice and the mono section titles it paints are. #7b8ba0 is
+     the same hue and saturation a shade up, and reads 5.14:1 on --surface,
+     5.71:1 on --well and 5.53:1 on --bg (measured 2026-09-17). */
+  --text: #e4eaf2;
+  --text-dim: #a5b3c4;
+  --text-faint: #7b8ba0;
+
+  /* The droid's blue - the interaction accent, and interaction only. It used
+     to light a live Status Plate cell as well, which made one hue mean both
+     "you chose this" and "this is alive"; the signal lights below took that
+     job back (operator, 2026-09-16). --accent-dim is the filled face of a
+     primary act; --accent-bright is the lift a hover or a focus ring takes. */
+  --accent: #4d8fe8;
   --accent-bright: #6ab0ff;
-  --accent-dim: #2d6cb5;
+  --accent-dim: #1d4f93;
+
+  /* The pre-anatomy inks. See "THE RETIRING SPELLINGS" above. */
   --silver: #b8c5d6;
   --silver-bright: #d4dde8;
-  --text: #e8edf4;
-  --text-dim: #a8bcd8;
-  --danger: #e85454;
-  --danger-bg: #3a1a1a;
+  --white: #f0f4f8;
+
+  /* The signal lights. There is no second orange: --warning already IS the
+     orange, and "you can do something about this" is what a degraded LED says,
+     so a --orange beside it would be one hue under two names. */
   --success: #54c87a;
   --warning: #e8a832;
-  --white: #f0f4f8;
+  --danger: #e85454;
+  --danger-bg: #3a1a1a;
 
   /* Neutral endpoints. Never painted straight on: they exist so a translucent
      lift or a shadow can be written as a share of one of them - for example
@@ -45,10 +101,16 @@
   --lift: #ffffff;
   --shade: #000000;
 
+  /* Paper, for print only. Not a theme (#327 stands): a printed bench sheet is
+     ink on paper, and the tokens are re-pointed at these inside @media print
+     at the foot of this file. */
+  --paper: #ffffff;
+  --paper-ink: #111111;
+  --paper-line: #999999;
+
   /* Promoted literals. Each of these was a hard-coded colour inside a rule
      until this block claimed it, and is named here for the job it does. */
   --scrim: #040a14;         /* full-viewport wash behind the sleep overlay */
-  --well: #060d18;          /* recessed ground a lamp sits in */
   --danger-deep: #c94545;   /* the hover face of a destructive button */
   /* The dome drawing's open-panel fill and edge. This is a position readout on
      a picture of the droid - where a panel physically is - and not a Status
@@ -56,8 +118,10 @@
   --panel-open: #ff9f43;
   --panel-open-edge: #ff7f00;
 
-  /* Spacing. The ladder the layout already walks. A rule that wants a step
-     between two of these is a rule that should pick one of them. */
+  /* Spacing. The anatomy's ladder is --space-2xs through --space-2xl:
+     4 / 8 / 12 / 16 / 24 / 32. A rule that wants a step between two of those
+     picks one of them. --space-3xs and --space-xs are the finer steps the
+     anatomy retires; see "THE RETIRING SPELLINGS" above. */
   --space-3xs: 2px;
   --space-2xs: 4px;
   --space-xs: 6px;
@@ -65,30 +129,50 @@
   --space-md: 12px;
   --space-lg: 16px;
   --space-xl: 24px;
+  --space-2xl: 32px;
 
-  /* Type. Each step carries the job it does, so a new surface picks a size by
-     asking what it is rather than by copying whatever the neighbour used. */
-  --fs-2xs: 0.72rem;    /* badges, pills, tags */
-  --fs-xs: 0.78rem;     /* rail status, captions */
-  --fs-sm: 0.85rem;     /* secondary lines, log text, table cells */
-  --fs-md: 0.9rem;      /* form labels and controls */
-  --fs-base: 0.95rem;   /* body */
-  --fs-lg: 1.1rem;      /* h2 */
-  --fs-xl: 1.45rem;     /* h1 */
+  /* Type, by job. Each step carries the job it does, so a new surface picks a
+     size by asking what it is rather than by copying whatever the neighbour
+     used - and nothing else is a size. Pixels, not rem: these are instrument
+     markings on a panel whose other numbers (row height, plate height, rail
+     width) are pixels too, and a scale that half-scales with the browser's
+     font setting puts a 10 px label beside a 40 px row that did not move. */
+  --fs-hint: 10px;     /* captions, chip labels, the .hint voice */
+  --fs-sect: 11px;     /* section titles and their subtitles, mono */
+  --fs-cell: 13px;     /* table cells, buttons, nav links */
+  --fs-body: 14px;     /* body text and prose */
+  --fs-h2: 16px;       /* a heading inside a section */
+  --fs-h1: 22px;       /* the page title */
+  --fs-readout: 28px;  /* a big mono number */
+
+  /* The one reading measure, on prose and nothing else. */
+  --measure: 70ch;
 
   /* The one monospace stack. Declared here because a fixed-position readout
      wants digits that do not change width as the value does; the .mono utility
      still carries its own copy and is not this slice's rule to edit. */
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
-  /* Corner radii. --radius-pill is a capsule of any height; --radius-round is
-     a circle and only ever goes on a square box. */
+  /* Corner radii. An instrument plate has a small chamfer, not a card's
+     radius; a button keeps a slightly rounder corner so it still reads as a
+     button. --radius-pill is a capsule of any height; --radius-round is a
+     circle and only ever goes on a square box. */
+  --radius-plate: 2px;
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-pill: 999px;
   --radius-round: 50%;
+
+  /* The frame's own numbers (ADR 0066). The gutter is a token rather than a
+     ladder step because it moves at the 1100 px breakpoint and the ladder does
+     not. */
+  --rail: 200px;       /* the nav rail: the longest member name at 13 px, an icon and its padding */
+  --gutter: var(--space-xl);  /* the work area's side padding at computer resolution */
+  --topbar-h: 60px;    /* holds a 44 px estop with its two lines beside it */
+  --plate-h: 56px;     /* the Status Plate, one row of eight cells */
+  --row: 40px;         /* one table or signal row - the bench's density, still a finger's target */
 
   /* Elevation: three heights and one recess. A box-shadow that is a focus ring
      or a glow is not elevation - it is written at its own site as a share of
@@ -107,29 +191,103 @@
   --avail-dim-settled: 0.45;
 }
 
+/* Declared on the element rather than inside the token block, because :root is
+   the token block and everything in it is a token. One palette, dark only
+   (#327), so the browser's own furniture - scrollbars, form controls, the
+   canvas behind an overscroll - is told which one it is drawing on. */
+html {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+/* ---------------------------------------------------------------------------
+   The frame (ADR 0066, CONTEXT.md "Operator Shell").
+
+   The Operator Shell document carries four regions and nothing else, and this
+   grid is where they sit: the topbar across the top, the nav rail down the
+   left, the work area beside it, and the Status Plate fixed to the foot of the
+   viewport. Every surface is mounted into the work area, so the frame is drawn
+   once and a navigation moves nothing.
+
+   Before this the body was a 900 px centred column and the nav was a row of
+   tabs above it. The rail is what a thirteen-entry nav in four groups needs at
+   computer resolution without the second row that read as a generic tab bar,
+   and it becomes a strip again at 1100 px (further down).
+
+   The regions are placed by name rather than by order, so a build that is
+   missing one does not shunt the others into its column.
+   --------------------------------------------------------------------------- */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
   background: var(--bg);
   color: var(--text);
-  padding: var(--space-md);
-  max-width: 900px;
-  margin: 0 auto;
+  margin: 0;
+  /* Room at the foot for the fixed plate, so the last row of any surface is
+     never underneath it. */
+  padding: 0 0 calc(var(--plate-h) + var(--space-xl));
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
   -webkit-text-size-adjust: 100%;
-  font-size: var(--fs-base);
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
+#shell-top {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  position: sticky;
+  top: 0;
+  /* The chrome sits over content that scrolls under it, which is what the
+     middle of the elevation scale is for: the seam alone reads as a drawn line
+     on a flat page, and a surface scrolling beneath the topbar should look
+     like it is passing behind something. */
+  box-shadow: var(--elev-2);
+  /* Above the Dashboard's sleep overlay (1200), because a sticky region with a
+     z-index is a stacking context and the estop's own 1300 inside it would
+     otherwise only rank against its siblings here. The overlay is a posture
+     the droid is in, not a dialog, and it must never cover the control that
+     ends that posture (#330). The Page Recovery View sits at 10001 and does
+     cover it; that is a modal dialog and is not this rule's decision. */
+  z-index: 1300;
+}
+
+#shell-nav {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+#shell-content {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  max-width: 1320px;
+  padding: var(--space-xl) var(--gutter) var(--space-2xl);
+}
+
+#shell-status {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* The plate's own rule declares the same rank for the same reason the topbar
+     does; this is the region that actually carries it. */
+  z-index: 1300;
+}
+
 h1 {
-  color: var(--white);
-  font-size: var(--fs-xl);
-  margin-bottom: var(--space-3xs);
-  letter-spacing: 0.4px;
+  color: var(--text);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 h2,
@@ -138,13 +296,38 @@ h3 {
 }
 
 h2 {
-  font-size: var(--fs-lg);
+  font-size: var(--fs-h2);
   margin-bottom: var(--space-md);
 }
 
 h3 {
-  font-size: 1rem;
-  margin-bottom: 10px;
+  font-size: var(--fs-body);
+  margin-bottom: var(--space-sm);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The icon sprite itself: a <symbol> library that is never painted, only
+   referenced. It is taken out of flow rather than hidden, because display:none
+   on the sprite makes every <use> in the document resolve to nothing. */
+svg.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* An icon from that sprite. It inherits the text colour it sits in and always
+   keeps its label beside it: an operator surface carries no emoji and no
+   unlabelled glyph (ADR 0066, docs/ui-copy-voice.md). */
+svg.i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
 }
 
 p,
@@ -158,51 +341,102 @@ code {
   font-size: 0.95em;
 }
 
+/* ---------------------------------------------------------------------------
+   The topbar: identity, where you are, the surface's own acts, and the estop.
+
+   Four columns, and the first is the rail's width so the brand sits over the
+   rail and the seam between them continues the rail's own edge. The brand is
+   the droid's NAME and its line, and no mark: ADR 0066's identity is the
+   inside of the droid, an instrument panel, and a portrait of the droid seen
+   from outside in the top-left logo slot is the generic-web-app convention
+   this look exists to leave (operator, 2026-09-16 on #398).
+   --------------------------------------------------------------------------- */
 .topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr) auto auto;
+  align-items: center;
+  min-height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .topbar-actions {
-  margin-left: auto;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
 }
 
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
+  min-height: var(--topbar-h);
+  padding: 0 var(--space-lg);
+  border-right: 1px solid var(--border);
   text-decoration: none;
-  color: inherit;
+  color: var(--text);
 }
 
-.topbar-logo {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
+.brand-name {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+/* Where the operator is, in the shell's own words: the surface's name, read
+   from the one place a surface is named (data/shell.js SURFACES). */
+.topbar-where {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  min-width: 0;
+  padding: 0 var(--gutter);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  line-height: 1.4;
+}
+
+.topbar-where b {
+  color: var(--text-dim);
+  font-weight: 500;
 }
 
 .subtitle {
-  color: var(--text-dim);
-  font-size: 0.9rem;
-  margin-bottom: 16px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
+/* A pill names what kind of thing something is - supported, roadmap, fitted,
+   a log level. It is an engraved label rather than a badge, so it takes the
+   plate's chamfer and the mono face, and it is small enough that it never
+   competes with the value beside it. */
 .status-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 112px;
-  padding: 10px 14px;
-  background: var(--surface-alt);
-  color: var(--silver-bright);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-sm);
-  font-weight: 700;
+  padding: 1px var(--space-sm);
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .status-pill.pill-ok {
@@ -220,17 +454,17 @@ code {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
+/* pill-info is not a state. It is the neutral pill - the log level, a kind of
+   thing - and it takes no colour at all, because blue reports nothing
+   (ADR 0066) and a plain label has nothing to report. */
 .status-pill.pill-info {
-  border-color: color-mix(in srgb, var(--accent-bright) 45%, var(--border));
-  color: var(--accent-bright);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--border-strong);
+  color: var(--text-dim);
+  background: transparent;
 }
 
 .status-pill-compact {
   min-width: 0;
-  padding: var(--space-xs) 10px;
-  font-size: var(--fs-xs);
-  font-weight: 700;
 }
 
 button.status-pill {
@@ -242,91 +476,74 @@ button.status-pill:hover {
   filter: brightness(1.15);
 }
 button.status-pill:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.home-snapshot-card {
-  border-left-color: color-mix(in srgb, var(--accent-bright) 70%, var(--border));
-}
+/* ---------------------------------------------------------------------------
+   The nav rail, ordered by Activity Group (ADR 0048, #288, ADR 0066).
 
-.snapshot-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
+   A column at computer resolution and a strip at 1100 px and below (the
+   breakpoint block further down). A group is its label, the hint saying what
+   the builder is doing, and the surfaces it offers; the divider between groups
+   is drawn here rather than stored beside the data, so retiring a group stays
+   a render-time decision.
 
-.snapshot-pills .status-pill {
-  justify-content: flex-start;
-}
-
+   The rail's right edge is a panel seam, and the surface on screen lights two
+   pixels of the link's own left edge - the dome has lines like that, and a
+   filled tab does not belong on an instrument panel.
+   --------------------------------------------------------------------------- */
 nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-bottom: 16px;
-  border-bottom: 2px solid var(--border);
-  padding-bottom: 10px;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-md);
+  border-right: 1px solid var(--border);
 }
 
 nav a {
-  padding: 10px 10px;
-  background: var(--surface);
-  color: var(--silver);
-  text-decoration: none;
-  border-radius: 4px 4px 0 0;
-  border: 1px solid var(--border);
-  border-bottom: none;
-  font-size: 0.87rem;
-  font-weight: 500;
-  transition: background 0.2s ease, color 0.2s ease;
-  white-space: nowrap;
-  min-height: 44px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-md);
+  min-height: 36px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: var(--fs-cell);
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 nav a:hover {
   background: var(--surface-alt);
-  color: var(--accent-bright);
+  color: var(--text);
 }
 
 nav a:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
+/* The surface on screen. `pointer-events: none` is kept: the link to where you
+   already are does nothing, and a press that does nothing is worse than a
+   control that refuses it. */
 nav a.active {
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
-  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
   pointer-events: none;
 }
 
-/* ---------------------------------------------------------------------------
-   Activity Groups: the nav is ordered by the job a builder is doing rather
-   than by firmware subsystem (ADR 0048, #288).
-
-   A group is a column - its name and the hint saying what the builder is
-   doing above the row of surfaces it offers - and the column is bottom-aligned
-   so the tabs still sit along the nav's bottom edge however tall the heads
-   run. The divider is drawn here rather than stored beside the data, so
-   adding or retiring a group stays a render-time decision.
-   --------------------------------------------------------------------------- */
+/* Dashboard is the landing and sits outside the groups (ADR 0048), so it is a
+   bare link at the head of the rail. */
 nav > a {
-  align-self: flex-end;
+  margin-bottom: var(--space-2xs);
 }
 
 .nav-group {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: var(--space-2xs);
-  margin-left: var(--space-sm);
-  padding-left: var(--space-md);
-  border-left: 1px solid var(--border);
+  display: grid;
+  gap: var(--space-3xs);
 }
 
 .nav-group-head {
@@ -334,20 +551,22 @@ nav > a {
   flex-direction: column;
   gap: var(--space-3xs);
   margin: 0;
-  padding: 0 var(--space-2xs);
+  padding: 0 var(--space-md) var(--space-2xs);
 }
 
 .nav-group-label {
-  font-size: var(--fs-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--silver);
+  color: var(--text-faint);
 }
 
 .nav-group-hint {
-  font-size: var(--fs-2xs);
-  color: var(--text-dim);
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--text-faint);
 }
 
 /* The group holding the surface on screen. A surface in two groups lights
@@ -357,35 +576,308 @@ nav > a {
 }
 
 .nav-group-links {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: var(--space-3xs);
 }
 
+/* The foot of the rail carries what is running, which is chrome rather than
+   any surface's business: data/footer.js writes the firmware and web-asset
+   versions into #fw-meta wherever the shell puts it. */
+.rail-foot {
+  margin-top: auto;
+  padding: var(--space-md);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+}
+
+/* ===========================================================================
+   The Surface Anatomy (ADR 0066, CONTEXT.md "Surface Anatomy").
+
+   The parts every operator surface is drawn from, so a builder who has learned
+   one screen has learned them all: a title with the question it answers, the
+   acts beside it, section heads whose subtitle is a count, a state, a
+   provenance or a purpose, the work area, and a feedback line saying what just
+   happened.
+
+   #399 sweeps the thirteen surfaces onto these in four slices; this is the
+   first, so the parts are declared once here and each later slice uses them
+   rather than adding a block of its own.
+   =========================================================================== */
+
+/* The title, and the question the surface answers. The acts sit beside it,
+   named for what they do to the thing on this screen. */
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-md) var(--space-xl);
+  margin-bottom: var(--space-xl);
+}
+
+.title .question {
+  margin-top: var(--space-2xs);
+  max-width: var(--measure);
+  color: var(--text-dim);
+}
+
+.title .acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* A moved thing leaves a forwarding address rather than a dead end. */
+.forward {
+  margin-top: var(--space-sm);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+}
+
+.forward a {
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The one section head. A mono uppercase title, dimmer than the content under
+   it, a bottom rule, and a subtitle that is a count, a state, a provenance or
+   a purpose - never a tagline, and never absent. */
+.sect {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-bottom: var(--space-sm);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.sect h2,
+.sect h3 {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sect .sub {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  line-height: 1.4;
+  text-align: right;
+}
+
+/* Contiguous plates divided by seams rather than by gaps: one bay, several
+   sections. A bay is what a row of instruments looks like; separate cards with
+   air between them is what a web page looks like. */
+.bay {
+  display: grid;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  margin-bottom: var(--space-lg);
+}
+
+.bay > section {
+  min-width: 0;
+  padding: var(--space-lg);
+}
+
+.bay > section + section {
+  border-left: 1px solid var(--border);
+}
+
+/* Three voices, and emphasis is weight rather than colour (#327).
+   .hint is the cue under a control, .prose is the why, and a .note is the
+   consequence beside a choice. Exactly two note colours: amber says act on
+   this, blue says here is information. */
+.hint {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+}
+
+.prose {
+  color: var(--text-dim);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  max-width: var(--measure);
+}
+
+.prose b,
+.hint b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.note {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--well);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--radius-plate) var(--radius-plate) 0;
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  line-height: 1.55;
+}
+
+.note b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.note-act {
+  border-left-color: var(--warning);
+}
+
+.note-info {
+  border-left-color: var(--accent);
+}
+
+/* A segmented control: one recess holding the choices, the chosen one lit by
+   the interaction blue. Two or three mutually exclusive answers to one
+   question, where a row of separate buttons would not say they were one. */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+}
+
+.seg > button {
+  flex: 1 1 0;
+  min-height: 34px;
+  padding: 0 var(--space-lg);
+  border: 0;
+  border-radius: var(--radius-plate);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-cell);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seg > button:hover {
+  color: var(--text);
+}
+
+.seg > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.seg > button.active,
+.seg > button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+/* A disclosure: the one motion that answers an act. */
+.disclose {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  margin-bottom: var(--space-lg);
+}
+
+.disclose > summary,
+.disclose > .dome-control-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  cursor: pointer;
+  list-style: none;
+}
+
+.disclose > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclose > summary h2,
+.disclose > summary h3,
+.disclose > .dome-control-header h2 {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.disclose > summary .sub,
+.disclose > .dome-control-header .sub {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+}
+
+.disclose > summary svg.i,
+.disclose > .dome-control-header svg.i {
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.disclose[open] > summary svg.i.chev,
+.disclose > .dome-control-header[aria-expanded="true"] svg.i.chev {
+  transform: rotate(90deg);
+}
+
+.disclose > .disclose-body {
+  padding: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+/* An instrument plate: a seam all round and a hair of light along the top
+   edge, which is what makes it read as bezelled rather than as a card. The
+   3 px blue bar down the left edge is gone - blue is interaction now, and a
+   bar on every card spent the accent on nothing at all (ADR 0066). */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-plate);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
   padding: var(--space-lg);
   margin-bottom: var(--space-lg);
-  transition: box-shadow 0.2s ease;
 }
 
-.card:hover {
-  box-shadow: var(--elev-2);
-}
-
+/* A plate carrying one of the reserved meanings wears it as a signal band down
+   its left edge - the only edge the anatomy colours. The band is written here
+   rather than left as a recolour of the seam, because the seam is one pixel
+   and a one-pixel red is not a warning anybody sees. */
 .card.danger {
-  border-left-color: var(--danger);
+  border-left: 2px solid var(--danger);
 }
 
 .card.success {
-  border-left-color: var(--success);
+  border-left: 2px solid var(--success);
 }
 
 .card.warning {
-  border-left-color: var(--warning);
+  border-left: 2px solid var(--warning);
 }
 
 /* .card.disabled-card is the whole-page form of "off": a page whose component
@@ -446,11 +938,28 @@ nav > a {
 }
 
 .hero-grid,
-.status-grid,
-.health-grid {
+.status-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+/* The health signals, one row each. 8 px of side padding and a 4 px gap rather
+   than the 12 and 8 the ladder would suggest: a signal carries the word its
+   evaluator reports (data/health_signals.js) rather than a bare OK, and at
+   three columns the longest pair - "RC Receiver" with "Frames ok" - wrapped to
+   two lines and made the grid ragged. The row is --row tall so a signal reads
+   at the same rhythm as a table row. */
+.health-grid {
+  display: grid;
+  gap: var(--space-2xs);
+  /* 240 px, not the 150 the #398 reference uses: its Health plate is half a
+     row wide and gets three columns, this one is the full width of the surface
+     and would get seven. Measured in a browser at 1440 px - at seven columns
+     "RC Receiver" and "File System" both wrapped to two lines and the grid
+     went ragged, which is the same wrap the reference's own note records at
+     its own width. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 
 .drive-grid {
@@ -462,62 +971,94 @@ nav > a {
 }
 
 .status-item {
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
+  background: var(--well);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  transition: border-color 0.2s ease;
+  border-radius: var(--radius-plate);
+  padding: var(--space-md);
+}
+
+.status-item dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-item dd {
+  margin-top: 2px;
+  font-size: var(--fs-body);
+  font-weight: 600;
 }
 
 .health-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--space-2xs);
+  min-height: var(--row);
+  padding: 0 var(--space-sm);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
-  transition: border-color 0.2s ease;
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  font-size: var(--fs-cell);
+}
+
+/* The evaluator's own word, pushed to the right-hand end of the row so the
+   states line up down the grid and can be read as a column. */
+.indicator-text {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 
-/* A health lamp with no state class yet: the dashboard renders these before
-   the first status frame arrives, and page_bootstrap.js lights one "info"
-   while a page is still loading. Both are transient unknowns, and CONTEXT.md
-   "Status Colour" keeps amber off a transient unknown - it is not something
-   the builder can act on, it is the answer not having arrived. Unlit and
-   neutral until the droid says otherwise. */
+/* A signal light is a droid LED (operator, 2026-09-16, amending CONTEXT.md
+   "Status Colour"): 7 px, and a lit one glows, which is what makes it read as
+   an LED rather than as a coloured pixel.
+
+   A lamp with no state class yet: the dashboard renders these before the first
+   status frame arrives, and page_bootstrap.js lights one "info" while a page
+   is still loading. Both are things nobody has answered yet, and CONTEXT.md
+   "Health Signal" says a thing never asked reads grey - never green, and never
+   amber either, because amber promises the builder something to do. So both
+   are the unlit dot, and neither is blue: blue is interaction, and a lamp
+   reports a state. */
 .indicator {
-  width: 14px;
-  height: 14px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-round);
   background: var(--text-dim);
   box-shadow: none;
-  opacity: 0.55;
-  flex: 0 0 14px;
+  opacity: 0.5;
+  flex: 0 0 7px;
   transition: background 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
 }
 
 .indicator.ok,
 .indicator.fail,
-.indicator.warn,
-.indicator.info {
+.indicator.warn {
   opacity: 1;
 }
 
 .indicator.info {
-  background: var(--accent-bright);
-  box-shadow: 0 0 6px var(--accent-bright);
+  background: var(--text-dim);
+  box-shadow: none;
+  opacity: 0.5;
 }
 
 .indicator.ok {
   background: var(--success);
-  box-shadow: 0 0 6px var(--success);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent);
 }
 
 .indicator.fail {
   background: var(--danger);
-  box-shadow: 0 0 6px var(--danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
 /* Amber earns its place here: a health signal reads "warn" when a subsystem is
@@ -525,7 +1066,7 @@ nav > a {
    something about. */
 .indicator.warn {
   background: var(--warning);
-  box-shadow: 0 0 6px var(--warning);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warning) 60%, transparent);
 }
 
 .indicator.off {
@@ -534,24 +1075,6 @@ nav > a {
   opacity: 0.4;
 }
 
-
-.indicator-text {
-  font-size: 0.65em;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  opacity: 0.75;
-}
-
-.status-item dt {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  margin-bottom: 6px;
-}
-
-.status-item dd {
-  font-weight: 700;
-  font-size: 1rem;
-}
 
 .button-row {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1186,7 +1709,7 @@ input.input-narrow:focus {
 }
 
 .feature-availability-status {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
   white-space: nowrap;
 }
 
@@ -1586,8 +2109,8 @@ input.input-narrow:focus {
 
 .log-wrap {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
+  border-radius: var(--radius-plate);
+  background: var(--well);
   overflow: hidden;
 }
 
@@ -1595,15 +2118,22 @@ input.input-narrow:focus {
   margin: 0;
   max-height: 60vh;
   overflow: auto;
-  color: var(--silver-bright);
-  font-size: 0.85rem;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.7;
+  font-family: var(--font-mono);
   white-space: pre-wrap;
-  padding: 12px;
+  overflow-wrap: anywhere;
+  padding: var(--space-md);
 }
 
+/* Inline, not a block: the entries are joined with a newline so that selecting
+   the log and copying it yields one line per entry, and under the pre-wrap the
+   console is painted with, that newline BETWEEN two blocks renders as a blank
+   line of its own - the log came out double-spaced. Inline spans take their
+   line break from the newline that is already there. */
 .log-line {
-  display: block;
+  display: inline;
 }
 
 .log-line-error {
@@ -1618,6 +2148,9 @@ input.input-narrow:focus {
   color: var(--text-dim);
 }
 
+/* The operator's own line, echoed back. It is the one thing in the log the
+   operator typed, so it takes the interaction blue - a record of an act, not a
+   report of a state. */
 .log-line-command {
   color: var(--accent-bright);
 }
@@ -1639,30 +2172,37 @@ input.input-narrow:focus {
   border: 0;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--shade) 24%, transparent);
-  color: var(--silver-bright);
-  font-size: 0.85rem;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-mono);
   outline: none;
-  padding: 10px 12px;
+  padding: var(--space-sm) var(--space-md);
 }
 
 .log-command-input:focus {
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
+/* The status stream was interrupted and the values on this surface are the
+   ones it last sent. Amber, because the builder can do something about it -
+   reload, or look at the link - and it is the one thing on the Dashboard
+   saying that what is on screen may no longer be true. */
 .stale-banner {
-  background: color-mix(in srgb, var(--warning) 20%, transparent);
-  border-bottom: 2px solid var(--warning);
-  color: var(--text);
-  font-size: 0.85em;
-  padding: 8px 16px;
-  text-align: center;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--well);
+  border-left: 2px solid var(--warning);
+  border-radius: 0 var(--radius-plate) var(--radius-plate) 0;
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  line-height: 1.55;
+  margin-bottom: var(--space-lg);
 }
 
 .log-paused {
   display: none;
   color: var(--warning);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   white-space: nowrap;
 }
 
@@ -1758,50 +2298,50 @@ body[data-page="wifi"] .wifi-summary-list dd {
   }
 }
 
+/* A control on an instrument panel: a chamfered corner rather than a capsule,
+   and no lift or drop shadow - a raised pill reads as a web button, which is
+   the look ADR 0066 leaves. The 36 px floor is the bench's density (#398); the
+   one control that keeps a 44 px floor is the estop, whose own rule says so.
+   Nothing you can press is green: the signal colours belong to readouts. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  padding: var(--space-md) 18px;
+  padding: 0 var(--space-lg);
   background: var(--surface-alt);
-  color: var(--silver-bright);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-md);
-  font-weight: 600;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-cell);
+  font-weight: 500;
+  line-height: 1.2;
   cursor: pointer;
   text-align: center;
   text-decoration: none;
-  min-width: 44px;
-  min-height: 44px;
-  box-shadow: var(--elev-1);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  min-width: 36px;
+  min-height: 36px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .btn:hover {
-  background: var(--border);
-  border-color: var(--accent);
-  color: var(--white);
-  transform: translateY(-1px);
-  box-shadow: var(--elev-2);
+  border-color: var(--text-faint);
+  color: var(--text);
 }
 
 .btn:active {
-  background: var(--accent-dim);
-  color: var(--white);
-  transform: scale(0.98);
+  background: var(--border);
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .btn:disabled,
 .btn[aria-disabled="true"] {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
@@ -1815,25 +2355,49 @@ textarea:disabled {
   cursor: not-allowed;
 }
 
+/* The primary act: the one filled control on a surface, and the one place the
+   blue is a ground rather than an edge. */
 .btn.accent {
-  background: var(--accent);
-  color: var(--white);
-  border-color: var(--accent-bright);
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .btn.accent:hover {
-  background: var(--accent-bright);
+  background: color-mix(in srgb, var(--accent-dim) 80%, var(--accent));
+  border-color: var(--accent);
+}
+
+/* A control that is present but is not asking to be pressed. */
+.btn.btn-quiet {
+  background: transparent;
+}
+
+.btn.btn-sm {
+  min-height: 30px;
+  padding: 0 var(--space-md);
+  font-size: 12px;
+}
+
+/* Why an act is switched off, beside it rather than in a title: a bench tablet
+   has no hover (ADR 0059, docs/ui-copy-voice.md rule 12). */
+.why {
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--text-faint);
 }
 
 .btn.danger {
-  background: var(--danger-bg);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
   border-color: var(--danger);
 }
 
 .btn.danger:hover {
-  background: var(--danger);
-  color: var(--white);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .btn.link-btn {
@@ -1855,17 +2419,19 @@ textarea:disabled {
    job, and a button that changed colour to say "not stopping anything" would
    be colouring for state, which #327 reserves for a latch that is set. */
 .topbar-right {
-  margin-left: auto;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-md);
+  min-height: var(--topbar-h);
+  padding: 0 var(--space-lg);
+  border-left: 1px solid var(--border);
 }
 
 .shell-estop {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2xs);
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: var(--space-md);
   /* Above the Dashboard's sleep overlay, which is a full-viewport scrim that
      takes pointer events and whose own panel says "Drive and safety controls
      remain active" - true of the droid, and it must be true of the screen
@@ -1877,31 +2443,50 @@ textarea:disabled {
   z-index: 1300;
 }
 
+/* The button keeps a 44 px floor the breakpoints never lower - a floor on this
+   one control rather than a constraint on any layout (#327) - and carries the
+   word STOP with the sprite's stop glyph beside it. The two fixed lines move
+   out of the button and sit to its left, right-aligned, where the topbar has
+   the width for them; they are still the same two lines, still visible text
+   rather than a title. */
 .shell-estop-button {
-  flex-direction: column;
-  gap: var(--space-3xs);
-  min-width: 132px;
-  min-height: 56px;
-  padding: var(--space-sm) var(--space-lg);
-  line-height: 1.15;
+  gap: var(--space-sm);
+  min-width: 120px;
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.shell-estop-button svg.i {
+  width: 18px;
+  height: 18px;
+}
+
+.shell-estop-lines {
+  display: grid;
+  gap: 1px;
+  text-align: right;
 }
 
 .shell-estop-action {
-  font-size: var(--fs-lg);
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-cell);
 }
 
 .shell-estop-consequence {
-  font-size: var(--fs-2xs);
-  font-weight: 500;
-  max-width: 22ch;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+  color: var(--text-faint);
 }
 
 .shell-estop-state {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: right;
   color: var(--text-dim);
 }
 
@@ -1910,8 +2495,8 @@ textarea:disabled {
 }
 
 .shell-estop-feedback {
-  max-width: none;
-  text-align: center;
+  max-width: 28ch;
+  text-align: right;
 }
 
 /* A surface that came back with its polling stopped (ADR 0048, #360).
@@ -1929,7 +2514,7 @@ textarea:disabled {
   background: color-mix(in srgb, var(--lift) 3%, transparent);
   border-radius: var(--radius-sm);
   color: var(--text-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   padding: var(--space-sm) var(--space-md);
   margin-bottom: var(--space-md);
 }
@@ -1938,34 +2523,38 @@ body.sleep-mode-active {
   overflow: hidden;
 }
 
+/* A surface's own topbar actions (#344): mounted beside the nav rather than in
+   the content region, so they stay put while the surface under them scrolls.
+   The Dashboard's three act on the DROID - sleep it, release the latch, reboot
+   the controller - rather than on anything the Dashboard is showing, which is
+   why they sit in the chrome beside the estop instead of in the title's act
+   row. Each carries its own feedback line under it, because three acts that
+   share one line cannot say which of them answered. */
 .index-top-actions {
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
-  gap: 8px;
-  margin: 0 0 0 auto;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .index-top-actions .top-action {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 2px;
 }
 
 .index-top-actions .top-action-button {
   min-width: 0;
-  padding: 8px 12px;
-  font-size: 0.84rem;
-  line-height: 1.1;
+  padding: 0 var(--space-md);
+  min-height: 32px;
+  font-size: 12px;
 }
 
 .compact-feedback {
   min-height: 1.2em;
   max-width: 220px;
   text-align: right;
-  font-size: 0.8rem;
-  color: var(--text-dim);
   margin: 0;
 }
 
@@ -2025,24 +2614,35 @@ body.sleep-mode-active {
   border-radius: 8px;
 }
 
+/* The feedback line: what just happened, at the foot of the thing it happened
+   to, and present in every state. Mono, because it reports rather than
+   explains.
+
+   The three outcomes used to be told apart by an emoji in ::before and by
+   nothing else - and an operator surface carries no emoji (ADR 0066), so they
+   now take the signal colour whose meaning they already have: green it worked,
+   amber you can do something about it, red it stopped or was refused. The
+   sentence still says which on its own; the colour is the second reading, not
+   the only one. */
 .feedback,
 .sys-status,
 .list-note {
   color: var(--text-dim);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
 }
 
-.feedback.success::before {
-  content: "✅ ";
+.feedback.success {
+  color: var(--success);
 }
 
-.feedback.warning::before {
-  content: "⚠️ ";
+.feedback.warning {
+  color: var(--warning);
 }
 
-.feedback.error::before {
-  content: "❌ ";
+.feedback.error {
+  color: var(--danger);
 }
 
 /* RC Mode Selector Cards */
@@ -2442,112 +3042,114 @@ body[data-page="servo"] .input-narrow {
   transform: none;
 }
 
+/* The rail's foot line, written by data/footer.js. It was a plate of its own
+   under the surface; on an instrument panel what is running is chrome, and it
+   belongs at the bottom of the rail with the rest of the frame. */
 .status-bar {
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  margin-top: 16px;
+  color: var(--text-faint);
 }
 
 .status-subline {
-  color: var(--text-dim);
-  font-size: 0.82rem;
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
 }
 
-/* The Status Plate (CONTEXT.md "Status Plate", #324, #346).
+/* The Status Plate (CONTEXT.md "Status Plate", #324, #346, ADR 0066).
 
-   One recessed instrument plate carrying eight borderless cells in fixed
-   positions, so it is read by muscle memory rather than scanned. The chrome
-   writes it once and repaints values in place; nothing here is rebuilt on a
-   navigation.
+   One recessed instrument plate fixed to the foot of the viewport, carrying
+   eight borderless cells in fixed positions and one freshness statement, so it
+   is read by muscle memory rather than scanned and is in reach at every scroll
+   position. The chrome writes it once and repaints values in place; nothing
+   here is rebuilt on a navigation.
 
-   The separator sits on the LEFT edge of every cell after the first, so a
-   cell that is ever hidden takes its rule with it and no JavaScript ever
-   touches a separator (r2d2-astromech-simulator v1.79.0,
-   src/css/02-layout.css:31). All eight of ours are always present, so that is
-   insurance rather than a requirement -- and it is the cheap kind.
+   A cell is a label over a value, with the signal light inside the value line -
+   the shape an instrument uses, where the label is the engraving and the value
+   is what the needle says.
 
-   A chip is deliberately not dressed as a button. The plate is the one
-   recess; eight recesses would read as eight unrelated widgets instead of one
+   The separator sits on the LEFT edge of every cell after the first, so a cell
+   that is ever hidden takes its rule with it and no JavaScript ever touches a
+   separator (r2d2-astromech-simulator v1.79.0, src/css/02-layout.css:31). All
+   eight of ours are always present, so that is insurance rather than a
+   requirement -- and it is the cheap kind.
+
+   A chip is deliberately not dressed as a button. The plate is the one recess;
+   eight recesses would read as eight unrelated widgets instead of one
    instrument, which is the reference's own note on the same rule: "Status is
    NOT pressable, so it no longer dresses like a button: no border, no plate."
-   Ours do take a press -- seven open the screen where the thing is changed
-   and the first cuts drive -- so they carry a pointer and a hover lift, and
+   Ours do take a press -- seven open the screen where the thing is changed and
+   the first cuts drive -- so they carry a pointer and a hover lift, and
    nothing else.
 
    Colour on the plate reports the droid's own health and never a posture the
-   operator chose (#327 "Status Colour"): --success for a thing doing its job,
-   --danger for something stopped or refused, and no colour at all for a
-   chosen mode, a switched-off component or a value the droid has not sent
-   yet. Amber is spent nowhere here. Amber means the builder can act and
-   should, and every cell on this plate offers the same one move -- the click
-   -- so the hue would carry no information. The freshness state is never
-   amber for the reason #324 gives: the operator cannot act on it and the
-   reconnect is already running. */
+   operator chose (#327 "Status Colour", as the operator amended it on
+   2026-09-16): --success for a thing doing its job, --danger for something
+   stopped or refused, and the unlit dot for a chosen mode, a switched-off
+   component or a value the droid has not sent yet. Amber is spent nowhere
+   here. Amber means the builder can act and should, and every cell on this
+   plate offers the same one move -- the click -- so the hue would carry no
+   information. The freshness state is never amber for the reason #324 gives:
+   the operator cannot act on it and the reconnect is already running. */
 .status-plate-region {
-  margin-top: var(--space-lg);
+  background: var(--well);
+  border-top: 1px solid var(--border-strong);
+  box-shadow:
+    inset 0 2px 6px color-mix(in srgb, var(--shade) 60%, transparent),
+    0 -1px 0 color-mix(in srgb, var(--lift) 4%, transparent);
   /* Above the Dashboard's sleep overlay, for the same reason the estop is
      (#330): the overlay is a full-viewport fixed scrim that takes pointer
      events, and a posture the droid is in must not hide the chrome that
      reports it. Measured in a browser before this rule existed --
      elementFromPoint over the first chip returned the overlay, so an operator
      looking at a sleeping droid could neither read the SLEEP chip that says
-     why nor press the ESTOP cell. The Page Recovery View and the Sequences
-     modal still sit higher and do cover it; both are modal dialogs, and that
-     is not this plate's decision to take. */
+     why nor press the ESTOP cell. #shell-status, which is the fixed region
+     this sits in, declares the same rank so the stacking context it creates
+     does not trap this one below the overlay. The Page Recovery View and the
+     Sequences modal still sit higher and do cover it; both are modal dialogs,
+     and that is not this plate's decision to take. */
   position: relative;
   z-index: 1300;
+  /* The eight cells, then the compartment holding the plate's one freshness
+     statement. The statement is a sibling of the cells rather than a ninth one:
+     the eight positions are the contract, and nothing that is not a chip
+     belongs among them. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 1.4fr);
 }
 
 .status-plate {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   align-items: stretch;
+  min-height: var(--plate-h);
   min-width: 0;
-  background: linear-gradient(180deg, var(--surface-alt), var(--surface));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-shadow:
-    inset 0 1px 4px color-mix(in srgb, var(--shade) 42%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--lift) 4%, transparent);
 }
 
-
 .status-chip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  flex: 1 1 auto;
+  display: grid;
+  align-content: center;
+  gap: 2px;
   min-width: 0;
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   border: none;
   background: transparent;
   border-radius: 0;
-  color: var(--text-dim);
+  color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  text-align: left;
   text-decoration: none;
-  white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .status-chip:hover,
 .status-chip:focus-visible {
-  background: color-mix(in srgb, var(--lift) 6%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--lift) 5%, transparent);
   outline: none;
 }
 
 .status-chip-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   flex: none;
   border-radius: var(--radius-round);
   background: var(--text-dim);
@@ -2555,11 +3157,25 @@ body[data-page="servo"] .input-narrow {
 }
 
 .status-chip-label {
-  font-weight: 700;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
 
 .status-chip-value {
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2583,21 +3199,20 @@ body[data-page="servo"] .input-narrow {
   border-left: 1px solid var(--border);
 }
 
-/* Doing its job. */
-.status-chip-live {
-  color: var(--success);
-}
-
+/* Doing its job. The green is on the light; the value stays ink, because the
+   plate's job is to be read at a glance and eight coloured words is not a
+   glance. */
 .status-chip-live .status-chip-dot {
   background: var(--success);
   opacity: 1;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 55%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent);
 }
 
 /* Stopped or refused -- the one thing --danger says (#327). On this plate
    that is a latched estop, feet a failsafe is holding at zero, and a link
    that was up and is gone. A component nobody fitted and a mode the operator
-   chose are neither, and take no colour. */
+   chose are neither, and take no colour. This is the one state that colours
+   the word as well as the light: it is the one an operator must not miss. */
 .status-chip-stopped {
   color: var(--danger);
 }
@@ -2605,17 +3220,31 @@ body[data-page="servo"] .input-narrow {
 .status-chip-stopped .status-chip-dot {
   background: var(--danger);
   opacity: 1;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 55%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
-/* The whole plate's one freshness state, and the fixed line that says what a
-   press does. The freshness line is the only thing that moves with the age of
-   the readout: there is no per-chip marker, because everything on the plate
-   arrives on one stream and saying its age eight times repeats one fact. */
-.status-plate-freshness {
-  margin-top: var(--space-2xs);
-  color: var(--text-dim);
-  font-size: var(--fs-2xs);
+/* The whole plate's one freshness state and the fixed line that says what a
+   press does, together in the plate's ninth cell. The freshness line is the
+   only thing that moves with the age of the readout: there is no per-chip
+   marker, because everything on the plate arrives on one stream and saying its
+   age eight times repeats one fact. */
+.status-plate-freshness,
+.status-plate-affordance {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.4;
+}
+
+.status-plate-fresh {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-md);
+  min-width: 0;
+  /* The same seam the cells are divided by, so the compartment reads as part of
+     the plate rather than as something parked next to it. */
+  border-left: 1px solid var(--border);
 }
 
 .status-plate-region[data-freshness="finding-out"] .status-plate-freshness {
@@ -2628,9 +3257,7 @@ body[data-page="servo"] .input-narrow {
    docs/ui-copy-voice.md rule 12). It says what the press does; each chip's
    own text says what the droid is doing. Two surfaces that cannot drift. */
 .status-plate-affordance {
-  margin-top: var(--space-3xs);
   color: var(--text-dim);
-  font-size: var(--fs-2xs);
 }
 
 /* The Ignored Input Notice (CONTEXT.md, #324, #346).
@@ -2639,25 +3266,30 @@ body[data-page="servo"] .input-narrow {
    personally: a control is switched off and the notice says which droid state
    is off, so it is a Note, and colour is reserved for refusals and for what
    the builder can act on (#327, docs/ui-copy-voice.md rule 11). The route is
-   the only thing that looks like a link, because the route is the point. */
+   the only thing that looks like a link, because the route is the point.
+
+   It sits above the plate rather than in it: the plate's eight positions are
+   fixed and a notice that pushed one aside would move the cell an operator
+   reads by muscle memory. */
 .ignored-input-notice {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2xs) var(--space-xs);
-  margin-top: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--gutter);
+  border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   color: var(--text-dim);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
 }
 
 .ignored-input-route {
   color: var(--accent-bright);
   font-weight: 600;
 }
+
+
 
 
 .mono {
@@ -2877,7 +3509,7 @@ label.sound-search-field {
   border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
   background: color-mix(in srgb, var(--warning) 20%, transparent);
   color: var(--warning);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-hint);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -3764,18 +4396,6 @@ label.sound-search-field {
 }
 
 
-/* Status with icons */
-.status-with-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-ok::before { content: "✅"; }
-.status-warn::before { content: "⚠️"; }
-.status-error::before { content: "❌"; }
-.status-info::before { content: "ℹ️"; }
-
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-5px); }
@@ -3797,35 +4417,18 @@ label.sound-search-field {
 
 /* Responsive adjustments */
 @media (max-width: 480px) {
-  body {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-
-  h1 {
-    font-size: 1.3rem;
-  }
-
-  h3 {
-    font-size: 0.95rem;
-  }
-
   .card {
-    padding: 12px;
+    padding: var(--space-md);
   }
 
-  .topbar {
-    flex-direction: column;
+  /* The estop keeps its own 44 px floor whatever else folds (#327), so the
+     topbar gives up the brand's second line rather than the control. */
+  .subtitle {
+    display: none;
   }
 
   .status-pill {
     width: 100%;
-  }
-
-  nav a {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-    min-height: 44px;
   }
 
   .dpad-grid {
@@ -3883,127 +4486,174 @@ label.sound-search-field {
 .flex { display: flex !important; }
 .text-warning { color: var(--warning); }
 
+/* ---------------------------------------------------------------------------
+   Dashboard (ADR 0066).
+
+   Three plates in one bay - what this droid is, what it is doing, and the two
+   numbers the Status Plate leaves off - then the health signals and the
+   controller's log.
+   --------------------------------------------------------------------------- */
+
+.dash-top {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+}
+
+/* The identity plate is a readout: a label, a value, and the one line that
+   says where the value came from. No picture - data/dashboard.html has never
+   held one, and CONTEXT.md "Body View" puts a recognisable droid silhouette in
+   its _Avoid_ list, because the real drawing of the droid is an arrangement
+   and not a likeness (#317, ADR 0063). The Body View is C4's. */
+.build > div {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.build > div:first-child {
+  padding-top: 0;
+}
+
+.build > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.build dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.build dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-body);
+}
+
+.build dd .hint {
+  display: block;
+  margin-top: 2px;
+}
+
+/* One control and its cue, divided from the next by a seam rather than by a
+   card of its own. */
+.ctl + .ctl {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+.ctl h3 {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* What the droid is doing now, beside the control that changes it. */
+.ctl h3 .now {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 400;
+}
+
+.ctl .hint {
+  margin-top: var(--space-sm);
+}
+
+/* The two numbers the Status Plate deliberately leaves off (#324): telemetry
+   belongs to the Dashboard, and the plate carries what bites fastest. */
+.readouts {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.readout {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.readout:last-child {
+  border-bottom: 0;
+}
+
+.readout dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.readout dd {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-readout);
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout dd small {
+  margin-left: var(--space-2xs);
+  color: var(--text-faint);
+  font-size: var(--fs-sect);
+}
+
+.readout .hint {
+  display: block;
+  margin-top: 2px;
+}
+
 /* ---- Mood Selector ---- */
 .mood-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
 }
 
+/* The Mood buttons are .btn with a taller target: four answers to one
+   question, laid out two by two so the words have room at the rail's width.
+   Which Mood is which is the word, and nothing else - the emoji that used to
+   label them went with ADR 0066. */
 .mood-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 12px 6px;
-  background: var(--surface-alt);
-  color: var(--silver-bright);
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  min-height: 64px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mood-btn .mood-icon {
-  font-size: 1.4rem;
-  line-height: 1;
-}
-
-.mood-btn:hover {
-  border-color: var(--accent);
-  background: var(--border);
-  transform: translateY(-2px);
-  box-shadow: var(--elev-2);
-}
-
-.mood-btn:active {
-  transform: scale(0.96);
-}
-
-.mood-btn:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-
-.mood-btn.active {
-  border-color: var(--accent-bright);
-  background: var(--accent-dim);
-  color: var(--white);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
+  min-height: 44px;
 }
 
 /* The four Moods used to wear four hues when selected, which put amber on
    Mid-Awake and green on Awake+ - colour spent on a choice the builder made,
    not on a state they can act on. Selection is one thing and looks like one
-   thing: .mood-btn.active above. Which Mood is which is the icon and the word. */
+   thing. Which Mood is which is the word. */
+.mood-btn.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
 
 /* ---- Operation Mode ---- */
+/* Two mutually exclusive answers to one question, so the segmented control
+   rather than two buttons: .opmode-grid is the recess and .opmode-btn the
+   segments, both dressed by the anatomy's .seg above. */
 .opmode-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 12px;
+  display: flex;
 }
 
 .opmode-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 16px 10px;
-  background: var(--surface-alt);
-  color: var(--silver-bright);
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  min-height: 70px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.opmode-btn .opmode-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.opmode-btn:hover {
-  border-color: var(--accent);
-  background: var(--border);
-  transform: translateY(-2px);
-  box-shadow: var(--elev-2);
-}
-
-.opmode-btn:active {
-  transform: scale(0.96);
-}
-
-.opmode-btn:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-
-.opmode-btn.active {
-  color: var(--white);
+  min-height: 44px;
 }
 
 /* Drive and Stationary are both deliberate Commanded Modes. Stationary used to
    wear amber, which read as "something is wrong" for a mode the operator chose
    on purpose; both now look selected the same way. */
-.opmode-btn.drive.active,
-.opmode-btn.stationary.active {
-  border-color: var(--accent-bright);
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
-}
 
 /* ---- Board image on setup page ---- */
 .board-image-wrap {
@@ -5261,50 +5911,28 @@ label.sound-search-field {
 }
 
 /* Dome Control Card (Home Page) */
+/* The Dome Control disclosure is a <div> with a <button>, not a <details>,
+   because dome_control.js renders the dome drawing lazily on the first expand
+   and owns this header's aria-expanded. The shape is the anatomy's disclosure
+   (above); what is left here is the reset that keeps a <button> from being
+   dressed as one. */
 .dome-control-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   width: 100%;
-  padding: 0;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
-  font-size: inherit;
-  font-weight: inherit;
   color: inherit;
-  min-height: auto;
-  box-shadow: none;
-  transition: opacity 0.2s ease;
-}
-
-.dome-control-header:hover {
-  opacity: 0.8;
 }
 
 .dome-control-header:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.dome-control-toggle {
-  display: inline-block;
-  transition: transform 0.2s ease;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-}
-
-.dome-control-header[aria-expanded="true"] .dome-control-toggle {
-  transform: rotate(180deg);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .dome-control-body {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: var(--space-lg);
 }
 
 .dome-control-body.hidden {
@@ -5441,7 +6069,7 @@ label.sound-search-field {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs) var(--space-md);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
@@ -5456,7 +6084,7 @@ label.sound-search-field {
 .seq-rehearsal-lead,
 .seq-rehearsal-clear {
   margin: 0 0 var(--space-xs);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
@@ -5478,7 +6106,7 @@ label.sound-search-field {
   padding: var(--space-xs) var(--space-sm);
   border-left: 3px solid var(--border);
   background: var(--surface-alt);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .seq-rehearsal-finding.seq-rehearsal-warning {
@@ -5500,13 +6128,13 @@ label.sound-search-field {
 }
 
 .seq-rehearsal-code {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
 }
 
 .seq-rehearsal-badge {
   margin-top: var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .seq-rehearsal-badge > summary {
@@ -5532,7 +6160,7 @@ label.sound-search-field {
    --------------------------------------------------------------------------- */
 .parts-summary {
   color: var(--text-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   margin-block: var(--space-sm);
 }
 
@@ -5543,7 +6171,7 @@ label.sound-search-field {
 .parts-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .parts-table thead th {
@@ -5558,7 +6186,7 @@ label.sound-search-field {
   text-align: left;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
   color: var(--silver);
   padding: var(--space-lg) var(--space-sm) var(--space-2xs);
 }
@@ -5575,7 +6203,7 @@ label.sound-search-field {
 .parts-shorthand,
 .parts-kind {
   margin-left: var(--space-xs);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
 }
 
@@ -5591,7 +6219,7 @@ label.sound-search-field {
 
 .parts-gang {
   display: block;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
   color: var(--text-dim);
 }
 
@@ -5686,7 +6314,7 @@ label.sound-search-field {
   flex-wrap: wrap;
   gap: var(--space-xs) var(--space-sm);
   margin-block: var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
@@ -5699,7 +6327,7 @@ label.sound-search-field {
 .outputs-address {
   margin-left: var(--space-xs);
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
 }
 
@@ -5747,12 +6375,12 @@ label.sound-search-field {
   display: block;
   margin-top: var(--space-2xs);
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
   color: var(--text-dim);
 }
 
 .outputs-release {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sect);
   color: var(--text-dim);
 }
 
@@ -5774,7 +6402,7 @@ label.sound-search-field {
   margin-top: var(--space-2xs);
   min-height: 36px;
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .parts-find[hidden] {
@@ -5791,13 +6419,13 @@ label.sound-search-field {
 
 .parts-find-text {
   flex: 1 1 12rem;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .parts-find-run .btn {
   min-height: 36px;
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .outputs-bar.is-stale .outputs-now,
@@ -5822,6 +6450,12 @@ label.sound-search-field {
    The slider is the dial. It is the one control that must never be rebuilt
    under the pointer, which is a rule in data/parts.js rather than here; what
    this adds is that it is wide enough to drive a part with at the bench.
+
+   Every size here is one of the anatomy's type steps, picked by the job the
+   text does rather than by what it used to measure: a button is --fs-cell, a
+   sentence the panel says about the output is --fs-cell, a caption beside a
+   control is --fs-hint, and the commanded width is --fs-readout, the same step
+   the anatomy's own dial paints that number at.
    --------------------------------------------------------------------------- */
 .outputs-acts {
   white-space: nowrap;
@@ -5831,7 +6465,7 @@ label.sound-search-field {
   min-height: 36px;
   margin-right: var(--space-2xs);
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .outputs-acts .btn[hidden] {
@@ -5861,7 +6495,7 @@ label.sound-search-field {
 
 .cal-band {
   margin-bottom: var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
@@ -5880,10 +6514,14 @@ label.sound-search-field {
   min-width: 12rem;
 }
 
+/* The number the dial is standing at, and the one thing on this panel a builder
+   reads at arm's length while looking at the droid rather than at the page. The
+   floor is in ch of its own mono face, so it holds the widest string it can
+   ever show ("2500 µs") without the row reflowing as the value changes. */
 .cal-readout {
-  min-width: 6rem;
+  min-width: 7ch;
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
+  font-size: var(--fs-readout);
   color: var(--text);
 }
 
@@ -5898,14 +6536,14 @@ label.sound-search-field {
 .cal-acts .btn {
   min-height: 36px;
   padding: var(--space-2xs) var(--space-sm);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 /* An explanation for a control that moves something is visible text at the
    entrance, never hover-only: a tablet at the bench has no hover (ADR 0059). */
 .cal-hint {
   margin-right: var(--space-sm);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
 }
 
@@ -5919,13 +6557,13 @@ label.sound-search-field {
 .cal-ends {
   margin-bottom: var(--space-sm);
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
 .cal-note {
   min-height: 1.2em;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-cell);
 }
 
 .cal-note.success {
@@ -5942,4 +6580,219 @@ label.sound-search-field {
 
 .cal-resume[hidden] {
   display: none;
+}
+
+/* The frame's breakpoints sit here, at the foot of the stylesheet, rather
+   than beside the frame they override: several surfaces declare their own
+   grid at the same specificity further down the file, and a media block
+   written next to the base rule loses to every one of them. Measured at
+   820 px, where .dash-top's three-column base rule outranked both blocks
+   below and the Dashboard stayed in two columns past its own breakpoint. */
+/* ---------------------------------------------------------------------------
+   The frame's breakpoints (ADR 0066).
+
+   1100 px: the rail becomes a top strip and the Dashboard's bay goes to two
+   columns. 900 px: the bays stack and the Status Plate folds to two rows of
+   four. 1440 and 820 - the two widths #399 asks every surface to render at -
+   both land inside a stable layout rather than on a boundary.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .topbar-brand {
+    border-right: 0;
+  }
+
+  .topbar-where {
+    display: none;
+  }
+
+  #shell-nav,
+  #shell-content {
+    grid-column: 1;
+  }
+
+  #shell-nav {
+    grid-row: 2;
+  }
+
+  #shell-content {
+    grid-row: 3;
+    padding: var(--space-lg) var(--space-lg) var(--space-2xl);
+  }
+
+  nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs) var(--space-lg);
+    padding: var(--space-sm) var(--space-lg);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  nav a {
+    min-height: 32px;
+    padding: 0 var(--space-sm);
+    gap: var(--space-sm);
+  }
+
+  .nav-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+  }
+
+  .nav-group-head {
+    padding: 0 var(--space-sm) 0 0;
+  }
+
+  .nav-group-hint {
+    display: none;
+  }
+
+  .nav-group-links {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .rail-foot {
+    display: none;
+  }
+
+  .dash-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dash-top > section:last-child {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dash-top > section:last-child .readouts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-top > section:last-child .readout {
+    border-bottom: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    /* Two rows of four cells instead of one row of eight. */
+    --plate-h: 100px;
+  }
+
+  /* The estop's two lines go before the button does: a review of what a press
+     would do is worth less than the press itself. */
+  .shell-estop-lines,
+  .shell-estop-feedback {
+    display: none;
+  }
+
+  .bay {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bay > section + section {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dash-top,
+  .dash-top > section:last-child .readouts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .status-plate {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .status-plate-region .status-plate > *:nth-child(5) {
+    border-left: 0;
+  }
+
+  .status-plate > * {
+    border-top: 1px solid var(--border);
+  }
+
+  .status-plate > *:nth-child(-n + 4) {
+    border-top: 0;
+  }
+
+  .status-plate-region {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .status-plate-fresh {
+    padding: var(--space-2xs) var(--space-md);
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Print: ink on paper (ADR 0066).
+
+   A printed bench sheet is a record of what the droid was, so the chrome goes -
+   nothing on paper is pressable - and the tokens are re-pointed at paper for
+   the duration. This is deliberately NOT a light theme: #327 stands, nothing
+   here is switchable on screen, and a reader who wants light gets it by
+   printing.
+   --------------------------------------------------------------------------- */
+@media print {
+  :root {
+    --bg: var(--paper);
+    --surface: var(--paper);
+    --surface-alt: var(--paper);
+    --well: var(--paper);
+    --border: var(--paper-line);
+    --border-strong: var(--paper-line);
+    --text: var(--paper-ink);
+    --text-dim: var(--paper-ink);
+    --text-faint: var(--paper-ink);
+    --silver: var(--paper-ink);
+    --silver-bright: var(--paper-ink);
+    --white: var(--paper-ink);
+  }
+
+  body {
+    display: block;
+    padding: 0;
+    min-height: 0;
+  }
+
+  #shell-top,
+  #shell-nav,
+  #shell-status,
+  .title .acts,
+  .stale-banner {
+    display: none !important;
+  }
+
+  #shell-content {
+    max-width: none;
+    padding: 0;
+  }
+
+  .card,
+  .bay,
+  .panel,
+  details.disclose {
+    break-inside: avoid;
+  }
+
+  /* A disclosure prints what it holds: paper has no affordance to open one. */
+  details.disclose > .disclose-body {
+    display: block !important;
+  }
 }

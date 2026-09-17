@@ -387,10 +387,13 @@ test("the chrome that points at that screen calls it by the same name", async ()
 
 test("no other surface was renamed, and every name still comes from SURFACES", async () => {
   const env = await boot();
+  // The whole of the link's text, with nothing stripped off the front. It used
+  // to carry an emoji and a space that this read past; ADR 0066 retired that,
+  // and the icon is now an <svg> that contributes no text at all - so the
+  // visible name is the entire string and the assertion can say so.
   const names = env.document.querySelectorAll("[data-surface-link]").map((link) => link.textContent.trim());
-  const withoutIcon = (text) => text.replace(/^\S+\s+/, "");
   assert.deepEqual(
-    [...new Set(names.map(withoutIcon))].sort(),
+    [...new Set(names)].sort(),
     ["Dashboard", "Dome", "Firmware", "Foot Drive", "Parts", "RC Control", "Sequences", "Servos", "Setup", "Sound", "WiFi"],
     "one rename, the other nine surfaces untouched, and Parts added under its own name (#347)",
   );

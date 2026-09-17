@@ -1,0 +1,13 @@
+diff --git i/data/app.js w/data/app.js
+index 97f3ee16..8074a9c9 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -231,7 +231,7 @@
+     const parts = Object.keys(HEALTH_SUMMARY_WORDS)
+       .filter((state) => counted.get(state))
+       .map((state) => `${counted.get(state)} ${HEALTH_SUMMARY_WORDS[state]}`);
+-    healthSummary.textContent = [`${signals.length} signals`, ...parts].join(" \u00b7 ");
++    healthSummary.textContent = `${signals.length} signals`;
+   };
+ 
+   let renderedComponentIds = null;

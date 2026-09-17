@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parts - artoo</title>
+  <link rel="stylesheet" href="anatomy.css">
+  <!-- Which board this mockup is showing, from ?board=. In the head so the
+       answer is stamped on <html> before the first frame. -->
+  <script src="board.js"></script>
+  <!-- #398 mockup: Parts, drawn to the Surface Anatomy (ADR 0066). Both
+       projections of the one mapping, one unwired row mid-way through Find by
+       Moving, and the calibration dial where pattern 5 puts it: a panel below
+       the table that follows the row you press Calibrate on. Opens from a
+       file; talks to nothing. Part names and shorthand are the catalog's
+       (docs/droid-parts.yaml); the wiring is fictional. -->
+</head>
+<body data-page="parts">
+  <script>window.PA_STATE = { page: "parts", build: "MrBaddeley MK4" };</script>
+  <header id="shell-top"></header>
+
+  <div class="frame">
+    <nav id="shell-nav"></nav>
+
+    <main>
+      <div class="title">
+        <div>
+          <h1>Parts</h1>
+          <p class="question">Which output moves each part, and what does each output move?</p>
+          <!-- A moved thing leaves a forwarding address (pattern 12). Whether
+               Servos retires is #364's; the anatomy has the place either way. -->
+          <p class="forward">Looking for Servos? The arm buttons and the typed-in calibration are <a href="#calpanel">Calibrate</a> on each row here.</p>
+        </div>
+      </div>
+
+      <!-- The Droid Build is stated at the head, because it decides which parts are offered and drawn (#288). -->
+      <div class="buildline">
+        <span class="k">Droid Build</span>
+        <span><b>MrBaddeley MK4</b> · complex dome · complex body</span>
+        <span class="hint">46 parts seeded · 10 fitted here · 4 on an output</span>
+        <span class="spacer"></span>
+        <button class="btn btn-sm" type="button">Change the build</button>
+      </div>
+
+      <!-- Projection 1: by part. Answers "which output moves this part". -->
+      <div class="panel">
+        <div class="sect"><h2>Parts</h2><span class="sub">58 parts · 4 on an output · 54 not wired</span></div>
+        <div class="tbl-scroll">
+          <table class="tbl" id="parts-table">
+            <thead>
+              <tr><th class="pin">Part</th><th>Driven by</th><th class="act">On this part</th></tr>
+            </thead>
+            <tbody id="parts-rows"></tbody>
+          </table>
+        </div>
+        <p class="feedback">Left body door and Right body door are on one lead, AUX1, so they move together. Upper utility arm is being calibrated below.</p>
+      </div>
+
+      <!-- Pattern 5: the calibration dial is a panel below the table, never a
+           modal, with every control present at once. It follows the row you
+           pressed Calibrate on, and says so. Amber because ARM1 has no
+           captured ends yet (#327: an uncalibrated Output before its first move). -->
+      <section class="calpanel" id="calpanel" aria-labelledby="cal-title">
+        <div class="sect">
+          <h2 id="cal-title">Calibrating</h2>
+          <span class="sub">Upper utility arm · ARM1 (ledc:0) · held · no ends captured yet</span>
+        </div>
+        <p class="hint" style="margin-bottom: var(--s3)">This panel follows whichever row you press Calibrate on. Turn until the arm reaches the end you want, then capture it. Every move here is a real servo.</p>
+        <div class="calbody">
+          <div class="caldial">
+            <svg viewBox="0 0 240 240" role="img" aria-label="Dial at 1500 microseconds, between 500 and 2500">
+              <circle class="ring" cx="120" cy="120" r="112"/>
+              <g class="ticks" id="dial-ticks"></g>
+              <path class="arc" id="dial-arc" d=""/>
+              <line class="needle" id="dial-needle" x1="120" y1="120" x2="120" y2="24"/>
+              <circle class="hub" cx="120" cy="120" r="64"/>
+              <text class="ro" x="120" y="126">1500</text>
+              <text class="ro-unit" x="120" y="146">µs commanded</text>
+              <text class="end" x="28" y="214">500</text>
+              <text class="end" x="184" y="214">2500</text>
+            </svg>
+          </div>
+          <div class="calctl">
+            <label class="field">
+              <span>Position · drag to move the arm</span>
+              <input type="range" min="500" max="2500" step="1" value="1500" aria-label="Commanded pulse width in microseconds">
+            </label>
+            <div class="nudge" role="group" aria-label="Nudge">
+              <button class="btn btn-sm" type="button">-10</button>
+              <button class="btn btn-sm" type="button">-1</button>
+              <input type="number" min="500" max="2500" step="1" value="1500" aria-label="Pulse width in microseconds">
+              <span class="hint">µs</span>
+              <button class="btn btn-sm" type="button">+1</button>
+              <button class="btn btn-sm" type="button">+10</button>
+            </div>
+            <div class="capture" role="group" aria-label="Capture the ends">
+              <button class="btn" type="button"><span>Set MIN</span><span class="val">not captured</span></button>
+              <button class="btn" type="button"><span>Set CENTER</span><span class="val">not captured</span></button>
+              <button class="btn" type="button"><span>Set MAX</span><span class="val">not captured</span></button>
+            </div>
+            <div class="note note-act calhint">
+              <b>Held while you adjust.</b> Pulses off, or closing this panel, makes the arm limp rather than closed. The hold ends on its own a few seconds after the last command and after ten minutes regardless; the arm goes limp and one press here resumes.
+            </div>
+            <div class="calactions">
+              <button class="btn" type="button" aria-pressed="false">
+                <svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pulses off
+              </button>
+              <label class="check"><input type="checkbox"> Reverse · swap the ends</label>
+              <span class="spacer"></span>
+              <button class="btn btn-quiet" type="button">Cancel</button>
+              <button class="btn btn-primary" type="button" disabled>Use these ends</button>
+              <span class="why">capture MIN and MAX first</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Projection 2: by output. Answers "what does this output move". -->
+      <div class="panel">
+        <div class="sect"><h2>Outputs</h2><span class="sub">5 outputs · 3 driving parts · 0 wired but switched off · 2 with no part</span></div>
+        <div class="tbl-scroll">
+          <table class="tbl" id="outputs-table">
+            <thead>
+              <tr>
+                <th class="tick"><input type="checkbox" aria-label="Tick every output" checked></th>
+                <th class="pin">Output</th>
+                <th>Drives</th>
+                <th>Commanded position</th>
+                <th>Output Release</th>
+                <th class="act">On this output</th>
+              </tr>
+            </thead>
+            <tbody id="outputs-rows"></tbody>
+          </table>
+        </div>
+
+        <!-- Pattern 7: rows that tick boxes, and a row apart for rows that move
+             hardware. The count rides in the button label: the number is the warning. -->
+        <div class="bulk">
+          <span class="hint" style="flex-basis:auto">2 ticked</span>
+          <select aria-label="Output Release for the ticked outputs">
+            <option>Release 2 s after arrival</option>
+            <option>Release 5 s after arrival</option>
+            <option>Hold until the next command</option>
+          </select>
+          <button class="btn" type="button">Apply this release to all 2 ticked outputs</button>
+        </div>
+        <div class="bulk">
+          <button class="btn" type="button">Centre all 3 wired outputs</button>
+          <button class="btn" type="button">Switch off all 5 outputs</button>
+          <span class="hint">Moves are paced by the Cadence Floor, so three servos never start together. Switching off leaves an output limp, not moved.</span>
+        </div>
+        <p class="feedback">Both tables read one answer from the droid, once a second while this page is open. The bar is what is on the pin; the tick is where the move ends. Neither is where the horn really is.</p>
+      </div>
+    </main>
+  </div>
+
+  <div id="shell-status"></div>
+  <script src="chrome.js"></script>
+  <script>
+    // Fictional wiring over the real catalog. Groups in the order the body
+    // controller meets them: the body first, then the dome, then the escape
+    // hatch. No row is ever hidden (#296): 58 parts, most reading "not wired",
+    // which is the honest state of a droid mid-build.
+    const OUTPUTS = ["ARM1", "ARM2", "AUX1", "AUX2", "AUX3"];
+    const GROUPS = [
+      ["Body doors", [
+        ["Left body door", "", "AUX1", true, "moves with Right body door"],
+        ["Right body door", "", "AUX1", true, "moves with Left body door"],
+        ["Rear-left body door", "", "", true],
+        ["Rear-right body door", "", "", true],
+        ["Dataport door", "", "", true, null, "finding"],
+        ["Chargebay door", "", "", true],
+        ["Small long door", "", "", true],
+        ["Drawer", "", "", true],
+      ]],
+      ["Body arms", [
+        ["Upper utility arm", "", "ARM1", true, null, "shown"],
+        ["Lower utility arm", "", "ARM2", true],
+      ]],
+      ["Common Additions", [
+        ["Gripper arm", "", "", false],
+        ["Gripper claw", "", "", false],
+        ["Interface arm", "", "", false],
+        ["Interface tool", "", "", false],
+      ]],
+      ["Dome pie panels", [1, 2, 3, 4, 5, 6].map((n) => [`Dome pie ${n}`, `PP${n}`, "", true])],
+      ["Dome side panels", Array.from({ length: 14 }, (_, i) => [`Dome side panel ${i + 1}`, `P${i + 1}`, "", true])],
+      ["Dome lights", [
+        ["Magic Panel", "P5", "", true, null, null, "light"],
+        ["Small upper panel", "P6", "", true, null, null, "light"],
+        ["Rear PSI", "P8", "", true, null, null, "light"],
+        ["Rear Logic Display", "P9", "", true, null, null, "light"],
+        ["Front Logic Displays", "P12", "", true, null, null, "light"],
+        ["Front PSI", "P14", "", true, null, null, "light"],
+      ]],
+      ["Holoprojectors", [1, 2, 3].flatMap((n) => [
+        [`Holoprojector ${n} pan`, `HP${n}-1`, "", true],
+        [`Holoprojector ${n} tilt`, `HP${n}-2`, "", true],
+      ])],
+      ["Dome fixtures", [["Dome button 1", "", "", true, null, null, "fixture"], ["Dome button 2", "", "", true, null, null, "fixture"]]],
+      ["Other parts", Array.from({ length: 10 }, (_, i) => [`Other part ${i + 1}`, "", "", null])],
+    ];
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const select = (name, out) =>
+      `<select aria-label="Output that drives ${esc(name)}">` +
+      `<option${out ? "" : " selected"}>– not wired –</option>` +
+      OUTPUTS.map((o) => `<option${o === out ? " selected" : ""}>${o}</option>`).join("") + `</select>`;
+
+    const partRow = ([name, short, out, fitted, gang, state, kind]) => {
+      const shown = state === "shown" ? ' aria-selected="true"' : "";
+      const th = `<th scope="row" class="pin">${esc(name)}${short ? `<span class="shorthand">${short}</span>` : ""}` +
+        (kind === "light" ? ` <span class="pill">light</span>` : "") +
+        (fitted === false ? `<span class="sub-line">not fitted on this droid</span>` : "") + `</th>`;
+      if (kind === "fixture") {
+        return `<tr>${th}<td class="dim">nothing drives it · an orientation reference</td><td class="act"></td></tr>`;
+      }
+      let driven, act;
+      if (out) {
+        driven = `<span class="mono">${out}</span>` + (gang ? `<span class="sub-line ganged">${esc(gang)}</span>` : "");
+        act = `<button class="btn btn-sm" type="button"${shown ? ' aria-pressed="true"' : ""}>Calibrate</button>`;
+      } else if (state === "finding") {
+        // Find by Moving, mid-run, on the row it was started from (CONTEXT.md).
+        driven = `<div class="find"><span class="mono">nudging AUX2</span><span class="cue">spare output 1 of 2 · did the dataport door move?</span></div>`;
+        act = `<button class="btn btn-sm btn-primary" type="button">That one</button> <button class="btn btn-sm" type="button">Next</button> <button class="btn btn-sm btn-quiet" type="button">Stop</button>`;
+      } else if (fitted === false) {
+        driven = `<span class="notwired">– not wired –</span>`;
+        act = `<button class="btn btn-sm btn-quiet" type="button">Fit it</button>`;
+      } else {
+        driven = select(name, out);
+        act = `<button class="btn btn-sm" type="button" title="Nudges each spare output a little, one at a time; you say which one moved">Find by moving</button>`;
+      }
+      return `<tr${shown}>${th}<td>${driven}</td><td class="act">${act}</td></tr>`;
+    };
+
+    document.getElementById("parts-rows").innerHTML = GROUPS.map(([label, rows]) => {
+      const wired = rows.filter((r) => r[2]).length;
+      const count = `${rows.length} part${rows.length === 1 ? "" : "s"} · ${wired ? `${wired} on an output` : "none wired"}`;
+      return `<tr class="grp"><th class="pin" colspan="3">${label}<span class="sub">${count}</span></th></tr>` + rows.map(partRow).join("");
+    }).join("");
+
+    // Output-first rows: address order, the order the leads plug in (#318).
+    const OUT_ROWS = [
+      ["ARM1", "ledc:0", ["Upper utility arm"], 1500, 1500, "2 s after arrival", false, true],
+      ["ARM2", "ledc:1", ["Lower utility arm"], 1500, 1500, "2 s after arrival", true, false],
+      ["AUX1", "ledc:3", ["Left body door", "Right body door"], 1200, 1200, "2 s after arrival", true, false],
+      ["AUX2", "ledc:4", [], null, null, "Limp - no pulse", false, false],
+      ["AUX3", "ledc:5", [], null, null, "Limp - no pulse", false, false],
+    ];
+    const pct = (us) => `${(((us - 1000) / 1000) * 100).toFixed(1)}%`;
+    const outRow = ([name, addr, parts, now, target, release, ticked, shown]) => {
+      const pos = now === null
+        ? `<div class="pos off"><div class="pos-bar"></div><span class="pos-us dim">no pulse</span></div>`
+        : `<div class="pos"><div class="pos-bar"><div class="pos-now" style="width:${pct(now)}"></div><div class="pos-tick" style="left:${pct(target)}"></div></div><span class="pos-us">${now} µs</span></div>`;
+      const drives = parts.length
+        ? parts.join(" + ") + (parts.length > 1 ? `<span class="sub-line ganged">one lead, two parts · a Rehearsal Warning, not a refusal</span>` : "")
+        : `<select aria-label="Put a part on ${name}"><option>Put a part on ${name}…</option><option>Dataport door</option><option>Chargebay door</option><option>Drawer</option></select>`;
+      const act = parts.length
+        ? `<button class="btn btn-sm" type="button"${shown ? ' aria-pressed="true"' : ""}>Calibrate</button>`
+        : `<span class="why">wire a part first</span>`;
+      return `<tr${shown ? ' aria-selected="true"' : ""}>` +
+        `<td class="tick"><input type="checkbox" aria-label="Tick ${name}"${ticked ? " checked" : ""}></td>` +
+        `<th scope="row" class="pin">${name}<span class="sub-line">${addr}</span></th>` +
+        `<td>${drives}</td><td>${pos}</td><td class="mono dim">${release}</td><td class="act">${act}</td></tr>`;
+    };
+    document.getElementById("outputs-rows").innerHTML = OUT_ROWS.map(outRow).join("");
+
+    // The dial: 50 ticks round the ring, an arc from 500 to the commanded
+    // width, the needle on the same angle. Static here; C1d builds the live one.
+    const ticks = [];
+    for (let i = 0; i <= 50; i++) {
+      const a = (-135 + (270 * i) / 50) * (Math.PI / 180);
+      const r1 = i % 5 === 0 ? 96 : 102, r2 = 108;
+      ticks.push(`<line x1="${120 + r1 * Math.sin(a)}" y1="${120 - r1 * Math.cos(a)}" x2="${120 + r2 * Math.sin(a)}" y2="${120 - r2 * Math.cos(a)}" stroke-width="${i % 5 === 0 ? 1.6 : 1}"/>`);
+    }
+    document.getElementById("dial-ticks").innerHTML = ticks.join("");
+    const angle = (us) => (-135 + (270 * (us - 500)) / 2000) * (Math.PI / 180);
+    const pt = (us, r) => `${120 + r * Math.sin(angle(us))} ${120 - r * Math.cos(angle(us))}`;
+    document.getElementById("dial-arc").setAttribute("d", `M ${pt(500, 90)} A 90 90 0 0 1 ${pt(1500, 90)}`);
+    const n = document.getElementById("dial-needle");
+    n.setAttribute("x2", 120 + 100 * Math.sin(angle(1500)));
+    n.setAttribute("y2", 120 - 100 * Math.cos(angle(1500)));
+  </script>
+</body>
+</html>
