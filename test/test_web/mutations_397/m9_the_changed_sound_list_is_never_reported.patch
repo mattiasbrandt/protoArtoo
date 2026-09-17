@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..0875d666 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1144,7 +1144,7 @@
+     if (!soundListChangedWarning) return;
+     const sentences = [];
+     if (catalogSupported && hasSavedChirpBindings()) {
+-      if (soundListChanged) {
++      if (false) {
+         sentences.push(SOUND_LIST_CHANGED_WARNING);
+       }
+       if (!soundListChecked) {

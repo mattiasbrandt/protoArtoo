@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..d84783b3 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1114,7 +1114,7 @@
+     if (!catalogLimits) return;
+     const sentences = [];
+     if (catalogSupported && catalogReady) {
+-      if (catalogManifestIncomplete) {
++      if (false) {
+         sentences.push("Some banks did not arrive from the module, so this is not the whole card.");
+       }
+       if (catalogMissingNames === 1) {

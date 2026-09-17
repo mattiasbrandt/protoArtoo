@@ -158,6 +158,38 @@
     "Power this board from the 3.3 V jumper — a 5 V rail can kill the controller's receive pin. Put a file named MP3TRIGR.INI on the card with the line #BAUD 9600, or the board will not answer.";
   const MP3_RANGE_WARNING =
     "This module stops at 255. 254 is Stop's silent file and 255 is the boot clip — they will not play as random chatter.";
+  // The module checksums its own file names, so it notices a sound being added,
+  // removed or renamed -- which is what shifts the numbers a saved assignment
+  // points at. What it cannot notice is a file moved between pages under the
+  // same name, so the check not having run is worth saying separately rather
+  // than being folded into silence.
+  const SOUND_LIST_CHANGED_WARNING =
+    "The sound list has changed since these assignments were saved. Check the assigned sounds before using them.";
+  const SOUND_LIST_UNCHECKED_NOTE =
+    "The sound list could not be checked against these assignments.";
+  const CATALOG_STALE_NOTE = "This listing is from an earlier refresh.";
+  const CATALOG_PARTIAL_SUGGESTION_NOTE =
+    "Suggestions need the whole listing, and part of it is missing. Refresh the catalog first.";
+  // A full walk is 300 sounds and can wait 450 ms on each one, so a refresh
+  // running for minutes is ordinary. The page keeps waiting while the
+  // controller says the same refresh is still going, and stops here rather than
+  // waiting forever on a controller that has stopped moving.
+  const CATALOG_REFRESH_MAX_POLLS = 300;
+  const CATALOG_REFRESH_OUTCOMES = {
+    completed: { ok: true, text: "Catalog refreshed" },
+    blocked: {
+      ok: false,
+      text: "Catalog refresh did not run — the module's link was busy. Try again in a moment.",
+    },
+    failed: {
+      ok: false,
+      text: "Catalog refresh failed — the module did not answer.",
+    },
+    interrupted: {
+      ok: false,
+      text: "Catalog refresh stopped early. Refresh again when the droid is idle.",
+    },
+  };
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
   const volDisplay = document.getElementById("vol-display");
@@ -216,6 +248,8 @@
   const chirpCatalogCard = document.getElementById("chirp-catalog-card");
   const catalogRows = document.getElementById("catalog-rows");
   const catalogStatus = document.getElementById("catalog-status");
+  const catalogLimits = document.getElementById("catalog-limits");
+  const soundListChangedWarning = document.getElementById("sound-list-changed-warning");
   const catalogFeedback = document.getElementById("catalog-feedback");
   const catalogFilterInput = document.getElementById("catalog-filter");
   const catalogBankTabs = document.getElementById("catalog-bank-tabs");
@@ -235,7 +269,23 @@
   let catalogReady = false;
   let catalogBanks = [];
   let catalogEntries = [];
-  let catalogBankFilter = 0;
+  // Which bank tab is selected, as "<bank>:<page>" -- empty means All banks. A
+  // bank number alone is not an address: 2A and 2B are different pages of bank
+  // 2 with different sounds in them, and filtering on the number showed both
+  // under either tab.
+  let catalogBankFilter = "";
+  // What the controller said the last discovery could not see, and whether the
+  // listing on screen came from the refresh the operator last asked for.
+  let catalogManifestIncomplete = false;
+  let catalogMissingNames = 0;
+  let catalogEntryCapReached = false;
+  let catalogStale = false;
+  // The refresh the controller is reporting on. Queue acceptance and refresh
+  // completion are different events, so the page watches its own request
+  // number rather than reading "some catalog is ready" as "mine finished".
+  let catalogRefreshStatus = { request: 0, active: 0, settled: 0, state: "none" };
+  let soundListChanged = false;
+  let soundListChecked = false;
   let catalogFetchPromise = null;
   let catalogRefreshInFlight = false;
   let catalogAutoLoadAttempted = false;
@@ -366,7 +416,13 @@
       catalogReady = false;
       catalogBanks = [];
       catalogEntries = [];
-      catalogBankFilter = 0;
+      catalogBankFilter = "";
+      catalogManifestIncomplete = false;
+      catalogMissingNames = 0;
+      catalogEntryCapReached = false;
+      catalogStale = false;
+      soundListChanged = false;
+      soundListChecked = false;
       catalogAutoLoadAttempted = false;
       catalogBulkMode = false;
       catalogSelectedKeys.clear();
@@ -376,6 +432,7 @@
       if (catalogBankTabs) catalogBankTabs.innerHTML = "";
       if (catalogBulkTarget) catalogBulkTarget.value = "";
       if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+      renderCatalogLimits();
     } else if (!catalogReady && catalogEntries.length === 0 && !catalogAutoLoadAttempted) {
       catalogAutoLoadAttempted = true;
       if (catalogStatus && !catalogStatus.textContent) {
@@ -385,6 +442,7 @@
     }
     syncCatalogBulkUi();
     applyChirpBindingBadges();
+    renderSoundListWarning();
 
     setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
     setElementVisible(modTotalTracksRow, supportsStatusQuery && supportsTrackCount);
@@ -1018,17 +1076,13 @@
         .map((entry) => Number.parseInt(String(entry?.index ?? "0"), 10))
         .filter((index) => Number.isFinite(index) && index >= 1 && index <= TRACK_MAX);
 
-      let lo = 0;
-      let hi = 0;
-      if (indexes.length > 0) {
-        lo = Math.min(...indexes);
-        hi = Math.max(...indexes);
-      } else {
-        const count = Number.parseInt(String(bankRow?.count ?? "0"), 10);
-        if (!Number.isFinite(count) || count < 1) return;
-        lo = 1;
-        hi = Math.min(count, TRACK_MAX);
-      }
+      // Only what was actually listed. The old fallback built 1..count out of
+      // the bank's declared size when no entry had been listed for it, which is
+      // a range over sounds nobody has seen -- exactly the omitted entries a
+      // suggestion must not claim.
+      if (indexes.length === 0) return;
+      const lo = Math.min(...indexes);
+      const hi = Math.max(...indexes);
       if (lo < 1 || hi < lo) return;
 
       suggestions.push({
@@ -1047,6 +1101,60 @@
     return suggestions;
   };
 
+  // Missing banks and a listing cut off at the entry limit both leave sounds
+  // out of the catalog with no row to say so. A suggested category range spans
+  // lo..hi, so a range built over a listing with holes in it silently claims
+  // sounds nobody listed.
+  const catalogListingIsPartial = () => catalogManifestIncomplete || catalogEntryCapReached;
+
+  // What the operator is NOT seeing. Every one of these used to live only in a
+  // controller log line, which meant a catalog that was usable and a catalog
+  // that was whole looked exactly the same on screen.
+  const renderCatalogLimits = () => {
+    if (!catalogLimits) return;
+    const sentences = [];
+    if (catalogSupported && catalogReady) {
+      if (catalogManifestIncomplete) {
+        sentences.push("Some banks did not arrive from the module, so this is not the whole card.");
+      }
+      if (catalogMissingNames === 1) {
+        sentences.push("One sound came back without a name and is listed by its index.");
+      } else if (catalogMissingNames > 1) {
+        sentences.push(`${catalogMissingNames} sounds came back without a name and are listed by their index.`);
+      }
+      if (catalogEntryCapReached) {
+        sentences.push("The listing stopped at the controller's entry limit, so the end of the card is missing.");
+      }
+    }
+    if (catalogStale) {
+      sentences.push(CATALOG_STALE_NOTE);
+    }
+    catalogLimits.textContent = sentences.join(" ");
+    setElementVisible(catalogLimits, sentences.length > 0);
+  };
+
+  const hasSavedChirpBindings = () =>
+    Object.keys(chirpBindings || {}).length > 0 ||
+    Object.keys(chirpCategoryBindings || {}).length > 0;
+
+  // Shown beside the assignments themselves, because that is what a changed
+  // sound list invalidates. Saving stays available throughout: the builder is
+  // the one who decides what the new numbers should point at.
+  const renderSoundListWarning = () => {
+    if (!soundListChangedWarning) return;
+    const sentences = [];
+    if (catalogSupported && hasSavedChirpBindings()) {
+      if (soundListChanged) {
+        sentences.push(SOUND_LIST_CHANGED_WARNING);
+      }
+      if (!soundListChecked) {
+        sentences.push(SOUND_LIST_UNCHECKED_NOTE);
+      }
+    }
+    soundListChangedWarning.textContent = sentences.join(" ");
+    setElementVisible(soundListChangedWarning, sentences.length > 0);
+  };
+
   const syncCatalogSuggestionUi = () => {
     catalogSuggestedCategoryMappings = buildSuggestedCategoryMappings();
     const suggestionCount = catalogSuggestedCategoryMappings.length;
@@ -1055,7 +1163,8 @@
       catalogSuggestBtn.textContent = suggestionCount > 0
         ? `Apply suggestions (${suggestionCount})`
         : "Apply suggestions";
-      const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
+      const enabled = catalogSupported && catalogReady && soundHardwareEnabled &&
+        !catalogRefreshInFlight && suggestionCount > 0 && !catalogListingIsPartial();
       catalogSuggestBtn.disabled = !enabled;
       catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
     }
@@ -1077,6 +1186,10 @@
     }
     if (catalogRefreshInFlight) {
       showFeedback(catalogFeedback, "Wait for catalog refresh to finish.", false);
+      return false;
+    }
+    if (catalogListingIsPartial()) {
+      showFeedback(catalogFeedback, CATALOG_PARTIAL_SUGGESTION_NOTE, false);
       return false;
     }
 
@@ -1207,28 +1320,38 @@
     return select;
   };
 
+  // A tab's identity is the bank AND the page it names. The label always said
+  // both -- B2A and B2B -- while the filter kept only the number, so clicking
+  // B2B listed every bank 2 entry, page A included.
+  const catalogBankPageKey = (bank, page) => {
+    const bankNumber = Number.parseInt(String(bank ?? "0"), 10);
+    const pageLetter = String(page ?? "A").trim().toUpperCase() || "A";
+    return `${Number.isFinite(bankNumber) ? bankNumber : 0}:${pageLetter}`;
+  };
+
   const renderCatalogBankTabs = () => {
     if (!catalogBankTabs) return;
     catalogBankTabs.innerHTML = "";
     if (!catalogSupported) return;
 
-    const tabs = [{ bank: 0, label: "All banks" }, ...catalogBanks.map((bank) => ({
-      bank: Number(bank.bank) || 0,
-      label: `B${bank.bank}${bank.page || "A"}`
+    const tabs = [{ key: "", label: "All banks" }, ...catalogBanks.map((bank) => ({
+      key: catalogBankPageKey(bank?.bank, bank?.page),
+      label: `B${Number.parseInt(String(bank?.bank ?? "0"), 10) || 0}${String(bank?.page ?? "A").trim().toUpperCase() || "A"}`
     }))];
 
     tabs.forEach((tab) => {
+      const selected = catalogBankFilter === tab.key;
       const button = document.createElement("button");
-      button.className = `btn sound-btn-compact catalog-bank-tab${catalogBankFilter === tab.bank ? " accent" : ""}`;
+      button.className = `btn sound-btn-compact catalog-bank-tab${selected ? " accent" : ""}`;
       button.type = "button";
       button.textContent = tab.label;
       button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", catalogBankFilter === tab.bank ? "true" : "false");
+      button.setAttribute("aria-selected", selected ? "true" : "false");
       button.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
       button.setAttribute("aria-disabled", button.disabled ? "true" : "false");
       button.addEventListener("click", () => {
         if (catalogRefreshInFlight || !soundHardwareEnabled) return;
-        catalogBankFilter = tab.bank;
+        catalogBankFilter = tab.key;
         renderCatalogBankTabs();
         renderCatalogRows();
       });
@@ -1236,10 +1359,14 @@
     });
   };
 
+  // Selection and the bulk actions both run off this list, so filtering here is
+  // what keeps a bulk map from reaching a row the operator cannot see.
   const getVisibleCatalogEntries = () => {
     const query = catalogFilterInput?.value?.trim().toLowerCase() ?? "";
     return catalogEntries.filter((entry) => {
-      if (catalogBankFilter !== 0 && Number(entry.bank) !== catalogBankFilter) return false;
+      if (catalogBankFilter && catalogBankPageKey(entry?.bank, entry?.page) !== catalogBankFilter) {
+        return false;
+      }
       if (!query) return true;
       const haystack = `${entry.name ?? ""} ${entry.bank ?? ""}${entry.page ?? ""} ${entry.index ?? ""}`.toLowerCase();
       return haystack.includes(query);
@@ -1409,15 +1536,51 @@
           result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: window.PageBootstrap.CATALOG_DEADLINE_MS });
         }
         const data = result.data || {};
+
+        // The refresh ledger and the saved-bindings check are answered whether
+        // or not the controller could let this read at the catalog itself, so
+        // they are taken from every reply.
+        const refresh = (data && typeof data.refresh === "object" && data.refresh) || {};
+        catalogRefreshStatus = {
+          request: Number.parseInt(String(refresh.request ?? "0"), 10) || 0,
+          active: Number.parseInt(String(refresh.active ?? "0"), 10) || 0,
+          settled: Number.parseInt(String(refresh.settled ?? "0"), 10) || 0,
+          state: String(refresh.state ?? "none"),
+        };
+        const bindings = (data && typeof data.bindings === "object" && data.bindings) || {};
+        soundListChanged = Boolean(bindings.sound_list_changed);
+        soundListChecked = Boolean(bindings.sound_list_checked);
+        renderSoundListWarning();
+
+        // A read the controller refused because a refresh holds the catalog has
+        // learned nothing about the catalog. Overwriting the rows on this
+        // answer would blank a listing that is still perfectly good, so what is
+        // on screen stays exactly as it is (the same rule the shell applies to
+        // a poll that did not come back).
+        if (data.busy) {
+          return catalogReady;
+        }
+
         catalogReady = Boolean(data.ready);
         catalogBanks = Array.isArray(data.banks) ? data.banks : [];
         catalogEntries = Array.isArray(data.entries) ? data.entries : [];
+        const limits = (data && typeof data.limits === "object" && data.limits) || {};
+        catalogManifestIncomplete = Boolean(limits.manifest_incomplete);
+        catalogMissingNames = Number.parseInt(String(limits.missing_names ?? "0"), 10) || 0;
+        catalogEntryCapReached = Boolean(limits.entry_cap_reached);
         const validKeys = new Set(catalogEntries.map((entry) => catalogEntryKey(entry)));
         [...catalogSelectedKeys].forEach((key) => {
           if (!validKeys.has(key)) {
             catalogSelectedKeys.delete(key);
           }
         });
+        // A bank tab whose page is no longer in the listing would filter every
+        // row away with no way back except All banks.
+        if (catalogBankFilter &&
+            !catalogBanks.some((bankRow) =>
+              catalogBankPageKey(bankRow?.bank, bankRow?.page) === catalogBankFilter)) {
+          catalogBankFilter = "";
+        }
 
         if (catalogStatus) {
           if (!catalogReady) {
@@ -1435,6 +1598,7 @@
           }
         }
 
+        renderCatalogLimits();
         renderCatalogBankTabs();
         renderCatalogRows();
         return catalogReady;
@@ -1451,6 +1615,24 @@
     })();
     return catalogFetchPromise;
   };
+  // The controller answers which request settled and how. An outcome that is
+  // not "completed" may still leave the earlier listing on screen -- it is
+  // often the only one there is -- but it is labelled as the earlier one rather
+  // than reported as this refresh succeeding.
+  const reportRefreshOutcome = (state) => {
+    const outcome = CATALOG_REFRESH_OUTCOMES[state];
+    if (!outcome) {
+      showFeedback(catalogFeedback, `Catalog refresh ended: ${state}`, false);
+      catalogStale = catalogReady;
+      renderCatalogLimits();
+      return false;
+    }
+    catalogStale = !outcome.ok && catalogReady;
+    renderCatalogLimits();
+    showFeedback(catalogFeedback, outcome.text, outcome.ok);
+    return outcome.ok;
+  };
+
   const refreshCatalog = async () => {
     if (!window.PAApi || !catalogSupported) return false;
     if (catalogRefreshInFlight) {
@@ -1468,17 +1650,39 @@
         showFeedback(catalogFeedback, result.data?.error || "Refresh enqueue failed", false);
         return false;
       }
-
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
-        const ready = await loadCatalog();
-        if (ready) {
-          showFeedback(catalogFeedback, "Catalog refreshed", true);
-          return true;
-        }
+      // Accepting the command onto the queue is all this answer reports. Which
+      // request it accepted is what makes the difference between watching this
+      // refresh and reading an older catalog that happens to still be ready.
+      const requestId = Number.parseInt(String(result.data.request ?? "0"), 10);
+      if (!Number.isFinite(requestId) || requestId < 1) {
+        showFeedback(catalogFeedback, "The controller did not say which refresh it accepted.", false);
+        return false;
       }
 
-      showFeedback(catalogFeedback, "Catalog refresh still running. Try again in a moment.", false);
+      for (let attempt = 0; attempt < CATALOG_REFRESH_MAX_POLLS; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await loadCatalog();
+        if (catalogRefreshStatus.settled >= requestId) {
+          return reportRefreshOutcome(catalogRefreshStatus.state);
+        }
+        if (catalogRefreshStatus.request > requestId) {
+          showFeedback(catalogFeedback,
+                       "Another catalog refresh was started, so this one is no longer the current request.",
+                       false);
+          return false;
+        }
+        // Still queued or still running. The polling window ending is not the
+        // operation ending: unlocking here would let a second refresh be
+        // enqueued on top of the one still walking the card.
+      }
+
+      showFeedback(
+        catalogFeedback,
+        catalogRefreshStatus.active === requestId
+          ? "Catalog refresh is still running. Open Sound again in a moment."
+          : "Catalog refresh has not started yet. Open Sound again in a moment.",
+        false
+      );
       return false;
     } catch (error) {
       showFeedback(catalogFeedback, `Catalog refresh failed: ${getApiErrorMessage(error)}`, false);
@@ -2044,6 +2248,9 @@
         syncVolumeLabel();
       }
       applyChirpBindingBadges();
+      // Whether there are saved assignments at all decides whether a warning
+      // about them has anything to warn about.
+      renderSoundListWarning();
       renderCatalogRows();
     } catch (_error) {
       // No dedicated feedback surface for initial track hydration.

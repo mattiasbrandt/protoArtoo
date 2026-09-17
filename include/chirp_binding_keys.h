@@ -51,6 +51,14 @@ inline const char* chirpBindingNvsKey(const char* key) {
     return nullptr;
 }
 
+// The sound-list checksum saved beside the bindings: the module's own MSUM at
+// the moment the builder last saved an assignment. Comparing it at boot and
+// after each refresh is what makes an index renumber -- a file added, removed
+// or renamed in Banks 2-6 -- visible against assignments that still address the
+// old numbering (#397 work item 4). Eight characters, inside the
+// 15-character ESP-IDF Preferences key ceiling the note above records.
+inline constexpr const char* CHIRP_SOUND_LIST_CHECKSUM_KEY = "chr_msum";
+
 struct ChirpCategoryBindingMapEntry {
     const char* loKey;
     const char* hiKey;

@@ -44,14 +44,14 @@ static HardwareSerial s_chirpSerial(UART_PORT_AUDIO);
 static const char* TAG = "ChirpDrv";
 static uint32_t s_lastNoRspDiagMs = 0;
 static constexpr uint32_t CHIRP_GNME_WAIT_MS = 450u;
-static constexpr uint32_t CHIRP_GNME_READLINE_MS = 120u;
+static constexpr uint32_t CHIRP_GNME_FRAME_MS = 120u;
 static constexpr uint8_t CHIRP_RX_DRAIN_YIELD_BYTES = 32u;
 // LIST is a whole console dump -- roughly 25 lines, ~1 s of it at 9600 baud --
 // and all of it has to be consumed here, so the budget is per-dump rather than
 // per-line. Two silent read windows in a row mean the module has stopped
 // sending: LIST is written in one pass, so there are no 100 ms gaps inside it.
 static constexpr uint32_t CHIRP_LIST_REPLY_MS = 1500u;
-static constexpr uint32_t CHIRP_LIST_READLINE_MS = 100u;
+static constexpr uint32_t CHIRP_LIST_FRAME_MS = 100u;
 static constexpr uint8_t CHIRP_LIST_QUIET_WINDOWS = 2u;
 // The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
 // this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
@@ -64,7 +64,8 @@ static constexpr uint8_t CHIRP_STAT_STREAM_COUNT = 3u;
 // + ",99" is 79 bytes, ~82 ms at 9600 baud.
 static constexpr uint32_t CHIRP_STAT_REPLY_MS = 200u;
 // streams[n].filename is char[64] in the module, so 79 characters is the
-// longest reply it can print and a filled buffer means something else arrived.
+// longest reply it can print; a frame that does not fit this is not a STAT
+// reply and readFrame() reports it as oversized rather than truncating it.
 static constexpr uint8_t CHIRP_STAT_LINE_MAX = 96u;
 static constexpr size_t CHIRP_STAT_PATH_MAX = 64u;
 
@@ -83,23 +84,68 @@ static const AudioSerialIO kChirpProductionIO {
     chirpWriteByte, chirpRxAvailable, chirpRxRead, chirpDelayMs, chirpMillisNow,
 };
 
-// Read one \r\n-terminated ASCII line via m_io. Stops at '\n', '\r' discarded.
+// -----------------------------------------------------------------------------
+// readFrame()
+// One whole '\n'-terminated line via m_io, or nothing.
+//
+// The module's replies are paced by the wire: "STAT:playing," plus a 63-byte
+// path is 79 bytes, ~82 ms at 9600 baud, and a queued reply can start arriving
+// near the end of a caller's read window. The previous reader returned whatever
+// it had when its window expired, so a caller could read half a NAME line as a
+// whole one -- "NAME:1,,5,gener" parses, and stores a track called "gener" --
+// and then read the tail as a second line. Bytes now stay in m_rxLine until
+// their terminator arrives, so the caller's own operation deadline bounds a
+// partial line and every parser only ever sees a complete frame (#397 item 12).
+//
 // Yields Core 0 while waiting to keep WiFi/web tasks responsive.
-uint8_t AudioDriverChirp::readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
-    if (maxLen == 0) { return 0; }
-    uint32_t start = m_io.millisNow();
-    uint8_t pos = 0;
-    while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && pos < maxLen - 1u) {
-        if (m_io.rxAvailable()) {
-            char c = (char)m_io.rxRead();
-            if (c == '\n') { break; }
-            if (c != '\r') { buf[pos++] = c; }
-        } else {
-            m_io.delayMs(1);
-        }
+// -----------------------------------------------------------------------------
+ChirpFrame AudioDriverChirp::readFrame(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
+    if (buf == nullptr || maxLen == 0) {
+        return ChirpFrame::None;
     }
-    buf[pos] = '\0';
-    return pos;
+    buf[0] = '\0';
+    const uint32_t start = m_io.millisNow();
+
+    while ((uint32_t)(m_io.millisNow() - start) < timeoutMs) {
+        if (!m_io.rxAvailable()) {
+            m_io.delayMs(1);
+            continue;
+        }
+        const char c = (char)m_io.rxRead();
+
+        if (c == '\n') {
+            const uint8_t len = m_rxLineLen;
+            const bool wasDiscarding = m_rxDiscardToTerminator;
+            m_rxLineLen = 0;
+            m_rxDiscardToTerminator = false;
+            if (wasDiscarding || len >= maxLen) {
+                // Either longer than any frame the module prints, or longer
+                // than this caller's buffer. Both are reported rather than
+                // truncated, and the next frame starts clean either way.
+                return ChirpFrame::Oversized;
+            }
+            memcpy(buf, m_rxLine, len);
+            buf[len] = '\0';
+            return ChirpFrame::Complete;
+        }
+        if (m_rxDiscardToTerminator || c == '\r') {
+            continue;
+        }
+        if (m_rxLineLen >= (uint8_t)(sizeof(m_rxLine) - 1u)) {
+            m_rxDiscardToTerminator = true;
+            m_rxLineLen = 0;
+            continue;
+        }
+        m_rxLine[m_rxLineLen++] = c;
+    }
+
+    return ChirpFrame::None;
+}
+
+void AudioDriverChirp::resetFrameAssembly() {
+    m_rxLineLen = 0;
+    m_rxDiscardToTerminator = false;
+    m_rxLine[0] = '\0';
 }
 
 static char normalizePage(char page) {
@@ -126,6 +172,16 @@ static char derivePageFromDirName(const char* dirName) {
     return 'A';
 }
 
+// One "BANK:<n>,<dir>,<count>" row.
+//
+// The directory field is allowed to be EMPTY, and only for Bank 1:
+// handleGman() prints "BANK:1,%s,%d" over bank1DirName, which is the empty
+// string on a card with no 1x_ directory (CHIRP serial_commands.cpp). Rejecting
+// that row was a real cost -- sawBank1 stayed false, so every discovery spent a
+// whole LIST dump recovering a count the module had already sent -- and an
+// empty dirName is exactly what a LIST-recovered Bank 1 row carries anyway: the
+// module named no directory. An SD bank always has one, so an empty directory
+// there is a malformed row and still fails.
 static bool parseBankLine(const char* line, AudioCatalogBank* out) {
     if (line == nullptr || out == nullptr) {
         return false;
@@ -146,7 +202,10 @@ static bool parseBankLine(const char* line, AudioCatalogBank* out) {
     while (*p != '\0' && *p != ',') {
         ++p;
     }
-    if (p == dirStart || *p != ',') {
+    if (*p != ',') {
+        return false;
+    }
+    if (p == dirStart && bankVal != 1u) {
         return false;
     }
 
@@ -348,19 +407,29 @@ uint16_t AudioDriverChirp::queryBank1CountFromList() {
     const uint32_t startMs = m_io.millisNow();
 
     while ((uint32_t)(m_io.millisNow() - startMs) < CHIRP_LIST_REPLY_MS) {
-        uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_LIST_READLINE_MS);
+        const ChirpFrame frame = readFrame(line, (uint8_t)sizeof(line), CHIRP_LIST_FRAME_MS);
         cooperativeCatalogYield();
-        if (n == 0) {
-            // n == 0 is either an empty line -- handleList() opens with
-            // println("\n=== Bank 1 (Flash) ===\n"), so the first line of the
-            // dump is empty -- or a window in which nothing arrived. Only the
-            // second ends the dump, so check the reader rather than the line.
-            if (m_io.rxAvailable() == 0 && ++quietWindows >= CHIRP_LIST_QUIET_WINDOWS) {
+        if (frame == ChirpFrame::None) {
+            // Nothing finished inside this window. handleList() opens with
+            // println("\n=== Bank 1 (Flash) ===\n"), so an EMPTY line is part of
+            // the dump -- but that arrives as a Complete frame of length zero,
+            // not as silence. What a window can also end on is the middle of a
+            // long line, and that is the module still talking: only a window
+            // that finished nothing AND is assembling nothing is quiet. Two of
+            // those in a row end the dump.
+            if (frameInProgress()) {
+                quietWindows = 0;
+                continue;
+            }
+            if (++quietWindows >= CHIRP_LIST_QUIET_WINDOWS) {
                 break;
             }
             continue;
         }
         quietWindows = 0;
+        if (frame != ChirpFrame::Complete) {
+            continue;  // an over-long console line; the next frame starts clean
+        }
 
         if (count == 0 && strncmp(line, "Sounds:", 7) == 0) {
             char* end = nullptr;
@@ -390,6 +459,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
             drainedBytes = 0;
         }
     }
+    resetFrameAssembly();
 
     sendCommand("GMAN");
     cooperativeCatalogYield();
@@ -397,12 +467,15 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint32_t startMs = m_io.millisNow();
     bool gotValidGmanLine = false;
     uint32_t rxBytes = 0;
+    uint16_t oversizedLines = 0;
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
     uint16_t droppedBankLines = 0;
     bool sawBank1 = false;
     bool sawMend = false;
     bool sawMdat = false;
+    bool sawMsum = false;
+    uint32_t soundListChecksum = 0;
     uint16_t declaredBankCount = 0;  // MDAT's count: Bank 1 plus every SD bank
     // Value-initialize catalog banks to respect declared defaults (page = 'A', etc.)
     for (uint8_t i = 0; i < AUDIO_CATALOG_MAX_BANKS; ++i) {
@@ -411,12 +484,20 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     char line[96];
 
     while ((uint32_t)(m_io.millisNow() - startMs) < timeoutMs) {
-        uint8_t n = readLine(line, (uint8_t)sizeof(line), 80u);
-        if (n == 0) {
+        const ChirpFrame frame = readFrame(line, (uint8_t)sizeof(line), 80u);
+        if (frame == ChirpFrame::None) {
             continue;
         }
-        rxBytes += n;
         cooperativeCatalogYield();
+        if (frame != ChirpFrame::Complete) {
+            // Bytes on the wire, but not a manifest frame. Counted as its own
+            // kind of link activity -- the module is plainly alive -- rather
+            // than added to rxBytes, which counts the bytes of frames that were
+            // actually read and would be a lie about a line nobody measured.
+            ++oversizedLines;
+            continue;
+        }
+        rxBytes += (uint32_t)strlen(line);
 
         bool isGmanLine = (strncmp(line, "MDAT:", 5) == 0) || (strncmp(line, "BANK:", 5) == 0) ||
                           (strncmp(line, "MSUM:", 5) == 0) || (strcmp(line, "MEND") == 0);
@@ -454,6 +535,20 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
             }
         }
 
+        if (strncmp(line, "MSUM:", 5) == 0) {
+            // The module's own checksum of its sound list. It was recognised as
+            // a frame marker and then thrown away, which is why a card whose
+            // files changed under a saved binding had nothing to notice it
+            // with. strtoul() saturates at ULONG_MAX rather than wrapping, so
+            // an out-of-range value is not read as some other CRC.
+            char* msumEnd = nullptr;
+            const unsigned long parsed = strtoul(line + 5, &msumEnd, 10);
+            if (msumEnd != line + 5 && parsed <= 0xFFFFFFFFul) {
+                sawMsum = true;
+                soundListChecksum = (uint32_t)parsed;
+            }
+        }
+
         if (strcmp(line, "MEND") == 0) {
             sawMend = true;
             break;
@@ -461,13 +556,13 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     }
 
     if (!gotValidGmanLine) {
-        if (rxBytes == 0) {
+        if (rxBytes == 0 && oversizedLines == 0) {
             PA_LOG_WARN(TAG,
                         "No CHIRP RX bytes during GMAN query. Verify CHIRP TX -> PIN_AUDIO_RX, common GND, and baud=9600.");
         } else {
             PA_LOG_WARN(TAG,
-                        "CHIRP RX activity seen (%u bytes) but no valid GMAN frame.",
-                        (unsigned)rxBytes);
+                        "CHIRP RX activity seen (%u bytes in frames, %u over-long lines) but no valid GMAN frame.",
+                        (unsigned)rxBytes, (unsigned)oversizedLines);
         }
         // No usable bank summary (no module, contested UART2, or garbled RX).
         // The bank array (~2.3 KB) is small and held to avoid alloc/free churn on
@@ -531,6 +626,11 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 
     m_catalogBankCount = catalogBankCount;
     m_totalTracks = bank1Count;
+    // What THIS read observed, including "nothing": a reply that lost its MSUM
+    // line has not shown the sound list unchanged, and saying so is what stops
+    // a truncated manifest from being read as reassurance.
+    m_soundListChecksum = sawMsum ? soundListChecksum : 0u;
+    m_soundListChecksumValid = sawMsum;
     return true;
 }
 
@@ -554,6 +654,11 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     m_catalogReady = false;
     m_catalogCount = 0;
     m_catalogBankCount = 0;
+    m_missingNameCount = 0;
+    m_entryCapReached = false;
+    m_soundListChecksum = 0;
+    m_soundListChecksumValid = false;
+    resetFrameAssembly();
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
@@ -643,7 +748,22 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
     sendCommand(cmd);
 }
 
+// -----------------------------------------------------------------------------
+// refreshCatalog()
+// GMAN for the bank summary, then one GNME per sound.
+//
+// The walk is long: up to AUDIO_CATALOG_MAX_ENTRIES names, each with its own
+// CHIRP_GNME_WAIT_MS deadline, so a card whose names go unanswered occupies the
+// calling task for minutes. cooperativeCatalogYield() lets the rest of Core 0
+// run, but it does not give the caller its own command queue back, so a Stop
+// stayed queued until the whole catalog had been walked. The interrupt
+// predicate is asked once per sound -- one 450 ms increment, never the whole
+// walk -- and an interrupted walk leaves the catalog NOT ready: its entry array
+// has already been overwritten in place, so there is no earlier catalog left to
+// keep and a half-walked one must not be served as a refreshed one.
+// -----------------------------------------------------------------------------
 bool AudioDriverChirp::refreshCatalog() {
+    m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Failed;
     if (domeUartOwnedBy(DOME_UART_DOME)) {
         return false;
     }
@@ -651,6 +771,12 @@ bool AudioDriverChirp::refreshCatalog() {
 
     if (!loadManifestBanks(2500u, false)) {
         m_catalogReady = false;
+        return false;
+    }
+    if (catalogInterruptRequested()) {
+        m_catalogReady = false;
+        m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Interrupted;
+        PA_LOG_INFO(TAG, "catalog refresh interrupted before the name walk started");
         return false;
     }
 
@@ -665,6 +791,8 @@ bool AudioDriverChirp::refreshCatalog() {
     // sees no entries while the array is swapped.
     m_catalogCount = 0;
     m_catalogReady = false;
+    m_missingNameCount = 0;
+    m_entryCapReached = false;
     if (!ensureEntryStorage((uint16_t)(total > AUDIO_CATALOG_MAX_ENTRIES
                                            ? AUDIO_CATALOG_MAX_ENTRIES : total))) {
         PA_LOG_WARN(TAG, "catalog entry storage alloc failed (%u entries); refresh skipped",
@@ -672,15 +800,26 @@ bool AudioDriverChirp::refreshCatalog() {
         return false;
     }
 
-    uint16_t missingNameCount = 0;
-
     for (uint8_t bankIdx = 0; bankIdx < m_catalogBankCount; ++bankIdx) {
         const AudioCatalogBank& bank = m_catalogBanks[bankIdx];
         for (uint16_t soundIndex = 1; soundIndex <= bank.count; ++soundIndex) {
+            if (catalogInterruptRequested()) {
+                m_catalogReady = false;
+                m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Interrupted;
+                PA_LOG_INFO(TAG,
+                            "catalog refresh interrupted after %u entries (bank %u index %u)",
+                            (unsigned)m_catalogCount, (unsigned)bank.bank, (unsigned)soundIndex);
+                return false;
+            }
             if (m_catalogCount >= m_catalogCapacity) {
+                // Usable, and not the whole card: everything from here on is
+                // absent from the catalog with no row to say so. Recorded so
+                // the API and the Sound page can, rather than only the log.
+                m_entryCapReached = true;
                 PA_LOG_WARN(TAG, "catalog entry cap reached (%u)",
                             (unsigned)m_catalogCapacity);
                 m_catalogReady = true;
+                m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Complete;
                 return true;
             }
 
@@ -695,11 +834,15 @@ bool AudioDriverChirp::refreshCatalog() {
             char line[112];
 
             while ((uint32_t)(m_io.millisNow() - startMs) < CHIRP_GNME_WAIT_MS) {
-                uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_GNME_READLINE_MS);
-                if (n == 0) {
+                const ChirpFrame frame =
+                    readFrame(line, (uint8_t)sizeof(line), CHIRP_GNME_FRAME_MS);
+                if (frame == ChirpFrame::None) {
                     continue;
                 }
                 cooperativeCatalogYield();
+                if (frame != ChirpFrame::Complete) {
+                    continue;  // over-long line, already dropped through its terminator
+                }
 
                 uint8_t respBank = 0;
                 char respPage = 'A';
@@ -740,18 +883,35 @@ bool AudioDriverChirp::refreshCatalog() {
                 entry.page = bank.page;
                 entry.index = soundIndex;
                 snprintf(entry.name, sizeof(entry.name), "index_%u", (unsigned)soundIndex);
-                ++missingNameCount;
+                ++m_missingNameCount;
             }
             cooperativeCatalogYield();
         }
     }
 
     m_catalogReady = true;
+    m_lastRefreshOutcome = AudioCatalogRefreshOutcome::Complete;
     PA_LOG_INFO(TAG, "catalog refresh done: banks=%u entries=%u missing_names=%u manifest=%s",
                 (unsigned)m_catalogBankCount, (unsigned)m_catalogCount,
-                (unsigned)missingNameCount,
+                (unsigned)m_missingNameCount,
                 m_manifestComplete ? "complete" : "INCOMPLETE");
     return true;
+}
+
+bool AudioDriverChirp::getSoundListChecksum(uint32_t* out) const {
+    if (!m_soundListChecksumValid) {
+        return false;
+    }
+    if (out != nullptr) {
+        *out = m_soundListChecksum;
+    }
+    return true;
+}
+
+void AudioDriverChirp::getCatalogCompleteness(AudioCatalogCompleteness& out) const {
+    out.manifestComplete = m_manifestComplete;
+    out.missingNameCount = m_missingNameCount;
+    out.entryCapReached = m_entryCapReached;
 }
 
 uint16_t AudioDriverChirp::getCatalogEntryCount() const {
@@ -990,6 +1150,7 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     configureChirpRx();
 
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    resetFrameAssembly();
 
     // Every default stream, asked one at a time. Stream 0 going idle while 1 or
     // 2 keep playing is the live lie: a beep that ended under a running piece
@@ -1019,17 +1180,22 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
             }
             // Wait for the whole line rather than a fixed slice of it: a
             // 63-character path needs ~80 ms to arrive at 9600 baud, and half a
-            // path left in the buffer poisons the next stream's reply.
-            // readLine() returns as soon as it sees '\n'.
-            uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_STAT_REPLY_MS - elapsed);
-            if (n == 0) {
+            // path handed to the parser is a status reply about a sound that
+            // does not exist. readFrame() returns as soon as it sees '\n', and
+            // holds anything shorter until the next window.
+            const ChirpFrame frame =
+                readFrame(line, (uint8_t)sizeof(line), CHIRP_STAT_REPLY_MS - elapsed);
+            if (frame == ChirpFrame::None) {
                 continue;
             }
-            rxBytes += n;
-            if (n >= (uint8_t)(sizeof(line) - 1u)) {
-                ++unparsableLines;  // filled the buffer with no terminator
+            if (frame != ChirpFrame::Complete) {
+                // Longer than any STAT reply the module prints. Counted as an
+                // unparsable line rather than added to rxBytes, which counts
+                // the bytes of frames that were read.
+                ++unparsableLines;
                 continue;
             }
+            rxBytes += (uint32_t)strlen(line);
 
             bool playing = false;
             char file[CHIRP_STAT_PATH_MAX] = {0};
@@ -1078,12 +1244,12 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     if (!out.linkOk) {
         uint32_t now = millis();
         if ((uint32_t)(now - s_lastNoRspDiagMs) > 5000u) {
-            if (rxBytes == 0) {
+            if (rxBytes == 0 && unparsableLines == 0) {
                 PA_LOG_WARN(TAG,
                             "No CHIRP RX bytes during STAT query. Verify return path CHIRP TX->S2 RX and shared GND.");
             } else {
                 PA_LOG_WARN(TAG,
-                            "CHIRP RX activity seen (%u bytes) but no valid STAT line (%u unparsable lines).",
+                            "CHIRP RX activity seen (%u bytes in frames) but no valid STAT line (%u unparsable lines).",
                             (unsigned)rxBytes, (unsigned)unparsableLines);
             }
             s_lastNoRspDiagMs = now;

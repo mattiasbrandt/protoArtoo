@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..8fc9519e 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1627,7 +1627,7 @@
+       renderCatalogLimits();
+       return false;
+     }
+-    catalogStale = !outcome.ok && catalogReady;
++    catalogStale = false;
+     renderCatalogLimits();
+     showFeedback(catalogFeedback, outcome.text, outcome.ok);
+     return outcome.ok;

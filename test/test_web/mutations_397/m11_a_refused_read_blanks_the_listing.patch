@@ -1,0 +1,13 @@
+diff --git i/data/sound.js w/data/sound.js
+index 3e35f4d5..cbd1fdce 100644
+--- i/data/sound.js
++++ w/data/sound.js
+@@ -1557,7 +1557,7 @@
+         // answer would blank a listing that is still perfectly good, so what is
+         // on screen stays exactly as it is (the same rule the shell applies to
+         // a poll that did not come back).
+-        if (data.busy) {
++        if (false) {
+           return catalogReady;
+         }
+ 
