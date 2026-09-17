@@ -10,6 +10,17 @@
 // not been heard from. These tests pin the two ends of that: a payload that
 // said nothing lights nothing, and a stream that drops after a good frame
 // leaves every row exactly as the controller last reported it.
+//
+// #402 left this surface one banner saying the stream had broken, beside the
+// Status Plate's own freshness line - the same fact in two aria-live regions on
+// one screen, announced twice. #399 removed the banner and kept the plate's
+// line, which is the better of the two because it carries the age. What was
+// asserted here as "the banner appears" is now asserted as "this surface writes
+// nothing at all about the stream", against a DECOY value planted in the
+// retired element: the harness answers getElementById for any id, so a test
+// that only read it back would pass against the code that still wrote to it.
+// The plate's line itself is driven for real in test_status_plate_346.js, which
+// boots the shipped shell.
 // =============================================================================
 
 import { test } from "node:test";
@@ -65,7 +76,16 @@ const mountDashboard = ({ model = healthSignals } = {}) => {
     stateOf: (id) => String(env.element(id).className).replace("indicator ", ""),
     textOf: (id) => String(env.element(`ht-${id.slice(2)}`).textContent),
     summary: () => String(env.element("health-summary").textContent),
-    bannerShown: () => env.element("status-stale-banner").style.display === "",
+    // A decoy in the element the banner used to be. Nothing on this surface may
+    // write to it; the pre-removal setStale wrote "" or "none" over exactly
+    // this, so the assertion is red against the code that carried the banner.
+    plantDecoy: () => {
+      env.element("status-stale-banner").style.display = "DECOY";
+      env.element("status-stale-banner").textContent = "DECOY";
+    },
+    decoyIntact: () =>
+      env.element("status-stale-banner").style.display === "DECOY" &&
+      env.element("status-stale-banner").textContent === "DECOY",
     send: (type, payload) => deliver(type, payload),
   };
 };
@@ -83,23 +103,58 @@ test("a Dashboard that has heard nothing lights nothing", () => {
 
 test("a stream that drops leaves every row on the state the controller reported", () => {
   const dash = mountDashboard();
+  dash.plantDecoy();
 
   dash.send("status", HEALTHY_FRAME);
   ROW_IDS.forEach((id) => assert.equal(dash.stateOf(id), "ok", `${id} should start nominal`));
   assert.equal(dash.summary(), "7 signals · 7 ok");
-  assert.equal(dash.bannerShown(), false, "no banner while the stream is running");
+  assert.ok(dash.decoyIntact(), "a good frame wrote to the retired stale banner");
 
   dash.send("stream_error", "");
 
-  // The surface says the stream broke exactly once, in its banner, beside the
-  // Status Plate's one freshness line. The rows themselves say nothing about
-  // age and change no colour.
-  assert.equal(dash.bannerShown(), true, "the stale banner is how this surface says the stream broke");
+  // The stream breaking is the Status Plate's one freshness line to report, and
+  // this surface adds nothing to it. The rows keep the state the controller
+  // last sent, say nothing about age, and change no colour.
+  assert.ok(
+    dash.decoyIntact(),
+    "this surface wrote its own freshness claim; the plate already carries the one for the screen",
+  );
   ROW_IDS.forEach((id) => {
     assert.equal(dash.stateOf(id), "ok", `${id} must keep the state the controller reported`);
     assert.doesNotMatch(dash.textOf(id), /stale/i, `${id} must not tell the operator about staleness`);
   });
   assert.equal(dash.summary(), "7 signals · 7 ok");
+});
+
+test("a fallback poll that keeps failing writes no freshness claim either", async () => {
+  // The other half of the same removal: with no event stream the surface polls,
+  // and the second failed poll in a row used to raise the same banner. The
+  // poll's own function is captured and driven here, which is what the shipped
+  // background poll does on its cadence.
+  const env = loadPageModule("app.js", {
+    respond: (path) =>
+      path === "/api/status"
+        ? Promise.reject(new Error("no response from controller"))
+        : { data: {} },
+    overrides: {
+      PAHealthSignals: healthSignals,
+      PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
+    },
+  });
+  await env.settle();
+  assert.ok(env.intervals.length > 0, "app.js must install a fallback poll when the stream is unsupported");
+  env.element("status-stale-banner").style.display = "DECOY";
+
+  for (let round = 0; round < 3; round += 1) {
+    env.intervals.forEach((timer) => timer.fn());
+    await env.settle();
+  }
+
+  assert.equal(
+    env.element("status-stale-banner").style.display,
+    "DECOY",
+    "a run of failed polls raised a banner this surface no longer carries",
+  );
 });
 
 test("a health module that never loaded reads not-reporting, not degraded", () => {

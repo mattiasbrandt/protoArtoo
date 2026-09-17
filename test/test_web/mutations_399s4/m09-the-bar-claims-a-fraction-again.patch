@@ -1,0 +1,14 @@
+diff --git i/data/firmware.js w/data/firmware.js
+index c4034b5b..e86c9340 100644
+--- i/data/firmware.js
++++ w/data/firmware.js
+@@ -53,8 +53,7 @@
+   // one. The sweep is the honest form of the same "something is happening".
+   const setIndeterminate = (bar, on) => {
+     if (!bar) return;
+-    bar.classList.toggle("indeterminate", on);
+-    if (on) bar.style.width = "";
++    if (on) bar.style.width = "50%";
+   };
+ 
+   const flashSuccess = sessionStorage.getItem('ota_flash_success');

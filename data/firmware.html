@@ -15,19 +15,28 @@
     <script>window.PAShellDelegate = true; location.replace("/#firmware");</script>
   </head>
   <body data-page="firmware">
-    <div id="shell-top"></div>
 
+    <!-- The title, and the question this surface answers (ADR 0066). Which
+         versions are on the droid right now is the footer's, on every screen,
+         so this surface carries the putting-there and not the reading-off. -->
+    <div class="title">
+      <div>
+        <h1>Firmware</h1>
+        <p class="question">How do you put a new build on the droid without reaching for a cable?</p>
+      </div>
+    </div>
 
     <div class="card">
-      <h3>💾 Firmware Update (.bin)</h3>
-      <div class="desc">Flash new firmware. Expects the compiled firmware binary (e.g. firmware.bin).</div>
-      <div class="desc mt-8 text-warning">
-        ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
+      <div class="sect"><h2>Controller firmware</h2><span class="sub">the program the droid runs</span></div>
+      <p class="prose">The controller's own code: drive, dome, sound, the radio and this web server. It arrives as one <code>.bin</code> the build produced, goes into the spare half of the flash, and only becomes the running firmware once the whole file has landed.</p>
+      <div class="note note-act">
+        <b>Keep the power on until the droid has restarted by itself.</b> Cutting power part-way through, or refreshing this page, leaves half an image behind.
       </div>
-      <div class="form-grid mt-16">
+      <div class="form-grid">
         <label class="field">
-          <span>Firmware File</span>
+          <span>Firmware file</span>
           <input id="fw-file" class="file-input" type="file" accept=".bin" aria-label="Select firmware file">
+          <span class="hint">The build writes it to <code>.pio/build/&lt;env&gt;/firmware.bin</code>. The wrong one leaves a controller that will not boot, and only a USB cable gets it back.</span>
         </label>
         <div id="fw-progress" class="fw-progress hidden">
           <div class="fw-progress-track">
@@ -35,25 +44,24 @@
           </div>
           <div id="fw-status" class="fw-progress-status" role="status" aria-live="polite" aria-atomic="true">Uploading...</div>
         </div>
-        <div class="button-row">
-          <button id="upload-fw-button" class="btn accent" type="button">📤 Upload and Flash</button>
+        <div class="button-row button-row-compact">
+          <button id="upload-fw-button" class="btn accent" type="button">Upload and flash</button>
         </div>
-        <div class="desc mt-8">⚠️ Wrong file will brick the device. Verify the filename before uploading.</div>
-        <div class="desc mt-8">Select a <code>.bin</code> firmware file, then click Upload and Flash. Keep power connected during the update. The controller reboots automatically when done — reconnect after it restarts.</div>
       </div>
+      <div id="fw-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Nothing uploaded yet.</div>
     </div>
-    <hr>
 
     <div class="card">
-      <h3>📁 Filesystem Update (.bin)</h3>
-      <div class="desc">Update the web UI files. Expects the LittleFS image (e.g. littlefs.bin).</div>
-      <div class="desc mt-8 text-warning">
-        ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
+      <div class="sect"><h2>Web UI files</h2><span class="sub">these pages, as one image</span></div>
+      <p class="prose">Every screen you are reading, packed into one filesystem image. It is a separate upload from the firmware above because the two change at different rates: a copy fix is a new web UI and the same controller code.</p>
+      <div class="note note-act">
+        <b>Keep the power on until the droid has restarted by itself.</b> A part-written filesystem leaves no web UI at all: the droid still drives and the serial Console still answers, but nothing in a browser does.
       </div>
-      <div class="form-grid mt-16">
+      <div class="form-grid">
         <label class="field">
-          <span>Filesystem Image</span>
+          <span>Filesystem image</span>
           <input id="fs-file" class="file-input" type="file" accept=".bin" aria-label="Select filesystem image file">
+          <span class="hint">Build it with <code>pio run -e &lt;env&gt; --target buildfs</code> and take <code>.pio/build/&lt;env&gt;/littlefs.bin</code>. It is the other <code>.bin</code> in that directory; the firmware one erases the web UI.</span>
         </label>
         <div id="fs-progress" class="fw-progress hidden">
           <div class="fw-progress-track">
@@ -61,24 +69,25 @@
           </div>
           <div id="fs-status" class="fw-progress-status" role="status" aria-live="polite" aria-atomic="true">Uploading...</div>
         </div>
-        <div class="button-row">
-          <button id="upload-fs-button" class="btn accent" type="button">📤 Upload Filesystem</button>
+        <div class="button-row button-row-compact">
+          <button id="upload-fs-button" class="btn accent" type="button">Upload the web UI</button>
         </div>
-        <div class="desc mt-8">⚠️ Wrong file will erase the web UI. Verify the filename before uploading.</div>
-        <div class="desc mt-8">Build with <code>pio run -e &lt;env&gt; --target buildfs</code>, then select <code>.pio/build/&lt;env&gt;/littlefs.bin</code> for your active environment. The controller reboots automatically when done.</div>
       </div>
+      <div id="fs-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Nothing uploaded yet.</div>
     </div>
 
+    <!-- The one act here that touches the droid rather than a file, so it sits
+         on its own plate with the consequence beside it
+         (docs/ui-copy-voice.md rule 12). -->
     <div class="card">
-      <h3>🔄 System Controls</h3>
-      <div class="button-row">
-        <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
+      <div class="sect"><h2>Reboot</h2><span class="sub">about ten seconds off the air</span></div>
+      <p class="prose">Start the controller again without cutting its power. Reach for it when a page stops answering and neither upload above is running; everything you have saved survives, and nothing is written or erased.</p>
+      <div class="button-row button-row-compact">
+        <button id="reboot-button" class="btn danger" type="button">Reboot the controller</button>
       </div>
-      <div id="fw-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No action taken yet.</div>
-      <div class="desc mt-12">Use Reboot if the controller stops responding. All settings are retained across reboots.</div>
+      <p class="hint">Refused while an upload is in flight, because a reboot part-way through one is exactly what leaves a half-written image behind.</p>
+      <div id="fw-reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No reboot asked for yet.</div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script

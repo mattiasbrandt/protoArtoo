@@ -28,14 +28,14 @@
   const sleepFeedback = document.getElementById("sleep-feedback");
   const topbarReboot = document.getElementById("topbar-reboot");
   const rebootFeedback = document.getElementById("reboot-feedback");
-  const staleBanner = document.getElementById('status-stale-banner');
-  // Staleness is this surface's one banner, beside the Status Plate's one
-  // freshness line. It is never a health state: a stale row keeps the state
-  // the controller last reported and says nothing about its age (CONTEXT.md
-  // "Health Signal", _Avoid_; #402).
-  const setStale = (stale) => {
-    if (staleBanner) staleBanner.style.display = stale === true ? "" : "none";
-  };
+  // This surface makes no freshness claim of its own. It used to carry a banner
+  // saying "The status stream was interrupted. These are the values the droid
+  // last sent" - the same fact the Status Plate's one freshness line already
+  // states, in a second aria-live region on the same screen, so a screen reader
+  // heard it twice. The plate's line is the better of the two because it
+  // carries the AGE, which is the half a builder actually needs, and CONTEXT.md
+  // "Status Plate" already makes it the surface's one freshness statement
+  // (#324, #402). Nothing here replaces it: one fact, one place.
   // The Controls section head's subtitle: a state, in three words, read off the
   // same frame the controls under it render from (ADR 0066). Web control and
   // the estop are not here - both are Status Plate cells, and the plate is on
@@ -69,7 +69,6 @@
   let lastStatus = null;
   let modePending = false;
   let moodPending = false;
-  let pollFailCount = 0;
   let estopClearPending = false;
   let sleepPending = false;
   let isSleeping = false;
@@ -352,7 +351,13 @@
   // read there and not restated here.
   const renderMissionSnapshot = (payload) => {
     const modeText = payload.stationary ? "Stationary" : "Driving";
-    const moodText = MOOD_LABELS[payload.activeMood] || `Mood ${payload.activeMood || 0}`;
+    // A mood this surface has no name for is not mood zero. The fallback used
+    // to print `Mood ${payload.activeMood || 0}`, so a frame that carried no
+    // mood at all - the state a page is in before the first one arrives - read
+    // "Mood 0" beside two readouts that say "Not reported" for the same thing.
+    // It is also the only place on this surface a raw number would reach the
+    // operator, which ADR 0059 keeps behind the mapping table above.
+    const moodText = MOOD_LABELS[payload.activeMood] || "Not reported";
     const sleepText = payload.sleepMode ? "asleep" : "awake";
 
     setText(snapshotMode, modeText);
@@ -480,8 +485,6 @@
 
   const applyStatus = (payload) => {
     lastStatus = payload;
-    pollFailCount = 0;
-    setStale(false);
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
@@ -1499,17 +1502,18 @@
       if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
         appendLogLine(LOG_UNREACHABLE_TEXT);
-        setStale(true);
       }
     });
   } else {
     // Fallback polling for pages without stream support
-    const refreshFromFallback = () => {
-      return refreshStatusOnce().catch(() => {
-        pollFailCount++;
-        if (pollFailCount >= 2) setStale(true);
+    // A failed poll is reported to the Console and nowhere else. The Status
+    // Plate's own freshness line is what tells the operator the readings have
+    // aged, and the bootstrap owns the retry; the failure count this used to
+    // keep existed only to raise the banner this surface no longer carries.
+    const refreshFromFallback = () =>
+      refreshStatusOnce().catch((error) => {
+        console.warn("[dashboard] status poll failed:", error);
       });
-    };
 
     // Owned by this surface: the shell stops it when the operator leaves the
     // Dashboard and starts it again on the way back (ADR 0048, #360). The

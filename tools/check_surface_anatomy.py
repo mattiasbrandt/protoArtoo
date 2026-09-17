@@ -29,13 +29,16 @@ the string --warning" from "this rule paints amber", and
 real cascade. A second, weaker regex copy of a check that already exists is not
 a second guard; it is a second thing to keep in step.
 
-THE PENDING LIST. #399 sweeps thirteen surfaces in four slices, each merged
-before the next starts, so between the first merge and the last there are
-surfaces this check would fail that nobody has reached yet. Each is listed in
-PENDING below with the slice that clears it, and the list is self-retiring: a
-file listed here that has NO pictograph left fails the check just as loudly as
-an unlisted file that has one. The list can therefore only shrink, and the slice
-that sweeps a surface deletes its row in the same change.
+THE PENDING LIST, AND WHY IT IS EMPTY. #399 swept thirteen surfaces in four
+slices, each merged before the next started, so between the first merge and the
+last there were surfaces this check would have failed that nobody had reached
+yet. Each was listed in PENDING below with the slice that cleared it, and the
+list was self-retiring: a file listed there with NO pictograph left failed the
+check just as loudly as an unlisted file with one. It could therefore only
+shrink, and the slice that swept a surface deleted its row in the same change.
+The last two rows went with slice 4, so PENDING is now empty and this check is a
+plain guard rather than a ledger. Leave it empty: a new row is a new
+exemption, and nothing has one.
 
 Run it as `make check-surface-anatomy`. Its own unit tests, which drive each
 check against fixtures and prove it can fail, are
@@ -78,12 +81,9 @@ SURFACE_ICON = re.compile(r'\{ page: "[a-z]+", doc: "[^"]+", icon: "([a-z0-9-]+)
 
 # Surfaces #399 has not swept yet, and the slice that clears each one. A row
 # here is a promise, not a suppression: the file is still checked, and it fails
-# if it is CLEAN, so the row cannot outlive the sweep that makes it true.
-PENDING = {
-    "wifi.html": "#399 slice 4 (Maintain and the rest)",
-    "wifi.js": "#399 slice 4 (Maintain and the rest)",
-    "firmware.html": "#399 slice 4 (Maintain and the rest)",
-}
+# if it is CLEAN, so the row cannot outlive the sweep that makes it true. Empty
+# since #399 slice 4 swept the last of the thirteen; see the docstring.
+PENDING: dict[str, str] = {}
 
 
 def served_files(data: Path) -> list[Path]:

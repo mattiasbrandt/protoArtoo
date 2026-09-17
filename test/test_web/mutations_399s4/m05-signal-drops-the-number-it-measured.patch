@@ -1,0 +1,13 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index c4638920..84d3cb83 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -76,7 +76,7 @@
+     if (!value) return "—";
+     const strength =
+       value >= -67 ? "Excellent" : value >= -75 ? "Good" : value >= -85 ? "Fair" : "Poor";
+-    return `${strength} · ${value} dBm`;
++    return strength;
+   };
+ 
+   const modeLabel = (mode) =>

@@ -32,7 +32,8 @@
   const staIp = document.getElementById("wifi-sta-ip");
   const apIp = document.getElementById("wifi-ap-ip");
   const wifiSignal = document.getElementById("wifi-signal");
-  const wifiRssi = document.getElementById("wifi-rssi");
+  const compareState = document.getElementById("wifi-compare-state");
+  const applyState = document.getElementById("wifi-apply-state");
   const activeSummaryMode = document.getElementById("wifi-active-summary-mode");
   const activeSummaryNetwork = document.getElementById("wifi-active-summary-network");
   const activeSummaryAddress = document.getElementById("wifi-active-summary-address");
@@ -65,13 +66,17 @@
     rebootRequestPending: false,
   };
 
+  // Signal strength is a measurement, not a Health Signal: it takes no colour
+  // and the word is the whole of what the four glyphs here used to say
+  // (CONTEXT.md "Status Colour"). The dBm reading rides in the same plate
+  // rather than in a second line under it, which is where this surface printed
+  // the same number twice. The thresholds are unchanged.
   const signalLabel = (rssi) => {
     const value = Number(rssi || 0);
-    if (!value) return "--";
-    if (value >= -67) return `✅ Excellent (${value} dBm)`;
-    if (value >= -75) return `✅ Good (${value} dBm)`;
-    if (value >= -85) return `⚠️ Fair (${value} dBm)`;
-    return `❌ Poor (${value} dBm)`;
+    if (!value) return "—";
+    const strength =
+      value >= -67 ? "Excellent" : value >= -75 ? "Good" : value >= -85 ? "Fair" : "Poor";
+    return `${strength} · ${value} dBm`;
   };
 
   const modeLabel = (mode) =>
@@ -88,13 +93,13 @@
   const setFeedback = (message, variant = "") => {
     if (!settingsFeedback) return;
     settingsFeedback.textContent = message;
-    settingsFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+    settingsFeedback.className = variant ? `feedback ${variant}` : "feedback";
   };
 
   const setApplyFeedback = (message, variant = "") => {
     if (!applyFeedback) return;
     applyFeedback.textContent = message;
-    applyFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+    applyFeedback.className = variant ? `feedback ${variant}` : "feedback";
   };
 
   const setApplyButtonState = () => {
@@ -103,13 +108,33 @@
     applyButton.disabled = !canApply;
     applyButton.setAttribute("aria-disabled", canApply ? "false" : "true");
     applyButton.classList.toggle("is-pending", state.rebootRequestPending);
+    if (applyState) {
+      applyState.textContent = state.rebootRequestPending
+        ? "reboot requested"
+        : state.wifiConfig?.pendingApply
+          ? "staged, waiting for a reboot"
+          : "nothing staged";
+    }
   };
 
-  const setPendingSummary = (text, stateName = "info") => {
+  // The Network posture head's subtitle. It is a word for the posture the
+  // controller answered with and takes no colour of its own: the plate's left
+  // edge carries the signal, and a coloured subtitle would be the same fact
+  // twice (ADR 0066, CONTEXT.md "Status Colour").
+  const setPendingSummary = (text) => {
     if (!pendingSummary) return;
-    const classMap = { ok: "pill-ok", warn: "pill-warn", error: "pill-error", info: "pill-info" };
-    pendingSummary.className = `status-pill ${classMap[stateName] || classMap.info} status-pill-compact`;
     pendingSummary.textContent = text;
+  };
+
+  // The Active against saved head's subtitle: whether the two halves under it
+  // agree, which is the question the heading raises.
+  const setCompareState = (wifi) => {
+    if (!compareState) return;
+    compareState.textContent = !wifi?.provisioned
+      ? "nothing saved yet"
+      : wifi.pendingApply
+        ? "saved settings wait for a reboot"
+        : "saved settings are the ones running";
   };
 
   const setFieldError = (name, message = "") => {
@@ -215,11 +240,11 @@
     const diag = state.diagnostics || {};
     const posture = currentPosture(wifi, diag);
     const apAddress = apUrl(diag);
-    const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "--";
+    const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "—";
     const hostAddress = `http://${mdnsHost()}`;
     const activeNetwork = posture.staEnabled
       ? (posture.staConnected ? (diag.staSsid || "Connected client") : "Client not connected")
-      : (diag.apSsid || wifi.apSsid || "--");
+      : (diag.apSsid || wifi.apSsid || "—");
 
     if (activeSummaryMode) {
       activeSummaryMode.textContent = activeModeText;
@@ -237,11 +262,12 @@
       savedSummaryMode.textContent = wifi.provisioned ? modeLabel(wifi.mode) : "Not provisioned";
     }
     if (savedSummarySta) {
-      savedSummarySta.textContent = wifi.staSsid || "--";
+      savedSummarySta.textContent = wifi.staSsid || "—";
     }
     if (savedSummaryAp) {
-      savedSummaryAp.textContent = wifi.apSsid || diag.apSsid || "--";
+      savedSummaryAp.textContent = wifi.apSsid || diag.apSsid || "—";
     }
+    setCompareState(wifi);
   };
 
   const renderPosture = () => {
@@ -249,7 +275,7 @@
     const diag = state.diagnostics || {};
 
     if (!wifi) {
-      setPendingSummary("Loading", "info");
+      setPendingSummary("finding out");
       return;
     }
 
@@ -260,55 +286,55 @@
       postureCard.dataset.posture = posture.stateName;
     }
 
+    // Three readouts that carried a glyph apiece. The word is the whole of
+    // what each one said, and the plate's left edge is where this surface
+    // reports how it is doing (ADR 0066, CONTEXT.md "Status Colour").
     if (provisioningState) {
       provisioningState.textContent = posture.networkRecovery
-        ? "🛠️ Network Recovery Mode"
-        : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+        ? "Network Recovery Mode"
+        : posture.provisioned ? "Provisioned" : "WiFi Provisioning";
     }
     if (activeMode) {
       activeMode.textContent = posture.modeText;
     }
     if (clientState) {
       clientState.textContent = posture.staEnabled
-        ? (posture.staConnected ? "✅ Connected" : "⏸️ Not connected")
+        ? (posture.staConnected ? "Connected" : "Not connected")
         : "Not active";
     }
     if (staIp) {
-      staIp.textContent = posture.staConnected && diag.staIp ? diag.staIp : "--";
+      staIp.textContent = posture.staConnected && diag.staIp ? diag.staIp : "—";
     }
     if (apIp) {
-      apIp.textContent = diag.apIp || "--";
+      apIp.textContent = diag.apIp || "—";
     }
     if (wifiSignal) {
-      wifiSignal.textContent = posture.staConnected ? signalLabel(diag.wifiRssi) : "--";
-    }
-    if (wifiRssi) {
-      wifiRssi.textContent = posture.staConnected && diag.wifiRssi ? diag.wifiRssi : "--";
+      wifiSignal.textContent = posture.staConnected ? signalLabel(diag.wifiRssi) : "—";
     }
     renderActiveVsSaved(posture.modeText);
 
     if (posture.networkRecovery) {
-      setPendingSummary("Recovery", "error");
+      setPendingSummary("Recovery");
       if (postureDesc) {
         postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
       }
     } else if (posture.stateName === "provisioning") {
-      setPendingSummary("Provisioning", "warn");
+      setPendingSummary("Provisioning");
       if (postureDesc) {
         postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
       }
     } else if (pendingApply) {
-      setPendingSummary("Pending apply", "warn");
+      setPendingSummary("Pending apply");
       if (postureDesc) {
         postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings are staged but not active yet.`;
       }
     } else if (posture.stateName === "client-failure") {
-      setPendingSummary("Client not connected", "error");
+      setPendingSummary("Client not connected");
       if (postureDesc) {
         postureDesc.textContent = "WiFi Client Mode is active, but the controller is not connected to the saved network.";
       }
     } else {
-      setPendingSummary("Active", "ok");
+      setPendingSummary("Active");
       if (postureDesc) {
         // Connected as a client without Device WiFi Settings ever being saved
         // (`provisioned` false) only happens via the Developer WiFi Shortcut
@@ -329,7 +355,7 @@
     const wifi = state.wifiConfig;
     const diag = state.diagnostics || {};
     if (!wifi) {
-      applyGuidance.textContent = "Loading reconnect guidance...";
+      applyGuidance.textContent = "Still finding out how you get back to the droid after a reboot.";
       return;
     }
 

@@ -10,8 +10,21 @@
      because a bare markup tag has none and the controller sheds connections
      in the opening burst by design.
 
+     THE LITERALS BELOW ARE DELIBERATE, and this is the only file in the
+     product where one is (docs/ui-copy-voice.md rule 21). A var() would
+     resolve to nothing in exactly the case this file exists for, so the
+     anatomy's tokens are copied in by hand and each is named beside its
+     value. Move a token in data/style.css, move it here: the pair has already
+     disagreed once, when .indicator.info was repointed to the unlit dot
+     (#399, ADR 0066) and the copy here stayed blue. Nothing here reports a
+     state in blue - the Retry now button is the only interaction on the panel
+     - and a page still finding out reads unlit, as the Status Plate's own
+     freshness state does. test_surface_anatomy_399s4.js holds the pair to it.
+
      Edit here only -- pages carry the directive, never a copy. -->
     <style>
+      /* The wash over whatever failed. Not a token either: --scrim is the
+         sleep overlay's. */
       #page-recovery-backdrop {
         position: fixed;
         inset: 0;
@@ -20,7 +33,10 @@
         align-items: center;
         justify-content: center;
         z-index: 10001;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        /* System faces only: a page with no stylesheet has no webfont. */
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+        font-size: 14px;                            /* --fs-body */
+        line-height: 1.5;
       }
       #page-recovery-backdrop.active { display: flex; }
       body.recovery-active > *:not(#page-recovery-backdrop) {
@@ -32,126 +48,164 @@
         visibility: hidden;
         pointer-events: none;
       }
+      /* An instrument plate: chamfer, seam, and .card's hair of light. */
       #page-recovery-backdrop .recovery-panel {
-        background: rgb(21, 34, 56);
-        border: 1px solid rgb(42, 74, 122);
-        border-radius: 8px;
-        padding: 20px;
+        background: rgb(16, 24, 34);                /* --surface  #101822 */
+        border: 1px solid rgb(34, 48, 65);          /* --border   #223041 */
+        border-radius: 2px;                         /* --radius-plate */
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.05),
+          0 12px 36px rgba(0, 0, 0, 0.45);          /* --elev-3 */
+        padding: 16px;                              /* --space-lg */
         width: 90%;
         max-width: 380px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         text-align: center;
       }
       #page-recovery-backdrop .recovery-header {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
+        gap: 8px;                                   /* --space-sm */
         margin-bottom: 8px;
       }
+      /* The controller said no. Amber, because a refusal is something the
+         builder can act on and the act is the button underneath. */
       #page-recovery-backdrop .recovery-refused-banner {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
+        gap: 8px;                                   /* --space-sm */
         margin-bottom: 8px;
-        color: rgb(232, 168, 50);
-        font-size: 0.8rem;
+        color: rgb(232, 168, 50);                   /* --warning  #e8a832 */
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 11px;                            /* --fs-sect */
         font-weight: 600;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.16em;
       }
+      /* A signal light, with the meanings data/style.css gives one: unlit for
+         a thing nobody has answered yet, amber degraded, red stopped. Unlit is
+         the default, and .info is spelled out because page_bootstrap.js
+         writes it for the loading state. */
       #page-recovery-backdrop .indicator {
-        width: 14px;
-        height: 14px;
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
         display: inline-block;
-        background: rgb(232, 168, 50);
-        box-shadow: 0 0 6px rgb(232, 168, 50);
+        background: rgb(165, 179, 196);             /* --text-dim  #a5b3c4 */
+        box-shadow: none;
+        opacity: 0.5;
       }
       #page-recovery-backdrop .indicator.info {
-        background: rgb(106, 176, 255);
-        box-shadow: 0 0 6px rgb(106, 176, 255);
+        background: rgb(165, 179, 196);             /* --text-dim, unlit */
+        box-shadow: none;
+        opacity: 0.5;
+      }
+      #page-recovery-backdrop .indicator.warn {
+        background: rgb(232, 168, 50);              /* --warning */
+        box-shadow: 0 0 6px rgba(232, 168, 50, 0.6);
+        opacity: 1;
       }
       #page-recovery-backdrop .indicator.fail {
-        background: rgb(232, 84, 84);
-        box-shadow: 0 0 6px rgb(232, 84, 84);
+        background: rgb(232, 84, 84);               /* --danger  #e85454 */
+        box-shadow: 0 0 6px rgba(232, 84, 84, 0.6);
+        opacity: 1;
       }
       #page-recovery-backdrop .recovery-status-reason {
-        color: rgb(212, 221, 232);
-        font-size: 0.95rem;
+        color: rgb(228, 234, 242);                  /* --text  #e4eaf2 */
+        font-size: 16px;                            /* --fs-h2 */
         font-weight: 600;
+        line-height: 1.4;
       }
       #page-recovery-backdrop .recovery-status-detail {
-        color: rgb(168, 188, 216);
-        font-size: 0.8rem;
-        margin-top: 2px;
+        color: rgb(165, 179, 196);                  /* --text-dim */
+        font-size: 13px;                            /* --fs-cell */
+        margin-top: 4px;                            /* --space-2xs */
       }
+      /* Which step the page is on. A readout, so the mono voice and the dim
+         ink - it was the blue, which made a state read as an accent. */
       #page-recovery-backdrop .recovery-step {
-        color: rgb(106, 176, 255);
-        font-size: 0.8rem;
+        color: rgb(165, 179, 196);                  /* --text-dim */
+        font-size: 11px;                            /* --fs-sect */
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        margin: 8px 0 0;
+        margin: 12px 0 0;                           /* --space-md */
       }
+      /* A recessed well, as every readout plate on this product is. */
       #page-recovery-backdrop .recovery-countdown-panel {
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgb(42, 74, 122);
-        border-radius: 6px;
-        padding: 10px;
+        background: rgb(6, 10, 16);                 /* --well  #060a10 */
+        border: 1px solid rgb(34, 48, 65);          /* --border */
+        border-radius: 2px;                         /* --radius-plate */
+        padding: 12px;                              /* --space-md */
         margin: 12px 0;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
+        gap: 4px;                                   /* --space-2xs */
       }
+      /* The seconds to the next attempt: a mono readout in the ink. It was
+         amber, and there is nothing to act on - the retry is already running,
+         which is #324's argument for the plate's freshness line. */
       #page-recovery-backdrop .recovery-countdown-value {
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: rgb(232, 168, 50);
+        font-size: 28px;                            /* --fs-readout */
+        font-weight: 600;
+        color: rgb(228, 234, 242);                  /* --text */
         font-variant-numeric: tabular-nums;
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        line-height: 1.1;
       }
       #page-recovery-backdrop .recovery-countdown-label {
-        color: rgb(168, 188, 216);
-        font-size: 0.75rem;
+        color: rgb(123, 139, 160);                  /* --text-faint  #7b8ba0 */
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 10px;                            /* --fs-hint */
+        line-height: 1.6;
+        letter-spacing: 0.06em;
         white-space: pre-line;
       }
       #page-recovery-backdrop .recovery-message {
-        color: rgb(168, 188, 216);
-        font-size: 0.85rem;
-        line-height: 1.4;
-        margin: 8px 0 0;
+        color: rgb(165, 179, 196);                  /* --text-dim */
+        font-size: 13px;                            /* --fs-cell */
+        line-height: 1.55;
+        margin: 12px 0 0;                           /* --space-md */
       }
       #page-recovery-backdrop .recovery-actions {
         display: flex;
-        gap: 8px;
-        margin-top: 12px;
+        gap: 8px;                                   /* --space-sm */
+        margin-top: 16px;                           /* --space-lg */
         justify-content: center;
       }
+      /* The one thing pressed here, so the one thing blue: .btn.accent's own
+         face, a button's corner rather than a plate's, and the 36 px floor. */
       #page-recovery-backdrop .btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 10px 16px;
-        background: rgb(74, 144, 217);
-        color: rgb(240, 244, 248);
-        border: 1px solid rgb(106, 176, 255);
-        border-radius: 999px;
-        font-size: 0.85rem;
-        font-weight: 600;
+        padding: 0 16px;                            /* --space-lg */
+        background: rgb(29, 79, 147);               /* --accent-dim  #1d4f93 */
+        color: rgb(228, 234, 242);                  /* --text */
+        border: 1px solid rgb(77, 143, 232);        /* --accent  #4d8fe8 */
+        border-radius: 3px;                         /* --radius-xs */
+        font-size: 13px;                            /* --fs-cell */
+        font-weight: 500;
         font-family: inherit;
+        line-height: 1.2;
         cursor: pointer;
-        min-height: 38px;
+        min-height: 36px;
       }
-      #page-recovery-backdrop .btn:hover { background: rgb(106, 176, 255); }
+      #page-recovery-backdrop .btn:hover { border-color: rgb(106, 176, 255); }  /* --accent-bright */
+      #page-recovery-backdrop .btn:focus-visible {
+        outline: 2px solid rgb(77, 143, 232);       /* --accent */
+        outline-offset: 2px;
+      }
+      /* Motion rather than colour: the page is working, which is not a state
+         the droid is in. */
       #page-recovery-backdrop .recovery-spinner {
         display: inline-block;
         width: 10px;
         height: 10px;
-        border: 2px solid rgba(106, 176, 255, 0.2);
-        border-top-color: rgb(106, 176, 255);
+        border: 2px solid rgba(165, 179, 196, 0.2); /* --text-dim, unlit */
+        border-top-color: rgb(165, 179, 196);       /* --text-dim */
         border-radius: 50%;
         animation: recovery-spin 0.8s linear infinite;
-        margin-right: 6px;
+        margin-right: 8px;                          /* --space-sm */
         vertical-align: -1px;
       }
       @keyframes recovery-spin { to { transform: rotate(360deg); } }
