@@ -78,7 +78,7 @@ struct AudioCatalogBank {
 struct AudioModuleState {
     bool linkOk;            // true if the module responded to at least one query
     uint8_t playState;      // 0=stop  1=playing  2=paused  0xFF=unknown
-    uint8_t device;         // 0=USB   1=SD/TF    2=FLASH   0xFF=unknown/none
+    uint8_t device;         // 0=USB 1=SD/TF 2=FLASH 3=Flash+SD (CHIRP) 0xFF=unknown/none
     uint16_t totalTracks;   // 0 if unknown
     uint16_t currentTrack;  // 0 if unknown
     uint16_t missingTrack;  // last track the module said was not on the card; 0 if none
@@ -145,7 +145,9 @@ class AudioDriver {
 
     // Query the module for live state. Returns true and populates 'out' if the
     // module responds. Default returns false (driver has no RX path).
-    // Must only be called from the AudioTask (Core 0). Blocking up to ~300 ms.
+    // Must only be called from the AudioTask (Core 0). Blocking for as long as
+    // the driver's own query budget: the CHIRP driver asks three streams in
+    // turn and can spend ~600 ms doing it.
     virtual bool queryModuleState(AudioModuleState& out) {
         (void)out;
         return false;

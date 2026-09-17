@@ -24,7 +24,7 @@
 //   setVolume(v)        -> "VOL:N\n" where N = v * 99 / 30
 //   begin() bootstrap   -> optional "GMAN\n" for bank summary when UART2 RX is available
 //   refreshCatalog()    -> "GMAN\n" + per-entry "GNME:bank,page,index\n"
-//   queryModuleState()  -> "STAT:0\n" for stream activity
+//   queryModuleState()  -> "STAT:0\n", "STAT:1\n", "STAT:2\n" for stream activity
 // =============================================================================
 
 #include "audio_chirp.h"
@@ -53,6 +53,20 @@ static constexpr uint8_t CHIRP_RX_DRAIN_YIELD_BYTES = 32u;
 static constexpr uint32_t CHIRP_LIST_REPLY_MS = 1500u;
 static constexpr uint32_t CHIRP_LIST_READLINE_MS = 100u;
 static constexpr uint8_t CHIRP_LIST_QUIET_WINDOWS = 2u;
+// The module's default stream count (CHIRP config.h DEFAULT_MAX_STREAMS 3), and
+// this droid's. #MAX_STREAMS can be set 1-10 in CHIRP.INI and no command
+// reports the value, so asking about three is asking about the default rather
+// than discovering a configuration.
+static constexpr uint8_t CHIRP_STAT_STREAM_COUNT = 3u;
+// Per stream, so a full snapshot is bounded by three of these. handleStat()
+// answers synchronously and prints straight to the UART, so the wait is one
+// module loop pass plus the line itself: "STAT:playing," + a 63-character path
+// + ",99" is 79 bytes, ~82 ms at 9600 baud.
+static constexpr uint32_t CHIRP_STAT_REPLY_MS = 200u;
+// streams[n].filename is char[64] in the module, so 79 characters is the
+// longest reply it can print and a filled buffer means something else arrived.
+static constexpr uint8_t CHIRP_STAT_LINE_MAX = 96u;
+static constexpr size_t CHIRP_STAT_PATH_MAX = 64u;
 
 // Production IO adapters
 static void chirpWriteByte(uint8_t b)    { softUartTxByte(b); }
@@ -536,7 +550,7 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     m_totalTracks = 0;
     m_linkOk = false;
     m_playState = 0xFF;
-    m_lastTrack = 0;
+    m_currentTrack = 0;
     m_catalogReady = false;
     m_catalogCount = 0;
     m_catalogBankCount = 0;
@@ -594,7 +608,6 @@ void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) 
         bank = 1;
     }
     page = normalizePage(page);
-    m_lastTrack = index;  // cache for currentTrack reporting
 
     // Buffer sized for "PLAY:65535,255,Z" (16 chars) + null
     char cmd[24];
@@ -609,6 +622,12 @@ void AudioDriverChirp::playTrackBanked(uint16_t index, uint8_t bank, char page) 
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::stop() {
     sendCommand("STOP");
+    // A bare STOP stops every stream (handleStop()'s empty-argument path), so
+    // idle and "no current track" are observations of what we just did, not
+    // optimism. Leaving the old index behind is what kept the Sound page naming
+    // a sound that had already stopped.
+    m_currentTrack = 0;
+    m_playState = 0x00;
 }
 
 // -----------------------------------------------------------------------------
@@ -756,39 +775,200 @@ bool AudioDriverChirp::isCatalogReady() const {
 }
 
 // -----------------------------------------------------------------------------
-// queryModuleState()
-// Query CHIRP stream status and map to AudioModuleState.
-// Returns true if at least one valid status line is received.
+// Status snapshot
 // -----------------------------------------------------------------------------
-static bool parseChirpStatusLine(const char* line, uint8_t* playStateOut) {
-    if (line == nullptr || playStateOut == nullptr) {
+
+// Case-insensitive whole-string equality. Written out rather than calling
+// strcasecmp(), which is POSIX <strings.h> -- the same rule
+// src/console/console_module.cpp states for its own key checks. Card names come
+// off FAT, where case is not identity, and the module's own Bank 1 grouping
+// compares with strcasecmp() (CHIRP file_management.cpp scanBank1).
+static bool equalsIgnoringCase(const char* a, const char* b) {
+    while (*a != '\0' && *b != '\0') {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return false;
+        }
+        ++a;
+        ++b;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+// A name with its last extension removed. Bank 1 catalog names carry the
+// module's forced ".wav" whatever the file on the card really is: handleGnme()
+// prints "%s.wav" over a basename whose real extension was already stripped
+// (finding 13.4), so this droid's "general01.wav" is a .mp3 on the card.
+static void nameWithoutExtension(const char* name, char* out, size_t outLen) {
+    size_t len = strlen(name);
+    const char* dot = strrchr(name, '.');
+    if (dot != nullptr && dot != name) {
+        len = (size_t)(dot - name);
+    }
+    if (len >= outLen) {
+        len = outLen - 1;
+    }
+    memcpy(out, name, len);
+    out[len] = '\0';
+}
+
+// The Bank 1 variant group a file belongs to, derived the way the module
+// derives it in scanBank1() (CHIRP file_management.cpp): the text before the
+// first '_' that is followed by a digit marks a variant set, otherwise the name
+// without its extension. "general01_02.mp3" and "general01.mp3" both fold to
+// "general01", which is what handleGnme() reports as "general01.wav".
+//
+// The module stores that basename in char[16], so a group longer than 15
+// characters is truncated on its side and will not compare equal here. That
+// leaves the playing sound unidentified, which is the honest answer; guessing
+// by prefix would risk naming the wrong sound.
+static void bank1GroupFromFileName(const char* file, char* out, size_t outLen) {
+    const char* underscore = strchr(file, '_');
+    if (underscore != nullptr && isdigit((unsigned char)underscore[1])) {
+        size_t len = (size_t)(underscore - file);
+        if (len >= outLen) {
+            len = outLen - 1;
+        }
+        memcpy(out, file, len);
+        out[len] = '\0';
+        return;
+    }
+    nameWithoutExtension(file, out, outLen);
+}
+
+// One direct STAT reply: "STAT:playing,<path>,<volume 0-99>" or "STAT:idle,,0",
+// printed straight to the UART by handleStat() rather than queued.
+//
+// Everything else returns false, including the queued "S:<n>,ply,<vol>"
+// notification: handlePlay() enqueues that BEFORE startStream(), so it survives
+// a play that then failed on a missing file, and the previous parser read it as
+// status and made playback sticky inside a poll.
+static bool parseChirpStatReply(const char* line, bool* playingOut, char* fileOut,
+                                size_t fileLen) {
+    if (line == nullptr || playingOut == nullptr || fileOut == nullptr || fileLen == 0) {
+        return false;
+    }
+    if (strncmp(line, "STAT:", 5) != 0) {
+        return false;
+    }
+    const char* state = line + 5;
+
+    if (strncmp(state, "idle,", 5) == 0) {
+        *playingOut = false;
+        fileOut[0] = '\0';
+        return true;
+    }
+    if (strncmp(state, "playing,", 8) != 0) {
         return false;
     }
 
-    if (strncmp(line, "STAT:", 5) == 0) {
-        const char* state = line + 5;
-        if (strncmp(state, "playing,", 8) == 0) {
-            *playStateOut = 0x01;
-            return true;
+    *playingOut = true;
+    fileOut[0] = '\0';
+    const char* path = state + 8;
+    // The volume is the last field, so split on the LAST comma: a card filename
+    // may contain one of its own.
+    const char* volumeComma = strrchr(path, ',');
+    size_t len = (volumeComma != nullptr) ? (size_t)(volumeComma - path) : strlen(path);
+    if (len == 0 || len >= fileLen) {
+        // Nothing, or more than the module can hold: an observation this long
+        // did not come off a char[64] filename intact, so it identifies
+        // nothing. The reply still proves the stream is playing.
+        return true;
+    }
+    memcpy(fileOut, path, len);
+    fileOut[len] = '\0';
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// catalogIndexForPath()
+// The catalog entry a reported playback path identifies, or 0 for none.
+//
+// handlePlay() builds the path STAT reports: "/flash/<file>" when the module
+// syncs Bank 1 to flash, "/<bank1Dir>/<file>" when it plays Bank 1 off the
+// card, and "/<bankDir>/<file>" for banks 2-6 (CHIRP serial_commands.cpp;
+// startStream() copies it into streams[n].filename). The catalog holds leaf
+// names, so the directory selects the bank and the leaf selects the entry --
+// which is also why two banks holding the same filename cannot be confused.
+//
+// A Bank 1 row recovered from LIST has no directory name, so only its
+// "/flash/..." form can be identified; that is a consequence of the module
+// never printing the directory, not a guess worth making.
+// -----------------------------------------------------------------------------
+uint16_t AudioDriverChirp::catalogIndexForPath(const char* path) const {
+    if (path == nullptr || path[0] != '/' || m_catalog == nullptr || m_catalogCount == 0 ||
+        m_catalogBanks == nullptr) {
+        return 0;
+    }
+
+    const char* dirStart = path + 1;
+    const char* slash = strchr(dirStart, '/');
+    if (slash == nullptr || slash[1] == '\0') {
+        return 0;  // not the "/<dir>/<leaf>" shape handlePlay() builds
+    }
+    const size_t dirLen = (size_t)(slash - dirStart);
+    const char* leaf = slash + 1;
+
+    char dirName[sizeof(m_catalogBanks[0].dirName)];
+    if (dirLen == 0 || dirLen >= sizeof(dirName)) {
+        return 0;  // no bank row could name a directory this long
+    }
+    memcpy(dirName, dirStart, dirLen);
+    dirName[dirLen] = '\0';
+
+    uint8_t wantBank = 0;
+    char wantPage = 'A';
+    if (equalsIgnoringCase(dirName, "flash")) {
+        wantBank = 1;  // the module's flash mirror of the active Bank 1 page
+    } else {
+        for (uint8_t i = 0; i < m_catalogBankCount; ++i) {
+            const AudioCatalogBank& bank = m_catalogBanks[i];
+            if (bank.dirName[0] != '\0' && equalsIgnoringCase(bank.dirName, dirName)) {
+                wantBank = bank.bank;
+                wantPage = bank.page;
+                break;
+            }
         }
-        if (strncmp(state, "idle,", 5) == 0) {
-            *playStateOut = 0x00;
-            return true;
+    }
+    if (wantBank == 0) {
+        return 0;
+    }
+
+    char wanted[sizeof(m_catalog[0].name)];
+    if (wantBank == 1) {
+        bank1GroupFromFileName(leaf, wanted, sizeof(wanted));
+    } else {
+        strncpy(wanted, leaf, sizeof(wanted) - 1);
+        wanted[sizeof(wanted) - 1] = '\0';
+    }
+
+    uint16_t index = 0;
+    uint8_t matches = 0;
+    for (uint16_t i = 0; i < m_catalogCount; ++i) {
+        const AudioCatalogEntry& entry = m_catalog[i];
+        if (entry.bank != wantBank) {
+            continue;
+        }
+        // Only one Bank 1 page is active at a time, so its page is not part of
+        // the address here.
+        if (wantBank != 1 && entry.page != wantPage) {
+            continue;
+        }
+        bool same;
+        if (wantBank == 1) {
+            char group[sizeof(entry.name)];
+            nameWithoutExtension(entry.name, group, sizeof(group));
+            same = equalsIgnoringCase(group, wanted);
+        } else {
+            same = equalsIgnoringCase(entry.name, wanted);
+        }
+        if (same) {
+            ++matches;
+            index = entry.index;
         }
     }
 
-    if (strncmp(line, "S:", 2) == 0) {
-        if (strstr(line, ",ply,") != nullptr) {
-            *playStateOut = 0x01;
-            return true;
-        }
-        if (strstr(line, ",idle,") != nullptr) {
-            *playStateOut = 0x00;
-            return true;
-        }
-    }
-
-    return false;
+    // More than one candidate is not an identification.
+    return (matches == 1) ? index : 0;
 }
 
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
@@ -796,13 +976,14 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.playState = 0xFF;
     out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2-6 on SD
     out.totalTracks = m_totalTracks;
-    out.currentTrack = m_lastTrack;   // last index sent via playTrack()
+    out.currentTrack = 0;
     out.missingTrack = 0;
 
     // Guard: DomeLink has priority on UART2; return cached state unchanged.
     if (domeUartOwnedBy(DOME_UART_DOME)) {
         out.linkOk = m_linkOk;
         out.playState = m_playState;
+        out.currentTrack = m_currentTrack;
         return out.linkOk;
     }
 
@@ -810,38 +991,88 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
 
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
-    sendCommand("STAT:0");
-
-    uint32_t startMs = m_io.millisNow();
-    char line[64];
+    // Every default stream, asked one at a time. Stream 0 going idle while 1 or
+    // 2 keep playing is the live lie: a beep that ended under a running piece
+    // of music used to report the whole module idle.
+    //
+    // STAT replies carry no stream number, so this counts them rather than
+    // attributing them: the module answers each query exactly once, so three
+    // valid idle replies mean three streams answered idle, whichever query each
+    // one belongs to. A stream that does not answer is NOT an idle stream.
+    uint8_t playingReplies = 0;
+    uint8_t idleReplies = 0;
     uint32_t rxBytes = 0;
     uint16_t unparsableLines = 0;
-    while ((uint32_t)(m_io.millisNow() - startMs) < 300u) {
-        uint8_t n = readLine(line, (uint8_t)sizeof(line), 40u);
-        if (n == 0) {
-            continue;
-        }
-        rxBytes += n;
-        uint8_t parsedPlayState = 0xFF;
-        if (!parseChirpStatusLine(line, &parsedPlayState)) {
-            ++unparsableLines;
-            continue;
-        }
+    char playingPath[CHIRP_STAT_PATH_MAX] = {0};
 
-        if (parsedPlayState == 0x01) {
-            out.playState = 0x01;
-            out.linkOk = true;
-        } else if (parsedPlayState == 0x00) {
-            if (out.playState != 0x01) {
-                out.playState = 0x00;
+    for (uint8_t stream = 0; stream < CHIRP_STAT_STREAM_COUNT; ++stream) {
+        char cmd[12];
+        snprintf(cmd, sizeof(cmd), "STAT:%u", (unsigned)stream);
+        sendCommand(cmd);
+
+        const uint32_t startMs = m_io.millisNow();
+        char line[CHIRP_STAT_LINE_MAX];
+        while (true) {
+            const uint32_t elapsed = (uint32_t)(m_io.millisNow() - startMs);
+            if (elapsed >= CHIRP_STAT_REPLY_MS) {
+                break;  // this stream did not answer within its own deadline
             }
-            out.linkOk = true;
+            // Wait for the whole line rather than a fixed slice of it: a
+            // 63-character path needs ~80 ms to arrive at 9600 baud, and half a
+            // path left in the buffer poisons the next stream's reply.
+            // readLine() returns as soon as it sees '\n'.
+            uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_STAT_REPLY_MS - elapsed);
+            if (n == 0) {
+                continue;
+            }
+            rxBytes += n;
+            if (n >= (uint8_t)(sizeof(line) - 1u)) {
+                ++unparsableLines;  // filled the buffer with no terminator
+                continue;
+            }
+
+            bool playing = false;
+            char file[CHIRP_STAT_PATH_MAX] = {0};
+            if (!parseChirpStatReply(line, &playing, file, sizeof(file))) {
+                ++unparsableLines;
+                continue;  // a queued S:/PACK: line or an ERR: answer, not status
+            }
+            if (playing) {
+                ++playingReplies;
+                if (playingPath[0] == '\0') {
+                    strncpy(playingPath, file, sizeof(playingPath) - 1);
+                    playingPath[sizeof(playingPath) - 1] = '\0';
+                }
+            } else {
+                ++idleReplies;
+            }
+            break;
         }
+    }
+
+    if (playingReplies > 0) {
+        out.playState = 0x01;
+        out.linkOk = true;
+        // Unidentified while playing is honest; a stale echo is not.
+        out.currentTrack = catalogIndexForPath(playingPath);
+    } else if (idleReplies >= CHIRP_STAT_STREAM_COUNT) {
+        out.playState = 0x00;
+        out.linkOk = true;
+        out.currentTrack = 0;
+    } else if (idleReplies > 0) {
+        // Some streams answered idle and at least one did not, so silence is
+        // not established. The module is clearly alive; its play state and
+        // current track stay as they were rather than reporting an idle nobody
+        // observed.
+        out.linkOk = true;
+        out.playState = m_playState;
+        out.currentTrack = m_currentTrack;
     }
 
     m_linkOk = out.linkOk;
     if (out.playState != 0xFF) {
         m_playState = out.playState;
+        m_currentTrack = out.currentTrack;
     }
 
     if (!out.linkOk) {
@@ -871,7 +1102,7 @@ void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
     out.playState = m_playState;
     out.device = 0x03;          // CHIRP: Bank 1 flash-backed, Banks 2-6 SD
     out.totalTracks = m_totalTracks;
-    out.currentTrack = m_lastTrack;   // last track index sent to playTrack()
+    out.currentTrack = m_currentTrack;  // last OBSERVED playback, cleared by stop()
     out.missingTrack = 0;
 }
 

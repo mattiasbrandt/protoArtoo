@@ -84,7 +84,10 @@ class AudioDriverChirp : public AudioDriver {
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
     bool m_linkOk = false;
-    uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
+    // The catalog entry the module was last OBSERVED playing, 0 when nothing
+    // identified it. Never the last index this driver sent: a commanded index
+    // echoed back as current playback is the lie #397 exists to remove.
+    uint16_t m_currentTrack = 0;
     bool m_catalogReady = false;
     // Whether the last GMAN reply accounted for every bank the module meant to
     // send. False after a truncated manifest, including one this driver
@@ -130,4 +133,9 @@ class AudioDriverChirp : public AudioDriver {
 
     // Read one \r\n-terminated ASCII line via m_io.
     uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
+
+    // The catalog index the module's reported playback path identifies, or 0
+    // when it identifies no single entry. Path-aware: see the definition in
+    // src/drivers/audio_chirp.cpp for the module-side rules it mirrors.
+    uint16_t catalogIndexForPath(const char* path) const;
 };
