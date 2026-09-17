@@ -1,0 +1,16 @@
+diff --git a/data/status_stream.js b/data/status_stream.js
+index 4cb0a2df..68d828cb 100644
+--- a/data/status_stream.js
++++ b/data/status_stream.js
+@@ -131,10 +131,7 @@
+     source.onopen = () => {
+       retryCount = 0;
+       replay();
+-      if (resyncOnOpen) {
+-        resyncOnOpen = false;
+-        emit("stream_resync");
+-      }
++      resyncOnOpen = false;
+     };
+ 
+     source.addEventListener("status", (event) => {

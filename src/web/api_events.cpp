@@ -15,6 +15,7 @@
 
 #include "../../include/logging.h"
 #include "../../include/web_event_stream.h"
+#include "../../include/web_server.h"   // requestStatusBroadcastNow()
 
 static const char* TAG = "WebEvents";
 
@@ -38,7 +39,26 @@ void handleEventsGet(WebRequest& req) {
     if (!req.beginEventStream()) {
         PA_LOG_WARN(TAG, "event stream could not be started");
         req.send(503, "text/plain", "event stream unavailable");
+        return;
     }
-    // On success the response is open-ended and belongs to the broadcaster.
-    // Nothing more is sent from here.
+
+    // The stream is delta-triggered: it carries a status when something asks
+    // for one and at no other time. So a client that connects to a droid which
+    // is not changing is told nothing at all, and a tab RECONNECTING after a
+    // latch shows whatever it had cached until some unrelated change happens
+    // to come along. Publishing every failsafe edge (src/failsafe_gate.cpp)
+    // fixes the browser that was already listening; it cannot fix the one that
+    // was not there when the edge went by (#346).
+    //
+    // So admission is itself an edge: a client arriving is a change in who
+    // needs to know. This asks rather than sends -- the payload is built on the
+    // event stream task with its own measured stack and its own buffer, and
+    // building 3 KB of JSON inline here would put it on the web handler's stack
+    // and race the broadcaster for that buffer. The ask reaches every open
+    // client rather than only this one, which costs one extra frame to at most
+    // two other tabs and is never wrong: what they receive is current.
+    //
+    // Refusals above return without asking. A client that was turned away has
+    // no stream to be told anything on.
+    requestStatusBroadcastNow();
 }

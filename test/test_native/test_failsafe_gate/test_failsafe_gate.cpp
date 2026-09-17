@@ -10,12 +10,21 @@
 #include <cstring>
 #include <unity.h>
 
+#include "commanded_modes_test_hooks.h"  // g_test_status_broadcast_count
 #include "failsafe_gate.h"
 #include "robot_state.h"
 
 // robotState and robotStateMux are provided by native_test_stubs.cpp
 extern RobotState robotState;
 extern portMUX_TYPE robotStateMux;
+
+// requestStatusBroadcastNow() counts in the native build
+// (src/native_test_stubs.cpp), which is how the tests below observe that a
+// failsafe edge asked the event stream to publish. It is read through the
+// header above rather than re-declared here, so the declaration and every use
+// stay compiler-checked against one another. The counter is reset inside each
+// test rather than in setUp(): tearDown() clears every layer, and those clears
+// are edges too.
 
 void setUp() {
     // Reset mocks before each test
@@ -304,6 +313,81 @@ void test_update_web_timeout_false_when_inactive_is_noop() {
     TEST_ASSERT_EQUAL_UINT32(0, robotState.failsafeTriggerCount);
 }
 
+// --- Test 10: every failsafe edge reaches the browser ---
+//
+// A latching estop that nobody is told about is a droid that reads SAFE on
+// every screen while it is held (#346). The event stream publishes on request
+// only, and before this group the request was made by the web handlers alone -
+// so an estop raised from the radio, an SBUS timeout, or a watchdog-reset latch
+// changed robotState and told no client at all.
+//
+// The request is posted from the one place that owns failsafe state, so every
+// layer is covered by construction rather than by remembering to add a call at
+// each trigger site. It posts a flag and does no work inline, because
+// failsafeTrigger() is reached from the 50 Hz real-time path.
+
+void test_trigger_estop_requests_a_status_broadcast() {
+    g_test_status_broadcast_count = 0;
+    failsafeTrigger(FailsafeLayer::ESTOP);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_trigger_sbus_watchdog_requests_a_status_broadcast() {
+    // Not only the estop: an SBUS timeout holds the feet just as hard, and the
+    // plate reads it through a mirror field of its own.
+    g_test_status_broadcast_count = 0;
+    failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_repeated_trigger_requests_nothing_further() {
+    // The rising edge is the event. dispatchStandardSbusInputs() re-triggers a
+    // held layer every frame, and a request per frame would rebuild the whole
+    // status payload 50 times a second on Core 0 for a state that has not moved.
+    failsafeTrigger(FailsafeLayer::SBUS_HW);
+    g_test_status_broadcast_count = 0;
+    failsafeTrigger(FailsafeLayer::SBUS_HW);
+    failsafeTrigger(FailsafeLayer::SBUS_HW);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
+void test_clearing_a_layer_requests_a_status_broadcast() {
+    // The falling edge matters as much as the rising one: a plate that shows
+    // STOPPED after the droid is free again is the same lie pointing the other
+    // way, and it is the one that makes an operator distrust the readout.
+    failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
+    g_test_status_broadcast_count = 0;
+    failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_clearing_an_inactive_layer_requests_nothing() {
+    // failsafeUpdateWebTimeout(false) runs on every arbiter tick.
+    g_test_status_broadcast_count = 0;
+    failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
+void test_clear_estop_requests_a_status_broadcast() {
+    failsafeTrigger(FailsafeLayer::ESTOP);
+    g_test_status_broadcast_count = 0;
+    failsafeClearEstop();
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_clear_estop_with_nothing_latched_requests_nothing() {
+    g_test_status_broadcast_count = 0;
+    failsafeClearEstop();
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
+void test_init_requests_nothing() {
+    // Boot is not an edge, and there is no client to tell.
+    g_test_status_broadcast_count = 0;
+    failsafeInit(&robotStateMux);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_status_broadcast_count);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -354,6 +438,16 @@ int main() {
     RUN_TEST(test_update_web_timeout_repeated_true_does_not_retrigger);
     RUN_TEST(test_update_web_timeout_false_when_active_clears_layer);
     RUN_TEST(test_update_web_timeout_false_when_inactive_is_noop);
+
+    // Test 10: every failsafe edge reaches the browser
+    RUN_TEST(test_trigger_estop_requests_a_status_broadcast);
+    RUN_TEST(test_trigger_sbus_watchdog_requests_a_status_broadcast);
+    RUN_TEST(test_repeated_trigger_requests_nothing_further);
+    RUN_TEST(test_clearing_a_layer_requests_a_status_broadcast);
+    RUN_TEST(test_clearing_an_inactive_layer_requests_nothing);
+    RUN_TEST(test_clear_estop_requests_a_status_broadcast);
+    RUN_TEST(test_clear_estop_with_nothing_latched_requests_nothing);
+    RUN_TEST(test_init_requests_nothing);
 
     return UNITY_END();
 }

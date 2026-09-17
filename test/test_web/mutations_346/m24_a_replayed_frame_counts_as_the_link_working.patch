@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+index ca9d5200..b41e7f44 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -1129,7 +1129,7 @@
+     // Only a frame the droid has just sent is evidence that we are hearing it.
+     // A replay is the session's own cache handed back -- it proves the browser
+     // still has a copy, which is not the same claim and was the one being made.
+-    if (!meta?.cached) plateNotHearing = null;
++    plateNotHearing = null;
+     paintPlate(payload);
+     renderPlateFreshness();
+     releaseSettledCauses(payload);

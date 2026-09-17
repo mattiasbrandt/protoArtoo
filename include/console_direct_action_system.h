@@ -406,9 +406,12 @@ static void consoleExecuteDirectReboot(uint32_t requestId, const char* operation
     requestSystemRestart(500);
 }
 
-// system.action.estop-clear: no arguments, the same failsafeClearEstop() +
-// requestStatusBroadcastNow() pair handleEstopClearPost() (POST
-// /api/estop/clear, src/web/api_estop.cpp) runs, in that order.
+// system.action.estop-clear: no arguments, the same failsafeClearEstop() call
+// handleEstopClearPost() (POST /api/estop/clear, src/web/api_estop.cpp) makes.
+// Neither adapter asks the event stream to publish: failsafeClearEstop()
+// publishes the edge itself (src/failsafe_gate.cpp, #346), so both paths
+// broadcast exactly once on a clear and neither broadcasts when there was
+// nothing latched.
 //
 // The latch itself is untouched: failsafeClearEstop() (src/failsafe_gate.cpp)
 // remains the single explicit-intent path that can release ESTOP, and this
@@ -424,7 +427,6 @@ static void consoleExecuteDirectEstopClear(uint32_t requestId, const char* opera
         return;
     }
     failsafeClearEstop();
-    requestStatusBroadcastNow();
 
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
