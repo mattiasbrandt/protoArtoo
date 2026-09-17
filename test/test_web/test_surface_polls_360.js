@@ -293,7 +293,6 @@ const STALE_AFTER_A_FAILED_REFRESH = [
   { file: "rc.js", what: "RC diagnostics" },
   { file: "servo.js", what: "Servos" },
   { file: "setup.js", what: "Setup" },
-  { file: "sound.js", what: "Sound" },
 ];
 
 for (const { file, what } of STALE_AFTER_A_FAILED_REFRESH) {
@@ -325,6 +324,61 @@ for (const { file, what } of STALE_AFTER_A_FAILED_REFRESH) {
     );
   });
 }
+
+// Sound owns two polls -- the status fallback and the audio module's own -- and
+// isStale() answers for a surface rather than for one poll of it. Each is
+// therefore failed on its own, with the other answering: a surface is current
+// only when everything it asks for has been answered, and a swallow left at
+// either site has to show up somewhere.
+test("sound.js: a failed status read leaves Sound showing what it last read", async () => {
+  let answering = true;
+  const env = loadPageModule("sound.js", {
+    respond: (path) => {
+      if (path === "/api/status" && !answering) throw new ApiError("the controller did not answer");
+      return {};
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.showing("some-other-surface");
+  assert.equal(env.window.PASurface.isStale(null), true, "Sound is left showing what it last read");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the status read never landed, so Sound must not report itself as current",
+  );
+});
+
+test("sound.js: a module that did not answer leaves Sound showing what it last read", async () => {
+  let answering = true;
+  const env = loadPageModule("sound.js", {
+    respond: (path) => {
+      if (path === "/api/audio" && !answering) throw new ApiError("the module did not answer");
+      return {};
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.showing("some-other-surface");
+  assert.equal(env.window.PASurface.isStale(null), true, "Sound is left showing what it last read");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the module never answered, so Sound must not report itself as current",
+  );
+});
 
 test("setup.js: a memory reading nobody could take does not come back as a fresh one", async () => {
   let answering = true;
