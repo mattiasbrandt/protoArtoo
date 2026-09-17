@@ -112,7 +112,6 @@
   /* Promoted literals. Each of these was a hard-coded colour inside a rule
      until this block claimed it, and is named here for the job it does. */
   --scrim: #040a14;         /* full-viewport wash behind the sleep overlay */
-  --danger-deep: #c94545;   /* the hover face of a destructive button */
   /* The dome drawing's open-panel fill and edge. This is a position readout on
      a picture of the droid - where a panel physically is - and not a Status
      Colour, so it is deliberately its own hue and never --warning. */
@@ -897,7 +896,8 @@ body[data-page="dome"] .card > * + *,
 body[data-page="sound"] .card > * + *,
 body[data-page="rc"] .card > * + *,
 body[data-page="rc"] .rc-channel-list > * + *,
-body[data-page="rc"] .rc-editor-panel > * + * {
+body[data-page="rc"] .rc-editor-panel > * + *,
+body[data-page="seq"] .card > * + * {
   margin-top: var(--space-md);
 }
 
@@ -4880,60 +4880,57 @@ body[data-page="setup"] .status-item .hint {
    Learned Sequence Editor (seq.html)
    ========================================================================= */
 
-.seq-card-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+/* The label over a run of sequence cards - "Your sequences", "Factory
+   sequences". It had no rule anywhere in this stylesheet, so both headings
+   rendered at the browser's own h3 size on a surface whose section heads are
+   11 px mono. The same treatment Sound's group labels take. */
+.seq-section-heading {
+  margin: var(--space-xl) 0 var(--space-md);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
-.seq-card-header-row h3 {
-  margin: 0;
+.seq-section-heading:first-child {
+  margin-top: 0;
 }
 
-.seq-card-actions-top {
-  display: flex;
-  gap: 8px;
+.seq-section-empty {
+  margin-bottom: var(--space-lg);
 }
 
-/* Empty state */
+/* Empty state: what is empty, why, and the act that ends it. The tick above it
+   is gone - a pictograph saying "all clear" over a surface with nothing on it
+   was the wrong reading as well as the wrong kind of glyph. */
 .seq-empty-state {
   text-align: center;
-  padding: 40px 20px;
-}
-
-.seq-empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 12px;
+  padding: var(--space-2xl) var(--space-xl);
 }
 
 .seq-empty-state h4 {
-  font-size: 1.1rem;
-  margin-bottom: 8px;
-  color: var(--silver-bright);
+  font-size: var(--fs-h2);
+  margin-bottom: var(--space-sm);
+  color: var(--text);
 }
 
 .seq-empty-state p {
   color: var(--text-dim);
-  margin-bottom: 20px;
+  font-size: var(--fs-body);
+  margin-bottom: var(--space-xl);
 }
 
 .seq-entry-points {
   display: flex;
-  gap: 12px;
+  gap: var(--space-md);
   justify-content: center;
   flex-wrap: wrap;
 }
 
 .seq-entry-points .btn {
   min-width: 160px;
-}
-
-/* Capacity display */
-.seq-capacity-row {
-  margin-bottom: 16px;
-  color: var(--text-dim);
-  font-size: 0.9rem;
 }
 
 /* Cards list */
@@ -4943,11 +4940,14 @@ body[data-page="setup"] .status-item .hint {
   gap: 12px;
 }
 
+/* A sequence, as a plate. No blue bar down its edge: slice 1 took that off
+   .card for the reason it comes off here too - a bar on every card spends the
+   accent on nothing at all (ADR 0066). */
 .seq-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-plate);
   background: var(--surface);
-  padding: 12px;
+  padding: var(--space-md);
   transition: background 0.2s;
 }
 
@@ -4957,72 +4957,78 @@ body[data-page="setup"] .status-item .hint {
 
 .seq-card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 
+/* The sequence's own name, in ink. It was the interaction blue, which is
+   selection, the row shown, the primary act and the focus ring - never a name
+   on a list (CONTEXT.md "Status Colour"). */
 .seq-card-header h4 {
   margin: 0;
-  font-size: 1rem;
-  color: var(--accent-bright);
+  font-size: var(--fs-h2);
+  color: var(--text);
   flex: 1;
   word-break: break-word;
 }
 
 .seq-badges {
   display: flex;
-  gap: 6px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
+/* A badge names a KIND OF THING - retrained, factory - and takes no colour at
+   all. "Retrained" wore the accent, which reports nothing; the only one left
+   with a hue is "invalid", and that is a refusal. */
 .seq-badge {
   display: inline-block;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  padding: 1px var(--space-sm);
+  border-radius: var(--radius-plate);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.seq-badge-retrained {
-  background: var(--accent-dim);
-  color: var(--accent-bright);
-}
-
-.seq-badge-factory {
-  background: var(--surface-alt);
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-
+/* A sequence Protocol Check would refuse. Amber: the builder can open it and
+   repair it, which is exactly what amber promises. */
 .seq-badge-invalid {
   background: color-mix(in srgb, var(--warning) 15%, transparent);
   color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
 }
 
+/* A factory sequence the builder has not made theirs yet. It is told apart by
+   treatment - a dimmer plate - and never by hue, the way every other
+   Availability Family on this product is (CONTEXT.md). */
 .seq-card-factory {
-  border-left: 3px solid var(--accent-dim);
   opacity: 0.92;
 }
 
 .seq-card-purpose {
-  font-size: 0.9rem;
+  font-size: var(--fs-body);
   color: var(--text-dim);
-  margin-bottom: 8px;
-  line-height: 1.4;
+  margin-bottom: var(--space-sm);
+  line-height: 1.55;
 }
 
 .seq-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 10px;
-  font-size: 0.85rem;
-  color: var(--text-dim);
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  color: var(--text-faint);
 }
 
 .seq-meta-item {
@@ -5031,13 +5037,8 @@ body[data-page="setup"] .status-item .hint {
 
 .seq-card-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
-}
-
-.seq-card-actions .btn-action {
-  font-size: 0.8rem;
-  padding: 6px 10px;
 }
 
 /* Modal styles */
@@ -5088,21 +5089,42 @@ body[data-page="setup"] .status-item .hint {
   border-bottom: 1px solid var(--border);
 }
 
+.seq-advanced-toggle,
+.step-type-reference-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.seq-advanced-toggle svg.i.chev,
+.step-type-reference-toggle svg.i.chev {
+  transition: transform 0.15s ease;
+}
+
+.seq-advanced-toggle[aria-expanded="true"] svg.i.chev,
+.step-type-reference-toggle[aria-expanded="true"] svg.i.chev {
+  transform: rotate(90deg);
+}
+
 .seq-modal-header h4 {
   margin: 0;
   font-size: 1rem;
   color: var(--silver-bright);
 }
 
+/* A dialog's close, as a word. It was a 1.5 rem cross in a 32 px box, which is
+   a glyph carrying a control with no label at all (ADR 0066). */
 .btn-close {
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
+  padding: 0 var(--space-sm);
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5236,20 +5258,6 @@ body[data-page="setup"] .status-item .hint {
 /* Utility classes */
 .hidden {
   display: none !important;
-}
-
-.btn-danger {
-  background: var(--danger);
-  color: var(--white);
-}
-
-.btn-danger:hover {
-  background: var(--danger-deep);
-}
-
-.btn-danger:disabled {
-  background: var(--danger);
-  opacity: 0.5;
 }
 
 /* ========================================================================
@@ -5411,7 +5419,8 @@ body[data-page="setup"] .status-item .hint {
 }
 
 .seq-validation-status {
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
   font-weight: 500;
 }
 
@@ -5550,55 +5559,68 @@ body[data-page="setup"] .status-item .hint {
   outline-offset: -2px;
 }
 
-.step-card-emoji {
-  flex-shrink: 0;
-  font-size: 1.2rem;
-  line-height: 1;
-}
-
 .step-number-label {
   flex-shrink: 0;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
 }
 
 .step-time-label {
   flex-shrink: 0;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
 }
 
+/* What kind of step this is, in ink. It was the interaction blue on every row
+   of the table, which makes a value look like a link (CONTEXT.md "Status
+   Colour"); what the anatomy lights blue here is the row you are on. */
 .step-card-type {
   flex-shrink: 0;
-  color: var(--accent);
-  font-weight: 500;
-  font-size: 0.95rem;
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--fs-cell);
 }
 
 .step-card-preview {
   flex: 1;
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: var(--fs-cell);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The open/closed marker, drawn from the sprite the way every other disclosure
+   in this product draws it. It was a geometric character swapped in the markup
+   on every expand. */
 .step-card-toggle {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
-  padding: 4px 8px;
+  padding: var(--space-2xs) var(--space-sm);
   background: transparent;
   border: none;
-  color: var(--text-dim);
+  color: var(--text-faint);
   cursor: pointer;
-  font-size: 0.9rem;
   transition: color 0.2s;
 }
 
 .step-card-toggle:hover {
-  color: var(--accent);
+  color: var(--text);
+}
+
+.step-card-toggle svg.i.chev {
+  transition: transform 0.15s ease;
+}
+
+.step-card-header[aria-expanded="true"] .step-card-toggle svg.i.chev {
+  transform: rotate(90deg);
 }
 
 .step-card-expanded {
@@ -5653,7 +5675,7 @@ body[data-page="setup"] .status-item .hint {
 }
 
 .step-handle:hover {
-  color: var(--accent);
+  color: var(--text);
 }
 
 .step-t {
@@ -5758,16 +5780,9 @@ body[data-page="setup"] .status-item .hint {
 }
 
 .step-type-card.active {
-  background: var(--accent);
+  background: var(--accent-dim);
   border-color: var(--accent);
-  color: var(--white);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
-}
-
-.step-type-card-emoji {
-  font-size: 1.2rem;
-  display: block;
-  line-height: 1;
+  color: var(--text);
 }
 
 .step-type-card-name {
@@ -5826,14 +5841,6 @@ body[data-page="setup"] .status-item .hint {
   align-items: flex-start;
   gap: 6px;
   font-size: 0.75rem;
-}
-
-.step-type-reference-emoji {
-  display: block;
-  flex-shrink: 0;
-  width: 20px;
-  text-align: center;
-  line-height: 1.2;
 }
 
 .step-type-reference-name {
@@ -5927,24 +5934,25 @@ body[data-page="setup"] .status-item .hint {
   cursor: pointer;
 }
 
+/* "Remove", not a multiplication sign. A glyph on its own carries a control
+   with no label at all, which is the one thing ADR 0066 does not let it do. */
 .step-remove {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  padding: 0;
+  min-height: 30px;
+  padding: 0 var(--space-md);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: var(--radius-xs);
   color: var(--danger);
   cursor: pointer;
-  font-size: 1rem;
-  font-weight: bold;
-  transition: all 0.2s;
+  font-family: inherit;
+  font-size: 12px;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .step-remove:hover {
-  background: var(--danger);
-  color: var(--white);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
   border-color: var(--danger);
 }
 

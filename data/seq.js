@@ -261,7 +261,7 @@
         html += sequences.map((seq) => renderSeqCard(seq)).join("");
       } else {
         html += '<h3 class="seq-section-heading">Your sequences</h3>';
-        html += '<div style="color: #999; font-size: 0.95rem; margin-bottom: 2rem;">No custom or retrained sequences yet</div>';
+        html += '<p class="prose seq-section-empty"><b>Nothing of your own yet.</b> Tune one of the factory sequences below and it lands here.</p>';
       }
 
       // "Factory sequences" section
@@ -308,7 +308,7 @@
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button class="btn btn-sm" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
 
     const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${window.PAUtils.escapeAttr(seq.name)}"`;
@@ -326,11 +326,11 @@
           <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm btn-action" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
-          <button class="btn btn-sm btn-action" data-action="test" ${testBtnDisabled}>Test</button>
-          <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
-          <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
-          <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
+          <button class="btn btn-sm" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
+          <button class="btn btn-sm" data-action="test" ${testBtnDisabled}>Test</button>
+          <button class="btn btn-sm" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
+          <button class="btn btn-sm" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
+          <button class="btn btn-sm" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
           ${shareBtn}
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
@@ -362,7 +362,7 @@
           <span class="seq-meta-item">Steps: ${stepCount}</span>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm btn-action" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open for editing — save under the same name to retrain this sequence">Tune</button>
+          <button class="btn btn-sm" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open for editing — save under the same name to retrain this sequence">Tune</button>
         </div>
       </div>
     `;
@@ -550,18 +550,10 @@
     }
   };
 
-  // Slice 1: Emoji->type mapping (using project's existing emoji set)
-  const stepTypeEmoji = {
-    audio: "🔊",
-    dome: "🧩",
-    domeRotate: "🔄",
-    loop: "🔁",
-    random: "🎲",
-    audioCat: "📚",
-    end: "🛑",
-  };
-
-  // Slice 1: Plain-English type names
+  // Plain-English type names. There was a parallel map of emoji beside this
+  // one, drawn in the step card and in the picker immediately next to the name
+  // it stood for, and it is gone: an operator surface carries no pictograph
+  // (ADR 0066) and the word was already doing the whole job.
   const stepTypeName = {
     audio: "Sound",
     dome: "Panel Action",
@@ -572,21 +564,13 @@
     end: "Sequence End",
   };
 
-  // Helper: derive dome sub-mode identity from cmd (emoji + name for collapsed card)
+  // Helper: which dome sub-mode a step's cmd is, by name, for the collapsed card
   const domeSubmodeLabel = (cmd) => {
-    if ((cmd || "").startsWith("DV:")) {
-      return { emoji: "🎨", name: "Visual Preset" };
-    }
-    if ((cmd || "").startsWith("DL:")) {
-      return { emoji: "🎭", name: "Logic / PSI Mode" };
-    }
-    if ((cmd || "").startsWith("DT:")) {
-      return { emoji: "💬", name: "Logic Text" };
-    }
-    if ((cmd || "").startsWith("DH:")) {
-      return { emoji: "🔦", name: "Holo Effect" };
-    }
-    return { emoji: "🧩", name: "Panel Action" };
+    if ((cmd || "").startsWith("DV:")) return { name: "Visual Preset" };
+    if ((cmd || "").startsWith("DL:")) return { name: "Logic / PSI Mode" };
+    if ((cmd || "").startsWith("DT:")) return { name: "Logic Text" };
+    if ((cmd || "").startsWith("DH:")) return { name: "Holo Effect" };
+    return { name: "Panel Action" };
   };
 
   // Slice 4: Step type descriptions for reference panel
@@ -604,8 +588,8 @@
   const renderStepTypeReference = () => {
     return `
       <div class="step-type-reference">
-        <button class="step-type-reference-toggle" aria-expanded="false" aria-controls="step-type-reference-panel">
-          What does each step type do? ▼
+        <button class="step-type-reference-toggle" type="button" aria-expanded="false" aria-controls="step-type-reference-panel">
+          <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>What does each step type do?
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
@@ -613,7 +597,6 @@
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
-                    <span class="step-type-reference-emoji">${stepTypeEmoji[type]}</span>
                     <span class="step-type-reference-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
                     <span class="step-type-reference-desc">${window.PAUtils.escapeHtml(stepTypeDescriptions[type])}</span>
                   </div>`
@@ -627,13 +610,10 @@
 
   const renderStepRow = (step, idx) => {
     const isExpanded = editorState.expanded.has(idx);
-    let emoji = stepTypeEmoji[step.type] || "•";
     let typeName = stepTypeName[step.type] || step.type;
     // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
     if (step.type === "dome") {
-      const label = domeSubmodeLabel(step.cmd);
-      emoji = label.emoji;
-      typeName = label.name;
+      typeName = domeSubmodeLabel(step.cmd).name;
     }
     const preview = stepPreview(step);
 
@@ -648,14 +628,13 @@
         <span class="step-handle" title="Drag to reorder steps">⋯</span>
         <span class="step-number-label">Step ${idx + 1}</span>
         <span class="step-time-label">t=${step.t || 0}ms</span>
-        <span class="step-card-emoji">${emoji}</span>
         <span class="step-card-type">${window.PAUtils.escapeHtml(typeName)}</span>
         <span class="step-card-preview">${window.PAUtils.escapeHtml(preview)}</span>
         ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
         <button class="step-card-toggle" aria-label="${isExpanded ? "Collapse" : "Expand"} step" type="button" tabindex="-1">
-          ${isExpanded ? "▼" : "▶"}
+          <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
         </button>
-        <button class="step-remove" aria-label="Remove this step" type="button" tabindex="-1">×</button>
+        <button class="step-remove" type="button" tabindex="-1">Remove</button>
       </div>
     `;
 
@@ -677,8 +656,7 @@
                 ${["audio", "domeRotate", "dome", "loop"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
-                        <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
                         <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
                       </button>`
                   )
@@ -686,16 +664,13 @@
               </div>
             </div>
             <div class="step-type-subgroup">
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}" title="Logic / PSI Mode">
-                <span class="step-type-card-emoji">🎭</span>
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}">
                 <span class="step-type-card-name">Logic / PSI Mode</span>
               </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}" title="Logic Text">
-                <span class="step-type-card-emoji">💬</span>
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}">
                 <span class="step-type-card-name">Logic Text</span>
               </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}" title="Holo Effect">
-                <span class="step-type-card-emoji">🔦</span>
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}">
                 <span class="step-type-card-name">Holo Effect</span>
               </button>
             </div>
@@ -706,8 +681,7 @@
                 ${["random", "audioCat", "end"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
-                        <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
                         <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
                       </button>`
                   )
@@ -1320,14 +1294,14 @@
       .join("");
 
     const tuneNotice = editorState.tuningFactory
-      ? `<div class="card warning" style="margin-bottom: 1rem; font-size: 0.9rem;">
-           Tuning <strong>${window.PAUtils.escapeHtml(editorState.tuningFactory)}</strong> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.
+      ? `<div class="note note-act" role="note">
+           Tuning <b>${window.PAUtils.escapeHtml(editorState.tuningFactory)}</b> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.
          </div>`
       : "";
 
     els.editorView.innerHTML = `
       <div class="card">
-        <h3>Edit — ${window.PAUtils.escapeHtml(seq.name || "New Sequence")}</h3>
+        <div class="sect"><h2>Editing</h2><span class="sub">${window.PAUtils.escapeHtml(seq.name || "a new sequence")} &middot; ${seq.steps.length} ${seq.steps.length === 1 ? "step" : "steps"}</span></div>
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
@@ -1357,8 +1331,8 @@
 
           <!-- Advanced Settings (collapsed by default) -->
           <div class="seq-metadata-section seq-metadata-advanced">
-            <button id="seq-editor-advanced-toggle" class="seq-advanced-toggle" aria-expanded="false" aria-controls="seq-editor-advanced-fields">
-              Advanced Settings ▼
+            <button id="seq-editor-advanced-toggle" class="seq-advanced-toggle" type="button" aria-expanded="false" aria-controls="seq-editor-advanced-fields">
+              <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Advanced settings
             </button>
             <div id="seq-editor-advanced-fields" class="seq-advanced-fields hidden">
               <div class="seq-editor-field">
@@ -1387,19 +1361,19 @@
         </div>
 
         <div class="seq-editor-steps">
-          <h4>Sequence Behavior (${seq.steps.length} Steps)</h4>
-          <p class="seq-editor-steps-helper">All steps are collapsed. Click to expand for editing.</p>
+          <div class="sect"><h3>Steps</h3><span class="sub">${seq.steps.length} ${seq.steps.length === 1 ? "step" : "steps"}, in the order they run</span></div>
+          <p class="hint">Every step starts collapsed. Press one to open it.</p>
           <div class="seq-editor-step-table" id="seq-editor-step-table">
             ${stepRows}
           </div>
-          <button id="seq-editor-add-step" class="btn btn-sm btn-secondary" aria-label="Add a new step">+ Add Step</button>
+          <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
         </div>
 
         <div class="seq-editor-footer">
-          <button id="seq-editor-test" class="btn btn-primary" aria-label="Test sequence on droid">Test on Droid</button>
-          <button id="seq-editor-save" class="btn btn-primary" aria-label="Save sequence">Save</button>
-          <button id="seq-editor-revert" class="btn btn-secondary" aria-label="Discard unsaved changes">Revert</button>
-          <button id="seq-editor-cancel" class="btn btn-secondary" aria-label="Cancel editing">Cancel</button>
+          <button id="seq-editor-test" class="btn" type="button">Test on the droid</button>
+          <button id="seq-editor-save" class="btn accent" type="button">Save</button>
+          <button id="seq-editor-revert" class="btn" type="button" aria-label="Discard unsaved changes">Revert</button>
+          <button id="seq-editor-cancel" class="btn" type="button" aria-label="Cancel editing">Cancel</button>
         </div>
 
         <div class="seq-editor-feedback" id="seq-editor-feedback" aria-live="polite" aria-label="Editor feedback">
@@ -1429,11 +1403,14 @@
     const summaryEl = document.getElementById("seq-editor-validation-summary");
     if (!summaryEl) return;
 
-    const icon = validation.ok ? "✓" : "⚠";
+    // No glyph in front of the verdict. Protocol Check's two outcomes take the
+    // signal colours their own meanings already have - green for a sequence the
+    // droid will accept, red for one it would refuse - and the sentence says
+    // which on its own (CONTEXT.md "Status Colour", ADR 0044).
     const status = validation.ok ? "valid" : "error";
     summaryEl.innerHTML = `
       <div class="seq-validation-status seq-validation-${status}">
-        ${icon} ${validation.ok ? "Sequence is valid" : validation.error || "Validation error"}
+        ${validation.ok ? "Sequence is valid" : validation.error || "Validation error"}
       </div>
     `;
 
@@ -1659,22 +1636,22 @@
     let message = "";
     if (severity === "disabled") {
       const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : "";
-      message = `⚠ ${elementId} is disabled on the connected dome${reason} — this step still runs, but the dome may ignore it.`;
+      message = `${elementId} is disabled on the connected dome${reason} — this step still runs, but the dome may ignore it.`;
     } else if (severity === "inactive") {
-      message = `⚠ ${elementId} is not currently active — this step still runs, but the dome may ignore it.`;
+      message = `${elementId} is not currently active — this step still runs, but the dome may ignore it.`;
     } else if (severity === "in_layout_false") {
-      message = `⚠ ${elementId} is not in the selected layout — this step still runs, but may not be available.`;
+      message = `${elementId} is not in the selected layout — this step still runs, but may not be available.`;
     } else if (severity === "unverified") {
-      message = `⚠ ${elementId} availability unverified — this step still runs, but the dome state is unknown.`;
+      message = `${elementId} availability unverified — this step still runs, but the dome state is unknown.`;
     } else if (severity === "unmapped") {
-      message = `⚠ ${elementId} is unmapped to command targets — this step cannot be authored.`;
+      message = `${elementId} is unmapped to command targets — this step cannot be authored.`;
     } else {
-      message = `⚠ ${elementId} is not available — this step may not execute as expected.`;
+      message = `${elementId} is not available — this step may not execute as expected.`;
     }
 
     // Special case: excluded-but-active diagnostic
     if (elem.in_layout === false && elem.active === true) {
-      message = `⚠ ${elementId} is excluded from the selected layout but the dome reports it active (layout/runtime mismatch) — this step may behave unexpectedly.`;
+      message = `${elementId} is excluded from the selected layout but the dome reports it active (layout/runtime mismatch) — this step may behave unexpectedly.`;
     }
 
     return message;
