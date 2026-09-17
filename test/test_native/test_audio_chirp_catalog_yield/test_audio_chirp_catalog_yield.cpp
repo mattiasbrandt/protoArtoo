@@ -2,7 +2,7 @@
 // test_audio_chirp_catalog_yield
 //
 // Regression coverage for issue #15: CHIRP catalog refresh must yield even when
-// every GMAN/GNME response is already waiting in RX. The ordinary readLine()
+// every GMAN/GNME response is already waiting in RX. The ordinary readFrame()
 // no-data delay path is not exercised in that case.
 // =============================================================================
 

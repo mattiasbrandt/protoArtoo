@@ -64,11 +64,31 @@ struct AudioCatalogEntry {
 };
 
 // Catalog bank descriptor  --  one bank/page combination in an audio catalog.
+//
+// dirName is empty when the module reported no directory for the bank. That is
+// an observation ("the module did not name one"), never a placeholder to fill
+// in: the CHIRP module sends "BANK:1,,<count>" for a card with no 1x_
+// directory, and a Bank 1 row recovered from LIST carries a count and nothing
+// else. Anything deriving a page or a path from dirName must check it first.
 struct AudioCatalogBank {
     uint8_t bank = 0;
     char page = 'A';
     char dirName[32] = {0};
     uint16_t count = 0;
+};
+
+// -----------------------------------------------------------------------------
+// AudioCatalogCompleteness  --  what the last catalog discovery could NOT see.
+//
+// A ready catalog is not the same thing as a whole one: the module's reply
+// queue can drop bank rows, individual names can go unanswered, and the entry
+// array has a fixed ceiling. Every one of those leaves a usable catalog that is
+// missing something, and describing it as complete is the lie #397 removes.
+// -----------------------------------------------------------------------------
+struct AudioCatalogCompleteness {
+    bool manifestComplete = false;   // every bank row the module announced arrived
+    uint16_t missingNameCount = 0;   // entries left as index_N because no name came back
+    bool entryCapReached = false;    // the walk stopped at the entry array's ceiling
 };
 
 // -----------------------------------------------------------------------------
@@ -211,5 +231,11 @@ class AudioDriver {
     // Caller should iterate [0, getCatalogBankCount()) if non-nullptr.
     virtual const AudioCatalogBank* getCatalogBanks() const {
         return nullptr;
+    }
+
+    // What the last discovery could not see. Default reports an incomplete
+    // manifest, which is the honest answer for a backend that never ran one.
+    virtual void getCatalogCompleteness(AudioCatalogCompleteness& out) const {
+        out = AudioCatalogCompleteness{};
     }
 };
