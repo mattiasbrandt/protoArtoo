@@ -1,0 +1,17 @@
+diff --git i/data/app.js w/data/app.js
+index 562fc93a..7461f00d 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -1501,11 +1501,10 @@
+   // when a cached frame exists, so nothing repaired it until the droid emitted
+   // a status, which a quiet latched droid never does. The shell's own copy
+   // sends the operator here to clear it.
++  startPageLoad();
+   setEstopUi(false);
+   setSleepUi(false);
+ 
+-  startPageLoad();
+-
+   if (window.PAStatusStream?.isSupported()) {
+     window.PAStatusStream.subscribe((eventType, payload) => {
+       if (eventType === "status") {

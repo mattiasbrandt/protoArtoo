@@ -1,0 +1,13 @@
+diff --git i/data/_recovery_kernel.html w/data/_recovery_kernel.html
+index 0491ed02..c0abf212 100644
+--- i/data/_recovery_kernel.html
++++ w/data/_recovery_kernel.html
+@@ -60,7 +60,7 @@
+          reason the wash does. A child combinator so the dim applies once
+          rather than once per nesting level - 0.4 four levels deep renders at
+          0.0256, which is the bug #117 fixed. */
+-      body.recovery-active #shell-content > *:not(#page-recovery-backdrop) {
++      body.recovery-active > *:not(#page-recovery-backdrop) {
+         opacity: 0.4;
+         pointer-events: none;
+       }
