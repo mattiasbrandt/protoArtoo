@@ -492,7 +492,12 @@
     renderReadouts(payload);
     renderOpMode(payload);
     renderActiveMood(payload);
-    setEstopUi(!!payload.estop);
+    // One place decides a latch, and it is not this one: data/shell.js's
+    // estopIsLatched, published as window.PAEstop (#346, #359). The truthy
+    // read this replaces answered a different question - a frame missing the
+    // field could not say "latched", and must not be allowed to say "clear"
+    // either.
+    setEstopUi(window.PAEstop.isLatched(payload));
     setSleepUi(!!payload.sleepMode);
   };
 
@@ -544,7 +549,7 @@
       showFeedback(estopFeedback, "Estop clear", "success");
     } catch (error) {
       showFeedback(estopFeedback, `Clearing estop failed: ${window.PAApi.messageFor(error)}`, "error");
-      if (lastStatus) setEstopUi(!!lastStatus.estop);
+      if (lastStatus) setEstopUi(window.PAEstop.isLatched(lastStatus));
     } finally {
       estopClearPending = false;
       renderEstopClear();
