@@ -192,7 +192,15 @@ test("an estop mid-run ends the run at once and stops showing the nudged output'
   assert.match(env.feedback(), /The estop stopped the run\. Rear-left body door stays – not wired –\./);
   assert.equal(env.cell("ledc:0", "outputs-bar").classList.contains("is-stale"), true, "the last commanded mark is held back");
   assert.match(env.text("ledc:0", "outputs-us"), /Stopped — finding out/);
-  assert.equal(env.cell("ledc:1", "outputs-bar").classList.contains("is-stale"), false, "only the Output the run was nudging");
+  // Every OTHER Output's mark is held back too, and that changed under this
+  // test. When it was written the estop stopped the nudge and nothing else, so
+  // only the nudged row's mark went stale. C1d (#364, 075cf487) made the estop
+  // edge RELEASE every enabled Output and command no position (ADR 0043), so
+  // none of them is being driven and none of their marks is current any more -
+  // a row left reading its last commanded width would be claiming the droid is
+  // holding a part it has just let go of (corrected on #365).
+  assert.equal(env.cell("ledc:1", "outputs-bar").classList.contains("is-stale"), true, "the estop let go of every Output");
+  assert.match(env.text("ledc:1", "outputs-us"), /Stopped — finding out/);
 
   // The firmware ended the move where it was and says so on the next answer;
   // that answer is current and repaints the row.
