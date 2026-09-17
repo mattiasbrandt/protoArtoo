@@ -1,0 +1,13 @@
+diff --git i/data/firmware.js w/data/firmware.js
+index c4034b5b..ad27888b 100644
+--- i/data/firmware.js
++++ w/data/firmware.js
+@@ -111,7 +111,7 @@
+   };
+ 
+   const postReboot = async () => {
+-    const target = rebootFeedback || feedback;
++    const target = feedback;
+     if (!window.PAApi) {
+       target.textContent = "API helper unavailable";
+       return;

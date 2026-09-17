@@ -1,0 +1,13 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index c4638920..2b2482db 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -123,7 +123,7 @@
+   // twice (ADR 0066, CONTEXT.md "Status Colour").
+   const setPendingSummary = (text) => {
+     if (!pendingSummary) return;
+-    pendingSummary.textContent = text;
++    pendingSummary.textContent = "Active";
+   };
+ 
+   // The Active against saved head's subtitle: whether the two halves under it
