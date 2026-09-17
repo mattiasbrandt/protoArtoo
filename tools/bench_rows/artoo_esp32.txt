@@ -3,9 +3,13 @@
 #
 # The replayable sheet for the artoo-esp32 Console bench runbook (#216),
 # commands only -- everything #216 lists that the Console Client's scripted
-# mode (#264) can express. Transport under test is the UART0 bridge,
-# unseated over USB-UART (#216's own scope: no seated or droid-mounted
-# hardware). Human-only steps are `pause` directives; what a row is expected
+# mode (#264) can express. Transport under test is the UART0 bridge over
+# USB-UART. Scope is Bench-Mode: nothing connected to the board (#216's own
+# scope). On THIS board that also means the ESP32 is out of the Artoo PCB,
+# because GPIO15 is shared with SBUS strapping and USB will not sync in the
+# socket -- an artoo-esp32 wiring fact, not a posture, and it says nothing
+# about firebeetle2 (CONTEXT.md "Bench-Mode", 2026-09-17).
+# Human-only steps are `pause` directives; what a row is expected
 # to answer stays on #216's own criterion, never written here
 # (docs/console-protocol.md's "no expect directive" decision).
 #
@@ -149,8 +153,9 @@ send system.action.reboot-wifi-module
 #   - The Console cannot SET a Component Member or an endpoint; those arrive on
 #     POST /api/config, and no page builds them until C3 (#351) and C1 (#347).
 #     So those steps are `pause` directives naming the request, not `send`.
-#   - Ceiling for the whole block is Controller Upload Verified. The bench is
-#     unseated: a row wanting a moving arm is Not Assessed and says so.
+#   - Ceiling for the whole block is Controller Upload Verified. Bench-Mode
+#     means nothing is connected to the board, so a row wanting a moving arm
+#     is Not Assessed and says so.
 # =============================================================================
 
 # A7 (#340) - "Say which sound module is actually fitted, and change it later,

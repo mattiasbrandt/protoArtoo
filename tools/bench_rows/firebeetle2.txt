@@ -251,8 +251,9 @@ send system.status.health
 #     fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
 #     src/console/console_module.cpp), so there is nothing here to read.
 #
-# Ceiling for this block, as for artoo's: Controller Upload Verified. The bench
-# is unseated; a row wanting a moving arm is Not Assessed and says so.
+# Ceiling for this block, as for artoo's: Controller Upload Verified. Bench-Mode
+# means nothing is connected to the board, so a row wanting a moving arm is Not
+# Assessed and says so.
 # =============================================================================
 
 # A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
