@@ -245,18 +245,27 @@ function newFirmwarePage() {
   };
 
   const posted = [];
+  // The upload transport, settled by the test rather than by the clock: a
+  // pending promise holds the in-flight state still so it can be read, and
+  // resolving or rejecting it drives the two ends.
+  let settleUpload = null;
   const sandbox = {
     PAApi: {
-      postForm: (path, body) => { posted.push(path); return Promise.resolve({ ok: true, data: {} }); },
+      postForm: (path) => { posted.push(path); return Promise.resolve({ ok: true, data: {} }); },
       messageFor: (error) => String(error && error.message),
     },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     confirm: () => true,
-    fetch: () => Promise.resolve({ ok: true, headers: { get: () => "" } }),
+    fetch: () => new Promise((resolve, reject) => { settleUpload = { resolve, reject }; }),
     FormData: class { append() {} },
     AbortController,
     document: { getElementById: byId, addEventListener() {}, body: makeStub() },
-    setTimeout, clearTimeout, Promise, console,
+    // Recorded, never run: waitForReconnect schedules a four-second poll on
+    // success, and a live timer would hold the test process open.
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    Promise,
+    console,
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
@@ -266,6 +275,12 @@ function newFirmwarePage() {
   return {
     byId,
     posted,
+    chooseFile: (inputId, name) => { byId(inputId).files = [{ name }]; },
+    finishUpload: (ok) =>
+      ok
+        ? settleUpload.resolve({ ok: true, status: 200, headers: { get: () => "" } })
+        : settleUpload.reject(new Error("connection lost")),
+    settled: () => new Promise((resolve) => setImmediate(resolve)),
     press: (id) => {
       const handlers = byId(id).listeners.click || [];
       assert.ok(handlers.length > 0, `#${id} has no click handler`);
@@ -299,6 +314,54 @@ test("the reboot answers on the reboot plate, and nowhere else", async () => {
   assert.deepEqual(page.posted, ["/api/reboot"], "and it is the same route it always asked for");
   assert.equal(page.byId("fw-reboot-feedback").textContent, "Reboot requested.");
   assert.ok(page.untouched(["fw-feedback", "fs-feedback"]), "it answered on another plate too");
+});
+
+test("an upload in flight moves rather than claiming half of itself", async () => {
+  const page = newFirmwarePage();
+  page.chooseFile("fw-file", "firmware.bin");
+  page.press("upload-fw-button");
+  await page.settled();
+
+  const bar = page.byId("fw-bar");
+  assert.equal(page.byId("fw-progress").classes.has("hidden"), false, "the progress block stayed hidden");
+  assert.ok(bar.classes.has("indeterminate"), "the bar is not saying anything is happening");
+  assert.equal(bar.style.width, "", "a width here is a fraction nothing measured");
+  assert.match(page.byId("fw-feedback").textContent, /^Uploading firmware\.bin/);
+
+  // And the interlock the brief is emphatic about: nothing else may start,
+  // and the reboot is refused, while an image is going up.
+  assert.equal(page.byId("upload-fw-button").disabled, true);
+  assert.equal(page.byId("upload-fs-button").disabled, true);
+  assert.equal(page.byId("reboot-button").disabled, true, "a reboot part-way through an upload is the defect");
+});
+
+test("an upload that lands fills the bar, and one that fails empties it", async () => {
+  const landed = newFirmwarePage();
+  landed.chooseFile("fw-file", "firmware.bin");
+  landed.press("upload-fw-button");
+  await landed.settled();
+  landed.finishUpload(true);
+  await landed.settled();
+  await landed.settled();
+
+  assert.equal(landed.byId("fw-bar").classes.has("indeterminate"), false, "it is still sweeping after it landed");
+  assert.equal(landed.byId("fw-bar").style.width, "100%");
+
+  const failed = newFirmwarePage();
+  failed.chooseFile("fs-file", "littlefs.bin");
+  failed.press("upload-fs-button");
+  await failed.settled();
+  failed.finishUpload(false);
+  await failed.settled();
+  await failed.settled();
+
+  assert.equal(failed.byId("fs-bar").classes.has("indeterminate"), false);
+  assert.equal(failed.byId("fs-bar").style.width, "0%");
+  assert.equal(failed.byId("fs-progress").classes.has("hidden"), true);
+  assert.equal(failed.byId("fs-status").textContent, "Upload failed");
+  assert.equal(failed.byId("fs-feedback").textContent, "connection lost");
+  assert.ok(failed.untouched(["fw-feedback", "fw-reboot-feedback"]), "the failure landed on another plate too");
+  assert.equal(failed.byId("reboot-button").disabled, false, "the interlock never released");
 });
 
 test("an upload the page cannot measure claims no fraction of one", () => {
