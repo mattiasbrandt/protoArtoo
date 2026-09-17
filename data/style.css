@@ -899,7 +899,8 @@ body[data-page="rc"] .rc-channel-list > * + *,
 body[data-page="rc"] .rc-editor-panel > * + *,
 body[data-page="seq"] .card > * + *,
 body[data-page="wifi"] .card > * + *,
-body[data-page="wifi"] #wifi-settings-form > * + * {
+body[data-page="wifi"] #wifi-settings-form > * + *,
+body[data-page="firmware"] .card > * + * {
   margin-top: var(--space-md);
 }
 
@@ -1950,15 +1951,27 @@ input.input-narrow {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* Firmware's two uploads. The form is one bounded column rather than the width
+   of the surface: a file picker is not a 1160 px control, which is the same
+   defect .settings-grid was written to undo on Foot Drive. The two notes above
+   it stay full width - they are prose, and .prose carries its own measure. */
+body[data-page="firmware"] .form-grid {
+  grid-template-columns: minmax(0, 520px);
+}
+
+/* Firmware's two file pickers, and the only file inputs this product serves.
+   The 44 px floor stays - it is the bench tablet's, the same one .field's
+   inputs keep - and everything else is the anatomy's: a chamfer rather than a
+   rounded card corner, and a size that is on the scale. */
 .file-input {
   width: 100%;
-  padding: 12px 14px;
+  padding: var(--space-md) var(--space-lg);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--fs-cell);
   transition: border-color 0.2s ease;
   min-height: 44px;
 }
@@ -1967,6 +1980,26 @@ input.input-narrow {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* The browser's own button inside the picker. Left alone it is the platform's
+   light grey slab, which on a dark instrument plate is the single loudest
+   thing on the surface - and it is not even the act, since the act is the
+   Upload button below. Drawn as the anatomy's plain .btn face instead. */
+.file-input::file-selector-button {
+  margin-right: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: var(--fs-cell);
+  cursor: pointer;
+}
+
+.file-input::file-selector-button:hover {
+  border-color: var(--accent);
 }
 
 /* Foot Drive's pad. CSS grid guarantees the cross layout at every width: the
@@ -2174,18 +2207,21 @@ input.input-narrow {
 
 .fw-progress {
   display: grid;
-  gap: 8px;
+  gap: var(--space-sm);
+  max-width: 420px;
 }
 
 .fw-progress-track {
   width: 100%;
   height: 12px;
-  background: color-mix(in srgb, var(--lift) 6%, transparent);
+  background: var(--well);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-plate);
   overflow: hidden;
 }
 
+/* The blue is interaction, not a state: this bar reports that the browser is
+   busy sending, which is the operator's own act still running. */
 .fw-progress-bar {
   width: 0;
   height: 100%;
@@ -2193,9 +2229,38 @@ input.input-narrow {
   transition: width 0.2s ease;
 }
 
+/* An upload nothing can measure. fetch() gives no progress events, so the
+   renderer used to park this bar at 50% - a number nothing measured, and
+   indistinguishable from a stalled upload. A sweep says the same "still
+   going" without naming a fraction. */
+.fw-progress-bar.indeterminate {
+  width: 40%;
+  transition: none;
+  animation: fw-progress-sweep 1.4s ease-in-out infinite;
+}
+
+/* The travel is bounded so a piece of the bar is on the track at every point
+   in the cycle: a sweep that runs fully off both ends spends part of every
+   pass looking exactly like a stalled upload, which is the reading this
+   replaced 50% to avoid. At 40% of the track wide, -50% leaves half of it
+   showing at the left end and 225% a tenth at the right. */
+@keyframes fw-progress-sweep {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(225%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fw-progress-bar.indeterminate {
+    width: 100%;
+    opacity: 0.45;
+    animation: none;
+  }
+}
+
 .fw-progress-status {
   color: var(--text-dim);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
 }
 
 .log-wrap {
@@ -2822,15 +2887,9 @@ body.sleep-mode-active {
    reader, and a within-card heading is a nested .sect head now, the way Setup
    already writes one (ADR 0066). */
 
-.info-note {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 8px 8px 0;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-}
+/* .info-note is gone too: no served file has referenced it, and the anatomy's
+   blue consequence note is .note .note-info. */
+
 
 /* Tooltip styles — exclude buttons and interactive elements */
 [title]:not(button):not(.btn):not(input):not(select):not(.indicator-text) {
@@ -4615,16 +4674,18 @@ body[data-page="setup"] .status-item .hint {
   }
 }
 
-/* Utility Classes */
+/* What is left of the pre-anatomy margin utilities. A swept surface spaces the
+   parts of a plate with the ladder rule further up (.card > * + *), so the
+   two below are the last two readers in data/ - the Dashboard's component
+   detail lines and Sound's mood-map feedback - and the block ends when they
+   are swept too.
+
+   Gone with this slice: .mt-12 and .mt-16, whose last readers were WiFi's and
+   Firmware's markup; .mt-10, .mt-20, .mb-6, .mb-12, .block and .flex, which
+   no served file referenced at all; and .text-warning, whose only readers were
+   Firmware's two "Warning:" lines - a consequence beside a control is a
+   .note .note-act now (ADR 0066, docs/ui-copy-voice.md rules 11 and 12). */
 .mt-6 { margin-top: 6px; }
-.mt-10 { margin-top: 10px; }
-.mt-16 { margin-top: 16px; }
-.mt-20 { margin-top: 20px; }
-.mb-6 { margin-bottom: 6px; }
-.mb-12 { margin-bottom: 12px; }
-.block { display: block !important; }
-.flex { display: flex !important; }
-.text-warning { color: var(--warning); }
 
 /* ---------------------------------------------------------------------------
    Dashboard (ADR 0066).
@@ -6172,10 +6233,6 @@ body[data-page="setup"] .status-item .hint {
   min-width: 90px;
   padding: 10px 14px;
   font-size: 0.9rem;
-}
-
-.mt-12 {
-  margin-top: 12px;
 }
 
 .mt-8 {

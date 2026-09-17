@@ -20,6 +20,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
@@ -82,13 +83,23 @@ class Pictographs(unittest.TestCase):
             anatomy.check_pictographs(anatomy.served_files(data), data, errors)
             self.assertEqual(len(errors), 1, errors)
 
+    # The two below drive the pending mechanism through a FIXTURE list rather
+    # than through the shipped one. They read the real PENDING until #399 slice
+    # 4 emptied it, at which point they raised StopIteration - and a check whose
+    # own coverage dies the moment its data goes empty is a check that stops
+    # being tested exactly when it becomes a pure guard. A planted row is also
+    # the stricter form: it pins what a row DOES, rather than whatever row the
+    # sweep happened to have left.
+    PENDING_FIXTURE = {"wifi.html": "#000 some slice"}
+
     def test_a_pending_surface_keeps_its_pictographs(self):
         # The point of the list: this file is not swept yet and must not fail.
-        name, slice_ = next(iter(anatomy.PENDING.items()))
+        name, slice_ = next(iter(self.PENDING_FIXTURE.items()))
         with tempfile.TemporaryDirectory() as tmp:
             data = tree(tmp, {name: f"<p>{ROCKET}</p>"})
             errors = []
-            swept, pending = anatomy.check_pictographs(anatomy.served_files(data), data, errors)
+            with patch.object(anatomy, "PENDING", self.PENDING_FIXTURE):
+                swept, pending = anatomy.check_pictographs(anatomy.served_files(data), data, errors)
             self.assertEqual(errors, [])
             self.assertEqual((swept, pending), (0, 1))
             self.assertTrue(slice_)
@@ -97,11 +108,12 @@ class Pictographs(unittest.TestCase):
         # The list is self-retiring. A row that has become true is a row that
         # should have been deleted by the slice that made it true, and leaving
         # it means the next reader believes a surface is unswept when it is not.
-        name = next(iter(anatomy.PENDING))
+        name = next(iter(self.PENDING_FIXTURE))
         with tempfile.TemporaryDirectory() as tmp:
             data = tree(tmp, {name: "<p>nothing to see</p>"})
             errors = []
-            anatomy.check_pictographs(anatomy.served_files(data), data, errors)
+            with patch.object(anatomy, "PENDING", self.PENDING_FIXTURE):
+                anatomy.check_pictographs(anatomy.served_files(data), data, errors)
             self.assertEqual(len(errors), 1, errors)
             self.assertIn("delete its row", errors[0])
 
@@ -190,6 +202,12 @@ class RealTree(unittest.TestCase):
         # and would quietly excuse nothing for the rest of the sweep.
         missing = sorted(name for name in anatomy.PENDING if not (anatomy.DATA / name).is_file())
         self.assertEqual(missing, [])
+
+    def test_nothing_is_still_waiting_for_a_slice(self):
+        # #399 swept all thirteen surfaces; the last two rows went with slice 4.
+        # A row added after that is not a promise about work in flight, it is an
+        # exemption - so the list stays empty and this is what says so.
+        self.assertEqual(anatomy.PENDING, {})
 
 
 if __name__ == "__main__":
