@@ -322,7 +322,7 @@ PORT: /dev/ttyUSB0 (usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-i
 BAUD: 115200
 HOST-TIME: 2026-09-03T22:07:10Z
 REPO: ed500ab6
-BOARD: artoo-esp32 (unseated bench) (asserted)
+BOARD: artoo-esp32 (Bench-Mode) (asserted)
 IMAGE: firmwareVersion=v1.0.0 fsVersion=fs-v1.0.0
 ```
 
