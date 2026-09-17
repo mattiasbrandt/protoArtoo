@@ -1,0 +1,12 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..cab21202 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -867,6 +867,6 @@
+       }
+       return loadSheet();
+     },
+-    { runOnStart: true, refreshOnReturn: true }
++    { runOnStart: false, refreshOnReturn: true }
+   ).start();
+ })();
