@@ -741,7 +741,7 @@ Returns live audio module status.
 
 - Success: `200` JSON includes backend/driver and runtime status fields
   - `driver`: the active sound module's display name, exactly as its driver
-    reports it - `DY-SV5W`, `MP3Trigger` or `CHIRP`. Which one is running is
+    reports it - `DY-SV5W`, `MP3Trigger` or `CHIRP Audio Trigger`. Which one is running is
     the Sound Component Member, chosen at runtime; see
     `GET /api/identity/components`.
   - `capabilities`: the `AUDIO_CAP_*` bitmask declared on that module's

@@ -124,8 +124,10 @@ class AudioDriver {
 
     virtual ~AudioDriver() = default;
 
-    // Returns a short human-readable name for this driver (e.g. "DY-SV5W", "CHIRP").
-    // Used by the status API to expose the active backend to the web UI.
+    // Returns the operator-visible name of this driver's module (e.g. "DY-SV5W",
+    // "CHIRP Audio Trigger"). Used by the status API to expose the active
+    // backend to the web UI, so it is product copy: a name that also belongs to
+    // another product is qualified here rather than on the page.
     virtual const char* driverName() const = 0;
 
     // Capability bits describing which query fields this backend can provide and

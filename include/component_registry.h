@@ -128,6 +128,25 @@ constexpr uint8_t componentPartCapabilities(const char* id) {
     return 0;
 }
 
+// The operator-visible name declared for one product, read straight out of the
+// manifest at compile time -- the same trick componentPartCapabilities() plays,
+// for the same reason: a driver that RETURNS its row's name cannot drift from
+// the name the rest of the UI shows for the same product. Returns nullptr for
+// an id no row declares, which componentPartExists() is asserted against at
+// every call site that depends on the answer.
+constexpr const char* componentPartDisplayName(const char* id) {
+#define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
+#define PA_COMPONENT_PART(value, part_id, part_name, category, protocol, status, capabilities, \
+                          gate, included)                                                     \
+    if (component_registry_detail::idEquals(id, part_id)) {                                   \
+        return (part_name);                                                                   \
+    }
+#include "component_registry.inc"
+#undef PA_COMPONENT_PART
+#undef PA_COMPONENT_CATEGORY
+    return nullptr;
+}
+
 // Whether any row declares this id, resolved at compile time. A driver cites
 // its own row by id to read its capability word, and a typo there would
 // otherwise resolve to a silent 0 rather than to a build failure -- so each
