@@ -1372,6 +1372,16 @@ Returns current config snapshot.
   the Part ids actually on this droid. A design **seeds** the Parts and never
   fences them: `fitted` says what is on the droid, and every Part the catalog
   declares stays legal to author, save and wire whatever it contains.
+- `guidedSetup`: where the guided Setup run stands (#351) — `run` (`not-run` |
+  `skipped` | `completed`), `visited`, the keys of the steps that have actually
+  been on screen, and `recorded`, whether any record exists at all. Skipping ends
+  the run exactly as finishing does; the two stay distinguishable because they
+  are different facts about a droid. **`recorded` is not redundant with an empty
+  `visited`**: a controller configured before this record existed carries no
+  record, and only that case may be read as "these answers were given before
+  anything could say so". Which steps EXIST is the browser's, not the
+  firmware's — the run is drawn in `data/setup.js` and its list grows, so
+  firmware stores the keys it is handed and checks their form alone.
 - `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart). Plaintext passwords are never returned.
 
 #### Example request
@@ -1420,6 +1430,17 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"fittedParts names a Part this build does not model"}`.
   This is a form check and not a narrowing: a Part outside `fittedParts` is
   still legal to author, save and wire.
+- guided setup (#351): `guidedSetupRun` — `not-run`, `skipped` or `completed`;
+  anything else is `400` `{"ok":false,"error":"guidedSetupRun must be not-run,
+  skipped or completed"}`. And `guidedSetupVisited` — the step keys that have
+  been on screen, as a comma-separated list, sent **whole** rather than one at a
+  time. An empty value, or `-`, is a real answer (the run has been drawn and has
+  shown nothing yet); omitting the field says the request is not about the
+  record. A key is at most 12 characters of `a-z`, `0-9` and `_`, and anything
+  else is `400` rather than dropped — a shortened record would report a step the
+  builder *was* shown as one they never were. The two fields are independent:
+  marking a step visited says nothing about whether the run has ended, and
+  ending the run says nothing about which steps were shown.
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
