@@ -893,7 +893,8 @@ body[data-page="parts"] .outputs-section > * + *,
 body[data-page="setup"] .card > * + *,
 body[data-page="setup"] #feature-form > * + *,
 body[data-page="drive"] .card > * + *,
-body[data-page="dome"] .card > * + * {
+body[data-page="dome"] .card > * + *,
+body[data-page="sound"] .card > * + * {
   margin-top: var(--space-md);
 }
 
@@ -3380,89 +3381,72 @@ body.sleep-mode-active {
   opacity: 0.7;
 }
 
-/* Sound page layout helpers */
+/* ---------------------------------------------------------------------------
+   Sound (ADR 0066, #399 slice 3).
+
+   Fourteen cards in three groups, which is why this surface keeps a label above
+   each group as well as a head inside each card: the group label answers "what
+   is this run of plates for", the head answers "what is on this one".
+   --------------------------------------------------------------------------- */
 body[data-page="sound"] {
   max-width: 1280px;
 }
 
+/* The workspace switch, beside the title rather than inside a card: which of
+   the two it is on decides what the whole surface shows. */
 .sound-view-toggle {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2xs);
 }
 
-.sound-view-toggle .btn {
-  min-width: 120px;
+.sound-view-toggle .seg {
+  flex: none;
 }
 
-.sound-global-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.sound-mode-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sound-view-toggle-pill .btn {
-  min-width: 0;
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 0.78rem;
-  border-radius: 999px;
-}
-
-.sound-global-controls .sound-inline-row {
-  margin-top: 8px;
-}
-
-.sound-global-controls .button-row {
-  gap: 8px;
-}
-
-.sound-global-controls .button-row .btn {
-  min-height: 34px;
-  padding: 5px 11px;
-  font-size: 0.82rem;
-}
-
-.sound-global-controls #vol-slider {
-  height: 4px;
+/* A volume runs 0 to 30. A slider for it does not need the whole width of an
+   1100 px plate, where one step is 36 px of travel. */
+.sound-volume-field {
+  max-width: 420px;
 }
 
 .sound-global-controls .sound-volume-value {
   min-width: 34px;
-  padding: 2px 8px;
+  padding: 2px var(--space-sm);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-plate);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
 }
 
+/* The label over a run of plates. The same mono uppercase as a section head,
+   one step dimmer than the heads under it, because it names a group and a
+   group is not a section. */
 .sound-section-label {
-  margin: 2px 2px 8px;
-  color: var(--silver-bright);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  margin: var(--space-xl) 0 var(--space-md);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  opacity: 0.85;
+}
+
+.sound-section-label:first-of-type {
+  margin-top: 0;
 }
 
 .sound-toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(280px, 420px);
+  gap: var(--space-md);
   align-items: end;
 }
 
 .sound-advanced-grid {
   display: grid;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
 }
 
 @media (min-width: 1080px) {
@@ -3484,12 +3468,13 @@ label.sound-search-field {
 
 .sound-search-field input[type="text"] {
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--space-sm) var(--space-md);
   color: var(--text);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   font: inherit;
+  font-size: var(--fs-cell);
   min-height: 40px;
 }
 
@@ -3499,23 +3484,14 @@ label.sound-search-field {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.sound-filter-count {
-  color: var(--text-dim);
-  font-size: 0.82rem;
-  font-weight: 600;
-  white-space: nowrap;
-  padding-bottom: 2px;
-}
-
 .sound-inline-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
+  gap: var(--space-md);
 }
 
 .sound-inline-row.tight {
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .sound-inline-row.wrap {
@@ -3526,22 +3502,65 @@ label.sound-search-field {
   flex: 1;
 }
 
+/* A label over a small box, and the module's own report of itself. Neither had
+   a rule anywhere in this stylesheet before the sweep: .form-label,
+   .sound-details, .sound-detail-row and .sound-detail-label were four class
+   names on this page with nothing behind them. */
+.form-label {
+  display: block;
+  margin-bottom: var(--space-2xs);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+}
+
+.sound-details {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.sound-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: var(--row);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  font-size: var(--fs-cell);
+}
+
+.sound-detail-label {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .sound-volume-value {
   min-width: 28px;
   text-align: right;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
 }
 
 .sound-state-badge {
+  font-family: var(--font-mono);
   font-weight: 600;
 }
 
+/* A panel seam, not a tinted one: the blue this border was mixed from is the
+   interaction accent, and a table is not an interaction (ADR 0066). */
 .sound-table-wrap {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 2%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--well);
 }
 
 .sound-table {
@@ -3550,23 +3569,30 @@ label.sound-search-field {
   table-layout: auto;
 }
 
-.sound-table th {
-  padding: 8px 10px;
-  word-break: break-word;
-}
-
+/* No word-break here. .sound-table-wrap already scrolls sideways, and
+   break-word let Chromium split a category name down the middle to make the
+   column narrower - "Processing" came out as "Proces sing" and "Surprised" as
+   "Surpris ed" on the two-column Advanced tuning row. Found in a browser at
+   1440 px. The rows are --row tall, so a table on this surface reads at the
+   same rhythm as a table on Parts. */
+.sound-table th,
 .sound-table td {
-  padding-top: 9px;
-  padding-bottom: 9px;
-  padding-left: 10px;
-  padding-right: 10px;
-  word-break: break-word;
+  padding: var(--space-sm) var(--space-md);
 }
 
+.sound-table tbody tr {
+  height: var(--row);
+}
+
+/* A table head on an instrument panel: mono, dim, and the same 11 px a section
+   head's own title takes, so a column name never outweighs a section name. */
 .sound-table thead tr {
   text-align: left;
-  color: var(--text-dim);
-  font-size: 0.8rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .sound-table th {
@@ -3581,51 +3607,46 @@ label.sound-search-field {
   background: color-mix(in srgb, var(--warning) 18%, transparent);
 }
 
+/* An edit the droid has not been told about yet. Amber earns its place: it is
+   something the builder can and should do something about, namely press Save. */
 .sound-dirty-pill {
   display: inline-block;
-  margin-top: var(--space-3xs);
-  padding: var(--space-3xs) var(--space-sm);
-  border-radius: var(--radius-pill);
+  margin-top: 2px;
+  padding: 1px var(--space-sm);
+  border-radius: var(--radius-plate);
   border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
   background: color-mix(in srgb, var(--warning) 20%, transparent);
   color: var(--warning);
+  font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
+/* A command as it is typed on the Console: mono, and the ink tier every other
+   value reads in. It was the interaction blue, and blue is selection, the row
+   shown, the primary act and the focus ring - never a value on a page. */
 .sound-mono {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  color: var(--accent);
+  font-family: var(--font-mono);
+  color: var(--text-dim);
 }
 
 .sound-track-input-sm { width: 80px; }
 .sound-track-input-md { width: 94px; }
 
-.sound-track-input-sm,
-.sound-track-input-md {
-  background: color-mix(in srgb, var(--lift) 3.5%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  min-height: 34px;
-  padding: 4px 8px;
-  font-size: 0.86rem;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
+.sound-track-input-lg { width: 118px; }
 
+.sound-track-input-sm,
+.sound-track-input-md,
 .sound-track-input-lg {
-  width: 118px;
   background: color-mix(in srgb, var(--lift) 3.5%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   color: var(--text);
   min-height: 34px;
-  padding: 4px 8px;
-  font-size: 0.86rem;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-cell);
   font-variant-numeric: tabular-nums;
   text-align: right;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -3646,34 +3667,38 @@ label.sound-search-field {
 .sound-action-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
 }
 
 .sound-feedback-inline {
   display: block;
-  margin-top: 4px;
-  font-size: 0.82rem;
+  margin-top: var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   min-height: 1.1em;
 }
 
 .sound-note-inline {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  margin-left: 6px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  margin-left: var(--space-sm);
 }
+
 .sound-category-hint {
-  margin-top: 4px;
-  color: var(--text-dim);
-  font-size: 0.78rem;
-  line-height: 1.35;
+  margin-top: var(--space-2xs);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
 }
 
 .sound-btn-compact,
 .sound-btn-play {
-  min-height: 36px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
+  min-height: 30px;
+  padding: 0 var(--space-md);
+  font-size: 12px;
 }
 
 .sound-align-end {
@@ -3684,23 +3709,32 @@ label.sound-search-field {
   display: none;
 }
 
+/* Green says NOMINAL, and a module sitting idle is exactly as nominal as one
+   playing a clip - so only the link state takes it. "Playing" is what the
+   module is doing, which is a value and reads in the ink tier beside "Idle"
+   (CONTEXT.md "Status Colour"). */
 .sound-state-badge[data-state="disabled"] { color: var(--text-dim); }
-.sound-state-badge[data-state="playing"]  { color: var(--success); }
+.sound-state-badge[data-state="playing"]  { color: var(--text); }
 .sound-state-badge[data-state="idle"]     { color: var(--text); }
 .sound-state-badge[data-state="ok"]       { color: var(--success); }
+.sound-state-badge[data-state="warn"]     { color: var(--warning); }
 .sound-state-badge[data-state="error"]    { color: var(--danger); }
 
+/* What a track is bound to. A pill names a KIND OF THING and takes no colour:
+   this one was blue, which is the interaction accent and reports nothing. */
 .chirp-binding-badge {
   display: inline-block;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent-bright);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  margin-top: var(--space-2xs);
+  padding: 1px var(--space-sm);
+  border-radius: var(--radius-plate);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 #catalog-bank-tabs {
@@ -3726,12 +3760,15 @@ label.sound-search-field {
   }
 
   .catalog-bulk-count {
-    font-size: 0.78rem;
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: var(--fs-hint);
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--text-dim);
-    padding: 4px 8px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--lift) 12%, transparent);
+    padding: var(--space-2xs) var(--space-sm);
+    border-radius: var(--radius-plate);
+    border: 1px solid var(--border-strong);
   }
 
   .catalog-select-col {
@@ -3788,12 +3825,7 @@ label.sound-search-field {
 @media (max-width: 720px) {
   .sound-toolbar {
     grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .sound-filter-count {
-    white-space: normal;
-    padding-bottom: 0;
+    gap: var(--space-sm);
   }
 
   .sound-table th {
@@ -3802,7 +3834,7 @@ label.sound-search-field {
 
   .sound-table th,
   .sound-table td {
-    padding: 7px 8px;
+    padding: var(--space-sm);
   }
 
   .sound-track-input-sm { width: 70px; }
@@ -3832,17 +3864,6 @@ label.sound-search-field {
     min-width: 34px;
   }
 
-}
-
-@media (max-width: 980px) {
-  .sound-global-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .sound-mode-inline {
-    justify-content: space-between;
-  }
 }
 
 /* ---------------------------------------------------------------------------

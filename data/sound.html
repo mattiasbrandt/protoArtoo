@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>protoArtoo - Sound</title>
+    <title>Sound - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
     <!-- Thin delegate. This file is the one copy of this surface's markup and
@@ -15,119 +15,123 @@
     <script>window.PAShellDelegate = true; location.replace("/#sound");</script>
   </head>
   <body data-page="sound">
-    <div id="shell-top"></div>
 
+    <!-- The title, the question this surface answers, and the one act that
+         belongs beside it rather than beside a card: which of the two workspaces
+         this page is in decides what the whole surface shows (ADR 0066). -->
+    <div class="title">
+      <div>
+        <h1>Sound</h1>
+        <p class="question">What can the droid say, and what makes it say each thing?</p>
+      </div>
+      <div class="acts">
+        <div class="sound-view-toggle">
+          <div class="seg" role="group" aria-label="Sound workspace">
+            <button id="sound-mode-advanced" type="button" aria-pressed="true">Advanced</button>
+            <button id="sound-mode-compact" type="button" aria-pressed="false">Compact</button>
+          </div>
+          <p class="hint" id="sound-mode-feedback"></p>
+        </div>
+      </div>
+    </div>
 
-    <!-- Audio Status -->
+    <!-- The module itself: what is fitted, and whether it is answering. -->
     <div class="card">
-      <h3>🔌 Audio Status</h3>
-      <p id="mod-query-note" class="desc"></p>
-      <p id="mp3-wire-note" class="desc hidden"></p>
-      <p id="mp3-missing-track" class="desc hidden" role="status" aria-live="polite"></p>
-      <table id="mod-status-table" class="sound-table mt-12">
-        <tbody>
-          <tr>
-            <td>Driver</td>
-            <td><span id="mod-driver">—</span></td>
-          </tr>
-          <tr>
-            <td>Module link</td>
-            <td><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <details class="mt-12">
-        <summary>More detail</summary>
-        <div class="sound-details mt-8">
-          <div id="mod-device-row" class="sound-detail-row">
-            <span class="sound-detail-label">Device</span>
-            <span id="mod-device">—</span>
-          </div>
-          <div class="sound-detail-row">
-            <span class="sound-detail-label">Play state</span>
-            <span id="mod-play-state">—</span>
-          </div>
-          <div id="mod-total-tracks-row" class="sound-detail-row">
-            <span class="sound-detail-label">Total tracks</span>
-            <span id="mod-total-tracks">—</span>
-          </div>
-          <div id="mod-current-track-row" class="sound-detail-row">
-            <span class="sound-detail-label">Current track</span>
-            <span id="mod-current-track">—</span>
+      <div class="sect"><h2>Audio module</h2><span class="sub">read back over the module's serial link</span></div>
+      <p class="hint" id="mod-query-note"></p>
+      <p class="hint hidden" id="mp3-wire-note"></p>
+      <p class="hint hidden" id="mp3-missing-track" role="status" aria-live="polite"></p>
+      <dl class="status-grid" id="mod-status-table">
+        <div class="status-item">
+          <dt>Driver</dt>
+          <dd><span id="mod-driver">—</span></dd>
+        </div>
+        <div class="status-item">
+          <dt>Module link</dt>
+          <dd><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></dd>
+        </div>
+      </dl>
+      <details class="disclose">
+        <summary>
+          <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
+          <h3>More detail</h3>
+          <span class="sub">what the module reports about itself</span>
+        </summary>
+        <div class="disclose-body">
+          <div class="sound-details">
+            <div id="mod-device-row" class="sound-detail-row">
+              <span class="sound-detail-label">Device</span>
+              <span id="mod-device">—</span>
+            </div>
+            <div class="sound-detail-row">
+              <span class="sound-detail-label">Play state</span>
+              <span id="mod-play-state">—</span>
+            </div>
+            <div id="mod-total-tracks-row" class="sound-detail-row">
+              <span class="sound-detail-label">Total tracks</span>
+              <span id="mod-total-tracks">—</span>
+            </div>
+            <div id="mod-current-track-row" class="sound-detail-row">
+              <span class="sound-detail-label">Current track</span>
+              <span id="mod-current-track">—</span>
+            </div>
           </div>
         </div>
       </details>
-      <div id="mod-poll-section" class="mt-12">
-        <button id="btn-poll-status" class="btn-secondary">Poll status</button>
+      <div id="mod-poll-section">
+        <button id="btn-poll-status" class="btn" type="button">Poll status</button>
       </div>
-      <div id="mod-status-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="mod-status-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Global Controls -->
-    <!-- Disabled notice (hidden when S2 Audio is enabled) -->
+    <!-- Audio switched off in Setup. An Availability Family "change it here"
+         (CONTEXT.md): the card names the move and routes to it. -->
     <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🔊 Sound Hardware Disabled</h3>
-      <div class="desc">Playback controls are unavailable because Audio is disabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> S2 — Audio</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S2 — Audio</strong> to restore sound controls.</div>
+      <div class="sect"><h2>Sound</h2><span class="sub">switched off in Setup</span></div>
+      <p class="prose"><b>The droid's voice is switched off.</b> Nothing on this page reaches the module until <b>Audio</b> is switched on in <a class="setup-link" href="/setup.html">Setup</a> — sequences still run start to finish, in silence.</p>
     </div>
 
     <div class="card sound-global-controls">
-      <div class="sound-global-head">
-        <h3>🔊 Global Controls</h3>
-        <div class="sound-mode-inline">
-          <span class="desc">View</span>
-          <div class="sound-view-toggle sound-view-toggle-pill" role="group" aria-label="Sound workspace mode">
-            <button class="btn accent" id="sound-mode-advanced" type="button" aria-pressed="true">Advanced</button>
-            <button class="btn" id="sound-mode-compact" type="button" aria-pressed="false">Compact</button>
-          </div>
-        </div>
-      </div>
-      <div id="sound-mode-feedback" class="desc mt-8"></div>
+      <div class="sect"><h2>Playback</h2><span class="sub">State &middot; <span id="sound-state-badge" class="sound-state-badge" data-state="disabled" role="status" aria-live="polite" aria-atomic="true">—</span></span></div>
 
-      <div class="mt-12">
-        <label class="form-label" for="vol-slider">Volume (0–30)</label>
+      <label class="field sound-volume-field" for="vol-slider">
+        <span>Volume (0-30)</span>
         <div class="sound-inline-row">
           <input type="range" id="vol-slider" min="0" max="30" value="20" class="grow">
           <span id="vol-display" class="sound-volume-value">20</span>
         </div>
-      </div>
+      </label>
 
-      <div class="button-row mt-12">
-        <button class="btn" id="btn-stop" title="Stop the current track only. Random/idle mood is unaffected — use the Quiet mood button to silence idle chatter.">⏹ Stop</button>
-        <button class="btn" id="btn-random-on">🔁 Random On</button>
-        <button class="btn" id="btn-random-off">⏸ Random Off</button>
+      <div class="button-row button-row-compact">
+        <button class="btn" id="btn-stop" type="button">Stop</button>
+        <button class="btn" id="btn-random-on" type="button">Random on</button>
+        <button class="btn" id="btn-random-off" type="button">Random off</button>
       </div>
+      <p class="hint">Stop ends the track that is playing and nothing else. Idle chatter keeps coming back until <b>Random off</b> or the Quiet mood stops it.</p>
 
-      <div class="mt-12">
-        <span class="desc">State: </span>
-        <span id="sound-state-badge" class="sound-state-badge" data-state="disabled" role="status" aria-live="polite" aria-atomic="true">—</span>
-      </div>
-
-      <div id="global-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="global-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
 
-    <div class="sound-section-label">Core Playback</div>
-    <!-- Named Sound Commands -->
+    <div class="sound-section-label">Core playback</div>
+    <!-- Named sounds -->
     <div class="card">
-      <h3>🎵 Named Sounds</h3>
-      <div class="sound-toolbar mt-12">
+      <div class="sect"><h2>Named sounds</h2><span class="sub" id="named-sound-filter-count" role="status" aria-live="polite" aria-atomic="true">finding out</span></div>
+      <div class="sound-toolbar">
         <label class="field sound-search-field" for="named-sound-filter">
           <span>Filter named sounds</span>
           <input type="text" id="named-sound-filter" placeholder="Search by name or command" autocomplete="off">
         </label>
-        <div id="named-sound-filter-count" class="sound-filter-count" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
-      <p id="track-number-note" class="desc mt-8"></p>
-      <div class="sound-table-wrap mt-12">
+      <p class="hint" id="track-number-note"></p>
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
-              <th>Label</th>
-              <th>Cmd</th>
-              <th>Track #</th>
-              <th>Actions</th>
+              <th scope="col">Label</th>
+              <th scope="col">Cmd</th>
+              <th scope="col">Track #</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="named-sound-rows">
@@ -135,70 +139,69 @@
           </tbody>
         </table>
       </div>
-      <p class="help-text desc mt-8">Boot Sound ($B) is the named startup macro track assignment, while Boot Complete (auto) is the system event track that plays automatically after boot.</p>
+      <p class="hint">Boot Sound (<b>$B</b>) is the startup track you name here. Boot Complete is a system event with its own track, played automatically once the controller is up — two different things that both happen at boot.</p>
     </div>
 
 
-    <!-- CHIRP Catalog (visible only when backend supports catalog) -->
+    <!-- CHIRP catalog (visible only when the fitted module can be asked for one) -->
     <div id="chirp-catalog-card" class="card hidden">
-      <h3>📚 CHIRP Sound Catalog</h3>
-      <div class="desc">Browse live CHIRP banks and map entries into named/system slots or category ranges.</div>
-      <div class="button-row mt-12">
-        <button id="btn-catalog-refresh" class="btn">🔄 Refresh Catalog</button>
-        <button id="btn-catalog-apply-suggestions" class="btn">🧭 Apply suggestions</button>
-        <button id="btn-catalog-bulk" class="btn">☑ Bulk</button>
+      <div class="sect"><h2>CHIRP catalog</h2><span class="sub">read off the module's own card</span></div>
+      <p class="prose">Every clip the fitted CHIRP knows about, by bank. Map one into a named slot, a system event or a category range, and the droid plays it wherever that slot is used.</p>
+      <div class="button-row button-row-compact">
+        <button id="btn-catalog-refresh" class="btn" type="button">Refresh catalog</button>
+        <button id="btn-catalog-apply-suggestions" class="btn" type="button">Apply suggestions</button>
+        <button id="btn-catalog-bulk" class="btn" type="button">Bulk</button>
       </div>
-      <div id="catalog-status" class="desc mt-8"></div>
-      <label class="field mt-12">
+      <p class="hint" id="catalog-status"></p>
+      <label class="field sound-search-field" for="catalog-filter">
         <span>Filter catalog</span>
         <input type="text" id="catalog-filter" placeholder="Search by name, bank, or index" autocomplete="off">
       </label>
-      <div id="catalog-bank-tabs" class="mt-12" role="tablist" aria-label="Catalog bank filter"></div>
-      <div id="catalog-bulk-bar" class="catalog-bulk-bar mt-8 hidden" aria-live="polite">
+      <div id="catalog-bank-tabs" role="tablist" aria-label="Catalog bank filter"></div>
+      <div id="catalog-bulk-bar" class="catalog-bulk-bar hidden" aria-live="polite">
         <span id="catalog-bulk-count" class="catalog-bulk-count">0 selected</span>
         <select id="catalog-bulk-target" class="sound-track-input-md catalog-map-select" aria-label="Bulk map target">
           <option value="">Choose target…</option>
         </select>
-        <button id="btn-catalog-bulk-map" class="btn sound-btn-compact">💾 Map checked</button>
-        <button id="btn-catalog-bulk-clear" class="btn sound-btn-compact">Clear</button>
-        <button id="btn-catalog-bulk-cancel" class="btn sound-btn-compact">Done</button>
+        <button id="btn-catalog-bulk-map" class="btn sound-btn-compact" type="button">Map checked</button>
+        <button id="btn-catalog-bulk-clear" class="btn sound-btn-compact" type="button">Clear</button>
+        <button id="btn-catalog-bulk-cancel" class="btn sound-btn-compact" type="button">Done</button>
       </div>
-      <div class="sound-table-wrap mt-8">
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
               <th id="catalog-col-select" class="catalog-select-col hidden">
                 <input type="checkbox" id="catalog-select-all" aria-label="Select all visible catalog rows">
               </th>
-              <th>Bank</th>
-              <th>#</th>
-              <th>Name</th>
-              <th>Map target</th>
-              <th>Actions</th>
+              <th scope="col">Bank</th>
+              <th scope="col">#</th>
+              <th scope="col">Name</th>
+              <th scope="col">Map target</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="catalog-rows"></tbody>
         </table>
       </div>
-      <div id="catalog-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="catalog-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-    <div class="sound-section-label sound-section-label-advanced">Advanced Tuning</div>
+
+    <div class="sound-section-label sound-section-label-advanced">Advanced tuning</div>
     <div class="sound-advanced-grid">
-    <!-- Sound Categories -->
+    <!-- Sound categories -->
     <div class="card sound-advanced-card">
-      <h3>🎚 Sound Categories</h3>
-      <div class="desc">
-        Configure random playback ranges per sound category. Set both Min and Max to 0 for silent/unset.
-      </div>
-      <p id="mp3-range-warning" class="desc hidden" role="status"></p>
-      <div class="sound-table-wrap mt-12">
+      <div class="sect"><h2>Sound categories</h2><span class="sub">a track range each</span></div>
+      <p class="prose">Idle chatter is drawn at random from a category's range. Set both Min and Max to 0 and that category never plays.</p>
+      <p class="hint hidden" id="mp3-range-warning" role="status"></p>
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
-              <th>Category</th>
-              <th>Min</th>
-              <th>Max</th>
-              <th>Actions</th>
+              <th scope="col">Category</th>
+              <th scope="col">Min</th>
+              <th scope="col">Max</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="category-sound-rows">
@@ -209,21 +212,19 @@
     </div>
 
 
-    <!-- Mood Mapping -->
+    <!-- Mood mapping -->
     <div class="card sound-advanced-card">
-      <h3>🧠 Mood Mapping</h3>
-      <div class="desc">
-        Choose which category ranges are used for each mood's idle random chatter.
-      </div>
-      <div class="sound-table-wrap mt-12">
+      <div class="sect"><h2>Mood mapping</h2><span class="sub">which categories each mood draws from</span></div>
+      <p class="prose">A mood is a set of categories the droid is allowed to chatter from. Tick a category under a mood and that mood can pick from its range.</p>
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
-              <th>Category</th>
-              <th>Quiet</th>
-              <th>Mid-Awake</th>
-              <th>Full-Awake</th>
-              <th>Awake+</th>
+              <th scope="col">Category</th>
+              <th scope="col">Quiet</th>
+              <th scope="col">Mid-Awake</th>
+              <th scope="col">Full-Awake</th>
+              <th scope="col">Awake+</th>
             </tr>
           </thead>
           <tbody id="mood-map-rows">
@@ -231,24 +232,22 @@
           </tbody>
         </table>
       </div>
-      <div class="button-row mt-12">
-        <button class="btn" id="btn-mood-map-save">💾 Save Changes</button>
+      <div class="button-row button-row-compact">
+        <button class="btn" id="btn-mood-map-save" type="button">Save changes</button>
       </div>
-      <div id="mood-map-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="mood-map-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-    <!-- System Sounds -->
+    <!-- System sounds -->
     <div class="card sound-advanced-card">
-      <h3>🛎 System Sounds</h3>
-      <div class="desc">
-        Configure event sounds for boot and drive-state changes. Track 0 keeps the event silent.
-      </div>
-      <div class="sound-table-wrap mt-12">
+      <div class="sect"><h2>System sounds</h2><span class="sub">what the droid says by itself</span></div>
+      <p class="prose">The clips the controller plays on its own — at boot, and when the drive state changes. Track 0 keeps that event silent.</p>
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
-              <th>Event</th>
-              <th>Track #</th>
-              <th>Actions</th>
+              <th scope="col">Event</th>
+              <th scope="col">Track #</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="system-sound-rows">
@@ -259,58 +258,51 @@
     </div>
     </div>
 
-    <!-- Direct Track Play -->
+    <!-- Direct track -->
     <div class="card">
-      <h3>▶ Direct Track</h3>
-      <div class="desc">Play any track number directly — useful for testing SD card layout.</div>
+      <div class="sect"><h2>Direct track</h2><span class="sub">for finding out what is on the card</span></div>
+      <p class="prose">Play any track number straight from the module, without going through a name, a category or a sequence. Nothing here is recorded: it is how you find out which clip is which.</p>
       <div class="sound-inline-row tight">
         <input type="number" id="direct-track" min="1" max="65535" value="1"
                class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
-        <button class="btn" id="btn-direct-play">▶ Play</button>
+        <button class="btn" id="btn-direct-play" type="button">Play</button>
       </div>
-      <div id="direct-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="direct-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <div class="sound-section-label sound-section-label-advanced">Automation and Timing</div>
+    <div class="sound-section-label sound-section-label-advanced">Automation and timing</div>
     <div class="sound-advanced-grid">
-    <!-- Random Playback Range -->
+    <!-- Random playback range -->
     <div class="card sound-advanced-card">
-      <h3>🎲 Random Playback Range</h3>
-      <div class="desc">
-        Tracks in this range are chosen randomly when random mode is active.
-        Changes are NVS-persisted and take effect on the next random event.
-      </div>
+      <div class="sect"><h2>Random range</h2><span class="sub">the pool random playback draws from</span></div>
+      <p class="prose">With random playback on, the droid picks a track from this range. It is written to the droid and takes effect at the next random event, not at once.</p>
       <div class="sound-inline-row wrap">
         <div>
           <label class="form-label" for="rand-min">Min track</label>
-          <input type="number" id="rand-min" min="1" max="999" value="1" class="sound-track-input-md mt-6">
+          <input type="number" id="rand-min" min="1" max="999" value="1" class="sound-track-input-md">
         </div>
         <div>
           <label class="form-label" for="rand-max">Max track</label>
-          <input type="number" id="rand-max" min="1" max="999" value="100" class="sound-track-input-md mt-6">
+          <input type="number" id="rand-max" min="1" max="999" value="100" class="sound-track-input-md">
         </div>
         <div class="sound-align-end">
-          <button class="btn" id="btn-rand-save">💾 Save Range</button>
+          <button class="btn" id="btn-rand-save" type="button">Save range</button>
         </div>
       </div>
-      <div id="rand-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="rand-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Mood Sound Intervals -->
+    <!-- Mood sound intervals -->
     <div class="card sound-advanced-card">
-      <h3>⏱ Mood Sound Intervals</h3>
-      <div class="desc">
-        How often a random sound plays in each mood. Set 0 to suppress random
-        playback for that mood. Changes are NVS-persisted and take effect on the
-        next timer cycle.
-      </div>
-      <div class="sound-table-wrap mt-12">
+      <div class="sect"><h2>Chatter intervals</h2><span class="sub">how often each mood speaks up</span></div>
+      <p class="prose">How long the droid waits between random sounds in each mood. Set 0 and that mood never chatters. Written to the droid, and picked up on the next timer cycle.</p>
+      <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
             <tr>
-              <th>Mood</th>
-              <th>Command</th>
-              <th>Interval (seconds)</th>
+              <th scope="col">Mood</th>
+              <th scope="col">Command</th>
+              <th scope="col">Interval (seconds)</th>
             </tr>
           </thead>
           <tbody>
@@ -346,14 +338,12 @@
           </tbody>
         </table>
       </div>
-      <div class="button-row mt-12">
-        <button class="btn" id="btn-int-save">💾 Save Intervals</button>
+      <div class="button-row button-row-compact">
+        <button class="btn" id="btn-int-save" type="button">Save intervals</button>
       </div>
-      <div id="int-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="int-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
     </div>
-
-    <div id="shell-status"></div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
          fetches /page_bootstrap.js itself, with retry, and hands it the script
