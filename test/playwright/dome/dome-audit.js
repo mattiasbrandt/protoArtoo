@@ -13,7 +13,7 @@ async function collect(page, label) {
     const domeFeedback = document.getElementById('dome-feedback');
     const escFeedback = document.getElementById('esc-feedback');
     const disabledCard = document.getElementById('dome-disabled-card');
-    const sectionHeadings = Array.from(document.querySelectorAll('.card h3')).map((el) => (el.textContent || '').trim());
+    const sectionHeadings = Array.from(document.querySelectorAll('.card .sect h2')).map((el) => (el.textContent || '').trim());
     const sliderLabels = Array.from(document.querySelectorAll('.slider-labels span')).map((el) => (el.textContent || '').trim());
 
     return {
@@ -26,8 +26,8 @@ async function collect(page, label) {
       hasLiveTrack: Boolean(document.querySelector('.dome-live-track')),
       liveFillWidth: getComputedStyle(document.getElementById('dome-live-fill')).width,
       speedValue: speed ? speed.textContent.trim() : '',
-      hardwarePill: document.getElementById('dome-hardware-pill')?.textContent?.trim() || '',
-      webPill: document.getElementById('dome-web-pill')?.textContent?.trim() || '',
+      hardwareState: document.getElementById('dome-hardware-state')?.textContent?.trim() || '',
+      webNote: document.getElementById('dome-web-note')?.textContent?.trim() || '',
       rotationState: document.getElementById('dome-rotation-state')?.textContent?.trim() || '',
       domeFeedback: domeFeedback
         ? { text: domeFeedback.textContent.trim(), className: domeFeedback.className }

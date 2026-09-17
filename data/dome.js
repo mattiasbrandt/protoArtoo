@@ -9,8 +9,8 @@
 (() => {
   const domeFeedback = document.getElementById("dome-feedback");
   const domeDisabledCard = document.getElementById("dome-disabled-card");
-  const domeHardwarePill = document.getElementById("dome-hardware-pill");
-  const domeWebPill = document.getElementById("dome-web-pill");
+  const domeHardwareState = document.getElementById("dome-hardware-state");
+  const domeWebNote = document.getElementById("dome-web-note");
   const domeSpeedDisplay = document.getElementById("dome-speed-display");
   const domeRotationState = document.getElementById("dome-rotation-state");
   const domeLiveFill = document.getElementById("dome-live-fill");
@@ -34,7 +34,7 @@
   let webControlEnabled = false;
   let webControlStatusKnown = false;
 
-  const FEEDBACK_BASE_CLASS = "feedback mt-12";
+  const FEEDBACK_BASE_CLASS = "feedback";
 
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
@@ -42,17 +42,25 @@
     el.className = level ? `${FEEDBACK_BASE_CLASS} ${level}` : FEEDBACK_BASE_CLASS;
   };
 
-  const setPillState = (el, text, state = "info", compact = true) => {
-    if (!el) return;
-    const classMap = {
-      ok: "pill-ok",
-      warn: "pill-warn",
-      error: "pill-error",
-      info: "pill-info",
-    };
-    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
-    el.textContent = text;
-    el.className = `${sizeClass} ${classMap[state] || classMap.info}`;
+  // The three readouts this surface used to paint as coloured pills are now
+  // words, and the setPillState that painted them is gone with them. None of
+  // the three was a health signal, which is the only thing that may take a
+  // signal colour (CONTEXT.md "Status Colour"):
+  //
+  //   the dome motor switched on or off in Setup is an AVAILABILITY FAMILY,
+  //   "change it here", and those are told apart by treatment and never by hue
+  //   - it read green when on and amber when off, and amber promises the
+  //     builder something is wrong rather than that they made a choice;
+  //
+  //   which way the dome is being turned is a VALUE - it read green forward
+  //     and amber reverse, so turning left looked like a symptom;
+  //
+  //   whether this browser may command the droid is a CHOSEN POSTURE and
+  //     takes no colour at all. It is also the Status Plate's CONTROL chip, so
+  //     what is left here is the half the plate cannot carry: that the consent
+  //     is the feet's and the dome turns either way.
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
   };
 
 
@@ -70,6 +78,11 @@
 
     if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${percent}%`;
 
+    // Which side of centre the bar fills is what says the direction; the bar's
+    // own colour is one colour, declared in the stylesheet, the same one Foot
+    // Drive's live output bars take. It used to be mixed towards green going
+    // forward and towards amber going back, which made one of the two
+    // directions look like a fault.
     if (domeLiveFill) {
       domeLiveFill.style.width = `${widthPct}%`;
       if (widthPct < 0.5) {
@@ -78,20 +91,21 @@
       } else if (percent >= 0) {
         domeLiveFill.style.opacity = "1";
         domeLiveFill.style.left = "50%";
-        domeLiveFill.style.background = "color-mix(in srgb, var(--success) 80%, var(--accent-bright))";
       } else {
         domeLiveFill.style.opacity = "1";
         domeLiveFill.style.left = `calc(50% - ${widthPct}%)`;
-        domeLiveFill.style.background = "color-mix(in srgb, var(--warning) 85%, var(--accent-bright))";
       }
     }
 
+    // The word, and only the word. The signed percentage sits beside it in
+    // #dome-speed-display, and printing the number in both put the same fact on
+    // the plate twice - once as "-42%" and once as "Reverse 42%".
     if (Math.abs(percent) < 2) {
-      setPillState(domeRotationState, "⏸️ Idle", "info", false);
+      setText(domeRotationState, "Idle");
     } else if (percent > 0) {
-      setPillState(domeRotationState, `↻ Forward ${percent}%`, "ok", false);
+      setText(domeRotationState, "Forward");
     } else {
-      setPillState(domeRotationState, `↺ Reverse ${Math.abs(percent)}%`, "warn", false);
+      setText(domeRotationState, "Reverse");
     }
   };
 
@@ -105,21 +119,18 @@
 
     domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
 
-    setPillState(
-      domeHardwarePill,
-      domeHardwareEnabled ? "🧩 DOME enabled" : "🧩 DOME disabled in Setup",
-      domeHardwareEnabled ? "ok" : "warn",
-      true,
+    setText(
+      domeHardwareState,
+      domeHardwareEnabled ? "switched on" : "switched off in Setup",
     );
 
     if (!webControlStatusKnown) {
-      setPillState(domeWebPill, "🕹️ Drive web lock status pending", "info", true);
+      setText(domeWebNote, "Finding out whether this browser may command the droid.");
     } else {
-      setPillState(
-        domeWebPill,
-        webControlEnabled ? "🕹️ Drive web lock ON (drive only)" : "🕹️ Drive web lock OFF (drive only)",
-        "info",
-        true,
+      setText(
+        domeWebNote,
+        `Web control is ${webControlEnabled ? "on" : "off"}. That consent is the feet's — ` +
+          "the dome turns on the radio and inside a sequence either way.",
       );
     }
 

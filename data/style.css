@@ -892,7 +892,8 @@ body[data-page="parts"] .card > * + *,
 body[data-page="parts"] .outputs-section > * + *,
 body[data-page="setup"] .card > * + *,
 body[data-page="setup"] #feature-form > * + *,
-body[data-page="drive"] .card > * + * {
+body[data-page="drive"] .card > * + *,
+body[data-page="dome"] .card > * + * {
   margin-top: var(--space-md);
 }
 
@@ -1402,7 +1403,13 @@ input.input-narrow {
 .field-checkbox {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
+}
+
+/* A tick spans the whole settings form rather than taking one of its columns:
+   the question it asks is about the four numbers under it. */
+.settings-grid .field-checkbox {
+  grid-column: 1 / -1;
 }
 
 .field-checkbox input[type="checkbox"] {
@@ -2062,35 +2069,44 @@ input.input-narrow {
   box-shadow: var(--elev-1);
 }
 
+/* The three ends of the dome's live track: full reverse, stop, full forward.
+   Mono, because they are markings on an instrument rather than prose. */
 .slider-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 8px;
-  font-size: 0.85rem;
-  color: var(--text-dim);
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
+/* The number the track is sitting on. A reading, so it is mono and takes the
+   readout step of the scale. */
 .slider-value {
   text-align: center;
-  margin-top: 8px;
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--silver-bright);
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--fs-h2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
-/* Dome page live rotation status */
-.dome-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+/* ---------------------------------------------------------------------------
+   Dome (ADR 0066, #399 slice 3).
+
+   What the dome is being told to do, and the two sets of numbers that decide
+   how far and how often. The live track is a READOUT: nothing on this surface
+   turns the dome, so there is nothing here to drag.
+   --------------------------------------------------------------------------- */
 
 .dome-live-track {
   position: relative;
   height: 16px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   overflow: hidden;
 }
@@ -2105,26 +2121,45 @@ input.input-narrow {
   background: color-mix(in srgb, var(--accent-bright) 75%, var(--border));
 }
 
+/* One colour for the bar whichever way the dome is going, and the same one
+   Foot Drive's live output bars take, so the two live readouts in this product
+   read alike. The renderer used to mix it towards green going forward and
+   towards amber going back, which made one of two directions look like a
+   fault; which side of centre it fills is what says the direction. */
 .dome-live-fill {
   position: absolute;
   left: 50%;
   top: 2px;
   bottom: 2px;
   width: 0%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-bright);
   opacity: 0;
-  transition: width 0.16s ease, left 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+  transition: width 0.16s ease, left 0.16s ease, opacity 0.16s ease;
 }
 
+/* The track's one reading, under the middle of the track it belongs to. It was
+   space-between, which threw the number to one end of an 1150 px plate and the
+   word to the other, so the two halves of one reading read as two. */
 .dome-live-meta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-md);
 }
 
 .dome-live-meta .slider-value {
   margin-top: 0;
+}
+
+/* Which way the dome is being turned, as a word. A value, not a symptom, so it
+   reads in the ink tier every other value on the droid reads in. */
+.dome-rotation-state {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .fw-progress {
@@ -6125,23 +6160,12 @@ body[data-page="setup"] .status-item .hint {
   margin-bottom: 12px;
 }
 
+/* Where the dome drawing came from, when it did not come from the dome. It is
+   a .note now and carries nothing of its own but the gap under it: the two
+   treatments it used to declare are the anatomy's two note voices, and one of
+   them was blue, which reports no state at all (CONTEXT.md "Status Colour"). */
 .dome-source-banner {
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  margin-bottom: 12px;
-}
-
-.dome-source-banner.info {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-left: 3px solid var(--accent);
-  color: var(--accent-bright);
-}
-
-.dome-source-banner.warn {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  border-left: 3px solid var(--warning);
-  color: var(--warning);
+  margin-bottom: var(--space-md);
 }
 
 .dome-svg-container {
