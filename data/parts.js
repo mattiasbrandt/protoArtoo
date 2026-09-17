@@ -1621,7 +1621,13 @@
     }
 
     let why = "";
-    if (estopLatched === null) {
+    if (outputs === null) {
+      // The droid has not answered with its Output rows yet, so what drives
+      // this Part is not known. Said as finding out rather than guessed at:
+      // every other sentence below would be a claim about a table nobody has
+      // read.
+      why = "Finding out what drives it.";
+    } else if (estopLatched === null) {
       // The droid has not said yet, which is not the same as a latched estop:
       // the acts are held either way, and only one of them is something the
       // builder can do anything about.
@@ -1750,7 +1756,7 @@
     // droid. One read, shared with every other surface that wants the Droid
     // Build (data/droid_build.js holds it single-flight), and the picture draws
     // from whatever the droid has answered so far rather than waiting on it.
-    window.DroidBuild?.load().then(() => paintBody());
+    window.DroidBuild?.load()?.then(() => paintBody());
     paintBody();
     // The estop gates "move it" like every other act on this page, and it
     // arrives on the status stream rather than on the bench feed. Subscribed
