@@ -53,8 +53,16 @@ class AudioDriverChirp : public AudioDriver {
 
     // Set volume 0-30 (clamped by AudioTask). Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
+    // The Sound page's Driver row is operator-facing, and bare "CHIRP" also
+    // names CHIRP Droid Control, a different product by the same author
+    // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
+    // copy). Read from this product's Component Registry row rather than
+    // restated here, exactly as capabilities() is. The other two sound drivers
+    // keep their own short literals: "MP3Trigger" is matched by the Sound page
+    // to decide which module-specific rows exist at all, so its spelling is
+    // load-bearing in a way this one is not.
     const char* driverName() const override {
-        return "CHIRP";
+        return componentPartDisplayName("chirp");
     }
 
     // Read from this product's Component Registry row rather than restated
@@ -84,8 +92,17 @@ class AudioDriverChirp : public AudioDriver {
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
     bool m_linkOk = false;
-    uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
+    // The catalog entry the module was last OBSERVED playing, 0 when nothing
+    // identified it. Never the last index this driver sent: a commanded index
+    // echoed back as current playback is the lie #397 exists to remove.
+    uint16_t m_currentTrack = 0;
     bool m_catalogReady = false;
+    // Whether the last GMAN reply accounted for every bank the module meant to
+    // send. False after a truncated manifest, including one this driver
+    // recovered Bank 1's count for: a recovered count is not proof that no
+    // other BANK row was dropped, and a catalog that cannot be shown complete
+    // must not be described as complete (#397 work item 1).
+    bool m_manifestComplete = false;
     uint16_t m_catalogCount = 0;
     uint16_t m_catalogCapacity = 0;  // allocated m_catalog entry count (right-sized)
     uint8_t m_catalogBankCount = 0;
@@ -98,6 +115,12 @@ class AudioDriverChirp : public AudioDriver {
     AudioCatalogBank* m_catalogBanks = nullptr;
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
+
+    // Bank 1's sound count read back from the module's LIST dump, or 0 when the
+    // dump did not carry it. Only called when GMAN arrived without its BANK:1
+    // line, which is what a card with 13 or more Bank 2-6 directories does to
+    // it; see loadManifestBanks().
+    uint16_t queryBank1CountFromList();
 
     // Split, lazy catalog allocation (heap-exhaustion fix). The bank summary
     // array (~2.3 KB) is needed by the boot/link path; the per-track entry array
@@ -118,4 +141,9 @@ class AudioDriverChirp : public AudioDriver {
 
     // Read one \r\n-terminated ASCII line via m_io.
     uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
+
+    // The catalog index the module's reported playback path identifies, or 0
+    // when it identifies no single entry. Path-aware: see the definition in
+    // src/drivers/audio_chirp.cpp for the module-side rules it mirrors.
+    uint16_t catalogIndexForPath(const char* path) const;
 };

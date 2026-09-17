@@ -859,11 +859,21 @@ void handleAudioGet(WebRequest& req) {
     captureAudioStatusSnapshot(&snap);
 
     uint8_t caps = audioGetCapabilities();
-    char body[256];
-    formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active,
-                          snap.playState, snap.device, snap.totalTracks, snap.currentTrack,
-                          snap.missingTrack,
-                          audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
+    char body[AUDIO_STATUS_JSON_BUF_SIZE];
+    const int needed = formatAudioStatusJson(
+        body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active, snap.playState,
+        snap.device, snap.totalTracks, snap.currentTrack, snap.missingTrack,
+        audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
+    // A truncated document is not an answer. The buffer above is sized for the
+    // longest response every field can produce today, so this is the guard for
+    // a field that grows later rather than an expected path: say so instead of
+    // sending JSON that stops mid-string under HTTP 200.
+    if (needed < 0 || (size_t)needed >= sizeof(body)) {
+        PA_LOG_WARN(TAG, "[AUDIO] GET /api/audio needs %d bytes, buffer is %u",
+                    needed, (unsigned)sizeof(body));
+        webSendJsonError(req, 500, "audio status response overflow");
+        return;
+    }
     req.send(200, "application/json", body);
 }
 

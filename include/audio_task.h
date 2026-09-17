@@ -141,7 +141,8 @@ bool audioQueueRefreshCatalog(CommandSource src);
 
 // Enqueue CHIRP slot/category binding cache refresh from NVS.
 bool audioQueueRefreshBindings(CommandSource src);
-// Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
+// Returns the operator-visible name of the active audio driver's module
+// (e.g. "DY-SV5W", "CHIRP Audio Trigger").
 // Safe to call from any task or web handler after AudioTask has been created.
 const char* audioGetDriverName();
 // Returns the capabilities bitmask of the compiled-in audio driver.
