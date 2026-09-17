@@ -7087,3 +7087,104 @@ body[data-page="setup"] .status-item .hint {
   flex: 1 1 18ch;
   margin: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Guided Setup's rail (#351)
+
+   The questions in the run, the one the builder is on, and what each currently
+   answers. A chip is a route as well as a readout: pressing it opens that
+   question, which is the half that makes the rail worth its space.
+
+   Every chip is the same size, so the run reads as a fixed length rather than
+   growing a column each time an answer gets longer - the title ellipsises
+   inside its box, and the answer slot is reserved on every chip whether it has
+   something to put in it or not.
+
+   A QUESTION NOT YET ASKED IS TOLD BY ITS GLYPH AND ITS WEIGHT, NEVER BY
+   COLOUR. The circle is hollow and the mark is lighter; the answer under it
+   still shows, because the default is a real value that has simply not been
+   looked at. Colour is spent on state and on interaction alone (#327), and a
+   value the builder has never set is neither.
+   --------------------------------------------------------------------------- */
+.wizard-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-block-end: var(--space-lg);
+}
+
+.wizard-chip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  width: 11ch;
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-hint);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wizard-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.wizard-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The question on screen. Blue is interaction and only interaction, and "the
+   one you are looking at" is exactly that (#327). */
+.wizard-chip.is-current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* Behind the builder: still a route, just no longer the subject. */
+.wizard-chip.is-behind {
+  border-color: var(--border-strong);
+}
+
+.wizard-chip-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.wizard-tick {
+  flex: none;
+  font-weight: 600;
+}
+
+.wizard-tick.is-unseen {
+  font-weight: 400;
+}
+
+.wizard-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reserved on every chip, so a chip does not grow a line the moment it has an
+   answer to show. */
+.wizard-chip-answer {
+  display: block;
+  min-height: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
+.wizard-legend {
+  margin-block-end: var(--space-lg);
+}
+

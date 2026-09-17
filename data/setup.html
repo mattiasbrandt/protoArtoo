@@ -33,12 +33,62 @@
       </div>
     </div>
 
+    <!-- ---------------------------------------------------------------------
+         Guided Setup: the first-run takeover (#351, #297, CONTEXT.md "Setup").
+
+         Setup is the guided run and nothing else. While that run is live this
+         surface shows its chrome and ONE step at a time; once the run has
+         ended - by reaching the last step or by the builder stopping - the
+         chrome goes and this page is the cards below, as it has always been.
+         The run never re-opens.
+
+         A step's body is an element carrying data-setup-step, and the wizard
+         shows the card that CONTAINS the current one. That is why the steps are
+         attributes on the controls a builder already meets rather than a second
+         set of screens: a question asked during the run and the same question
+         answered afterwards are the same markup, so the two cannot drift.
+
+         The step LIST, its order and every count live in data/setup.js. Nothing
+         here numbers a step, because a number typed in markup is a number that
+         goes wrong the day a step is inserted - which is exactly what #368 is
+         about to do.
+         --------------------------------------------------------------------- -->
+    <div class="card" id="wizard-checking">
+      <div class="sect"><h2>Setup</h2><span class="sub">reading this droid</span></div>
+      <p class="prose">Finding out whether this droid has been set up yet.</p>
+    </div>
+
+    <div class="card hidden" id="wizard-head">
+      <!-- The rail: the questions in this run, the one you are on, and what
+           each one currently answers. A hollow mark is a question that has not
+           been on screen yet, which is not the same as one you answered. -->
+      <div class="wizard-rail" id="wizard-rail" role="group" aria-label="The questions in this run"></div>
+      <p class="hint wizard-legend hidden" id="wizard-legend"></p>
+      <div class="sect"><h2 id="wizard-question">Setting this droid up</h2><span class="sub" id="wizard-step-name"></span></div>
+      <p class="prose" id="wizard-why"></p>
+    </div>
+
+    <!-- Step 1. The run continues the flow that started when the builder gave
+         the droid their WiFi, so it opens on the link they are reading this
+         over rather than on a fresh subject. Run-only: WiFi has its own
+         surface, and a second permanent home for it here would be the drift
+         #288 closed. -->
+    <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
+      <div class="sect"><h2>WiFi</h2><span class="sub" id="wizard-wifi-state">finding out</span></div>
+      <div data-setup-step="wifi">
+        <p class="prose" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
+        <div class="button-row button-row-compact">
+          <a class="btn" href="#wifi">Change the network in WiFi</a>
+        </div>
+      </div>
+    </div>
+
     <!-- The board this image is running on. One card, never two: the Component
          Registry gates the two Body Controllers on PA_BOARD, so an image
          carries exactly one of them and the other is not offered or mentioned. -->
     <div class="card">
       <div class="sect"><h2>Body Controller</h2><span class="sub">this image carries one board</span></div>
-      <div class="board-image-wrap" id="board-image-panel">
+      <div class="board-image-wrap" id="board-image-panel" data-setup-step="_board">
         <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
         <img id="board-image" alt="" title="">
         <div id="board-image-placeholder" class="board-placeholder">
@@ -53,6 +103,7 @@
       <p class="prose">Say what is actually bolted to this droid. A component switched off is a component the controller never talks to, so the surfaces that use it say what is missing rather than failing quietly.</p>
       <form id="feature-form">
 
+        <div data-setup-step="drive">
         <div class="sect"><h3>Foot Drive</h3><span class="sub">what moves the feet</span></div>
         <div class="note note-info" role="note">
           <span>Leave this off and the droid is a statue — the sticks move, the wheels don't.</span>
@@ -67,6 +118,8 @@
           </label>
         </div>
 
+        </div>
+        <div data-setup-step="domerot">
         <div class="sect"><h3>Dome rotation</h3><span class="sub">what turns the dome</span></div>
         <div class="note note-info" role="note">
           <span>Off, the dome sits still through every sequence, however the show is written.</span>
@@ -81,6 +134,8 @@
           </label>
         </div>
 
+        </div>
+        <div data-setup-step="domectl">
         <div class="sect"><h3>protoR2link</h3><span class="sub">the link to the dome's own board</span></div>
         <div class="note note-info" role="note">
           <span>Carries light, panel and sound cues up to the dome's own board. Off, the body still drives — the dome just stops listening.</span>
@@ -95,6 +150,8 @@
           </label>
         </div>
 
+        </div>
+        <div data-setup-step="sound">
         <div class="sect"><h3>Audio</h3><span class="sub">the droid's voice</span></div>
         <div class="note note-info" role="note">
           <span>Your droid's voice. Off, sequences still run start to finish, in silence.</span>
@@ -110,6 +167,8 @@
           </label>
         </div>
 
+        </div>
+        <div data-setup-step="servos">
         <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
         <p class="hint">Tick the arms you have fitted, and say which servo is on each one. The type decides the widths the controller will drive that output between.</p>
         <div class="component-row" data-feature-entry="system.config.enable_arm1">
@@ -208,6 +267,8 @@
           </select>
         </div>
 
+        </div>
+        <div data-setup-step="rc">
         <div class="sect"><h3>RC Receiver Channels</h3><span class="sub">6 channels, applied after a restart</span></div>
         <div class="note note-info" role="note">
           <div>Tick the channels you actually have wired to the receiver.</div>
@@ -263,6 +324,7 @@
         </div>
         <p class="hint">In Stationary mode, Dual SBUS is usually unnecessary — Single SBUS or Standard PWM is the lighter answer.</p>
 
+        </div>
       </form>
       <div class="setup-toolbar">
         <span id="setup-save-summary" class="status-pill">Auto-save ready</span>
@@ -488,7 +550,7 @@
     <div class="card">
       <div class="sect"><h2>Droid identity</h2><span class="sub">what this droid answers to</span></div>
       <p class="prose">The name is the droid's, not the browser's: it is stored on the controller, so a second computer or a cleared cache meets the same droid.</p>
-      <div class="identity-grid">
+      <div class="identity-grid" data-setup-step="name">
         <label class="field" for="droid-name-input">
           <span>Droid name</span>
           <input id="droid-name-input" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protoartoo">
@@ -512,6 +574,24 @@
         <button id="reboot-button" class="btn danger" type="button">Restart the controller</button>
       </div>
       <div id="reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- The run's footer. Position and escape, and nothing else: when an answer
+         takes effect is a different question for every step and is stated beside
+         the step that owns it (#370), so a blanket promise here would be false
+         for at least three of them. No count in it is typed - see data/setup.js.
+
+         It sits at the end of the body rather than under the step, because the
+         cards between here and the chrome above are hidden while the run is
+         live, so this lands directly under whichever step is on screen. -->
+    <div class="card hidden" id="wizard-foot" data-setup-run-only>
+      <p class="hint" id="wizard-position"></p>
+      <div class="button-row button-row-compact">
+        <button id="wizard-back" class="btn" type="button">Back</button>
+        <button id="wizard-next" class="btn accent" type="button">Next</button>
+        <button id="wizard-stop" class="btn btn-quiet" type="button">Stop here</button>
+      </div>
+      <div id="wizard-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
