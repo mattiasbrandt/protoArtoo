@@ -2343,17 +2343,6 @@ body[data-page="firmware"] .form-grid {
    ones it last sent. Amber, because the builder can do something about it -
    reload, or look at the link - and it is the one thing on the Dashboard
    saying that what is on screen may no longer be true. */
-.stale-banner {
-  padding: var(--space-sm) var(--space-md);
-  background: var(--well);
-  border-left: 2px solid var(--warning);
-  border-radius: 0 var(--radius-plate) var(--radius-plate) 0;
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-  line-height: 1.55;
-  margin-bottom: var(--space-lg);
-}
-
 .log-paused {
   display: none;
   color: var(--warning);
@@ -7001,8 +6990,7 @@ body[data-page="setup"] .status-item .hint {
   #shell-top,
   #shell-nav,
   #shell-status,
-  .title .acts,
-  .stale-banner {
+  .title .acts {
     display: none !important;
   }
 
