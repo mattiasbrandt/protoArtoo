@@ -80,8 +80,6 @@ SURFACE_ICON = re.compile(r'\{ page: "[a-z]+", doc: "[^"]+", icon: "([a-z0-9-]+)
 # here is a promise, not a suppression: the file is still checked, and it fails
 # if it is CLEAN, so the row cannot outlive the sweep that makes it true.
 PENDING = {
-    "wifi.html": "#399 slice 4 (Maintain and the rest)",
-    "wifi.js": "#399 slice 4 (Maintain and the rest)",
     "firmware.html": "#399 slice 4 (Maintain and the rest)",
 }
 

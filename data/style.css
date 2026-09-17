@@ -897,7 +897,9 @@ body[data-page="sound"] .card > * + *,
 body[data-page="rc"] .card > * + *,
 body[data-page="rc"] .rc-channel-list > * + *,
 body[data-page="rc"] .rc-editor-panel > * + *,
-body[data-page="seq"] .card > * + * {
+body[data-page="seq"] .card > * + *,
+body[data-page="wifi"] .card > * + *,
+body[data-page="wifi"] #wifi-settings-form > * + * {
   margin-top: var(--space-md);
 }
 
@@ -1316,11 +1318,15 @@ body[data-page="seq"] .card > * + * {
   grid-template-columns: minmax(0, 220px);
 }
 
+/* A labelled control. The two pre-anatomy spellings it carried - a
+   --silver-bright ink and a 0.9rem size that is on no scale - are the ones
+   #399 slice 3 left for the slice that owns WiFi and Firmware, since .field is
+   read by both of those and by Setup, Drive, Dome and Sound. */
 .field {
   display: grid;
-  gap: 8px;
-  color: var(--silver-bright);
-  font-size: 0.9rem;
+  gap: var(--space-sm);
+  color: var(--text);
+  font-size: var(--fs-cell);
 }
 
 /* Foot Drive: the one line explaining the three preset sliders, and the
@@ -2295,35 +2301,43 @@ input.input-narrow {
   display: block;
 }
 
+/* WiFi. Two columns of the width a setting actually needs, the way
+   .settings-grid holds Foot Drive's and Dome's, rather than two halves of
+   whatever the surface is wide: a network name is not a 700 px field. */
 body[data-page="wifi"] .wifi-settings-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(200px, 320px));
+  justify-content: start;
+  column-gap: var(--space-xl);
+  row-gap: var(--space-lg);
 }
 
 body[data-page="wifi"] .wifi-mode-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(220px, 420px));
+  justify-content: start;
+  gap: var(--space-md);
 }
 
+/* A choice card: the plate's chamfer, the seam all round, and the interaction
+   blue on the one the builder picked. Nothing here reports a state, so nothing
+   here takes a signal colour. */
 body[data-page="wifi"] .wifi-mode-option {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
-  gap: 10px;
-  min-height: 72px;
-  padding: 12px;
+  gap: var(--space-md);
+  padding: var(--space-md);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 3%, transparent);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 body[data-page="wifi"] .wifi-mode-option.is-selected {
-  border-color: var(--accent-bright);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 body[data-page="wifi"] .wifi-mode-option input {
@@ -2332,54 +2346,80 @@ body[data-page="wifi"] .wifi-mode-option input {
 
 body[data-page="wifi"] .wifi-mode-title {
   display: block;
-  color: var(--silver-bright);
-  font-weight: 700;
+  margin-bottom: var(--space-2xs);
+  color: var(--text);
+  font-size: var(--fs-h2);
+  font-weight: 600;
 }
 
-/* Standalone AP Mode gets no rail of its own. CONTEXT.md calls it a valid
-   operator-selected posture beyond onboarding, and amber would say the builder
-   ought to change it. The failure postures below keep the red rail. */
+/* The posture plate's own signal band, and the one place this surface colours
+   for state. Two pixels rather than a recoloured one-pixel seam, for the
+   reason .card.danger gives: a one-pixel red is not a warning anybody sees.
 
+   Standalone AP Mode gets no band at all - CONTEXT.md calls it a valid
+   operator-selected posture beyond onboarding, and a colour on a chosen
+   posture would read it as a symptom.
+
+   Amber and red are told apart by what the builder does next (CONTEXT.md
+   "Status Colour"). A controller in WiFi Provisioning or Network Recovery Mode
+   has not failed at anything: it is waiting for the builder to save settings,
+   which is exactly "you can do something about this". A client that was given
+   a network and could not join it HAS failed, and that is red. */
 body[data-page="wifi"] #wifi-posture-card[data-posture="provisioning"],
-body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"],
 body[data-page="wifi"] #wifi-posture-card[data-posture="recovery"] {
-  border-left-color: var(--danger);
+  border-left: 2px solid var(--warning);
+}
+
+body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"] {
+  border-left: 2px solid var(--danger);
 }
 
 body[data-page="wifi"] .wifi-compare-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 12px;
+  gap: var(--space-md);
 }
 
+/* The two halves of "active against saved", drawn as the recessed plate every
+   other readout on this product sits in (.status-item). */
 body[data-page="wifi"] .wifi-summary-list {
   display: grid;
   grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
-  gap: 8px 12px;
+  gap: var(--space-sm) var(--space-md);
   align-content: start;
-  padding: 12px;
+  padding: var(--space-md);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--lift) 2.5%, transparent);
+  border-radius: var(--radius-plate);
+  background: var(--well);
 }
 
 body[data-page="wifi"] .wifi-summary-list dt {
-  color: var(--text-dim);
-  font-size: 0.84rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 body[data-page="wifi"] .wifi-summary-list dd {
   min-width: 0;
-  color: var(--silver-bright);
-  font-weight: 700;
+  font-size: var(--fs-cell);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 720px) {
+/* The three grids above are two tracks with a minimum rather than two halves
+   of the surface, so the tablet width holds them side by side and a network
+   name stays the size of a network name - the defect .settings-grid was
+   written to undo, and the one this page had at 720. They go to one column at
+   the anatomy's own third breakpoint, which is where two minimum tracks and a
+   gutter stop fitting anyway. */
+@media (max-width: 600px) {
   body[data-page="wifi"] .wifi-settings-grid,
   body[data-page="wifi"] .wifi-mode-options,
   body[data-page="wifi"] .wifi-compare-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2764,11 +2804,6 @@ body.sleep-mode-active {
   outline-offset: 2px;
 }
 
-.rc-mode-icon {
-  font-size: 2.5rem;
-  margin-bottom: 8px;
-}
-
 .rc-mode-title {
   font-weight: 700;
   font-size: 1rem;
@@ -2782,40 +2817,11 @@ body.sleep-mode-active {
   line-height: 1.4;
 }
 
-/* Section Labels */
-.section-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  font-size: 1rem;
-  color: var(--silver-bright);
-}
+/* .section-label, .section-label:first-of-type, .section-label-row and its
+   nested override are gone with WiFi's sweep: that surface was their last
+   reader, and a within-card heading is a nested .sect head now, the way Setup
+   already writes one (ADR 0066). */
 
-.section-label:first-of-type {
-  margin-top: 0;
-}
-
-.section-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 20px;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.section-label-row .section-label {
-  margin: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
 .info-note {
   margin-top: 12px;
   padding: 12px 16px;
