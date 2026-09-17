@@ -252,11 +252,25 @@ must be able to find without the MCP server.
 
 **The wing for this repository is `wing_protoartoo`** - searches, diary entries
 and KG writes name that wing, from the primary checkout and from every `../wt-*`
-worktree alike. It is not derived from the directory you happen to be in:
-measured 2026-09-17, the palace already carries `wing_wt_399`, `wing_wt_344`,
-`wing_wt_serial_console` and `wing_issue97` beside the real one - a handful of
-entries each, filed where nobody will look for them again, against the 38,908 in
-`wing_protoartoo`.
+worktree alike, never a wing derived from the directory you happen to be in. The
+convention on this machine is `wing_<project>` (`wing_mattias`, `wing_dotfiles`,
+`wing_work`); the bare form `protoartoo` is not a wing and neither is
+`protoArtoo`, which case-sensitively matches nothing and returns "No results
+found" rather than an error. The palace was consolidated on 2026-09-17 (3.9.0 ->
+3.10.0): 82 wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the
+protoArtoo part of `sessions` were merged into `wing_protoartoo`, which now holds
+**144,948 records**. Nothing needs re-mining.
+
+**Writes are refused, and that is expected.** The MemPalace daemon holds the
+palace's single writer lease for its whole lifetime, and the lease is
+palace-wide, so it binds every worktree: `mempalace_add_drawer`,
+`update_drawer`, `diary_write` and `kg_add` return JSON-RPC `-32001` *"Peer MCP
+writer active; this server is read-only for mutating tools"*. Reads and the
+logstream tools are unaffected, and the hook auto-save still works because it
+routes through the daemon's own queue. Do not retry, do not shell out to the
+CLI, do not work around it: note once in the report that a write was refused,
+and put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/` -
+where it outlives a palace entry anyway.
 
 If `mempalace_status` errors, skip every MemPalace step for that session and say
 so once in the report. Probing the CLI, retrying, or working around it is out of

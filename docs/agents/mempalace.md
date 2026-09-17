@@ -1,9 +1,25 @@
 # MemPalace memory protocol
 
 Long-term project memory for `protoArtoo` lives in MemPalace (MCP server plus a
-user-level daemon). Agents with MCP access follow this protocol. If
-`mempalace_status` errors, skip every step below for that session and say so
-once in the report.
+user-level daemon), in one wing: **`wing_protoartoo`**. The convention on this
+machine is `wing_<project>`; the bare `protoartoo` is not a wing, and
+`protoArtoo` case-sensitively matches nothing and answers "No results found"
+rather than failing - so a wing-scoped search against it reads as *no prior art*
+when it means *no such wing*. The palace was consolidated on 2026-09-17: 82
+wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the protoArtoo part of
+`sessions` merged into `wing_protoartoo` (144,948 records). Agents with MCP
+access follow this protocol.
+
+**Two things stop the protocol, and both are answered the same way - say so once
+and carry on.** If `mempalace_status` errors, skip every step below for that
+session. If a *write* is refused - `add_drawer`, `update_drawer`,
+`diary_write` or `kg_add` returning JSON-RPC `-32001` *"Peer MCP writer active;
+this server is read-only for mutating tools"* - that is the daemon holding the
+palace's single writer lease, which is palace-wide and therefore binds every
+worktree. It is expected, not a fault of yours: reads and the logstream tools
+still work, and hook auto-save still works because it routes through the
+daemon's queue. Do not retry, do not shell out to the CLI, do not work around
+it. Put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/`.
 
 ## Session start
 
@@ -31,6 +47,12 @@ once in the report.
   re-query MemPalace for it.
 
 ## Saving memories
+
+> [!IMPORTANT]
+> **Expect this to be refused.** While the daemon runs, every mutating tool
+> returns `-32001` (see above). The advice below is what to save *when a write
+> succeeds* - it is not a step to retry until it does, and a refusal is not a
+> reason to keep the finding out of the issue, `CONTEXT.md` or `docs/adr/`.
 
 - Use `mempalace_add_drawer` to persist significant findings, decisions, or
   constraints discovered during a session.
