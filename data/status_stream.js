@@ -107,11 +107,11 @@
     source.close();
     source = null;
     // Everything on screen has been unwatched since this moment, and the
-    // device pushes on a change and on nothing else -- so reopening tells us
-    // nothing about what happened while we were away. The next open asks for a
-    // snapshot instead of trusting the cache. The ask is an EVENT: whoever
-    // owns the session's one status read answers it, and this transport does
-    // not grow a reader of its own (#346).
+    // device pushes only when something calls requestStatusBroadcastNow() --
+    // so the replay on reopening tells us nothing about what happened while we
+    // were away. The next open asks for a snapshot instead of trusting the
+    // cache. The ask is an EVENT: whoever owns the session's one status read
+    // answers it, and this transport does not grow a reader of its own (#346).
     resyncOnOpen = true;
   };
 
@@ -195,10 +195,9 @@
     },
     // A status that arrived some other way than on the stream -- the one
     // /api/status read the Operator Shell does at boot. The device pushes an
-    // event on a change and on nothing else, so a client that connects to a
-    // quiet droid is told nothing until something moves; whoever closes that
-    // gap hands the answer here rather than keeping it, so the session's last
-    // status has one home. Every subscriber is told, including one that
+    // event only when something calls requestStatusBroadcastNow(), so whoever
+    // reads a status by another route hands the answer here rather than
+    // keeping it, and the session's last status has one home. Every subscriber is told, including one that
     // subscribes later, so the cold start costs one request for the session
     // instead of one per consumer.
     //

@@ -441,7 +441,7 @@ test("RC LINK reads the hardware failsafe bit as well as the frames", async () =
   // something measured.
   env.pushStatus({ rcCh1: { state: "ready" } });
   await sleep(5);
-  assert.equal(env.chipValue("rclink"), "PWM");
+  assert.equal(env.chipValue("rclink"), "UNMEASURED");
 });
 
 test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
@@ -454,7 +454,7 @@ test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
   // chip reading only the state says the link died when nobody could ask.
   env.pushStatus({ dome_link: { state: "lost", uart_owner: "audio" } });
   await sleep(5);
-  assert.equal(env.chipValue("domelink"), "SOUND HAS BUS");
+  assert.equal(env.chipValue("domelink"), "HELD BY SOUND");
   assert.equal(env.chipClass("domelink"), "status-chip", "a busy bus is not a stopped link");
 
   env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
@@ -466,7 +466,7 @@ test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
   // a bus the dome is holding, and only rx_status tells them apart.
   env.pushStatus({ audio: { link_ok: false, rx_status: "blocked_by_dome_uart" } });
   await sleep(5);
-  assert.equal(env.chipValue("soundlink"), "DOME HAS BUS");
+  assert.equal(env.chipValue("soundlink"), "HELD BY DOME");
   assert.equal(env.chipClass("soundlink"), "status-chip");
 
   env.pushStatus({ audio: { link_ok: false, rx_status: "no_response" } });

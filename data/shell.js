@@ -497,6 +497,39 @@
     typeof payload === "object" &&
     VERIFIABLE_STATUS_FIELDS.every((field) => hasKey(payload, field));
 
+  // ---------------------------------------------------------------------------
+  // Is it latched, and are the feet held: asked once each
+  //
+  // Wave 1 answers the first question four different ways -- `=== true` on the
+  // plate, `!!payload.estop` in this file's own chrome and on Foot Drive,
+  // truthy on Dashboard -- and the set of things that hold the feet was
+  // hand-copied between the DRIVE chip and the notice's row for the same
+  // thing. Two readers of one fact drift, and a set copied by hand drifts the
+  // moment a fifth input can hold the feet and only one copy hears about it.
+  // So the shell asks once, here, and the chip, the chrome's state line and
+  // the notice all read the answer.
+  //
+  // `=== true` and never truthiness: a field that did not arrive must not
+  // answer this question at all, which is what isVerifiedStatus() above is for
+  // (#346).
+  const estopIsLatched = (status) => status.estop === true;
+
+  // The inputs OTHER than the estop that make DriveTask emit zero frames
+  // (src/drive_arbiter.cpp, failsafeIsActive() || webTimedOut). Split out
+  // rather than folded into feetAreHeld() because the notice needs exactly
+  // this half: the estop has a row of its own that names the more specific
+  // reason, and that row must not be shadowed by the general one.
+  const feetHeldBesidesEstop = (status) =>
+    status.sbusHwFailsafe === true ||
+    status.sbusSignalLost === true ||
+    status.webDriveExpired === true;
+
+  // Everything that can hold the feet, the estop included. The DRIVE chip
+  // reads this: a chip that watched one of the five would sit dark while the
+  // droid was held still, which is the reference's shipped Bug 2 exactly
+  // (r2d2-astromech-simulator v1.79.0, src/js/app/hud.js:203).
+  const feetAreHeld = (status) => estopIsLatched(status) || feetHeldBesidesEstop(status);
+
   // The two RC receivers. rcCh3..rcCh6 are further channels of the same
   // receiver and only ever report "ready" or "standby", so they carry no link
   // state at all; rcCh1 is the drive receiver except in single_sbus + useCh2,
@@ -520,33 +553,24 @@
       page: null,
       affordance: "Cuts drive now",
       read: (status) =>
-        status.estop === true ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
+        estopIsLatched(status) ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
     },
     {
       id: "drive",
       label: "DRIVE",
       page: "drive",
-      // Every input that can hold the feet at zero is read here, and there are
-      // five: the operator's latch and the watchdog-reset latch (which the
-      // firmware merges into `estop`), the receiver's hardware failsafe bit,
-      // the SBUS watchdog, and the web-drive timeout. Any one of them makes
-      // DriveTask emit zero frames (src/drive_arbiter.cpp, failsafeIsActive()
-      // || webTimedOut), so a chip reading one of the five would sit dark
-      // while the droid was held still -- which is the reference's shipped
-      // Bug 2 exactly: one clock guarded two channels and the summary chip
-      // tested one of them (r2d2-astromech-simulator, src/js/app/hud.js:203).
+      // Every input that can hold the feet at zero, and there are five: the
+      // operator's latch and the watchdog-reset latch (which the firmware
+      // merges into `estop`), the receiver's hardware failsafe bit, the SBUS
+      // watchdog, and the web-drive timeout. feetAreHeld() above is where that
+      // set is written down, once.
       //
       // `failsafeSource` is deliberately NOT one of the five: the firmware
       // never resets it when a layer clears (src/failsafe_gate.cpp,
       // failsafeClear), so it names the last reason rather than a live one.
       read: (status) => {
         if (!hasKey(status, "drive")) return chipState("", "OFF");
-        const held =
-          status.estop === true ||
-          status.sbusHwFailsafe === true ||
-          status.sbusSignalLost === true ||
-          status.webDriveExpired === true;
-        return held ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
+        return feetAreHeld(status) ? chipState("stopped", "STOPPED") : chipState("live", "ARMED");
       },
     },
     {
@@ -570,10 +594,12 @@
         // Standard PWM inputs: the firmware publishes whether they are enabled
         // and nothing whatever about whether pulses are arriving -- PWM loss
         // submits a zero frame and triggers no failsafe layer and no key
-        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip
-        // names the kind of input and claims no link, because a chip may only
-        // print what something measured.
-        if (states.includes("ready")) return chipState("", "PWM");
+        // (src/tasks/rc_input.cpp, dispatchStandardPwmInputs). So the chip says
+        // it is not measuring, because a chip may only print what something
+        // measured. It said "PWM" until the operator settled the wording on
+        // 2026-09-17: that named a mode, and a mode reads like a thing that is
+        // fine. Uncoloured either way -- nothing is wrong, we just do not know.
+        if (states.includes("ready")) return chipState("", "UNMEASURED");
         return chipState("", states.length > 0 ? "STANDBY" : "OFF");
       },
     },
@@ -616,17 +642,19 @@
       label: "DOME LINK",
       page: "dome",
       // The heartbeat state, and the UART owner, which is the second half.
-      // The dome shares UART2 with the sound module, and while sound holds it
-      // the heartbeat cannot arrive at all -- the firmware reports that as an
-      // ordinary "lost", so a chip reading only the state would say the dome
-      // link died when the truth is that nobody can ask.
+      // The dome shares a serial line with the sound module, and while sound
+      // holds it the heartbeat cannot arrive at all -- the firmware reports
+      // that as an ordinary "lost", so a chip reading only the state would say
+      // the dome link died when the truth is that nobody can ask. It said
+      // "SOUND HAS BUS" until the operator settled the wording on 2026-09-17:
+      // that named a UART to a maker who never wired one by that name.
       read: (status) => {
         const link = status.dome_link;
         const linkState = link !== null && typeof link === "object" ? link.state : undefined;
         if (linkState === "connected") return chipState("live", "OK");
         if (linkState === "disabled") return chipState("", "OFF");
         if (link !== null && typeof link === "object" && link.uart_owner === "audio") {
-          return chipState("", "SOUND HAS BUS");
+          return chipState("", "HELD BY SOUND");
         }
         if (linkState === "lost") return chipState("stopped", "LOST");
         if (linkState === "not_seen") return chipState("", "NO HEARTBEAT");
@@ -638,15 +666,15 @@
       label: "SOUND LINK",
       page: "sound",
       // link_ok is half the condition. A false link_ok means either the
-      // module did not answer or the dome owns the UART and nobody could ask,
-      // and only rx_status tells the two apart (src/drivers/audio_chirp.cpp,
-      // classifyRxStatus). Reading link_ok alone reports a dead module for a
-      // bus that is merely busy.
+      // module did not answer or the dome owns the shared serial line and
+      // nobody could ask, and only rx_status tells the two apart
+      // (src/drivers/audio_chirp.cpp, classifyRxStatus). Reading link_ok alone
+      // reports a dead module for a line that is merely busy.
       read: (status) => {
         if (!hasKey(status, "audio")) return chipState("", "OFF");
         const audio = status.audio;
         if (audio === null || typeof audio !== "object") return chipState("", CHIP_UNKNOWN);
-        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "DOME HAS BUS");
+        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "HELD BY DOME");
         if (audio.link_ok === true) return chipState("live", "OK");
         if (audio.rx_status === "no_response") return chipState("stopped", "NO ANSWER");
         return chipState("", CHIP_UNKNOWN);
@@ -982,7 +1010,7 @@
   // what the droid last said instead, which is a fact rather than a guess.
   const applyEstopStatus = (payload) => {
     if (!hasKey(payload, "estop")) return;
-    estopLatched = !!payload.estop;
+    estopLatched = estopIsLatched(payload);
     renderEstopState();
   };
 
@@ -998,9 +1026,16 @@
     else applyEstopStatus(result.data);
   };
 
-  // The device pushes a status event on a change and on nothing else, so a
-  // client that connects to a quiet droid is told nothing at all. This is the
-  // read that closes that gap; every later change arrives on the stream.
+  // The device pushes a status event when something calls
+  // requestStatusBroadcastNow() and at no other time -- a state change, or a
+  // client being admitted to the stream (src/web/api_events.cpp). Naming the
+  // mechanism rather than saying "on a change" matters: the old wording is
+  // what would send the next reader looking for a poll that does not exist,
+  // instead of for the call site that does (#346).
+  //
+  // This read still closes the boot gap on its own account: the shell asks
+  // once so the chrome has a frame even before the stream is up, and every
+  // later change arrives on the stream.
   const loadInitialStatus = async ({ handle = null } = {}) => {
     if (window.PAStatusStream?.getLastStatus?.()) {
       applyEstopStatus(window.PAStatusStream.getLastStatus());
@@ -1187,19 +1222,17 @@
       chip: "estop",
       page: "drive",
       says: "The estop is latched",
-      active: (status) => status.estop === true,
+      active: estopIsLatched,
     },
     {
       id: "feet",
       chip: "drive",
       says: "The feet are not armed",
-      // The same enumeration the DRIVE chip makes, minus the estop, which has
-      // its own row above and would otherwise shadow it.
-      active: (status) =>
-        !hasKey(status, "drive") ||
-        status.sbusHwFailsafe === true ||
-        status.sbusSignalLost === true ||
-        status.webDriveExpired === true,
+      // The same set the DRIVE chip reads, minus the estop, which has its own
+      // row above and names the more specific reason. Read from the shared
+      // predicate rather than copied out again, so a sixth way to hold the
+      // feet cannot land in the chip and miss this row.
+      active: (status) => !hasKey(status, "drive") || feetHeldBesidesEstop(status),
     },
     {
       id: "stationary",
@@ -1370,10 +1403,13 @@
       else if (eventType === "stream_error") notePlateRefreshFailed("link");
       else if (eventType === "stream_resync") {
         // The stream came back. What it replays is the frame from before it
-        // went away, and the device pushes on a change and on nothing else --
-        // so the only way to learn what happened while we were not listening
-        // is to ask. This is the session's one status read, reused: no second
-        // reader, and no second route.
+        // went away, so the only way to learn what happened while we were not
+        // listening is to have the state re-sent. The controller now does that
+        // itself on admission (src/web/api_events.cpp), which covers every
+        // page on the stream; this asks as well, because it is the shell that
+        // knows a resync is outstanding and the two answers are the same
+        // frame. The session's one status read, reused: no second reader, and
+        // no second route.
         readStatusOnce().catch((error) => {
           console.warn("[shell] status resync after reconnect failed:", error);
           notePlateRefreshFailed("link");
