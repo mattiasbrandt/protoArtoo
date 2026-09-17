@@ -1,0 +1,12 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..ca01d4c7 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -678,7 +678,6 @@
+ 
+     const present = TIERS.map((tier) => {
+       const tierRows = rows.filter((row) => row.tier === tier.id);
+-      if (tierRows.length === 0) return null;
+       return {
+         id: tier.id,
+         heading: tier.heading,

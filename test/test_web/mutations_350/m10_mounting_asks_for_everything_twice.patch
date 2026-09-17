@@ -1,0 +1,16 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..4f1187a4 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -861,10 +861,7 @@
+   let firstStart = true;
+   window.PASurface?.poll(
+     () => {
+-      if (firstStart) {
+-        firstStart = false;
+-        return Promise.resolve();
+-      }
++      firstStart = false;
+       return loadSheet();
+     },
+     { runOnStart: true, refreshOnReturn: true }

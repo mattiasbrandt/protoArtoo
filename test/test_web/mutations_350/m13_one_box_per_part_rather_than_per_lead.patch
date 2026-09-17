@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..549336fc 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -440,7 +440,7 @@
+       .filter((row) => row.tier === "driven")
+       .forEach((row) => {
+         const address = row.output.address;
+-        let group = groups.find((each) => each.address === address);
++        let group = null;
+         if (!group) {
+           group = { address, label: outputLabel(row.output), parts: [] };
+           groups.push(group);

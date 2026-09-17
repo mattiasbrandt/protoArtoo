@@ -1,0 +1,13 @@
+diff --git i/data/droid_parts.js w/data/droid_parts.js
+index 3362d63d..b09d292a 100644
+--- i/data/droid_parts.js
++++ w/data/droid_parts.js
+@@ -143,7 +143,7 @@
+         ],
+         "position": "rear-right",
+         "bearingDeg": 150,
+-        "control": "dome-link"
++        "control": "body-ledc"
+       },
+       {
+         "index": 1,

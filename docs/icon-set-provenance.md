@@ -57,6 +57,7 @@ no symbol, which is the failure this list would otherwise hide.
 | `timeline-outline` | Sequences, in the nav rail |
 | `tune-variant` | Setup, in the nav rail |
 | `puzzle-outline` | Parts, in the nav rail |
+| `connection` | Wiring, in the nav rail |
 | `robot-outline` | Servos, in the nav rail |
 | `wifi` | WiFi, in the nav rail |
 | `chip` | Firmware, in the nav rail |
@@ -67,10 +68,14 @@ no symbol, which is the failure this list would otherwise hide.
 | `chevron-right` | a disclosure's open/closed marker |
 
 The #398 prototype (`prototypes/395-surface-anatomy/chrome.js`, merged) holds
-the full twenty-two paths it took from the same package, including the six this
-image does not carry - `connection`, `wrench-outline`, `arrow-left`,
-`arrow-right`, `play-outline` and `pause`. A slice that needs one copies its
-path in beside the others rather than fetching a package to read it again.
+the full twenty-two paths it took from the same package, including the five this
+image does not carry - `wrench-outline`, `arrow-left`, `arrow-right`,
+`play-outline` and `pause`. A slice that needs one copies its path in beside the
+others rather than fetching a package to read it again.
+
+`connection` is the first of those six a slice has needed. Wiring (#350) is the
+destination the prototype's own nav row named `connection`, so landing that
+surface was one path copied in and no package fetched.
 
 `robot-outline` is the one choice the prototype did not make for us: it left
 Servos out of the rail because `CONTEXT.md` **Activity Group** does not list it

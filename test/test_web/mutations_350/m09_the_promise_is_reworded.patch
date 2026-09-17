@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..4a8eb096 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -615,7 +615,7 @@
+   // copy this whole view exists to abolish.
+   // ---------------------------------------------------------------------------
+   const promiseHtml = () =>
+-    `Everything below says <b>${esc(PROMISE)}</b>, read from the Body Controller that ` +
++    `Everything below says <b>how your droid is wired</b>, read from the Body Controller that ` +
+     `answered this page - not from a document anyone keeps by hand. It draws ` +
+     `<b>${esc(SCOPE)}</b>.`;
+ 
