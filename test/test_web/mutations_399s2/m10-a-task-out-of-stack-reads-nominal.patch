@@ -1,0 +1,17 @@
+diff --git i/data/setup.js w/data/setup.js
+index 45dac076..34351213 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1639,10 +1639,8 @@
+   // rather than with a hard-coded hex: a colour literal outside :root is a
+   // defect (CONTEXT.md "Status Colour"), and these three were Material's own
+   // green, amber and red rather than the droid's.
+-  function hwmState(hwm) {
+-    if (hwm > 2048) return "ok";
+-    if (hwm > 1024) return "warn";
+-    return "fail";
++  function hwmState(_hwm) {
++    return "ok";
+   }
+ 
+   function fragState(ratio) {

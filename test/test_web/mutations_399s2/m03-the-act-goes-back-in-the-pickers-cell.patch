@@ -1,0 +1,17 @@
+diff --git i/data/parts.js w/data/parts.js
+index eca09ac9..16944891 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -265,10 +265,9 @@
+       `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
+       `<span class="parts-gang"></span></th>` +
+       `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
+-      `<option value="${NO_OUTPUT}">Finding out...</option></select></td>` +
+-      `<td class="parts-acts">` +
++      `<option value="${NO_OUTPUT}">Finding out...</option>` +
+       `<button class="btn btn-sm parts-find" type="button" aria-label="${esc(`Find the output that moves ${part.name} by nudging each spare output`)}" ` +
+-      `disabled aria-disabled="true">Find by moving</button></td></tr>`
++      `disabled aria-disabled="true">Find by moving</button></select></td></tr>`
+     );
+   };
+ 
