@@ -101,6 +101,11 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/dome/cmd", WebMethod::kPost, handleDomeCmdPost);
     webRegisterRoute("/api/dome/layout", WebMethod::kGet, handleDomeLayoutGet);
 
+    // /api/servo/centre is registered ahead of /api/servo for the reason
+    // /api/audio/tracks is registered ahead of /api/audio above: the async
+    // backend matches in registration order, and the shorter POST path would
+    // otherwise swallow requests for the longer one.
+    webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost);
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
     webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
 

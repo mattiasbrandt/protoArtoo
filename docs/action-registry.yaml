@@ -2433,6 +2433,33 @@ entries:
     required: true
   nvs_key: null
   executor: servoCmdQueue
+- name: servo.action.centre-all
+  display_name: Back To Centre
+  description: 'Put every servo output back to the centre position recorded on its own row - one press, and the droid paces the sweep itself. The controller expands it into one output at a time and leaves at
+    least 450 ms between them, so a whole body going back at once cannot brown out the shared servo rail. Each output goes to ITS OWN recorded centre, not to a fixed 1500 us, and an output whose row takes
+    longer than that to travel holds the next one off until it has finished. A row recorded as an LED strip is skipped: a light has no centre to go back to. It takes no target - the sweep covers every output
+    there is. Any estop, sleep mode, sequence or stop ends it where it has got to, and the outputs already centred stay where they were sent. Pressing it again starts the sweep over rather than running a second
+    one alongside.
+
+    '
+  domain: servo
+  type: action
+  marcduino_cmd: null
+  api_path: /api/servo/centre
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/sequence_bulk_centre.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # No params, and that is the decision rather than an omission: which outputs
+  # the sweep covers, in what order and how far apart is the Sequence
+  # Coordinator's, because a pace a caller could name is a pace a caller could
+  # walk around (CONTEXT.md "Cadence Floor").
+  params: []
+  nvs_key: null
+  executor: robotState.bulkCentreRequest
 - name: servo.action.stop
   display_name: Stop
   description: 'Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no

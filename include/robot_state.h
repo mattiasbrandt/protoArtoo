@@ -334,6 +334,15 @@ struct RobotState {
     uint32_t queueOverflowCount;  // shared telemetry counter, incremented by many tasks
     bool rcConfigDirty;  // Set by config apply, cleared by RcInputTask after rebuild
     bool seqStopRequested;  // Non-latching web stop signal (POST /api/seq/stop), cleared by SequenceDispatcherTask
+    // A bulk centre the operator asked for (POST /api/servo/centre, #318 #365),
+    // cleared by SequenceDispatcherTask when it starts the sweep. The same
+    // transient-flag shape as seqStopRequested above, and for the same reason:
+    // a web handler validates and signals, and the Coordinator owns the run.
+    //
+    // A CommandSource rather than a bool, with SRC_NONE meaning nobody has
+    // asked, so the log line the sweep leaves names who pressed - the Console
+    // and the browser both reach this and they are different surfaces.
+    CommandSource bulkCentreRequest;
 };
 
 // -----------------------------------------------------------------------------

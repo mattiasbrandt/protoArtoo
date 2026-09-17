@@ -33,6 +33,7 @@
 #include "robot_state.h"
 #include "seq_store.h"
 #include "sequence_body_step.h"
+#include "sequence_bulk_centre.h"
 #include "sequence_dispatcher.h"
 #include "sequence_dispatcher_step.h"
 #include "sequence_engine.h"
@@ -89,10 +90,14 @@ bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
 //
 // A flutter resolves to its how-far target, because a flutter ends open
 // (ADR 0049). The oscillation on the way there is NOT performed yet: it is
-// generated motion, and generated motion is what the Cadence Floor paces --
-// which is unmeasured on the body and deferred past this ticket. Until it
-// exists, a routine fluttering several Parts at once would be emitting exactly
-// the many-at-once shape the Floor is there to hold apart.
+// generated motion, and generated motion is what the Cadence Floor paces. The
+// Floor now exists (include/sequence_bulk_centre.h, #365), on the dome's figure
+// as an explicitly-labelled stand-in, but it bounds the bulk centre it was
+// built for and nothing else - a flutter is a second expansion, with its own
+// question about what the oscillation should look like, and nobody has decided
+// that yet. Until it is performed, a routine fluttering several Parts at once
+// would be emitting exactly the many-at-once shape the Floor is there to hold
+// apart.
 // -----------------------------------------------------------------------------
 static bool dispatchBodyMove(const SeqAction& act) {
     const uint8_t rowCount = configCacheServoOutputCount();
@@ -120,6 +125,64 @@ static bool dispatchBodyMove(const SeqAction& act) {
     cmd.source = SRC_SEQ;
     cmd.timestampMs = millis();
     return xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE;
+}
+
+// -----------------------------------------------------------------------------
+// centreOneOutput  --  one row's turn in a bulk centre sweep (#318, #365).
+//
+// The operator asked once, from the output-first table; this is the Coordinator
+// expanding that one press into one Output move, and the sweep's cursor spaces
+// the next one by the Cadence Floor (include/sequence_bulk_centre.h). Nothing
+// about the pace is the browser's, which is the whole point: a safe cadence a
+// page held could be walked around by a hand-edited or imported client.
+//
+// The row is read from the LIVE table at the moment its turn comes, one row at
+// a time because that is how the cache hands them out, so a table saved
+// mid-sweep is read as it now stands rather than as it was when the operator
+// pressed.
+//
+// The cursor is what says whether the turn is over: every path that dealt with
+// the row advances it, and the one path that could not - a full servoCmdQueue -
+// leaves it alone, so the same row comes round again on the next tick, exactly
+// as the staged ring close above holds its index. A row with nothing to centre,
+// or one this image cannot drive, is counted and passed over.
+// -----------------------------------------------------------------------------
+static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
+    const uint8_t rowCount = configCacheServoOutputCount();
+    ServoOutputRow row = {};
+    if (run.nextRow >= rowCount || !configCacheReadServoOutput(run.nextRow, &row)) {
+        // The table shrank under the sweep - a save between two rows. End it
+        // here rather than walking past the end of the table.
+        sequenceBulkCentreEnd(&run);
+        return;
+    }
+
+    if (!sequenceBulkCentreHasTravel(row)) {
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        return;
+    }
+
+    const SeqBodyStepPlan plan = sequenceBodyCentrePlan(row);
+    if (!plan.drive) {
+        PA_LOG_INFO(TAG, "output %u not centred - %s", (unsigned)run.nextRow,
+                    consoleReasonString(plan.reason));
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        return;
+    }
+
+    // The same command a Body Step queues, to the same queue, with the same
+    // clamp already applied: one motion path, and ServoTask still decides the
+    // move's own shape from the Output's Motion Profile (ADR 0052).
+    ServoCommand cmd = {};
+    cmd.armId = plan.armId;
+    cmd.type = SERVO_CMD_POSITION;
+    cmd.positionUs = plan.targetUs;
+    cmd.source = (CommandSource)run.src;
+    cmd.timestampMs = now;
+    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+        return;  // the cursor stays put: this row's turn comes round again
+    }
+    sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
 }
 
 // =============================================================================
@@ -285,6 +348,12 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     uint32_t       resyncCloseDueMs = 0;
     uint32_t       waitMs = 10;  // task wake timeout; computed at end of each iteration
 
+    // The bulk centre sweep an operator starts from the output-first table
+    // (#318, #365). Static for the same reason the engine above is: the cursor
+    // stays off this task's measured stack chain (ADR 0040).
+    static SeqBulkCentreRun centreRun;
+    centreRun = SeqBulkCentreRun{};
+
     while (true) {
         esp_task_wdt_reset();
         SequenceRequest req = {};
@@ -336,6 +405,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     seqEngineStart(engine, entry, now);
                     seqEvidenceBegin(req.name, (uint8_t)req.src, now, bodyQueueFullCount());
                     resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
+                    // ...and so does a bulk centre still sweeping. A sequence
+                    // and a sweep both move body Outputs, and two of them
+                    // interleaving is the many-at-once shape the Cadence Floor
+                    // exists to keep apart. The sequence is the later word.
+                    if (centreRun.active) {
+                        PA_LOG_INFO(TAG, "back to centre ended - %s took over", req.name);
+                        sequenceBulkCentreEnd(&centreRun);
+                    }
                     strncpy(activeName, req.name, sizeof(activeName) - 1);
                     activeName[sizeof(activeName) - 1] = '\0';
                     retryLogged = false;
@@ -353,9 +430,24 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // Estop abort is latching: once it fires, it drains all pending actions and
         // prevents new sequences from starting until estop is released and resync completes.
         bool estopActive = false;
+        bool sleepActive = false;
         taskENTER_CRITICAL(&robotStateMux);
         estopActive = robotState.estop;
+        sleepActive = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
+
+        // A bulk centre ends on either halt, where it has got to (#365). ADR
+        // 0043 has ServoTask release every enabled Output on that same edge and
+        // command no position, so a sweep that kept queueing moves would be
+        // driving parts the droid has just deliberately let go of. Nothing is
+        // commanded on the way out: the release is the whole of what a halt
+        // does to an Output.
+        if ((estopActive || sleepActive) && centreRun.active) {
+            PA_LOG_INFO(TAG, "back to centre ended (%s) after %u centred, %u skipped",
+                        estopActive ? "estop" : "sleep mode", (unsigned)centreRun.centred,
+                        (unsigned)centreRun.skipped);
+            sequenceBulkCentreEnd(&centreRun);
+        }
 
         if (estopActive && seqEngineActive(engine)) {
             PA_LOG_INFO(TAG, "abort %s (estop)", activeName);
@@ -391,6 +483,15 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             robotState.seqStopRequested = false;  // clear the transient flag
         }
         taskEXIT_CRITICAL(&robotStateMux);
+
+        // A stop stops what the Coordinator is doing, and a bulk centre is that
+        // as much as a sequence is: an operator who presses Stop while the
+        // droid is sweeping means the sweep.
+        if (stopRequested && centreRun.active) {
+            PA_LOG_INFO(TAG, "back to centre ended (web stop) after %u centred, %u skipped",
+                        (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
+            sequenceBulkCentreEnd(&centreRun);
+        }
 
         if (stopRequested && seqEngineActive(engine)) {
             PA_LOG_INFO(TAG, "abort %s (web stop)", activeName);
@@ -445,6 +546,46 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
+        // The bulk centre an operator started from the output-first table
+        // (#318, #365). The request is a transient flag the web handler sets
+        // and this clears, the shape POST /api/seq/stop already uses; the run
+        // itself - which Outputs, in what order, how far apart - is this task's
+        // and never the browser's.
+        CommandSource centreSrc = SRC_NONE;
+        taskENTER_CRITICAL(&robotStateMux);
+        if (robotState.bulkCentreRequest != SRC_NONE) {
+            centreSrc = robotState.bulkCentreRequest;
+            robotState.bulkCentreRequest = SRC_NONE;
+        }
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (centreSrc != SRC_NONE) {
+            if (estopActive || sleepActive) {
+                // Refused rather than queued: the droid has let go of every
+                // Output, and a sweep that started here would drive parts
+                // nobody is watching the moment the halt cleared.
+                PA_LOG_WARN(TAG, "[%s] back to centre refused - %s",
+                            commandSourceToString(centreSrc),
+                            estopActive ? "estop active" : "sleep mode active");
+            } else {
+                sequenceBulkCentreStart(&centreRun, now, (uint8_t)centreSrc);
+                PA_LOG_INFO(TAG, "[%s] back to centre - %u outputs, at least %u ms apart",
+                            commandSourceToString(centreSrc),
+                            (unsigned)configCacheServoOutputCount(),
+                            (unsigned)SEQ_CADENCE_FLOOR_MS);
+            }
+        }
+
+        // One row per tick, and only when its turn is due. One servo actuating
+        // at a time is the rail rule the Cadence Floor holds; a row the sweep
+        // passes over costs it no time, because nothing moved.
+        if (sequenceBulkCentreRowDue(centreRun, now)) {
+            centreOneOutput(centreRun, now);
+            if (!centreRun.active) {
+                PA_LOG_INFO(TAG, "back to centre done - %u centred, %u skipped",
+                            (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
+            }
+        }
+
         // SAFETY INVARIANT: Suppression window behavior.
         // Advance the cursor: dispatch due actions, retry on queue-full.
         // If a downstream queue is full mid-sequence, the action is retried
@@ -490,8 +631,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
-        // Compute wait timeout for next iteration: 10 ms if active or resync pending,
+        // Compute wait timeout for next iteration: 10 ms if a sequence is
+        // active, a resync close is pending or a bulk centre is sweeping;
         // 250 ms otherwise (task blocks on request queue, wakes on TWDT and edges).
-        waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != 0xFF);
+        waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != 0xFF,
+                                             centreRun.active);
     }
 }

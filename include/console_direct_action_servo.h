@@ -2,8 +2,8 @@
 // include/console_direct_action_servo.h
 //
 // Controller Console direct-action executors - servo domain: open, close,
-// set-position and stop (#221 remainder), nudge (#363), and hold and release
-// (#364). Split out of
+// set-position and stop (#221 remainder), nudge (#363), hold and release
+// (#364), and the bulk centre (#365). Split out of
 // src/console/console_module.cpp by #257 so this domain's rows can be extended
 // without colliding with the other domains' files.
 //
@@ -218,6 +218,33 @@ static void consoleExecuteServoStop(uint32_t requestId, const char* operationNam
     }
 }
 
+// servo.action.centre-all (#318, #365): no arguments, matching
+// POST /api/servo/centre (handleServoCentrePost(), src/web/api_servo.cpp) - a
+// transient flag set unconditionally, the same shape dome.action.sequence-stop
+// uses. No arm, because the sweep covers every Servo Output and choosing them
+// is the Sequence Coordinator's; no estop or sleep gate, because the REST
+// source has none either and the Coordinator is the one place that judgement
+// lives (it refuses to start under a halt and says so).
+//
+// APPLIED rather than QUEUED: nothing entered a queue here. The flag is read on
+// the Coordinator's next tick, and what it queues after that is one servo
+// command per Output, no closer together than the Cadence Floor.
+static void consoleExecuteServoCentreAll(uint32_t requestId, const char* operationName,
+                                         const ConsoleArgs& args, ConsoleCommandSource source,
+                                         const ConsoleRecordSink* sink) {
+    if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
+        return;
+    }
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.bulkCentreRequest = consoleCommandSourceFor(source);
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                            CONSOLE_REASON_NONE);
+    }
+}
+
 static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.open", consoleExecuteServoOpen},
     {"servo.action.close", consoleExecuteServoClose},
@@ -226,6 +253,7 @@ static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.nudge", consoleExecuteServoNudge},
     {"servo.action.hold", consoleExecuteServoHold},
     {"servo.action.release", consoleExecuteServoRelease},
+    {"servo.action.centre-all", consoleExecuteServoCentreAll},
 };
 static const size_t kServoDirectActionExecutorCount =
     sizeof(g_servoDirectActionExecutors) / sizeof(g_servoDirectActionExecutors[0]);

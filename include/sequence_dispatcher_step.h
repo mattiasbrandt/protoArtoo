@@ -67,15 +67,21 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
 
 // Idle gating: compute the wait timeout for the task's blocking queue receive.
 //
-// When a sequence is active or a staged ring-close is pending, the task must
-// run at 10 ms cadence to feed step-driven choreography and ring-close drain.
-// When idle, the task blocks on the request queue and only wakes for TWDT
-// reset (3 s timeout) and to poll estop/dome-connect edges.
+// When a sequence is active, a staged ring-close is pending, or a bulk centre
+// is sweeping, the task must run at 10 ms cadence to feed step-driven
+// choreography, the ring-close drain and the Cadence Floor. When idle, the task
+// blocks on the request queue and only wakes for TWDT reset (3 s timeout) and
+// to poll estop/dome-connect edges.
 //
 // Args:
 //   engineActive: true if a sequence is currently running.
 //   resyncClosePending: true if a staged ring-close is waiting in resyncCloseIdx.
+//   bulkCentreActive: true while a bulk centre sweep has rows left (#365). The
+//     idle 250 ms would round the Cadence Floor up to the next wake, so the
+//     spacing between two Outputs would be whatever the tick allowed rather
+//     than the number the Floor names.
 //
-// Returns: wait_ms for xQueueReceive timeout (10 ms if either condition is
+// Returns: wait_ms for xQueueReceive timeout (10 ms if any condition is
 // true, 250 ms otherwise).
-uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending);
+uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending,
+                                     bool bulkCentreActive);
