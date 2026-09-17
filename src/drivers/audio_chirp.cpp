@@ -474,6 +474,8 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     bool sawBank1 = false;
     bool sawMend = false;
     bool sawMdat = false;
+    bool sawMsum = false;
+    uint32_t soundListChecksum = 0;
     uint16_t declaredBankCount = 0;  // MDAT's count: Bank 1 plus every SD bank
     // Value-initialize catalog banks to respect declared defaults (page = 'A', etc.)
     for (uint8_t i = 0; i < AUDIO_CATALOG_MAX_BANKS; ++i) {
@@ -529,6 +531,20 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
                     bank1Count = bank.count;
                     sawBank1 = true;
                 }
+            }
+        }
+
+        if (strncmp(line, "MSUM:", 5) == 0) {
+            // The module's own checksum of its sound list. It was recognised as
+            // a frame marker and then thrown away, which is why a card whose
+            // files changed under a saved binding had nothing to notice it
+            // with. strtoul() saturates at ULONG_MAX rather than wrapping, so
+            // an out-of-range value is not read as some other CRC.
+            char* msumEnd = nullptr;
+            const unsigned long parsed = strtoul(line + 5, &msumEnd, 10);
+            if (msumEnd != line + 5 && parsed <= 0xFFFFFFFFul) {
+                sawMsum = true;
+                soundListChecksum = (uint32_t)parsed;
             }
         }
 
@@ -609,6 +625,11 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 
     m_catalogBankCount = catalogBankCount;
     m_totalTracks = bank1Count;
+    // What THIS read observed, including "nothing": a reply that lost its MSUM
+    // line has not shown the sound list unchanged, and saying so is what stops
+    // a truncated manifest from being read as reassurance.
+    m_soundListChecksum = sawMsum ? soundListChecksum : 0u;
+    m_soundListChecksumValid = sawMsum;
     return true;
 }
 
@@ -634,6 +655,8 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     m_catalogBankCount = 0;
     m_missingNameCount = 0;
     m_entryCapReached = false;
+    m_soundListChecksum = 0;
+    m_soundListChecksumValid = false;
     resetFrameAssembly();
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
@@ -840,6 +863,16 @@ bool AudioDriverChirp::refreshCatalog() {
                 (unsigned)m_catalogBankCount, (unsigned)m_catalogCount,
                 (unsigned)m_missingNameCount,
                 m_manifestComplete ? "complete" : "INCOMPLETE");
+    return true;
+}
+
+bool AudioDriverChirp::getSoundListChecksum(uint32_t* out) const {
+    if (!m_soundListChecksumValid) {
+        return false;
+    }
+    if (out != nullptr) {
+        *out = m_soundListChecksum;
+    }
     return true;
 }
 

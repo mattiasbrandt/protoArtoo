@@ -70,6 +70,7 @@ enum ScriptMode {
     SCRIPT_SD_INVALID,          // an SD index the module answers with INVALID
     SCRIPT_SD_PAGELESS,         // a page-zero SD directory: "NAME:2,,,3,file"
     SCRIPT_TRUNCATED_THEN_WALK, // truncated GMAN, small card, names available
+    SCRIPT_NO_MSUM,             // a manifest whose MSUM line never arrived
 };
 
 struct ScriptedChirpIO {
@@ -150,6 +151,8 @@ struct ScriptedChirpIO {
                 appendRx("MDAT:2\nBANK:1,1A_general,0\nBANK:2,2_Label,3\nMSUM:9\nMEND\n");
             } else if (mode == SCRIPT_TRUNCATED_THEN_WALK) {
                 appendRx("BANK:2,2A_music,1\nMSUM:9\nMEND\n");
+            } else if (mode == SCRIPT_NO_MSUM) {
+                appendRx("MDAT:1\nBANK:1,1A_general,2\nMEND\n");
             } else if (mode == SCRIPT_GMAN_COMPLETE) {
                 appendRx("MDAT:3\n");
                 appendRx("BANK:1,1A_general,24\n");
@@ -395,6 +398,39 @@ void test_recovered_bank1_is_walked_for_names() {
     TEST_ASSERT_EQUAL_STRING("cantina.mp3", entries[2].name);
 }
 
+// -----------------------------------------------------------------------------
+// The module's own checksum of its sound list (work item 4)
+// -----------------------------------------------------------------------------
+
+void test_the_manifest_checksum_is_kept_not_only_recognised() {
+    g_io.mode = SCRIPT_GMAN_TRUNCATED;
+    AudioDriverChirp drv;
+    drv.setIO(makeScriptedIO());
+    TEST_ASSERT_TRUE(drv.begin(15));
+
+    uint32_t checksum = 0;
+    TEST_ASSERT_TRUE_MESSAGE(
+        drv.getSoundListChecksum(&checksum),
+        "MSUM was recognised as a frame marker and its value discarded, so nothing could notice "
+        "a card whose files changed under a saved binding");
+    TEST_ASSERT_EQUAL_UINT32(2712847316u, checksum);
+}
+
+void test_a_manifest_without_a_checksum_reports_no_observation() {
+    g_io.mode = SCRIPT_NO_MSUM;
+    AudioDriverChirp drv;
+    drv.setIO(makeScriptedIO());
+    TEST_ASSERT_TRUE(drv.begin(15));
+
+    uint32_t checksum = 0xABCDu;
+    TEST_ASSERT_FALSE_MESSAGE(
+        drv.getSoundListChecksum(&checksum),
+        "a reply that lost its MSUM line has not shown the sound list unchanged; reporting a "
+        "zero here would read as a checksum the module never sent");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0xABCDu, checksum,
+                                     "an unobserved checksum must not overwrite the caller's value");
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -409,5 +445,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_invalid_is_a_miss_not_a_track_called_invalid);
     RUN_TEST(test_pageless_sd_reply_is_not_accepted_as_a_name);
     RUN_TEST(test_recovered_bank1_is_walked_for_names);
+    RUN_TEST(test_the_manifest_checksum_is_kept_not_only_recognised);
+    RUN_TEST(test_a_manifest_without_a_checksum_reports_no_observation);
     return UNITY_END();
 }

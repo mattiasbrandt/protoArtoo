@@ -90,6 +90,7 @@ class AudioDriverChirp : public AudioDriver {
     // Catalog interface implementations (overrides).
     bool refreshCatalog() override;
     void getCatalogCompleteness(AudioCatalogCompleteness& out) const override;
+    bool getSoundListChecksum(uint32_t* out) const override;
     uint16_t getCatalogEntryCount() const override;
     const AudioCatalogEntry* getCatalogEntries() const override;
     uint8_t getCatalogBankCount() const override;
@@ -122,6 +123,17 @@ class AudioDriverChirp : public AudioDriver {
     uint16_t m_missingNameCount = 0;
     // The walk stopped at m_catalogCapacity with banks still unwalked.
     bool m_entryCapReached = false;
+    // GMAN's "MSUM:<n>" -- the module's CRC32 over its variant and file NAMES in
+    // scan order (CHIRP_Audio.ino globalFilenameChecksum). It changes when a
+    // file is added, removed or renamed, which is exactly what renumbers the
+    // Banks 2-6 indexes a saved binding addresses. It does NOT cover
+    // directories, pages or file contents, so a same-name move between pages
+    // keeps it; that is a limit to state, not a reason to withhold the warning
+    // the module does offer (#397 work item 4).
+    uint32_t m_soundListChecksum = 0;
+    // Whether the last manifest read carried a checksum at all. A checksum of
+    // zero is a value; an absent one is not, and the two must not be confused.
+    bool m_soundListChecksumValid = false;
     // Catalog storage is heap-allocated on first discovery and reused after.
     // When CHIRP RX is unavailable (e.g. the dome link owns the shared
     // controller) discovery

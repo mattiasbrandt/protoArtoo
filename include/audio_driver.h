@@ -238,4 +238,14 @@ class AudioDriver {
     virtual void getCatalogCompleteness(AudioCatalogCompleteness& out) const {
         out = AudioCatalogCompleteness{};
     }
+
+    // The checksum the module reported for its own sound list at the last
+    // manifest read, if it reported one. Writes *out and returns true only when
+    // a value was actually observed: a module that sent no checksum, or a reply
+    // the checksum line was dropped from, is "not observed", which is a
+    // different fact from a checksum of zero. Default: no such value exists.
+    virtual bool getSoundListChecksum(uint32_t* out) const {
+        (void)out;
+        return false;
+    }
 };
