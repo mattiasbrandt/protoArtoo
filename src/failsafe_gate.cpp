@@ -5,6 +5,26 @@
 // Internal state: 5-bit bitmask (_activeMask) with one bit per FailsafeLayer.
 // All critical sections use taskENTER_CRITICAL / taskEXIT_CRITICAL with the
 // shared robotState spinlock (no-op in native test mode via stubs).
+//
+// PUBLISHING AN EDGE. The event stream builds a status payload when something
+// asks it to and at no other time, so a layer that latches without asking
+// leaves every browser reading the state from before. That is how a latching
+// estop raised from the radio reached no screen at all: the web handlers each
+// asked for themselves (api_estop.cpp, api_drive.cpp), and the paths that
+// latch without a web request - an SBUS timeout, a watchdog-reset boot, an RC
+// action - asked for nobody (#346).
+//
+// The ask lives here rather than at each trigger site because this is the one
+// place that owns the mask: a layer added later is published by construction
+// instead of by remembering. It is an EDGE, not a state - a held layer is
+// re-triggered every SBUS frame, and asking per frame would rebuild the whole
+// status payload 50 times a second for a state that has not moved.
+//
+// requestStatusBroadcastNow() sets one flag inside a critical section and
+// returns (web_server.cpp); the payload is built by the event stream task on
+// Core 0. That is what makes it safe to call from here, because
+// failsafeTrigger() is reached from the real-time path - no allocation, no
+// blocking, and never with robotStateMux held.
 // =============================================================================
 
 #include "failsafe_gate.h"
@@ -15,6 +35,7 @@
 
 #include "logging.h"
 #include "robot_state.h"
+#include "web_server.h"   // requestStatusBroadcastNow()
 
 static const char* TAG = "FailsafeGate";
 
@@ -97,6 +118,7 @@ void failsafeTrigger(FailsafeLayer layer) {
 
     if (!wasActive) {
         PA_LOG_WARN(TAG, "triggered layer=%u", (unsigned)layer);
+        requestStatusBroadcastNow();
     }
 }
 
@@ -121,6 +143,11 @@ void failsafeClear(FailsafeLayer layer) {
 
     if (wasActive) {
         PA_LOG_INFO(TAG, "cleared layer=%u", (unsigned)layer);
+        // The falling edge is published too. A plate still showing STOPPED
+        // after the droid is free again is the same untruth pointing the other
+        // way, and it is the one that teaches an operator to distrust the
+        // readout.
+        requestStatusBroadcastNow();
     }
 }
 
@@ -182,6 +209,9 @@ void failsafeClearEstop() {
     }
     if (watchdogWasActive) {
         PA_LOG_INFO(TAG, "watchdog_reset cleared (explicit)");
+    }
+    if (estopWasActive || watchdogWasActive) {
+        requestStatusBroadcastNow();
     }
 }
 
