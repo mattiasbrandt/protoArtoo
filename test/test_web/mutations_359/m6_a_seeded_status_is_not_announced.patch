@@ -1,12 +1,13 @@
 diff --git i/data/status_stream.js w/data/status_stream.js
-index 5b66abf5..376d7517 100644
+index 07ee85bd..de2f16ee 100644
 --- i/data/status_stream.js
 +++ w/data/status_stream.js
-@@ -132,7 +132,6 @@
+@@ -206,7 +206,7 @@
+     // as a replay. A read that came back as an error envelope is refused here
+     // exactly as one that arrived on the stream would be.
      seed(status) {
-       if (!status || typeof status !== "object") return;
-       lastStatus = status;
--      emit("status", lastStatus);
+-      adopt(status);
++      if (isStatusFrame(status)) lastStatus = status;
      },
      isSupported() {
        return typeof EventSource !== "undefined";

@@ -1,13 +1,13 @@
 diff --git i/data/shell.js w/data/shell.js
-index 377525f4..d86e72fa 100644
+index b88d24cc..114e12e3 100644
 --- i/data/shell.js
 +++ w/data/shell.js
-@@ -383,7 +383,7 @@
- 
+@@ -1021,7 +1021,7 @@
+   // what the droid last said instead, which is a fact rather than a guess.
    const applyEstopStatus = (payload) => {
-     if (!payload || typeof payload !== "object") return;
--    estopLatched = !!payload.estop;
-+    estopLatched = !payload.estop;
+     if (!hasKey(payload, "estop")) return;
+-    estopLatched = estopIsLatched(payload);
++    estopLatched = !estopIsLatched(payload);
      renderEstopState();
    };
  
