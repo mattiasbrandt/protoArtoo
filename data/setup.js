@@ -1466,6 +1466,27 @@ const BOARD_LABELS = {
 
     if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
 
+    // The Sound Component Member: which module is actually fitted. The saved
+    // choice, not `activeMember`, which is the one the droid booted with and is
+    // not a setting anybody chose (src/web/api_config.cpp).
+    if (components.audio?.member !== undefined) p.set('soundMember', components.audio.member);
+
+    // The Droid Build (ADR 0047). Each half goes as a PAIR, because a variant
+    // means nothing against another design and the controller refuses a request
+    // that sends one without the other. The Fitted Parts go as the id list the
+    // write side takes; an empty one is a real answer - a droid with nothing
+    // fitted yet - and is sent as such.
+    const build = cfg?.droidBuild || {};
+    if (build.domeDesign !== undefined && build.domeVariant !== undefined) {
+      p.set('domeDesign', build.domeDesign);
+      p.set('domeVariant', build.domeVariant);
+    }
+    if (build.bodyDesign !== undefined && build.bodyVariant !== undefined) {
+      p.set('bodyDesign', build.bodyDesign);
+      p.set('bodyVariant', build.bodyVariant);
+    }
+    if (Array.isArray(build.fitted)) p.set('fittedParts', build.fitted.join(','));
+
     // Guided Setup's record travels with the backup like any other config key
     // (operator, 2026-09-17 on #371). A configured backup restored without it
     // would read as "never asked" for every category, which is the exact untruth

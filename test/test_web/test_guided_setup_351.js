@@ -439,43 +439,71 @@ test("an inert droid with no record is a first run, not a grandfathered one", as
   assert.equal(env.shown(env.id("wizard-head")), true);
 });
 
+// Choose a backup file, tick Core config, press Restore - and hand back the form
+// the controller was actually asked for. Shared by the two tests below, because
+// a key dropped on the way back in is the same defect whichever key it is.
+const restoreParamsFor = async (patch) => {
+  const env = boot();
+  await env.runSection();
+  const backup = { schema: 1, config: { ...freshConfig(), ...patch } };
+
+  const fileInput = env.id("backup-file-input");
+  fileInput.files = [{ text: JSON.stringify(backup) }];
+  fileInput.fire("change", {});
+
+  env.id("restore-chk-config").checked = true;
+  env.id("restore-chk-rc-map").checked = false;
+  env.id("restore-chk-audio-tracks").checked = false;
+  env.id("restore-chk-mood-map").checked = false;
+
+  env.click("backup-restore-btn");
+  await new Promise((resolve) => setImmediate(resolve));
+  const restore = env.posts.filter((post) => post.body instanceof URLSearchParams).at(-1);
+  assert.ok(restore, "the restore must have reached the controller at all");
+  return restore.body;
+};
+
 test("Backup and Restore carries the run's record like any other config key", async () => {
   // The restore path flattens a backup's GET /api/config body into POST form
   // params by hand, so a key it does not name is silently dropped on the way
   // back in - and a configured backup restored without this one would read as
   // never asked for every category (operator, 2026-09-17 on #371).
-  //
-  // Driven the way a builder drives it: choose a file, tick Core config, press
-  // Restore. What the controller was asked for is the observable.
-  const restoreParamsFor = async (guidedSetup) => {
-    const env = boot();
-    await env.runSection();
-    const backup = { schema: 1, config: { ...freshConfig(), guidedSetup } };
-
-    const fileInput = env.id("backup-file-input");
-    fileInput.files = [{ text: JSON.stringify(backup) }];
-    fileInput.fire("change", {});
-
-    env.id("restore-chk-config").checked = true;
-    env.id("restore-chk-rc-map").checked = false;
-    env.id("restore-chk-audio-tracks").checked = false;
-    env.id("restore-chk-mood-map").checked = false;
-
-    env.click("backup-restore-btn");
-    await new Promise((resolve) => setImmediate(resolve));
-    const restore = env.posts.filter((post) => post.body instanceof URLSearchParams).at(-1);
-    assert.ok(restore, "the restore must have reached the controller at all");
-    return restore.body;
-  };
-
-  const configured = await restoreParamsFor({ run: "completed", recorded: true, visited: ["wifi", "drive"] });
+  const configured = await restoreParamsFor({
+    guidedSetup: { run: "completed", recorded: true, visited: ["wifi", "drive"] },
+  });
   assert.equal(configured.get("guidedSetupRun"), "completed");
   assert.equal(configured.get("guidedSetupVisited"), "wifi,drive");
 
-  const showedNothing = await restoreParamsFor({ run: "skipped", recorded: true, visited: [] });
+  const showedNothing = await restoreParamsFor({
+    guidedSetup: { run: "skipped", recorded: true, visited: [] },
+  });
   assert.equal(
     showedNothing.get("guidedSetupVisited"),
     "-",
     "a run that showed nothing is an answer, and an empty form value would not survive as one",
   );
+});
+
+// Riding along: the same flattener was already dropping two answers a builder
+// gave, and the page promises "Core config: restored" over the top of it. Found
+// while wiring the run's record through it.
+test("a restore puts back the sound module and the droid build, which it used to drop", async () => {
+  const restored = await restoreParamsFor({
+    components: { ...freshConfig().components, audio: { enabled: true, member: "mp3_trigger", activeMember: "dy_sv5w" } },
+    droidBuild: {
+      domeDesign: "mk4", domeVariant: "complex",
+      bodyDesign: "mk3", bodyVariant: "simple",
+      fitted: ["domePie1", "bodyDoorL"],
+    },
+  });
+
+  // The SAVED choice, never the one the droid happens to have booted with.
+  assert.equal(restored.get("soundMember"), "mp3_trigger");
+
+  // Each half as a pair: the controller refuses a design without its variant.
+  assert.equal(restored.get("domeDesign"), "mk4");
+  assert.equal(restored.get("domeVariant"), "complex");
+  assert.equal(restored.get("bodyDesign"), "mk3");
+  assert.equal(restored.get("bodyVariant"), "simple");
+  assert.equal(restored.get("fittedParts"), "domePie1,bodyDoorL");
 });
