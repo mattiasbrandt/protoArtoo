@@ -19,7 +19,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -150,6 +150,54 @@ test("a left surface shows what it last read until it has answered again", async
   assert.equal(fresh[0].detail.surface, "rc");
 });
 
+test("a refresh that did not land is not an answer: the surface stays as it was", async () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  let fail = null;
+  env.surface.poll(() => new Promise((_resolve, reject) => { fail = reject; }), { cadenceMs: 1000 }).start();
+
+  env.surface.showing("setup");
+  env.surface.showing("rc");
+  assert.equal(env.surface.isStale("rc"), true, "RC is showing what it read before the operator left");
+
+  env.fire(env.live()[0]);
+  fail(new Error("the controller did not answer"));
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("rc"),
+    true,
+    "a refresh that never landed must not report the screen as current",
+  );
+  assert.equal(
+    env.events.filter((event) => event.type === "pa:surface-fresh").length,
+    0,
+    "and the shell is not told to take the note down",
+  );
+  // The rejection reaching this far without node reporting an unhandled one is
+  // the other half of the claim: the registry catches it, so no polling site
+  // has to -- and a site that did would hide the failure from the registry.
+});
+
+test("a poll that hands back nothing at all has not answered either", async () => {
+  const env = makeRegistry();
+  env.surface.showing("rc");
+  // The shape that marked a surface fresh unconditionally before #360 was
+  // reopened: an attempt that returns something which is not a promise.
+  env.surface.poll(() => undefined, { cadenceMs: 1000 }).start();
+
+  env.surface.showing("setup");
+  env.surface.showing("rc");
+  env.fire(env.live()[0]);
+  await sleep(0);
+
+  assert.equal(
+    env.surface.isStale("rc"),
+    true,
+    "something that never said it asked cannot be read as having been told",
+  );
+});
+
 test("a surface that stopped its own poll has not been left, and is not stale", () => {
   const env = makeRegistry();
   env.surface.showing("setup");
@@ -226,6 +274,103 @@ for (const { file, cadenceMs, what } of SURFACE_POLLS) {
     );
   });
 }
+
+// =============================================================================
+// ... and what each of them shows after a refresh that did not land
+//
+// This is the defect that reopened #360. Every one of these sites caught its
+// own rejection, so the registry was handed a fulfilled promise for a read
+// that never happened and took the "Showing what this screen last read" note
+// down over values from before the operator left. The assertion is made
+// against the shipped module, through its own failing transport, because that
+// is the only place the swallow could hide.
+// =============================================================================
+
+const STALE_AFTER_A_FAILED_REFRESH = [
+  { file: "app.js", what: "the Dashboard" },
+  { file: "dome.js", what: "Dome" },
+  { file: "drive.js", what: "Drive" },
+  { file: "rc.js", what: "RC diagnostics" },
+  { file: "servo.js", what: "Servos" },
+  { file: "setup.js", what: "Setup" },
+  { file: "sound.js", what: "Sound" },
+];
+
+for (const { file, what } of STALE_AFTER_A_FAILED_REFRESH) {
+  test(`${file}: a refresh that fails leaves ${what} showing what it last read`, async () => {
+    let answering = true;
+    const env = loadPageModule(file, {
+      respond: () => {
+        if (!answering) throw new ApiError("the controller did not answer");
+        return {};
+      },
+    });
+    await env.settle();
+
+    // The operator leaves: everything this module owns stops, and what is on
+    // the screen is from before.
+    env.window.PASurface.showing("some-other-surface");
+    assert.equal(env.window.PASurface.isStale(null), true, `${file} is left showing what it last read`);
+
+    // The link drops while they are away, and they come back to it.
+    answering = false;
+    env.window.PASurface.showing(null);
+    env.emit("document", "visibilitychange", {});
+    await env.settle(8);
+
+    assert.equal(
+      env.window.PASurface.isStale(null),
+      true,
+      `${file}: a refresh that never landed must not report the screen as current`,
+    );
+  });
+}
+
+test("setup.js: a memory reading nobody could take does not come back as a fresh one", async () => {
+  let answering = true;
+  const env = loadPageModule("setup.js", {
+    respond: (path) => {
+      if (path === "/api/profiler" && !answering) throw new ApiError("the controller did not answer");
+      return path === "/api/profiler"
+        ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
+        : {};
+    },
+    // The live-update stream is available here, so Setup's serial fallback poll
+    // is never created and the profiler's is the only poll on the surface --
+    // isStale() answers for a surface, not for one poll of several.
+    overrides: {
+      PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => ({}) },
+    },
+  });
+  env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
+  await env.settle();
+  env.emit("window", "pa:identity-available", {
+    detail: {
+      board: "artoo_esp32",
+      board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+      build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
+    },
+  });
+  await env.settle();
+  assert.ok(
+    env.requests.some((request) => request.path === "/api/profiler"),
+    "the profiler is polling, which is what makes the rest of this test mean anything",
+  );
+
+  env.window.PASurface.showing("rc");
+  assert.equal(env.window.PASurface.isStale(null), true, "leaving Setup stops the profiler");
+
+  answering = false;
+  env.window.PASurface.showing(null);
+  env.emit("document", "visibilitychange", {});
+  await env.settle(8);
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    true,
+    "the readings on screen are the ones from before, and must not read as current",
+  );
+});
 
 test("wifi.js: the diagnostics poll it starts on settling stops when the operator leaves", async () => {
   const env = loadPageModule("wifi.js", {
@@ -524,6 +669,40 @@ test("a surface that came back says it is showing what it last read, until it an
   await sleep(10);
   assert.equal(env.noteText(), null, "and the note goes when the surface is current again");
   poll.handle.stop();
+});
+
+test("a returned surface whose refresh fails keeps saying what it is showing", async () => {
+  const env = await boot();
+  let answering = true;
+  const poll = surfacePoll(
+    env,
+    () => (answering
+      ? Promise.resolve({})
+      : Promise.reject(new Error("the controller did not answer"))),
+    { runOnStart: true },
+  );
+  // Let that first read land while the operator is still here: a read that
+  // answers after they have left has still put a current value on the screen,
+  // and this test is about the one that never answers at all.
+  await sleep(10);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  // The link drops while the operator is reading something else -- which is
+  // the case the note exists for, and the one that used to clear it.
+  answering = false;
+  const asked = poll.calls.count;
+
+  env.navigate("#home");
+  await sleep(140);
+
+  assert.equal(env.mountedSurface(), "home");
+  assert.ok(poll.calls.count > asked, "the poll asked again on the way back in");
+  assert.match(
+    env.noteText() || "",
+    /Showing what this screen last read/,
+    "nothing answered, so the note stays up over the values from before",
+  );
 });
 
 test("the estop's own poll is chrome: navigating never stops it", async () => {
