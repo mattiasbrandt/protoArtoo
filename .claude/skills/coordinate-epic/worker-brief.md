@@ -132,6 +132,13 @@ BOUNDARIES
   the issue. Shipping the remainder while reporting the ticket complete is
   an automatic reject.
 
+MEMPALACE IS READ-ONLY FOR YOU
+Search it, read diaries, query the KG. Your writes are refused ("Peer MCP
+writer active", -32001) because a machine-wide daemon owns the single writer
+lease. Expected, not your bug: do not retry, do not shell out to the CLI, do
+not work around it. Note once in your report that a write was refused, and put
+the finding on the issue - where it outlives a palace entry anyway.
+
 SLICE WORKFLOW (AGENTS.md, binding)
 - implement -> verify FAST -> commit immediately (explicit per-file git add,
   type(scope): summary, no co-author trailers) -> record

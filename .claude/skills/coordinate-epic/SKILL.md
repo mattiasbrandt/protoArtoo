@@ -157,18 +157,69 @@ reporting passes that never ran. In the worker's worktree, personally:
    through an epic that claimed to consolidate polling. Both were invisible
    to a green gate.
 
-1. Re-run the slice gate with the worker's exact invocation, including any
-   `--fenced` pathspecs and the worker's `--mutations` patches from your
-   brief: `python3 tools/slice_verify.py --base <base> [--fenced ...]
-   [--mutations <patches>]`. Its block must match the worker's pasted block
-   character for character, provenance lines included - both script hashes
-   (`gate` and `mut`), HEAD sha, DIRTY marker, merge-base, diff size;
-   divergence marks the slice unverified (AGENTS.md "Worker slice gate"). The
-   gate runs both suites, the mutation stage, the build, and the diff checks;
-   `--json` on both runs makes the comparison diffable. Any waiver ACK in a
-   worker's block that you did not sanction - `--expect-gate-edit`,
-   `--expect-no-new-tests`, `--expect-no-mutations` - is an automatic
-   reject. Then every remaining acceptance check.
+1. **Check the block's provenance against the branch - do not re-run the gate
+   behind every slice.** Read the worker's pasted block and verify, in its
+   worktree, that it is a block *of this branch*:
+
+   ```
+   git rev-parse HEAD                      # == the block's HEAD sha
+   git rev-parse <base>                    # == the block's merge-base TOO
+   git diff --shortstat <base>...HEAD      # == the block's diff size
+   git hash-object tools/slice_verify.py tools/mutation_verify.py
+                                           # == the block's gate and mut hashes
+   git status --porcelain                  # clean but for data/*version.json
+   ```
+
+   **The second line is `rev-parse <base>`, not `merge-base <base> HEAD`, and
+   the difference is the whole check.** A slice whose base moved under it still
+   has an internally consistent block: its own `merge-base` and the one you
+   compute both name the OLD tip, so they agree and the slice passes while
+   being verified against a tree that no longer exists. Compare the block's
+   merge-base to the base's CURRENT tip. This is not hypothetical - it happened
+   three times on #175 in one evening, and one of those slices was repairing a
+   defect introduced by the very merge it did not have.
+
+   When they differ, **what it costs depends on what landed in between**, and
+   you decide that rather than reflexively sending the slice back:
+
+   ```
+   comm -12 <(git diff --name-only <block merge-base>..<base> | sort) \
+            <(git -C <worktree> diff --name-only <block merge-base>...HEAD | sort)
+   ```
+
+   - **No overlap** - merge it, and let the per-wave gate run on the merged tree
+     be its proof. The slice's own block is honest about the tree it was built
+     on, and its test-total arithmetic against the older base still shows the
+     tests it added.
+   - **Overlap, or the merged work is the subject of this slice** - the worker
+     merges `<base>` and re-runs the gate, and that block is the one you accept.
+     #346's reopen is the case in point: it branched before a merge whose change
+     *was* its own third finding, so no file-level overlap would have saved it.
+
+   A blanket re-gate on every moved tip buys back the duplicate cost this
+   protocol just removed, once per merge - and serial integration moves the tip
+   by definition.
+
+   Then read the block itself: every changed web production JS file appears in
+   the mutation table, every row KILLED, and **no waiver ACK you did not grant**
+   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations` - an
+   unsanctioned ACK is an automatic reject). Any of those disagreeing is the
+   trigger to re-run the full gate on that one slice, with the worker's exact
+   invocation, and compare character for character.
+
+   **The gate itself you run ONCE PER WAVE, on the merged tree**, with the
+   union of the wave's fences - the run Integration already requires, because
+   line numbers and stragglers move on merge. That run is the anti-fabrication
+   net for every slice in the wave.
+
+   **Why, so nobody restores the duplicate.** Measured on #175, 2026-09-17: the
+   coordinator re-ran the full gate behind **18** accepted slices and found **0**
+   divergences. Each re-run was a second copy of the most expensive thing in the
+   repo - the mutation stage runs the whole web suite once per patch, 28 times
+   on a slice like #346 - serialised behind a machine-wide build lock, while
+   every rejection that epic produced came from step 0, which costs nothing.
+   Spend the iteration on the production diff, not on a second identical block.
+   Then every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
    against the pre-fix commit for bug fixes. Mutation coverage is proven by
    the gate re-run in step 1 - the mutation row passes only when every patch
@@ -237,8 +288,10 @@ reporting passes that never ran. In the worker's worktree, personally:
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
-review completes. After the final merge, re-run the merged-tree test suite
-and any epic-level acceptance sweeps - line numbers and stragglers move.
+review completes. After the final merge, **run the slice gate on the merged
+tree** with the union of the wave's fences, plus any epic-level acceptance
+sweeps - line numbers and stragglers move, and this is the run that stands
+behind every slice in the wave (critic protocol step 1).
 Nothing is pushed to origin until the operator explicitly says so.
 
 **A slice is not finished until its pane is closed.** The sequence is one
@@ -337,12 +390,48 @@ on the hash, and a clean slice reads as tampered.
 When another coordinator works the same repo, agree these and record them on
 your epic so they outlive the session: the build lock above; a post on your
 epic before either side touches shared build configuration (`platformio.ini`,
-framework envelope, budgets); announced device sessions; and each epic's
+framework envelope, budgets); announced device sessions; who owns the palace
+writer lease, since a writable `mempalace serve` or a direct `mine` takes
+writes from everyone else for its lifetime; and each epic's
 integration branch left where the other's baseline expects it, with the
 measured merge surface recorded on the ticket that owns it.
 
 After any window where the other side built unlocked, verify rather than
 assume: clean-rebuild your base and symbol-check every merged slice.
+
+## MemPalace under parallel workers (one writer, machine-wide)
+
+The user-level daemon holds the palace's single writer lease for its whole
+lifetime, and the lease is palace-wide, so it binds every worktree: a worker's
+`add_drawer`, `update_drawer`, `diary_write` or `kg_add` is refused with
+-32001 "Peer MCP writer active". Reads and the logstream tools work normally.
+Verified 2026-09-17 - this is the steady state, not an incident.
+
+- **Never budget on a worker persisting anything.** What must survive the epic
+  goes where AGENTS.md already puts the durable record - the sub-issue, its
+  pinned comment, `CONTEXT.md`, `docs/adr/` - and that is your job at
+  acceptance.
+- **A refused write is the AGENTS.md "skip it and say so once" clause**,
+  extended from a failing `mempalace_status` to a refused write. A worker that
+  retries it, shells out to the CLI, or works around it has left its slice.
+- **Hook auto-save still works** - it routes through the daemon's queue, not
+  the worker's MCP server. It needs nothing from you.
+- **Never run `mempalace mine`, `sweep` or `repair` by hand during an epic.**
+  A direct writer collides with the lease, and `repair --archive-existing` is
+  what leaves `palace.pre-rebuild-*` behind; this palace carries three.
+
+**Worker sessions are not free RAM.** No index is shared: a session that runs
+one vector search cold-loads its own copy - 1.4 GB measured here - and holds it
+for `MEMPALACE_MCP_IDLE_HOURS`, default 8. Ten panes plus their node processes
+is how this box OOM-killed a Claude session at 8.3 GB on 2026-09-11. Closing a
+slice's pane promptly (see Integration) returns that memory.
+
+**Worktree wings fragment memory.** Auto-save derives the wing from cwd and
+only folds a worktree into its project for `<project>/.claude/worktrees/<wt>`;
+`epic_worktree.py` makes `../wt-<issue>`, a sibling, so every worker mints
+`wing_wt_<issue>`. Measured 2026-09-17: 65 such wings, 220 drawers, invisible
+to the `--wing protoArtoo` search this repo's protocol prescribes. So search
+unscoped, and never read a wing-scoped miss as "no prior art".
 
 ## Reporting
 
