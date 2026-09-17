@@ -86,8 +86,9 @@ const char* audioRxStatusDetail(AudioRxStatus status);
 // audioTask()  --  FreeRTOS task entry point.
 // Pinned to Core 0 (non-RT side). Driver init and queries block for hundreds of
 // ms, and without PA_CAP_DEDICATED_AUDIO_UART the software bit-bang TX
-// additionally holds a critical section for up to ~6 ms per audio command;
-// Core 0 keeps all of it away from DriveTask / ServoTask.
+// additionally holds a critical section for ~1.04 ms per byte, once per byte of
+// a command that is 2 bytes on an MP3 Trigger, 4 to 6 on a DY-SV5W and 12 on a
+// CHIRP "PLAY:12,2,C"; Core 0 keeps all of it away from DriveTask / ServoTask.
 // Priority: 3 (below web server; above idle).
 // Stack: 3072 bytes.
 // -----------------------------------------------------------------------------

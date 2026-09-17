@@ -156,11 +156,19 @@ Required `CHIRP.INI` settings:
 | Key | Required value | Purpose |
 |---|---|---|
 | `#BAUD_RATE` | `9600` | Must match protoArtoo soft-UART rate |
-| `#BANK1_PAGE` | `A` (default) | Selects active page for Bank 1 vocals |
-| `#USE_FLASH_BANK1` | `1` (default) | Enable flash sync for fast Bank 1 access; disable if Bank 1 exceeds 14 MB |
+| `#BANK1_PAGE` | `A` (board default) | Selects active page for Bank 1 vocals |
+| `#USE_FLASH_BANK1` | write it explicitly | Flash sync for fast Bank 1 access; leave it off if Bank 1 exceeds 14 MB |
+
+**Write `#USE_FLASH_BANK1` out rather than relying on a default.** The CHIRP
+firmware starts it at **0** (`CHIRP_Audio.ino`, `useFlashForBank1 = false`,
+"Default to SD unless enabled in INI") while the comment block at the top of the
+same file says the default is 1. The two disagree, so a card that does not name
+the key gets SD-backed Bank 1 whatever the upstream documentation says.
 
 Alternative baud-rate method (no SD card edit): hold **Prev** and press
-**Play/Stop** on the CHIRP board to cycle 115200 → 2400 → 9600.
+**Play/Stop** on the CHIRP board to cycle 115200 → 9600 → 2400 → 115200.
+That is the firmware's order (`CHIRP_Audio.ino`); the upstream README lists the
+three rates in a different one.
 
 **protoArtoo driver mapping:**
 
@@ -178,8 +186,13 @@ Alternative baud-rate method (no SD card edit): hold **Prev** and press
 > numbering and must be re-mapped via the Sound page when using CHIRP.
 
 CHIRP catalog operations are integrated in the backend. AudioTask can queue a catalog
-refresh (`GMAN` + `GNME`) and the driver caches up to 6 banks and 300 entries for
-web consumption.
+refresh (`GMAN` + `GNME`) and the driver caches up to `AUDIO_CATALOG_MAX_BANKS`
+(**64**) bank/page rows and `AUDIO_CATALOG_MAX_ENTRIES` (**300**) entries for web
+consumption (`include/audio_driver.h`). A card with more sounds than that is
+listed as far as the cap and says so: `GET /api/audio/catalog` reports
+`limits.entry_cap_reached`, alongside `limits.manifest_incomplete` for bank rows
+the module's reply queue dropped and `limits.missing_names` for entries that came
+back unnamed. A ready catalog is usable; `complete` is what says it is also whole.
 
 Catalog source-of-truth is the connected module response. `tasks/CHIRP-SD` remains
 reference-only developer data and is not used as runtime catalog input.
@@ -208,10 +221,22 @@ CHIRP supports live status queries at any time, including active playback. The
 protoArtoo CHIRP driver queries automatically every 10 seconds, so no operator
 poll action is required.
 
-Reported fields include module link state (ACK-based), play state (idle/playing
-from `STAT` response), and Bank 1 sound count (from `GMAN` at boot). The Sound
-page status card auto-refreshes for CHIRP; device type and current track are
-not applicable for CHIRP and are hidden.
+Reported fields include module link state (ACK-based), play state (playing when
+any of the module's default three streams reports playing), Bank 1 sound count
+(from `GMAN` at boot), device type and current track. The Sound page status card
+auto-refreshes for CHIRP, and **shows every one of those rows** — the CHIRP
+registry row declares the device-type and current-track capability bits, so
+`applyCapabilityUI()` displays both.
+
+What those two rows mean here:
+
+- **Device type** is the constant `Flash+SD`. CHIRP has no command that reports
+  its storage, and Bank 1 lives on onboard flash while Banks 2–6 live on the
+  card, so the driver states that arrangement rather than querying it.
+- **Current track** is the catalog entry the module says it is *playing*, not the
+  last index protoArtoo asked for. It is 0 after Stop, and 0 whenever the
+  reported path does not identify exactly one catalog entry — unidentified while
+  playing is honest; naming a sound that already stopped is not.
 
 #### Catalog-assisted slot mapping (Sound page)
 
@@ -224,9 +249,16 @@ When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace 
 - maps an entry directly to Named/System slots (CHIRP binding path via `chr_*`)
 - maps entry/selection to category ranges (`snd_cat_*` `lo..hi`) and persists category bank/page binding (`chr_cat_*`)
   when rows are from the same bank/page
+- filters by bank **and** page: a `B2B` tab lists B2B's sounds only, and `All banks` lists every page
 - offers `Apply suggestions` to infer category mappings from CHIRP bank directory names (`*_chatty`, `*_sad`, etc.)
-  and apply them in one action
-- locks catalog controls during refresh and shows long-running feedback (large catalogs can take about 1 minute)
+  and apply them in one action, withheld while part of the listing is missing — a suggested range spans
+  `lo..hi` and would otherwise claim sounds nobody listed
+- names what the listing is missing (banks that did not arrive, sounds listed by index, the entry cap)
+- warns beside the Named sounds table when the module's `MSUM` checksum shows the card's sound list has
+  changed since the assignments were saved. Saving stays available: the builder decides what the new
+  numbers should point at
+- locks catalog controls during refresh and shows long-running feedback (large catalogs can take about
+  1 minute), waiting on the refresh **it** asked for rather than on any catalog being ready
 - enables slot-aware playback resolution in firmware: CHIRP-capable named/system slots
   prefer `PLAY:index,bank,page` when a valid binding exists and fall back to numeric `snd_*`
   tracks otherwise

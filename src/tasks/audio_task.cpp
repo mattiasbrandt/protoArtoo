@@ -21,9 +21,12 @@
 // Core assignment: Core 0 (non-RT).
 // Reason: begin() and every query block for hundreds of ms, and without
 // PA_CAP_DEDICATED_AUDIO_UART the TX is a software bit-bang that additionally
-// holds a portMUX critical section for ~6 ms per command
-// (src/drivers/audio_soft_uart_tx.h). Keeping AudioTask on Core 0 prevents any
-// interaction with DriveTask / ServoTask timing on Core 1 either way.
+// holds a portMUX critical section for ~1.04 ms PER BYTE, released between
+// bytes (src/drivers/audio_soft_uart_tx.h). A command is that many times over,
+// and how many bytes it is depends on the module: 2 for an MP3 Trigger track,
+// 4 to 6 for a DY-SV5W frame, 12 for a CHIRP "PLAY:12,2,C". Keeping AudioTask
+// on Core 0 prevents any interaction with DriveTask / ServoTask timing on
+// Core 1 either way.
 //
 // Driver selection: the Sound Component Member, a runtime setting staged at
 // reboot (ADR 0042). Every image carries a driver for every supported sound
