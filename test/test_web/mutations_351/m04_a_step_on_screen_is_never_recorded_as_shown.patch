@@ -1,0 +1,12 @@
+diff --git i/data/setup.js w/data/setup.js
+index 92f7df44..e21369ca 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -2246,7 +2246,6 @@ const BOARD_LABELS = {
+ 
+   const markVisited = (step) => {
+     if (!step || visited.has(step.key)) return;
+-    visited.add(step.key);
+     clearTimeout(saveTimer);
+     saveTimer = setTimeout(saveVisited, 400);
+   };

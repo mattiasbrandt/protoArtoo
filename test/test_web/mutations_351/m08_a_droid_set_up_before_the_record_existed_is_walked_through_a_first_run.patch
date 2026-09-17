@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 92f7df44..294e4fc9 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -2378,7 +2378,7 @@ const BOARD_LABELS = {
+     const guided = config?.guidedSetup || {};
+ 
+     runState = typeof guided.run === "string" ? guided.run : RUN_NOT_RUN;
+-    grandfathered = guided.recorded === false && configuredBeforeTheRecordExisted(config);
++    grandfathered = false;
+     (Array.isArray(guided.visited) ? guided.visited : []).forEach((key) => visited.add(String(key)));
+ 
+     renderWifiStep(config);

@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 92f7df44..93ab8a00 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -2027,7 +2027,7 @@ const BOARD_LABELS = {
+   let saveTimer = null;
+   let ending = false;
+ 
+-  const runHasEnded = () => runState !== RUN_NOT_RUN || grandfathered;
++  const runHasEnded = () => grandfathered;
+ 
+   const configuredBeforeTheRecordExisted = (config) => {
+     const components = config?.components || {};

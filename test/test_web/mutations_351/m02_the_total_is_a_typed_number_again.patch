@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 92f7df44..bcd1eefd 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -2199,7 +2199,7 @@ const BOARD_LABELS = {
+     // Position and escape, and nothing else. When an answer takes effect is a
+     // different question for every step and belongs beside the step that owns it
+     // (#370); a blanket promise here would be false for at least three of them.
+-    const total = questionCount();
++    const total = 9;
+     const escape = "you can stop at any step, and stopping ends the run";
+     if (position) {
+       position.textContent = isQuestion(step)
