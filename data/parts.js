@@ -253,6 +253,7 @@
   // The Find by Moving button starts refused: a run must not start on a guess
   // about the estop, and the droid has not said yet. The first status frame
   // gates it, the way the shell's own plate says "finding out" until then.
+  //
   // The act sits in its own column, beside the thing it acts on, rather than
   // under the picker in the same cell: two controls stacked in one cell made a
   // 93 px row out of the anatomy's 40 px one, measured in a browser at 1440 px.
