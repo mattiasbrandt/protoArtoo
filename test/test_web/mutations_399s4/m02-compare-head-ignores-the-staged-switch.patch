@@ -1,0 +1,15 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index c4638920..ac3e42c4 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -132,9 +132,7 @@
+     if (!compareState) return;
+     compareState.textContent = !wifi?.provisioned
+       ? "nothing saved yet"
+-      : wifi.pendingApply
+-        ? "saved settings wait for a reboot"
+-        : "saved settings are the ones running";
++      : "saved settings are the ones running";
+   };
+ 
+   const setFieldError = (name, message = "") => {

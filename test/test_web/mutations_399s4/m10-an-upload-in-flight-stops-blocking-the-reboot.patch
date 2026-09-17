@@ -1,0 +1,13 @@
+diff --git i/data/firmware.js w/data/firmware.js
+index c4034b5b..09f36775 100644
+--- i/data/firmware.js
++++ w/data/firmware.js
+@@ -42,7 +42,7 @@
+   const setUploadBusy = (busy) => {
+     uploadInProgress = busy;
+     uploadButton.disabled = busy;
+-    rebootButton.disabled = busy;
++    rebootButton.disabled = false;
+     if (uploadFsButton) uploadFsButton.disabled = busy;
+   };
+ 

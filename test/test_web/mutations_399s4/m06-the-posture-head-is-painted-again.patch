@@ -1,0 +1,12 @@
+diff --git i/data/wifi.js w/data/wifi.js
+index c4638920..f7b9c8a0 100644
+--- i/data/wifi.js
++++ w/data/wifi.js
+@@ -123,6 +123,7 @@
+   // twice (ADR 0066, CONTEXT.md "Status Colour").
+   const setPendingSummary = (text) => {
+     if (!pendingSummary) return;
++    pendingSummary.className = "status-pill pill-ok status-pill-compact";
+     pendingSummary.textContent = text;
+   };
+ 
