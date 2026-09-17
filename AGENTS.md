@@ -540,6 +540,18 @@ image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it
 not only spill from another target. The RAM budget moves by the same
 explicit-decision rule.
 
+**The filesystem image is measured by the coordinator, not by a slice**
+(operator decision, 2026-09-17). `tools/check_build_budgets.py` images the
+filesystem with `-t buildfs` and counts the blocks it allocates for any env
+declaring `fs_budget_bytes`; `make check-build-budgets` runs it. That is the
+measurement, once per wave, by whoever integrates. It is deliberately NOT in the
+slice gate and is never an acceptance criterion on a build ticket: hand-measured
+block arithmetic in tickets is how this was done while the image was full and
+before the check existed, and it costs every slice an essay to reproduce a number
+a script already knows. A ticket that would trip the budget does not raise it
+either - `tools/build_budgets.json`'s own rationale makes a raise a decision
+about Learned Sequence storage, which is the operator's.
+
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized
 size budget. Avoid low-value tests that only mirror implementation details.
