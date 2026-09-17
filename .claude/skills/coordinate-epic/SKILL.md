@@ -292,6 +292,15 @@ review completes. After the final merge, **run the slice gate on the merged
 tree** with the union of the wave's fences, plus any epic-level acceptance
 sweeps - line numbers and stragglers move, and this is the run that stands
 behind every slice in the wave (critic protocol step 1).
+
+**Measure the filesystem image in the same pass**, with `make
+check-build-budgets` - it images the filesystem and counts allocated blocks for
+every env declaring `fs_budget_bytes`. That measurement is yours, once per wave.
+Never put block arithmetic in a ticket's acceptance criteria and never ask a
+worker for it: the number is mechanical, the gate does not produce it, and a
+slice that would trip the budget cannot raise it anyway - `build_budgets.json`
+makes a raise a decision about Learned Sequence storage, which is the
+operator's (AGENTS.md "Build-size budget rule").
 Nothing is pushed to origin until the operator explicitly says so.
 
 **A slice is not finished until its pane is closed.** The sequence is one

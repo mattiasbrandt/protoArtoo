@@ -250,6 +250,28 @@ persist — is `docs/agents/mempalace.md`; follow it. The issue tracker, commits
 `CONTEXT.md` and `docs/adr/` remain the durable record for anything a reader
 must be able to find without the MCP server.
 
+**The wing for this repository is `wing_protoartoo`** - searches, diary entries
+and KG writes name that wing, from the primary checkout and from every `../wt-*`
+worktree alike, never a wing derived from the directory you happen to be in. The
+convention on this machine is `wing_<project>` (`wing_mattias`, `wing_dotfiles`,
+`wing_work`); the bare form `protoartoo` is not a wing and neither is
+`protoArtoo`, which case-sensitively matches nothing and returns "No results
+found" rather than an error. The palace was consolidated on 2026-09-17 (3.9.0 ->
+3.10.0): 82 wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the
+protoArtoo part of `sessions` were merged into `wing_protoartoo`, which now holds
+**144,948 records**. Nothing needs re-mining.
+
+**Writes are refused, and that is expected.** The MemPalace daemon holds the
+palace's single writer lease for its whole lifetime, and the lease is
+palace-wide, so it binds every worktree: `mempalace_add_drawer`,
+`update_drawer`, `diary_write` and `kg_add` return JSON-RPC `-32001` *"Peer MCP
+writer active; this server is read-only for mutating tools"*. Reads and the
+logstream tools are unaffected, and the hook auto-save still works because it
+routes through the daemon's own queue. Do not retry, do not shell out to the
+CLI, do not work around it: note once in the report that a write was refused,
+and put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/` -
+where it outlives a palace entry anyway.
+
 If `mempalace_status` errors, skip every MemPalace step for that session and say
 so once in the report. Probing the CLI, retrying, or working around it is out of
 scope.
@@ -531,6 +553,18 @@ separate fixed hard ceiling below the partition size never moves. The artoo-esp3
 image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it,
 not only spill from another target. The RAM budget moves by the same
 explicit-decision rule.
+
+**The filesystem image is measured by the coordinator, not by a slice**
+(operator decision, 2026-09-17). `tools/check_build_budgets.py` images the
+filesystem with `-t buildfs` and counts the blocks it allocates for any env
+declaring `fs_budget_bytes`; `make check-build-budgets` runs it. That is the
+measurement, once per wave, by whoever integrates. It is deliberately NOT in the
+slice gate and is never an acceptance criterion on a build ticket: hand-measured
+block arithmetic in tickets is how this was done while the image was full and
+before the check existed, and it costs every slice an essay to reproduce a number
+a script already knows. A ticket that would trip the budget does not raise it
+either - `tools/build_budgets.json`'s own rationale makes a raise a decision
+about Learned Sequence storage, which is the operator's.
 
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized

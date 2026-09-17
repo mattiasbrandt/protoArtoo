@@ -173,7 +173,9 @@ Evidence discipline:
 
 Memory and decision workflow (MemPalace):
 - Follow AGENTS.md "Memory (MemPalace)" - it is the single source of truth for session start, search, and what to persist, via `docs/agents/mempalace.md`.
+- The wing is `wing_protoartoo`, from every worktree as well as the primary checkout.
 - If `mempalace_status` errors, skip every MemPalace step for the session and say so once in the report. Probing the CLI, retrying, or working around it is out of scope.
+- A refused *write* (`-32001` "Peer MCP writer active") is expected, not your bug: the daemon holds the palace's single writer lease. Say so once, put what must survive on the sub-issue or in `CONTEXT.md` / `docs/adr/`, and carry on. Do not retry or use the CLI.
 
 Verification judgment:
 - Automated tests are evidence, not the goal. Prefer high-signal checks around safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, and prior regression paths.

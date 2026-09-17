@@ -1,9 +1,25 @@
 # MemPalace memory protocol
 
 Long-term project memory for `protoArtoo` lives in MemPalace (MCP server plus a
-user-level daemon). Agents with MCP access follow this protocol. If
-`mempalace_status` errors, skip every step below for that session and say so
-once in the report.
+user-level daemon), in one wing: **`wing_protoartoo`**. The convention on this
+machine is `wing_<project>`; the bare `protoartoo` is not a wing, and
+`protoArtoo` case-sensitively matches nothing and answers "No results found"
+rather than failing - so a wing-scoped search against it reads as *no prior art*
+when it means *no such wing*. The palace was consolidated on 2026-09-17: 82
+wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the protoArtoo part of
+`sessions` merged into `wing_protoartoo` (144,948 records). Agents with MCP
+access follow this protocol.
+
+**Two things stop the protocol, and both are answered the same way - say so once
+and carry on.** If `mempalace_status` errors, skip every step below for that
+session. If a *write* is refused - `add_drawer`, `update_drawer`,
+`diary_write` or `kg_add` returning JSON-RPC `-32001` *"Peer MCP writer active;
+this server is read-only for mutating tools"* - that is the daemon holding the
+palace's single writer lease, which is palace-wide and therefore binds every
+worktree. It is expected, not a fault of yours: reads and the logstream tools
+still work, and hook auto-save still works because it routes through the
+daemon's queue. Do not retry, do not shell out to the CLI, do not work around
+it. Put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/`.
 
 ## Session start
 
@@ -15,22 +31,28 @@ once in the report.
 2. If the user's opening message references past decisions, prior conversations,
    or asks "why did we..." / "what was the reason for..." style questions:
    - Call `mempalace_search` with a targeted query before answering.
-   - Prefer wing-scoped searches (`--wing protoArtoo` or equivalent wing name
-     as revealed by `mempalace_status`) over unscoped global searches.
+   - Prefer wing-scoped searches (`--wing wing_protoartoo`, the wing for this
+     repository and every worktree of it (AGENTS.md "Memory (MemPalace)")) over unscoped global searches.
 
 ## During work
 
 - **Search before speculating.** If a design decision, prior constraint, or
   architectural rationale is referenced but not in the current context, search
-  before guessing: `mempalace_search "<topic>" --wing protoArtoo`.
+  before guessing: `mempalace_search "<topic>" --wing wing_protoartoo`.
 - **Search before duplicating.** Before proposing a new approach that might
   conflict with past decisions, check for prior art:
-  `mempalace_search "<approach>" --wing protoArtoo`.
+  `mempalace_search "<approach>" --wing wing_protoartoo`.
 - **Do not search for things already in context.** If the relevant file has been
   read or the fact was stated in this session, use the session context — do not
   re-query MemPalace for it.
 
 ## Saving memories
+
+> [!IMPORTANT]
+> **Expect this to be refused.** While the daemon runs, every mutating tool
+> returns `-32001` (see above). The advice below is what to save *when a write
+> succeeds* - it is not a step to retry until it does, and a refusal is not a
+> reason to keep the finding out of the issue, `CONTEXT.md` or `docs/adr/`.
 
 - Use `mempalace_add_drawer` to persist significant findings, decisions, or
   constraints discovered during a session.
@@ -39,7 +61,7 @@ once in the report.
   a conclusion worth keeping.
 - Do NOT save routine implementation steps, intermediate errors, or content that
   is already captured verbatim.
-- Filing format: use the wing for this project (from `mempalace_status`) and the
+- Filing format: use `wing_protoartoo` (AGENTS.md "Memory (MemPalace)") and the
   most relevant room (hall) — `hall_facts` for locked decisions, `hall_discoveries`
   for breakthroughs, `hall_events` for notable sessions.
 
