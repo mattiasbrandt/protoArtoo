@@ -15,17 +15,17 @@ once in the report.
 2. If the user's opening message references past decisions, prior conversations,
    or asks "why did we..." / "what was the reason for..." style questions:
    - Call `mempalace_search` with a targeted query before answering.
-   - Prefer wing-scoped searches (`--wing protoArtoo` or equivalent wing name
-     as revealed by `mempalace_status`) over unscoped global searches.
+   - Prefer wing-scoped searches (`--wing wing_protoartoo`, the wing for this
+     repository and every worktree of it (AGENTS.md "Memory (MemPalace)")) over unscoped global searches.
 
 ## During work
 
 - **Search before speculating.** If a design decision, prior constraint, or
   architectural rationale is referenced but not in the current context, search
-  before guessing: `mempalace_search "<topic>" --wing protoArtoo`.
+  before guessing: `mempalace_search "<topic>" --wing wing_protoartoo`.
 - **Search before duplicating.** Before proposing a new approach that might
   conflict with past decisions, check for prior art:
-  `mempalace_search "<approach>" --wing protoArtoo`.
+  `mempalace_search "<approach>" --wing wing_protoartoo`.
 - **Do not search for things already in context.** If the relevant file has been
   read or the fact was stated in this session, use the session context — do not
   re-query MemPalace for it.
@@ -39,7 +39,7 @@ once in the report.
   a conclusion worth keeping.
 - Do NOT save routine implementation steps, intermediate errors, or content that
   is already captured verbatim.
-- Filing format: use the wing for this project (from `mempalace_status`) and the
+- Filing format: use `wing_protoartoo` (AGENTS.md "Memory (MemPalace)") and the
   most relevant room (hall) — `hall_facts` for locked decisions, `hall_discoveries`
   for breakthroughs, `hall_events` for notable sessions.
 

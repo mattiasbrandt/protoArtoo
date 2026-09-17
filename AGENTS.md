@@ -250,6 +250,14 @@ persist — is `docs/agents/mempalace.md`; follow it. The issue tracker, commits
 `CONTEXT.md` and `docs/adr/` remain the durable record for anything a reader
 must be able to find without the MCP server.
 
+**The wing for this repository is `wing_protoartoo`** - searches, diary entries
+and KG writes name that wing, from the primary checkout and from every `../wt-*`
+worktree alike. It is not derived from the directory you happen to be in:
+measured 2026-09-17, the palace already carries `wing_wt_399`, `wing_wt_344`,
+`wing_wt_serial_console` and `wing_issue97` beside the real one - a handful of
+entries each, filed where nobody will look for them again, against the 38,908 in
+`wing_protoartoo`.
+
 If `mempalace_status` errors, skip every MemPalace step for that session and say
 so once in the report. Probing the CLI, retrying, or working around it is out of
 scope.
