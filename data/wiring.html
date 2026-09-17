@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/wiring.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wiring - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate: a direct visit is handed to the shell at this route (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#wiring");</script>
+  </head>
+  <body data-page="wiring">
+
+    <!-- The title, the question this surface answers, and the promise the whole
+         sheet rests on (ADR 0066, CONTEXT.md "Wiring"). The promise and the
+         scope statement are on the face rather than only in a section, because
+         a builder decides whether to trust a bench sheet before they read a
+         row of it - and both sentences are repeated on every picture below,
+         since a picture is the part of a page that gets cropped and pasted
+         somewhere else (#293).
+
+         The promise line is EMPTY here and written by data/wiring.js. Both
+         sentences have exactly one home, so this screen's header and the
+         printable bench copy's header (#353) cannot come to say different
+         things - which is the same defect, one level up, as a page keeping its
+         own copy of a pin number.
+
+         There is no .acts here on purpose: Wiring writes nothing. -->
+    <div class="title">
+      <div>
+        <h1>Wiring</h1>
+        <p class="question">I am holding a servo lead: which output does it go to, and which part will it move?</p>
+        <p class="wiring-promise" id="wiring-promise"></p>
+      </div>
+    </div>
+
+    <!-- The loom: which wire leaves the Body Controller for each thing on the
+         end of it, and which pin it leaves from. Written by data/wiring.js from
+         the Board Lanes the running firmware reports on GET /api/identity, so
+         this markup carries no pin number - which is the whole reason a Board
+         Lane exists (include/board_lanes.inc). -->
+    <div class="card">
+      <div class="sect">
+        <h2>The loom</h2>
+        <span class="sub" id="wiring-loom-summary" role="status" aria-live="polite">Finding out what this image routes...</span>
+      </div>
+      <p class="prose">One wire per thing the Body Controller talks to, with the port it leaves from. A lane that is switched off is drawn broken and says so on its own row: the wire is still one you have to run, and nothing is riding it yet.</p>
+      <div id="wiring-loom"></div>
+      <p class="hint">Only the lanes this image reports are here. The dome ESC and the RC receiver are driven by this image too, and no Board Lane names where they are routed yet, so this sheet does not put a pin number on either of them.</p>
+    </div>
+
+    <!-- The four honesty tiers, the footnote, and the bound. Every section in
+         here is generated: a tier with nothing in it has no section at all,
+         rather than a heading over an empty table, and the footnote is built
+         from the tiers that are actually on the sheet. -->
+    <div class="card">
+      <div class="sect">
+        <h2>What this image will drive</h2>
+        <span class="sub" id="wiring-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
+      </div>
+      <p class="prose">Every part this image could drive, and every output with nothing on it, each in exactly one group below. A part is on at most one output, so a part appears once; an output ganged to two parts that always move together appears on both their rows, because one wire moves both.</p>
+      <div id="wiring-tiers"></div>
+      <div id="wiring-footnote"></div>
+    </div>
+
+    <!-- The shared rail: described, never drawn (CONTEXT.md "Wiring"). Its
+         prose is the generator's for the same reason the promise is - the
+         cadence is stated once, in one file, and the bench copy states the same
+         one. -->
+    <div class="card">
+      <div class="sect">
+        <h2>The shared rail</h2>
+        <span class="sub">described, never drawn</span>
+      </div>
+      <div id="wiring-rail"></div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..b3558f51 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -252,7 +252,7 @@
+             `moves. ${setupRouteHtml("Switch it on")}.`,
+         };
+       }
+-      return { tier: "driven", part, output, why: "" };
++      return { tier: "driven", part, output, why: "this output is switched on." };
+     });
+ 
+     const outputRows = outputs

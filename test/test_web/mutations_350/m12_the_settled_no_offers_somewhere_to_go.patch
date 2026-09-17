@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 64d230db..1324825b 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -601,7 +601,7 @@
+     return (
+       `<p class="hint wiring-bound">Outside this sheet: ${clauses.join(" and ")}. ` +
+       `They are on the droid and they are not on this sheet, because this sheet says ` +
+-      `${esc(PROMISE)}.</p>`
++      `${esc(PROMISE)}. ${PARTS_ROUTE} has the rest.</p>`
+     );
+   };
+ 

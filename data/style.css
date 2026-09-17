@@ -7089,6 +7089,267 @@ body[data-page="setup"] .status-item .hint {
 }
 
 /* ---------------------------------------------------------------------------
+   Wiring (#350): the bench sheet on a screen
+
+   Its own block, added whole, so no shared rule above changes. Every value is
+   a token from the palette at the top of this file - including in the SVG,
+   which is why nothing data/wiring.js emits carries a paint attribute: the
+   pictures have to answer for both copies of this sheet, and @media print
+   re-points those tokens at paper. The reference project had to hard-code its
+   amber with a hex fallback for exactly this reason, because its exported sheet
+   carried none of its app's tokens (r2d2-astromech-simulator v1.79.0,
+   src/js/app/wiring.js:49).
+
+   NOTHING HERE COLOURS FOR A TIER. Which honesty tier a row is in is told by
+   which section it is under, and a dimmed cell says "nobody has set this"
+   (docs/ui-copy-voice.md rules 13 and 20). A tier is an Availability Family
+   question and a family is told apart by treatment, never by hue.
+   --------------------------------------------------------------------------- */
+
+/* The bounded promise, under the question. The anatomy's third line in a
+   .title, styled like .forward rather than like .question: the question is the
+   builder's own words and this is the sheet declaring what it is. */
+.wiring-promise {
+  margin-top: var(--space-sm);
+  max-width: var(--measure);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  line-height: 1.6;
+}
+
+/* The ladder step between a swept card's own parts. Written here rather than
+   added to the shared selector list beside .card, because four slices are
+   adding their own blocks to this file in one wave and a shared selector list
+   is where that collides; it applies to this surface alone either way. */
+body[data-page="wiring"] .card > * + * {
+  margin-top: var(--space-md);
+}
+
+body[data-page="wiring"] .wiring-tier > * + * {
+  margin-top: var(--space-md);
+}
+
+/* A tier is a section inside a plate: its own head, its own count, its own
+   table. The seam above it is what divides one tier from the next, so the
+   plates do not multiply with the tiers. */
+.wiring-tier + .wiring-tier {
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+.wiring-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cell);
+}
+
+/* Column heads are engraved labels, in the same mono uppercase voice as a
+   section head: a table on an instrument panel is read by its markings. */
+.wiring-table thead th {
+  text-align: left;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.wiring-row th,
+.wiring-row td {
+  height: var(--row);
+  text-align: left;
+  font-weight: 400;
+  vertical-align: middle;
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+/* The subject column stays put while the table scrolls sideways, so the row a
+   builder is reading never leaves the screen. It needs a ground of its own: a
+   transparent sticky cell shows the cells passing underneath it. */
+.wiring-row th[scope="row"] {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+/* The loom's signals are two words at most, so its first column does not wrap:
+   "Foot Drive" split over two lines reads as two rows on an instrument panel.
+   The parts table's own first column keeps wrapping, because a part name runs
+   to "Dome side panel 12" and nowrapping it would push the reason column off
+   the plate. */
+.wiring-loom-table .wiring-row th[scope="row"] {
+  white-space: nowrap;
+}
+
+/* An address, a bus and a design name are markings rather than prose. */
+.wiring-address,
+.wiring-cad,
+.wiring-shorthand {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  color: var(--text-dim);
+}
+
+/* A Part Kind is carried by treatment and never by colour, the same dashed
+   engraving the part-first table gives it. */
+.wiring-kind {
+  margin-left: var(--space-xs);
+  font-size: var(--fs-hint);
+  color: var(--text-dim);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-plate);
+  padding: 0 var(--space-2xs);
+}
+
+/* An Output is a legend and an address, or the words for having neither. Both
+   are short and neither wraps: "- not wired -" broken over two lines reads as
+   two answers. */
+.wiring-output {
+  white-space: nowrap;
+}
+
+/* A value nobody has set, said rather than left blank: a blank cell reads as a
+   row that went missing (docs/ui-copy-voice.md rule 13). */
+.wiring-dim {
+  color: var(--text-faint);
+  font-size: var(--fs-sect);
+}
+
+/* The why, inline on its own row. It is the widest column on purpose: a reason
+   truncated to fit is a reason nobody acted on. */
+.wiring-reason {
+  color: var(--text-dim);
+  font-size: var(--fs-sect);
+  line-height: 1.5;
+  min-width: 22ch;
+}
+
+.wiring-reason a,
+.wiring-bound a {
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The bound, said out loud under the last tier: what is on the droid and not
+   on this sheet. It carries no link, because there is nothing for a builder to
+   do about it - a settled no (CONTEXT.md "Availability Family"). */
+.wiring-bound {
+  max-width: var(--measure);
+}
+
+.wiring-footnote {
+  max-width: var(--measure);
+  padding-left: var(--space-lg);
+  color: var(--text-dim);
+  font-size: var(--fs-sect);
+  line-height: 1.7;
+}
+
+/* ---------------------------------------------------------------------------
+   The pictures
+
+   A drawing on an instrument panel, not an illustration: the plate's own
+   ground, the seam round it, mono markings, and the one accent nowhere in it.
+   A link this image is not driving is drawn broken AND says why on its row, so
+   the dash is a reminder of a reason rather than a convention to learn.
+   --------------------------------------------------------------------------- */
+.wd {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  font-family: var(--font-mono);
+}
+
+.wd-title {
+  fill: var(--text);
+  font-size: var(--fs-cell);
+  font-weight: 600;
+}
+
+.wd-scope,
+.wd-bus,
+.wd-note,
+.wd-board-sub {
+  fill: var(--text-faint);
+  font-size: var(--fs-hint);
+}
+
+.wd-board-face {
+  fill: var(--surface-alt);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.wd-board-name {
+  fill: var(--text);
+  font-size: var(--fs-sect);
+  text-anchor: middle;
+}
+
+.wd-board-sub {
+  text-anchor: middle;
+}
+
+.wd-box {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+}
+
+.wd-name {
+  fill: var(--text);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+}
+
+.wd-line {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 1.8;
+}
+
+.wd-arrow {
+  fill: var(--text-dim);
+}
+
+/* Not driving anything: broken, and dimmer than the ink beside it. */
+.wd-link.is-idle .wd-line {
+  stroke: var(--text-faint);
+  stroke-width: 1.3;
+  stroke-dasharray: 5 4;
+}
+
+.wd-link.is-idle .wd-arrow {
+  fill: var(--text-faint);
+}
+
+.wd-link.is-idle .wd-box {
+  stroke: var(--border);
+}
+
+.wd-link.is-idle .wd-name {
+  fill: var(--text-dim);
+}
+
+/* A bench tablet at 900 px has no room for a five-column table beside a
+   drawing, so the table scrolls sideways under its own sticky first column
+   rather than the surface scrolling as a whole. */
+@media (max-width: 900px) {
+  .wiring-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    The body view: a picture of the droid, and the panel beside it (#352,
    ADR 0063)
 
