@@ -223,9 +223,13 @@ test("Setup scopes restart guidance to RC input channels", () => {
   assert.doesNotMatch(html, /Component changes save immediately\. Restart the controller to apply them\./);
 
   const env = loadPageModule("setup.js", { respond: () => ({}) });
+  // The floppy-disk glyph that stood in front of this string went with ADR
+  // 0066, which retired emoji from every operator surface: the claim under
+  // test - that the global summary says nothing about a restart - is the same
+  // equality assertion against the same sentence.
   assert.equal(
     env.element("setup-save-summary").textContent,
-    "💾 Auto-save ready",
+    "Auto-save ready",
     "the global summary must not claim every component save needs restart"
   );
 });

@@ -151,7 +151,7 @@
     rcCh4:       featureToggle("rc-ch4", "RC Channel 4"),
     rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
     rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
-    drive:       featureToggle("drive", "Drive"),
+    drive:       featureToggle("drive", "Foot Drive"),
     audio:       featureToggle("audio", "Audio"),
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
@@ -220,18 +220,22 @@
   let saveTimeout = null;
   const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
 
+  // The save state, as a pill beside the feedback line it belongs to. The four
+  // outcome classes are the anatomy's own: green it saved, amber there is
+  // something left to do about it, red it was refused, and no colour at all
+  // while nothing has happened yet (ADR 0066).
   const setSaveSummary = (message, state = "info") => {
     if (!setupSaveSummary) return;
-    const classMap = { ok: "pill-ok", saving: "pill-warn", warn: "pill-warn", error: "pill-error", info: "pill-info" };
+    const classMap = { ok: "pill-ok", saving: "pill-warn", warn: "pill-warn", error: "pill-error", info: "" };
     setupSaveSummary.dataset.state = state;
-    setupSaveSummary.className = `status-pill ${classMap[state] || classMap.info}`;
+    setupSaveSummary.className = `status-pill ${classMap[state] ?? ""}`.trim();
     setupSaveSummary.textContent = message;
   };
 
   const setFeedbackState = (element, message, variant = "") => {
     if (!element) return;
     element.textContent = message;
-    element.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+    element.className = variant ? `feedback ${variant}` : "feedback";
   };
 
   const setFeatureFeedback = (message, variant = "") => {
@@ -535,9 +539,9 @@
       rebootButton.title = pending ? "Waiting for settings to save..." : "";
     }
     if (pending) {
-      setSaveSummary("💾 Saving...", "saving");
+      setSaveSummary("Saving...", "saving");
     } else if (setupSaveSummary?.dataset.state === "saving") {
-      setSaveSummary("💾 Auto-save ready", "info");
+      setSaveSummary("Auto-save ready", "info");
     }
   };
 
@@ -626,23 +630,18 @@
     if (auxLedCountInput) {
       auxLedCountInput.disabled = !hasRgb;
     }
+    // Where the strip is routed is a CHOSEN POSTURE, not a health signal, so it
+    // takes no colour at all: colouring an answer the builder gave would make a
+    // setting read as a symptom (CONTEXT.md "Status Colour", amended by the
+    // operator 2026-09-16). The two readouts say the same fact at two lengths -
+    // the section head says where, the pill beside the count says which line.
     if (auxLedRouteStatus) {
-      if (!hasRgb) {
-        auxLedRouteStatus.textContent = "Not routed";
-        auxLedRouteStatus.style.color = "var(--text-dim)";
-      } else {
-        auxLedRouteStatus.textContent = `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]} LED`;
-        auxLedRouteStatus.style.color = "var(--success)";
-      }
+      auxLedRouteStatus.textContent = hasRgb
+        ? `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]} LED`
+        : "Not routed";
     }
     if (auxLedRouteBadge) {
-      if (!hasRgb) {
-        auxLedRouteBadge.textContent = "🔗 Not routed";
-        auxLedRouteBadge.className = "status-pill pill-info status-pill-compact";
-      } else {
-        auxLedRouteBadge.textContent = `🔗 ${AUX_RGB_LABEL_BY_KEY[rgbKey]}`;
-        auxLedRouteBadge.className = "status-pill pill-ok status-pill-compact";
-      }
+      auxLedRouteBadge.textContent = hasRgb ? AUX_RGB_LABEL_BY_KEY[rgbKey] : "Not routed";
     }
   };
 
@@ -721,15 +720,16 @@
     Object.keys(featureToggles).forEach(updateToggleStatus);
   };
 
+  // The section head's subtitle: how many of the components this image can
+  // offer are switched on. It is a count and takes no colour - what a builder
+  // ticked is a chosen posture, and a green count would read as a verdict on
+  // their droid (CONTEXT.md "Status Colour").
   const updateEnabledSummary = () => {
     if (!setupEnabledSummary) return;
     const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);
     const enabledCount = toggles.filter((toggle) => toggle.input.checked).length;
     const total = toggles.length;
-    const state = enabledCount > 0 ? "ok" : "info";
-    const prefix = enabledCount > 0 ? "✅" : "⚪";
-    setupEnabledSummary.className = `status-pill ${state === "ok" ? "pill-ok" : "pill-info"}`;
-    setupEnabledSummary.textContent = `${prefix} ${enabledCount}/${total} on`;
+    setupEnabledSummary.textContent = `${enabledCount} of ${total} switched on`;
   };
 
 
@@ -954,19 +954,19 @@
       const savedAt = new Date().toLocaleTimeString();
       if (rcRestartPending) {
         setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply RC input changes.`, "success");
-        setSaveSummary(`🔄 Saved at ${savedAt} · restart required`, "warn");
+        setSaveSummary(`Saved at ${savedAt} · restart required`, "warn");
       } else {
         setFeatureFeedback(`Saved at ${savedAt}`, "success");
-        setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
+        setSaveSummary(`Saved at ${savedAt}`, "ok");
       }
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
       // Preserve pending restart status: don't downgrade from warn to error state if restart was already pending
       if (rcRestartPending) {
-        setSaveSummary(`🔄 Save failed, but restart still required`, "warn");
+        setSaveSummary("Save failed, but restart still required", "warn");
       } else {
-        setSaveSummary("❌ Save failed", "error");
+        setSaveSummary("Save failed", "error");
       }
     } finally {
       saveInFlight = false;
@@ -1111,7 +1111,7 @@
   });
   updateEnabledSummary();
   updateAuxLedConfigVisibility();
-  setSaveSummary("💾 Auto-save ready", "info");
+  setSaveSummary("Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
   setIdentityFeedback("Loading controller identity…");
   if (window.PAIdentity) receiveIdentity(window.PAIdentity);
@@ -1120,12 +1120,27 @@
   const serialS1 = document.getElementById("serial-s1-state");
   const serialS2 = document.getElementById("serial-s2-state");
   const serialS3 = document.getElementById("serial-s3-state");
+  const serialS1Light = document.getElementById("serial-s1-light");
+  const serialS2Light = document.getElementById("serial-s2-light");
+  const serialS3Light = document.getElementById("serial-s3-light");
   const serialStatusLine = document.getElementById("serial-status-line");
   const diagUptime = document.getElementById("diag-uptime");
   const diagHeapFree = document.getElementById("diag-heap-free");
   const diagHeapMin = document.getElementById("diag-heap-min");
   const diagHeapLargest = document.getElementById("diag-heap-largest");
+  const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
+  const diagHeapMinLight = document.getElementById("diag-heap-min-light");
+  const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
   const diagMemoryNote = document.getElementById("diag-memory-note");
+
+  // A health signal reads as a droid LED and the COLOUR IS THE READING: the
+  // light carries it and the value beside it stays ink (CONTEXT.md "Health
+  // Signal", "Status Colour"). Before this the state was painted onto the text
+  // with element.style.color and spelled with an emoji beside it, which put a
+  // colour on a number and a picture in a readout.
+  const setLight = (light, state) => {
+    if (light) light.className = `indicator ${state}`;
+  };
 
   const formatUptime = (uptimeMs) => {
     const totalSeconds = Math.floor(Number(uptimeMs || 0) / 1000);
@@ -1150,33 +1165,37 @@
 
     if (pin === 0) {
       auxLedPreviewText.textContent = "";
-      auxLedPreviewText.style.color = "var(--text-dim)";
       auxLedPreviewNote.textContent = "";
       return;
     }
 
+    // The words carry both readings. Neither sentence is coloured: the swatch
+    // beside them already shows the one thing on this row that is a colour, and
+    // it is the strip's own live colour rather than a state.
     if (!available) {
       auxLedPreviewText.textContent = `LED strip on AUX${pin} unavailable`;
-      auxLedPreviewText.style.color = "var(--warning)";
-      auxLedPreviewNote.textContent = "Strip configured, but output driver is unavailable.";
+      auxLedPreviewNote.textContent = "The strip is recorded here, but the controller has no output driver for it.";
       return;
     }
 
     auxLedPreviewText.textContent = `AUX${pin} LED - ${effect}`;
-    auxLedPreviewText.style.color = "var(--success)";
-    auxLedPreviewNote.textContent = `Live color ${r},${g},${b} with ${effect} effect.`;
+    auxLedPreviewNote.textContent = `Live colour ${r},${g},${b} with the ${effect} effect.`;
   };
 
   const renderSerialStatus = (d) => {
+    // The same four readings as before, on the same four states: what changed
+    // is that the light carries the colour and the words carry the reading.
+    // "off" for a lane that is switched off is the grey CONTEXT.md "Health
+    // Signal" asks for - a thing never asked reads grey, never green.
     if (serialS1) {
       serialS1.textContent = !d.drive ? "Disabled"
         : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
-      serialS1.style.color = d.drive ? "var(--success)" : "var(--text-dim)";
+      setLight(serialS1Light, d.drive ? "ok" : "off");
     }
     if (serialS2) {
       serialS2.textContent = !d.audio ? "Disabled"
         : d.audio.state === "playing" ? "Playing" : "Enabled / Idle";
-      serialS2.style.color = d.audio ? "var(--success)" : "var(--text-dim)";
+      setLight(serialS2Light, d.audio ? "ok" : "off");
     }
     const s2DriverEl = document.getElementById("s2-driver-label");
     if (s2DriverEl) {
@@ -1187,21 +1206,22 @@
       const transport = typeof dl?.transport === "string" ? dl.transport.toUpperCase() : "N/A";
       if (!dl || dl.state === "disabled") {
         serialS3.textContent = "Disabled";
-        serialS3.style.color = "var(--text-dim)";
+        setLight(serialS3Light, "off");
       } else if (dl.state === "connected") {
         serialS3.textContent = `Connected (${transport}, hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
-        serialS3.style.color = "var(--success)";
+        setLight(serialS3Light, "ok");
       } else if (dl.state === "lost") {
         serialS3.textContent = `Lost (${transport}) — last seen ${dl.last_rx_ms} ms ago`;
-        serialS3.style.color = "var(--danger)";
+        setLight(serialS3Light, "fail");
       } else {
         serialS3.textContent = `Waiting for dome heartbeat (${transport})`;
-        serialS3.style.color = "var(--warning)";
+        setLight(serialS3Light, "warn");
       }
     }
+    // Uptime is telemetry, not a health signal: a number that has never been a
+    // state carried a green of its own here until this slice took it off.
     if (diagUptime) {
       diagUptime.textContent = formatUptime(d.uptimeMs);
-      diagUptime.style.color = "var(--success)";
     }
 
     const heapFreeKb = Math.round((d.heapFree || 0) / 1024);
@@ -1214,29 +1234,29 @@
     const heapMinState = heapMinKb < Math.round((t.minCritical || 36864) / 1024) ? "critical" : heapMinKb < Math.round((t.minWarn || 53248) / 1024) ? "watch" : "good";
     const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round((t.largestCritical || 20480) / 1024) ? "critical" : heapLargestKb < Math.round((t.largestWarn || 36864) / 1024) ? "watch" : "good";
 
-    const colorForState = (state) =>
-      state === "critical" ? "var(--danger)"
-        : state === "watch" ? "var(--warning)"
-          : state === "na" ? "var(--text-dim)" : "var(--success)";
+    // The same four states as before, on the same thresholds. "na" is the
+    // firmware that reports no largest block at all - never asked, so grey.
+    const lampForState = (state) =>
+      state === "critical" ? "fail" : state === "watch" ? "warn" : state === "na" ? "off" : "ok";
 
     if (diagHeapFree) {
-      const suffix = heapFreeState === "critical" ? "❌ Critical" : heapFreeState === "watch" ? "⚠️ Watch" : "✅ Good";
-      diagHeapFree.textContent = `${heapFreeKb} KB ${suffix}`;
-      diagHeapFree.style.color = colorForState(heapFreeState);
+      const word = heapFreeState === "critical" ? "Critical" : heapFreeState === "watch" ? "Watch" : "Good";
+      diagHeapFree.textContent = `${heapFreeKb} KB ${word}`;
+      setLight(diagHeapFreeLight, lampForState(heapFreeState));
     }
     if (diagHeapMin) {
-      const suffix = heapMinState === "critical" ? "❌ Critical" : heapMinState === "watch" ? "⚠️ Watch" : "✅ Good";
-      diagHeapMin.textContent = `${heapMinKb} KB ${suffix}`;
-      diagHeapMin.style.color = colorForState(heapMinState);
+      const word = heapMinState === "critical" ? "Critical" : heapMinState === "watch" ? "Watch" : "Good";
+      diagHeapMin.textContent = `${heapMinKb} KB ${word}`;
+      setLight(diagHeapMinLight, lampForState(heapMinState));
     }
     if (diagHeapLargest) {
       if (!hasLargest) {
-        diagHeapLargest.textContent = "N/A";
+        diagHeapLargest.textContent = "Not reported by this firmware";
       } else {
-        const suffix = heapLargestState === "critical" ? "❌ Fragmented" : heapLargestState === "watch" ? "⚠️ Watch" : "✅ Good";
-        diagHeapLargest.textContent = `${heapLargestKb} KB ${suffix}`;
+        const word = heapLargestState === "critical" ? "Fragmented" : heapLargestState === "watch" ? "Watch" : "Good";
+        diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
       }
-      diagHeapLargest.style.color = colorForState(heapLargestState);
+      setLight(diagHeapLargestLight, lampForState(heapLargestState));
     }
     if (diagMemoryNote) {
       diagMemoryNote.textContent = `Memory Min is a historical low-water mark since boot; current low-water mark is ${heapMinKb} KB.`;
@@ -1297,7 +1317,7 @@
 
   const setFeedback = (msg, variant = '') => {
     feedback.textContent = msg;
-    feedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+    feedback.className = variant ? `feedback ${variant}` : 'feedback';
   };
 
   const showRestorePanel = (show) => {
@@ -1615,16 +1635,20 @@
     return (bytes / 1024).toFixed(1) + " KB";
   }
 
-  function hwmColor(hwm) {
-    if (hwm > 2048) return "#4caf50";   // green
-    if (hwm > 1024) return "#ff9800";   // amber
-    return "#f44336";                   // red
+  // The same two thresholds as before, answering with a Status Colour state
+  // rather than with a hard-coded hex: a colour literal outside :root is a
+  // defect (CONTEXT.md "Status Colour"), and these three were Material's own
+  // green, amber and red rather than the droid's.
+  function hwmState(hwm) {
+    if (hwm > 2048) return "ok";
+    if (hwm > 1024) return "warn";
+    return "fail";
   }
 
-  function fragColor(ratio) {
-    if (ratio < 0.30) return "#4caf50";
-    if (ratio < 0.50) return "#ff9800";
-    return "#f44336";
+  function fragState(ratio) {
+    if (ratio < 0.30) return "ok";
+    if (ratio < 0.50) return "warn";
+    return "fail";
   }
 
   function setText(id, val) {
@@ -1647,24 +1671,23 @@
     const lbl = document.getElementById("prof-frag-label");
     if (bar) {
       bar.style.width = pct.toFixed(1) + "%";
-      bar.style.background = fragColor(d.fragRatio);
+      bar.className = `prof-bar is-${fragState(d.fragRatio)}`;
     }
     if (lbl) {
       const health = d.fragRatio < 0.30 ? "Healthy" : d.fragRatio < 0.50 ? "Watch" : "Critical";
       lbl.textContent = health + " — fragmentation " + pct.toFixed(1) + "% (1 - largest/free)";
     }
 
-    // Task stack HWM table
+    // Task stack HWM table. The state is a signal light in its own cell, so the
+    // word beside it stays ink: the table reads down the lights the way the
+    // health grid does.
     const hwmTbody = document.getElementById("prof-hwm-tbody");
     if (hwmTbody && Array.isArray(d.taskStacks)) {
-      hwmTbody.innerHTML = d.taskStacks.map(t => {
-        const color = hwmColor(t.hwmBytes);
-        return `<tr>
-          <td style="padding:3px 8px">${t.name}</td>
-          <td style="text-align:right;padding:3px 8px">${kb(t.hwmBytes)}</td>
-          <td style="text-align:center;padding:3px 8px;color:${color};font-weight:bold">${t.status.toUpperCase()}</td>
-        </tr>`;
-      }).join("");
+      hwmTbody.innerHTML = d.taskStacks.map(t => `<tr>
+          <td>${t.name}</td>
+          <td class="num">${kb(t.hwmBytes)}</td>
+          <td class="num"><span class="indicator ${hwmState(t.hwmBytes)}"></span>${t.status.toUpperCase()}</td>
+        </tr>`).join("");
     }
 
     // Task heap table (Tier 2 — only when taskHeap present)
@@ -1673,10 +1696,10 @@
     if (heapSection && heapTbody && Array.isArray(d.taskHeap) && d.taskHeap.length > 0) {
       heapSection.hidden = false;
       heapTbody.innerHTML = d.taskHeap.map(t => `<tr>
-        <td style="padding:3px 8px">${t.name}</td>
-        <td style="text-align:right;padding:3px 8px">${kb(t.current)}</td>
-        <td style="text-align:right;padding:3px 8px">${kb(t.peak)}</td>
-        <td style="text-align:right;padding:3px 8px">${t.heapCount}</td>
+        <td>${t.name}</td>
+        <td class="num">${kb(t.current)}</td>
+        <td class="num">${kb(t.peak)}</td>
+        <td class="num">${t.heapCount}</td>
       </tr>`).join("");
     } else if (heapSection) {
       heapSection.hidden = true;
@@ -1697,10 +1720,10 @@
     const snapTbody = document.getElementById("prof-snap-tbody");
     if (snapTbody && Array.isArray(d.snapshots)) {
       snapTbody.innerHTML = d.snapshots.map(s => `<tr>
-        <td style="padding:3px 8px">${s.label}</td>
-        <td style="text-align:right;padding:3px 8px">${kb(s.heapFree)}</td>
-        <td style="text-align:right;padding:3px 8px">${kb(s.largestBlock)}</td>
-        <td style="text-align:right;padding:3px 8px">${s.ts}</td>
+        <td>${s.label}</td>
+        <td class="num">${kb(s.heapFree)}</td>
+        <td class="num">${kb(s.largestBlock)}</td>
+        <td class="num">${s.ts}</td>
       </tr>`).join("");
     }
   }
@@ -1711,12 +1734,12 @@
       renderProfiler(result.data);
       if (feedback) {
         feedback.textContent = `Memory readings updated at ${new Date().toLocaleTimeString()}`;
-        feedback.className = "feedback mt-12 success";
+        feedback.className = "feedback success";
       }
     } catch (error) {
       if (feedback) {
         feedback.textContent = `Memory readings unavailable: ${window.PAApi.messageFor(error)}`;
-        feedback.className = "feedback mt-12 warning";
+        feedback.className = "feedback warning";
       }
     }
   }

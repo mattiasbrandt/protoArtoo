@@ -1446,23 +1446,28 @@ input.input-narrow {
 }
 
 .toggle-label {
-  font-size: 0.9rem;
-  color: var(--silver-bright);
+  font-size: var(--fs-cell);
+  color: var(--text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
+/* What is recorded as fitted to this component - a product name off the
+   Component Registry. It is a KIND of thing, not a state, so it is the
+   anatomy's engraved label rather than a coloured badge. */
 .component-badge {
   display: inline-block;
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: var(--radius-xs);
-  padding: var(--space-3xs) var(--space-xs);
-  font-size: 0.75rem;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  padding: 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 500;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -1477,7 +1482,8 @@ input.input-narrow {
 }
 
 .toggle-status {
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
   margin-left: auto;
 }
@@ -1549,11 +1555,19 @@ input.input-narrow {
   transition: border-color 0.18s ease, background-image 0.18s ease, opacity 0.18s ease;
 }
 
-/* Available, and running. Green is not one of the two reserved colours and is
-   not being spent on a way of saying no - it marks the states that are a yes. */
+/* Switched on, and this image can offer it. It is the brightest of the four
+   rails and nothing else: a component the builder ticked is a CHOSEN POSTURE
+   and takes no colour at all, and an Availability Family is told apart by
+   treatment, never by hue (CONTEXT.md "Status Colour", "Availability Family").
+
+   This rail was --success until #399 slice 2. Green was defensible while #327
+   reserved only amber and red; the operator's 2026-09-16 amendment made green
+   a Status Colour meaning "nominal - clear, armed, linked, reporting", which is
+   a reading of how a thing is DOING, and a switch nobody has asked the droid
+   about is not that. */
 .feature-availability-row.feature-state-on {
-  border-left-color: var(--success);
-  background-image: linear-gradient(90deg, color-mix(in srgb, var(--success) 11%, transparent), transparent 44%);
+  border-left-color: var(--text);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--lift) 9%, transparent), transparent 44%);
 }
 
 /* change it here — the switch is on a protoArtoo page and the builder can
@@ -1621,8 +1635,10 @@ input.input-narrow {
   letter-spacing: 0.025em;
 }
 
+/* The word "On" is the value of a setting, so it reads in the ink tier the
+   value of a setting reads in. It was --success; see the rail above. */
 .feature-state-on {
-  color: var(--success);
+  color: var(--text);
 }
 
 /* Every way of saying no reads in the quiet text tier. The words already
@@ -1647,8 +1663,8 @@ input.input-narrow {
   flex-basis: 100%;
   margin: 0 0 var(--space-2xs) 64px;
   color: var(--text-dim);
-  font-size: 0.8rem;
-  line-height: 1.35;
+  font-size: var(--fs-hint);
+  line-height: 1.6;
 }
 
 .feature-availability-reason[hidden] {
@@ -1678,7 +1694,7 @@ input.input-narrow {
 }
 
 .feature-availability-panel.feature-state-on {
-  border-left-color: var(--success);
+  border-left-color: var(--text);
 }
 
 .feature-availability-panel.feature-state-not-in-this-build,
@@ -1701,22 +1717,28 @@ input.input-narrow {
   opacity: var(--avail-dim-finding);
 }
 
+/* The section head and the availability rail on one line: what this panel is,
+   and whether this image can run it at all. */
 .feature-availability-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: var(--space-lg);
+}
+
+.feature-availability-header > .sect {
+  flex: 1 1 auto;
 }
 
 .feature-availability-rail {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
   flex-shrink: 0;
-  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
+  padding: var(--space-2xs) var(--space-sm) var(--space-2xs) var(--space-md);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--well) 48%, transparent);
+  border-radius: var(--radius-plate);
+  background: var(--well);
 }
 
 .feature-availability-status {
@@ -1760,11 +1782,13 @@ input.input-narrow {
   transition: background 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-/* Available features: compile-time present (included) and runtime enabled (on) */
+/* Available features: compile-time present (included) and runtime enabled (on).
+   A lit bulb rather than a green one - this lamp says the feature is HERE, which
+   is an Availability Family answer and is told apart by treatment. */
 .feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp,
 .feature-availability-lamp-indicator.feature-state-included .feature-availability-lamp {
-  background: var(--success);
-  box-shadow: 0 0 9px color-mix(in srgb, var(--success) 55%, transparent);
+  background: var(--text);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--text) 45%, transparent);
 }
 
 /* change it elsewhere: an empty socket rather than a dark bulb, so the row
@@ -1812,13 +1836,13 @@ input.input-narrow {
 .type-segmented {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2xs);
   flex-wrap: wrap;
   justify-content: flex-end;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--lift) 3%, transparent);
+  padding: var(--space-2xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--well);
   min-height: 44px;
 }
 
@@ -1826,11 +1850,11 @@ input.input-narrow {
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-dim);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: var(--radius-plate);
+  padding: var(--space-sm) var(--space-md);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--fs-cell);
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
   min-height: 34px;
@@ -1838,14 +1862,18 @@ input.input-narrow {
 }
 
 .type-segmented .seg-option:hover {
-  color: var(--silver-bright);
+  color: var(--text);
   background: color-mix(in srgb, var(--lift) 5%, transparent);
 }
 
+/* The option chosen, lit by the interaction accent the way every other
+   segmented control on the droid lights one (.seg > button.active). It was
+   --success, which made an answer the builder gave read as a health signal and
+   put a green on something you can press. */
 .type-segmented .seg-option.is-active {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
-  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .type-segmented .seg-option:focus-visible {
@@ -1868,13 +1896,13 @@ input.input-narrow {
 }
 
 .type-select {
-  padding: 6px 10px;
+  padding: var(--space-sm) var(--space-md);
   background: color-mix(in srgb, var(--lift) 4%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   color: var(--text);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-cell);
   cursor: pointer;
   min-width: 150px;
   min-height: 44px;
@@ -3775,56 +3803,166 @@ label.sound-search-field {
   }
 }
 
-/* Setup page small layout helpers */
+/* ---------------------------------------------------------------------------
+   Setup (ADR 0066, #399 slice 2)
+
+   The surface a droid is declared on and the controller is looked over from,
+   drawn to the anatomy: a card per question, a section head over each with a
+   count or a purpose beside it, and every state on this page carried by a
+   signal light rather than painted onto the text beside it.
+   --------------------------------------------------------------------------- */
 .s2-driver-label {
-  font-size: 0.8rem;
+  margin-left: var(--space-sm);
+  font-size: var(--fs-hint);
   color: var(--text-dim);
-  margin-left: 8px;
 }
 
+/* The save state and the line that says what just happened, on one row: they
+   report the same act and reading them apart was reading it twice. */
 .setup-toolbar {
   display: flex;
-  gap: 10px;
+  gap: var(--space-md);
   align-items: center;
   flex-wrap: wrap;
 }
 
-.identity-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.identity-header h3 {
-  margin: 0;
-  white-space: nowrap;
-}
-
 .identity-feedback {
   min-height: 20px;
-  text-align: right;
 }
 
 .identity-grid {
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(270px, 1fr) minmax(96px, 112px);
-  gap: 12px;
+  gap: var(--space-md);
   align-items: center;
 }
 
 .identity-checkbox {
   align-self: end;
   min-height: 44px;
-  color: var(--silver-bright);
+  color: var(--text-dim);
 }
 
 .identity-save-button {
   align-self: end;
   min-height: 44px;
-  padding-inline: 14px;
+  padding-inline: var(--space-lg);
   white-space: nowrap;
+}
+
+/* A readout whose state is a light: the light sits with the value, the way a
+   Status Plate cell carries its own, and the value stays ink. */
+body[data-page="setup"] .status-item dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+body[data-page="setup"] .status-item .hint {
+  display: block;
+  margin-top: var(--space-2xs);
+}
+
+/* Where an LED strip is routed, and what it is showing. The swatch is the one
+   thing on this surface that paints a colour from data: it is the strip's own
+   live colour, not a state, so it is set from the frame rather than tokened. */
+.led-route {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.led-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.led-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  background: var(--well);
+}
+
+/* The parts a restore may write, each its own tick. */
+.restore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-sm) var(--space-lg);
+}
+
+/* The Memory Profiler's own tables and its fragmentation bar. Both carried
+   hard-coded colours until this slice: Material's green, amber and red on the
+   bar and on a status cell, and a #444 rule under every heading. */
+.prof-bar-wrap {
+  height: 16px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  overflow: hidden;
+}
+
+.prof-bar {
+  width: 0;
+  height: 100%;
+  background: var(--text-dim);
+  transition: width 0.4s ease, background 0.4s ease;
+}
+
+.prof-bar.is-ok {
+  background: var(--success);
+}
+
+.prof-bar.is-warn {
+  background: var(--warning);
+}
+
+.prof-bar.is-fail {
+  background: var(--danger);
+}
+
+.prof-table-wrap {
+  overflow-x: auto;
+}
+
+.prof-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cell);
+}
+
+.prof-table th {
+  text-align: left;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.prof-table td {
+  padding: var(--space-2xs) var(--space-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.prof-table th.num,
+.prof-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The state cell: its light first, then the word the profiler reported. */
+.prof-table td.num .indicator {
+  display: inline-block;
+  margin-right: var(--space-sm);
+  vertical-align: middle;
 }
 
 /* RC mapper class-based dynamic markup */
@@ -4668,7 +4806,7 @@ label.sound-search-field {
 /* ---- Board image on setup page ---- */
 .board-image-wrap {
   text-align: center;
-  padding: 12px 0 4px;
+  padding: var(--space-md) 0 var(--space-2xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4678,7 +4816,7 @@ label.sound-search-field {
 .board-image-wrap img {
   max-width: 100%;
   max-height: 260px;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
   object-fit: contain;
 }
@@ -4695,7 +4833,7 @@ label.sound-search-field {
   width: min(100%, 346px);
   height: auto;
   aspect-ratio: 4 / 3;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
   color: var(--text);
 }
@@ -4708,25 +4846,28 @@ label.sound-search-field {
   max-width: 100%;
   max-height: 260px;
   min-height: 100px;
-  border-radius: 10px;
+  border-radius: var(--radius-plate);
   border: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--surface-alt) 0%, var(--surface) 100%);
-  gap: 8px;
-  padding: 12px;
+  background: var(--well);
+  gap: var(--space-sm);
+  padding: var(--space-md);
 }
 
 .board-placeholder.hidden {
   display: none;
 }
 
+/* An empty picture plate is a board-shaped hole, and the icon says which shape
+   it is: the sprite's own chip, inheriting the text colour, with the sentence
+   under it as its label (ADR 0066). It was a 48 px emoji keyboard glyph. */
 .board-placeholder-icon {
-  font-size: 48px;
-  line-height: 1;
-  opacity: 0.8;
+  width: 32px;
+  height: 32px;
+  color: var(--text-faint);
 }
 
 .board-placeholder-text {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text-dim);
   text-align: center;
   max-width: 240px;
