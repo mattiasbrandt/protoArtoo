@@ -97,6 +97,11 @@ uint32_t audioCatalogRefreshBegin();
 // settled is ignored, so a slow loser cannot overwrite a newer outcome.
 void audioCatalogRefreshSettled(uint32_t requestId, AudioCatalogRefreshState state);
 
+// Settle whatever request has been handed out and has not settled yet, for a
+// caller that knows the refresh cannot run but does not know which number it
+// was given. Does nothing when there is no outstanding request.
+void audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState state);
+
 void audioCatalogRefreshLedgerRead(AudioCatalogRefreshLedger* out);
 
 // -----------------------------------------------------------------------------

@@ -125,6 +125,19 @@ void audioCatalogRefreshSettled(uint32_t requestId, AudioCatalogRefreshState sta
     taskEXIT_CRITICAL(&s_mux);
 }
 
+void audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState state) {
+    if (!isTerminal(state)) {
+        return;
+    }
+    taskENTER_CRITICAL(&s_mux);
+    const bool outstanding = s_ledger.requestId > s_ledger.settledId;
+    const uint32_t id = s_ledger.requestId;
+    taskEXIT_CRITICAL(&s_mux);
+    if (outstanding) {
+        audioCatalogRefreshSettled(id, state);
+    }
+}
+
 void audioCatalogRefreshLedgerRead(AudioCatalogRefreshLedger* out) {
     if (out == nullptr) {
         return;

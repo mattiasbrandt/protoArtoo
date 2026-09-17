@@ -374,6 +374,11 @@ bool audioQueueQueryStatus(CommandSource src) {
 
 bool audioQueueRefreshCatalog(CommandSource src) {
     if (audioOutputInactive()) {
+        // Accepted and discarded (ADR 0027): audio output was off at boot, so
+        // this task does not exist and nothing will ever run the refresh.
+        // Settling it here is what stops a caller polling for a completion that
+        // was never going to arrive.
+        audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState::Blocked);
         return true;
     }
     AudioCommand msg{};

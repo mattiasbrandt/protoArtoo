@@ -155,6 +155,30 @@ void test_an_old_completed_refresh_does_not_settle_a_new_request() {
     TEST_ASSERT_TRUE(ledger.settledId < ledger.requestId);
 }
 
+// Audio output off at boot means the task does not exist, so the caller that
+// knows the refresh cannot run settles it without knowing its number.
+void test_an_outstanding_request_can_be_settled_without_naming_it() {
+    const uint32_t asked = audioCatalogRefreshRequested();
+    audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState::Blocked);
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_UINT32(asked, ledger.settledId);
+    TEST_ASSERT_EQUAL_INT(AudioCatalogRefreshState::Blocked, ledger.settledState);
+}
+
+void test_settling_the_outstanding_request_does_nothing_when_there_is_none() {
+    const uint32_t id = audioCatalogRefreshRequested();
+    audioCatalogRefreshSettled(id, AudioCatalogRefreshState::Completed);
+    audioCatalogRefreshSettleOutstanding(AudioCatalogRefreshState::Blocked);
+
+    AudioCatalogRefreshLedger ledger{};
+    audioCatalogRefreshLedgerRead(&ledger);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        AudioCatalogRefreshState::Completed, ledger.settledState,
+        "a settled request is finished; nothing may reopen it as blocked");
+}
+
 void test_a_non_terminal_state_never_settles_anything() {
     const uint32_t id = audioCatalogRefreshRequested();
     audioCatalogRefreshSettled(id, AudioCatalogRefreshState::Running);
@@ -312,6 +336,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_a_refresh_nobody_asked_for_still_gets_a_number);
     RUN_TEST(test_an_older_outcome_cannot_overwrite_a_newer_one);
     RUN_TEST(test_an_old_completed_refresh_does_not_settle_a_new_request);
+    RUN_TEST(test_an_outstanding_request_can_be_settled_without_naming_it);
+    RUN_TEST(test_settling_the_outstanding_request_does_nothing_when_there_is_none);
     RUN_TEST(test_a_non_terminal_state_never_settles_anything);
     RUN_TEST(test_a_changed_sound_list_raises_the_warning);
     RUN_TEST(test_an_unchanged_sound_list_leaves_the_warning_down);
