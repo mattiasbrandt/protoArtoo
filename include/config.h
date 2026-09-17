@@ -509,6 +509,30 @@ constexpr uint32_t SBUS_TIMEOUT_MS = 200;  // Watchdog timeout for drive receive
 // -----------------------------------------------------------------------------
 constexpr uint32_t WEB_DRIVE_TIMEOUT_MS = 500;  // Web drive command expiry
 
+// The calibration dial's hold on a Servo Output (ADR 0064, #364). While a dial
+// has an Output the Part stays driven so the builder can look and listen, and
+// firmware bounds that hold in two ways, neither of which a page can extend:
+//
+//   SERVO_HOLD_EXPIRY_MS   how long after the last hold command for that
+//                          Output the pulse comes off. The same shape as
+//                          WEB_DRIVE_TIMEOUT_MS above -- firmware observing
+//                          arrivals, not a page asserting liveness -- so a
+//                          closed lid or a dropped link is caught in seconds.
+//                          The page keeps a hold alive at one command a second,
+//                          so 3 s is three missed beats, not one late one.
+//   SERVO_HOLD_CEILING_MS  the most a dial holds from when it took the Output,
+//                          however many commands keep arriving. Ten minutes:
+//                          long enough to fight one stubborn linkage, short
+//                          enough that a bench left at lunchtime is not driving
+//                          a servo all afternoon (ADR 0064's considered options).
+//
+// Both are judged in ServoTask (include/servo_hold.h is the rule), which
+// releases the Output and says why (ServoLimpReason, include/robot_state.h).
+// Not configurable on purpose: one more number a builder can set wrong, for a
+// bound that has no reason to differ between droids.
+constexpr uint32_t SERVO_HOLD_EXPIRY_MS = 3000;
+constexpr uint32_t SERVO_HOLD_CEILING_MS = 600000;
+
 // -----------------------------------------------------------------------------
 // Watchdog
 // -----------------------------------------------------------------------------

@@ -475,8 +475,8 @@ Queues servo command.
 
 - Body fields:
 - `arm`: `arm1|arm2|aux1|aux2|aux3|both`
-- `action`: `open|close|stop|position|nudge`
-- `positionUs`: required when `action=position`; range `500..2500`
+- `action`: `open|close|stop|position|nudge|hold|release`
+- `positionUs`: required when `action=position` or `action=hold`; range `500..2500`
 - `action=nudge` (Find by Moving, ADR 0050): a small twitch about wherever
   the output is right now — up 100 µs, down 100 µs, and back to where it
   started — so a builder can watch which part moves. It carries no width:
@@ -487,12 +487,31 @@ Queues servo command.
   pulse on it, or sitting outside that band, is not nudged, and an estop ends
   a nudge where it is. `arm=both` is refused. `GET /api/servo/outputs`'s
   `nudgesDone` says when a nudge has ended.
+- `action=hold` (the calibration dial, ADR 0064): drive the output to
+  `positionUs` and **keep driving it there**, so you can look at the part and
+  listen to the servo while it is still being held. An ordinary move lets go
+  once it arrives; this one does not. The controller bounds the hold in two
+  ways and a request can extend neither: it lets go about **3 s** after hold
+  commands stop arriving, and **10 minutes** after the first one however many
+  keep arriving. Either way the output goes limp where it is and
+  `GET /api/servo/outputs` reports `limp` as `expiry` or `ceiling`. Send one a
+  second to keep a hold alive; send another after it has let go to take the
+  output back, which restarts both bounds. `arm=both` is refused — a dial
+  stands on one output.
+- `action=release` (pulses off, ADR 0043): take the pulse off the output. It
+  goes limp **exactly where it is** — nothing is driven to a position first, so
+  where the part ends up is whatever gravity and friction decide. It carries no
+  `positionUs`. This is how a calibration hold ends, and it is also what the
+  estop and Sleep Mode now do to every enabled output at once. A released
+  output stays limp until something commands it again, and that first move is a
+  jump rather than a ramp, because the controller no longer knows where the
+  part is. `arm=both` releases ARM1 and ARM2 only.
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"Missing arm or action parameter"}`
 - `400` `{"ok":false,"error":"Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both"}`
-- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, or nudge"}`
-- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}`
+- `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, hold, or release"}`
+- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}` (and the same sentence naming `hold`)
 - `400` missing/invalid `positionUs`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
@@ -549,7 +568,32 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - `bandLoUs`, `bandHiUs`: the pulse widths this Output can be driven between,
     set by the component fitted to it (`1000`..`2000` unless a part that takes
     more is named). Every commanded width is clamped into this band, so it is
-    the span a position is drawn against.
+    the span a position is drawn against, and it is the range the calibration
+    dial opens at.
+  - `component`: what is recorded as fitted — `none`, `mg996r`, `mg90s` or
+    `rgb`. It is what decides the band above, and it is reported beside it so a
+    surface can say *which* band it is showing and why: "what an MG996R takes"
+    and "nothing recorded as fitted" are the same two numbers and different
+    sentences.
+  - `openUs`, `centreUs`, `closeUs`: the three positions recorded for this
+    Output. The pair is **directional**: `openUs` is whichever end the builder
+    recorded as open, larger *or* smaller than `closeUs`, because a reversed
+    linkage is `open < close` and there is no invert flag anywhere. Take the
+    min and max of the two if you need an ordering; never sort them into
+    storage.
+  - `calibrated`: whether somebody has measured this Output against its linkage
+    by capturing a position on it (`POST /api/config` `captureOutput`). Typing
+    endpoint numbers into a form does **not** set it. While it is false there
+    are no recorded ends to work within, so overshoot easing degrades to `none`
+    and a test sweep has nowhere sane to sweep between.
+  - `held`: whether a calibration dial currently holds this Output, meaning
+    both firmware bounds above are armed and the pulse stays on until one fires
+    or the builder lets go.
+  - `limp`: why there is no pulse, meaningful only while `commandedUs` is
+    `null`. One of `off` (nothing has driven it since boot — switched off, or
+    never commanded), `pulses-off` (a release let go of it), `expiry` (a dial's
+    hold commands stopped arriving), `ceiling` (a dial held it for the full ten
+    minutes), `estop`, or `sleep`.
   - `commandedUs`: the width the controller has put on the pin right now, part
     way through a move too. `null` when there is no pulse on the Output at all.
   - `targetUs`: where the move in progress ends, or the same as `commandedUs`
@@ -572,14 +616,14 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
 curl -s http://artoo.local/api/servo/outputs
 ```
 
-#### Example response (a fresh controller with ARM1 and ARM2 switched on, then one door ganged with an arm, part way through opening)
+#### Example response (a fresh controller with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, AUX1 let go with pulses off after a nudge, and AUX3 released by the estop)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1620,"targetUs":2000,"nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":1500,"targetUs":1500,"nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":1},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"commandedUs":null,"targetUs":null,"nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
 ```
 
 ### POST /api/aux-led/color
@@ -1339,6 +1383,30 @@ Updates supported config fields and persists to NVS.
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.
+- servo capture (ADR 0064, the calibration dial): `captureOutput`,
+  `captureEnd`, `captureUs` — sent together or not at all. `captureOutput` is
+  an Output Address exactly as `GET /api/servo/outputs` spells it (`ledc:3`);
+  `captureEnd` is `open`, `centre` or `close`; `captureUs` is the width the
+  dial was standing at, `500..2500`. It records **where the builder drove the
+  part**, so unlike the typed endpoints above it marks the Output `calibrated`.
+  It never touches boot behaviour: finding an endpoint must not be the act that
+  makes a panel move at power-up. A captured *end* that would leave `centreUs`
+  outside the travel between the two ends **drags the centre to the nearer end
+  and keeps it**, rather than refusing the capture — read `centreUs` back to
+  see whether it moved. Capturing the centre itself never drags anything. A
+  shape error is `400` `{"ok":false,"error":"captureOutput, captureEnd and
+  captureUs must be sent together: an Output Address, one of open/centre/close,
+  and a width 500..2500"}`.
+- servo reverse (ADR 0041): `reverseOutput` — an Output Address, and nothing
+  else. The linkage runs the other way, so the Output's two ends trade places.
+  **No widths travel with it**: the swap is made on the row from what the row
+  holds, so a surface working from a second-old copy of the pair cannot write a
+  stale number back, and a reverse can never be a way to type one. It records
+  no measurement — a builder saying which way a linkage runs has not measured
+  anything — and `centreUs` does not move, because swapping the ends does not
+  change the travel between them. Sending it again is a real undo: the stored
+  state **is** the pair, and there is no invert flag anywhere. A bad address is
+  `400` `{"ok":false,"error":"reverseOutput must be an Output Address"}`.
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
 - Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent

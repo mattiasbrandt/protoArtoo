@@ -55,6 +55,15 @@ export const output = (address, name, extra = {}) => ({
   parts: [],
   bandLoUs: 1000,
   bandHiUs: 2000,
+  // What the calibration dial reads (#364). A fresh row is unmeasured, with
+  // the band's own ends standing in for a calibration nobody has made.
+  component: "mg996r",
+  openUs: 2000,
+  centreUs: 1500,
+  closeUs: 1000,
+  calibrated: false,
+  held: false,
+  limp: "off",
   commandedUs: null,
   targetUs: null,
   nudgesDone: 0,
@@ -97,6 +106,7 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     intervals: [],
     cleared: [],
     nudgeFails: null, // set to an Error to make the next POST /api/servo fail
+    configFails: null, // the same for the next POST /api/config
   };
 
   const windowListeners = new Map();
@@ -163,11 +173,65 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
             env.nudgeFails = null;
             throw error;
           }
+          const row = env.outputs.find((each) => each.name.toLowerCase() === form.arm);
+          // A hold drives the output there and keeps the pulse on it, with
+          // both firmware bounds armed. Nothing here expires it: the bounds
+          // are the controller's, and a test that wants one fires it with
+          // env.wentLimp().
+          if (row && form.action === "hold") {
+            row.commandedUs = Number(form.positionUs);
+            row.targetUs = row.commandedUs;
+            row.held = true;
+            row.limp = "off";
+          }
+          // A release takes the pulse off. The output goes limp where it is:
+          // nothing is commanded, so the widths stop being a position at all.
+          if (row && form.action === "release") {
+            row.commandedUs = null;
+            row.targetUs = null;
+            row.held = false;
+            row.limp = "pulses-off";
+          }
           // The firmware queues the nudge and answers at once; the nudge
           // itself ends later, when the test bumps nudgesDone.
           return { ok: true, status: 200, data: { ok: true } };
         }
         if (path === "/api/config") {
+          if (env.configFails) {
+            const error = env.configFails;
+            env.configFails = null;
+            throw error;
+          }
+          // A capture: the named position is recorded, the row becomes
+          // measured, and a captured END that has swallowed the centre drags
+          // the centre inside the travel - the firmware's rule
+          // (servoOutputCapture(), include/servo_output_row.h), stood in for
+          // here so the page can be watched reading the result back rather
+          // than re-deriving it.
+          if (form.captureOutput) {
+            const row = env.outputs.find((each) => each.address === form.captureOutput);
+            const us = Number(form.captureUs);
+            if (form.captureEnd === "open") row.openUs = us;
+            else if (form.captureEnd === "close") row.closeUs = us;
+            else row.centreUs = us;
+            row.calibrated = true;
+            if (form.captureEnd !== "centre") {
+              const lo = Math.min(row.openUs, row.closeUs);
+              const hi = Math.max(row.openUs, row.closeUs);
+              if (row.centreUs < lo) row.centreUs = lo;
+              else if (row.centreUs > hi) row.centreUs = hi;
+            }
+            return { ok: true, status: 200, data: {} };
+          }
+          // A reverse: the two ends trade places, on the row, from what the row
+          // holds. No width travels with it.
+          if (form.reverseOutput) {
+            const row = env.outputs.find((each) => each.address === form.reverseOutput);
+            const wasOpen = row.openUs;
+            row.openUs = row.closeUs;
+            row.closeUs = wasOpen;
+            return { ok: true, status: 200, data: {} };
+          }
           // The firmware's move: off whatever Output had the Part, onto the
           // one named.
           env.outputs.forEach((each) => {
@@ -199,6 +263,22 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
         if (!el) return;
         el.textContent = text;
         el.className = level ? `feedback ${level}` : "feedback";
+      },
+      // The shipped PAUtils exports this (data/web_api.js) and the calibration
+      // dial coalesces its hold commands through it, so the mock carries it
+      // too - with REAL timers, because a debounce stubbed to call straight
+      // through would make "a drag sends one hold, not twenty" true by
+      // construction (test/test_web/README.md).
+      debounce: (fn, ms) => {
+        let timer = null;
+        return (...args) => {
+          if (timer !== null) clearTimeout(timer);
+          timer = setTimeout(() => {
+            fn(...args);
+            timer = null;
+          }, ms);
+          timer.unref?.();
+        };
       },
     },
   };
@@ -281,7 +361,10 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   env.row = (address) => env.rows().find((node) => node.dataset.output === address);
   env.cell = (address, className) => env.row(address).querySelector(`.${className}`);
   env.text = (address, className) => env.cell(address, className).textContent;
-  env.nudges = () => env.posts.filter((post) => post.path === "/api/servo");
+  // Nudges only. POST /api/servo carries four actions since #364, so filtering
+  // on the path alone would count a hold or a release as a nudge.
+  env.nudges = () =>
+    env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "nudge");
   env.moves = () => env.posts.filter((post) => post.path === "/api/config");
   // The builder presses the row's Find by moving button: the click reaches
   // the table's delegated handler the way a real one does.
@@ -297,6 +380,43 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   // The droid says a nudge on this Output has ended, however it ended.
   env.endNudge = (address) => {
     env.outputs.find((each) => each.address === address).nudgesDone += 1;
+  };
+  // One of the controller's own bounds fired, or anything else took the pulse
+  // off: the Output is limp and says why. Ending a nudge counts as ended, so
+  // the count goes up with it, exactly as the firmware does it.
+  env.wentLimp = (address, why) => {
+    const row = env.outputs.find((each) => each.address === address);
+    row.commandedUs = null;
+    row.targetUs = null;
+    row.held = false;
+    row.limp = why;
+    row.nudgesDone += 1;
+  };
+  env.holds = () => env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "hold");
+  env.releases = () => env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "release");
+  env.captures = () => env.posts.filter((post) => post.path === "/api/config" && post.form.captureOutput);
+  env.reverses = () => env.posts.filter((post) => post.path === "/api/config" && post.form.reverseOutput);
+  env.dial = () => document.querySelector(".cal-panel");
+  env.dialOpen = () => env.dial().hidden === false;
+  env.dialNote = () => env.dial().querySelector(".cal-note").textContent;
+  env.dialText = (className) => env.dial().querySelector(`.${className}`).textContent;
+  env.dialButton = (className) => env.dial().querySelector(`.${className}`);
+  env.slider = () => env.dial().querySelector(".cal-slider");
+  // The acts on an Output row reach the table's delegated handler the way a
+  // real click does, the same shape env.pressFind uses for the other table.
+  env.pressCalibrate = (address) =>
+    env.region().fire("click", { target: env.row(address).querySelector(".outputs-calibrate") });
+  env.pressPulsesOff = (address) =>
+    env.region().fire("click", { target: env.row(address).querySelector(".outputs-off") });
+  // The builder drags the dial. mini_dom has no value semantics for a range
+  // input, so the value is set the way a browser would before the event.
+  env.drive = (us) => {
+    env.slider().value = String(us);
+    env.slider().fire("input", { target: env.slider() });
+  };
+  env.pressDial = (className) => {
+    const button = env.dialButton(className);
+    env.dial().fire("click", { target: button });
   };
   // A status frame on the shared stream, the way /api/events delivers one.
   env.pushStatus = (frame) => windowMock.PAStatusStream.seed({ ...frame });

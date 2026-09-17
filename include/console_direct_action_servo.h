@@ -2,7 +2,8 @@
 // include/console_direct_action_servo.h
 //
 // Controller Console direct-action executors - servo domain: open, close,
-// set-position and stop (#221 remainder), and nudge (#363). Split out of
+// set-position and stop (#221 remainder), nudge (#363), and hold and release
+// (#364). Split out of
 // src/console/console_module.cpp by #257 so this domain's rows can be extended
 // without colliding with the other domains' files.
 //
@@ -84,8 +85,11 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
         return;
     }
 
-    uint16_t positionUs = 0;  // dead for OPEN/CLOSE (src/tasks/servo_task.cpp never reads it)
-    if (type == SERVO_CMD_POSITION) {
+    // Dead for OPEN/CLOSE/NUDGE/RELEASE, which src/tasks/servo_task.cpp never
+    // reads it for. POSITION and HOLD both carry a width and take the same
+    // check: a hold is a drive that keeps the pulse on afterwards.
+    uint16_t positionUs = 0;
+    if (type == SERVO_CMD_POSITION || type == SERVO_CMD_HOLD) {
         char* end = nullptr;
         long parsed = strtol(consoleArgsFind(args, "position_us"), &end, 10);
         if (*end != '\0' || parsed < SERVO_PULSE_MIN_US || parsed > SERVO_PULSE_MAX_US) {
@@ -133,6 +137,34 @@ static void consoleExecuteServoNudge(uint32_t requestId, const char* operationNa
                                      const ConsoleArgs& args, ConsoleCommandSource source,
                                      const ConsoleRecordSink* sink) {
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_NUDGE, args, source, sink);
+}
+
+// servo.action.hold (#364, ADR 0064): the calibration dial's hold, reached from
+// the Console as well as from the dial. It carries a position_us like
+// set-position and goes through the same width check, because a hold IS a drive
+// -- what differs is that the pulse stays on afterwards. One output per hold,
+// so the registry's enum for it excludes "both" the way set-position's does.
+//
+// Holding from the Console is a real thing to want on a FireBeetle 2 with no
+// WiFi up, where the Console is the only surface there is; the two firmware
+// bounds apply identically, so a Console session that walks away leaves an
+// output held for at most ten minutes, and for about three seconds if it stops
+// sending.
+static void consoleExecuteServoHold(uint32_t requestId, const char* operationName,
+                                    const ConsoleArgs& args, ConsoleCommandSource source,
+                                    const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_HOLD, args, source, sink);
+}
+
+// servo.action.release (#364, ADR 0043): pulses off. No width, because a
+// release commands no position at all, so it takes consoleExecuteServoCommand()'s
+// no-width path exactly as open, close and nudge do. "both" IS in this row's
+// enum, unlike hold's: letting go of two arms is the same act twice rather than
+// two outputs being moved together.
+static void consoleExecuteServoRelease(uint32_t requestId, const char* operationName,
+                                       const ConsoleArgs& args, ConsoleCommandSource source,
+                                       const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_RELEASE, args, source, sink);
 }
 
 // servo.action.stop: target=<arm1|arm2|aux1|aux2|aux3|both> only - no
@@ -192,6 +224,8 @@ static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.set-position", consoleExecuteServoSetPosition},
     {"servo.action.stop", consoleExecuteServoStop},
     {"servo.action.nudge", consoleExecuteServoNudge},
+    {"servo.action.hold", consoleExecuteServoHold},
+    {"servo.action.release", consoleExecuteServoRelease},
 };
 static const size_t kServoDirectActionExecutorCount =
     sizeof(g_servoDirectActionExecutors) / sizeof(g_servoDirectActionExecutors[0]);

@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..4c1eb1f4 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -896,7 +896,7 @@
+   // An Output a dial can drive: one with travel, and with a name the servo
+   // route takes as its arm. A light has neither a position nor anything to let
+   // go of, and an expander's unnamed row cannot be addressed by POST /api/servo.
+-  const isDriveable = (output) => !isLightRow(output) && output.name !== "";
++  const isDriveable = (output) => output.name !== "";
+ 
+   let dial = null; // the Output being calibrated, at most one
+ 

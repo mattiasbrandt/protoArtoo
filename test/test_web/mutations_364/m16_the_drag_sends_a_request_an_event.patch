@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..60e4f283 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1225,7 +1225,7 @@
+     if (dial === null) return;
+     dial.us = Number(dialSlider.value);
+     dialReadout.textContent = `${dial.us} µs`;
+-    sendHoldSoon();
++    sendHold();
+   });
+ 
+   dialPanel.addEventListener("click", (event) => {

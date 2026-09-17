@@ -344,15 +344,101 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
     // Not pulsing is said with null on the wire - both keys present, neither a
     // number - so an absent key and a stalled table cannot look the same. The
     // nudge count is a number whatever the pulse: a refused nudge on an Output
-    // with no pulse still ended, and a run waiting on it must see that.
+    // with no pulse still ended, and a run waiting on it must see that. And
+    // `limp` says WHY there is no pulse (#364): AUX1 and AUX3 have never been
+    // driven, which is not the same answer as a dial having let go of them.
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:3\",\"name\":\"AUX1\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null,\"nudgesDone\":1}"));
+        "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
+        "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
+        "\"held\":false,\"limp\":\"off\",\"nudgesDone\":1}"));
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:5\",\"name\":\"AUX3\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"commandedUs\":null,\"targetUs\":null,\"nudgesDone\":0}"));
+        "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
+        "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
+        "\"held\":false,\"limp\":\"off\",\"nudgesDone\":0}"));
+}
+
+// What the calibration dial reads off this answer (#364, ADR 0064): the band it
+// opens at and the component that set it, the three widths it captures into,
+// whether anybody has measured them, whether a dial holds the Output, and why
+// there is no pulse when there is none.
+//
+// The reversed pair is the part that has to survive the wire: `openUs` is
+// whichever end the builder recorded as open, and a surface that sorted the two
+// would be the invert flag ADR 0041 refuses arriving by the back door.
+void test_the_servo_outputs_answer_carries_what_the_dial_edits() {
+    seedUnwiredServoOutputRows();
+
+    // ARM1 calibrated with a reversed linkage: open is the LOWER number.
+    ServoOutputEdit reversed = {};
+    reversed.driver = SERVO_DRIVER_LEDC;
+    reversed.channel = LEDC_CH_ARM1;
+    reversed.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    reversed.open_us = 1150;
+    reversed.close_us = 1850;
+    configCacheApplyServoOutputEdits(&reversed, 1);
+    // An MG90S on AUX2, which is the row the dial may open at the full band.
+    ServoOutputEdit micro = {};
+    micro.driver = SERVO_DRIVER_LEDC;
+    micro.channel = LEDC_CH_AUX2;
+    micro.fields = SERVO_FIELD_COMPONENT;
+    micro.component = SERVO_COMP_MG90S;
+    configCacheApplyServoOutputEdits(&micro, 1);
+
+    robotState.servoCommanded[0] = {1600, 1600, true, 0, true, SERVO_LIMP_OFF};   // ARM1, a dial has it
+    robotState.servoCommanded[1] = {0, 0, false, 0, false, SERVO_LIMP_CEILING};   // ARM2, the ten minutes ran out
+    robotState.servoCommanded[2] = {0, 0, false, 0, false, SERVO_LIMP_RELEASED};  // AUX1, pulses off
+    robotState.servoCommanded[3] = {2400, 2400, true, 0, false, SERVO_LIMP_OFF};  // AUX2, driven, no dial
+    robotState.servoCommanded[4] = {0, 0, false, 0, false, SERVO_LIMP_ESTOP};     // AUX3, the estop let go
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+    robotState = RobotState{};
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonArray outputs = doc["outputs"].as<JsonArray>();
+
+    // The pair keeps its direction: open below close, exactly as recorded.
+    TEST_ASSERT_EQUAL_UINT16(1150, outputs[0]["openUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(1850, outputs[0]["closeUs"] | 0);
+    // Centre followed the two ends, because the row is still unmeasured.
+    TEST_ASSERT_EQUAL_UINT16(1500, outputs[0]["centreUs"] | 0);
+    // And it IS still unmeasured, which is the distinction this ticket turns
+    // on: typing two numbers into a form is an edit, and only a capture -- the
+    // builder driving the part until it looks right and pressing the button --
+    // says a human measured this Output against its linkage
+    // (servoOutputCapture() sets the bit, servoOutputApplyEdit() does not).
+    TEST_ASSERT_FALSE(outputs[0]["calibrated"] | true);
+    TEST_ASSERT_EQUAL_STRING("mg996r", outputs[0]["component"] | "");
+    TEST_ASSERT_TRUE(outputs[0]["held"] | false);
+
+    // A row nobody has touched at all says the same thing, with the band's own
+    // ends rather than anybody's calibration.
+    TEST_ASSERT_FALSE(outputs[2]["calibrated"] | true);
+    TEST_ASSERT_EQUAL_STRING("none", outputs[2]["component"] | "");
+    TEST_ASSERT_EQUAL_UINT16(2000, outputs[2]["openUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(1000, outputs[2]["closeUs"] | 0);
+
+    // The wide band is the component's, and it reaches the answer as the word
+    // a builder chose as well as the two numbers it decides.
+    TEST_ASSERT_EQUAL_STRING("mg90s", outputs[3]["component"] | "");
+    TEST_ASSERT_EQUAL_UINT16(500, outputs[3]["bandLoUs"] | 0);
+    TEST_ASSERT_EQUAL_UINT16(2500, outputs[3]["bandHiUs"] | 0);
+    TEST_ASSERT_FALSE(outputs[3]["held"] | true);
+
+    // Every way an Output can be limp reads differently, which is the whole
+    // point: "ten minutes is the most a dial holds" is not "you pressed pulses
+    // off" and neither is "the estop let go".
+    TEST_ASSERT_EQUAL_STRING("ceiling", outputs[1]["limp"] | "");
+    TEST_ASSERT_EQUAL_STRING("pulses-off", outputs[2]["limp"] | "");
+    TEST_ASSERT_EQUAL_STRING("estop", outputs[4]["limp"] | "");
+    TEST_ASSERT_EQUAL_STRING("off", outputs[3]["limp"] | "");
 }
 
 // The largest answer the table can give: every row it can hold, each at the
@@ -385,9 +471,16 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     // 3229 B measured at #362, when every row gained its band and commanded
-    // position, and 3589 B at #363, when every row gained its nudge count;
-    // the route refuses at 4096.
-    TEST_ASSERT_LESS_THAN_UINT32(4096u, (uint32_t)strlen(backend.sentBody));
+    // position; 3589 B at #363, when every row gained its nudge count; and
+    // 6209 B at #364, when every row gained the seven fields the calibration
+    // dial reads -- the fitted component, the three recorded widths, the
+    // `calibrated` bit, whether a dial holds the Output and why it has no
+    // pulse. 109 B a row, and the route refuses at 8192.
+    //
+    // Twenty-four rows is the expander case nobody has fitted. The five this
+    // controller drives answer in 1219 B, which is what the Parts page's
+    // one-second bench feed actually carries.
+    TEST_ASSERT_LESS_THAN_UINT32(8192u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
     JsonArray outputs = doc["outputs"].as<JsonArray>();
@@ -406,6 +499,7 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_servo_outputs_answer_lists_every_row_and_all_its_parts);
     RUN_TEST(test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band);
+    RUN_TEST(test_the_servo_outputs_answer_carries_what_the_dial_edits);
     RUN_TEST(test_a_full_table_of_outputs_fits_under_the_route_ceiling);
     RUN_TEST(test_get_returns_config_json);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);

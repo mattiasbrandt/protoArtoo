@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..42ea8568 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1183,7 +1183,7 @@
+     dialSafe.textContent = alreadySafe ? "safe range (already)" : "safe range";
+     dialUseEnds.disabled = !output.calibrated;
+     dialUseEnds.setAttribute("aria-disabled", output.calibrated ? "false" : "true");
+-    dialSweep.disabled = !output.calibrated || dial.sweeping;
++    dialSweep.disabled = dial.sweeping;
+     dialSweep.setAttribute("aria-disabled", dialSweep.disabled ? "true" : "false");
+ 
+     // The Output has gone limp under the dial: one of the firmware's two

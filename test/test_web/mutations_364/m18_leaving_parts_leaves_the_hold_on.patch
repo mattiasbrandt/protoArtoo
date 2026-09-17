@@ -1,0 +1,17 @@
+diff --git i/data/parts.js w/data/parts.js
+index 42f13dec..c9ab33db 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -810,11 +810,7 @@
+   // allowed; this only hears that it is happening.
+   window.PASurface?.holdUnmount(() => {
+     if (run !== null) endRun(`The run stopped when you left Parts. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+-    // And the dial lets go of its Output. ADR 0064 ends a hold when the builder
+-    // presses pulses off or closes the dial, and leaving the page is closing
+-    // it; waiting for the firmware's expiry instead would drive the part for
+-    // another few seconds with nobody there to watch it.
+-    closeDial();
++    // And the dial lets go of its Output.
+     return false;
+   });
+ 

@@ -232,10 +232,14 @@ void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
     out->nudgesDone = commanded.nudgesDone;
 
     // No pulse, no position: the widths of an output nobody has driven are not
-    // a place it stands, so they are not handed on.
+    // a place it stands, so they are not handed on. Why there is none travels
+    // instead (#364): a surface says "pulses off" and "the estop let go"
+    // differently.
     if (!commanded.pulsing) {
+        out->limp = commanded.limp;
         return;
     }
+    out->held = commanded.held;
     out->pulsing = true;
     out->nowUs = commanded.nowUs;
     out->targetUs = commanded.targetUs;

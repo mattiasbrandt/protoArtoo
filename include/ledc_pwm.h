@@ -176,6 +176,15 @@ bool ledcPwmSetPercent(uint8_t channel, float percent);
 // Set channel to neutral position (1500us).
 bool ledcPwmSetNeutral(uint8_t channel);
 
+// Take the pulse off a channel (ADR 0043, #364): duty 0, so the pin sits low
+// for the whole period and the servo sees no pulse at all -- it goes limp
+// where it is. The channel stays configured, so the next
+// ledcPwmSetPulseWidth() puts a pulse back. Returns false silently if the
+// channel is not in the configured mask, false with a log if the LEDC write
+// fails. The opposite of ledcPwmEmergencyStop(), which DRIVES every channel to
+// neutral; a release commands nothing.
+bool ledcPwmRelease(uint8_t channel);
+
 // Get the GPIO pin associated with a channel. Returns 0 if channel invalid.
 uint8_t getChannelGpio(uint8_t channel);
 

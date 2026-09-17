@@ -124,6 +124,8 @@ struct ServoOutputCommandedSnapshot {
                           // (ServoCommandedPosition::nudgesDone, #363); handed on
                           // whether or not the output is pulsing -- a count is a
                           // count, and 0 is the honest one for an output never nudged
+    bool held;            // the calibration dial has this Output (#364, ADR 0064)
+    ServoLimpReason limp; // why there is no pulse; read only while !pulsing
 };
 
 // Capture one Output's commanded position from ServoTask's mirror

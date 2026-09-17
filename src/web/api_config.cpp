@@ -1122,13 +1122,33 @@ void handleServoOutputsGet(WebRequest& req) {
             parts.add(servoOutputPartAt(row, slot));
         }
 
-        // The span both position marks are drawn across: the band this Output
-        // can be driven in, set by the component fitted to it. Every commanded
-        // width is clamped into it on the way to the pin
-        // (servoOutputClampPulse()), so neither mark can fall off either end.
+        // The span both position marks are drawn across, and the span the
+        // calibration dial opens at: the band this Output can be driven in, set
+        // by the component fitted to it. Every commanded width is clamped into
+        // it on the way to the pin (servoOutputClampPulse()), so neither mark
+        // can fall off either end and the dial cannot offer a width the
+        // firmware would refuse (ADR 0041, #364).
         const ServoPulseBand band = servoComponentBand(row.component);
         output["bandLoUs"] = band.lo;
         output["bandHiUs"] = band.hi;
+        // What the builder said is fitted, beside the band it decides, so the
+        // dial can say WHICH band it opened at and why rather than only how
+        // wide it is -- "what an MG996R takes" and "nothing recorded as fitted"
+        // are the same two numbers and different sentences.
+        output["component"] = servoCompTypeToString(row.component);
+
+        // The Endpoint Pair and the centre the dial captures into, directional
+        // as they are stored: `openUs` is whichever end the builder recorded as
+        // open, larger or smaller than `closeUs`, because a reversed linkage is
+        // open < close and there is no invert flag anywhere (ADR 0041). A
+        // surface wanting an ordering takes the min and max of the two.
+        output["openUs"] = row.open_us;
+        output["centreUs"] = row.centre_us;
+        output["closeUs"] = row.close_us;
+        // Whether anybody has measured this Output against its linkage. It is
+        // what test sweep needs -- there is nowhere sane to sweep between until
+        // ends exist -- and what degrades overshoot (ADR 0052).
+        output["calibrated"] = row.calibrated;
 
         // Commanded, both: where ServoTask has told the Output to be now, and
         // where the move in progress ends. Nothing reads a servo back. null for
@@ -1143,6 +1163,13 @@ void handleServoOutputsGet(WebRequest& req) {
             output["commandedUs"] = nullptr;
             output["targetUs"] = nullptr;
         }
+        // Whether the calibration dial has this Output, and why it has no pulse
+        // when it has none (#364, ADR 0064). `held` says both firmware bounds
+        // are armed; `limp` is only meaningful while `commandedUs` is null, and
+        // it is what lets the surface say "went limp -- ten minutes is the most
+        // a dial holds" rather than only that the pulse has gone.
+        output["held"] = commanded.held;
+        output["limp"] = servoLimpReasonToString(commanded.limp);
         // How many Find by Moving nudges have ended on this Output since boot
         // (#363). A run reads it before it asks for a nudge and knows the
         // nudge is over when it has gone up -- returned, cut short, or refused
@@ -1155,10 +1182,20 @@ void handleServoOutputsGet(WebRequest& req) {
     // twenty-four rows at their longest address holding every Part the catalog
     // declares between them - is held under it by test_api_config_get. It was
     // 2560 B over a 1621 B answer until #362 gave every row its band and its
-    // commanded position, 67 B a row, and 3229 B until #363 added the nudge
-    // count, 15 B a row; the same answer is now 3589 B. A fitted droid with
-    // five rows answers in well under a kilobyte.
-    webSendJsonDocument(req, doc, 4096, TAG);
+    // commanded position, 67 B a row; 4096 over 3229 B until #363 added the
+    // nudge count, 15 B a row; and 4096 over 3589 B until #364 added the seven
+    // fields the calibration dial reads, 109 B a row, taking the same answer to
+    // 6209 B. Raised to 8192 for that, deliberately and once: it is a bound on
+    // a per-request malloc, so the spend is transient rather than BSS, and 8192
+    // leaves the same kind of headroom 4096 left over 3589.
+    //
+    // What that worst case is NOT is what this controller sends. Twenty-four
+    // rows is the expander nobody has fitted; the five LEDC outputs answer in
+    // 1219 B, and that is what the Parts page's one-second bench feed carries.
+    // A fitted expander would also be the moment to ask whether calibration
+    // fields belong on a feed that repeats them every second - they change only
+    // when somebody edits one (#364).
+    webSendJsonDocument(req, doc, 8192, TAG);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).

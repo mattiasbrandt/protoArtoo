@@ -40,6 +40,13 @@
 // carries Find by Moving: the droid nudges each spare Output a little, one at
 // a time, and the builder presses "That one" when the Part twitches. The rules
 // of that run are with the code, below the move.
+//
+// A Part is calibrated by driving it (#291, #364, ADR 0064). An Output's row
+// carries the dial: the builder drives the part until it looks right and
+// presses the button for the end they are setting, and the part KEEPS being
+// driven while they look and listen. The rules of that hold are with the code,
+// below the run - and the two bounds that end it are the firmware's, not this
+// page's.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -272,7 +279,15 @@
       `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
       `${addOptions}</select></td>` +
       `<td><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
-      `<span class="outputs-us"></span></td><td class="outputs-release"></td></tr>`
+      `<span class="outputs-us"></span></td><td class="outputs-release"></td>` +
+      // The acts, beside what they act on. Both start refused: neither may run
+      // on a guess about the estop, and the droid has not said yet.
+      `<td class="outputs-acts">` +
+      `<button class="btn outputs-calibrate" type="button" ` +
+      `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
+      `<button class="btn outputs-off" type="button" ` +
+      `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
+      `</td></tr>`
     );
   };
 
@@ -284,7 +299,8 @@
   const buildOutputs = (addresses) => {
     outputsRegion.innerHTML =
       `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
-      `<th scope="col">Commanded position</th><th scope="col">Output Release</th></tr></thead><tbody>` +
+      `<th scope="col">Commanded position</th><th scope="col">Output Release</th>` +
+      `<th scope="col">Calibrate</th></tr></thead><tbody>` +
       outputs.map(outputRowHtml).join("") +
       `</tbody></table>`;
     outputRows.clear();
@@ -297,9 +313,14 @@
         tick: node.querySelector(".outputs-tick"),
         us: node.querySelector(".outputs-us"),
         release: node.querySelector(".outputs-release"),
+        calibrate: node.querySelector(".outputs-calibrate"),
+        off: node.querySelector(".outputs-off"),
       });
     });
     outputAddresses = addresses;
+    // The buttons are built refused; this is what makes them live again on a
+    // droid whose estop is clear.
+    gateActs();
   };
 
   // Both marks against one span, so they cannot disagree about scale and the
@@ -349,7 +370,15 @@
     else if (output.targetUs === output.commandedUs) row.us.textContent = `${output.commandedUs} µs`;
     else row.us.textContent = `${output.commandedUs} → ${output.targetUs} µs`;
     if (light) row.release.textContent = "None - a light has nothing to let go of";
-    else row.release.textContent = pulsing ? "Holds where it stops" : "Limp - no pulse";
+    else if (output.held) row.release.textContent = "The dial is holding it";
+    else if (pulsing) row.release.textContent = "Holds where it stops";
+    // An Output that has gone limp says WHICH of the ways it can happen this
+    // was (#364): a bound the dial ran into is not the estop letting go.
+    else row.release.textContent = LIMP_SAID[output.limp] || LIMP_SAID.off;
+    const driveable = isDriveable(output);
+    row.calibrate.hidden = !driveable;
+    row.off.hidden = !driveable;
+    row.node.classList.toggle("is-held", output.held);
   };
 
   const paintOutputs = (addresses) => {
@@ -419,6 +448,7 @@
     summary.textContent = text;
     // The droid has answered again, which is the only thing a run steps on.
     stepRun();
+    paintDial();
   };
 
   const loadOutputs = async ({ handle = null } = {}) => {
@@ -438,6 +468,17 @@
       // How many nudges have ended on this Output (#363); null from a firmware
       // that does not say, which a run must refuse rather than wait on.
       nudgesDone: typeof output.nudgesDone === "number" ? output.nudgesDone : null,
+      // What the calibration dial reads (#364). The three widths are the
+      // recorded positions, directional: openUs is whichever end the builder
+      // recorded as open, so nothing here sorts the pair.
+      component: typeof output.component === "string" ? output.component : "",
+      openUs: typeof output.openUs === "number" ? output.openUs : null,
+      centreUs: typeof output.centreUs === "number" ? output.centreUs : null,
+      closeUs: typeof output.closeUs === "number" ? output.closeUs : null,
+      calibrated: output.calibrated === true,
+      held: output.held === true,
+      // Why there is no pulse, meaningful only while commandedUs is null.
+      limp: typeof output.limp === "string" ? output.limp : "off",
     }));
     paint();
   };
@@ -673,6 +714,20 @@
       endRun(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
       return;
     }
+    // The Output being nudged has gone limp - pulses off from its row, one of
+    // the calibration dial's bounds, or anything else that takes a pulse off a
+    // pin (#364). A limp Output cannot twitch, so there is nothing left to
+    // watch for: the run ENDS here rather than stepping on to the next Output.
+    // Ending a nudge bumps nudgesDone, so without this the count going up would
+    // read as "that one finished, try the next" and the run would carry on
+    // past the thing the builder just did.
+    if (output.commandedUs === null) {
+      endRun(
+        `${outputLabel(output)} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`,
+        "warning"
+      );
+      return;
+    }
     if (output.nudgesDone === run.before) return;
     nudgeNext();
   };
@@ -755,7 +810,563 @@
   // allowed; this only hears that it is happening.
   window.PASurface?.holdUnmount(() => {
     if (run !== null) endRun(`The run stopped when you left Parts. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+    // And the dial lets go of its Output. ADR 0064 ends a hold when the builder
+    // presses pulses off or closes the dial, and leaving the page is closing
+    // it; waiting for the firmware's expiry instead would drive the part for
+    // another few seconds with nobody there to watch it.
+    closeDial();
     return false;
+  });
+
+  // ---------------------------------------------------------------------------
+  // The calibration dial (#291, #364, ADR 0064)
+  //
+  // A builder drives the part until it looks right, presses a button, and that
+  // becomes the end. No typing microseconds, and no guessing whether the number
+  // they typed is the one the servo is holding -- the dial is already standing
+  // at a width the droid is driving, so a capture is one assignment
+  // (r2d2-astromech-simulator v1.79.0, src/js/maestro/setup-hw-cal.js:610).
+  //
+  // THE PART KEEPS BEING DRIVEN while they look and listen. That is the point
+  // of the whole panel: Output Release cuts drive when a part arrives, which is
+  // exactly when the builder has stopped moving it in order to look at it, and
+  // a servo fighting its linkage is only audible while it is being driven. So
+  // the dial takes the Output and holds it, and the firmware -- not this page --
+  // bounds that hold two ways: it lets go a few seconds after these commands
+  // stop arriving, and ten minutes after it took the Output whatever keeps
+  // arriving. This page can refresh the first and can move neither. When either
+  // fires the Output goes limp and the panel says which one it was.
+  //
+  // REVERSE IS A SWAP, READ BACK FROM THE NUMBERS. Nothing here stores an
+  // invert flag and nothing may: the droid swaps the two ends on the row and
+  // this page shows what the row then says, so the control can never disagree
+  // with the numbers above it, and pressing it again is a real undo.
+  //
+  // Repainted in place like every other row on this page. A rebuilt slider is a
+  // commanded move on a real droid.
+  // ---------------------------------------------------------------------------
+  // How often the hold is refreshed while the dial is open. Comfortably inside
+  // the firmware's few-second expiry, so an ordinary hiccup does not drop the
+  // hold, and far short of the ten-minute ceiling, which nothing sent from here
+  // can move.
+  const HOLD_KEEPALIVE_MS = 1000;
+  // A drag fires input events far faster than the droid needs to hear about
+  // them; this is short enough to feel immediate and long enough not to queue.
+  const HOLD_CHANGE_MS = 50;
+  // Long enough to watch a part reach an end and settle before it leaves again.
+  const SWEEP_DWELL_MS = 900;
+  // What `safe range` narrows to: the cautious band every component band
+  // contains (SERVO_BAND_STD, include/servo_output_row.h).
+  const SAFE_LO = 1000;
+  const SAFE_HI = 2000;
+  // One press of the fine buttons. A slider cannot be dragged to a single
+  // microsecond at the bench, and a tablet has no arrow keys (ADR 0059).
+  const FINE_US = 5;
+
+  // Why an Output has no pulse, said the way a builder needs it. The two
+  // firmware bounds each get their own sentence, because "the browser stopped
+  // asking" and "ten minutes is up" are different things to have happened.
+  const LIMP_SAID = {
+    "off": "Limp - no pulse",
+    "pulses-off": "Limp - pulses off",
+    "expiry": "Went limp - the dial stopped asking",
+    "ceiling": "Went limp - ten minutes is the most a dial holds",
+    "estop": "Limp - the estop let go",
+    "sleep": "Limp - sleep mode let go",
+  };
+
+  // What the band the dial opens at is, and why it is that one. The component
+  // governs the clamp (ADR 0041), so the dial opens at the widest range the
+  // firmware will actually drive this row -- never wider, or it would offer
+  // widths the droid refuses.
+  const COMPONENT_SAID = {
+    mg996r: "what an MG996R takes",
+    mg90s: "what an MG90S takes, which is everything a servo will",
+    rgb: "the cautious range - what is recorded here is an LED strip, not a servo",
+    none: "the cautious range, because nothing is recorded as fitted here",
+  };
+
+  const bandSentence = (output) => {
+    const said = COMPONENT_SAID[output.component] || COMPONENT_SAID.none;
+    const unlockable = output.component === "none" || output.component === "mg996r";
+    const unlock = unlockable ? " Record the part as an MG90S for the full 500-2500." : "";
+    return `${output.bandLoUs}-${output.bandHiUs} µs — ${said}.${unlock}`;
+  };
+
+  // An Output a dial can drive: one with travel, and with a name the servo
+  // route takes as its arm. A light has neither a position nor anything to let
+  // go of, and an expander's unnamed row cannot be addressed by POST /api/servo.
+  const isDriveable = (output) => !isLightRow(output) && output.name !== "";
+
+  let dial = null; // the Output being calibrated, at most one
+
+  const dialPanel = document.createElement("section");
+  dialPanel.className = "cal-panel";
+  dialPanel.hidden = true;
+  dialPanel.innerHTML =
+    `<h4 class="cal-title"></h4>` +
+    `<p class="desc">Drive the part until it looks right, then press the button for the end you are ` +
+    `setting. The part keeps being driven while you look and listen, so you can hear a servo fighting ` +
+    `its linkage. The droid lets go on its own a few seconds after this page stops asking, and ten ` +
+    `minutes after it took the output whatever this page does - either way it goes limp where it is ` +
+    `and says so below.</p>` +
+    `<p class="cal-band"></p>` +
+    `<div class="cal-drive">` +
+    `<button class="btn cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
+    `<input class="cal-slider" type="range" step="1" aria-label="Drive this output">` +
+    `<button class="btn cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
+    `<span class="cal-readout"></span>` +
+    `</div>` +
+    `<div class="cal-acts">` +
+    `<button class="btn accent cal-set" type="button" data-end="close">Set MIN</button>` +
+    `<button class="btn accent cal-set" type="button" data-end="centre">Set CENTER</button>` +
+    `<button class="btn accent cal-set" type="button" data-end="open">Set MAX</button>` +
+    `</div>` +
+    `<p class="cal-ends"></p>` +
+    `<div class="cal-acts">` +
+    `<button class="btn cal-reverse" type="button">reverse</button>` +
+    `<span class="cal-hint">it swaps the two ends</span>` +
+    `<button class="btn cal-safe" type="button">safe range</button>` +
+    `<button class="btn cal-useends" type="button">use these ends</button>` +
+    `<button class="btn cal-sweep" type="button">test sweep</button>` +
+    `</div>` +
+    `<div class="cal-acts">` +
+    `<button class="btn cal-off" type="button">pulses off</button>` +
+    `<button class="btn cal-resume" type="button">take it again</button>` +
+    `<button class="btn cal-done" type="button">done</button>` +
+    `</div>` +
+    `<p class="cal-note" role="status" aria-live="polite"></p>`;
+  outputsSection.appendChild(dialPanel);
+
+  const dialTitle = dialPanel.querySelector(".cal-title");
+  const dialBand = dialPanel.querySelector(".cal-band");
+  const dialSlider = dialPanel.querySelector(".cal-slider");
+  const dialReadout = dialPanel.querySelector(".cal-readout");
+  const dialEnds = dialPanel.querySelector(".cal-ends");
+  const dialNote = dialPanel.querySelector(".cal-note");
+  const dialSafe = dialPanel.querySelector(".cal-safe");
+  const dialUseEnds = dialPanel.querySelector(".cal-useends");
+  const dialSweep = dialPanel.querySelector(".cal-sweep");
+  const dialResume = dialPanel.querySelector(".cal-resume");
+
+  const dialOutput = () =>
+    (dial === null || outputs === null ? null : outputs.find((each) => each.address === dial.address) || null);
+
+  const setNote = (text, level) => {
+    dialNote.textContent = text;
+    dialNote.className = level ? `cal-note ${level}` : "cal-note";
+  };
+
+  // Every act on this panel is started from a click handler and finishes later,
+  // so nothing awaits it. A rejection with no handler is a control that did
+  // nothing and said nothing -- the dial simply stops, which reads as a dead
+  // droid rather than as a page that broke. Each act catches its own REQUEST
+  // failures and says which; this catches everything else and refuses to be
+  // silent about it.
+  const started = (promise) =>
+    promise?.catch?.((error) => {
+      console.error("[parts] the dial failed:", error);
+      setNote(`Something went wrong on this page: ${error && error.message ? error.message : error}`, "error");
+    });
+
+  // The span the slider covers. The component band by default -- the widest the
+  // firmware will drive this row -- narrowed by `safe range` to the cautious
+  // band, or by `use these ends` to the travel the builder has recorded.
+  const dialRange = (output) => {
+    if (dial !== null && dial.ends && output.calibrated) {
+      return {
+        lo: Math.min(output.openUs, output.closeUs),
+        hi: Math.max(output.openUs, output.closeUs),
+      };
+    }
+    if (dial !== null && dial.safe) {
+      return { lo: Math.max(output.bandLoUs, SAFE_LO), hi: Math.min(output.bandHiUs, SAFE_HI) };
+    }
+    return { lo: output.bandLoUs, hi: output.bandHiUs };
+  };
+
+  // MIN and MAX name the two ends, not an ordering: after a reverse, MIN can be
+  // the larger number, exactly as the reference project's dial says
+  // ("ends swapped — MIN is now 1850 µs"). MIN is the row's `close` and MAX its
+  // `open`, and reverse trades them, so nothing here has to sort a pair -- which
+  // is how the invert flag ADR 0041 refuses stays refused.
+  const endsSentence = (output) => {
+    if (!output.calibrated) {
+      return "No ends recorded yet. Drive the part to one and press Set MIN or Set MAX.";
+    }
+    return `MIN ${output.closeUs} µs · CENTER ${output.centreUs} µs · MAX ${output.openUs} µs`;
+  };
+
+  const sendServo = async (action, extra = {}) => {
+    const output = dialOutput();
+    if (!output) return false;
+    try {
+      await window.PAApi.postForm(
+        "/api/servo",
+        { arm: output.name.toLowerCase(), action, ...extra },
+        { timeoutMs: 4000 }
+      );
+      return true;
+    } catch (error) {
+      setNote(`The droid did not take that: ${window.PAApi.messageFor(error)}`, "error");
+      return false;
+    }
+  };
+
+  // Every hold command carries the width the dial is standing at. The first one
+  // takes the Output and starts both bounds; the rest refresh the short expiry
+  // and nothing else.
+  const sendHold = () => sendServo("hold", { positionUs: String(dial === null ? 0 : dial.us) });
+  const sendHoldSoon = window.PAUtils.debounce(() => {
+    if (dial !== null && !dial.sweeping) sendHold();
+  }, HOLD_CHANGE_MS);
+
+  let holdTimer = null;
+  const stopKeepalive = () => {
+    if (holdTimer === null) return;
+    window.clearInterval(holdTimer);
+    holdTimer = null;
+  };
+  // The keepalive refreshes the hold only while the droid still says it HAS the
+  // Output. The moment one of the firmware's two bounds lets go, this stops
+  // asking and waits for the builder to press.
+  //
+  // Without that, the ceiling would not exist. It releases the Output and drops
+  // the hold; the very next command takes the Output afresh and starts the
+  // ceiling over, so a page that kept asking would silently hold a servo for as
+  // long as the tab was open -- which is the one thing ADR 0064 says the page
+  // must not be able to do. Resuming is one press, and this is what makes that
+  // sentence true rather than decorative.
+  const startKeepalive = () => {
+    stopKeepalive();
+    holdTimer = window.setInterval(() => {
+      if (dial !== null && dial.holding && !dial.sweeping) sendHold();
+    }, HOLD_KEEPALIVE_MS);
+  };
+
+  const closeDial = ({ release = true } = {}) => {
+    if (dial === null) return;
+    // Closing the dial ends the hold, which is what ADR 0064 says ends it
+    // besides the builder pressing pulses off. Leaving it to the expiry would
+    // drive the part for three more seconds with nobody watching.
+    if (release) sendServo("release");
+    dial = null;
+    stopKeepalive();
+    dialPanel.hidden = true;
+    paint();
+  };
+
+  const openDial = (address) => {
+    if (outputs === null) return;
+    const output = outputs.find((each) => each.address === address);
+    if (!output) return;
+    if (run !== null) {
+      showFeedback(`One at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
+      return;
+    }
+    if (dial !== null && dial.address !== address) closeDial();
+    const band = { lo: output.bandLoUs, hi: output.bandHiUs };
+    dial = {
+      address,
+      // Start from where the droid says the Output is standing, so the first
+      // hold does not move the part at all. An Output with no pulse has no
+      // position to start from, so the middle of its band is the honest guess.
+      us: output.commandedUs === null ? Math.round((band.lo + band.hi) / 2) : output.commandedUs,
+      safe: false,
+      ends: false,
+      sweeping: false,
+      // The droid has the Output as far as this page knows. Cleared when an
+      // answer says it let go, so the keepalive stops asking for it.
+      holding: true,
+    };
+    dialPanel.hidden = false;
+    setNote("");
+    sendHold();
+    startKeepalive();
+    paint();
+  };
+
+  // A capture: the width the dial is standing at becomes one of this Output's
+  // three recorded positions, and the row becomes measured. The droid may drag
+  // the centre inside the travel the capture just described; this page does not
+  // re-derive that rule, it reads the centre back and says if it moved.
+  const capture = async (end) => {
+    const output = dialOutput();
+    if (!output) return;
+    const centreBefore = output.centreUs;
+    const label = end === "centre" ? "CENTER" : end === "open" ? "MAX" : "MIN";
+    try {
+      await window.PAApi.postForm(
+        "/api/config",
+        { captureOutput: output.address, captureEnd: end, captureUs: String(dial.us) },
+        { timeoutMs: 4000 }
+      );
+    } catch (error) {
+      setNote(`${label} was not recorded: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    await refresh();
+    const after = dialOutput();
+    if (after && after.centreUs !== centreBefore) {
+      setNote(
+        `${label} is ${dial.us} µs. Centre moved to ${after.centreUs} µs — it was outside the travel you just captured.`,
+        "warning"
+      );
+      return;
+    }
+    setNote(`${label} is ${dial.us} µs.`, "success");
+  };
+
+  const reverseEnds = async () => {
+    const output = dialOutput();
+    if (!output) return;
+    try {
+      await window.PAApi.postForm("/api/config", { reverseOutput: output.address }, { timeoutMs: 4000 });
+    } catch (error) {
+      setNote(`The ends were not swapped: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    await refresh();
+    const after = dialOutput();
+    if (after) setNote(`Ends swapped — MIN is now ${after.closeUs} µs.`, "success");
+  };
+
+  // test sweep visits the ends the builder recorded and comes back to where the
+  // dial was standing. It refuses on an Output with none: the dial opens at the
+  // whole band, so there is nowhere sane to sweep between until ends exist, and
+  // ADR 0052 gives the same shape to overshoot easing, which degrades while
+  // `calibrated` is unset.
+  const testSweep = async () => {
+    const output = dialOutput();
+    if (!output) return;
+    const startedAt = dial.us;
+    dial.sweeping = true;
+    paint();
+    const legs = [output.closeUs, output.openUs, startedAt];
+    for (const target of legs) {
+      if (dial === null || !dial.sweeping) return;
+      dial.us = target;
+      paint();
+      dial.holding = true;
+      if (!(await sendHold())) break;
+      await new Promise((resolve) => window.setTimeout(resolve, SWEEP_DWELL_MS));
+    }
+    if (dial === null) return;
+    dial.sweeping = false;
+    dial.us = startedAt;
+    paint();
+    setNote(`Swept ${output.closeUs} µs to ${output.openUs} µs and back.`, "success");
+  };
+
+  // Repaint in place: style, textContent, classList, value and disabled on
+  // nodes that already exist. Never innerHTML, and never the control the
+  // builder has hold of.
+  const paintDial = () => {
+    gateActs();
+    if (dial === null) {
+      dialPanel.hidden = true;
+      return;
+    }
+    const output = dialOutput();
+    if (!output) {
+      // The Output left the droid's answer under the dial - a reboot, or a
+      // different firmware. Say so rather than driving something that is gone.
+      setNote("That output is not in the droid's answer any more, so the dial closed.", "warning");
+      closeDial({ release: false });
+      return;
+    }
+    const range = dialRange(output);
+    if (dial.us < range.lo) dial.us = range.lo;
+    if (dial.us > range.hi) dial.us = range.hi;
+
+    dialTitle.textContent = `Calibrating ${outputLabel(output)}`;
+    dialBand.textContent = bandSentence(output);
+    dialEnds.textContent = endsSentence(output);
+    dialReadout.textContent = `${dial.us} µs`;
+    if (document.activeElement !== dialSlider) {
+      dialSlider.min = String(range.lo);
+      dialSlider.max = String(range.hi);
+      dialSlider.value = String(dial.us);
+    }
+
+    dialSafe.classList.toggle("is-on", dial.safe);
+    dialUseEnds.classList.toggle("is-on", dial.ends);
+    // `safe range` is inert on a row whose band is already the cautious one,
+    // and says so rather than pretending to narrow anything.
+    const alreadySafe = output.bandLoUs >= SAFE_LO && output.bandHiUs <= SAFE_HI;
+    dialSafe.textContent = alreadySafe ? "safe range (already)" : "safe range";
+    dialUseEnds.disabled = !output.calibrated;
+    dialUseEnds.setAttribute("aria-disabled", output.calibrated ? "false" : "true");
+    dialSweep.disabled = !output.calibrated || dial.sweeping;
+    dialSweep.setAttribute("aria-disabled", dialSweep.disabled ? "true" : "false");
+
+    // The Output has gone limp under the dial: one of the firmware's two
+    // bounds, or the estop. The panel says which, and one press takes it back.
+    const limp = output.commandedUs === null;
+    // The droid has let go. Stop asking for it: the next hold would take the
+    // Output afresh and restart both bounds, which is the builder's press to
+    // make, not this page's to make for them.
+    if (limp) dial.holding = false;
+    dialResume.hidden = !limp;
+    if (limp && !dial.sweeping) {
+      setNote(`${LIMP_SAID[output.limp] || LIMP_SAID.off}. Press take it again to hold it once more.`, "warning");
+    }
+  };
+
+  // The dial's controls and the row acts are gated on the same one fact the
+  // find buttons are: a latched estop refuses everything that asks the droid to
+  // move something, and the shell's own notice names why, so nothing here says
+  // it twice. They gate themselves rather than riding gateFind() because the
+  // output-first table is rebuilt whenever the SET of Outputs changes, so its
+  // buttons have to be re-gated after each build as well as on each frame.
+  const gateActs = () => {
+    const live = estopLatched === false;
+    window.PAApi.gateControls(Array.from(outputRows.values(), (row) => row.calibrate), live);
+    window.PAApi.gateControls(Array.from(outputRows.values(), (row) => row.off), live);
+    window.PAApi.gateControls(Array.from(dialPanel.querySelectorAll("button")), live);
+    window.PAApi.gateControls([dialSlider], live);
+  };
+
+  window.PAStatusStream?.subscribe((eventType, payload) => {
+    if (eventType !== "status" || !payload || typeof payload !== "object") return;
+    gateActs();
+    // A latched estop has released every enabled Output (ADR 0043), so a dial
+    // that was holding one is no longer holding anything. The panel stays open
+    // and says so; the next answer from the droid carries the reason.
+    if (payload.estop === true && dial !== null) {
+      dial.sweeping = false;
+      setNote("The estop let go of every output. Clear it, then press take it again.", "error");
+    }
+  });
+
+  dialSlider.addEventListener("input", () => {
+    if (dial === null) return;
+    dial.us = Number(dialSlider.value);
+    dialReadout.textContent = `${dial.us} µs`;
+    sendHoldSoon();
+  });
+
+  dialPanel.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    if (!button || button.disabled || dial === null) return;
+    if (button.classList.contains("cal-fine")) {
+      const output = dialOutput();
+      if (!output) return;
+      const range = dialRange(output);
+      const next = dial.us + Number(button.dataset.step) * FINE_US;
+      dial.us = Math.min(range.hi, Math.max(range.lo, next));
+      paintDial();
+      sendHoldSoon();
+      return;
+    }
+    if (button.classList.contains("cal-set")) {
+      started(capture(button.dataset.end));
+      return;
+    }
+    if (button.classList.contains("cal-reverse")) {
+      started(reverseEnds());
+      return;
+    }
+    if (button === dialSafe) {
+      const output = dialOutput();
+      if (output && output.bandLoUs >= SAFE_LO && output.bandHiUs <= SAFE_HI) {
+        setNote("This output is already on the cautious range, so safe range has nothing to narrow.", "warning");
+        return;
+      }
+      dial.safe = !dial.safe;
+      if (dial.safe) dial.ends = false;
+      paintDial();
+      return;
+    }
+    if (button === dialUseEnds) {
+      dial.ends = !dial.ends;
+      if (dial.ends) dial.safe = false;
+      paintDial();
+      return;
+    }
+    if (button === dialSweep) {
+      const output = dialOutput();
+      if (output && !output.calibrated) {
+        setNote("Nothing to sweep between yet: record MIN and MAX first.", "warning");
+        return;
+      }
+      started(testSweep());
+      return;
+    }
+    if (button.classList.contains("cal-off")) {
+      started(pulsesOff(dial.address));
+      return;
+    }
+    if (button === dialResume) {
+      // One press re-takes the Output, which restarts both firmware bounds.
+      dial.holding = true;
+      started(sendHold());
+      setNote("Holding it again.", "success");
+      return;
+    }
+    if (button.classList.contains("cal-done")) closeDial();
+  });
+
+  // ---------------------------------------------------------------------------
+  // pulses off, from a row or from the dial
+  //
+  // The Output goes limp where it is, at once. Reachable from a row so that it
+  // is reachable DURING a Find by Moving run (#363's inherited criterion): the
+  // run is nudging that Output, and taking the pulse off it ends the run's
+  // motion. The surface says which of the two happened, because "the run
+  // stopped" and "the output is limp" are different facts and the builder has
+  // just caused both.
+  // ---------------------------------------------------------------------------
+  const pulsesOff = async (address) => {
+    if (outputs === null) return;
+    const output = outputs.find((each) => each.address === address);
+    if (!output) return;
+    const label = outputLabel(output);
+    const findingPart = run !== null && run.address === address ? run.partId : null;
+    if (findingPart !== null) {
+      // The nudged Output's last commanded mark is not current any more: the
+      // release ended the nudge somewhere the run never read.
+      markNotCurrent(address);
+      endRun();
+    }
+    try {
+      await window.PAApi.postForm(
+        "/api/servo",
+        { arm: output.name.toLowerCase(), action: "release" },
+        { timeoutMs: 4000 }
+      );
+    } catch (error) {
+      const said = `${label} did not let go: ${window.PAApi.messageFor(error)}`;
+      if (dial !== null && dial.address === address) setNote(said, "error");
+      else showFeedback(said, "error");
+      return;
+    }
+    // Which of the two things happened is said, because the builder has just
+    // caused both and they are different facts (#363's inherited criterion).
+    const said =
+      findingPart !== null
+        ? `${label} is limp, and that stopped the run finding ${partLabel(findingPart)}. ${partLabel(findingPart)} stays ${NOT_WIRED}.`
+        : `${label} is limp — nothing is driving it, so it will sit wherever it is.`;
+    if (dial !== null && dial.address === address) setNote(said, "success");
+    showFeedback(said, findingPart !== null ? "warning" : "success");
+    refresh();
+  };
+
+  // One read the dial and a capture both wait on, so what the panel shows after
+  // an act is what the droid answered rather than what this page assumed.
+  const refresh = () =>
+    loadOutputs().catch((error) => {
+      console.warn("[parts] reading the outputs failed:", error);
+    });
+
+  outputsRegion.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    const address = button?.closest?.("[data-output]")?.dataset.output;
+    // A browser delivers no click to a disabled button; this is the rule
+    // itself, the way the part-first table states it for Find by moving.
+    if (!address || button.disabled) return;
+    if (button.classList.contains("outputs-calibrate")) openDial(address);
+    else if (button.classList.contains("outputs-off")) started(pulsesOff(address));
   });
 
   // ---------------------------------------------------------------------------

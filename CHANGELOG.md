@@ -81,6 +81,41 @@ the patch releases, whose notes live on their own GitHub Release.
   nothing more; the estop ends it too, and the button stays refused while the
   estop is latched. The same twitch is on the Controller Console as
   `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
+- **Calibrate a part by driving it and pressing a button.** Press `calibrate`
+  on an output on the Parts page and you get a dial: drag it, or nudge it 5 µs
+  at a time, until the part looks right, then press `Set MIN`, `Set CENTER` or
+  `Set MAX`. Whatever the dial is standing at becomes that end. No typing
+  microseconds, and no wondering whether the number you typed is the one the
+  servo is holding. The dial opens at the widest range the controller will
+  actually drive that output — 1000-2000 µs, or the full 500-2500 on a part you
+  have recorded as taking it — and says which range it is and why. `safe range`
+  narrows a wide one, `use these ends` narrows it to what you have measured, and
+  `test sweep` runs the part between your two ends. The last two wait until
+  there are ends to work with, and say so. `reverse` swaps the two ends for a
+  linkage that runs the other way; press it again and you are exactly back where
+  you were. Capture an end that leaves your centre outside the travel and the
+  centre comes with it rather than the capture being refused, and the dial tells
+  you it moved.
+- **The part keeps being driven while you look and listen.** This is what the
+  dial is for: a servo fighting its linkage is only audible while something is
+  driving it, and until now the drive was cut the moment a part arrived —
+  exactly when you had stopped moving it in order to look. So the dial holds the
+  output, and the controller, not the browser, decides when that ends: it lets
+  go a few seconds after the page stops asking, and after ten minutes however
+  long you keep at it. Either way the part goes limp where it is and the row
+  says which of the two it was; one press takes it back and starts both over.
+  `pulses off` on any output row makes it limp at once, wherever it happens to
+  be — including while a `Find by moving` run is nudging it, which stops the run
+  and says so. Both are on the Controller Console too, as `servo.action.hold`
+  and `servo.action.release`.
+- **Estop and sleep now let go of every output instead of closing them.** They
+  used to drive whatever a running sequence had moved to its closed position and
+  keep holding it there. Holding drive is how a fought part grinds itself, and
+  driving many outputs at once is how the board browns out — so a stop now takes
+  the pulse off every output and commands no position at all. Nothing is driven,
+  so nothing can grind and nothing can brown out. What this costs is honest: a
+  released part sits wherever gravity and friction leave it, and the droid no
+  longer tidies itself up on the way to a stop.
 - **The picker cards can show the part in your hand.** Every product in the
   lineup now has a photograph on the FireBeetle 2 — the same dark ground as
   the rest of the UI, sized to a card, so matching a card to the hardware on
