@@ -16,14 +16,12 @@
   </head>
   <body data-page="seq">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Restoring
-         a backup is the one act that belongs beside the title rather than
+    <!-- The title is the name in the nav (ADR 0066). Restoring a backup is the one act that belongs beside the title rather than
          beside a row: it puts a sequence on the droid that is not on the list
          yet, so there is no row for it to sit next to. -->
     <div class="title">
       <div>
         <h1>Sequences</h1>
-        <p class="question">What has this droid learned to do, and what does each one look like?</p>
       </div>
       <div class="acts">
         <button id="seq-btn-import" class="btn" type="button">Restore backup</button>
@@ -95,7 +93,7 @@
         <div class="seq-modal-body">
           <p class="prose" id="seq-wipe-seq-name"></p>
           <div class="seq-wipe-warning">
-            <p class="prose"><b>This deletes the sequence from the droid and cannot be undone.</b> If its name matches a factory sequence, deleting it puts the factory one back. Otherwise every RC trigger pointing at that name stops doing anything.</p>
+            <p class="prose"><b>Deletes the sequence from the droid, for good.</b> A factory sequence of the same name comes back; otherwise its RC triggers go dead.</p>
             <p class="seq-wipe-confirm-prompt">Type the sequence name to confirm:</p>
             <input
               id="seq-wipe-confirm-input"
