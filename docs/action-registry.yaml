@@ -48,7 +48,7 @@
 entries:
 - name: drive.action.move
   display_name: Move
-  description: Set drive speed and steering
+  description: Drive the feet. Speed and steer each run -1000 to 1000.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -78,8 +78,7 @@ entries:
   executor: driveArbiterSubmit
 - name: drive.action.speed
   display_name: Speed
-  description: Forward/reverse drive speed (analog axis binding)
-  runtime_description: Forward/reverse drive speed (analog axis)
+  description: Forward and back on the feet. Bind it to a stick.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -103,8 +102,7 @@ entries:
   executor: driveArbiterSubmit
 - name: drive.action.steer
   display_name: Steer
-  description: Left/right steering (analog axis binding)
-  runtime_description: Left/right steering (analog axis)
+  description: Left and right on the feet. Bind it to a stick.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -128,7 +126,7 @@ entries:
   executor: driveArbiterSubmit
 - name: drive.action.speed-preset-slow
   display_name: Speed Preset Slow
-  description: Apply the configured Slow speed preset to drive speed limit
+  description: Cap the feet at the Slow preset.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -150,7 +148,7 @@ entries:
   executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-normal
   display_name: Speed Preset Normal
-  description: Apply the configured Normal speed preset to drive speed limit
+  description: Cap the feet at the Normal preset.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -172,7 +170,7 @@ entries:
   executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-turbo
   display_name: Speed Preset Turbo
-  description: Apply the configured Turbo speed preset to drive speed limit
+  description: Cap the feet at the Turbo preset.
   domain: drive
   type: action
   marcduino_cmd: null
@@ -194,8 +192,7 @@ entries:
   executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-cycle
   display_name: Speed Preset Cycle
-  description: Cycle speed preset Slow -> Normal -> Turbo
-  runtime_description: Cycle drive speed preset Slow -> Normal -> Turbo
+  description: 'Step the speed preset: Slow, Normal, Turbo, and round again.'
   domain: drive
   type: action
   marcduino_cmd: null
@@ -213,7 +210,7 @@ entries:
   executor: applySpeedPresetRuntime
 - name: drive.status.current
   display_name: Drive Status
-  description: Current drive speed, steering, and failsafe state
+  description: 'What the feet are doing: speed, steer and failsafe.'
   domain: drive
   type: status
   marcduino_cmd: null
@@ -230,7 +227,7 @@ entries:
   is_query: false
 - name: drive.event.failsafe-triggered
   display_name: Failsafe Triggered
-  description: Drive stopped due to signal loss, estop, or watchdog
+  description: 'The feet stopped: signal lost, estop or watchdog.'
   domain: drive
   type: event
   marcduino_cmd: null
@@ -246,7 +243,7 @@ entries:
   executor: failsafeTrigger
 - name: drive.config.speed-limit
   display_name: Speed Limit Setting
-  description: Persisted maximum drive speed setting
+  description: The most the controller ever sends the wheels. Saved on the droid.
   domain: drive
   type: config
   marcduino_cmd: null
@@ -262,7 +259,7 @@ entries:
   executor: configApply
 - name: dome.action.set-speed
   display_name: Dome Speed
-  description: Dome rotation speed (analog axis)
+  description: Turn the dome. Bind it to a stick.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -280,7 +277,7 @@ entries:
   executor: domeCmdQueue
 - name: dome.action.send-command
   display_name: Send Dome Command
-  description: Send a raw Marcduino command to the dome controller
+  description: Send a raw Marcduino command to the dome.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -296,7 +293,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.marcduino-sequence
   display_name: Marcduino Sequence
-  description: Trigger a raw numbered body sequence payload (typically SE30-SE36)
+  description: Play a numbered body sequence, usually SE30 to SE36.
   domain: dome
   type: action
   marcduino_cmd: M<nn>
@@ -313,7 +310,7 @@ entries:
   executor: parseMarcduinoCommand
 - name: dome.action.marcduino-command
   display_name: Marcduino Command
-  description: Send a specific Marcduino command string to the dome
+  description: Send one Marcduino command to the dome.
   domain: dome
   type: action
   marcduino_cmd: varies
@@ -330,12 +327,7 @@ entries:
   executor: parseMarcduinoCommand
 - name: dome.action.dome-sequence
   display_name: Dome Sequence
-  description: 'Forward a DM:<NAME> choreography command to the dome (AstroPixelsPlus DomeSequences.h). Payload is the full DM: string stored in marcduinoPayload[16]. Valid payloads: DM:PIES, DM:LOW, DM:OPENALL,
-    DM:FLUTTER, DM:BLOOM, DM:SCREAM, DM:OVERLOAD, DM:HEART, DM:ALARM, DM:DISCO, DM:VADER, DM:ROCKMARCH, DM:HELLO, DM:LEIA, DM:CANTINA, DM:RESET, DM:RANDOM. The dome handles panels/holos/logics and sends
-    dome=seqon/BD:/dome=seqoff back to the body, which are handled by dome_link.cpp + dome_cue_handler.cpp (T27).
-
-    '
-  runtime_description: Trigger a dome-side panel/light sequence by number
+  description: Play a dome show by name, like DM:FLUTTER. The Sequences page lists them all.
   domain: dome
   type: action
   marcduino_cmd: DM:<NAME>
@@ -352,7 +344,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-scream
   display_name: Scream
-  description: SE01 - scream audio and body sequence, then forward :SE01 to dome
+  description: SE01. A scream, and the body and dome join in.
   domain: dome
   type: action
   marcduino_cmd: :SE01
@@ -370,7 +362,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-wave
   display_name: Wave
-  description: SE02 - body wave sequence, then forward :SE02 to dome
+  description: SE02. A body wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE02
@@ -388,7 +380,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-fast-wave
   display_name: Fast Wave
-  description: SE03 - fast wave sequence, then forward :SE03 to dome
+  description: SE03. A fast wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE03
@@ -406,7 +398,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-open-wave
   display_name: Open Wave
-  description: SE04 - open wave sequence, then forward :SE04 to dome
+  description: SE04. An open wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE04
@@ -424,7 +416,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-beep-cantina
   display_name: Beep Cantina
-  description: SE05 - short Cantina audio with body wave, then forward :SE05 to dome
+  description: SE05. Short Cantina with a body wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE05
@@ -442,7 +434,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-faint
   display_name: Faint
-  description: SE06 - faint audio with body park sequence, then forward :SE06 to dome
+  description: 'SE06. A faint: the body parks, and the dome joins in.'
   domain: dome
   type: action
   marcduino_cmd: :SE06
@@ -460,7 +452,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-cantina
   display_name: Cantina Dance
-  description: SE07 - long Cantina audio with body wave, then forward :SE07 to dome
+  description: SE07. Long Cantina with a body wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE07
@@ -478,7 +470,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-leia
   display_name: Leia Message
-  description: SE08 - Leia audio with body sequence, then forward :SE08 to dome
+  description: SE08. The Leia message, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE08
@@ -496,7 +488,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-disco
   display_name: Disco
-  description: SE09 - disco audio ($D) with body wave, then forward :SE09 to dome
+  description: SE09. Disco music with a body wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE09
@@ -514,7 +506,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-screams
   display_name: Screams
-  description: SE15 - screams audio only on body side, then forward :SE15 to dome
+  description: SE15. Screams from the body, and the dome does its part.
   domain: dome
   type: action
   marcduino_cmd: :SE15
@@ -532,7 +524,7 @@ entries:
   executor: sequenceStart
 - name: dome.action.droid-sequence-wiggle
   display_name: Panel Wiggle
-  description: SE16 - body wave sequence, then forward :SE16 to dome
+  description: SE16. A body wave, and the dome joins in.
   domain: dome
   type: action
   marcduino_cmd: :SE16
@@ -550,10 +542,7 @@ entries:
   executor: sequenceStart
 - name: dome.api.get-layout
   display_name: Get Dome Layout
-  description: 'Body proxy for the dome''s composed layout view-model (ADR 0009): a cached, non-blocking relay of GET /api/dome/layout on the dome. Requires WiFi as the active dome transport; returns 503
-    on cache miss or non-WiFi transport and triggers a background refresh.
-
-    '
+  description: The dome's panel layout, as the body last heard it. Needs the dome on WiFi.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -577,10 +566,7 @@ entries:
   executor: domeLayoutCacheReadChunk
 - name: dome.action.sequence-stop
   display_name: Stop Sequence
-  description: 'Non-latching abort of the currently running DM:* sequence, reusing the dispatcher''s existing abort path (seqEngineAbort + staggered dome cleanup). Idempotent 200 OK even when nothing is
-    running; does not latch or affect estop.
-
-    '
+  description: Stop the dome show that is running. The estop is untouched.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -596,7 +582,7 @@ entries:
   executor: robotState.seqStopRequested
 - name: dome.event.cue-scream
   display_name: BD:SCREAM
-  description: Dome cue -- plays scream category audio (cfg_snd_cat_scrm), fallback AUDIO_SLOT_NAMED_SCREAM
+  description: The dome asks for a scream. Plays from the Scream category.
   domain: dome
   type: event
   marcduino_cmd: BD:SCREAM
@@ -612,7 +598,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-happy
   display_name: BD:HAPPY
-  description: Dome cue -- plays happy category audio (cfg_snd_cat_hap); sent on every panel open/close toggle
+  description: The dome asks for a happy sound, on every panel open or close.
   domain: dome
   type: event
   marcduino_cmd: BD:HAPPY
@@ -628,7 +614,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-overload
   display_name: BD:OVERLOAD
-  description: Dome cue -- plays sad/distressed category audio (cfg_snd_cat_sad), fallback AUDIO_SLOT_NAMED_FAINT
+  description: The dome asks for a sad sound. Plays from the Sad category.
   domain: dome
   type: event
   marcduino_cmd: BD:OVERLOAD
@@ -644,7 +630,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-alarm
   display_name: BD:ALARM
-  description: Dome cue -- plays alarm category audio (cfg_snd_cat_alrm)
+  description: The dome asks for an alarm. Plays from the Alert category.
   domain: dome
   type: event
   marcduino_cmd: BD:ALARM
@@ -660,7 +646,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-vader
   display_name: BD:VADER
-  description: Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (Imperial March, ~47 s)
+  description: The dome asks for the Imperial March, about 47 s.
   domain: dome
   type: event
   marcduino_cmd: BD:VADER
@@ -676,7 +662,7 @@ entries:
   executor: audioQueuePlaySlot
 - name: dome.event.cue-rockmarch
   display_name: BD:ROCKMARCH
-  description: Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (same as VADER; alternate visual on dome)
+  description: The dome asks for the Imperial March, with its other light show.
   domain: dome
   type: event
   marcduino_cmd: BD:ROCKMARCH
@@ -692,7 +678,7 @@ entries:
   executor: audioQueuePlaySlot
 - name: dome.event.cue-leia
   display_name: BD:LEIA
-  description: Dome cue -- plays AUDIO_SLOT_NAMED_LEIA (Leia message track, ~36 s)
+  description: The dome asks for the Leia message, about 36 s.
   domain: dome
   type: event
   marcduino_cmd: BD:LEIA
@@ -708,7 +694,7 @@ entries:
   executor: audioQueuePlaySlot
 - name: dome.event.cue-cantina
   display_name: BD:CANTINA
-  description: Dome cue -- plays AUDIO_SLOT_NAMED_CANTINA_L (Cantina, 130 BPM, ~17 s)
+  description: The dome asks for the Cantina, about 17 s.
   domain: dome
   type: event
   marcduino_cmd: BD:CANTINA
@@ -724,7 +710,7 @@ entries:
   executor: audioQueuePlaySlot
 - name: dome.event.cue-heart
   display_name: BD:HEART
-  description: Dome cue -- plays sentimental category audio (cfg_snd_cat_sent)
+  description: The dome asks for a sentimental sound.
   domain: dome
   type: event
   marcduino_cmd: BD:HEART
@@ -740,7 +726,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-hello
   display_name: BD:HELLO
-  description: Dome cue -- plays general category audio (cfg_snd_cat_gen)
+  description: The dome asks for a general sound.
   domain: dome
   type: event
   marcduino_cmd: BD:HELLO
@@ -756,9 +742,7 @@ entries:
   executor: audioQueuePlayCategory
 - name: dome.event.cue-reset
   display_name: BD:RESET
-  description: 'Dome cue -- Track Stop (audioQueueTrackStop, ADR 0010): stops current audio playback only, preserves random/idle mood; sent by DM:RESET sequence
-
-    '
+  description: The dome asks the body to stop the track. Chatter carries on.
   domain: dome
   type: event
   marcduino_cmd: BD:RESET
@@ -774,7 +758,7 @@ entries:
   executor: audioQueueTrackStop
 - name: dome.status.current
   display_name: Dome Status
-  description: Current dome motor speed and connection state
+  description: Dome motor speed, and whether the dome is linked.
   domain: dome
   type: status
   marcduino_cmd: null
@@ -793,9 +777,7 @@ entries:
   - domeEnabled
 - name: dome.action.move
   display_name: Dome Speed (Web)
-  description: 'Set dome rotation speed from the browser. Gated by sleep mode (423) and the enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is the SBUS/PWM RC-bindable axis.
-
-    '
+  description: Turn the dome from the browser. Refused while asleep or with the dome motor off.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -818,7 +800,7 @@ entries:
   executor: domeCmdQueue
 - name: dome.api.list-sequences
   display_name: List Learned Sequences
-  description: Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)
+  description: 'Your Learned Sequences: name, toggle group, mute time, and whether each one checks out.'
   domain: dome
   type: status
   marcduino_cmd: null
@@ -840,11 +822,7 @@ entries:
   is_query: true
 - name: dome.api.list-builtin-sequences
   display_name: List Factory Sequences
-  description: 'Lightweight Factory catalog metadata (no step data). GET /api/seq/builtins also accepts a name= parameter for the full JSON v1 of one Factory sequence (the editor''s clone source) - a
-    document read #206 excludes from the Console, so only the list form is wired here; no params: to keep the Console''s own schema honest about what it actually runs (type: status entries take no
-    arguments, docs/console-catalog-contributing.md).
-
-    '
+  description: The Factory Sequences, by name, without their steps.
   domain: dome
   type: status
   marcduino_cmd: null
@@ -865,7 +843,7 @@ entries:
   is_query: true
 - name: dome.api.get-sequence
   display_name: Get Learned Sequence
-  description: Raw stored JSON v1 of one Learned Sequence by name
+  description: One Learned Sequence, as its saved JSON.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -893,7 +871,7 @@ entries:
   executor: seqStoreReadFileSlice
 - name: dome.action.save-sequence
   display_name: Save Learned Sequence
-  description: Validate (Protocol Check) and persist a Learned Sequence JSON v1 body to LittleFS
+  description: Check a Learned Sequence and save it on the droid.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -919,9 +897,7 @@ entries:
   executor: seqStoreSave
 - name: dome.action.delete-sequence
   display_name: Memory Wipe
-  description: 'Delete a Learned Sequence by name. Reports any RC trigger bindings the wipe leaves dangling (silent no-ops) unless a Factory sequence shadows the name.
-
-    '
+  description: Wipe a Learned Sequence off the droid. Names any RC trigger it leaves dead.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -941,9 +917,7 @@ entries:
   executor: seqStoreDelete
 - name: dome.action.test-sequence
   display_name: Test Sequence
-  description: 'Run a DM:* sequence by name (Learned or Factory) via the same ungated path as POST /api/dome/cmd. Accepts a JSON body { "name": "DM:..." } or a form "name" parameter.
-
-    '
+  description: Play a sequence by name, Learned or Factory.
   domain: dome
   type: action
   marcduino_cmd: null
@@ -963,10 +937,7 @@ entries:
   executor: sequenceStart
 - name: dome.api.get-sequence-last-run
   display_name: Get Last Sequence Run
-  description: 'Machine-readable evidence of the most recent body-owned sequence run: outcome, bounded TX stream, cleanup commands, inferred FX scopes and ring masks, retained-TX truncation, and body-local
-    queue-full/retry counters (issue #2 task #6).
-
-    '
+  description: 'What the last sequence run did: how it ended, and every command it sent.'
   domain: dome
   type: status
   marcduino_cmd: null
@@ -1001,7 +972,7 @@ entries:
   executor: seqEvidenceSnapshot
 - name: sound.action.play-track
   display_name: Play Track
-  description: Play a specific track number from the SD card
+  description: Play a track number off the card.
   domain: sound
   type: action
   marcduino_cmd: $nnn
@@ -1026,7 +997,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.play-track-scream
   display_name: Play Scream
-  description: Play the scream track (AUDIO_TRACK_SCREAM)
+  description: Play the scream.
   domain: sound
   type: action
   marcduino_cmd: $S
@@ -1042,7 +1013,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-faint
   display_name: Play Short Circuit
-  description: Play the short circuit / faint track (AUDIO_TRACK_FAINT)
+  description: Play the short circuit.
   domain: sound
   type: action
   marcduino_cmd: $F
@@ -1058,7 +1029,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-leia
   display_name: Play Leia Message
-  description: Play the Leia message track (AUDIO_TRACK_LEIA)
+  description: Play the Leia message.
   domain: sound
   type: action
   marcduino_cmd: $L
@@ -1074,7 +1045,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-cantina-short
   display_name: Play Short Cantina
-  description: Play the short Cantina track (AUDIO_TRACK_CANTINA_S)
+  description: Play the short Cantina.
   domain: sound
   type: action
   marcduino_cmd: $c
@@ -1090,7 +1061,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-cantina-long
   display_name: Play Long Cantina
-  description: Play the long Cantina track (AUDIO_TRACK_CANTINA_L, 130 BPM)
+  description: Play the long Cantina.
   domain: sound
   type: action
   marcduino_cmd: $C
@@ -1106,7 +1077,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-sw-theme
   display_name: Play Star Wars Theme
-  description: Play the Star Wars main theme track (AUDIO_TRACK_SW_THEME)
+  description: Play the Star Wars theme.
   domain: sound
   type: action
   marcduino_cmd: $W
@@ -1122,7 +1093,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-imperial-march
   display_name: Play Imperial March
-  description: Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)
+  description: Play the Imperial March.
   domain: sound
   type: action
   marcduino_cmd: $M
@@ -1138,7 +1109,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-startup
   display_name: Play Startup Sound
-  description: Play the startup / boot track (AUDIO_TRACK_STARTUP)
+  description: Play the startup sound.
   domain: sound
   type: action
   marcduino_cmd: $B
@@ -1154,7 +1125,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-disco
   display_name: Play Disco
-  description: Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)
+  description: Play the disco track. Silent when none is set.
   domain: sound
   type: action
   marcduino_cmd: $D
@@ -1170,14 +1141,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
-  description: 'Cached CHIRP catalog entries from the active audio backend, one per
-    sound. GET /api/audio/catalog also accepts a bank= filter and returns the bank
-    directory alongside the entries; the Console answers the unfiltered entry list
-    (each entry carries its own bank, so the filter adds nothing a reader cannot do)
-    and no params:, keeping its schema honest about what it runs - type: status
-    entries take no arguments (docs/console-catalog-contributing.md).
-
-    '
+  description: Every clip the CHIRP knows, by bank.
   domain: sound
   type: status
   marcduino_cmd: null
@@ -1204,7 +1168,7 @@ entries:
   executor: audioGetCatalogEntries
 - name: sound.api.refresh-catalog
   display_name: Refresh Catalog
-  description: Queue CHIRP catalog refresh (GMAN plus GNME enumeration)
+  description: Read the CHIRP's clip list again. Takes up to a minute.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1220,7 +1184,7 @@ entries:
   executor: audioQueueRefreshCatalog
 - name: sound.api.play-banked
   display_name: Play Banked Entry
-  description: Play a CHIRP sound by explicit bank, page, and index
+  description: Play a CHIRP clip by bank, page and index.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1281,7 +1245,7 @@ entries:
   executor: audioQueuePlayTrackBanked
 - name: sound.api.get-mood-map
   display_name: Get Mood Category Map
-  description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
+  description: Which sound categories each mood chatters from.
   domain: sound
   type: status
   marcduino_cmd: null
@@ -1310,7 +1274,7 @@ entries:
   executor: configCacheRead
 - name: sound.action.set-mood-map
   display_name: Set Mood Category Map
-  description: Set the per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+), each 0..4095
+  description: Set which categories each mood chatters from. One mask per mood, 0 to 4095.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1355,9 +1319,7 @@ entries:
   executor: audioMoodMapApply
 - name: sound.action.set-category-range
   display_name: Set Category Range
-  description: 'Atomic update of one CHIRP category''s lo/hi track range (and optional bank/page/index binding), avoiding a partial two-request save.
-
-    '
+  description: Set one category's track range in one go.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1386,9 +1348,7 @@ entries:
   executor: audioCategoryRangeApply
 - name: sound.action.query-status
   display_name: Query Module Status
-  description: 'Enqueue an on-demand audio module status query; result becomes available via GET /api/audio after ~1.5 s (query timeout + queue latency).
-
-    '
+  description: Ask the sound module how it is. The answer lands in about 1.5 s.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1404,10 +1364,7 @@ entries:
   executor: audioQueueQueryStatus
 - name: sound.action.track-stop
   display_name: Track Stop
-  description: 'Stop current audio playback only; preserves random/idle mood, bumping the anti-spam cadence instead of disabling it (ADR 0010). Used by the web Stop button, the sequence engine''s terminal/abort
-    cleanup, and the dome BD:RESET cue (dome.event.cue-reset). Distinct from Quiet (sound.action.quiet), which also disables idle mood.
-
-    '
+  description: Stop this track. Chatter carries on.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1423,10 +1380,7 @@ entries:
   executor: audioQueueTrackStop
 - name: sound.action.quiet
   display_name: Quiet
-  description: 'Stop playback and disable random/idle mood until reboot or Random On (ADR 0010 term: Quiet). Exclusive to the mood system; unlike Track Stop (sound.action.track-stop), this changes standing
-    idle-chatter behavior, not just the current track.
-
-    '
+  description: Stop the sound and hush chatter until a reboot or Random on.
   domain: sound
   type: action
   marcduino_cmd: $s
@@ -1443,7 +1397,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.set-volume
   display_name: Set Volume
-  description: Set the audio output volume to an absolute level
+  description: Set the volume, 0 to 30.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1466,7 +1420,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.volume-up
   display_name: Volume Up
-  description: Increase volume by 1 step (0-30 scale)
+  description: One step louder, of 30.
   domain: sound
   type: action
   marcduino_cmd: $+
@@ -1482,7 +1436,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.volume-down
   display_name: Volume Down
-  description: Decrease volume by 1 step (0-30 scale)
+  description: One step quieter, of 30.
   domain: sound
   type: action
   marcduino_cmd: $-
@@ -1498,7 +1452,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.volume-preset-mid
   display_name: Volume Preset Mid
-  description: Set volume to the mid preset (15)
+  description: Volume to 15, half way.
   domain: sound
   type: action
   marcduino_cmd: $m
@@ -1514,7 +1468,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.volume-preset-max
   display_name: Volume Preset Max
-  description: Set volume to the max preset (30)
+  description: Volume to 30, full.
   domain: sound
   type: action
   marcduino_cmd: $f
@@ -1530,7 +1484,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.volume-preset-min
   display_name: Volume Preset Min
-  description: Set volume to the min preset (0)
+  description: Volume to 0, silent.
   domain: sound
   type: action
   marcduino_cmd: $p
@@ -1546,7 +1500,7 @@ entries:
   executor: audioQueueSetVolume
 - name: sound.action.dollar-command
   display_name: Raw Sound Command
-  description: Send a raw dollar-prefix command to the sound module
+  description: Send a raw $ command to the sound module.
   domain: sound
   type: action
   marcduino_cmd: $...
@@ -1563,7 +1517,7 @@ entries:
   executor: audioQueueDollar
 - name: sound.action.random-on
   display_name: Random Sound On
-  description: Enable automatic random sound playback
+  description: Let the droid chatter on its own.
   domain: sound
   type: action
   marcduino_cmd: $R
@@ -1579,7 +1533,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-off
   display_name: Random Sound Off
-  description: Disable automatic random sound playback
+  description: Stop the droid chattering on its own.
   domain: sound
   type: action
   marcduino_cmd: $O
@@ -1595,8 +1549,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-general
   display_name: Random General
-  description: Play one random track from the configured General category range
-  runtime_description: Play one random track from configured general range
+  description: Play a random General sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1615,8 +1568,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-chatty
   display_name: Random Chatty
-  description: Play one random track from the configured Chatty category range
-  runtime_description: Play one random track from configured chatty range
+  description: Play a random Chatty sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1635,8 +1587,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-happy
   display_name: Random Happy
-  description: Play one random track from the configured Happy category range
-  runtime_description: Play one random track from configured happy range
+  description: Play a random Happy sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1655,8 +1606,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-processing
   display_name: Random Processing
-  description: Play one random track from the configured Processing category range
-  runtime_description: Play one random track from configured processing range
+  description: Play a random Processing sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1675,8 +1625,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-sad
   display_name: Random Sad
-  description: Play one random track from the configured Sad category range
-  runtime_description: Play one random track from configured sad range
+  description: Play a random Sad sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1695,8 +1644,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-sentimental
   display_name: Random Sentimental
-  description: Play one random track from the configured Sentimental category range
-  runtime_description: Play one random track from configured sentimental range
+  description: Play a random Sentimental sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1715,8 +1663,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-humming
   display_name: Random Humming
-  description: Play one random track from the configured Humming category range
-  runtime_description: Play one random track from configured humming range
+  description: Play a random Humming sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1735,8 +1682,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-scream
   display_name: Random Scream
-  description: Play one random track from the configured Scream category range
-  runtime_description: Play one random track from configured scream range
+  description: Play a random Scream sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1755,8 +1701,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-surprised
   display_name: Random Surprised
-  description: Play one random track from the configured Surprised category range
-  runtime_description: Play one random track from configured surprised range
+  description: Play a random Surprised sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1775,8 +1720,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-alert
   display_name: Random Alert
-  description: Play one random track from the configured Alert category range
-  runtime_description: Play one random track from configured alert range
+  description: Play a random Alert sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1795,8 +1739,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-snarky
   display_name: Random Snarky
-  description: Play one random track from the configured Snarky category range
-  runtime_description: Play one random track from configured snarky range
+  description: Play a random Snarky sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1815,8 +1758,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.action.random-whistle
   display_name: Random Whistle
-  description: Play one random track from the configured Whistle category range
-  runtime_description: Play one random track from configured whistle range
+  description: Play a random Whistle sound.
   domain: sound
   type: action
   marcduino_cmd: null
@@ -1835,7 +1777,7 @@ entries:
   executor: audioQueuePlayTrack
 - name: sound.status.current
   display_name: Sound Status
-  description: Current playback state, volume, and module health
+  description: 'What the sound module is doing: playing, volume and health.'
   domain: sound
   type: status
   marcduino_cmd: null
@@ -1863,7 +1805,7 @@ entries:
   - rx_detail
 - name: sound.config.volume
   display_name: Volume
-  description: "Default audio volume (0\u201330)"
+  description: Volume at power-on, 0 to 30.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1886,7 +1828,7 @@ entries:
   executor: audioSetVolumeCommitApplied
 - name: sound.config.random-min
   display_name: Random Min Track
-  description: Lowest track number in the random playback pool
+  description: Lowest track random playback can pick.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1906,7 +1848,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.random-max
   display_name: Random Max Track
-  description: Highest track number in the random playback pool
+  description: Highest track random playback can pick.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1926,7 +1868,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
   display_name: Quiet Mode Interval
-  description: Seconds between random sound plays in Quiet mood. Read-only on the Controller Console; set it on the Sound page
+  description: Seconds between chatter in Quiet. Read-only here; set it on the Sound page.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1943,7 +1885,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.mood-interval-mid
   display_name: Mid-Awake Interval
-  description: Seconds between random sound plays in Mid-Awake mood. Read-only on the Controller Console; set it on the Sound page
+  description: Seconds between chatter in Mid-Awake. Read-only here; set it on the Sound page.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1960,7 +1902,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.mood-interval-full
   display_name: Full-Awake Interval
-  description: Seconds between random sound plays in Full-Awake mood. Read-only on the Controller Console; set it on the Sound page
+  description: Seconds between chatter in Full-Awake. Read-only here; set it on the Sound page.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1977,7 +1919,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.mood-interval-awake-plus
   display_name: Awake+ Interval
-  description: Seconds between random sound plays in Awake+ mood. Read-only on the Controller Console; set it on the Sound page
+  description: Seconds between chatter in Awake+. Read-only here; set it on the Sound page.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -1994,7 +1936,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.startup-track
   display_name: Startup Boot Sound Track ($B)
-  description: Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event
+  description: The track $B plays at startup. Not the same as Boot Complete.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2014,7 +1956,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.boot-complete-track
   display_name: Boot Complete System Track
-  description: Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)
+  description: The track played once the controller is up. Not the same as $B.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2035,7 +1977,7 @@ entries:
 
 - name: sound.config.network-down-track
   display_name: Network Link Lost System Track
-  description: Automatic system-event sound fired once when the ESP-Hosted C6 link supervisor exhausts its recovery ladder and settles into the terminal degraded state (#189)
+  description: The track played once when the WiFi module's link is lost for good.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2054,7 +1996,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.track-assignments
   display_name: Track Assignments
-  description: Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)
+  description: Which track each named sound plays, $B included.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2118,7 +2060,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.system-track-assignments
   display_name: System Sound Assignments
-  description: System-event sound track assignments (T09), including automatic boot-complete playback
+  description: Which track each system event plays, Boot Complete included.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2156,7 +2098,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.category-ranges
   display_name: Category Ranges
-  description: Min/max track ranges for RC random-by-category sound actions (T07/T10)
+  description: The track range each sound category picks from.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2209,9 +2151,7 @@ entries:
   executor: audioCategoryRangeApply
 - name: sound.config.mood-category-map
   display_name: Mood Category Map
-  description: "Per-mood bitmask selecting which of the 12 sound categories contribute to idle random chatter. One uint16 per mood (bits 0\u201311, one per category in T07 registration order). Stored as\
-    \ four NVS uint16 values. Configurable via GET/POST /api/audio/mood-map. Default bitmasks reflect suggested character-appropriate presets (see T11 spec). A bitmask of 0x0000 disables category-based\
-    \ selection for that mood and falls back to the flat [randMin, randMax] pool.\n"
+  description: Which categories each mood chatters from. A mood with none picks from the random range.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2256,7 +2196,7 @@ entries:
   executor: audioMoodMapApply
 - name: servo.action.open
   display_name: Open
-  description: Open a servo-driven panel or arm to its open position
+  description: Drive a panel or arm to its open end.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2284,7 +2224,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.close
   display_name: Close
-  description: Close a servo-driven panel or arm to its closed position
+  description: Drive a panel or arm to its closed end.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2312,7 +2252,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.set-position
   display_name: Set Position
-  description: Move a servo to a specific pulse-width position
+  description: Drive a servo to a pulse width, in microseconds.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2344,9 +2284,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.nudge
   display_name: Nudge
-  description: 'Twitch a servo a little about wherever it is right now - up 100 us, down 100 us, and back to where it started - so you can watch which part moves and wire that part to this output (Find by Moving, ADR 0050). The twitch stays inside the cautious 1000-2000 us band and never goes to a recorded end, so it is safe on an output nobody has measured yet; an output sitting outside that band, or with no pulse on it, is not nudged. One output per nudge; the controller runs the whole out-and-back itself, so the output comes back even if the browser that asked has gone. An estop ends it where it is.
-
-    '
+  description: Twitch one output 100 us each way and back, so you see which part moves. Safe on an output nobody has measured; the estop ends it.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2372,9 +2310,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.travel
   display_name: Travel
-  description: 'Run the part on this output through its recorded travel and back - out to the end recorded as open, across to the end recorded as close, and back to the width it started from - so you can watch one part move by pointing at it (ADR 0063). It carries no width: the two ends come off the output''s own row, so nothing sent here can name a position. The controller runs the whole out-and-back itself and rests about 0.6 s at each end, so the part comes back even if the browser that asked has gone. Refused, with nothing moved, on an output with no pulse on it, on one no row describes, and on one nobody has measured - an unmeasured row''s two ends are whatever it was stored with, so travelling to them would be a move of hundreds of microseconds on a linkage nobody has measured. One output per travel; target=both is refused. An estop ends it where it is.
-
-    '
+  description: Run one part open, closed and back, on the ends you measured. Refused on an unmeasured output; the estop ends it.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2400,9 +2336,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.hold
   display_name: Hold
-  description: 'Drive a servo to a pulse width and KEEP driving it there, so you can look at the part and listen to the servo while it is still being held (the calibration dial, ADR 0064). Ordinary moves let go once they arrive; this one does not. The controller bounds the hold in two ways you cannot extend from here: it lets go about three seconds after the last hold command stops arriving, and it lets go ten minutes after the first one whatever keeps arriving. Either way the output goes limp where it is and GET /api/servo/outputs says which bound it was. Send one a second to keep a hold alive; send it again after it lets go to take the output back, which restarts both bounds. One output per hold - target=both is refused.
-
-    '
+  description: Drive one output to a width and keep it there while you watch and listen. It lets go 3 s after the last hold, or after ten minutes.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2434,9 +2368,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.release
   display_name: Pulses Off
-  description: 'Take the pulse off a servo output. The part goes limp exactly where it is - nothing is driven to a position first, so where it ends up is whatever gravity and friction decide (ADR 0043). This is how you end a calibration hold, and it is also what the estop and Sleep Mode now do to every output at once. A released output stays limp until something commands it again, and that first move is a jump rather than a ramp, because the controller no longer knows where the part is. target=both releases ARM1 and ARM2 only; AUX1-3 are released one at a time.
-
-    '
+  description: Take the pulse off. The part goes limp where it is, and its next move is a jump.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2463,13 +2395,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.centre-all
   display_name: Back To Centre
-  description: 'Put every servo output back to the centre position recorded on its own row - one press, and the droid paces the sweep itself. The controller expands it into one output at a time and leaves at
-    least 450 ms between them, so a whole body going back at once cannot brown out the shared servo rail. Each output goes to ITS OWN recorded centre, not to a fixed 1500 us, and an output whose row takes
-    longer than that to travel holds the next one off until it has finished. A row recorded as an LED strip is skipped: a light has no centre to go back to. It takes no target - the sweep covers every output
-    there is. Any estop, sleep mode, sequence or stop ends it where it has got to, and the outputs already centred stay where they were sent. Pressing it again starts the sweep over rather than running a second
-    one alongside.
-
-    '
+  description: Send every output to its own centre, one at a time, so the servos do not brown out. LED strips are skipped; the estop ends it.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2490,10 +2416,7 @@ entries:
   executor: robotState.bulkCentreRequest
 - name: servo.action.stop
   display_name: Stop
-  description: 'Move the servo straight to its neutral (centre) pulse width - this does NOT hold the arm or panel wherever it currently is, it drives to the middle of its travel (there is no
-    freeze-in-place command). target=both moves ARM1 and ARM2 only; AUX1, AUX2 and AUX3 must be stopped one at a time (robot_state.h''s own broadcast-id comment).
-
-    '
+  description: Drive the servo to centre. It does not hold where it is.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2524,8 +2447,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.toggle-arm1
   display_name: ARM1 Toggle
-  description: Toggle the arm 1 servo between open and closed
-  runtime_description: Toggle arm 1 servo between open and closed
+  description: Swing arm 1 open or closed.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2542,8 +2464,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.toggle-arm2
   display_name: ARM2 Toggle
-  description: Toggle the arm 2 servo between open and closed
-  runtime_description: Toggle arm 2 servo between open and closed
+  description: Swing arm 2 open or closed.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2560,8 +2481,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.toggle-aux1
   display_name: AUX1 Toggle
-  description: Toggle the aux 1 servo between open and closed
-  runtime_description: Toggle aux 1 servo between open and closed
+  description: Swing AUX 1 open or closed.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2578,8 +2498,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.toggle-aux2
   display_name: AUX2 Toggle
-  description: Toggle the aux 2 servo between open and closed
-  runtime_description: Toggle aux 2 servo between open and closed
+  description: Swing AUX 2 open or closed.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2596,8 +2515,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.action.toggle-aux3
   display_name: AUX3 Toggle
-  description: Toggle the aux 3 servo between open and closed
-  runtime_description: Toggle aux 3 servo between open and closed
+  description: Swing AUX 3 open or closed.
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2614,7 +2532,7 @@ entries:
   executor: servoCmdQueue
 - name: servo.status.current
   display_name: Servo Status
-  description: Current position and state of all servo channels
+  description: Where each servo was last told to be.
   domain: servo
   type: status
   marcduino_cmd: null
@@ -2631,10 +2549,7 @@ entries:
   is_query: false
 - name: servo.api.get-outputs
   display_name: Get Servo Outputs
-  description: 'Every live Servo Output row, the Parts each one drives (ADR 0041, ADR 0050) and where it has been told to be: the band its widths are clamped into, the commanded width now and at the end of the move in progress, and how many Find by Moving nudges have ended on it since boot. Both widths are commanded; nothing reads a servo back. Both projections of the Parts destination read this one answer.
-    Read-only; a Part moves through POST /api/config movePart.
-
-    '
+  description: Every servo output, the parts on it, and where it was told to be. Nothing reads a servo back.
   domain: servo
   type: status
   marcduino_cmd: null
@@ -2662,7 +2577,7 @@ entries:
   is_query: true
 - name: aux.action.led-color
   display_name: LED Color
-  description: Set AUX LED strip RGB color
+  description: Set the AUX LED strip colour.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2697,7 +2612,7 @@ entries:
   executor: auxLedQueue
 - name: aux.action.led-effect
   display_name: LED Effect
-  description: Set AUX LED strip effect mode
+  description: Set the AUX LED strip effect.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2725,7 +2640,7 @@ entries:
   executor: auxLedQueue
 - name: aux.status.led-state
   display_name: AUX LED State
-  description: Current AUX LED pin selection, color, and effect
+  description: Which AUX header the strip is on, and its colour and effect.
   domain: aux
   type: status
   marcduino_cmd: null
@@ -2742,7 +2657,7 @@ entries:
   is_query: false
 - name: aux.config.led-pin
   display_name: LED Header Selection
-  description: Selected AUX header for WS2812B strip (0=disabled, 1=AUX1, 2=AUX2, 3=AUX3)
+  description: 'Which AUX header drives the LED strip: 0 for none, or 1 to 3.'
   domain: aux
   type: config
   marcduino_cmd: null
@@ -2767,7 +2682,7 @@ entries:
   executor: configApply
 - name: aux.config.led-count
   display_name: LED Count
-  description: Number of LEDs in the selected AUX strip
+  description: How many LEDs are on the strip.
   domain: aux
   type: config
   marcduino_cmd: null
@@ -2790,7 +2705,7 @@ entries:
   executor: configApply
 - name: system.action.set-mode
   display_name: Set Mode
-  description: Switch between stationary and driving mode
+  description: Switch between Stationary and Driving. Stationary locks the feet.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2808,8 +2723,7 @@ entries:
   executor: commandedSetStationary
 - name: system.action.estop
   display_name: Emergency Stop
-  description: Immediately stop all drive output and latch the emergency stop
-  runtime_description: Immediately stop all drive output and latch estop
+  description: Stop the feet now and latch the estop.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2827,7 +2741,7 @@ entries:
   executor: failsafeTrigger
 - name: system.action.estop-clear
   display_name: Clear E-Stop
-  description: Release the latched emergency stop to allow drive again
+  description: Release the latched estop. The feet can move again.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2843,7 +2757,7 @@ entries:
   executor: failsafeClearEstop
 - name: system.action.enable-web-control
   display_name: Enable Web Control
-  description: Allow the browser to send drive commands
+  description: Let the browser drive the feet.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2859,7 +2773,7 @@ entries:
   executor: commandedSetWebControl
 - name: system.action.disable-web-control
   display_name: Disable Web Control
-  description: Revoke browser drive control and zero motors
+  description: Take the feet back from the browser. They stop.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2875,7 +2789,7 @@ entries:
   executor: commandedSetWebControl
 - name: system.action.reboot
   display_name: Reboot
-  description: Restart the controller firmware
+  description: Restart the controller.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2891,9 +2805,7 @@ entries:
   executor: requestSystemRestart
 - name: system.action.reboot-wifi-module
   display_name: Reboot WiFi Module
-  description: Reboot the WiFi module - the controller holds its enable line low for a tenth of a second, the module restarts, and the link comes back on its own a few seconds later. Nothing else
-    on the droid pauses; driving, dome, servos and sound do not go through the WiFi module. Run it from the serial console and watch the link come back there, because over WiFi the answer would
-    travel on the link this command takes down. A board with no WiFi module fitted reports it as not on this board.
+  description: Restart the WiFi module; the link is back in a few seconds and nothing else pauses. Run it over serial, since WiFi drops with it.
   domain: system
   type: action
   # The first registry row to carry board_capability (#243). It is what
@@ -2927,7 +2839,7 @@ entries:
   executor: hostedLinkResetCoprocessor
 - name: system.action.set-mood
   display_name: Set Mood
-  description: Set the droid's active mood, controlling body chatter rate and dome lighting behaviour
+  description: 'Set the mood: how much the body chatters and how the dome lights behave.'
   domain: system
   type: action
   marcduino_cmd: null
@@ -2952,10 +2864,7 @@ entries:
   executor: applyMood
 - name: system.action.sleep
   display_name: Sleep
-  description: 'Put the droid into sleep mode: suppresses sound chatter, dome idle animations, and servo idle animations. Drive and RC remain fully active. Also notifies the dome controller via the dome
-    serial link.
-
-    '
+  description: 'Put the droid to sleep: chatter, dome and servo idle moves rest. Drive and RC stay awake.'
   domain: system
   type: action
   marcduino_cmd: '#PASL (tx), #APSL (rx sync)'
@@ -2972,9 +2881,7 @@ entries:
   executor: commandedSetSleep
 - name: system.action.wake
   display_name: Wake
-  description: 'Wake the droid from sleep mode: resumes sound chatter, dome idle animations, and servo idle animations. Also notifies the dome controller via the dome serial link.
-
-    '
+  description: 'Wake the droid: chatter, dome and servo idle moves come back.'
   domain: system
   type: action
   marcduino_cmd: '#PAWU (tx), #APWU (rx sync)'
@@ -2991,9 +2898,8 @@ entries:
   executor: commandedSetSleep
 - name: system.action.sleep-toggle
   display_name: Sleep / Wake Toggle
-  description: Toggle sleep mode on/off. RC-bindable momentary or toggle.
+  description: Sleep or wake. Drive stays awake either way.
   runtime_display_name: Sleep Toggle
-  runtime_description: Toggle cosmetic sleep mode while keeping drive safety active
   domain: system
   type: action
   marcduino_cmd: null
@@ -3010,7 +2916,7 @@ entries:
   executor: commandedSetSleep
 - name: system.event.drives-engaged
   display_name: Drives Engaged
-  description: Internal event when mode changes from stationary to driving
+  description: The droid switched to Driving.
   domain: system
   type: event
   marcduino_cmd: null
@@ -3026,7 +2932,7 @@ entries:
   executor: none
 - name: system.event.dome-enabled
   display_name: Dome Enabled
-  description: Internal event when dome output is enabled
+  description: The dome motor came on.
   domain: system
   type: event
   marcduino_cmd: null
@@ -3042,7 +2948,7 @@ entries:
   executor: none
 - name: system.event.boot-complete
   display_name: Boot Complete
-  description: Internal event emitted when boot completes and automatic boot-complete sound may play
+  description: The controller is up. The Boot Complete sound may play.
   domain: system
   type: event
   marcduino_cmd: null
@@ -3058,7 +2964,7 @@ entries:
   executor: none
 - name: system.status.sleep-mode
   display_name: Sleep Mode
-  description: "Whether the droid is currently in sleep mode. RAM-only \u2014 always boots awake. Carried as the `sleepMode` field in the status SSE event.\n"
+  description: Whether the droid is asleep. It always wakes at boot.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3075,7 +2981,7 @@ entries:
   is_query: false
 - name: system.status.mood
   display_name: Mood
-  description: Currently active mood preset (Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14)
+  description: 'The mood now: Quiet 10, Full-Awake 11, Mid-Awake 13, Awake+ 14.'
   domain: system
   type: status
   marcduino_cmd: null
@@ -3092,7 +2998,7 @@ entries:
   is_query: false
 - name: system.config.mood
   display_name: Active Mood
-  description: Persisted active mood preset ID
+  description: The mood the droid starts in.
   domain: system
   type: config
   marcduino_cmd: null
@@ -3348,7 +3254,7 @@ entries:
   executor: configApply
 - name: system.config.log-level
   display_name: Log Level
-  description: 'Runtime log level: 1 Error, 2 Warning, 3 Info, 4 Debug'
+  description: 'How much the log says: 1 Error, 2 Warning, 3 Info, 4 Debug.'
   domain: system
   type: config
   marcduino_cmd: null
@@ -3364,7 +3270,7 @@ entries:
   executor: configApply
 - name: system.status.health
   display_name: Health
-  description: 'System health snapshot: estop, SBUS, WiFi, heap, filesystem, uptime, reset reason'
+  description: 'Health at a glance: estop, radio, WiFi, memory, storage, uptime and last reset.'
   domain: system
   type: status
   marcduino_cmd: null
@@ -3394,7 +3300,7 @@ entries:
   - resetReason
 - name: system.status.dashboard-health
   display_name: Dashboard Health Signals
-  description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
+  description: The Dashboard's health lights, worked out in the browser.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3411,7 +3317,7 @@ entries:
   is_query: false
 - name: system.status.logs
   display_name: Logs
-  description: Recent firmware log lines
+  description: Recent log lines.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3444,7 +3350,7 @@ entries:
   is_query: true
 - name: system.status.wifi
   display_name: WiFi
-  description: WiFi connection status, mode, IP addresses, and signal strength
+  description: 'WiFi now: mode, addresses and signal.'
   domain: system
   type: status
   marcduino_cmd: null
@@ -3469,7 +3375,7 @@ entries:
   - networkRecovery
 - name: wifi.config.settings
   display_name: WiFi Settings
-  description: How the controller gets on WiFi - joining your network, or hosting its own - and the network name for each. Both are saved together and take effect at the next restart. Passwords are not typed here; set them on the WiFi page, under Device WiFi Settings.
+  description: Join your network or host the droid's own, with a name for each. Saved together and applied at the next restart; set passwords on the WiFi page.
   domain: wifi
   type: config
   marcduino_cmd: null
@@ -3512,7 +3418,7 @@ entries:
   executor: wifiApply
 - name: dome.status.serial-link
   display_name: Dome Serial Link
-  description: Dome serial link status and heartbeat timing
+  description: The dome serial link, and when it last heard a heartbeat.
   domain: dome
   type: status
   marcduino_cmd: null
@@ -3532,7 +3438,7 @@ entries:
   - heartbeatTx
 - name: system.api.get-identity
   display_name: Get Droid Identity
-  description: Current cosmetic droid name and mDNS opt-in
+  description: The droid's name, and whether it answers to it on the network.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3565,7 +3471,7 @@ entries:
 - name: system.api.get-components
   display_name: Get Component Lineup
   display_group: System
-  description: Every hardware product the project supports or plans, and which of them this image can drive
+  description: Every product the project supports or plans, and which of them this build can drive.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3588,7 +3494,7 @@ entries:
   is_query: true
 - name: system.action.set-identity
   display_name: Set Droid Identity
-  description: Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in
+  description: 'Name the droid: 1 to 32 lowercase letters, numbers or hyphens. Also turns answering to it on the network on or off.'
   domain: system
   type: action
   marcduino_cmd: null
@@ -3613,10 +3519,7 @@ entries:
   executor: configCacheApply
 - name: system.api.get-profiler
   display_name: Get Heap Profiler Snapshot
-  description: 'Heap/stack diagnostics snapshot: global heap free/min/largest-block, fragmentation ratio, per-task stack high-water marks, mode-scoped low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING)
-    per-task heap stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).
-
-    '
+  description: Memory and stack snapshot. Only in a profiling build.
   domain: system
   # Reclassified from type: action by #224. It reads and returns a snapshot and
   # changes nothing, which is what type: status means here - the same
@@ -3651,10 +3554,7 @@ entries:
   is_query: true
 - name: system.action.profiler-trace-start
   display_name: Start Heap Trace
-  description: 'Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires the profiler and SDK heap-tracing support).
-    The trace records the controller you are watching it on - a busy serial console or a chatty log level allocates too, and shows up in the result.
-
-    '
+  description: Start a memory leak trace. Only in a tracing build, and a busy console shows up in it.
   domain: system
   type: action
   build_flag: PA_HEAP_TRACING
@@ -3676,7 +3576,7 @@ entries:
   executor: profilerTraceStart
 - name: system.action.profiler-trace-stop
   display_name: Stop Heap Trace
-  description: Stop the running Tier 3 heap leak trace and dump the result to the serial log. The dump is serial traffic itself, so it lands after the measurement it describes, never inside it.
+  description: Stop the leak trace and print it to the serial log.
   domain: system
   type: action
   build_flag: PA_HEAP_TRACING
@@ -3694,7 +3594,7 @@ entries:
   executor: profilerTraceStop
 - name: system.api.get-coredump-status
   display_name: Get Coredump Status
-  description: Whether a PANIC coredump image is present in the coredump partition, and its size
+  description: Whether a crash dump is stored, and its size.
   domain: system
   type: action
   marcduino_cmd: null
@@ -3719,9 +3619,7 @@ entries:
   executor: none
 - name: system.api.get-coredump
   display_name: Download Coredump
-  description: 'Stream the raw ELF coredump image from the coredump partition (issue #8 observability; the seated controller cannot be USB-read due to GPIO15/SBUS strapping).
-
-    '
+  description: Download the stored crash dump.
   domain: system
   type: action
   marcduino_cmd: null
@@ -3743,7 +3641,7 @@ entries:
   executor: none
 - name: system.action.erase-coredump
   display_name: Erase Coredump
-  description: Erase the coredump image from the coredump partition
+  description: Erase the stored crash dump.
   domain: system
   type: action
   marcduino_cmd: null
@@ -3764,7 +3662,7 @@ entries:
   executor: esp_core_dump_image_erase
 - name: system.api.get-admission-trace
   display_name: Get Admission Trace
-  description: "Ring buffer of admission decisions \u2014 shed count, reasons, and admission state snapshots. Compiled in only when PA_ADMISSION_TRACE=1 (issue #97 floor decision diagnostics).\n"
+  description: Why the controller turned requests away lately. Only in a tracing build.
   domain: system
   type: action
   build_flag: PA_ADMISSION_TRACE
@@ -3790,7 +3688,7 @@ entries:
   executor: fillAdmissionTraceResponse
 - name: system.api.get-validation
   display_name: Get Validation Snapshot
-  description: Consolidated hardware-validation snapshot (Phase 4 closure checks)
+  description: One snapshot of the hardware checks.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3821,7 +3719,7 @@ entries:
   executor: populateValidationJson
 - name: system.action.upload-firmware
   display_name: Upload Firmware
-  description: OTA upload of a new firmware image (U_FLASH), applied on next boot
+  description: Upload new firmware. It runs after the next boot.
   domain: system
   type: action
   marcduino_cmd: null
@@ -3843,9 +3741,7 @@ entries:
   executor: none
 - name: system.action.upload-filesystem
   display_name: Upload Filesystem
-  description: 'OTA upload of a new LittleFS/SPIFFS image (U_SPIFFS) to the data partition; LittleFS is unmounted by the Update library during write.
-
-    '
+  description: Upload a new web UI image. The pages are gone while it writes.
   domain: system
   type: action
   marcduino_cmd: null
@@ -3867,7 +3763,7 @@ entries:
   executor: none
 - name: system.api.event-stream
   display_name: Event Stream
-  description: Server-sent event stream the dashboard subscribes to for status and rc events
+  description: The live stream the Dashboard reads.
   domain: system
   type: status
   marcduino_cmd: null
@@ -3884,7 +3780,7 @@ entries:
   is_query: false
 - name: rc.status.snapshot
   display_name: RC Snapshot
-  description: Live RC channel values, SBUS raw data, and current binding state
+  description: Live RC channels, and what each one is bound to.
   domain: rc
   type: status
   marcduino_cmd: null
@@ -3904,7 +3800,7 @@ entries:
   - sbus2
 - name: rc.action.toggle-debug
   display_name: Toggle RC Debug
-  description: Enable or disable verbose RC channel logging
+  description: Log every RC channel, or stop.
   domain: rc
   type: action
   marcduino_cmd: null
@@ -3920,7 +3816,7 @@ entries:
   executor: commandedSetRcDebug
 - name: rc.api.get-bindable-actions
   display_name: List Bindable Actions
-  description: JSON array of all RC-bindable robot actions with token + testability metadata
+  description: Every action you can bind to a channel.
   domain: rc
   type: status
   marcduino_cmd: null
@@ -3945,7 +3841,7 @@ entries:
   is_query: true
 - name: rc.api.get-map
   display_name: Get RC Map
-  description: Current RC channel-to-action binding map
+  description: Which channel does what.
   domain: rc
   type: action
   marcduino_cmd: null
@@ -3973,9 +3869,7 @@ entries:
   executor: populateRcMapJson
 - name: rc.action.set-map
   display_name: Set RC Map
-  description: 'Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.
-
-    '
+  description: 'Bind channels to actions. A dome sequence needs its DM: name.'
   domain: rc
   type: action
   marcduino_cmd: null
@@ -3998,7 +3892,7 @@ entries:
   executor: rcMapApply
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
-  description: Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing
+  description: Fire a bindable action once, as if its channel moved.
   domain: rc
   type: action
   marcduino_cmd: null
@@ -4018,7 +3912,7 @@ entries:
   executor: dispatchRcTriggerActionTest
 - name: rc.config.mode
   display_name: RC Mode
-  description: 'Active RC input mode: standard_pwm, single_sbus, or dual_sbus'
+  description: 'The receiver type: standard_pwm, single_sbus or dual_sbus.'
   domain: rc
   type: config
   marcduino_cmd: null
@@ -4038,7 +3932,7 @@ entries:
   executor: configApply
 - name: dome.seq.vader
   display_name: "DM:VADER \u2014 Imperial March"
-  description: '47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.'
+  description: 'Imperial March, 47 s: red holos, march logics and PSI.'
   domain: dome
   type: action
   marcduino_cmd: DM:VADER
@@ -4055,7 +3949,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.hello
   display_name: "DM:HELLO \u2014 Hello There"
-  description: '4-second greeting: logic text, then P1 opens and closes. Body-owned flat sequence.'
+  description: 'Hello There, 4 s: logic text, then P1 opens and closes.'
   domain: dome
   type: action
   marcduino_cmd: DM:HELLO
@@ -4072,7 +3966,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.nod
   display_name: "DM:NOD \u2014 Acknowledgment nod"
-  description: '3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence.'
+  description: 'A nod, 3 s: a happy sound, Yes on the logics and a P1 wave.'
   domain: dome
   type: action
   marcduino_cmd: DM:NOD
@@ -4089,7 +3983,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.flutter
   display_name: "DM:FLUTTER \u2014 Panel flutter"
-  description: 4-second ring and pie sweep to 75 percent, then close. Body-owned flat sequence.
+  description: 'Flutter, 4 s: rings and pies sweep to 75 percent, then close.'
   domain: dome
   type: action
   marcduino_cmd: DM:FLUTTER
@@ -4106,7 +4000,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.bloom
   display_name: "DM:BLOOM \u2014 Pie bloom"
-  description: '6-second pie bloom: slow open together, triple wiggle, close. Body-owned flat sequence (linear easing).'
+  description: 'Bloom, 6 s: the pies open together, wiggle three times and close.'
   domain: dome
   type: action
   marcduino_cmd: DM:BLOOM
@@ -4123,7 +4017,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.leia
   display_name: "DM:LEIA \u2014 Leia message"
-  description: '36-second Leia message: front holo Leia effect, Leia logics/PSI, $L audio. Body-owned flat sequence.'
+  description: 'Leia message, 36 s: front holo Leia, Leia logics and PSI, and the message.'
   domain: dome
   type: action
   marcduino_cmd: DM:LEIA
@@ -4140,7 +4034,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.alarm
   display_name: "DM:ALARM \u2014 Alarm"
-  description: '10-second alarm: red holo flashes, alarm logics/PSI, alert-category audio. Body-owned flat sequence.'
+  description: 'Alarm, 10 s: red holo flashes, alarm logics and an alert sound.'
   domain: dome
   type: action
   marcduino_cmd: DM:ALARM
@@ -4157,7 +4051,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.heart
   display_name: "DM:HEART \u2014 Heart"
-  description: '10-second sweetheart mode: rainbow holos, logic message, sentimental-category audio. Body-owned flat sequence.'
+  description: 'Heart, 10 s: rainbow holos, a logic message and a sentimental sound.'
   domain: dome
   type: action
   marcduino_cmd: DM:HEART
@@ -4174,7 +4068,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.reset
   display_name: "DM:RESET \u2014 Reset all"
-  description: Stop audio, close and release all panels, reset holos/logics/PSI; clears toggle latches. Body-owned flat sequence.
+  description: Stop the sound, close and let go of every panel, and reset holos, logics and PSI.
   domain: dome
   type: action
   marcduino_cmd: DM:RESET
@@ -4191,7 +4085,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.pies
   display_name: "DM:PIES \u2014 Pie panels toggle"
-  description: 'Pie panel toggle with latched state: wave-open twice or serial close. Body-owned toggle sequence (12 s window).'
+  description: 'Pie panels, as a toggle: wave open twice, or close one by one. 12 s.'
   domain: dome
   type: action
   marcduino_cmd: DM:PIES
@@ -4208,7 +4102,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.low
   display_name: "DM:LOW \u2014 Ring panels toggle"
-  description: 'Ring panel toggle with latched state: wave twice then open, or serial close. Body-owned toggle sequence (15 s window).'
+  description: 'Ring panels, as a toggle: wave twice then open, or close one by one. 15 s.'
   domain: dome
   type: action
   marcduino_cmd: DM:LOW
@@ -4225,7 +4119,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.openall
   display_name: "DM:OPENALL \u2014 All panels toggle"
-  description: 'All-panel toggle with latched state: pie sweep + ring burst + twinkle, or serial close-all. Body-owned toggle sequence (10 s window).'
+  description: 'All panels, as a toggle: pie sweep, ring burst and twinkle, or close them all. 10 s.'
   domain: dome
   type: action
   marcduino_cmd: DM:OPENALL
@@ -4242,7 +4136,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.cantina
   display_name: "DM:CANTINA \u2014 Cantina dance"
-  description: 15-second 130 BPM alternating panel dance with white holo flashes, long Cantina track. Body-owned loop sequence.
+  description: 'Cantina dance, 15 s: panels swap each beat at 130 BPM, with white holo flashes.'
   domain: dome
   type: action
   marcduino_cmd: DM:CANTINA
@@ -4259,7 +4153,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.rockmarch
   display_name: "DM:ROCKMARCH \u2014 Rock march"
-  description: 45-second Imperial March with one ring panel stepping per 923 ms beat. Body-owned loop sequence.
+  description: 'Rock March, 45 s: the Imperial March, one ring panel stepping each beat.'
   domain: dome
   type: action
   marcduino_cmd: DM:ROCKMARCH
@@ -4276,7 +4170,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.scream
   display_name: "DM:SCREAM \u2014 Scream"
-  description: '7-second scream: burst-open panels, red alert logics/PSI, random one-panel flutter, scream-category audio. Body-owned random sequence (15 s window).'
+  description: 'Scream, 7 s: panels burst open, red alert, one panel flutters.'
   domain: dome
   type: action
   marcduino_cmd: DM:SCREAM
@@ -4293,7 +4187,7 @@ entries:
   executor: sequenceStart
 - name: dome.seq.overload
   display_name: "DM:OVERLOAD \u2014 Overload"
-  description: '7-second overload: failure logics/PSI, holos short-circuit, six panels drift to random positions, sad-category audio. Body-owned random sequence (12 s window).'
+  description: 'Overload, 7 s: failure logics, holos short out, six panels drift.'
   domain: dome
   type: action
   marcduino_cmd: DM:OVERLOAD
@@ -4310,7 +4204,7 @@ entries:
   executor: sequenceStart
 - name: system.console
   display_name: Controller Console
-  description: 'Browser adapter for the Controller Console (ADR 0036). Processes operations and returns Console Records.'
+  description: The Controller Console, in the browser. Type a command and get records back.
   domain: system
   type: action
   marcduino_cmd: null

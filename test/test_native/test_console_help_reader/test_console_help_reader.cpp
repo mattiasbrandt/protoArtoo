@@ -17,11 +17,12 @@
 //      compiled offsets addressing an older file, so the read SUCCEEDS and
 //      returns another operation's row (#281).
 //   3. The rows the real catalog actually holds fit the read. Three rows in
-//      data/console_help.txt are longer than the 512-byte buffer this module
-//      used to read into, and their description and executor delimiters fell
-//      past the cut, so those fields were absent from an otherwise successful
-//      answer (#282). Those tests read data/console_help.txt itself: the row
-//      lengths are the defect, so a fixture cannot stand in for them.
+//      data/console_help.txt were once longer than the 512-byte buffer this
+//      module used to read into, and their description and executor delimiters
+//      fell past the cut, so those fields were absent from an otherwise
+//      successful answer (#282). Those tests read data/console_help.txt
+//      itself, every row of it: the row lengths are the defect, so a fixture
+//      cannot stand in for them.
 //   4. The request path performs NO dynamic allocation. The Console task runs
 //      on Core 0 and AGENTS.md forbids allocation in task loops after setup();
 //      a comment promising it is not evidence, so this counts real operator new
@@ -96,7 +97,7 @@ static ConsoleHelpReader g_reader;
 // -----------------------------------------------------------------------------
 // File-backed help reader over the REAL data/console_help.txt.
 //
-// The three rows that #282 lost fields on are real rows -- 561, 562 and 585
+// The three rows that #282 lost fields on were real rows -- 561, 562 and 585
 // bytes, with the delimiter closing their executor at 560, 561 and 524 -- and a
 // hand-written fixture is exactly what would not have caught that: the row
 // lengths ARE the defect. This reader is the same shape as the LittleFS one in
@@ -340,79 +341,70 @@ void test_alias_help_matches_on_the_canonical_name() {
 }
 
 // -----------------------------------------------------------------------------
-// 2b. The rows that do not fit a naive read buffer (#282)
+// 2b. The real rows come back whole (#282)
 // -----------------------------------------------------------------------------
-// Driven from the real data/console_help.txt, not a fixture: the defect was the
-// length of three real rows against a 512-byte read buffer, so a fixture with
-// convenient lengths is precisely the test that would have passed while the
-// board lost fields. `help sound.config.mood-category-map` is the row that
-// pins the boundary rather than merely crossing it - its description delimiter
-// sits at 506 and its executor delimiter at 524, so a 512-byte buffer returned
-// the description and dropped the executor, with `status=ok outcome=completed`
-// and nothing to say a field was missing.
-static void assertRealRowIsWholeAndClamped(const char* opName, const char* executor) {
+// Driven from the real data/console_help.txt, not a fixture: #282 was the
+// length of three real rows (561, 562 and 585 bytes) against a 512-byte read
+// buffer, so a fixture with convenient lengths is precisely the test that would
+// have passed while the board lost fields. The short droid English rewrite of
+// the registry (#407) brought every row under 300 bytes and every description
+// under the 256-byte field buffer, so no real row crosses either bound today.
+// The three named rows are the ones #282 lost fields on; the last test walks
+// every row, so a description that grows long again is caught on the row it
+// grows on rather than on whichever three this file happened to name.
+static void assertRealRowIsWhole(const char* opName, const char* executor) {
     useRealHelpFile();
     runHelp(opName);
 
     TEST_ASSERT_TRUE(g_ended);
     TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
-        "an over-long catalog row reported a degradation: its prose did not fit the read buffer");
+        "a real catalog row reported a degradation: its prose did not fit the read buffer");
 
     const char* description = fieldNamed("description");
-    TEST_ASSERT_NOT_NULL_MESSAGE(description,
-        "an over-long catalog row lost its description SILENTLY");
-    // All three rows carry a description longer than the module's 256-byte
-    // field buffer, so the emitted value is the clamped 255 - the same value
-    // the browser adapter returns. Clamping is the documented behaviour;
-    // vanishing is not.
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(255, (uint32_t)strlen(description),
-        "the description was not the clamped 255 bytes the browser adapter returns");
+    TEST_ASSERT_NOT_NULL_MESSAGE(description, "a real catalog row lost its description SILENTLY");
+    TEST_ASSERT_NULL_MESSAGE(fieldNamed("description_truncated"),
+        "a real description was clamped: it no longer fits the 256-byte field buffer");
 
     const char* got = fieldNamed("executor");
-    TEST_ASSERT_NOT_NULL_MESSAGE(got, "an over-long catalog row lost its executor SILENTLY");
+    TEST_ASSERT_NOT_NULL_MESSAGE(got, "a real catalog row lost its executor SILENTLY");
     TEST_ASSERT_EQUAL_STRING(executor, got);
 }
 
-void test_over_long_row_keeps_description_and_executor() {
-    // 561 bytes; both prose delimiters (546, 560) fell past a 512-byte read.
-    assertRealRowIsWholeAndClamped("help dome.action.dome-sequence", "sequenceStart");
+void test_real_dome_sequence_row_comes_back_whole() {
+    // Was 561 bytes, with both prose delimiters past a 512-byte read.
+    assertRealRowIsWhole("help dome.action.dome-sequence", "sequenceStart");
 }
 
-void test_over_long_row_keeps_executor_when_only_it_overflowed() {
-    // 585 bytes; description delimiter at 506 (inside a 512-byte read),
-    // executor delimiter at 524 (outside it). The asymmetric case.
-    assertRealRowIsWholeAndClamped("help sound.config.mood-category-map", "audioMoodMapApply");
+void test_real_mood_category_map_row_comes_back_whole() {
+    // Was 585 bytes, with only the executor delimiter past a 512-byte read:
+    // the asymmetric case.
+    assertRealRowIsWhole("help sound.config.mood-category-map", "audioMoodMapApply");
 }
 
-void test_over_long_row_with_no_params_tail_is_whole() {
-    // 562 bytes; prose delimiters at 534 and 561, so the row is almost all
-    // prose and needs nearly the whole buffer.
-    assertRealRowIsWholeAndClamped("help system.action.reboot-wifi-module",
-                                   "hostedLinkResetCoprocessor");
+void test_real_reboot_wifi_module_row_comes_back_whole() {
+    // Was 562 bytes and almost all prose.
+    assertRealRowIsWhole("help system.action.reboot-wifi-module", "hostedLinkResetCoprocessor");
 }
 
-void test_clamped_description_is_marked_truncated() {
-    // Ten of the 194 catalog descriptions are longer than the module's
-    // 256-byte field buffer, and this is the longest at 506 bytes. The value
-    // is clamped - the board has no static RAM to spend on carrying it whole -
-    // so the operator gets a sentence that stops mid-word, and before this the
-    // record said nothing about that at all.
+void test_every_real_row_comes_back_whole() {
+    size_t count = 0;
+    const ConsoleCatalogEntry* entries = consoleCatalogGetEntries(&count);
+    TEST_ASSERT_NOT_NULL(entries);
+    TEST_ASSERT_TRUE_MESSAGE(count > 100, "the catalog is not the real one");
+
     useRealHelpFile();
-    runHelp("help dome.action.dome-sequence");
-
-    const char* description = fieldNamed("description");
-    TEST_ASSERT_NOT_NULL(description);
-    TEST_ASSERT_EQUAL_UINT32(255, (uint32_t)strlen(description));
-
-    const char* marker = fieldNamed("description_truncated");
-    TEST_ASSERT_NOT_NULL_MESSAGE(marker,
-        "a clamped description was emitted with nothing to say it had been cut");
-    TEST_ASSERT_EQUAL_STRING("true", marker);
-
-    // The marker is not the degradation status: the prose IS here, so
-    // help_file_status must stay absent (docs/console-protocol.md s.3.4).
-    TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"),
-        "a clamped field is not an unreadable help file");
+    char command[128];
+    char message[160];
+    for (size_t i = 0; i < count; ++i) {
+        snprintf(command, sizeof(command), "help %s", entries[i].name);
+        snprintf(message, sizeof(message), "%s", entries[i].name);
+        runHelp(command);
+        TEST_ASSERT_TRUE_MESSAGE(g_ended, message);
+        TEST_ASSERT_NULL_MESSAGE(fieldNamed("help_file_status"), message);
+        TEST_ASSERT_NOT_NULL_MESSAGE(fieldNamed("description"), message);
+        TEST_ASSERT_NULL_MESSAGE(fieldNamed("description_truncated"), message);
+        TEST_ASSERT_NOT_NULL_MESSAGE(fieldNamed("executor"), message);
+    }
 }
 
 void test_whole_description_carries_no_truncation_marker() {
@@ -489,10 +481,10 @@ int main(int, char**) {
     RUN_TEST(test_row_for_another_operation_is_reported_unreadable);
     RUN_TEST(test_matching_row_emits_no_help_file_status);
     RUN_TEST(test_alias_help_matches_on_the_canonical_name);
-    RUN_TEST(test_over_long_row_keeps_description_and_executor);
-    RUN_TEST(test_over_long_row_keeps_executor_when_only_it_overflowed);
-    RUN_TEST(test_over_long_row_with_no_params_tail_is_whole);
-    RUN_TEST(test_clamped_description_is_marked_truncated);
+    RUN_TEST(test_real_dome_sequence_row_comes_back_whole);
+    RUN_TEST(test_real_mood_category_map_row_comes_back_whole);
+    RUN_TEST(test_real_reboot_wifi_module_row_comes_back_whole);
+    RUN_TEST(test_every_real_row_comes_back_whole);
     RUN_TEST(test_whole_description_carries_no_truncation_marker);
     RUN_TEST(test_row_cut_before_its_executor_degrades_explicitly);
     RUN_TEST(test_help_request_allocates_nothing);
