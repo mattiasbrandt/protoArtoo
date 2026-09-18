@@ -16,20 +16,28 @@
 // ONE GENERATOR, TWO CALLERS. wiringDocument() returns the whole sheet as
 // markup and nothing else -- no DOM, no fetches, no stylesheet. The screen
 // caller at the foot of this file mounts those strings into the surface's
-// plates; the printable bench copy (#353) wraps the same strings in a file of
-// its own. That is why the sheet is built as strings rather than nodes: the two
-// copies cannot disagree if there is only one thing that makes them, and
-// CONTEXT.md "Wiring" is explicit that they are "the same document from one
-// generator". A second generator is the one thing this group can get wrong
-// that cannot be fixed cheaply later.
+// plates; the printable bench copy (#366) wraps the same strings in a file of
+// its own, wiringSheetFile(). That is why the sheet is built as strings rather
+// than nodes: the two copies cannot disagree if there is only one thing that
+// makes them, and CONTEXT.md "Wiring" is explicit that they are "the same
+// document from one generator". A second generator is the one thing this group
+// can get wrong that cannot be fixed cheaply later.
 //
-// COLOUR AND SIZE ARE THE STYLESHEET'S. Every element this file emits carries a
-// class and no inline paint, the SVG included, so the tokens in data/style.css
-// decide what it looks like -- and @media print re-points those tokens at paper
-// (data/style.css ":root" and its print block), which is what lets one markup
-// answer for both copies. The project this view learns from had to hard-code
-// its amber with a fallback because its exported sheet carried none of its
-// app's tokens (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:49).
+// COLOUR AND SIZE ARE THE STYLESHEET'S, AND THE PICTURES CARRY PAPER BENEATH IT.
+// Every element this file emits carries a class, so on screen the tokens in
+// data/style.css decide what it looks like -- and @media print re-points those
+// tokens at paper (data/style.css ":root" and its print block). The saved bench
+// copy ships with no stylesheet at all, though, and a picture is the part of it
+// that gets cropped out and pasted somewhere else, so each picture also carries
+// its own paint as SVG presentation attributes. Those are the lowest-priority
+// paint there is -- any stylesheet rule beats them -- so on screen they change
+// nothing, and in the saved file they are all there is. Every colour among them
+// is a `var(--token,#fallback)` pair naming the token the stylesheet paints the
+// same element with, and the fallback is the paper value @media print gives
+// that token: the saved file and a printed screen are the same ink on the same
+// paper. This is the form the project this view learns from shipped for the
+// same reason (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:50), and
+// the one colour literal a standalone export is allowed (#366).
 // =============================================================================
 (() => {
   "use strict";
@@ -52,6 +60,17 @@
   // to say it has to carry it. Whoever takes the body's own measurement (#355)
   // changes it in both places.
   const CADENCE = "~450 ms (one servo at a time)";
+
+  // The three plate headings. They are the generator's for the same reason
+  // the promise is: the screen writes them into its plates and the saved file
+  // prints them, so a heading reworded here is reworded in both, and a heading
+  // typed into data/wiring.html as well would be the second copy this whole
+  // view exists to abolish.
+  const PLATES = Object.freeze({
+    loom: "The loom",
+    tiers: "What this image will drive",
+    rail: "The shared rail",
+  });
 
   // ---------------------------------------------------------------------------
   // The four honesty tiers
@@ -316,13 +335,111 @@
   const BOX_X = 520;
   const BOX_W = 416;
   const TOP = 46;
+  // The foot carries two lines, the promise and the scope statement.
+  const FOOT_H = 48;
+  const BADGE_W = 46;
+  const BADGE_H = 16;
+  const RIGHT_X = DIAGRAM_W - BOARD_X;
 
-  const svgScopeLine = (y) =>
-    `<text class="wd-scope" x="${BOARD_X}" y="${y}">${esc(SCOPE)}</text>`;
+  // ---------------------------------------------------------------------------
+  // The paper beneath the stylesheet
+  //
+  // Each pair names the token data/style.css paints that element with, and
+  // falls back to what that token becomes under @media print: --text,
+  // --text-dim and --text-faint all print as --paper-ink, the seams as
+  // --paper-line, and every ground as --paper. Written out rather than read
+  // from the stylesheet because the saved file is precisely the copy that has
+  // no stylesheet to read. If --paper-ink or --paper-line ever moves, these
+  // move with it.
+  //
+  // These are the only colour literals this surface ships, and they appear
+  // nowhere but inside a var() pair (#366; D2's checker, #353, accepts exactly
+  // this form and nothing looser).
+  // ---------------------------------------------------------------------------
+  const INK = "var(--text,#111111)";
+  const INK_DIM = "var(--text-dim,#111111)";
+  const INK_FAINT = "var(--text-faint,#111111)";
+  const SEAM = "var(--border,#999999)";
+  const SEAM_STRONG = "var(--border-strong,#999999)";
+  const PLATE = "var(--surface,#ffffff)";
+  const PLATE_RAISED = "var(--surface-alt,#ffffff)";
+
+  // Sizes in the picture's own units, matching the type tokens the stylesheet
+  // gives the same classes (--fs-hint 10, --fs-sect 11, --fs-cell 13).
+  const SMALL = `fill="${INK_FAINT}" font-size="10"`;
+
+  // ---------------------------------------------------------------------------
+  // When the sheet was made
+  //
+  // ONE function, and both the saved file's name and the stamp drawn inside
+  // every picture are cut from the string it returns, so the file on the
+  // printer and the page in your hand cannot name two different minutes -- and
+  // cannot have read the clock twice, one in UTC and one in local time.
+  // Local time, to the minute, because it records the moment a person pressed
+  // the button (r2d2-astromech-simulator v1.79.0, src/js/core/util.js:36).
+  // ---------------------------------------------------------------------------
+  const sheetStamp = (when) => {
+    const time = when instanceof Date ? when : new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return (
+      `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}` +
+      `-${pad(time.getHours())}${pad(time.getMinutes())}`
+    );
+  };
+
+  // "2026-09-18-1405" as a person writes it: "2026-09-18 14:05".
+  const stampText = (stamp) => `${stamp.slice(0, 10)} ${stamp.slice(11, 13)}:${stamp.slice(13, 15)}`;
+
+  // The droid name the firmware allows is lower-case letters, digits and
+  // hyphens (docs/api.md, POST /api/identity), which is already safe in a file
+  // name; anything else is not trusted into one.
+  const sheetFileName = (droidName, stamp) =>
+    `wiring-${/^[a-z0-9-]{1,32}$/.test(droidName || "") ? droidName : "droid"}-${stamp}.html`;
+
+  // ---------------------------------------------------------------------------
+  // What travels with every picture
+  //
+  // The badge, the droid and the minute in the head; the bounded promise and
+  // the scope statement along the foot. A picture that leaves the page -- a
+  // crop, a photo of the printout, a paste into a build thread -- has lost
+  // the header that said all four, and a printed page loses its header first
+  // (#293). The promise carries where it came from in the same line: this
+  // image reported it, and it was not read out of docs/pin_map.md, which is not
+  // on the droid.
+  //
+  // The badge is drawn in ink rather than the reference's amber. Amber here is
+  // a Status Colour -- "degraded, and you can do something about it" -- and a
+  // sheet being new is not a state of the droid (CONTEXT.md "Status Colour").
+  // What BETA means rides in the badge's <title>, which is what a hover and a
+  // screen reader get.
+  // ---------------------------------------------------------------------------
+  const svgBadge = () =>
+    `<g class="wd-beta"><title>New sheet. Check it against the droid before you cut a ` +
+    `wire.</title>` +
+    `<rect class="wd-beta-edge" x="${RIGHT_X - BADGE_W}" y="11" width="${BADGE_W}" ` +
+    `height="${BADGE_H}" rx="3" fill="none" stroke="${INK}" stroke-width="1.4"/>` +
+    `<text class="wd-beta-mark" x="${RIGHT_X - BADGE_W / 2}" y="22.5" fill="${INK}" ` +
+    `font-size="9.5" font-weight="700" letter-spacing=".12em" text-anchor="middle">BETA</text></g>`;
+
+  const svgStamp = (droidName, stamp) =>
+    `<text class="wd-stamp" x="${RIGHT_X - BADGE_W - 10}" y="23" ${SMALL} text-anchor="end">` +
+    `${droidName ? `${esc(droidName)} · ` : ""}made ${esc(stampText(stamp))}</text>`;
+
+  const svgFoot = (height) =>
+    `<text class="wd-scope wd-promise" x="${BOARD_X}" y="${height - 26}" ${SMALL}>` +
+    `${esc(PROMISE)} - as the firmware reports it, not a pin map</text>` +
+    `<text class="wd-scope" x="${BOARD_X}" y="${height - 12}" ${SMALL}>${esc(SCOPE)}</text>`;
 
   const svgOpen = (title, height) =>
     `<svg class="wd" viewBox="0 0 ${DIAGRAM_W} ${height}" role="img" ` +
-    `aria-label="${escAttr(title)}" xmlns="http://www.w3.org/2000/svg">`;
+    `aria-label="${escAttr(title)}" xmlns="http://www.w3.org/2000/svg" ` +
+    `font-family="monospace">`;
+
+  const svgHead = (text, { droidName, stamp }) =>
+    `<text class="wd-title" x="${BOARD_X}" y="24" fill="${INK}" font-size="13" ` +
+    `font-weight="600">${esc(text)}</text>` +
+    svgStamp(droidName, stamp) +
+    svgBadge();
 
   // SVG text does not wrap: an over-long label runs out past its box and over
   // whatever is beside it. So a label that will not fit is cut and the whole of
@@ -334,27 +451,36 @@
     return whole.length > max ? `${whole.slice(0, max - 1)}...` : whole;
   };
 
-  const svgText = (className, x, y, text, max) => {
+  // `paint` is the element's presentation attributes: its paper, for the copy
+  // that has no stylesheet (see "The paper beneath the stylesheet").
+  const svgText = (className, x, y, text, max, paint) => {
     const whole = String(text ?? "");
     const shown = clip(whole, max);
     const title = shown === whole ? "" : `<title>${esc(whole)}</title>`;
-    return `<text class="${className}" x="${x}" y="${y}">${esc(shown)}${title}</text>`;
+    return `<text class="${className}" x="${x}" y="${y}" ${paint}>${esc(shown)}${title}</text>`;
   };
 
   // One row: the Body Controller's edge, out to the thing on the end of it. A
   // line that is not live is dashed AND says why on the row, because a dashed
-  // line on its own is a convention a builder has to be taught.
+  // line on its own is a convention a builder has to be taught. The paper
+  // carries the same difference the .is-idle rules draw on screen.
   const svgLink = (index, { live, busText, name, note }) => {
     const y = TOP + index * ROW_H + ROW_H / 2;
     const state = live ? "is-live" : "is-idle";
+    const line = live
+      ? `stroke="${INK_DIM}" stroke-width="1.8"`
+      : `stroke="${INK_FAINT}" stroke-width="1.3" stroke-dasharray="5 4"`;
     return (
       `<g class="wd-link ${state}">` +
-      `<path class="wd-line" d="M${BOARD_X + BOARD_W} ${y} H ${BOX_X}"/>` +
-      `<path class="wd-arrow" d="M${BOX_X - 12} ${y - 4} L${BOX_X - 3} ${y} L${BOX_X - 12} ${y + 4} Z"/>` +
-      svgText("wd-bus", BOARD_X + BOARD_W + 12, y - 7, busText, 48) +
-      `<rect class="wd-box" x="${BOX_X}" y="${y - 17}" width="${BOX_W}" height="34" rx="2"/>` +
-      svgText("wd-name", BOX_X + 10, y - 3, name, 58) +
-      svgText("wd-note", BOX_X + 10, y + 11, note, 64) +
+      `<path class="wd-line" d="M${BOARD_X + BOARD_W} ${y} H ${BOX_X}" fill="none" ${line}/>` +
+      `<path class="wd-arrow" d="M${BOX_X - 12} ${y - 4} L${BOX_X - 3} ${y} L${BOX_X - 12} ${y + 4} Z" ` +
+      `fill="${live ? INK_DIM : INK_FAINT}"/>` +
+      svgText("wd-bus", BOARD_X + BOARD_W + 12, y - 7, busText, 48, SMALL) +
+      `<rect class="wd-box" x="${BOX_X}" y="${y - 17}" width="${BOX_W}" height="34" rx="2" ` +
+      `fill="${PLATE}" stroke="${live ? SEAM_STRONG : SEAM}"/>` +
+      svgText("wd-name", BOX_X + 10, y - 3, name, 58,
+        `fill="${live ? INK : INK_DIM}" font-size="11" font-weight="600"`) +
+      svgText("wd-note", BOX_X + 10, y + 11, note, 64, SMALL) +
       `</g>`
     );
   };
@@ -366,20 +492,23 @@
     const y = TOP + 6;
     return (
       `<g class="wd-board">` +
-      `<rect class="wd-board-face" x="${BOARD_X}" y="${y}" width="${BOARD_W}" height="${height}" rx="2"/>` +
-      `<text class="wd-board-name" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 - 4}">Body Controller</text>` +
-      `<text class="wd-board-sub" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 + 12}">${esc(caption)}</text>` +
+      `<rect class="wd-board-face" x="${BOARD_X}" y="${y}" width="${BOARD_W}" height="${height}" rx="2" ` +
+      `fill="${PLATE_RAISED}" stroke="${SEAM_STRONG}" stroke-width="1.5"/>` +
+      `<text class="wd-board-name" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 - 4}" ` +
+      `fill="${INK}" font-size="11" text-anchor="middle">Body Controller</text>` +
+      `<text class="wd-board-sub" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 + 12}" ` +
+      `${SMALL} text-anchor="middle">${esc(caption)}</text>` +
       `</g>`
     );
   };
 
-  const loomDiagramHtml = (lanes, boardName) => {
+  const loomDiagramHtml = (lanes, boardName, made) => {
     if (lanes.length === 0) return "";
-    const height = TOP + lanes.length * ROW_H + 34;
+    const height = TOP + lanes.length * ROW_H + FOOT_H;
     const title = `The loom: ${lanes.length} Board Lane${lanes.length === 1 ? "" : "s"} this image routes`;
     return (
       svgOpen(title, height) +
-      `<text class="wd-title" x="${BOARD_X}" y="24">Control signals - ${esc(boardName)}</text>` +
+      svgHead(`Control signals - ${boardName}`, made) +
       svgBoard(lanes.length, plural(lanes.length, ["lane", "lanes"])) +
       lanes
         .map((lane, index) =>
@@ -391,7 +520,7 @@
           })
         )
         .join("") +
-      svgScopeLine(height - 12) +
+      svgFoot(height) +
       `</svg>`
     );
   };
@@ -407,13 +536,13 @@
   // on, out to the part it moves. Ground is drawn because a servo lead has
   // three wires and only two of them are this sheet's; the rail itself is
   // described in its own plate and never drawn (CONTEXT.md "Wiring").
-  const signalDiagramHtml = (driven, boardName) => {
+  const signalDiagramHtml = (driven, boardName, made) => {
     if (driven.length === 0) return "";
-    const height = TOP + driven.length * ROW_H + 34;
+    const height = TOP + driven.length * ROW_H + FOOT_H;
     const title = `Signal and ground for ${driven.length} driven output${driven.length === 1 ? "" : "s"}`;
     return (
       svgOpen(title, height) +
-      `<text class="wd-title" x="${BOARD_X}" y="24">Signal and ground - ${esc(boardName)}</text>` +
+      svgHead(`Signal and ground - ${boardName}`, made) +
       svgBoard(driven.length, plural(driven.length, ["driven output", "driven outputs"])) +
       driven
         .map((group, index) =>
@@ -425,7 +554,7 @@
           })
         )
         .join("") +
-      svgScopeLine(height - 12) +
+      svgFoot(height) +
       `</svg>`
     );
   };
@@ -667,12 +796,18 @@
 
   // ---------------------------------------------------------------------------
   // wiringDocument()
-  // The whole sheet, as markup, from one read of the droid. Pure.
+  // The whole sheet, as markup, from one read of the droid. Pure: the minute it
+  // is stamped with arrives in the model as a sheetStamp() string, so the
+  // caller that names a file after that minute holds the very string the
+  // pictures print.
   // ---------------------------------------------------------------------------
   const wiringDocument = (model = {}) => {
     const parts = model.parts || [];
     const outputs = model.outputs || [];
     const boardName = model.boardName || "Body Controller";
+    const droidName = typeof model.droidName === "string" ? model.droidName : "";
+    const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
+    const made = { droidName, stamp };
     const rows = wiringRows(model);
     const lanes = loomRows(model);
 
@@ -710,14 +845,18 @@
       cadence: CADENCE,
       promiseHtml: promiseHtml(),
       railHtml: railHtml(),
+      plates: PLATES,
       boardName,
+      droidName,
+      stamp,
+      fileName: sheetFileName(droidName, stamp),
       rows,
       lanes,
       tiers: present,
       summary,
       loomSummary,
       loomHtml: lanes.length
-        ? loomTableHtml(lanes) + loomDiagramHtml(lanes, boardName)
+        ? loomTableHtml(lanes) + loomDiagramHtml(lanes, boardName, made)
         : '<p class="hint">This image reports no Board Lane at all, so there is no loom to draw.</p>',
       // Every tier that is present becomes a section; a tier that is not simply
       // is not here. The driven picture rides inside the Driven section, where
@@ -730,7 +869,7 @@
               `<div class="sect"><h3>${esc(section.heading)}</h3>` +
               `<span class="sub">${section.countText}</span></div>` +
               section.tableHtml +
-              (section.id === "driven" ? signalDiagramHtml(driven, boardName) : "") +
+              (section.id === "driven" ? signalDiagramHtml(driven, boardName, made) : "") +
               `</section>`
           )
           .join("") + outOfScopeHtml(parts),
@@ -738,16 +877,59 @@
     };
   };
 
+  // ---------------------------------------------------------------------------
+  // wiringSheetFile()
+  // The bench copy: what wiringDocument() made, in a file that stands alone.
+  //
+  // It is a WRAPPER and nothing more. Every heading, tier, row, count,
+  // picture and sentence in it is a string the generator returned; this adds
+  // only the frame a file needs to be a page.
+  //
+  // STANDALONE, WHICH IS FOUR DECISIONS. No stylesheet, no <script> and no
+  // <img>: it fetches nothing when it is opened, so it opens on a laptop at the
+  // bench with no droid in reach. No <style> either: the pictures carry their
+  // own paper (see "The paper beneath the stylesheet"), and the tables and
+  // prose are plain HTML a browser prints legibly on its own. The one <link> is
+  // an icon that is an empty data: URL, because without one a browser goes
+  // looking for a favicon beside the file. And <base> points back at the droid
+  // that made it, so the "Put it on an output in Parts" links still reach Parts
+  // when this is opened from a download folder rather than resolving against
+  // the disk.
+  // ---------------------------------------------------------------------------
+  const wiringSheetFile = (sheet, origin = "") => {
+    const madeAt = stampText(sheet.stamp);
+    const about = sheet.droidName ? `${sheet.droidName} - ${madeAt}` : madeAt;
+    return (
+      "<!doctype html>\n" +
+      '<html lang="en"><head><meta charset="utf-8">' +
+      `<title>Wiring - ${esc(about)}</title>` +
+      '<link rel="icon" href="data:,">' +
+      (origin ? `<base href="${escAttr(origin)}/">` : "") +
+      "</head><body>" +
+      `<h1>Wiring</h1>` +
+      `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
+      `<p>${sheet.promiseHtml}</p>` +
+      `<h2>${esc(sheet.plates.loom)}</h2><p>${sheet.loomSummary}</p>${sheet.loomHtml}` +
+      `<h2>${esc(sheet.plates.tiers)}</h2><p>${sheet.summary}</p>` +
+      `${sheet.tiersHtml}${sheet.footnoteHtml}` +
+      `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
+      "</body></html>\n"
+    );
+  };
+
   window.PAWiring = Object.freeze({
     PROMISE,
     SCOPE,
     CADENCE,
     TIERS,
+    PLATES,
     wiringRows,
     loomRows,
     promiseHtml,
     railHtml,
+    sheetStamp,
     wiringDocument,
+    wiringSheetFile,
   });
 
   // ===========================================================================
@@ -755,7 +937,7 @@
   //
   // Mounts what wiringDocument() made. It knows which plate each piece goes on
   // and nothing else about the sheet -- every string above is the generator's,
-  // so the bench copy (#353) can put the same strings in a file without
+  // so the bench copy (#366) puts the same strings in a file without
   // re-deciding one of them.
   // ===========================================================================
   const write = (id, html) => {
@@ -775,23 +957,78 @@
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
     boardName: "Body Controller",
+    droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
 
-  // The two sentences that do not wait for the droid. They go up at mount
-  // rather than on the first answer, because the promise is what tells a
-  // builder whether to read the rest at all, and a header that is blank until
-  // a fetch lands has nothing to say in exactly the moment it matters.
+  // The pieces that do not wait for the droid: the two sentences and the
+  // plate headings. They go up at mount rather than on the first answer,
+  // because the promise is what tells a builder whether to read the rest at
+  // all, and a header that is blank until a fetch lands has nothing to say in
+  // exactly the moment it matters.
   write("wiring-promise", promiseHtml());
   write("wiring-rail", railHtml());
+  write("wiring-loom-heading", esc(PLATES.loom));
+  write("wiring-tiers-heading", esc(PLATES.tiers));
+  write("wiring-rail-heading", esc(PLATES.rail));
 
-  const paint = () => {
-    const sheet = wiringDocument(model());
+  // The pictures on screen carry the minute they were drawn - when this
+  // surface last read the droid, or when its sheet was last saved - so a
+  // screenshot of them says when it was true, the same as the saved copy does.
+  const paint = (stamp = sheetStamp()) => {
+    const sheet = wiringDocument({ ...model(), stamp });
     write("wiring-loom-summary", sheet.loomSummary);
     write("wiring-summary", sheet.summary);
     write("wiring-loom", sheet.loomHtml);
     write("wiring-tiers", sheet.tiersHtml);
     write("wiring-footnote", sheet.footnoteHtml);
+    return sheet;
   };
+
+  // ---------------------------------------------------------------------------
+  // The bench copy's caller
+  //
+  // The one act on this surface, and it writes nothing to the droid: it saves
+  // a file on the computer in front of you. The sheet it saves is made from the
+  // same read the screen is showing, and the screen is repainted with that
+  // very sheet in the same moment, so the page you are looking at and the file
+  // you just saved carry the same minute, the same tiers and the same counts.
+  //
+  // It is a real link rather than a button that fakes one: the file is put on
+  // the link as the press is handled, and the browser's own download does the
+  // rest, which is also what a keyboard's Enter reaches.
+  // ---------------------------------------------------------------------------
+  const saveLink = document.getElementById("wiring-save");
+  let savedUrl = "";
+
+  const saveFeedback = (text, level = "") =>
+    window.PAUtils?.showFeedback?.(document.getElementById("wiring-save-feedback"), text, level);
+
+  const saveSheet = (event) => {
+    if (!answered) {
+      event.preventDefault?.();
+      saveFeedback("No answer from the droid yet. Nothing to save.");
+      return;
+    }
+    try {
+      const sheet = paint(sheetStamp(new Date()));
+      const file = wiringSheetFile(sheet, window.location?.origin || "");
+      if (savedUrl) URL.revokeObjectURL(savedUrl);
+      savedUrl = URL.createObjectURL(new Blob([file], { type: "text/html" }));
+      saveLink.setAttribute("href", savedUrl);
+      saveLink.setAttribute("download", sheet.fileName);
+      // The browser does the saving and does not say when it has, so this
+      // says what was handed over rather than claiming it landed.
+      saveFeedback(`Saving ${sheet.fileName}. Print it anywhere, no droid needed.`);
+    } catch (error) {
+      // The link still holds the last file it was given, or none, so the
+      // press must not follow it: a stale sheet saved under a fresh name is
+      // the one outcome worse than no sheet.
+      event.preventDefault?.();
+      saveFeedback(`Not saved: ${error.message}`, "error");
+    }
+  };
+
+  saveLink?.addEventListener("click", saveSheet);
 
   // One section for one answer. The sheet is a join of three reads and a half
   // answer is not a sheet -- a table painted from outputs the droid reported
@@ -817,6 +1054,7 @@
         : {};
     answered = true;
     paint();
+    saveLink?.setAttribute("aria-disabled", "false");
   };
 
   // Identity is fetched once at boot by the shell, so a surface mounted later

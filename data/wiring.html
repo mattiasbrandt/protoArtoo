@@ -21,16 +21,29 @@
 
          The promise line is EMPTY here and written by data/wiring.js. Both
          sentences have exactly one home, so this screen's header and the
-         printable bench copy's header (#353) cannot come to say different
+         printable bench copy's header (#366) cannot come to say different
          things - which is the same defect, one level up, as a page keeping its
          own copy of a pin number.
 
-         There is no .acts here on purpose: Wiring writes nothing. -->
+         The one act saves that bench copy to this computer, and it writes
+         nothing to the droid: Wiring is still a reference. It is a link, not
+         a button, because the file is a download the browser hands over, and
+         it stays unavailable until the droid has answered, since there is no
+         sheet to save before then.
+
+         The three plate headings below are EMPTY here too, for the same
+         reason as the promise: data/wiring.js (PLATES) is their one home, and
+         it writes them here and into the saved file, so the two copies cannot
+         come to name a plate differently. -->
     <div class="title">
       <div>
         <h1>Wiring</h1>
         <p class="question">I am holding a servo lead: which output does it go to, and which part will it move?</p>
         <p class="wiring-promise" id="wiring-promise"></p>
+      </div>
+      <div class="acts wiring-acts">
+        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Save sheet to print</a>
+        <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
 
@@ -41,7 +54,7 @@
          Lane exists (include/board_lanes.inc). -->
     <div class="card">
       <div class="sect">
-        <h2>The loom</h2>
+        <h2 id="wiring-loom-heading"></h2>
         <span class="sub" id="wiring-loom-summary" role="status" aria-live="polite">Finding out what this image routes...</span>
       </div>
       <p class="prose">One wire per thing the Body Controller talks to, with the port it leaves from. A lane that is switched off is drawn broken and says so on its own row: the wire is still one you have to run, and nothing is riding it yet.</p>
@@ -55,7 +68,7 @@
          from the tiers that are actually on the sheet. -->
     <div class="card">
       <div class="sect">
-        <h2>What this image will drive</h2>
+        <h2 id="wiring-tiers-heading"></h2>
         <span class="sub" id="wiring-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
       </div>
       <p class="prose">Every part this image could drive, and every output with nothing on it, each in exactly one group below. A part is on at most one output, so a part appears once; an output ganged to two parts that always move together appears on both their rows, because one wire moves both.</p>
@@ -69,7 +82,7 @@
          one. -->
     <div class="card">
       <div class="sect">
-        <h2>The shared rail</h2>
+        <h2 id="wiring-rail-heading"></h2>
         <span class="sub">described, never drawn</span>
       </div>
       <div id="wiring-rail"></div>
