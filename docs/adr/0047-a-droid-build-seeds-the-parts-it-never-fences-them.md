@@ -26,7 +26,7 @@ It assumes one, everywhere, silently:
 | `CONTEXT.md` **Layout Fallback Hierarchy** tier 3 | *"render the offline MK4 model"* |
 
 A real droid is a mixture. The operator's own is an **MK4 complex dome on an MK4
-simple body**, assembled months apart, and that is the ordinary case rather than
+basic body** (written *simple* until 2026-09-18; *Basic* is MrBaddeley's name, #409), assembled months apart, and that is the ordinary case rather than
 an edge one. A builder with an MK3 body meets a parts list for a droid they did
 not build.
 
