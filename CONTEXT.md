@@ -250,7 +250,7 @@ The shape every operator surface follows inside the **Operator Shell**, so a bui
 _Avoid_: a question or tagline under the title, a purpose clause as a subtitle, design system (a component library this project does not ship), theme or skin (the identity is part of the anatomy, not a switchable layer), template, workspace, a generic web app look
 
 **Maker Voice**:
-The register of every sentence a builder reads: short droid English, one or two dry sentences, a physical consequence, never a narrative or a wellness question. The title is the name; a note sits beside the choice; `.prose` is only for an irreversible or stranding act. Rules in `docs/ui-copy-voice.md` (#175, 2026-09-18).
+The register of every sentence a builder reads: short droid English, one or two dry sentences, a physical consequence, never a narrative or a wellness question. The title is the name; a note sits beside the choice; `.prose` is only for an irreversible or stranding act. Rules in `docs/ui-copy-voice.md` (#175, #407, 2026-09-18).
 _Avoid_: a page question, a why-paragraph on an ordinary card, contrast-and-feel essays, wellness questions, philosophy of measurement, firmware vocabulary in operator copy
 
 **Status Plate**:

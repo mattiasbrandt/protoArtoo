@@ -152,7 +152,7 @@ or the ban on firmware vocabulary. The field stays; the sentence gets
 shorter. The prototype under `prototypes/395-surface-anatomy/` still shows
 the question line; that line is historical.
 
-The copy sweep that lands this is its own ticket under #175. D1 (#348) still
+The copy sweep that lands this is [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407). D1 (#348) still
 owns "every no names your next move"; this amendment owns the register of
 the words, not the routing of a no.
 
@@ -186,8 +186,7 @@ the words, not the routing of a no.
   blue is repaired at its next refresh.
 - Per the 2026-09-18 amendment, `CONTEXT.md` **Surface Anatomy** drops the
   page question; **Maker Voice** is the register; `docs/ui-copy-voice.md`
-  replaces the literary examples. The live strings wait on the copy-sweep
-  ticket.
+  replaces the literary examples. The live strings wait on [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407).
 - A prototype ticket under #175 owns the mockup pass and carries the anatomy's
   pattern library with its citations, so an implementer does not re-derive it;
   the sweep ticket is minted from the approved mockup and inherits it.
