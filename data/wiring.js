@@ -61,6 +61,17 @@
   // changes it in both places.
   const CADENCE = "~450 ms (one servo at a time)";
 
+  // The three plate headings. They are the generator's for the same reason
+  // the promise is: the screen writes them into its plates and the saved file
+  // prints them, so a heading reworded here is reworded in both, and a heading
+  // typed into data/wiring.html as well would be the second copy this whole
+  // view exists to abolish.
+  const PLATES = Object.freeze({
+    loom: "The loom",
+    tiers: "What this image will drive",
+    rail: "The shared rail",
+  });
+
   // ---------------------------------------------------------------------------
   // The four honesty tiers
   //
@@ -403,8 +414,8 @@
   // screen reader get.
   // ---------------------------------------------------------------------------
   const svgBadge = () =>
-    `<g class="wd-beta"><title>This sheet is new: check it against the droid in front of ` +
-    `you before you cut a wire.</title>` +
+    `<g class="wd-beta"><title>New sheet. Check it against the droid before you cut a ` +
+    `wire.</title>` +
     `<rect class="wd-beta-edge" x="${RIGHT_X - BADGE_W}" y="11" width="${BADGE_W}" ` +
     `height="${BADGE_H}" rx="3" fill="none" stroke="${INK}" stroke-width="1.4"/>` +
     `<text class="wd-beta-mark" x="${RIGHT_X - BADGE_W / 2}" y="22.5" fill="${INK}" ` +
@@ -416,7 +427,7 @@
 
   const svgFoot = (height) =>
     `<text class="wd-scope wd-promise" x="${BOARD_X}" y="${height - 26}" ${SMALL}>` +
-    `${esc(PROMISE)} - reported by the firmware itself, not read from a pin map</text>` +
+    `${esc(PROMISE)} - as the firmware reports it, not a pin map</text>` +
     `<text class="wd-scope" x="${BOARD_X}" y="${height - 12}" ${SMALL}>${esc(SCOPE)}</text>`;
 
   const svgOpen = (title, height) =>
@@ -834,6 +845,7 @@
       cadence: CADENCE,
       promiseHtml: promiseHtml(),
       railHtml: railHtml(),
+      plates: PLATES,
       boardName,
       droidName,
       stamp,
@@ -869,11 +881,9 @@
   // wiringSheetFile()
   // The bench copy: what wiringDocument() made, in a file that stands alone.
   //
-  // It is a WRAPPER and nothing more. Every tier, row, count, picture and
-  // sentence in it is a string the generator returned; this adds only the
-  // frame a file needs to be a page, and the plate headings, which on screen
-  // are the surface's own markup (data/wiring.html) and must read the same
-  // here.
+  // It is a WRAPPER and nothing more. Every heading, tier, row, count,
+  // picture and sentence in it is a string the generator returned; this adds
+  // only the frame a file needs to be a page.
   //
   // STANDALONE, WHICH IS FOUR DECISIONS. No stylesheet, no <script> and no
   // <img>: it fetches nothing when it is opened, so it opens on a laptop at the
@@ -899,10 +909,10 @@
       `<h1>Wiring</h1>` +
       `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
       `<p>${sheet.promiseHtml}</p>` +
-      `<h2>The loom</h2><p>${sheet.loomSummary}</p>${sheet.loomHtml}` +
-      `<h2>What this image will drive</h2><p>${sheet.summary}</p>` +
+      `<h2>${esc(sheet.plates.loom)}</h2><p>${sheet.loomSummary}</p>${sheet.loomHtml}` +
+      `<h2>${esc(sheet.plates.tiers)}</h2><p>${sheet.summary}</p>` +
       `${sheet.tiersHtml}${sheet.footnoteHtml}` +
-      `<h2>The shared rail</h2>${sheet.railHtml}` +
+      `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
       "</body></html>\n"
     );
   };
@@ -912,6 +922,7 @@
     SCOPE,
     CADENCE,
     TIERS,
+    PLATES,
     wiringRows,
     loomRows,
     promiseHtml,
@@ -949,12 +960,16 @@
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
 
-  // The two sentences that do not wait for the droid. They go up at mount
-  // rather than on the first answer, because the promise is what tells a
-  // builder whether to read the rest at all, and a header that is blank until
-  // a fetch lands has nothing to say in exactly the moment it matters.
+  // The pieces that do not wait for the droid: the two sentences and the
+  // plate headings. They go up at mount rather than on the first answer,
+  // because the promise is what tells a builder whether to read the rest at
+  // all, and a header that is blank until a fetch lands has nothing to say in
+  // exactly the moment it matters.
   write("wiring-promise", promiseHtml());
   write("wiring-rail", railHtml());
+  write("wiring-loom-heading", esc(PLATES.loom));
+  write("wiring-tiers-heading", esc(PLATES.tiers));
+  write("wiring-rail-heading", esc(PLATES.rail));
 
   // The pictures on screen carry the minute they were drawn - when this
   // surface last read the droid, or when its sheet was last saved - so a
@@ -991,7 +1006,7 @@
   const saveSheet = (event) => {
     if (!answered) {
       event.preventDefault?.();
-      saveFeedback("The droid has not answered yet, so there is no sheet to save.");
+      saveFeedback("No answer from the droid yet. Nothing to save.");
       return;
     }
     try {
@@ -1003,16 +1018,13 @@
       saveLink.setAttribute("download", sheet.fileName);
       // The browser does the saving and does not say when it has, so this
       // says what was handed over rather than claiming it landed.
-      saveFeedback(
-        `Your browser is saving ${sheet.fileName}. Open it and print it - ` +
-          "it needs no connection to the droid."
-      );
+      saveFeedback(`Saving ${sheet.fileName}. Print it anywhere, no droid needed.`);
     } catch (error) {
       // The link still holds the last file it was given, or none, so the
       // press must not follow it: a stale sheet saved under a fresh name is
       // the one outcome worse than no sheet.
       event.preventDefault?.();
-      saveFeedback(`The sheet was not saved: ${error.message}`, "error");
+      saveFeedback(`Not saved: ${error.message}`, "error");
     }
   };
 
