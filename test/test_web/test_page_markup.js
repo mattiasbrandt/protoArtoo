@@ -113,6 +113,15 @@ for (const name of servedPages) {
     const openingTag = html.match(/<html\b[^>]*>/)?.[0] || "";
     const declared = openingTag.match(/data-scripts="([^"]*)"/)?.[1] || "";
     const sources = declared.split(",").map((source) => source.trim()).filter(Boolean);
+    // A forwarder is the old address of a renamed surface (data/setup.html,
+    // #404): a delegate with an empty body, which the shell never fetches
+    // because no surface names it. It has nothing to mount, so it must declare
+    // nothing to run - a chain there would be a promise nothing keeps.
+    const body = html.match(/<body\b[^>]*>([\s\S]*)<\/body>/)?.[1] ?? null;
+    if (html.includes(SHELL_DELEGATE_MARKER) && body !== null && body.trim() === "") {
+      assert.deepEqual(sources, [], `${name} is a forwarder and must declare no script chain`);
+      return;
+    }
     assert.ok(sources.length > 0, `${name} must declare data-scripts on <html>`);
     for (const source of sources) {
       assert.ok(fs.existsSync(path.join(dataDir, source.slice(1))), `${name}: ${source}`);

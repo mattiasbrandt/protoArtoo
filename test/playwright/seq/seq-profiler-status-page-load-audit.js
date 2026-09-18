@@ -110,11 +110,11 @@ async function auditSeqPage(browser) {
 }
 
 async function auditSetupPage(browser) {
-  console.log('setup.html - profiler routes');
-  const { page, responses, failures } = await loadPage(browser, '/setup.html');
+  console.log('maintenance.html - profiler routes');
+  const { page, responses, failures } = await loadPage(browser, '/maintenance.html');
 
   try {
-    reportPage('/setup.html', responses, failures);
+    reportPage('/maintenance.html', responses, failures);
     await page.screenshot({ path: '/tmp/issue90-setup.png', fullPage: true });
   } finally {
     await page.close();

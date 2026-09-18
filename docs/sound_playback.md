@@ -469,21 +469,22 @@ Implementation references:
 - `data/sound.html`
 - `data/sound.js`
 
-### Setup page (`/setup.html`)
+### Configuration and Maintenance (`/configuration.html`, `/maintenance.html`)
 
-Audio-related controls:
+What was the Setup page is two surfaces since #404. Audio-related controls:
 
-- `S2 - Sound` enable/disable toggle
-- Live driver label for S2 (the fitted member's name, not a product picker)
-- Sound serial state visibility in setup diagnostics
+- `S2 - Sound` enable/disable toggle, on Configuration
+- Live driver label for S2 (the fitted member's name, not a product picker), on
+  Configuration
+- Sound serial state in Maintenance's serial links
 
-The Setup board picture is the body controller (`artoo_pcb` / `firebeetle2`),
-not the sound module.
+The board picture on Configuration is the body controller (`artoo_pcb` /
+`firebeetle2`), not the sound module.
 
 Implementation references:
 
-- `data/setup.html`
-- `data/setup.js`
+- `data/configuration.html`, `data/configuration.js`
+- `data/maintenance.html`, `data/maintenance.js`
 
 ---
 

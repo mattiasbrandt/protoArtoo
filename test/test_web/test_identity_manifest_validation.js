@@ -9,7 +9,8 @@
 // 4. Non-object response (e.g., string) → invalid, caught by Layer 1 validation
 // 5. 204 No Content (null/empty response) → invalid, caught by Layer 1 validation
 //
-// This test harness loads shell.js and setup.js into a vm context with mocked
+// This test harness loads shell.js, then the Feature Availability module and the
+// Configuration surface that reads it, into a vm context with mocked
 // window/document, validating that Layer 1 validation prevents invalid manifests
 // from reaching the resolver, and Layer 2 uses Object.hasOwn to distinguish
 // missing keys from false values.
@@ -155,7 +156,7 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
       dispatchedEvents.push(event);
       for (const handler of windowListeners.get(event.type) || []) handler(event);
     },
-    location: { origin: "http://device", href: "http://device/setup.html" },
+    location: { origin: "http://device", href: "http://device/configuration.html" },
     localStorage: { getItem: () => null, setItem() {} },
     requestAnimationFrame: () => 1,
     setTimeout(fn, ms) {
@@ -225,9 +226,9 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
   context.globalThis = context;
 
   // Set up document mocks
-  windowMock.document.body.dataset.page = "setup";
+  windowMock.document.body.dataset.page = "configuration";
 
-  // Pre-create the identity-actions element (setup.js will get it via getElementById)
+  // Pre-create the identity-actions element (configuration.js will get it via getElementById)
   const identityActions = new MockElement("div", "identity-actions", mockDocument);
   mockDocument.elements.set("identity-actions", identityActions);
   mockDocument.body.appendChild(identityActions);
@@ -235,8 +236,11 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
   // Load shell.js first
   vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
 
-  // Load setup.js
-  vm.runInNewContext(readFileSync("data/setup.js", "utf8"), context, { filename: "setup.js" });
+  // Then the surface's own chain: the resolver both surfaces share, and the
+  // surface whose identity card carries the retry.
+  for (const file of ["feature_availability.js", "configuration.js"]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
 
   return { context, windowMock, dispatchedEvents, mockDocument };
 };

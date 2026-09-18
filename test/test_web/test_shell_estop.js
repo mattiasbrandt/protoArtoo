@@ -234,7 +234,7 @@ test("the estop is on every surface, and it is one control rather than one per s
   const button = env.estopButton();
   assert.ok(button, "the shell renders it");
 
-  for (const route of ["drive", "dome", "sound", "servo", "seq", "rc", "setup", "wifi", "firmware", "home"]) {
+  for (const route of ["drive", "dome", "sound", "servo", "seq", "rc", "configuration", "maintenance", "wifi", "firmware", "home"]) {
     env.navigate(`#${route}`);
     await sleep(180);
     assert.equal(env.document.body.dataset.page, route, `${route} is the mounted surface`);

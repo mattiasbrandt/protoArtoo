@@ -298,32 +298,47 @@ test("returning to a surface repaints it without asking the controller for it ag
   );
 });
 
-test("a cold boot never lands in Setup, and the persisted value is what says so", async () => {
+// What used to be the Setup page is Configuration now, and every link written
+// to it - #setup, /setup.html, a "switch it on in Setup" line - was written to
+// reach the page a component is switched on from. The alias is the rename
+// record, so those keep opening that page rather than nothing (#404).
+test("an address written for Setup opens Configuration, the page it was written to reach", async () => {
   const env = await boot();
   env.navigate("#setup");
   await sleep(140);
 
-  assert.equal(env.document.body.dataset.page, "setup", "the address is honoured -- the runtime answer CAN be Setup");
-  assert.equal(
-    JSON.parse(env.store.get("pa.shell.v1")).surface,
-    "home",
-    "the serialised value still says the last remembered surface, not Setup",
-  );
+  assert.equal(env.mountedSurface(), "configuration", "the old route opens the renamed surface");
+  assert.equal(env.window.location.hash, "#configuration", "and the address says what is shown");
 
-  // The proof that matters is the next cold boot, with nothing in the address.
-  const next = await boot({ stored: env.store.get("pa.shell.v1") });
-  assert.equal(next.mountedSurface(), "home");
+  // A link to the old document is a click on this page, and it lands in the
+  // same place without the browser leaving the shell for the forwarder.
+  env.navigate("#home");
+  await sleep(140);
+  const link = env.document.createElement("a");
+  link.setAttribute("href", "/setup.html");
+  env.document.body.appendChild(link);
+  const click = {
+    type: "click",
+    button: 0,
+    target: link,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+  env.document.dispatch("click", click);
+  await sleep(140);
+
+  assert.equal(click.defaultPrevented, true, "the browser is not sent to /setup.html");
+  assert.equal(env.mountedSurface(), "configuration");
+  assert.equal(env.requests.filter((path) => path === "/setup.html").length, 0, "the forwarder is never fetched");
 });
 
-test("a stored surface of Setup is corrected, and the correction is written back", async () => {
+test("a store that says Setup opens Configuration, and then says so itself", async () => {
   const env = await boot({ stored: JSON.stringify({ surface: "setup" }) });
 
-  assert.equal(env.mountedSurface(), "home", "a store that says Setup does not land there");
-  assert.equal(
-    JSON.parse(env.store.get("pa.shell.v1")).surface,
-    "home",
-    "and it stops saying Setup rather than being re-filtered on every boot",
-  );
+  assert.equal(env.mountedSurface(), "configuration", "an old spelling resolves like any address a builder typed");
+  assert.equal(env.storedSurface(), "configuration", "and the store names the surface, not the old spelling");
 });
 
 test("an address this build does not know opens something rather than nothing", async () => {
@@ -378,7 +393,7 @@ const registry = [...shellSrc.matchAll(/\{ page: "([a-z]+)", doc: "\/([a-z]+\.ht
   .map(([, page, file]) => ({ page, file }));
 
 test("the shell knows every surface, and every surface is a file that exists", () => {
-  assert.equal(registry.length, 12, "twelve surfaces");
+  assert.equal(registry.length, 13, "thirteen surfaces");
   registry.forEach(({ file }) => {
     assert.doesNotThrow(() => readData(file), `${file} is served`);
   });

@@ -1,15 +1,22 @@
 // =============================================================================
-// Feature Availability on Setup (issue #186).
+// Feature Availability on Maintenance (issue #186).
 //
-// The setup page learns compile-time availability from the identity manifest.
+// Maintenance learns compile-time availability from the identity manifest.
 // It must never probe /api/profiler to discover absence. These tests execute
-// the shipped setup.js resolver, renderers, and polling transition.
+// the shipped resolver (data/feature_availability.js), handed to the shipped
+// data/maintenance.js the way the page loads it first, and the surface's
+// renderers and polling transition (#404).
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
 
+import { createRequire } from "node:module";
+
 import { loadPageModule } from "./helpers/page_module_env.js";
+
+const require = createRequire(import.meta.url);
+const { createFeatureAvailability } = require("../../data/feature_availability.js");
 
 const PROFILER_PATH = "/api/profiler";
 const CONFIG = {
@@ -46,8 +53,9 @@ const identity = ({ nativeWifi = true, hostedWifi = false, profiler = false } = 
   },
 });
 
-const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
-  const env = loadPageModule("setup.js", {
+const loadMaintenance = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
+  const availability = createFeatureAvailability();
+  const env = loadPageModule("maintenance.js", {
     respond: (path) => {
       if (path === "/api/config") return CONFIG;
       if (path === "/api/status") return {};
@@ -56,6 +64,7 @@ const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
         : profilerAnswer;
       return {};
     },
+    overrides: { PAFeatureAvailability: availability },
   });
   env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
@@ -63,14 +72,18 @@ const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
     ...env,
     profilerRequests: () => env.requests.filter((request) => request.path === PROFILER_PATH),
     publishIdentity: async (payload) => {
-      env.emit("window", "pa:identity-available", { detail: payload });
+      availability.setIdentity(payload);
+      await env.settle();
+    },
+    loseIdentity: async (reason) => {
+      availability.setIdentityError(reason);
       await env.settle();
     },
   };
 };
 
 test("the shipped resolver distinguishes all four final feature states", async () => {
-  const env = await loadSetupPage();
+  const env = await loadMaintenance();
   const availability = env.window.PAFeatureAvailability;
 
   assert.equal(availability.resolve({ enabled: true }).state, "on");
@@ -90,7 +103,7 @@ test("the shipped resolver distinguishes all four final feature states", async (
 });
 
 test("the profiler stays visible and says Not included without probing its endpoint", async () => {
-  const env = await loadSetupPage();
+  const env = await loadMaintenance();
   await env.publishIdentity(identity({ profiler: false }));
 
   assert.equal(env.profilerRequests().length, 0);
@@ -110,13 +123,12 @@ test("the profiler stays visible and says Not included without probing its endpo
 });
 
 test("identity loading and failure never start profiler traffic", async () => {
-  const env = await loadSetupPage();
+  const env = await loadMaintenance();
 
   assert.equal(env.element("profiler-card").dataset.featureState, "checking");
   assert.equal(env.profilerRequests().length, 0);
 
-  env.emit("window", "pa:identity-unavailable", { detail: { error: new Error("offline") } });
-  await env.settle();
+  await env.loseIdentity("no-response");
 
   assert.equal(env.element("profiler-card").dataset.featureState, "identity-unavailable");
   assert.equal(env.element("profiler-availability-status").textContent, "Availability unknown");
@@ -124,7 +136,7 @@ test("identity loading and failure never start profiler traffic", async () => {
 });
 
 test("the profiler starts polling only after the manifest reports it present", async () => {
-  const env = await loadSetupPage();
+  const env = await loadMaintenance();
   await env.publishIdentity(identity({ profiler: false }));
   assert.equal(env.profilerRequests().length, 0);
 
@@ -137,7 +149,7 @@ test("the profiler starts polling only after the manifest reports it present", a
 });
 
 test("transient profiler errors do not change compile-time availability", async () => {
-  const env = await loadSetupPage({ profilerAnswer: () => { throw new Error("controller busy"); } });
+  const env = await loadMaintenance({ profilerAnswer: () => { throw new Error("controller busy"); } });
   await env.publishIdentity(identity({ profiler: true }));
 
   // Compile-time availability is immutable - should stay "included" despite errors

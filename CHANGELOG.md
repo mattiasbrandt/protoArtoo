@@ -61,6 +61,12 @@ the patch releases, whose notes live on their own GitHub Release.
   Setup does not ask again. The two are kept apart, so a droid you answered and
   a droid you walked away from are still different afterwards. All of it travels
   with Backup and Restore like any other setting.
+- **Configuration and Maintenance, where Setup was.** Configuration holds what
+  the droid is made of: its components, the LED strip, its name. Maintenance
+  checks the controller over: serial links, memory, backup, restart. A droid
+  that is not set up opens the guided run over Configuration, and Maintenance
+  runs it again for a droid you rebuilt. Nothing you set is cleared. Old links
+  to Setup open Configuration.
 
 - **Put the whole droid back to centre with one press.** Parts has a Back to
   centre button above the outputs table. Every output goes to the centre you

@@ -8,14 +8,18 @@
 // colour, compare - is the reference project's own enforcement
 // (r2d2-astromech-simulator v1.79.0, tests/chrome.test.js:509).
 //
-// Run against tools/serve_editor_fixture.py: setup.html carries a PA:INCLUDE
-// that a plain static server does not expand, and none of its scripts load
-// without it.
+// Run against tools/serve_editor_fixture.py: the surfaces carry a PA:INCLUDE
+// that a plain static server does not expand, and none of their scripts load
+// without it. The component rows are Configuration's and the Memory Profiler
+// panel is Maintenance's since #404 split the Setup page, so each state is
+// read on the surface that carries its element.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const { mkdirSync } = require('node:fs');
 
-const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/setup.html';
+const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const CONFIGURATION_URL = `${BASE_URL}/configuration.html`;
+const MAINTENANCE_URL = `${BASE_URL}/maintenance.html`;
 const HEADLESS = process.env.HEADLESS === 'true';
 const ARTIFACT_DIR = 'output/playwright/issue-341';
 
@@ -89,7 +93,7 @@ const READ = `(row) => {
   try {
     // The colours that must not appear on a way of saying no, resolved by the
     // browser from the tokens rather than pasted in as hex.
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(CONFIGURATION_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.PAFeatureAvailability), null, { timeout: 10000 });
     const reserved = await page.evaluate(() => {
       const probe = (value) => {
@@ -107,7 +111,7 @@ const READ = `(row) => {
     // family class it is supposed to resolve to.
     const stateOf = async (mode, target, setup) => {
       identityMode = mode;
-      await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
+      await page.goto(target === 'panel' ? MAINTENANCE_URL : CONFIGURATION_URL, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => Boolean(window.PAFeatureAvailability), null, { timeout: 10000 });
       return page.evaluate(
         async ([apply, read, which]) => {
@@ -131,7 +135,7 @@ const READ = `(row) => {
       notInThisBuild: await stateOf('ok', 'row', '(row) => { row.dataset.buildFlag = "PA_HEAP_PROFILE"; window.PAFeatureAvailability.setIdentity(window.PAIdentity); }'),
       // checking and identity-unavailable are only reachable through the
       // manifest fetch itself, so they are read off the profiler panel, whose
-      // requirement metadata is declared in setup.html and therefore present
+      // requirement metadata is declared in maintenance.html and therefore present
       // before the fetch settles. The panel is the other element the families
       // dress, so this reads both shapes rather than only the row.
       checking: await stateOf('slow', 'panel', '() => {}'),
@@ -203,7 +207,7 @@ const READ = `(row) => {
     assert.ok(Number(after) > Number(lift.before), `hover should lift a dimmed family: ${lift.before} -> ${after}`);
 
     identityMode = 'ok';
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(MAINTENANCE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#profiler-card[data-feature-state]', { timeout: 10000 });
     await page.screenshot({ path: `${ARTIFACT_DIR}/availability-families.png`, fullPage: true });
 

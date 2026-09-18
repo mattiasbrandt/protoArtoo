@@ -19,8 +19,19 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
+import { createRequire } from "node:module";
+
 import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+
+const require = createRequire(import.meta.url);
+const { createFeatureAvailability } = require("../../data/feature_availability.js");
+
+// Configuration and Maintenance read the identity manifest through the shipped
+// Feature Availability module their pages load first (#404). A module run on
+// its own is handed a fresh one of those, for real, the way the Dashboard's
+// tests take health_signals.js.
+const withAvailability = (extra = {}) => ({ PAFeatureAvailability: createFeatureAvailability(), ...extra });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -107,7 +118,7 @@ test("a surface's poll runs only while its surface is the one on screen", () => 
 
   assert.equal(env.live().length, 1, "RC is on screen, so its poll is running");
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   assert.equal(env.live().length, 0, "leaving RC stops what RC was asking for");
 
   env.surface.showing("rc");
@@ -116,7 +127,7 @@ test("a surface's poll runs only while its surface is the one on screen", () => 
 
 test("a surface that turns its own poll on while it is off screen does not start asking", () => {
   const env = makeRegistry();
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   const poll = env.surface.poll(() => Promise.resolve(), { cadenceMs: 5000 });
 
   env.surface.showing("home");
@@ -124,7 +135,7 @@ test("a surface that turns its own poll on while it is off screen does not start
 
   assert.equal(env.live().length, 0, "the manifest said yes; the operator is elsewhere, so nothing runs");
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   assert.equal(env.live().length, 1, "it starts when the operator opens the surface that owns it");
 });
 
@@ -134,7 +145,7 @@ test("a left surface shows what it last read until it has answered again", async
   let answer = null;
   env.surface.poll(() => new Promise((resolve) => { answer = resolve; }), { cadenceMs: 1000 }).start();
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   assert.equal(env.surface.isStale("rc"), true, "what RC is showing is from before the operator left");
 
   env.surface.showing("rc");
@@ -156,7 +167,7 @@ test("a refresh that did not land is not an answer: the surface stays as it was"
   let fail = null;
   env.surface.poll(() => new Promise((_resolve, reject) => { fail = reject; }), { cadenceMs: 1000 }).start();
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   env.surface.showing("rc");
   assert.equal(env.surface.isStale("rc"), true, "RC is showing what it read before the operator left");
 
@@ -186,7 +197,7 @@ test("a poll that hands back nothing at all has not answered either", async () =
   // reopened: an attempt that returns something which is not a promise.
   env.surface.poll(() => undefined, { cadenceMs: 1000 }).start();
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   env.surface.showing("rc");
   env.fire(env.live()[0]);
   await sleep(0);
@@ -210,7 +221,7 @@ test("a surface with two polls is not current until both have answered", async (
   status.start();
   module.start();
 
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   assert.equal(env.surface.isStale("sound"), true, "leaving Sound stops both of the polls it owns");
 
   env.surface.showing("sound");
@@ -245,14 +256,14 @@ test("a surface with two polls is not current until both have answered", async (
 
 test("a poll the surface turned off does not hold the note up", async () => {
   const env = makeRegistry();
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   const serial = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
   const profiler = env.surface.poll(() => Promise.resolve({}), { cadenceMs: 5000 });
   serial.start();
   profiler.start();
 
   env.surface.showing("rc");
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   // What the memory profiler does when the manifest says it is not in this
   // build: the surface stops asking. It is not waiting for an answer, so it
   // must not pin the note up on a surface that is otherwise current.
@@ -262,21 +273,21 @@ test("a poll the surface turned off does not hold the note up", async () => {
   await sleep(0);
 
   assert.equal(
-    env.surface.isStale("setup"),
+    env.surface.isStale("maintenance"),
     false,
-    "the only poll Setup still wants has answered, so Setup is current",
+    "the only poll Maintenance still wants has answered, so Maintenance is current",
   );
 });
 
 test("a surface that stopped its own poll has not been left, and is not stale", () => {
   const env = makeRegistry();
-  env.surface.showing("setup");
+  env.surface.showing("maintenance");
   const poll = env.surface.poll(() => Promise.resolve(), { cadenceMs: 5000 });
   poll.start();
   poll.stop();
 
   assert.equal(env.live().length, 0, "the surface's own stop() stops it");
-  assert.equal(env.surface.isStale("setup"), false, "nobody left this screen; it is showing what it means to show");
+  assert.equal(env.surface.isStale("maintenance"), false, "nobody left this screen; it is showing what it means to show");
 });
 
 test("a surface can hold its own unmount, and the hold belongs to that surface alone", () => {
@@ -323,14 +334,15 @@ const SURFACE_POLLS = [
   { file: "drive.js", cadenceMs: 2000, what: "the drive status" },
   { file: "servo.js", cadenceMs: 1000, what: "the servo status" },
   { file: "sound.js", cadenceMs: 2000, what: "the sound status" },
-  { file: "setup.js", cadenceMs: 5000, what: "the serial status" },
+  { file: "maintenance.js", cadenceMs: 5000, what: "the serial status", overrides: withAvailability },
+  { file: "configuration.js", cadenceMs: 5000, what: "the live status", overrides: withAvailability },
   { file: "app.js", cadenceMs: 3000, what: "the dashboard status" },
   { file: "rc.js", cadenceMs: 1000, what: "the RC diagnostics" },
 ];
 
-for (const { file, cadenceMs, what } of SURFACE_POLLS) {
+for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
   test(`${file}: ${what} poll stops when the operator is reading another surface`, async () => {
-    const env = loadPageModule(file, { respond: () => ({}) });
+    const env = loadPageModule(file, { respond: () => ({}), overrides: overrides() });
     await env.settle();
 
     const polls = env.intervals.filter((timer) => timer.ms === cadenceMs);
@@ -362,10 +374,11 @@ const STALE_AFTER_A_FAILED_REFRESH = [
   { file: "drive.js", what: "Drive" },
   { file: "rc.js", what: "RC diagnostics" },
   { file: "servo.js", what: "Servos" },
-  { file: "setup.js", what: "Setup" },
+  { file: "maintenance.js", what: "Maintenance", overrides: withAvailability },
+  { file: "configuration.js", what: "Configuration", overrides: withAvailability },
 ];
 
-for (const { file, what } of STALE_AFTER_A_FAILED_REFRESH) {
+for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRESH) {
   test(`${file}: a refresh that fails leaves ${what} showing what it last read`, async () => {
     let answering = true;
     const env = loadPageModule(file, {
@@ -373,6 +386,7 @@ for (const { file, what } of STALE_AFTER_A_FAILED_REFRESH) {
         if (!answering) throw new ApiError("the controller did not answer");
         return {};
       },
+      overrides: overrides(),
     });
     await env.settle();
 
@@ -450,30 +464,30 @@ test("sound.js: a module that did not answer leaves Sound showing what it last r
   );
 });
 
-test("setup.js: a memory reading nobody could take does not come back as a fresh one", async () => {
+test("maintenance.js: a memory reading nobody could take does not come back as a fresh one", async () => {
   let answering = true;
-  const env = loadPageModule("setup.js", {
+  const availability = createFeatureAvailability();
+  const env = loadPageModule("maintenance.js", {
     respond: (path) => {
       if (path === "/api/profiler" && !answering) throw new ApiError("the controller did not answer");
       return path === "/api/profiler"
         ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
         : {};
     },
-    // The live-update stream is available here, so Setup's serial fallback poll
-    // is never created and the profiler's is the only poll on the surface --
-    // isStale() answers for a surface, not for one poll of several.
+    // The live-update stream is available here, so Maintenance's serial fallback
+    // poll is never created and the profiler's is the only poll on the surface
+    // -- isStale() answers for a surface, not for one poll of several.
     overrides: {
+      PAFeatureAvailability: availability,
       PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => ({}) },
     },
   });
   env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
-  env.emit("window", "pa:identity-available", {
-    detail: {
-      board: "artoo_esp32",
-      board_capabilities: { PA_CAP_NATIVE_WIFI: true },
-      build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
-    },
+  availability.setIdentity({
+    board: "artoo_esp32",
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+    build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
   });
   await env.settle();
   assert.ok(
@@ -482,7 +496,7 @@ test("setup.js: a memory reading nobody could take does not come back as a fresh
   );
 
   env.window.PASurface.showing("rc");
-  assert.equal(env.window.PASurface.isStale(null), true, "leaving Setup stops the profiler");
+  assert.equal(env.window.PASurface.isStale(null), true, "leaving Maintenance stops the profiler");
 
   answering = false;
   env.window.PASurface.showing(null);
@@ -552,21 +566,21 @@ test("wifi.js: a refresh that fails leaves WiFi showing what it last read", asyn
   );
 });
 
-test("setup.js: the memory profiler stops asking when the operator reads another surface", async () => {
-  const env = loadPageModule("setup.js", {
+test("maintenance.js: the memory profiler stops asking when the operator reads another surface", async () => {
+  const availability = createFeatureAvailability();
+  const env = loadPageModule("maintenance.js", {
     respond: (path) => (path === "/api/profiler"
       ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
       : {}),
+    overrides: { PAFeatureAvailability: availability },
   });
   env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
 
-  env.emit("window", "pa:identity-available", {
-    detail: {
-      board: "artoo_esp32",
-      board_capabilities: { PA_CAP_NATIVE_WIFI: true },
-      build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
-    },
+  availability.setIdentity({
+    board: "artoo_esp32",
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+    build_flags: { PA_HEAP_PROFILE: true, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
   });
   await env.settle();
 
@@ -579,7 +593,7 @@ test("setup.js: the memory profiler stops asking when the operator reads another
 
   assert.ok(
     profilerPolls.every((timer) => env.cleared.intervals.includes(timer.id)),
-    "leaving Setup stops the profiler -- the surface that asks hardest is the point of the ticket",
+    "leaving Maintenance stops the profiler -- the surface that asks hardest is the point of the ticket",
   );
   assert.equal(
     env.requests.filter((request) => request.path === "/api/profiler").length,
@@ -923,9 +937,9 @@ test("opening RC, leaving, and opening the profiler leaves one surface asking, n
   await sleep(140);
   const rc = surfacePoll(env);
 
-  env.navigate("#setup");
+  env.navigate("#maintenance");
   await sleep(140);
-  const setup = surfacePoll(env);
+  const maintenance = surfacePoll(env);
 
   const homeBefore = home.calls.count;
   const rcBefore = rc.calls.count;
@@ -933,9 +947,9 @@ test("opening RC, leaving, and opening the profiler leaves one surface asking, n
 
   assert.equal(home.calls.count, homeBefore, "the Dashboard stopped asking when it was left");
   assert.equal(rc.calls.count, rcBefore, "RC diagnostics stopped asking when it was left");
-  assert.ok(setup.calls.count > 0, "the surface the operator is reading is the one asking");
+  assert.ok(maintenance.calls.count > 0, "the surface the operator is reading is the one asking");
   assert.equal(env.streamsOpened.length, 1, "and the session still holds one live-update slot, not three");
-  setup.handle.stop();
+  maintenance.handle.stop();
 });
 
 test("leaving a surface writes nothing to the droid", async () => {

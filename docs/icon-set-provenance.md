@@ -55,27 +55,31 @@ no symbol, which is the failure this list would otherwise hide.
 | `volume-high` | Sound, in the nav rail |
 | `controller-classic-outline` | RC Control, in the nav rail |
 | `timeline-outline` | Sequences, in the nav rail |
-| `tune-variant` | Setup, in the nav rail |
+| `tune-variant` | Configuration, in the nav rail |
 | `puzzle-outline` | Parts, in the nav rail |
 | `connection` | Wiring, in the nav rail |
 | `robot-outline` | Servos, in the nav rail |
 | `wifi` | WiFi, in the nav rail |
 | `chip` | Firmware, in the nav rail |
+| `wrench-outline` | Maintenance, in the nav rail |
 | `stop-circle-outline` | the Latching Estop, in the topbar |
 | `power-sleep` | the Dashboard's Sleep act |
 | `restart` | the Dashboard's Restart act |
 | `console-line` | reserved for the Controller Console |
 | `chevron-right` | a disclosure's open/closed marker |
+| `arrow-left`, `arrow-right` | Foot Drive's pad, the pair turned a quarter for forward and reverse |
 
 The #398 prototype (`prototypes/395-surface-anatomy/chrome.js`, merged) holds
-the full twenty-two paths it took from the same package, including the five this
-image does not carry - `wrench-outline`, `arrow-left`, `arrow-right`,
-`play-outline` and `pause`. A slice that needs one copies its path in beside the
-others rather than fetching a package to read it again.
+the full twenty-two paths it took from the same package, including the two this
+image does not carry - `play-outline` and `pause`. A slice that needs one copies
+its path in beside the others rather than fetching a package to read it again.
 
-`connection` is the first of those six a slice has needed. Wiring (#350) is the
-destination the prototype's own nav row named `connection`, so landing that
-surface was one path copied in and no package fetched.
+`connection` was the first of the ones left out that a slice needed. Wiring
+(#350) is the destination the prototype's own nav row named `connection`, so
+landing that surface was one path copied in and no package fetched.
+`wrench-outline` came in the same way with Maintenance (#404), the row the
+prototype drew it on, and Configuration kept the `tune-variant` the Setup page
+it split from had worn.
 
 `robot-outline` is the one choice the prototype did not make for us: it left
 Servos out of the rail because `CONTEXT.md` **Activity Group** does not list it
