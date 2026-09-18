@@ -538,9 +538,12 @@
     // One `said` line per elevation, all written together: one kind of state at
     // a time, so every face says the same sentence.
     const saids = host.querySelectorAll(".bodyview-said");
+    // Array.from: a browser's querySelectorAll answers a NodeList, which has
+    // forEach and no find.
+    const legendItems = Array.from(host.querySelectorAll("[data-legend]"));
     const legendNodes = LEGEND.map((entry) => ({
       entry,
-      node: host.querySelectorAll("[data-legend]").find((each) => each.dataset.legend === entry.id),
+      node: legendItems.find((each) => each.dataset.legend === entry.id),
     }));
     const nodes = new Map();
     host.querySelectorAll("[data-marker]").forEach((cell) => {
