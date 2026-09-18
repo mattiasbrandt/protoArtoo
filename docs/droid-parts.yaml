@@ -76,6 +76,28 @@
 #               design carrying it is the one a fresh flash records as its
 #               answer — together with its `default_variant` and the complement
 #               that variant seeds.
+#   card:       which of the three card kinds this design is (ADR 0047), and
+#               required on every design, because a card whose kind is guessed
+#               from its id or from an empty seed list is the one way `own` and
+#               an unread complement end up drawn alike:
+#                 supported  a design we carry: selectable, and choosing it
+#                            seeds its complement.
+#                 roadmap    a design we intend to carry: drawn, never
+#                            selectable, and never stored. Its complement is
+#                            unknown by definition, so its `seeds:` is `TBD`,
+#                            and the generator keeps it out of the firmware's
+#                            design table, which is what makes the controller
+#                            refuse it as a stored answer (#368). "Planned, not
+#                            built" must never read as "your board cannot do
+#                            this" (#297, #302).
+#                 own-build  "my own build": always selectable and seeds
+#                            nothing, so a droid that is nobody's published
+#                            design is never locked out. Its `seeds:` is `[]`.
+#   halves:     which halves of a droid the design is offered for, when it is
+#               not both: `[dome]` on a dome-only design. Absent means both. It
+#               decides which of the two card rows the design is drawn in; it
+#               is not a fence, and the firmware stores either half's answer
+#               whatever it says.
 #   label:      the operator-facing name on the card.
 #   short:      short form for chips and the wiring sheet's build summary.
 #   blurb:      the one sentence the card shows.
@@ -216,6 +238,7 @@ designs:
     # than left absent (ADR 0047): a builder reads MK4 and corrects it, which
     # an empty droid map would never prompt them to do.
     preselected: true
+    card: supported
     label: MrBaddeley MK4
     short: MK4
     blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.
@@ -259,6 +282,10 @@ designs:
                 bodyPanel5, bodyPanel6, bodyPanel7, bodyPanel8]
 
   - id: mk41
+    card: supported
+    # Offered as a Dome Design only: MK4.1 is a dome, and a body card for it
+    # would be a body nobody can build (#409).
+    halves: [dome]
     label: MrBaddeley MK4.1
     short: MK4.1
     blurb: MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only — pick MK4 Basic or Complex for the body.
@@ -278,7 +305,21 @@ designs:
              domeBtn1, domeBtn2]
       body: []
 
+  - id: mk3
+    # The operator's decision, 2026-09-18 (#368): MK3 is a design we intend to
+    # carry and do not yet. Drawn so a builder with an MK3 droid sees it is
+    # coming; never selectable, so nobody is started on a complement nobody
+    # has read.
+    card: roadmap
+    label: MrBaddeley MK3
+    short: MK3
+    blurb: We intend to carry it. Not yet.
+    # Which parts an MK3 carries has not been read out of MrBaddeley's files -
+    # do not guess it.
+    seeds: TBD
+
   - id: own
+    card: own-build
     label: My own build
     short: Own build
     blurb: For a droid that is nobody's published design — nothing is fitted for you, and each part joins the list as you build it.

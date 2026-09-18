@@ -10,7 +10,7 @@
 //   Check vocabulary is still the whole catalog - so a Part outside the Fitted
 //   set is still nameable, still saveable, still wirable.
 //
-//   The two halves are independent. An MK3 body under an MK4 dome is an
+//   The two halves are independent. An MK4.1 dome on an MK4 Basic body is an
 //   ordinary droid, so nothing may refuse a pairing.
 //
 //   A deliberately empty droid and a controller nobody has answered are
@@ -241,6 +241,33 @@ void test_a_stored_design_this_build_cannot_name_is_repaired_and_counted(void) {
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(loaded.fitted));
 }
 
+// A roadmap design is drawn on a card and can never be picked, so a stored one
+// is not an answer anybody gave through this product - a hand-edited key, or a
+// backup from an image that carried the design before it was withdrawn. The
+// catalog declares MK3 as that kind of design (#368), and it restores to the
+// default rather than surviving as an answer the controller cannot seed.
+void test_a_stored_roadmap_design_restores_to_the_default(void) {
+    MapWriter writer;
+    writer.writeStr("dbuild_domed", "mk4");
+    writer.writeStr("dbuild_domev", "complex");
+    writer.writeStr("dbuild_bodyd", "mk3");
+    writer.writeStr("dbuild_bodyv", "");
+    writer.writeStr("dbuild_parts", "doorFL");
+
+    MapReader reader;
+    copyInto(writer, &reader);
+    DroidBuildConfig loaded = {};
+    DroidBuildRepairReport report = {};
+    configDeserializeDroidBuild(reader, &loaded, &report);
+
+    TEST_ASSERT_TRUE(report.bodyRepaired);
+    TEST_ASSERT_FALSE(report.domeRepaired);
+    TEST_ASSERT_EQUAL_STRING(DROID_BUILD_DEFAULT_DESIGN, loaded.body.design);
+    TEST_ASSERT_EQUAL_STRING(DROID_BUILD_DEFAULT_VARIANT, loaded.body.variant);
+    // Only the half that named it: the Parts stay as the builder left them.
+    TEST_ASSERT_EQUAL_UINT32(1u, (uint32_t)droidFittedPartsCount(loaded.fitted));
+}
+
 void test_a_stored_variant_that_is_not_its_design_s_takes_the_default_pair(void) {
     MapWriter writer;
     writer.writeStr("dbuild_domed", "own");
@@ -332,6 +359,7 @@ int main(int, char**) {
     RUN_TEST(test_a_controller_that_has_never_been_answered_takes_the_default);
     RUN_TEST(test_a_droid_with_nothing_fitted_is_an_answer_and_survives);
     RUN_TEST(test_a_stored_design_this_build_cannot_name_is_repaired_and_counted);
+    RUN_TEST(test_a_stored_roadmap_design_restores_to_the_default);
     RUN_TEST(test_a_stored_variant_that_is_not_its_design_s_takes_the_default_pair);
     RUN_TEST(test_a_stored_part_this_build_no_longer_declares_is_dropped_and_counted);
     RUN_TEST(test_the_stored_part_list_tolerates_spacing_and_refuses_an_overlong_token);
