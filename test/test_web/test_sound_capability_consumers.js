@@ -16,6 +16,10 @@
 // blocked, which has been wrong on a DY-SV5W or MP3 Trigger build all along and
 // is wrong on a different boot of the same image now that the module is a
 // runtime choice.
+//
+// The third is the same misreading on a droid whose sound is switched off
+// (#370): no module is running, so the page says which one was picked and
+// that sound is off, in the firmware's own line - never "Ready".
 // =============================================================================
 
 import { test } from "node:test";
@@ -137,3 +141,19 @@ test("a module with no status query at all loses the Total tracks row too", asyn
 // The dashboard's blocked-RX line names the fitted module
 // -----------------------------------------------------------------------------
 
+test("with sound switched off the page says so, naming the module that was picked", async () => {
+  const offLine = "MP3 Trigger picked \u00b7 sound is off";
+  const env = loadPageModule("sound.js", {
+    respond: (path) =>
+      path === "/api/status"
+        ? { data: { audio: { state: "off", detail: offLine, driver: "MP3 Trigger", output: "off", link_ok: false } } }
+        : { data: audioStatus(CAP_STATUS_QUERY) },
+    // A stream that has not delivered yet, so the page reads the status once.
+    overrides: { PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => null } },
+  });
+  await env.settle();
+
+  const badge = env.element("sound-state-badge");
+  assert.equal(badge.textContent, offLine);
+  assert.equal(badge.dataset.state, "disabled");
+});
