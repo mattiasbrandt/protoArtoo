@@ -479,7 +479,12 @@
       }
 
       if (modDriver) modDriver.textContent = d.driver ?? "—";
-      if (modLink) {
+      // Sound switched off at boot has no module to answer, so no answer is
+      // not a fault to paint red (#370): the link says it is off.
+      if (modLink && d.output === "off") {
+        modLink.textContent = "Sound is off";
+        modLink.dataset.state = "disabled";
+      } else if (modLink) {
         const ok = Boolean(d.link_ok);
         modLink.textContent = ok ? "OK" : "No response";
         modLink.dataset.state = ok ? "ok" : "error";

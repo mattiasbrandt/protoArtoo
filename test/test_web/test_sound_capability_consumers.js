@@ -147,7 +147,7 @@ test("with sound switched off the page says so, naming the module that was picke
     respond: (path) =>
       path === "/api/status"
         ? { data: { audio: { state: "off", detail: offLine, driver: "MP3 Trigger", output: "off", link_ok: false } } }
-        : { data: audioStatus(CAP_STATUS_QUERY) },
+        : { data: audioStatus(CAP_STATUS_QUERY, { driver: "MP3 Trigger", output: "off", link_ok: false }) },
     // A stream that has not delivered yet, so the page reads the status once.
     overrides: { PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => null } },
   });
@@ -156,4 +156,9 @@ test("with sound switched off the page says so, naming the module that was picke
   const badge = env.element("sound-state-badge");
   assert.equal(badge.textContent, offLine);
   assert.equal(badge.dataset.state, "disabled");
+
+  // A module that is off does not answer, and that is not a fault to paint red.
+  await env.runSection("audio-status", {});
+  await env.settle();
+  assert.equal(env.element("mod-link").dataset.state, "disabled");
 });
