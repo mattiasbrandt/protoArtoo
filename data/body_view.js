@@ -76,20 +76,40 @@
   // (#317). So a layout lives HERE, on the surface that draws it, and it is
   // ONE table: two of them would be exactly the drift D2 exists to catch.
   //
-  // What it is today: two faces, and three columns on each, reading left to
-  // right as a builder facing the droid sees them. A part's compass word picks
-  // both -- a `rear` word puts it on the rear face, a `left` or `right` in the
-  // word puts it in that column. That is the arrangement, and it is deliberately
+  // What it is: two elevations, a front and a rear, drawn side by side (#372).
+  // Each is a dome band above a body band, and each band is three columns
+  // reading left to right as a builder facing that side of the droid sees
+  // them. Three catalog facts place a marker and nothing else does:
+  //
+  //   the compass word's `front`/`rear`  -> which elevation
+  //   the compass word's `left`/`right`  -> which column; neither is the centre
+  //   the Part's `half`                  -> which band; the section the catalog
+  //                                         declares it in, dome or body
+  //
+  // Within a column, markers stack in catalog order: the words give a
+  // quadrant, not a spot, so the order is an arrangement and says nothing about
+  // height on the droid. That is the whole of "nominal", and it is deliberately
   // not a likeness.
   //
-  // C4b (#372) is the picture: it refines these slots into nominal positions on
-  // a front and a rear elevation, and it edits THIS table rather than adding a
-  // second one. Its own criteria are the check on the result -- twelve body
-  // parts on the front face, two on the rear, a part on exactly one of them.
+  // A PART IS ON EXACTLY ONE ELEVATION, OR ON NONE AND REPORTED. Every SLOTS
+  // entry names one face, so a placed Part cannot land on both; a word the
+  // table does not name, or a half it does not name, goes to `unplaced` rather
+  // than onto a face (the disjoint-sections rule after r2d2-astromech-simulator
+  // v1.79.0, src/js/app/wiring.js:526 -- "a row must appear exactly once").
+  // How many Parts each face carries is a consequence of the catalog's words,
+  // never a number this file holds; there are no side elevations, because
+  // nothing is left over to draw on one (ADR 0063).
   // ---------------------------------------------------------------------------
   const FACES = [
-    { id: "front", label: "Front" },
-    { id: "rear", label: "Rear" },
+    { id: "front", label: "Front view" },
+    { id: "rear", label: "Rear view" },
+  ];
+  // Top to bottom on each elevation, keyed by the catalog's `half`. The dome
+  // sits on the body, so it is drawn above it; that is the only vertical fact
+  // the catalog gives, and the only one this draws.
+  const BANDS = [
+    { id: "dome", label: "Dome" },
+    { id: "body", label: "Body" },
   ];
   const COLUMNS = ["left", "centre", "right"];
 
@@ -121,6 +141,16 @@
     markerGap: 8,
     facePadding: 14,
     headingHeight: 26,
+    // A band's own heading, and the air between the dome band and the body
+    // band below it.
+    bandHeadingHeight: 20,
+    bandGap: 10,
+    // The line at the foot of each elevation that says which kind of state it
+    // shows, and one line of the legend under both.
+    saidHeight: 22,
+    legendRowHeight: 22,
+    legendSwatchWidth: 36,
+    legendSwatchHeight: 14,
     // How far the leaf swings at the open end. Enough to read as open at a
     // glance across a whole droid's worth of markers, and short of a right
     // angle so a swung leaf stays inside its own column rather than landing on
@@ -142,15 +172,54 @@
   // and 1 at the open end. An Output nobody has measured has no travel for a
   // fraction to be of, which is why `unmeasured` is its own mark and not a
   // `driven` with a made-up number.
+  //
+  // `means` is the sentence the legend says for the mark, written beside the
+  // token it defines so a mark cannot exist without one and the legend cannot
+  // define a mark that is gone -- the drift the reference's hand-written
+  // footer shipped (#293's reading of wiring.js:645, and data/wiring.js's
+  // TIERS for the same rule on the Wiring sheet).
   // ---------------------------------------------------------------------------
-  const MARKS = Object.freeze({
-    DRIVEN: "driven",
-    UNMEASURED: "unmeasured",
-    LIMP: "limp",
-    UNDRIVEN: "undriven",
-    UNKNOWN: "unknown",
-  });
-  const MARK_TOKENS = Object.freeze(Object.keys(MARKS).map((key) => MARKS[key]));
+  const MARK_DEFINITIONS = Object.freeze([
+    {
+      key: "DRIVEN",
+      token: "driven",
+      means: "An output drives it. The edge swung out is how far open it was told to be.",
+    },
+    {
+      key: "UNMEASURED",
+      token: "unmeasured",
+      means: "An output drives it, and nobody has measured its ends, so no position is drawn.",
+    },
+    { key: "LIMP", token: "limp", means: "Its output has let go, so it is told no position at all." },
+    { key: "UNDRIVEN", token: "undriven", means: "Nothing drives it yet." },
+    { key: "UNKNOWN", token: "unknown", means: "The droid has not said yet." },
+  ]);
+  const MARKS = Object.freeze(
+    MARK_DEFINITIONS.reduce((marks, definition) => {
+      marks[definition.key] = definition.token;
+      return marks;
+    }, {})
+  );
+  const MARK_TOKENS = Object.freeze(MARK_DEFINITIONS.map((definition) => definition.token));
+
+  // What the legend can say, in the order it says it: every mark, and then the
+  // one Part Kind treatment this renderer draws. `swatch` is the class list a
+  // legend swatch wears, which is the SAME class list a marker in that state
+  // wears -- so the swatch is drawn by the very rules that draw the marker, and
+  // cannot come to look different from it.
+  const LEGEND = Object.freeze(
+    MARK_DEFINITIONS.map((definition) => ({
+      id: definition.token,
+      swatch: `is-${definition.token}` + (definition.token === "driven" ? " has-position" : ""),
+      means: definition.means,
+    })).concat([
+      {
+        id: "light",
+        swatch: "is-driven partkind-light",
+        means: "A light. It has no travel, so it never swings.",
+      },
+    ])
+  );
 
   // The two kinds of state this surface can show, and the sentence each one
   // draws on the picture. Both are commanded intent, which is why the two
@@ -200,9 +269,10 @@
   // light declares `sitsOn: hp1Pan`, the marker offers three with no change
   // here.
   //
-  // A Part with no position word is not placed and not dropped either: it comes
-  // back in `unplaced`, and C4d (#374) is the slice that names them beside the
-  // drawing. `other1`..`other10` have no position word by definition.
+  // A Part with no position word, or none of the two halves, is not placed and
+  // not dropped either: it comes back in `unplaced`, and C4d (#374) is the
+  // slice that names them beside the drawing. `other1`..`other10` have no
+  // position word by definition.
   // ---------------------------------------------------------------------------
 
   // The Part a marker stands on: the one this Part is carried by, following the
@@ -241,13 +311,25 @@
       const host = hostOf(part, byId);
       const key = markerKeyFor(host);
       const slot = SLOTS[host.position];
-      if (!slot) {
+      // The host's half too, for the same reason: a light is in the band of the
+      // panel it is bolted to. A half this table does not name is reported
+      // rather than drawn in whichever band is nearest.
+      const band = BANDS.find((each) => each.id === host.half);
+      if (!slot || !band) {
         unplaced.push(part.id);
         return;
       }
       let marker = byKey.get(key);
       if (!marker) {
-        marker = { id: key, face: slot.face, column: slot.column, parts: [], label: "", index: 0 };
+        marker = {
+          id: key,
+          face: slot.face,
+          band: band.id,
+          column: slot.column,
+          parts: [],
+          label: "",
+          index: 0,
+        };
         byKey.set(key, marker);
         markers.push(marker);
       }
@@ -271,16 +353,18 @@
       marker.label = shared ? stems[0] : first.name;
     });
 
-    // Laid out in catalog order within each column, so the arrangement is
-    // stable across repaints and across droids: two builders comparing
-    // screenshots see the same thing in the same place.
+    // Laid out in catalog order within each column of each band, so the
+    // arrangement is stable across repaints and across droids: two builders
+    // comparing screenshots see the same thing in the same place.
     FACES.forEach((face) => {
-      COLUMNS.forEach((column) => {
-        let index = 0;
-        markers.forEach((marker) => {
-          if (marker.face !== face.id || marker.column !== column) return;
-          marker.index = index;
-          index += 1;
+      BANDS.forEach((band) => {
+        COLUMNS.forEach((column) => {
+          let index = 0;
+          markers.forEach((marker) => {
+            if (marker.face !== face.id || marker.band !== band.id || marker.column !== column) return;
+            marker.index = index;
+            index += 1;
+          });
         });
       });
     });
@@ -314,25 +398,43 @@
       COLUMNS.length * GEOMETRY.columnWidth +
       (COLUMNS.length - 1) * GEOMETRY.columnGap +
       2 * GEOMETRY.facePadding;
-    const deepest = markers.reduce((most, marker) => Math.max(most, marker.index + 1), 0);
-    const faceHeight =
-      GEOMETRY.headingHeight +
-      deepest * (GEOMETRY.markerHeight + GEOMETRY.markerGap) +
-      2 * GEOMETRY.facePadding;
+    const faceX = (faceIndex) => faceIndex * (faceWidth + GEOMETRY.columnGap);
+    const rowPitch = GEOMETRY.markerHeight + GEOMETRY.markerGap;
     const width = FACES.length * faceWidth + (FACES.length - 1) * GEOMETRY.columnGap;
-    // The sentence saying which kind of state this is rides at the foot of the
-    // picture, INSIDE the viewBox, so a screenshot of the drawing carries it.
-    const height = faceHeight + GEOMETRY.headingHeight;
+
+    // A band is drawn when either elevation has something in it, and it is as
+    // deep on both as its deepest column on either, so the dome band of the
+    // front view lines up with the dome band of the rear one and the eye can
+    // cross between them. A band with nothing in it on both faces is not drawn:
+    // an empty heading would be a claim about a part of the droid nobody has.
+    const bands = BANDS.map((band) => ({
+      id: band.id,
+      label: band.label,
+      depth: markers
+        .filter((marker) => marker.band === band.id)
+        .reduce((most, marker) => Math.max(most, marker.index + 1), 0),
+    })).filter((band) => band.depth > 0);
+    const bandTop = new Map();
+    let cursor = GEOMETRY.headingHeight + GEOMETRY.facePadding;
+    bands.forEach((band) => {
+      bandTop.set(band.id, cursor);
+      cursor += GEOMETRY.bandHeadingHeight + band.depth * rowPitch + GEOMETRY.bandGap;
+    });
+    // The sentence saying which kind of state this is rides at the foot of
+    // EACH elevation, inside its plate, so a screenshot cropped to one face
+    // still says which face it is and what it is showing (after
+    // r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:481, which states
+    // scope per diagram because a page gets cropped).
+    const saidY = cursor + GEOMETRY.saidHeight - 8;
+    const faceHeight = cursor + GEOMETRY.saidHeight + GEOMETRY.facePadding;
+    const legendTop = faceHeight + GEOMETRY.bandGap;
 
     const markerAt = (marker, faceIndex) => {
       const x =
-        faceIndex * (faceWidth + GEOMETRY.columnGap) +
+        faceX(faceIndex) +
         GEOMETRY.facePadding +
         COLUMNS.indexOf(marker.column) * (GEOMETRY.columnWidth + GEOMETRY.columnGap);
-      const y =
-        GEOMETRY.headingHeight +
-        GEOMETRY.facePadding +
-        marker.index * (GEOMETRY.markerHeight + GEOMETRY.markerGap);
+      const y = bandTop.get(marker.band) + GEOMETRY.bandHeadingHeight + marker.index * rowPitch;
       return { x, y };
     };
 
@@ -362,31 +464,84 @@
       );
     };
 
+    // A band's heading carries its count, read off the markers actually drawn
+    // in it (docs/ui-copy-voice.md rule 8) -- which is how the front view comes
+    // to say how many body parts it carries without this file ever holding
+    // the number.
+    const bandHtml = (band, face, faceIndex) => {
+      const x0 = faceX(faceIndex);
+      const top = bandTop.get(band.id);
+      const here = markers.filter((marker) => marker.face === face.id && marker.band === band.id);
+      const count = here.reduce((sum, marker) => sum + marker.parts.length, 0);
+      const counted =
+        count === 0 ? "none on this side" : `${count} ${count === 1 ? "part" : "parts"}`;
+      return (
+        `<g class="bodyview-band" data-band="${esc(band.id)}">` +
+        `<line class="bodyview-band-rule" x1="${x0 + GEOMETRY.facePadding}" y1="${top}" ` +
+        `x2="${x0 + faceWidth - GEOMETRY.facePadding}" y2="${top}"></line>` +
+        `<text class="bodyview-band-label" x="${x0 + GEOMETRY.facePadding}" ` +
+        `y="${top + GEOMETRY.bandHeadingHeight - 7}">${esc(band.label)} · ${counted}</text>` +
+        here.map((marker) => markerHtml(marker, faceIndex)).join("") +
+        `</g>`
+      );
+    };
+
     const faceHtml = (face, faceIndex) => {
-      const x0 = faceIndex * (faceWidth + GEOMETRY.columnGap);
+      const x0 = faceX(faceIndex);
       return (
         `<g class="bodyview-face" data-face="${esc(face.id)}">` +
         `<rect class="bodyview-face-plate" x="${x0}" y="0" width="${faceWidth}" ` +
         `height="${faceHeight}" rx="4"></rect>` +
         `<text class="bodyview-face-label" x="${x0 + GEOMETRY.facePadding}" ` +
         `y="${GEOMETRY.facePadding + 10}">${esc(face.label)}</text>` +
-        markers
-          .filter((marker) => marker.face === face.id)
-          .map((marker) => markerHtml(marker, faceIndex))
-          .join("") +
+        bands.map((band) => bandHtml(band, face, faceIndex)).join("") +
+        `<text class="bodyview-said" x="${x0 + GEOMETRY.facePadding}" y="${saidY}">` +
+        `${esc(KIND_SAID.live)}</text>` +
+        `</g>`
+      );
+    };
+
+    // The legend, under both elevations and inside the viewBox so it travels
+    // with a screenshot. Every entry is built here, once, and update() shows
+    // exactly the ones the picture is drawing at that moment and no others --
+    // generated from the states drawn rather than a fixed list (ADR 0063), and
+    // still a repaint in place rather than a rebuild. A swatch wears a marker's
+    // own classes, so it is drawn by the rules that draw the marker.
+    const legendHtml = (entry) => {
+      const w = GEOMETRY.legendSwatchWidth;
+      const h = GEOMETRY.legendSwatchHeight;
+      const top = (GEOMETRY.legendRowHeight - h) / 2;
+      const swing = (GEOMETRY.maxSwingDeg * 0.6).toFixed(1);
+      return (
+        `<g class="bodyview-legend-item" data-legend="${esc(entry.id)}" display="none">` +
+        `<g class="bodyview-marker bodyview-swatch ${esc(entry.swatch)}" aria-hidden="true">` +
+        `<rect class="bodyview-footprint" x="0" y="${top}" width="${w}" height="${h}" rx="2"></rect>` +
+        `<rect class="bodyview-leaf" x="0" y="${top}" width="${w}" height="${h}" rx="2" ` +
+        `transform="rotate(${swing} 0 ${top})"></rect>` +
+        `</g>` +
+        `<text class="bodyview-legend-text" x="${w + 10}" y="${GEOMETRY.legendRowHeight / 2}">` +
+        `${esc(entry.means)}</text>` +
         `</g>`
       );
     };
 
     host.innerHTML =
-      `<svg class="bodyview-svg" viewBox="0 0 ${width} ${height}" role="group" ` +
+      `<svg class="bodyview-svg" viewBox="0 0 ${width} ${faceHeight}" role="group" ` +
       `data-state-kind="${STATE_KINDS.LIVE}">` +
       FACES.map(faceHtml).join("") +
-      `<text class="bodyview-said" x="0" y="${faceHeight + 16}">${esc(KIND_SAID.live)}</text>` +
+      `<g class="bodyview-legend">` +
+      LEGEND.map(legendHtml).join("") +
+      `</g>` +
       `</svg>`;
 
     const svg = host.querySelector(".bodyview-svg");
-    const said = host.querySelector(".bodyview-said");
+    // One `said` line per elevation, all written together: one kind of state at
+    // a time, so every face says the same sentence.
+    const saids = host.querySelectorAll(".bodyview-said");
+    const legendNodes = LEGEND.map((entry) => ({
+      entry,
+      node: host.querySelectorAll("[data-legend]").find((each) => each.dataset.legend === entry.id),
+    }));
     const nodes = new Map();
     host.querySelectorAll("[data-marker]").forEach((cell) => {
       const marker = markers.find((each) => each.id === cell.dataset.marker);
@@ -425,9 +580,14 @@
     const update = (model) => {
       const state = model || {};
       const kind = state.kind === STATE_KINDS.POSE ? STATE_KINDS.POSE : STATE_KINDS.LIVE;
-      said.textContent = state.said || KIND_SAID[kind];
+      saids.forEach((said) => {
+        said.textContent = state.said || KIND_SAID[kind];
+      });
       svg.setAttribute("data-state-kind", kind);
       const marks = state.marks || {};
+      // What this frame actually draws, which is the whole of what the legend
+      // may define.
+      const drawn = new Set();
       nodes.forEach((node, markerId) => {
         const mark = marks[markerId] || {};
         let token = mark.mark;
@@ -443,6 +603,8 @@
         }
         MARK_TOKENS.forEach((each) => node.cell.classList.toggle(`is-${each}`, each === token));
         node.cell.classList.toggle("partkind-light", mark.light === true);
+        drawn.add(token);
+        if (mark.light === true) drawn.add("light");
         // A position is drawn only where there is a recorded travel for it to
         // be a fraction of. Everything else has NO leaf -- absent, not dimmed,
         // because a dimmed position mark is still a claim.
@@ -461,6 +623,19 @@
         node.title.textContent = describe;
         node.cell.setAttribute("aria-label", describe);
       });
+
+      // The legend says the states drawn this frame, in LEGEND's order, and
+      // nothing else; the picture grows by exactly the rows it shows.
+      let rows = 0;
+      legendNodes.forEach(({ entry, node }) => {
+        const shown = drawn.has(entry.id);
+        node.setAttribute("display", shown ? "inline" : "none");
+        if (!shown) return;
+        node.setAttribute("transform", `translate(0 ${legendTop + rows * GEOMETRY.legendRowHeight})`);
+        rows += 1;
+      });
+      const height = rows === 0 ? faceHeight : legendTop + rows * GEOMETRY.legendRowHeight;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     };
 
     const pick = (event) => {
@@ -607,6 +782,7 @@
     STATE_KINDS,
     KIND_SAID,
     FACES,
+    BANDS,
     COLUMNS,
     SLOTS,
     placementFor,

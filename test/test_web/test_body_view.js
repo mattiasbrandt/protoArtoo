@@ -94,9 +94,69 @@ test("a Part with no position word is reported unplaced, never dropped and never
   });
 });
 
+// The disjoint-sections rule across the two elevations (#372): read off the
+// drawing a builder sees, not off placementFor(), so a Part drawn on both
+// faces is caught wherever the duplication happens.
+test("every Part is on exactly one elevation or reported unplaced - never both, never neither", () => {
+  const catalog = catalogOf();
+  const { host, BodyView } = boot();
+  const drawing = BodyView.mountDrawing(host, { parts: catalog.parts });
+
+  const seen = new Map(catalog.parts.map((part) => [part.id, []]));
+  host.querySelectorAll("[data-face]").forEach((face) => {
+    face.querySelectorAll("[data-marker]").forEach((cell) => {
+      drawing.partsOf(cell.dataset.marker).forEach((id) => seen.get(id).push(face.dataset.face));
+    });
+  });
+  drawing.unplaced.forEach((id) => seen.get(id).push("unplaced"));
+
+  seen.forEach((places, id) => {
+    assert.equal(places.length, 1, `${id} appears exactly once, not [${places.join(", ")}]`);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // It shows one kind of state at a time, and says which
 // ---------------------------------------------------------------------------
+
+// A legend that defines a state nobody can find on the picture, or leaves a
+// drawn one undefined, is a picture that lies about itself (ADR 0063: the
+// legend is generated from the states actually drawn).
+test("the legend defines exactly the states the picture is drawing, and follows a repaint", () => {
+  const catalog = catalogOf();
+  const { host, BodyView } = boot();
+  const drawing = BodyView.mountDrawing(host, { parts: catalog.parts });
+  const legend = () =>
+    host
+      .querySelectorAll("[data-legend]")
+      .filter((node) => node.getAttribute("display") !== "none")
+      .map((node) => node.dataset.legend)
+      .sort();
+  const drawnStates = () => {
+    const states = new Set();
+    host.querySelectorAll("[data-marker]").forEach((cell) => {
+      BodyView.MARK_TOKENS.forEach((token) => {
+        if (cell.classList.contains(`is-${token}`)) states.add(token);
+      });
+      if (cell.classList.contains("partkind-light")) states.add("light");
+    });
+    return [...states].sort();
+  };
+
+  drawing.update({
+    kind: "live",
+    marks: { doorFL: { mark: "driven", at: 0.5 }, drawer: { mark: "limp" }, panel5: { mark: "driven", light: true } },
+  });
+  assert.deepEqual(legend(), drawnStates());
+  assert.deepEqual(legend(), ["driven", "light", "limp", "unknown"]);
+
+  const marks = {};
+  drawing.markerIds().forEach((id) => {
+    marks[id] = { mark: "undriven" };
+  });
+  drawing.update({ kind: "live", marks });
+  assert.deepEqual(legend(), ["undriven"], "a state no longer drawn leaves the legend");
+});
 
 // ---------------------------------------------------------------------------
 // Nothing is presented as read back from a servo

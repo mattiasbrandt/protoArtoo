@@ -39,6 +39,20 @@ the patch releases, whose notes live on their own GitHub Release.
   it says so on the page and on every picture, and the shared rail is explained
   rather than drawn. Nothing on it is kept by hand, so it cannot go stale
   against the firmware the way a wiring document does.
+- **See your whole droid on one picture.** Parts opens with a front view and a
+  rear view of the droid, the dome above the body on each, and every part that
+  has a place is drawn on the side its name says it sits - so the doors and
+  arms across the front read at a glance instead of a row at a time. It shows
+  what the controller last told each part, never a reading taken from it: a
+  part told to open is drawn open, and a part nothing drives shows no position
+  at all rather than a dimmed one. Each view says which side it is and what it
+  is showing on the picture itself, so a screenshot still says it, and the
+  legend underneath names only the states you can actually see. Pick a part
+  and the panel beside it says what drives it and offers add it to the build,
+  give it an Output, and move it - which runs the part out to its open end,
+  across to its close end and back, as one command. It is an arrangement
+  rather than a likeness of any one design, so it reads the same on a droid
+  that is nobody's published design.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,

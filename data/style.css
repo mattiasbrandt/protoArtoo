@@ -7651,3 +7651,43 @@ body[data-page="wiring"] .wiring-tier > * + * {
   font-size: var(--fs-hint);
   color: var(--text-faint);
 }
+
+/* ---------------------------------------------------------------------------
+   The body view's elevations and legend (#372, ADR 0063)
+
+   Its own block, after the body view's, so no rule above is edited. The front
+   and rear views are arrangements, not likenesses: a band is a rule and a
+   label, never an outline of a dome or a body, because a drawn silhouette is
+   somebody's published droid.
+
+   A legend swatch wears a marker's own classes (`bodyview-marker is-...`), so
+   the treatments above draw it; what this block adds is only that a swatch is
+   not a thing to pick - it takes no pointer, and so no hover lift either.
+   --------------------------------------------------------------------------- */
+.bodyview-band-rule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.bodyview-band-label,
+.bodyview-legend-text {
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.08em;
+  fill: var(--text-faint);
+}
+
+.bodyview-band-label {
+  text-transform: uppercase;
+}
+
+.bodyview-legend-text {
+  letter-spacing: normal;
+  fill: var(--text-dim);
+  dominant-baseline: middle;
+}
+
+.bodyview-swatch {
+  cursor: default;
+  pointer-events: none;
+}
