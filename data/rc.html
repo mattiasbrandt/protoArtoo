@@ -16,12 +16,11 @@
   </head>
   <body data-page="rc">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Every act
-         here is named beside the thing it acts on, so the title carries none. -->
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named
+         beside the thing it acts on, so the title carries none. -->
     <div class="title">
       <div>
         <h1>RC Control</h1>
-        <p class="question">Which stick, switch or dial on the transmitter does what on this droid?</p>
       </div>
     </div>
 
@@ -29,32 +28,30 @@
          (CONTEXT.md), told apart by treatment and never by hue: the mapping
          half of this page keeps working, so the card says that too.
 
-         The three sentences below are #166's, word for word. No test pins
-         them any more (#406: copy is read on the screen and in the diff), so
-         a sweep that is about layout and pictographs has to leave them alone
-         on its own account. The first draft of this card said
-         "Nothing is arriving from a receiver", which drops the clause that
-         carries the whole diagnosis - the source is inactive FOR THE RECEIVER
-         TYPE AND ROUTING you picked, which is the thing to go and change. -->
+         Shortened to short droid English (#407), but one clause must survive
+         any rewrite: an earlier draft said "Nothing is arriving from a
+         receiver", which drops the whole diagnosis - the source is inactive
+         FOR THE RECEIVER TYPE AND ROUTING you picked, which is the thing to go
+         and change. -->
     <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>RC input</h2><span class="sub">no source is live</span></div>
-      <p class="prose"><b>No RC source is active for the current receiver type and routing.</b> Enable the applicable RC input in <a class="setup-link" href="/setup.html">Setup</a>, or select the intended receiver type and routing below, then restart the controller. Mapping edits remain available.</p>
+      <p class="note"><b>No RC source live for this receiver type and routing.</b> Switch the input on in <a class="setup-link" href="/setup.html">Setup</a>, or pick the right receiver below and restart; mappings still edit.</p>
     </div>
 
     <!-- The receiver type comes first: it decides what every other card on this
          page is even about. -->
     <div class="card">
       <div class="sect"><h2>Receiver type</h2><span class="sub" id="rc-mode-summary">finding out</span></div>
-      <p class="prose">What is plugged into the controller's RC inputs. Pick the one you actually fitted: the channel list, the live column and the mapping editor below all follow this choice.</p>
-      <!-- #166's two sentences, word for word, and pinned as such. -->
+      <!-- Two save moments on one page, told apart where the builder picks
+           (docs/ui-copy-voice.md rule 9). -->
       <div class="note note-info" role="note">
-        Receiver type and single-SBUS routing save immediately and apply after controller restart. Channel mapping changes apply when saved.
+        Receiver type and SBUS input save at once and take effect after a restart. Mappings take effect when saved.
       </div>
 
       <div class="rc-mode-grid" role="group" aria-label="Receiver type">
         <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
           <div class="rc-mode-title">Standard PWM</div>
-          <div class="rc-mode-desc">Six separate PWM leads from an ordinary receiver</div>
+          <div class="rc-mode-desc">Six PWM leads from an ordinary receiver</div>
         </div>
         <div class="rc-mode-card" data-mode="single_sbus" tabindex="0" role="button" aria-pressed="false">
           <div class="rc-mode-title">Single SBUS</div>
@@ -99,7 +96,7 @@
       <div class="button-row button-row-compact">
         <button id="rc-reset-defaults" class="btn" type="button">Clear all mappings</button>
       </div>
-      <p class="hint">Clearing takes every binding off at once and asks first. A channel with nothing on it still arrives; it just does not do anything.</p>
+      <p class="hint">Clears every binding at once, after asking. An unbound channel still arrives and does nothing.</p>
     </div>
 
     <!-- The live column: what the transmitter is sending right now, and whether
@@ -107,12 +104,12 @@
     <div class="card">
       <div class="rc-live-monitor-layout">
         <div>
-          <div class="sect"><h3>Live monitor</h3><span class="sub">the channel you have selected</span></div>
+          <div class="sect"><h3>Live monitor</h3><span class="sub">selected channel</span></div>
           <div id="rc-live-preview-content">
           </div>
         </div>
         <div>
-          <div class="sect"><h3>Source health</h3><span class="sub">three inputs, and how old each one is</span></div>
+          <div class="sect"><h3>Source health</h3><span class="sub">age of each input</span></div>
           <div id="rc-preview-source-health" class="rc-source-grid"></div>
         </div>
       </div>

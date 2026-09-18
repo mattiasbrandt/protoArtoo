@@ -253,12 +253,12 @@
   // so a change to either is made to both by hand (#354).
   const MARCDUINO_SEQUENCES = [
     { id: 30, name: "Utility arm open-and-close", description: "Both utility arms swing out, then flick in and out twice before they close (5 s)." },
-    { id: 31, name: "All body panels open and close", description: "Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+    { id: 31, name: "All body panels open and close", description: "Every body door and arm opens and works, then folds away in order (14 s)." },
     { id: 32, name: "All body doors wiggle-close", description: "The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
     { id: 33, name: "Use gripper arm", description: "The left breadpan door opens and the gripper arm rises and snaps its claw three times, then folds away (8 s)." },
     { id: 34, name: "Use interface tool", description: "The right breadpan door opens and the interface arm rises and works its tool three times, then folds away (9 s)." },
     { id: 35, name: "Ping-pong body doors", description: "The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
-    { id: 36, name: "BT-1 two-gripper sequence", description: "BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },
+    { id: 36, name: "BT-1 two-gripper sequence", description: "Both breadpan doors open and both grippers snap together five times, then fold away (7 s)." },
   ];
 
   // Factory dome sequences (fallback when /api/seq/list is unavailable)
@@ -272,14 +272,14 @@
     { payload: 'DM:OVERLOAD',  label: 'Overload',             description: 'Failure logics, panels sluggishly drift (12 s)' },
     { payload: 'DM:HEART',     label: 'Heart',                description: 'Rainbow holos, sweet logic message (10 s)' },
     { payload: 'DM:ALARM',     label: 'Alarm',                description: 'Pulsing red holos and logics (10 s)' },
-    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco sequence delegating to SE09 (46 s)' },
+    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco lights and music (46 s)' },
     { payload: 'DM:VADER',     label: 'Imperial March',       description: 'Imperial March -- red logics/holos (47 s)' },
     { payload: 'DM:ROCKMARCH', label: 'Rock March',           description: 'Imperial March alternate visual (47 s)' },
     { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Logic text greeting, then P1 opens and closes (4 s)' },
     { payload: 'DM:LEIA',      label: 'Leia',                 description: 'Front holo Leia effect, logic Leia mode (36 s)' },
     { payload: 'DM:CANTINA',   label: 'Cantina',              description: '130 BPM alternating panel dance (17 s)' },
     { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
-    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Delegate to a random SE sequence' },
+    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Plays a random sequence' },
   ];
 
   // Cached learned sequences (fetched on demand)
@@ -775,7 +775,7 @@
 
     if (!selectedChannel) {
       rcLivePreviewContent.innerHTML =
-        '<p class="prose"><b>No channel is selected.</b> Pick one in the list below and what it is sending shows up here.</p>';
+        '<p class="note"><b>No channel selected.</b> Pick one below to see what it sends.</p>';
       return;
     }
 
