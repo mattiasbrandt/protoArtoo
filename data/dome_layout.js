@@ -28,6 +28,8 @@
 //   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
 //     'vendored' and 'stated-design' are both tier 3: the first says the
 //     built-in drawing is this builder's dome, the second that it is not.
+//   - statedDesignDifference(): the connected dome's panels against the stated
+//     Dome Design's, for the builder to resolve; it changes neither (#368)
 // =============================================================================
 
 (() => {
@@ -253,6 +255,71 @@
     return model;
   }
 
+  /**
+   * The connected dome's panels, set against the stated Dome Design's.
+   *
+   * The Dome Design is the builder's statement and the dome's layout is the
+   * dome's; when both are present and disagree, the difference is reported for
+   * the builder to resolve and nothing here changes either one (CONTEXT.md
+   * "Dome Design", #333, #368). This returns the difference and writes nothing.
+   *
+   * Only a LIVE layout is a connected dome. A cached one is a dome that was
+   * connected once, and is not compared.
+   *
+   * What is compared is the panels - the pies and the side panels - because
+   * those are named the same on both sides: the dome's canonical element id
+   * (`PP1`, `P7`, ADR 0009) is the catalog's community shorthand for that part
+   * (docs/droid-parts.yaml `shorthand:`), and a panel is what a variant adds or
+   * leaves out ("a basic dome cannot grow the complex pies"). Holoprojectors,
+   * lights and fixtures are spelled differently on the two sides and are not
+   * compared rather than matched by guesswork.
+   *
+   * @returns {object|null} null with no connected dome;
+   *   {comparable: false} when the stated design declares no dome complement
+   *   to compare (unknown, or my own build);
+   *   otherwise {comparable: true, designLabel, domeOnly, designOnly}, each a
+   *   list of panel shorthands.
+   */
+  function statedDesignDifference() {
+    if (currentSource !== 'live' || !currentModel) {
+      return null;
+    }
+    const build = window.DroidBuild?.current?.() || null;
+    const parts = window.DroidParts?.parts || [];
+    const design = (window.DroidParts?.designs || []).find((row) => row.id === build?.dome.design);
+    if (!build || !design) {
+      return { comparable: false };
+    }
+    const complement = window.DroidBuild.complementFor(build.dome.design, build.dome.variant, 'dome');
+    // My own build seeds nothing on purpose, so it states no complement for a
+    // dome to disagree with; an unknown complement cannot be compared at all.
+    if (!complement.known || design.card === 'own-build') {
+      return { comparable: false };
+    }
+
+    const panels = parts.filter(
+      (part) => part.section === 'dome_pies' || part.section === 'dome_panels'
+    );
+    const stated = new Set(complement.ids);
+    const reported = new Set(
+      currentModel.elements
+        .filter((elem) => elem.in_layout === true && elem.element_type === 'panel')
+        .map((elem) => elem.id)
+    );
+
+    const variant = (design.variants || []).find((row) => row.id === build.dome.variant);
+    return {
+      comparable: true,
+      designLabel: variant ? `${design.short} ${variant.label}` : design.short,
+      domeOnly: panels
+        .filter((part) => reported.has(part.shorthand) && !stated.has(part.id))
+        .map((part) => part.shorthand),
+      designOnly: panels
+        .filter((part) => stated.has(part.id) && !reported.has(part.shorthand))
+        .map((part) => part.shorthand),
+    };
+  }
+
   // ── Fetch & Resolve ────────────────────────────────────────────────────
 
   /**
@@ -476,5 +543,6 @@
     onChange,
     offChange,
     getSource,
+    statedDesignDifference,
   };
 })();

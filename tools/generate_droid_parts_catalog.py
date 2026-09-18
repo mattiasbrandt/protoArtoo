@@ -195,9 +195,22 @@ PART_KEYS = frozenset(
 PART_KINDS = frozenset(("light",))
 
 DESIGN_KEYS = frozenset(
-    ("id", "preselected", "label", "short", "blurb", "note", "variants",
-     "default_variant", "seeds")
+    ("id", "preselected", "card", "halves", "label", "short", "blurb", "note",
+     "variants", "default_variant", "seeds")
 )
+
+# The three card kinds ADR 0047 names, as the catalog spells them. Required on
+# every design, because the alternative is a surface guessing the kind - from
+# the id, or from an empty seed list - and those guesses are exactly how `own`
+# (a real, empty complement) and an unread complement end up drawn alike.
+CARD_SUPPORTED = "supported"
+CARD_ROADMAP = "roadmap"
+CARD_OWN_BUILD = "own-build"
+CARD_KINDS = (CARD_SUPPORTED, CARD_ROADMAP, CARD_OWN_BUILD)
+
+# The halves a design may be offered for. A design names them only when it is
+# not offered for both, so there is one spelling of "both": no key at all.
+DESIGN_HALVES = ("dome", "body")
 # `legacy_ids`: spellings a variant was stored under before it was renamed. A
 # Droid Build is stored verbatim on the device and in every backup, so a rename
 # that dropped the old spelling would quietly reset every droid that answered
@@ -611,6 +624,33 @@ def read_designs(doc, declared_ids, problems, halves=None):
         row = {"id": design_id, "label": card["label"], "short": card["short"],
                "blurb": card["blurb"]}
 
+        card_kind = design.get("card")
+        if card_kind not in CARD_KINDS:
+            problems.append(
+                f"{where}: card is {card_kind!r}; every design declares one of "
+                f"{list(CARD_KINDS)}"
+            )
+        row["card"] = card_kind
+
+        # Emitted only where it narrows: a design offered for both halves
+        # carries no key, so there is one spelling of "both".
+        halves_offered = design.get("halves")
+        if halves_offered is not None:
+            if (
+                not isinstance(halves_offered, list)
+                or not halves_offered
+                or any(h not in DESIGN_HALVES for h in halves_offered)
+                or len(set(halves_offered)) != len(halves_offered)
+            ):
+                problems.append(
+                    f"{where}: halves is {halves_offered!r}; it lists some of "
+                    f"{list(DESIGN_HALVES)}, each once"
+                )
+            elif set(halves_offered) == set(DESIGN_HALVES):
+                problems.append(f"{where}: halves names both; omit the key instead")
+            else:
+                row["halves"] = list(halves_offered)
+
         # Emitted only where it is true: a design row carrying
         # `preselected: false` would read as a second answer to a question that
         # has exactly one.
@@ -635,7 +675,24 @@ def read_designs(doc, declared_ids, problems, halves=None):
                 problems.append(f"{where}: declares no complement at all")
             else:
                 row["seeds"] = read_seeds(where, design["seeds"])
+                # A roadmap design is one nobody has read, so its complement is
+                # the declared unknown and nothing else; `own` is the one
+                # genuinely empty complement. Either the other way round would
+                # draw one card kind as the other.
+                if card_kind == CARD_ROADMAP and design["seeds"] != TBD:
+                    problems.append(
+                        f"{where}: a roadmap design's seeds are {TBD}; "
+                        "nobody has read its complement"
+                    )
+                if card_kind == CARD_OWN_BUILD and design["seeds"] != []:
+                    problems.append(f"{where}: my own build seeds nothing; its seeds are []")
             rows.append(row)
+            continue
+
+        # Nothing on a roadmap card or on "my own build" can be picked beyond
+        # the card itself, so neither carries a second axis to pick on.
+        if card_kind in (CARD_ROADMAP, CARD_OWN_BUILD):
+            problems.append(f"{where}: a {card_kind} design declares no variants")
             continue
 
         if not isinstance(variants, list) or not variants:
@@ -714,6 +771,13 @@ def read_designs(doc, declared_ids, problems, halves=None):
         )
     else:
         chosen = next(r for r in rows if r["id"] == preselected_ids[0])
+        # A fresh controller records the pre-selected design as its answer, and
+        # a roadmap design is one the controller refuses to store.
+        if chosen.get("card") == CARD_ROADMAP:
+            problems.append(
+                f"designs/{chosen['id']}: is pre-selected, and a roadmap design "
+                "cannot be a controller's answer"
+            )
         # A pre-selected design has to be able to answer both halves of a
         # Droid Build on a fresh flash, so the complement its default variant
         # seeds must be known. `own` could legitimately be pre-selected and
@@ -936,8 +1000,15 @@ def design_identifier(design_id):
 
 
 def design_header_lines(catalog):
-    """The design vocabulary and the answer a fresh controller starts on."""
-    designs = catalog["designs"]
+    """The design vocabulary and the answer a fresh controller starts on.
+
+    A roadmap design is left out of the table, and that omission is the whole of
+    the controller's refusal of one (#368): droidDesignChoiceIsKnown() reads
+    this table, and both write paths - POST /api/config and the NVS restore -
+    already ask that one predicate. So a roadmap row cannot become an answer
+    firmware stores, with no second check at either call site to drift from it.
+    """
+    designs = [d for d in catalog["designs"] if d["card"] != CARD_ROADMAP]
     preselected = next(d for d in designs if d.get("preselected"))
     default_variant = preselected.get("defaultVariant", "")
     if "variants" in preselected:
@@ -974,9 +1045,13 @@ def design_header_lines(catalog):
         "// The design vocabulary",
         "//",
         "// A Droid Build names a Dome Design and a Body Design, each at a Design",
-        "// Variant, and the two halves are answered independently - an MK3 body under",
-        "// an MK4 dome is an ordinary droid rather than an error, so nothing below",
-        "// compares one half against the other (ADR 0047, #333).",
+        "// Variant, and the two halves are answered independently - an MK4.1 dome on",
+        "// an MK4 Basic body is an ordinary droid rather than an error, so nothing",
+        "// below compares one half against the other (ADR 0047, #333).",
+        "//",
+        "// These are the designs a Droid Build may STORE. A roadmap design - one the",
+        "// catalog draws as coming and nobody can pick yet - is left out on purpose,",
+        "// so droidDesignChoiceIsKnown() refuses it on every write path (#368).",
         "// -----------------------------------------------------------------------------",
         f"constexpr size_t DROID_DESIGN_COUNT = {len(designs)};",
         "",

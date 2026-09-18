@@ -40,7 +40,15 @@ const dataDir = join(__dirname, "../../data");
 const SURFACES = {
   configuration: {
     html: "configuration.html",
-    scripts: ["feature_availability.js", "configuration.js", "setup.js"],
+    scripts: [
+      "feature_availability.js",
+      "droid_parts.js",
+      "droid_build.js",
+      "dome_layout.js",
+      "droid_build_picker.js",
+      "configuration.js",
+      "setup.js",
+    ],
   },
   maintenance: {
     html: "maintenance.html",
@@ -131,9 +139,10 @@ const makeStub = () => ({
   click() {},
 });
 
-const boot = ({ config = freshConfig(), surface = "configuration" } = {}) => {
+const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = null } = {}) => {
   const parsed = surfaceDocument(SURFACES[surface].html);
   const posts = [];
+  const gets = [];
   const sections = new Map();
   const timers = [];
   let nextTimer = 1;
@@ -165,7 +174,14 @@ const boot = ({ config = freshConfig(), surface = "configuration" } = {}) => {
     PAApi: {
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
-        if (path === "/api/config") return { data: config };
+        gets.push(path);
+        if (path === "/api/config") return { ok: true, data: config };
+        // A dome on the WiFi link answers with its layout; with none given,
+        // the controller's own answer for a dome it cannot reach (docs/api.md).
+        if (path === "/api/dome/layout") {
+          if (domeLayout) return { ok: true, data: domeLayout };
+          throw new Error("dome layout unavailable");
+        }
         throw new Error(`unexpected GET ${path}`);
       },
       // The body arrives as a plain object from the run and as URLSearchParams
@@ -175,6 +191,14 @@ const boot = ({ config = freshConfig(), surface = "configuration" } = {}) => {
       postForm: async (path, body) => {
         const read = (key) => (body instanceof URLSearchParams ? body.get(key) : body[key]);
         posts.push({ path, body, get: read });
+        if (read("domeDesign") !== undefined || read("bodyDesign") !== undefined) {
+          const build = config.droidBuild || (config.droidBuild = {});
+          ["domeDesign", "domeVariant", "bodyDesign", "bodyVariant"].forEach((key) => {
+            if (read(key) !== undefined && read(key) !== null) build[key] = read(key);
+          });
+          if (read("fittedParts") !== undefined) build.fitted = read("fittedParts").split(",");
+          return { ok: true, data: config };
+        }
         const run = read("guidedSetupRun");
         const seen = read("guidedSetupVisited");
         if (run !== undefined && run !== null) config.guidedSetup.run = run;
@@ -283,7 +307,9 @@ const boot = ({ config = freshConfig(), surface = "configuration" } = {}) => {
   return {
     parsed,
     posts,
+    gets,
     config,
+    window: windowMock,
     location: windowMock.location,
     // Delivers a window event to what the surface registered for it.
     emitWindow: (type, event = {}) => (windowListeners.get(type) || []).forEach((handler) => handler(event)),
@@ -324,9 +350,10 @@ test("the run tells the controller which steps it actually showed", async () => 
     "the step the run opened on is recorded",
   );
 
-  // Straight to the last question: the six it jumped over were never on screen
-  // and must not be claimed.
-  env.railClick(8);
+  // Straight to the last question: every step it jumped over was never on
+  // screen and must not be claimed. Found by position rather than typed, so a
+  // step inserted into the run does not move what this asks about.
+  env.railClick(env.chips().length - 1);
   env.flushTimers();
   assert.equal(env.posts.at(-1).get("guidedSetupVisited"), "wifi,name");
   assert.equal(env.posts.at(-1).path, "/api/config");
@@ -484,4 +511,180 @@ test("a run reopened from Maintenance opens at its first question and can be mov
   assert.equal(env.id("wizard-stop").disabled, false, "and so can Stop");
   env.click("wizard-next");
   assert.equal(env.chips().findIndex((chip) => chip.current), 1, "and pressing it moves the run on");
+});
+
+// =============================================================================
+// The Droid Build step (#368, ADR 0047)
+//
+// Drawn on Configuration and shown as a step of the run. Three things here are
+// ways the decision behind it could be undone with every card still looking
+// right: a pick that replaces the Fitted Parts with a design's list, a roadmap
+// card that can be chosen, and a connected dome that quietly rewrites what the
+// builder said their dome is.
+// =============================================================================
+
+const withBuild = (build) => {
+  const config = freshConfig();
+  config.droidBuild = build;
+  return config;
+};
+
+// The design cards of one half, as the builder meets them.
+const designCards = (env, half) =>
+  env.id("droid-build-body").querySelectorAll("[data-half]")
+    .find((section) => section.getAttribute("data-half") === half)
+    .querySelectorAll("[data-design]");
+
+const cardFor = (env, half, design) =>
+  designCards(env, half).find((card) => card.getAttribute("data-design") === design);
+
+const variantFor = (env, half, variant) =>
+  env.id("droid-build-body").querySelectorAll("[data-half]")
+    .find((section) => section.getAttribute("data-half") === half)
+    .querySelectorAll("[data-variant]")
+    .find((button) => button.getAttribute("data-variant") === variant);
+
+const droidBuildPosts = (env) => env.posts.filter((post) => post.get("domeDesign") !== undefined ||
+  post.get("bodyDesign") !== undefined || post.get("fittedParts") !== undefined);
+
+test("choosing designs on the step keeps every part the builder already fitted", async () => {
+  // The gripper arm belongs to no design. A pick that wrote the chosen
+  // design's list as the Fitted Parts would drop it, which is the fence
+  // ADR 0047 refused.
+  const config = withBuild({
+    domeDesign: "mk4", domeVariant: "basic",
+    bodyDesign: "own", bodyVariant: "",
+    fitted: ["gripArm"],
+  });
+  const env = boot({ config });
+  await env.runSection();
+  await env.settle();
+  env.railClick(env.chips().findIndex((chip) => chip.title === "Droid Build"));
+
+  // An MK4.1 dome ...
+  cardFor(env, "dome", "mk41").fire("click", {});
+  await env.settle();
+  // ... on an MK4 Basic body: the design first, then its variant.
+  cardFor(env, "body", "mk4").fire("click", {});
+  await env.settle();
+  variantFor(env, "body", "basic").fire("click", {});
+  await env.settle();
+
+  const writes = droidBuildPosts(env);
+  assert.ok(writes.length >= 2, "each pick reached the droid");
+  writes.forEach((post) => {
+    const fitted = post.get("fittedParts");
+    if (fitted !== undefined) assert.ok(fitted.split(",").includes("gripArm"), "a pick dropped a fitted part");
+  });
+  assert.equal(config.droidBuild.domeDesign, "mk41");
+  assert.equal(config.droidBuild.domeVariant, "");
+  assert.equal(config.droidBuild.bodyDesign, "mk4");
+  assert.equal(config.droidBuild.bodyVariant, "basic");
+  assert.ok(config.droidBuild.fitted.includes("gripArm"));
+  assert.ok(config.droidBuild.fitted.includes("pie1"), "the MK4.1 dome seeded its parts");
+
+  // The rail reads the same answer the cards do.
+  const chip = env.chips().find((c) => c.title === "Droid Build");
+  assert.equal(chip.answer, "MK4.1 · MK4");
+});
+
+// The variants of one design option, as the builder meets them under its card.
+const optionVariants = (env, half, design) =>
+  env.id("droid-build-body").querySelectorAll("[data-half]")
+    .find((section) => section.getAttribute("data-half") === half)
+    .querySelectorAll("[data-option]")
+    .find((option) => option.getAttribute("data-option") === design)
+    .querySelectorAll("[data-variant]")
+    .map((button) => ({ id: button.getAttribute("data-variant"), checked: button.getAttribute("aria-checked") }));
+
+test("a design's variants are on screen under it, from the first paint", async () => {
+  // Shipped once without them: the row was drawn only after the droid's
+  // answer had arrived, and apart from the design it belonged to (operator
+  // finding, 2026-09-18 on #368). A variant is not cosmetic - it decides which
+  // complement is fitted - so it is never implied.
+  const reading = boot({ config: freshConfig() });
+  await reading.settle();
+  for (const half of ["dome", "body"]) {
+    assert.deepEqual(optionVariants(reading, half, "mk4"),
+      [{ id: "basic", checked: "false" }, { id: "complex", checked: "true" }],
+      `${half}: the default's variants while the droid's answer is still unread`);
+  }
+
+  // A fresh flash records MK4 Complex; a stored build is its own answer.
+  const stored = boot({
+    config: withBuild({
+      domeDesign: "mk41", domeVariant: "",
+      bodyDesign: "mk4", bodyVariant: "basic",
+      fitted: [],
+    }),
+  });
+  await stored.settle();
+  assert.deepEqual(optionVariants(stored, "body", "mk4"),
+    [{ id: "basic", checked: "true" }, { id: "complex", checked: "false" }]);
+  // MK4.1 declares no variants, so the chosen dome carries no sub-selection.
+  ["mk4", "mk41", "own", "mk3"].forEach((design) =>
+    assert.deepEqual(optionVariants(stored, "dome", design), [], `${design} on the dome`));
+});
+
+test("a roadmap card cannot be chosen, and nothing on the step writes before the droid has answered", async () => {
+  const env = boot({
+    config: withBuild({
+      domeDesign: "mk4", domeVariant: "complex",
+      bodyDesign: "mk4", bodyVariant: "complex",
+      fitted: ["doorFL"],
+    }),
+  });
+  await env.settle();
+
+  const roadmap = designCards(env, "body").filter((card) =>
+    card.querySelectorAll(".status-pill").some((p) => p.textContent === "Roadmap"));
+  assert.deepEqual(roadmap.map((card) => card.getAttribute("data-design")), ["mk3"]);
+  // Static content rather than a control: no button, nothing listening.
+  roadmap.forEach((card) => {
+    assert.equal(card.tagName, "DIV");
+    assert.equal(card.listeners.length, 0);
+    card.fire("click", {});
+  });
+  await env.settle();
+  assert.deepEqual(droidBuildPosts(env), [], "a roadmap card wrote to the droid");
+
+  // An older controller that reports no Droid Build: a pick here would be
+  // applied over an empty build and write back a design's list alone.
+  const older = boot({ config: freshConfig() });
+  await older.settle();
+  cardFor(older, "dome", "mk41").fire("click", {});
+  await older.settle();
+  assert.deepEqual(droidBuildPosts(older), [], "the step wrote before the droid had answered");
+});
+
+test("a connected dome that disagrees is shown, and the stated Dome Design stands", async () => {
+  // The live MK4 dome, with one pie it does not report.
+  const layout = JSON.parse(readFileSync(join(__dirname, "../../tests/fixtures/dome_layout_mk4.json"), "utf8"));
+  layout.elements.find((elem) => elem.id === "PP3").in_layout = false;
+
+  const config = withBuild({
+    domeDesign: "mk4", domeVariant: "complex",
+    bodyDesign: "mk4", bodyVariant: "basic",
+    fitted: ["pie1", "pie3"],
+  });
+  const env = boot({ config, domeLayout: layout });
+  await env.settle();
+  const configReads = env.gets.filter((path) => path === "/api/config").length;
+
+  // What the status stream does when the dome link comes up.
+  await env.window.DomeLayout.load();
+  await env.settle();
+
+  const note = env.id("droid-build-body").querySelectorAll(".droid-build-dome-differs");
+  assert.equal(note.length, 1, "the difference is shown");
+  assert.match(note[0].textContent, /lacks PP3/);
+
+  assert.deepEqual(droidBuildPosts(env), [], "the dome's layout was written over the builder's answer");
+  const build = env.window.DroidBuild.current();
+  assert.equal(build.dome.design, "mk4");
+  assert.equal(build.dome.variant, "complex");
+  assert.ok(build.fitted.includes("pie3"), "the dome took a fitted part off");
+  // The page already held the droid's answer: resolving the dome spends no
+  // second read of it on a controller that sheds connections under load.
+  assert.equal(env.gets.filter((path) => path === "/api/config").length, configReads);
 });

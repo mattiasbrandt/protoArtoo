@@ -51,8 +51,8 @@
   // The steps - ONE ordered array
   //
   // The rail, the header, the footer, back and next, and every count read this
-  // and nothing else. Inserting a step is adding a row: #368 puts the Droid
-  // Build at position three and nothing below this array has to move.
+  // and nothing else. Inserting a step is adding a row: #368 put the Droid
+  // Build at position three and nothing below this array had to move.
   //
   // A LEADING UNDERSCORE means "in the run, not in the count" - a step that is
   // shown rather than asked. Today that is the board, which is whichever one this
@@ -86,6 +86,15 @@
       q: () => (boardLabel ? `This is your ${boardLabel}.` : "This is the board doing the work."),
       why: "Nothing to pick: this firmware was built for this board. Everything after this plugs into it.",
       answer: () => boardLabel,
+    },
+    {
+      key: "build",
+      title: "Droid Build",
+      q: "Which droid did you build?",
+      why: "Your droid starts with the parts its design carries. Dome and body can come from different designs.",
+      // The picker's own summary, so the rail and the cards read one answer
+      // (data/droid_build_picker.js).
+      answer: () => window.DroidBuildPicker?.summary() || "",
     },
     {
       key: "drive",
@@ -498,6 +507,11 @@
     if (!runHasEnded()) renderRail();
   });
   document.getElementById("droid-name-input")?.addEventListener("input", () => {
+    if (!runHasEnded()) renderRail();
+  });
+  // The Droid Build is not a form control: it changes through its seam, and
+  // the seam tells every surface when it has.
+  window.DroidBuild?.onChange(() => {
     if (!runHasEnded()) renderRail();
   });
 

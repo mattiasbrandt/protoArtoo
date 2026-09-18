@@ -61,6 +61,16 @@ the patch releases, whose notes live on their own GitHub Release.
   Setup does not ask again. The two are kept apart, so a droid you answered and
   a droid you walked away from are still different afterwards. All of it travels
   with Backup and Restore like any other setting.
+- **Say which droid you built.** Configuration and the guided run ask your
+  Dome Design and your Body Design, each at its variant, and the two can come
+  from different designs: an MK4.1 dome on an MK4 Basic body is an ordinary
+  droid. Picking a design fits the parts it carries and never takes off one you
+  already fitted, so the gripper arm you printed stays. MK4 Complex is the
+  default and says so. My own build fits nothing and is always there. MK3 is on
+  the card list as coming and cannot be picked yet. Where a design's parts are
+  not written down yet, the step says so instead of fitting nothing quietly. A
+  connected dome that reports different panels from your Dome Design is shown
+  under it; your answer stands until you change it.
 - **Configuration and Maintenance, where Setup was.** Configuration holds what
   the droid is made of: its components, the LED strip, its name. Maintenance
   checks the controller over: serial links, memory, backup, restart. A droid

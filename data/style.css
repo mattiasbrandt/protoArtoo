@@ -7675,3 +7675,143 @@ body[data-page="wiring"] .wiring-tier > * + * {
   font-size: var(--fs-hint);
   color: var(--text-faint);
 }
+
+
+/* ---------------------------------------------------------------------------
+   The Droid Build step (#368): a Dome Design and a Body Design, each a row of
+   design plates, the chosen one carrying its Design Variants
+   (data/droid_build_picker.js).
+
+   Its own block, added whole, so no shared rule above changes. It draws the
+   anatomy's picker card (docs/ui-copy-voice.md, ADR 0066 - "the identity is
+   the inside of the droid: an instrument panel"): a raised plate with the seam
+   all round and the hair of light along its top edge that .card carries, a
+   mono readout, a pill for the kind of card, and the interaction blue on the
+   one the builder picked and on nothing else. The variant row is the shared
+   .seg control and the roadmap plate takes the shared "settled no" dim
+   (.availability-settled-no); nothing here restyles either.
+
+   A roadmap plate is not a dimmer button: it has no hover, no pointer and no
+   focus ring, and its seam is dashed, because there is nothing on it to press.
+   --------------------------------------------------------------------------- */
+.droid-build-half + .droid-build-half {
+  margin-top: var(--space-xl);
+}
+
+.droid-build-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-md);
+  margin-block: var(--space-md);
+}
+
+.droid-build-plate {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.droid-build-plate:hover:not(.availability-settled-no) {
+  border-color: var(--text-faint);
+}
+
+.droid-build-plate.is-chosen,
+.droid-build-plate.is-chosen:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+}
+
+.droid-build-plate.availability-settled-no {
+  border-style: dashed;
+}
+
+/* The face of the plate: the press, or on a roadmap plate the words alone. */
+.droid-build-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  flex: 1 1 auto;
+  width: 100%;
+  padding: var(--space-md);
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+}
+
+button.droid-build-card {
+  cursor: pointer;
+}
+
+button.droid-build-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Before the droid's answer has been read, a plate is not a control yet. */
+button.droid-build-card:disabled {
+  cursor: default;
+}
+
+.droid-build-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 18px;
+}
+
+/* The design's short form, read like a unit's designation on its plate. */
+.droid-build-card-readout {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.droid-build-plate.is-chosen .droid-build-card-readout {
+  color: var(--accent-bright);
+}
+
+.droid-build-card-label {
+  color: var(--text);
+  font-size: var(--fs-cell);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.droid-build-card-blurb {
+  font-size: var(--fs-cell);
+  line-height: 1.5;
+}
+
+/* The chosen design's Design Variants: part of its plate, under its words,
+   behind a seam - the next choice, visibly belonging to the design above. */
+.droid-build-variant-block {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.droid-build-variant-label {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.droid-build-unknown,
+.droid-build-dome-differs,
+.droid-build-boundary {
+  margin-block: var(--space-sm);
+}

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/configuration.js,/setup.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/droid_build_picker.js,/configuration.js,/setup.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -60,8 +60,8 @@
 
          The step LIST, its order and every count live in data/setup.js. Nothing
          here numbers a step, because a number typed in markup is a number that
-         goes wrong the day a step is inserted - which is exactly what #368 is
-         about to do.
+         goes wrong the day a step is inserted - which is exactly what #368
+         did.
          --------------------------------------------------------------------- -->
     <div class="card" id="wizard-checking">
       <div class="sect"><h2>Setup</h2><span class="sub">reading this droid</span></div>
@@ -105,6 +105,18 @@
           <svg class="i board-placeholder-icon" aria-hidden="true" focusable="false"><use href="#i-chip"/></svg>
           <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Which droid this is: a Dome Design and a Body Design, each at its
+         Design Variant (ADR 0047, #368). The cards are drawn by
+         data/droid_build_picker.js from the catalog's designs, so nothing here
+         names a design. The guided run shows this same host as its step. -->
+    <div class="card">
+      <div class="sect"><h2>Droid Build</h2><span class="sub" id="droid-build-summary">finding out</span></div>
+      <div data-setup-step="build">
+        <div id="droid-build-body"></div>
+        <div id="droid-build-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
     </div>
 

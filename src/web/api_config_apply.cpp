@@ -419,8 +419,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     // saveable and wirable, which is the decision this whole field exists to
     // keep (ADR 0047, #333).
     //
-    // The two halves are never compared. An MK3 body under an MK4 dome is an
-    // ordinary droid, and refusing that pairing is the other way this could
+    // The two halves are never compared. An MK4.1 dome on an MK4 Basic body is
+    // an ordinary droid, and refusing that pairing is the other way this could
     // quietly undo itself.
     if (!applyDroidBuildHalf(params, "domeDesign", "domeVariant",
                              "domeDesign and domeVariant must be sent together, and name a "

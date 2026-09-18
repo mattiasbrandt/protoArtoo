@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 2d0698665c77a0fbe277e816ffa0ec2384ea06814a3fa40b3df77a20d378dd0a
+// Source digest: sha256 9f30be3d9359a7e9ae0ce46c0c85827f6aed18b75217af3ac0ab0ae3f6ab78ea
 //
 // The Droid Parts Catalog's id vocabulary, and only that. A Part is
 // identity; an Output Address is only wiring, so there is no parts table
@@ -162,9 +162,13 @@ inline const char* droidPartIdAt(size_t index) {
 // The design vocabulary
 //
 // A Droid Build names a Dome Design and a Body Design, each at a Design
-// Variant, and the two halves are answered independently - an MK3 body under
-// an MK4 dome is an ordinary droid rather than an error, so nothing below
-// compares one half against the other (ADR 0047, #333).
+// Variant, and the two halves are answered independently - an MK4.1 dome on
+// an MK4 Basic body is an ordinary droid rather than an error, so nothing
+// below compares one half against the other (ADR 0047, #333).
+//
+// These are the designs a Droid Build may STORE. A roadmap design - one the
+// catalog draws as coming and nobody can pick yet - is left out on purpose,
+// so droidDesignChoiceIsKnown() refuses it on every write path (#368).
 // -----------------------------------------------------------------------------
 constexpr size_t DROID_DESIGN_COUNT = 3;
 

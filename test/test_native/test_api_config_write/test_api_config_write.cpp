@@ -502,6 +502,56 @@ void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
     TEST_ASSERT_EQUAL_STRING(before.dome.design, after.dome.design);
 }
 
+// A roadmap design is a card nobody can pick (#368). The route refuses it as a
+// stated half exactly the way it refuses a design the catalog never declared,
+// because it asks the same predicate - and applies nothing of the request.
+void test_a_roadmap_design_is_refused_as_a_stated_half() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    configCacheApplyDroidBuild(before);
+
+    const WebRequestTestParam params[] = {{"bodyDesign", "mk3"}, {"bodyVariant", ""}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_STRING(before.body.design, after.body.design);
+    TEST_ASSERT_EQUAL_STRING(before.body.variant, after.body.variant);
+}
+
+// The mixed droid the ticket names: a dome from one design on a body from
+// another saves without complaint, both halves as stated (#368).
+void test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    configCacheApplyDroidBuild(before);
+
+    const WebRequestTestParam params[] = {
+        {"domeDesign", "mk41"}, {"domeVariant", ""},
+        {"bodyDesign", "mk4"}, {"bodyVariant", "basic"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_STRING("mk41", after.dome.design);
+    TEST_ASSERT_EQUAL_STRING("", after.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
+    TEST_ASSERT_EQUAL_STRING("basic", after.body.variant);
+}
+
 // --- Part moves through the whole route (ADR 0050, #347) ---------------------
 
 // Five empty rows, whatever an earlier test left in storage: a move persists,
@@ -608,6 +658,8 @@ int main() {
     RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);
     RUN_TEST(test_the_part_vocabulary_is_unchanged_by_a_droid_build_write);
     RUN_TEST(test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying);
+    RUN_TEST(test_a_roadmap_design_is_refused_as_a_stated_half);
+    RUN_TEST(test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);

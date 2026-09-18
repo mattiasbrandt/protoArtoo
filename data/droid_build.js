@@ -286,6 +286,10 @@
       return null;
     }
     applyDroidBuild(stored, { seed: false, persist: false });
+    // This page now holds the device's answer, so a later load() - the dome
+    // layout asks for one before it resolves - joins it rather than reading
+    // /api/config again. That is what "spends no request at all" above means.
+    loading = Promise.resolve(applied);
     return applied;
   }
 

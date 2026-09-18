@@ -140,8 +140,8 @@ class GeneratorRefusals(unittest.TestCase):
 
     def test_a_default_on_a_design_with_no_variants(self):
         self.scratch.edit(
-            "  - id: own\n    label: My own build",
-            "  - id: own\n    default_variant: complex\n    label: My own build",
+            "  - id: own\n    card: own-build\n",
+            "  - id: own\n    card: own-build\n    default_variant: complex\n",
         )
         self.assertRefused("declares a default_variant but no variants")
 
@@ -153,8 +153,8 @@ class GeneratorRefusals(unittest.TestCase):
 
     def test_two_designs_both_claim_to_be_pre_selected(self):
         self.scratch.edit(
-            "  - id: own\n    label: My own build",
-            "  - id: own\n    preselected: true\n    label: My own build",
+            "  - id: own\n    card: own-build\n",
+            "  - id: own\n    card: own-build\n    preselected: true\n",
         )
         self.assertRefused("exactly one design carries `preselected: true`")
 
@@ -184,6 +184,25 @@ class GeneratorRefusals(unittest.TestCase):
         live variant id would mean two things on the way in (#409)."""
         self.scratch.edit("legacy_ids: [simple]", "legacy_ids: [complex]")
         self.assertRefused("legacy_ids that are ambiguous")
+
+    def test_a_design_that_does_not_say_which_card_it_is(self):
+        """A surface guessing the kind from the id or the seeds is how `own`
+        and an unread complement end up drawn alike (ADR 0047)."""
+        self.scratch.edit("  - id: own\n    card: own-build\n", "  - id: own\n")
+        self.assertRefused("every design declares one of")
+
+    def test_a_roadmap_design_that_claims_a_complement(self):
+        """Nobody has read a roadmap design's parts, so a seed list on one is
+        a guess the generator refuses (#368)."""
+        self.scratch.edit("    seeds: TBD\n\n  - id: own", "    seeds: [doorFL]\n\n  - id: own")
+        self.assertRefused("a roadmap design's seeds are TBD")
+
+    def test_a_roadmap_design_pre_selected(self):
+        """A fresh controller records its pre-selected design, and the
+        controller refuses a roadmap design as an answer."""
+        self.scratch.edit("\n    preselected: true", "")
+        self.scratch.edit("    card: roadmap\n", "    card: roadmap\n    preselected: true\n")
+        self.assertRefused("a roadmap design cannot be a controller's answer")
 
     def test_a_design_id_that_is_not_an_identifier(self):
         """A design id is stored verbatim in device config and becomes a C
@@ -410,6 +429,18 @@ class GeneratorPromises(unittest.TestCase):
         # seeded from there, and firmware is not a second copy of it.
         self.assertNotIn('"blurb"', firmware)
         self.assertNotIn("DROID_DESIGN_VARIANTS_OWN", firmware)
+
+    def test_a_roadmap_design_is_drawn_and_never_stored(self):
+        """The browser draws a roadmap card; the firmware's design table - the
+        one droidDesignChoiceIsKnown() reads on every write path - does not
+        carry it, which is what makes the controller refuse it (#368)."""
+        firmware, browser = self.scratch.generate()
+        roadmap = [d for d in browser_payload(browser)["designs"] if d["card"] == "roadmap"]
+        self.assertEqual([d["id"] for d in roadmap], ["mk3"])
+        self.assertIsNone(roadmap[0]["seeds"])
+        self.assertNotIn('"mk3"', firmware)
+        stored = len([d for d in browser_payload(browser)["designs"] if d["card"] != "roadmap"])
+        self.assertIn(f"constexpr size_t DROID_DESIGN_COUNT = {stored};", firmware)
 
     def test_the_regeneration_note_names_both_outputs(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:
