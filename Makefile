@@ -169,7 +169,7 @@ check-pin-drift: ## Check the pins in config.h against the wiring in docs/pin_ma
 
 # The Surface Anatomy's two mechanical rules - no pictograph on a swept surface,
 # and every icon reference resolving against the sprite - in the same
-# report-never-rewrite shape as the three above (#399, ADR 0066).
+# report-never-rewrite shape as the four above (#399, ADR 0066).
 check-surface-anatomy: ## Check the operator surfaces against the Surface Anatomy
 	python3 tools/check_surface_anatomy.py
 

@@ -213,7 +213,7 @@ jobs:
       # The Surface Anatomy's two mechanical rules (#399, ADR 0066): no
       # pictograph on a surface the sweep has reached, and every icon
       # reference resolving against the sprite data/shell.js injects. It runs
-      # here, beside the other two report-never-rewrite checks, because an
+      # here, beside the other three report-never-rewrite checks, because an
       # unresolved <use> renders an empty box and says nothing at all.
       - name: 🎨 Surface Anatomy
         id: surface-anatomy
