@@ -178,18 +178,33 @@
     head.appendChild(element("span", "sub", state));
     section.appendChild(head);
 
+    // Before the droid's answer has been read, the design a fresh controller
+    // records is drawn as the one shown - at its default variant, with nothing
+    // pressable - so the step never renders a design without its variants
+    // while it waits.
+    const preselected = preselectedDesign();
+    const shown = choice || (preselected
+      ? { design: preselected.id, variant: preselected.defaultVariant || "" }
+      : null);
+
     const cards = element("div", "droid-build-cards");
     cards.setAttribute("role", "radiogroup");
     cards.setAttribute("aria-label", half.title);
     offeredFor(half.key).forEach((design) => {
-      cards.appendChild(designCard(half, design, choice?.design === design.id, interactive));
+      // One option per design: its card, and - on the design shown - its
+      // variants directly under it, as the sub-selection that belongs to it
+      // (operator, 2026-09-18 on #368). A design with no variants has none.
+      const option = element("div", "droid-build-option");
+      option.dataset.option = design.id;
+      option.appendChild(designCard(half, design, choice?.design === design.id, interactive));
+      if (shown?.design === design.id && Array.isArray(design.variants)) {
+        option.appendChild(variantRow(half, design, shown, interactive));
+      }
+      cards.appendChild(option);
     });
     section.appendChild(cards);
 
     const chosenDesign = designById(choice?.design);
-    if (chosenDesign && Array.isArray(chosenDesign.variants)) {
-      section.appendChild(variantRow(half, chosenDesign, choice, interactive));
-    }
 
     // A complement nobody has written down is said out loud, never drawn as an
     // empty half: fitting nothing silently would read as "your dome has no

@@ -7757,9 +7757,31 @@ button.droid-build-card:disabled {
   line-height: 1.5;
 }
 
+/* A design and, under the chosen one, its variants: one option, so the
+   sub-selection visibly belongs to the design above it rather than reading as
+   a control of its own further down (operator, 2026-09-18 on #368). */
+.droid-build-option {
+  display: flex;
+  flex-direction: column;
+}
+
+.droid-build-option > .droid-build-card {
+  flex: 1 1 auto;
+}
+
 .droid-build-variants {
-  max-width: 360px;
-  margin-bottom: var(--space-sm);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-plate) var(--radius-plate);
+}
+
+/* The chosen design's frame runs round its variants too. */
+.droid-build-card.is-chosen + .droid-build-variants {
+  border-color: var(--accent);
+}
+
+.droid-build-option > .droid-build-card:has(+ .droid-build-variants) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .droid-build-unknown,

@@ -588,6 +588,44 @@ test("choosing designs on the step keeps every part the builder already fitted",
   assert.equal(chip.answer, "MK4.1 · MK4");
 });
 
+// The variants of one design option, as the builder meets them under its card.
+const optionVariants = (env, half, design) =>
+  env.id("droid-build-body").querySelectorAll("[data-half]")
+    .find((section) => section.getAttribute("data-half") === half)
+    .querySelectorAll("[data-option]")
+    .find((option) => option.getAttribute("data-option") === design)
+    .querySelectorAll("[data-variant]")
+    .map((button) => ({ id: button.getAttribute("data-variant"), checked: button.getAttribute("aria-checked") }));
+
+test("a design's variants are on screen under it, from the first paint", async () => {
+  // Shipped once without them: the row was drawn only after the droid's
+  // answer had arrived, and apart from the design it belonged to (operator
+  // finding, 2026-09-18 on #368). A variant is not cosmetic - it decides which
+  // complement is fitted - so it is never implied.
+  const reading = boot({ config: freshConfig() });
+  await reading.settle();
+  for (const half of ["dome", "body"]) {
+    assert.deepEqual(optionVariants(reading, half, "mk4"),
+      [{ id: "basic", checked: "false" }, { id: "complex", checked: "true" }],
+      `${half}: the default's variants while the droid's answer is still unread`);
+  }
+
+  // A fresh flash records MK4 Complex; a stored build is its own answer.
+  const stored = boot({
+    config: withBuild({
+      domeDesign: "mk41", domeVariant: "",
+      bodyDesign: "mk4", bodyVariant: "basic",
+      fitted: [],
+    }),
+  });
+  await stored.settle();
+  assert.deepEqual(optionVariants(stored, "body", "mk4"),
+    [{ id: "basic", checked: "true" }, { id: "complex", checked: "false" }]);
+  // MK4.1 declares no variants, so the chosen dome carries no sub-selection.
+  ["mk4", "mk41", "own", "mk3"].forEach((design) =>
+    assert.deepEqual(optionVariants(stored, "dome", design), [], `${design} on the dome`));
+});
+
 test("a roadmap card cannot be chosen, and nothing on the step writes before the droid has answered", async () => {
   const env = boot({
     config: withBuild({
