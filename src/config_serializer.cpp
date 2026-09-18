@@ -329,6 +329,8 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     // componentResolveMember()'s question, not the serializer's, so a member
     // cut from one image and restored in the next survives the round trip.
     out->sound_member         = r.readU8  ("snd_member",      def.sound_member);
+    // The Radio Controller Component Member, read raw for the same reason.
+    out->rc_member            = r.readU8  ("rc_member",       def.rc_member);
 
     out->rc_pwm_drive_speed  = loadRcBinding(r, "rcp_drv", def.rc_pwm_drive_speed);
     out->rc_pwm_drive_steer  = loadRcBinding(r, "rcp_str", def.rc_pwm_drive_steer);
@@ -582,6 +584,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("op_mode", cfg.stationary) && ok;
     ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
     ok = w.writeU8("snd_member", cfg.sound_member) && ok;
+    ok = w.writeU8("rc_member", cfg.rc_member) && ok;
 
     // RC bindings  --  format and write as strings
     char encoded[48] = {};

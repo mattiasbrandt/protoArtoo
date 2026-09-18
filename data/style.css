@@ -1598,15 +1598,13 @@ input.input-narrow {
    Each family also has a bare .availability-* class, so a surface that arrives
    later wears its family directly instead of editing these shared rules.
 
-   One state is not yet split at the source. identity-unavailable covers two
-   different failures - a transport failure that is retryable, and a manifest
-   the controller could not describe, which is terminal - and CONTEXT.md puts
-   the first in "still finding out" and the second in "settled no". The copy
-   already tells them apart (data/setup.js reasonFor()), but the DOM carries a
-   single feature-state-identity-unavailable class for both, so CSS cannot.
-   It is dressed as "still finding out" here, which is the reading its own
-   label ("Availability unknown") makes, until the element carries the
-   distinction. */
+   One state covers two families. identity-unavailable is a transport failure
+   that is retryable, or a manifest the controller could not describe, which
+   is terminal - and CONTEXT.md puts the first in "still finding out" and the
+   second in "settled no". It is dressed as "still finding out" here, and the
+   element also carries its family class (data/feature_availability.js
+   familyClassFor(), #369), which the "B1's fourth answer" block near the end
+   of this file uses to draw the terminal case as settled. */
 .feature-availability-row {
   position: relative;
   flex-wrap: wrap;
@@ -1743,11 +1741,6 @@ input.input-narrow {
   background:
     repeating-linear-gradient(135deg, color-mix(in srgb, var(--lift) 6%, transparent) 0 5px, transparent 5px 10px),
     var(--surface-alt);
-}
-
-.feature-availability-row .seg-option:disabled {
-  cursor: not-allowed;
-  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
 }
 
 .feature-availability-panel {
@@ -1894,68 +1887,6 @@ input.input-narrow {
 
 .feature-availability-content[aria-hidden="true"] {
   display: none;
-}
-
-.type-segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2xs);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  padding: var(--space-2xs);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  background: var(--well);
-  min-height: 44px;
-}
-
-.type-segmented .seg-option {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: var(--radius-plate);
-  padding: var(--space-sm) var(--space-md);
-  font: inherit;
-  font-size: var(--fs-cell);
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  min-height: 34px;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
-}
-
-.type-segmented .seg-option:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--lift) 5%, transparent);
-}
-
-/* The option chosen, lit by the interaction accent the way every other
-   segmented control on the droid lights one (.seg > button.active). It was
-   --success, which made an answer the builder gave read as a health signal and
-   put a green on something you can press. */
-.type-segmented .seg-option.is-active {
-  color: var(--text);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.type-segmented .seg-option:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-.type-select.type-select-native {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-  pointer-events: none;
 }
 
 .type-select {
@@ -4892,76 +4823,6 @@ body[data-page="maintenance"] .status-item .hint {
    wear amber, which read as "something is wrong" for a mode the operator chose
    on purpose; both now look selected the same way. */
 
-/* ---- Board image on setup page ---- */
-.board-image-wrap {
-  text-align: center;
-  padding: var(--space-md) 0 var(--space-2xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 260px;
-}
-
-.board-image-wrap img {
-  max-width: 100%;
-  max-height: 260px;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  object-fit: contain;
-}
-
-.board-image-wrap img.hidden {
-  display: none;
-}
-
-/* The legacy asset set's line drawing, drawn inline from the sprite setup.html
-   includes (ADR 0065). Framed like the photograph, at the photograph's 4:3 and
-   no taller, so the panel reads the same on either board. Its strokes are
-   currentColor; the global .hidden rule hides it. */
-.board-image-wrap .board-art {
-  width: min(100%, 346px);
-  height: auto;
-  aspect-ratio: 4 / 3;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.board-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  max-height: 260px;
-  min-height: 100px;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  background: var(--well);
-  gap: var(--space-sm);
-  padding: var(--space-md);
-}
-
-.board-placeholder.hidden {
-  display: none;
-}
-
-/* An empty picture plate is a board-shaped hole, and the icon says which shape
-   it is: the sprite's own chip, inheriting the text colour, with the sentence
-   under it as its label (ADR 0066). It was a 48 px emoji keyboard glyph. */
-.board-placeholder-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--text-faint);
-}
-
-.board-placeholder-text {
-  font-size: var(--fs-body);
-  color: var(--text-dim);
-  text-align: center;
-  max-width: 240px;
-}
-
 @media (max-width: 500px) {
   .mood-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -7811,7 +7672,390 @@ button.droid-build-card:disabled {
 }
 
 .droid-build-unknown,
-.droid-build-dome-differs,
-.droid-build-boundary {
+.droid-build-dome-differs {
   margin-block: var(--space-sm);
+}
+
+/* ---------------------------------------------------------------------------
+   The Component Picker (#369): each component family's products as cards
+   (data/component_picker.js).
+
+   Its own block, added whole. A card IS a Droid Build plate (#368) - the same
+   .droid-build-plate / .droid-build-card anatomy the operator approved as the
+   look of a picker card - so this block adds only what a product card has and
+   a design card does not: its picture.
+
+   The picture frame is the same size whatever fills it - a drawing, a
+   photograph, or nothing - and it carries no dimming of its own, so a card
+   missing its picture lays out identically and never reads as greyed. Greyed
+   is the plate's state class (.availability-settled-no for a roadmap product,
+   .availability-change-elsewhere for one this image does not carry), never
+   the frame's.
+   --------------------------------------------------------------------------- */
+/* Every row of cards is as tall as the tallest card in the family, so a
+   "Not fitted" card - words alone - holds its row's height (operator,
+   2026-09-18 on #369). */
+.droid-build-cards.component-cards {
+  grid-auto-rows: 1fr;
+}
+
+.component-picker + .note,
+.component-picker + .component-consequence {
+  margin-top: 0;
+}
+
+.component-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  color: var(--text);
+}
+
+.component-card-art svg,
+.component-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* A product whose card is shown on this image but that it does not carry:
+   the "change it elsewhere" family, drawn on a plate's whole seam rather
+   than on a row's left rail. */
+.droid-build-plate.availability-change-elsewhere {
+  border-style: dashed;
+}
+
+/* The Component Toggle behind a family whose cards are its control. It stays
+   in the form, because it is the value the save sends; the cards are what the
+   builder sees and presses. */
+.component-row.component-toggle-backing {
+  display: none;
+}
+
+/* A link option the project intends to carry (ELRS under an RC Radio): shown
+   in the segmented row it belongs to, and not a control - a span, dimmed to
+   the "settled no" family, with no pointer. */
+.seg > .component-link-roadmap {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 var(--space-lg);
+  color: var(--text-faint);
+  font-size: var(--fs-cell);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-plate);
+  opacity: var(--avail-dim-settled);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+   Output plates (#369): the utility arms, the AUX outputs and the RC receiver
+   channels, drawn in the picker's plate language instead of a row of
+   switches (operator, 2026-09-18). Each is still the same checkbox, the same
+   type selector and the same save; only the drawing changes.
+
+   The plate IS the switch: its head is the <label>, so a press anywhere on it
+   toggles the checkbox, and a switched-on output takes the chosen treatment
+   (the interaction blue), exactly as a picked card does. The slider is not
+   drawn. The Availability Family classes on the row still apply - a plate
+   this image cannot run dims like any other - so nothing here restyles them.
+   --------------------------------------------------------------------------- */
+.output-plates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-md);
+  margin-block: var(--space-md);
+}
+
+.output-plates > .component-row.output-plate {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  background-image: none;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.output-plates > .component-row.output-plate:hover {
+  border-color: var(--text-faint);
+}
+
+.output-plates > .component-row.output-plate:has(input[type="checkbox"]:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+}
+
+.output-plates > .component-row.output-plate:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.output-plate .toggle-switch {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+}
+
+.output-plate .toggle-slider {
+  display: none;
+}
+
+.output-plate .toggle-label {
+  font-weight: 600;
+}
+
+/* The state word, read like a plate's readout: mono, and lit on an output
+   that is switched on. */
+.output-plate .toggle-status {
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.output-plate:has(input[type="checkbox"]:checked) .toggle-status {
+  color: var(--accent-bright);
+}
+
+/* A chosen RC Radio's RC Receiver (#369): small receiver cards inside the
+   radio's plate, the same plate language one size down - a picture, the
+   name, and the interaction blue on the receiver the droid reads. */
+.component-receivers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: var(--space-xs);
+}
+
+.component-receiver {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.component-receiver:hover:not(:disabled) {
+  border-color: var(--text-faint);
+}
+
+.component-receiver.is-chosen {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--well));
+  color: var(--text);
+}
+
+.component-receiver:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.component-receiver:disabled {
+  cursor: default;
+}
+
+.component-receiver .component-card-art {
+  border-color: var(--border);
+}
+
+.component-receiver-label {
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.component-receiver-caption {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.06em;
+}
+
+.component-sub-second {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+/* A roadmap product's own options wrap inside its plate rather than run past
+   it: the labels are longer than a segment's and nothing here is pressed. */
+.seg.component-planned-row {
+  flex-wrap: wrap;
+}
+
+.seg.component-planned-row > .component-link-roadmap {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-xs) var(--space-sm);
+  white-space: normal;
+  text-align: center;
+}
+
+/* The chosen RC Receiver's channel ticks (#369): the output plates, one size
+   down, inside the radio's plate. A row the mode does not read is hidden by
+   the picker, and this block is only ever shown inside that answer. */
+.component-sub-channels {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.component-sub-channels .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-xs);
+  margin-block: 0;
+}
+
+.component-sub-channels .output-plates > .component-row.output-plate {
+  padding: var(--space-2xs) var(--space-sm);
+}
+
+.component-sub-channels .output-plates > .component-row.output-plate[hidden],
+.output-plates.component-receiver-channels:not(.component-sub-channels .output-plates) {
+  display: none;
+}
+
+/* A chosen radio carrying its RC Receiver answer takes two columns, so the
+   receiver cards and channel ticks have room beside each other. */
+.component-cards > .component-plate:has(.component-sub-channels, .component-receivers) {
+  grid-column: span 2;
+}
+
+/* The two-column radio plate keeps its picture the size of its neighbours'. */
+.component-cards > .component-plate:has(.component-sub-channels, .component-receivers) > .component-card > .component-card-art {
+  max-height: 188px;
+}
+
+.component-sub-channels .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+
+.component-sub-channels .output-plate .toggle-label {
+  white-space: nowrap;
+}
+
+.component-sub-channels .output-plate .toggle-status {
+  letter-spacing: 0.06em;
+}
+
+/* ---------------------------------------------------------------------------
+   The arm and AUX outputs on Wiring and Servos (#369,
+   data/output_settings.js): the same output plates, with the plate's head as
+   the press on Wiring and the servo type as the shared segmented control
+   under it. An output in use takes the chosen treatment, as a switched-on
+   output did on Configuration.
+   --------------------------------------------------------------------------- */
+.output-plates > .output-setting {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.output-plates > .output-setting.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+}
+
+.output-setting-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+button.output-setting-head {
+  cursor: pointer;
+}
+
+button.output-setting-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.output-setting .toggle-label {
+  font-weight: 600;
+}
+
+.output-setting .toggle-status {
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.output-setting.is-on .toggle-status {
+  color: var(--accent-bright);
+}
+
+.output-setting .output-seg > button {
+  padding-inline: var(--space-xs);
+}
+
+.output-setting-note {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   B1's fourth answer, applied (#341, #369): an identity that will never be
+   read is SETTLED NO, and one still being fetched is STILL FINDING OUT. The
+   element now carries the family (data/feature_availability.js
+   familyClassFor), so the terminal case leaves the dotted, breathing
+   "finding out" dress the state class alone gave it. And "still finding
+   out" is dimmed, so like every dimmed family it lifts on hover and focus:
+   a builder can still read what they cannot yet act on.
+   --------------------------------------------------------------------------- */
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no {
+  border-left-style: solid;
+  border-left-color: transparent;
+  opacity: var(--avail-dim-settled);
+}
+
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no:hover,
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no:focus-within,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no:hover,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no:focus-within {
+  opacity: 0.85;
+}
+
+.availability-finding-out:hover,
+.availability-finding-out:focus-within,
+.feature-availability-row.availability-finding-out:hover,
+.feature-availability-row.availability-finding-out:focus-within,
+.feature-availability-panel.availability-finding-out:hover,
+.feature-availability-panel.availability-finding-out:focus-within {
+  opacity: 1;
 }

@@ -196,8 +196,15 @@ PART_KINDS = frozenset(("light",))
 
 DESIGN_KEYS = frozenset(
     ("id", "preselected", "card", "halves", "label", "short", "blurb", "note",
-     "variants", "default_variant", "seeds")
+     "variants", "default_variant", "seeds", "picture")
 )
+
+# `picture`: the asset-set picture a design card shows - the id of a drawing
+# (`art-<id>`) in the legacy set and a photograph (`/<id>.webp`) in the
+# default set, the same lookup a Component Picker card makes (ADR 0065). Every
+# MrBaddeley design shares one (#369). Optional: a design with none, such as
+# "my own build", is words alone.
+PICTURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # The three card kinds ADR 0047 names, as the catalog spells them. Required on
 # every design, because the alternative is a surface guessing the kind - from
@@ -631,6 +638,16 @@ def read_designs(doc, declared_ids, problems, halves=None):
                 f"{list(CARD_KINDS)}"
             )
         row["card"] = card_kind
+
+        picture = design.get("picture")
+        if picture is not None:
+            if not isinstance(picture, str) or not PICTURE_ID_RE.match(picture):
+                problems.append(
+                    f"{where}: picture is {picture!r}; it names an asset-set picture "
+                    "id in lower case, or is omitted"
+                )
+            else:
+                row["picture"] = picture
 
         # Emitted only where it narrows: a design offered for both halves
         # carries no key, so there is one spelling of "both".

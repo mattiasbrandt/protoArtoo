@@ -325,6 +325,8 @@
 
     if (rc.sbusTimeoutMs !== undefined) p.set('sbusTimeoutMs', rc.sbusTimeoutMs);
     if (rc.inputMode !== undefined) p.set('rcInputMode', rc.inputMode);
+    // The RC Radio, the Radio Controller's Component Member (#369).
+    if (rc.member !== undefined) p.set('rcMember', rc.member);
     if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
 
     [
@@ -744,6 +746,11 @@
       "feature-state-identity-unavailable",
     );
     card.classList.add("feature-availability-panel", `feature-state-${result.state}`);
+    // Terminal and retryable identity failures are two families, which the
+    // state class alone cannot say (data/feature_availability.js).
+    card.classList.remove(...window.PAFeatureAvailability.FAMILY_CLASSES);
+    const family = window.PAFeatureAvailability.familyClassFor(result.state);
+    if (family) card.classList.add(family);
     card.dataset.featureState = result.state;
 
     if (availabilityStatus) {

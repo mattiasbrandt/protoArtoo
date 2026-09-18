@@ -2,8 +2,9 @@
 // data/configuration.js
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
-// The Droid Build, the hardware component toggles and their component types,
-// the LED strip route, the Body Controller picture and the droid's name.
+// The Droid Build, the Component Picker's families and the toggles behind
+// them, the LED strip's count and route, and the droid's name. The arm and
+// AUX outputs moved to Wiring and Servos (data/output_settings.js, #369).
 // Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
@@ -15,11 +16,10 @@
 // What a builder calls the board this image runs on. `identity.board` names the
 // firmware build and is not an operator-facing word, and the identity manifest
 // carries no name beside it, so this is where the two meet. File scope rather
-// than inside the module below, because two things on this surface read it - the
-// board picture and guided Setup's board step, which data/setup.js draws over
-// this surface and which loads after this file - and a second copy is a second
-// thing to keep in step (include/component_registry.inc holds the product names;
-// this is the shorter word the surfaces use).
+// than inside the module below, because guided Setup's board step reads it -
+// data/setup.js draws over this surface and loads after this file - and a
+// second copy is a second thing to keep in step (include/component_registry.inc
+// holds the product names; this is the shorter word the surfaces use).
 const BOARD_LABELS = {
   artoo_esp32: "Artoo Controller",
   firebeetle2: "FireBeetle 2",
@@ -35,11 +35,6 @@ const BOARD_LABELS = {
     state: "off",
   });
   const featureToggles = {
-    arm1:        featureToggle("arm1", "Utility Arm 1"),
-    arm2:        featureToggle("arm2", "Utility Arm 2"),
-    aux1:        featureToggle("aux1", "AUX 1"),
-    aux2:        featureToggle("aux2", "AUX 2"),
-    aux3:        featureToggle("aux3", "AUX 3"),
     domeEsc:     featureToggle("dome-esc", "Dome ESC"),
     rcCh1:       featureToggle("rc-ch1", "RC Channel 1"),
     rcCh2:       featureToggle("rc-ch2", "RC Channel 2"),
@@ -52,18 +47,13 @@ const BOARD_LABELS = {
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
-  // Component type selects — maps API key to select element
-  const typeSelects = {
-    arm1Type: document.getElementById("type-arm1"),
-    arm2Type: document.getElementById("type-arm2"),
-    aux1Type: document.getElementById("type-aux1"),
-    aux2Type: document.getElementById("type-aux2"),
-    aux3Type: document.getElementById("type-aux3"),
-  };
-  const AUX_RGB_SELECT_KEYS = ["aux1Type", "aux2Type", "aux3Type"];
-  const AUX_RGB_PIN_BY_KEY = { aux1Type: 1, aux2Type: 2, aux3Type: 3 };
-  const AUX_RGB_LABEL_BY_KEY = { aux1Type: "AUX1", aux2Type: "AUX2", aux3Type: "AUX3" };
-  const AUX_RGB_TOGGLE_KEY_BY_TYPE = { aux1Type: "aux1", aux2Type: "aux2", aux3Type: "aux3" };
+  // The arm and AUX outputs - in use, servo type, LED strip line - are set on
+  // Wiring and Servos now (data/output_settings.js, #369). This surface keeps
+  // the LED strip's count and preview, and reads where the strip is routed
+  // from the saved config rather than deriving it: it no longer holds the AUX
+  // rows it was derived from, and never sends aux_led_pin.
+  const AUX_LINE_LABELS = { 1: "AUX1", 2: "AUX2", 3: "AUX3" };
+  let routedAuxPin = 0;
 
   const featureFeedback = document.getElementById("feature-feedback");
   const auxLedCountInput = document.getElementById("aux-led-count");
@@ -83,11 +73,6 @@ const BOARD_LABELS = {
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
-    enableArm1:        "arm1",
-    enableArm2:        "arm2",
-    enableAux1:        "aux1",
-    enableAux2:        "aux2",
-    enableAux3:        "aux3",
     enableDomeEsc:     "domeEsc",
     enableRcCh1:       "rcCh1",
     enableRcCh2:       "rcCh2",
@@ -108,6 +93,11 @@ const BOARD_LABELS = {
   let savedRcChangeGeneration = 0;
   let rcRestartPending = false;
   let bootActiveRcComponents = {};  // Snapshot of boot-active RC component state from /api/rc
+  // The receiver type the droid booted with, and the one it has saved since.
+  // Chosen on the Radio Controller cards (data/component_picker.js), and like
+  // a channel toggle it takes effect only after a restart.
+  let bootActiveRcMode = null;
+  let savedRcMode = null;
   // Auto-save state
   let saveTimeout = null;
   const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
@@ -280,120 +270,7 @@ const BOARD_LABELS = {
         performIdentityDiagnosis();
       }, { once: true });
     }
-    // Show placeholder when identity is unavailable
-    showBoardPlaceholder("Could not tell which board this is.");
   });
-
-  // ---- Board picture ----
-
-  // identity.board names the firmware build, but a board's pictures are filed
-  // under its Component Registry id (include/component_registry.inc, the Body
-  // Controller family), and for the Artoo PCB the two tokens differ.
-  const BOARD_PRODUCT_IDS = {
-    artoo_esp32: "artoo_pcb",
-    firebeetle2: "firebeetle2",
-  };
-
-  const boardArt = document.getElementById("board-art");
-  const boardArtUse = document.getElementById("board-art-use");
-  const boardImage = document.getElementById("board-image");
-  const boardPlaceholder = document.getElementById("board-image-placeholder");
-  const boardPlaceholderText = document.getElementById("board-placeholder-text");
-
-  const showBoardPlaceholder = (text) => {
-    if (boardArt) boardArt.classList.add("hidden");
-    if (boardImage) boardImage.classList.add("hidden");
-    if (boardPlaceholder) {
-      boardPlaceholder.classList.remove("hidden");
-      if (boardPlaceholderText) boardPlaceholderText.textContent = text;
-    }
-  };
-
-  const showBoardImage = () => {
-    if (boardArt) boardArt.classList.add("hidden");
-    if (boardImage) boardImage.classList.remove("hidden");
-    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
-  };
-
-  const showBoardArt = () => {
-    if (boardImage) boardImage.classList.add("hidden");
-    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
-    boardArt.classList.remove("hidden");
-  };
-
-  // The picture comes from this build's asset set (ADR 0065), in the order every
-  // product card follows: the line drawing, else the photograph, else the
-  // placeholder. Which set was built is read from the document, not declared:
-  // setup.html inlines the set's sprite, and only the legacy set's carries
-  // symbols.
-  const updateBoardImage = (identity) => {
-    // This listener outlives the surface being on screen, and the shell replays
-    // the identity to every surface it mounts - so it also fires while the
-    // operator is reading another one. The panel is then out of the document,
-    // the drawing's symbol cannot be found, and the lookup below would fall
-    // through to a photograph the legacy set does not carry: the builder came
-    // back to "No photo of this board yet" where the drawing had been. The
-    // board never changes within a session, so there is nothing to repaint
-    // off screen.
-    if (boardImage && document.getElementById("board-image") !== boardImage) return;
-    if (!boardImage || !identity || !identity.board) {
-      showBoardPlaceholder("Checking which board this is…");
-      return;
-    }
-
-    const boardId = identity.board;
-    const boardLabel = BOARD_LABELS[boardId] || boardId;
-    const productId = BOARD_PRODUCT_IDS[boardId];
-    if (!productId) {
-      // Not a registry product, so no set has a drawing or a photograph of it,
-      // and there is no /<id>.webp route to ask.
-      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
-      return;
-    }
-
-    if (boardArt && boardArtUse && document.getElementById(`art-${productId}`)) {
-      // Drawn from the page's own sprite: nothing is fetched, so the
-      // deferred-asset gate below has nothing to hold back.
-      boardArtUse.setAttribute("href", `#art-${productId}`);
-      boardArt.setAttribute("aria-label", `${boardLabel} PCB`);
-      showBoardArt();
-      return;
-    }
-
-    const imageSrc = `/${productId}.webp`;
-
-    // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
-    boardImage.onload = () => {
-      showBoardImage();
-    };
-
-    boardImage.onerror = () => {
-      // Board has no photo yet; show placeholder with board name
-      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
-    };
-
-    // Set alt and title before setting src
-    boardImage.alt = `${boardLabel} PCB`;
-    boardImage.title = `${boardLabel} PCB`;
-
-    // Use data-deferred-src so image load is gated by announceAssetsOnce(), which ensures
-    // /api/events SSE opens before image fetches compete for the connection.
-    // Identity can resolve after the one-shot deferred-asset sweep has already run
-    // (a section that is visibly waiting to retry already counts as settled), so a
-    // late data-deferred-src would never be swept.
-    if (window.PAAssetsReady) boardImage.src = imageSrc;
-    else boardImage.dataset.deferredSrc = imageSrc;
-  };
-
-  // Listen for identity available event and update board image
-  window.addEventListener("pa:identity-available", (event) => {
-    updateBoardImage(event.detail);
-  });
-
-  // Also check cache at initialization time (if identity came before this script ran)
-  if (window.PAIdentity) {
-    updateBoardImage(window.PAIdentity);
-  }
 
   const saveIdentity = async () => {
     if (!window.PAApi || !identityNameInput) return;
@@ -436,6 +313,11 @@ const BOARD_LABELS = {
   let savePending = false;
   window.PAConfigurationSave = { isPending: () => savePending };
 
+  // Fields a Component Picker pick carries beside the toggles - today the
+  // Sound Component Member. They ride the next save and are cleared once it has
+  // been sent, so a pick is never held back for a later one (#369).
+  let pendingPickParams = {};
+
   const setSavePending = (pending) => {
     savePending = pending;
     if (pending) {
@@ -455,77 +337,9 @@ const BOARD_LABELS = {
     return normalized;
   };
 
-  const segmentedTypeControls = Array.from(document.querySelectorAll(".type-segmented[data-target]"));
-
-  const syncSegmentedControl = (control) => {
-    if (!control) return;
-    const targetId = control.dataset.target || "";
-    const target = document.getElementById(targetId);
-    if (!target) return;
-    const selected = String(target.value || "");
-    control.querySelectorAll(".seg-option[data-value]").forEach((button) => {
-      const isActive = button.dataset.value === selected;
-      button.classList.toggle("is-active", isActive);
-      button.setAttribute("aria-pressed", isActive ? "true" : "false");
-    });
-  };
-
-  const syncAllSegmentedControls = () => {
-    segmentedTypeControls.forEach((control) => syncSegmentedControl(control));
-  };
-
-  const initSegmentedTypeControls = () => {
-    segmentedTypeControls.forEach((control) => {
-      const targetId = control.dataset.target || "";
-      const target = document.getElementById(targetId);
-      if (!target) return;
-
-      control.addEventListener("click", (event) => {
-        const button = event.target.closest(".seg-option[data-value]");
-        if (!button) return;
-        const nextValue = String(button.dataset.value || "");
-        if (target.value !== nextValue) {
-          target.value = nextValue;
-          target.dispatchEvent(new Event("change", { bubbles: true }));
-        } else {
-          syncSegmentedControl(control);
-        }
-      });
-
-      target.addEventListener("change", () => syncSegmentedControl(control));
-      syncSegmentedControl(control);
-    });
-  };
-
-  const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => {
-    const toggleKey = AUX_RGB_TOGGLE_KEY_BY_TYPE[key];
-    const toggle = featureToggles[toggleKey];
-    const enabled = Boolean(toggle?.available && toggle.input?.checked);
-    return enabled && typeSelects[key]?.value === "rgb";
-  });
-
-  const deriveAuxLedPinFromTypes = () => {
-    const rgbKey = getRgbAuxKeys()[0];
-    return rgbKey ? AUX_RGB_PIN_BY_KEY[rgbKey] : 0;
-  };
-
-  const enforceSingleRgbAux = (changedKey = "") => {
-    const rgbKeys = getRgbAuxKeys();
-    if (rgbKeys.length <= 1) return;
-    const keepKey = changedKey && rgbKeys.includes(changedKey) ? changedKey : rgbKeys[0];
-    rgbKeys.forEach((key) => {
-      if (key !== keepKey && typeSelects[key]) {
-        typeSelects[key].value = "none";
-      }
-    });
-    const keptLabel = AUX_RGB_LABEL_BY_KEY[keepKey] || "selected AUX";
-    setFeatureFeedback(`Only one AUX line can drive LED strip output. Keeping ${keptLabel}.`, "warning");
-  };
-
   const updateAuxLedConfigVisibility = () => {
-    const rgbKeys = getRgbAuxKeys();
-    const rgbKey = rgbKeys[0] || "";
-    const hasRgb = Boolean(rgbKey);
+    const line = AUX_LINE_LABELS[routedAuxPin] || "";
+    const hasRgb = Boolean(line);
 
     if (auxLedCountInput) {
       auxLedCountInput.disabled = !hasRgb;
@@ -536,12 +350,10 @@ const BOARD_LABELS = {
     // operator 2026-09-16). The two readouts say the same fact at two lengths -
     // the section head says where, the pill beside the count says which line.
     if (auxLedRouteStatus) {
-      auxLedRouteStatus.textContent = hasRgb
-        ? `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]} LED`
-        : "Not routed";
+      auxLedRouteStatus.textContent = hasRgb ? `Routed via ${line} LED` : "Not routed";
     }
     if (auxLedRouteBadge) {
-      auxLedRouteBadge.textContent = hasRgb ? AUX_RGB_LABEL_BY_KEY[rgbKey] : "Not routed";
+      auxLedRouteBadge.textContent = hasRgb ? line : "Not routed";
     }
   };
 
@@ -606,6 +418,11 @@ const BOARD_LABELS = {
         "feature-state-identity-unavailable",
       );
       row.classList.add(`feature-state-${result.state}`);
+      // The family the state is painted in, which the state class cannot say
+      // for an identity that will never be read (data/feature_availability.js).
+      row.classList.remove(...window.PAFeatureAvailability.FAMILY_CLASSES);
+      const family = window.PAFeatureAvailability.familyClassFor(result.state);
+      if (family) row.classList.add(family);
       row.dataset.featureState = result.state;
       setRowControlsAvailable(row, toggle.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);
@@ -641,13 +458,9 @@ const BOARD_LABELS = {
     if (isInitialLoad) {
       captureBootActiveRcState(payload);
     }
+    if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
     const togglePayload = {
-      enableArm1: components.arm1?.enabled,
-      enableArm2: components.arm2?.enabled,
-      enableAux1: components.aux1?.enabled,
-      enableAux2: components.aux2?.enabled,
-      enableAux3: components.aux3?.enabled,
       enableDomeEsc: components.domeEsc?.enabled,
       enableRcCh1: components.rcCh1?.enabled,
       enableRcCh2: components.rcCh2?.enabled,
@@ -670,19 +483,6 @@ const BOARD_LABELS = {
       updateToggleStatus(toggleKey);
     });
 
-    const typePayload = {
-      arm1Type: components.arm1?.type,
-      arm2Type: components.arm2?.type,
-      aux1Type: components.aux1?.type,
-      aux2Type: components.aux2?.type,
-      aux3Type: components.aux3?.type,
-    };
-    Object.entries(typeSelects).forEach(([apiKey, select]) => {
-      if (select && typePayload[apiKey] !== undefined) {
-        select.value = String(typePayload[apiKey] || "none");
-      }
-    });
-
     // Populate component labels (badges and descriptions) from the config response.
     // Maps API keys to internal component names used for ID lookups.
     const apiKeyToComponentName = {
@@ -690,11 +490,6 @@ const BOARD_LABELS = {
       audio: "enable_audio",
       protoR2link: "enable_protor2link",
       domeEsc: "enable_dome_esc",
-      arm1: "enable_arm1",
-      arm2: "enable_arm2",
-      aux1: "enable_aux1",
-      aux2: "enable_aux2",
-      aux3: "enable_aux3",
       rcCh1: "enable_rc_ch1",
       rcCh2: "enable_rc_ch2",
       rcCh3: "enable_rc_ch3",
@@ -708,11 +503,6 @@ const BOARD_LABELS = {
       audio: components.audio?.label,
       protoR2link: components.protoR2link?.label,
       domeEsc: components.domeEsc?.label,
-      arm1: components.arm1?.label,
-      arm2: components.arm2?.label,
-      aux1: components.aux1?.label,
-      aux2: components.aux2?.label,
-      aux3: components.aux3?.label,
       rcCh1: components.rcCh1?.label,
       rcCh2: components.rcCh2?.label,
       rcCh3: components.rcCh3?.label,
@@ -742,21 +532,19 @@ const BOARD_LABELS = {
           const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
           if (labelDescSpan) {
             // Use parentNode.removeChild for compatibility with test mocks
-            if (labelDescSpan.parentNode) {
-              labelDescSpan.parentNode.removeChild(labelDescSpan);
+            const note = labelDescSpan.parentNode;
+            if (note) {
+              note.removeChild(labelDescSpan);
+              // A note that said only where to wire it now says nothing, and
+              // an empty note is a bar with no words in it (#369).
+              if (!String(note.textContent || "").trim()) note.classList?.add("hidden");
             }
           }
         }
       }
     });
 
-    const auxLedPin = Number(payload?.aux_led_pin || 0);
-    const routedRgbKey = auxLedPin >= 1 && auxLedPin <= 3 ? AUX_RGB_SELECT_KEYS[auxLedPin - 1] : "";
-    if (routedRgbKey && typeSelects[routedRgbKey]) {
-      typeSelects[routedRgbKey].value = "rgb";
-    }
-    enforceSingleRgbAux(routedRgbKey);
-    syncAllSegmentedControls();
+    routedAuxPin = Number(payload?.aux_led_pin || 0);
 
     if (auxLedCountInput && payload?.aux_led_count !== undefined) {
       auxLedCountInput.value = String(payload.aux_led_count);
@@ -770,6 +558,7 @@ const BOARD_LABELS = {
   const captureBootActiveRcState = (config) => {
     // Snapshot RC component enabled states at page load (boot-active truth).
     // Later, if saved state matches this, no restart is actually needed.
+    if (typeof config?.rc?.inputMode === "string") bootActiveRcMode = config.rc.inputMode;
     if (config?.components) {
       for (const key of RC_TOGGLE_KEYS) {
         if (config.components[key] !== undefined) {
@@ -783,6 +572,7 @@ const BOARD_LABELS = {
     // Check if UI values match boot-active truth.
     // If the operator has changed an RC toggle away from boot-active, restart is needed.
     // If they've reverted it back to boot-active, no restart is needed.
+    if (bootActiveRcMode && savedRcMode && savedRcMode !== bootActiveRcMode) return true;
     for (const key of RC_TOGGLE_KEYS) {
       const toggle = featureToggles[key];
       if (!toggle || !toggle.input) continue;
@@ -801,6 +591,7 @@ const BOARD_LABELS = {
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
       renderFeatures(result.data);
+      window.ComponentPicker?.adopt(result.data);
       // The Droid Build rides on the same payload, so the step below draws the
       // droid's own answer without asking the controller a second time.
       window.DroidBuild?.adopt(result.data);
@@ -819,6 +610,7 @@ const BOARD_LABELS = {
     }
 
     saveInFlight = true;
+    let carriedPick = false;
     const requestEditGeneration = featureEditGeneration;
     const requestRcChangeGeneration = rcChangeGeneration;
     setFeatureFeedback("Saving...");
@@ -830,19 +622,16 @@ const BOARD_LABELS = {
           body.set(paramKey, toggle.input.checked ? "true" : "false");
         }
       });
-      Object.entries(typeSelects).forEach(([apiKey, select]) => {
-        const toggleKey = apiKey.replace(/Type$/, "");
-        if (select && featureToggles[toggleKey]?.available !== false) {
-          body.set(apiKey, select.value);
-        }
-      });
-      body.set("aux_led_pin", String(deriveAuxLedPinFromTypes()));
       if (auxLedCountInput) {
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
+      Object.entries(pendingPickParams).forEach(([field, value]) => body.set(field, value));
+      carriedPick = Object.keys(pendingPickParams).length > 0;
+      pendingPickParams = {};
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       if (featureEditGeneration === requestEditGeneration) {
         renderFeatures(result.data);
+        window.ComponentPicker?.adopt(result.data);
       }
       // Guard RC restart state: only update if this request's RC generation is newer than the last saved one
       if (requestRcChangeGeneration > savedRcChangeGeneration) {
@@ -861,6 +650,9 @@ const BOARD_LABELS = {
     } catch (error) {
       console.error("[configuration] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
+      // A refused pick is read back rather than left on screen: the cards
+      // then show what the droid holds, not the answer it did not take.
+      if (carriedPick) loadFeatures();
       // Preserve pending restart status: don't downgrade from warn to error state if restart was already pending
       if (rcRestartPending) {
         setSaveSummary("Save failed, but restart still required", "warn");
@@ -891,6 +683,27 @@ const BOARD_LABELS = {
     }, 300);
   };
 
+  // A Component Picker pick (data/component_picker.js). Picking is applying:
+  // the toggle behind the family is set, and the save goes now, carrying any
+  // member field with it, through the same save every toggle on this page uses.
+  const applyComponentPick = ({ toggleId = "", enabled = true, params = {} } = {}) => {
+    const key = Object.keys(featureToggles).find((name) => featureToggles[name].input?.id === toggleId);
+    if (key) {
+      featureToggles[key].input.checked = enabled;
+      updateToggleStatus(key);
+      updateEnabledSummary();
+    }
+    Object.assign(pendingPickParams, params);
+    featureEditGeneration += 1;
+    if (Object.hasOwn(params, "rcInputMode")) rcChangeGeneration += 1;
+    setSavePending(true);
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    saveScheduled = false;
+    saveFeatures();
+  };
+  window.PAConfiguration = { applyComponentPick };
+
   // Attach listeners to all toggles and selects
   Object.keys(featureToggles).forEach((key) => {
     const toggle = featureToggles[key];
@@ -903,23 +716,6 @@ const BOARD_LABELS = {
           rcChangeGeneration += 1;
         }
         updateEnabledSummary();
-        if (["aux1", "aux2", "aux3"].includes(key)) {
-          updateAuxLedConfigVisibility();
-        }
-        debouncedSave();
-      });
-    }
-  });
-
-  Object.entries(typeSelects).forEach(([typeKey, select]) => {
-    if (select) {
-      select.addEventListener("change", () => {
-        featureEditGeneration += 1;
-        if (AUX_RGB_SELECT_KEYS.includes(typeKey)) {
-          enforceSingleRgbAux(typeKey);
-          updateAuxLedConfigVisibility();
-        }
-        syncAllSegmentedControls();
         debouncedSave();
       });
     }
@@ -947,7 +743,6 @@ const BOARD_LABELS = {
   }
 
 
-  initSegmentedTypeControls();
   // The Droid Build step, drawn into its host on this surface; guided Setup
   // shows that same host as a step of its run (data/setup.js).
   window.DroidBuildPicker?.mount({
@@ -955,6 +750,9 @@ const BOARD_LABELS = {
     summary: document.getElementById("droid-build-summary"),
     feedback: document.getElementById("droid-build-feedback"),
   });
+  // The Component Picker, drawn into every component family's host on this
+  // surface; guided Setup shows those same hosts as its steps (data/setup.js).
+  window.ComponentPicker?.mount(document);
   window.PAFeatureAvailability.subscribe(() => {
     updateAllToggleStatuses();
     updateEnabledSummary();

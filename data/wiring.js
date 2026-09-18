@@ -168,6 +168,12 @@
   const setupRouteHtml = (action) =>
     window.PAUi?.setupActionHtml?.(action) ?? `${esc(action)} in Configuration`;
 
+  // Where an arm or AUX output is marked in use: on this surface, under the
+  // sheet (data/output_settings.js, #369). Named in words rather than linked,
+  // because the saved bench copy carries this sentence too and has no page
+  // under it.
+  const OUTPUTS_IN_USE = "Outputs in use";
+
   // Where a Part is put on an Output. Parts is the surface that owns that act,
   // and it is a destination that exists.
   const PARTS_ROUTE = '<a href="/parts.html">Parts</a>';
@@ -265,8 +271,8 @@
           part,
           output,
           why:
-            `${esc(outputLabel(output))} is switched off: the lead is right, nothing moves. ` +
-            `${setupRouteHtml("Switch it on")}.`,
+            `${esc(outputLabel(output))} is not marked in use: the lead is right, nothing moves. ` +
+            `Mark it in use under ${OUTPUTS_IN_USE}.`,
         };
       }
       return { tier: "driven", part, output, why: "" };

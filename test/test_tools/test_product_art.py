@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "include" / "component_registry.inc"
+CATALOG = ROOT / "docs" / "droid-parts.yaml"
 LEGACY_ART = ROOT / "data" / "asset-sets" / "legacy" / "_product_art.html"
 DEFAULT_ART = ROOT / "data" / "asset-sets" / "default" / "_product_art.html"
 
@@ -37,6 +38,16 @@ VIEWBOX_RE = re.compile(r'<symbol id="[^"]+" viewBox="([^"]+)"')
 
 def _registry_products():
     return set(PART_RE.findall(REGISTRY.read_text(encoding="utf-8")))
+
+
+# The other pictures a set carries: a Droid Build design card's, named by the
+# catalog's `picture:` field (#369). Read as text rather than parsed, the way
+# the registry is above, so this test needs nothing the repo does not ship.
+PICTURE_RE = re.compile(r"^\s+picture:\s*([a-z][a-z0-9_]*)\s*$", re.M)
+
+
+def _design_pictures():
+    return set(PICTURE_RE.findall(CATALOG.read_text(encoding="utf-8")))
 
 
 def _drawn_products():
@@ -61,8 +72,16 @@ class ProductDrawings(unittest.TestCase):
             % ", ".join(sorted(missing)),
         )
 
+    def test_the_catalog_names_its_pictures(self):
+        # A silent empty set would let a design picture go undrawn unnoticed.
+        self.assertIn("mrbaddeley", _design_pictures())
+
+    def test_every_design_picture_is_drawn(self):
+        missing = _design_pictures() - _drawn_products()
+        self.assertEqual(set(), missing, "no drawing for design picture %s" % ", ".join(sorted(missing)))
+
     def test_every_drawing_names_a_product(self):
-        stray = _drawn_products() - _registry_products()
+        stray = _drawn_products() - _registry_products() - _design_pictures()
         self.assertEqual(
             set(),
             stray,

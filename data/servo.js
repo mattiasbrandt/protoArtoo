@@ -12,7 +12,9 @@
 // (#400). The `calib` names below are kept because reading the calibration is
 // still exactly what they do.
 // Component types (mg996r/mg90s/rgb/none) are read from /api/config to render
-// type-appropriate controls per AUX channel.
+// type-appropriate controls per AUX channel. Which servo each output carries
+// is set on this page through data/output_settings.js (#369), which tells
+// this file when the answer changes.
 // =============================================================================
 (() => {
   const armControlsCard      = document.getElementById("arm-controls-card");
@@ -160,16 +162,19 @@
     { id: "aux3", name: "AUX 3", label: "AUX3" },
   ];
 
-  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
-  const setupActionHtml = window.PAUi?.setupActionHtml
-    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Configuration</a>`);
+  // The arm and AUX lines are marked in use, and an AUX line given the LED
+  // strip, on Wiring (data/output_settings.js, #369), so that is where these
+  // sentences send a builder.
+  const setupActionHtml = (action) => `${action} on <a class="setup-link" href="#wiring">Wiring</a>`;
+  // The strip's count and preview stay on Configuration until Lights (#410).
+  const ledCountText = window.PAUi?.setupActionText?.("set its length") || "set its length in Configuration";
   const isServoType = (type) => type === "mg996r" || type === "mg90s";
   const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
 
   const buildAuxLedRow = (aux) => `
     <div class="arm-control-row" id="row-${aux.id}">
       <span class="arm-name">${aux.name}</span>
-      <span class="arm-position">LED strip &middot; ${setupActionText("configure")}</span>
+      <span class="arm-position">LED strip &middot; ${ledCountText}</span>
     </div>`;
 
   const buildAuxServoRow = (aux, detail, typeLabel) => {
@@ -220,7 +225,7 @@
     if (enabled.length === 0) {
       renderedAuxIds = "none";
       auxControlsContainer.innerHTML =
-        `<p class="note"><b>No AUX output switched on.</b> ${setupActionHtml("Switch one on")}.</p>`;
+        `<p class="note"><b>No AUX output in use.</b> ${setupActionHtml("Mark one in use")}.</p>`;
       return;
     }
 
@@ -399,6 +404,7 @@
       "/web_api.js": "controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
+      "/output_settings.js": "arm and AUX outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
     });
@@ -408,6 +414,23 @@
   };
 
   startPageLoad();
+
+  // The servo on each output, set here; the in-use ticks and the LED strip
+  // are Wiring's. One answer drawn on both surfaces (data/output_settings.js),
+  // and the test rows below follow it the moment it changes.
+  window.PAOutputSettings?.mount("type", {
+    body: document.getElementById("servo-types-body"),
+    feedback: document.getElementById("servo-types-feedback"),
+  });
+  window.PAOutputSettings?.onChange((outputs) => {
+    if (!outputs) return;
+    ["aux1", "aux2", "aux3"].forEach((id) => {
+      auxTypes[id] = outputs[id].type;
+      auxConfigured[id] = outputs[id].enabled;
+    });
+    renderAuxControls(lastPayload || {});
+    renderTestSections(lastPayload || {});
+  });
 
   // SSE-first status updates with visibility-aware fallback polling.
   if (window.PAStatusStream?.isSupported()) {

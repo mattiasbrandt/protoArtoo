@@ -63,6 +63,8 @@ const char* rcModeToString(RcInputMode mode) {
             return "standard_pwm";
         case RC_INPUT_SINGLE_SBUS:
             return "single_sbus";
+        case RC_INPUT_ELRS:
+            return "elrs";
         case RC_INPUT_DUAL_SBUS:
         default:
             return "dual_sbus";
@@ -481,6 +483,12 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject rc = doc["rc"].to<JsonObject>();
     rc["inputMode"] = rcModeToString(snap.system.rc_input_mode);
     rc["sbusTimeoutMs"] = snap.drive.sbusTimeoutMs;
+    // The Radio Controller Component Member (ADR 0042): which radio, beside
+    // how its receiver is wired (inputMode above). Registry id, as the Sound
+    // member is; absent when the stored value names nothing this image knows.
+    if (const ComponentPartEntry* radio = componentPartByValue(snap.system.rc_member)) {
+        rc["member"] = radio->id;
+    }
 
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
     rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;

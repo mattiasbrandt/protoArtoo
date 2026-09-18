@@ -16,6 +16,7 @@ requires.
 Not a build step. Re-run by hand when an original is replaced:
 
     python3 tools/encode_product_photos.py
+    python3 tools/encode_product_photos.py --only rc_radio   # one product
 """
 
 from __future__ import annotations
@@ -45,14 +46,14 @@ GROUND_TOL = 14
 
 # source filename -> Component Registry id (include/component_registry.inc).
 # esp32_gpio_ledc is the MCU's own PWM and has no product photograph.
-# elrs-radio.png is a handset, not the ELRS receiver the registry row names.
+# elrs-radio.png is a RadioMaster TX16S handset: it waited, unencoded, while
+# the Radio Controller rows were receivers, and illustrates the generic RC
+# Radio card now that the family lists radios (#369).
 SOURCES = {
     "artoo-pcb-esp32.jpg": "artoo_pcb",
     "firebeetle2.jpg": "firebeetle2",
     "ds650.jpg": "hotrc_ds650",
-    "rc-receiver-pwm.jpg": "rc_transmitter_pwm",
-    "rc-receiver-sbus.jpg": "rc_transmitter_sbus",
-    "rc-receiver-elrs.jpg": "rc_transmitter_elrs",
+    "elrs-radio.png": "rc_radio",
     "xbox-360.jpg": "xbox_controller",
     "pca9685.jpg": "pca9685",
     "pololu-maestro.jpg": "pololu_maestro",
@@ -67,6 +68,10 @@ SOURCES = {
     "mp3-trigger.jpg": "mp3_trigger",
     "chirp-audio-trigger.jpg": "chirp",
     "dfplayer-mini.jpg": "dfplayer_mini",
+    # Not a Component Registry product: the one picture every MrBaddeley
+    # design card in the Droid Build shows (docs/droid-parts.yaml `picture:`,
+    # #369). Its corners are dark, so the ground is kept and it is fitted whole.
+    "mrbaddeley-printed-droids.png": "mrbaddeley",
 }
 
 
@@ -206,6 +211,13 @@ def main() -> int:
         default=DST,
         help="default asset-set directory",
     )
+    parser.add_argument(
+        "--only",
+        action="append",
+        metavar="ID",
+        help="encode only this registry id (repeatable); the others' originals "
+        "need not be present",
+    )
     args = parser.parse_args()
     if not args.src.is_dir():
         print(f"missing originals: {args.src}", file=sys.stderr)
@@ -214,7 +226,12 @@ def main() -> int:
 
     total = 0
     over = 0
-    for source_name, product_id in SOURCES.items():
+    selected = {name: pid for name, pid in SOURCES.items() if not args.only or pid in args.only}
+    unknown = set(args.only or []) - set(SOURCES.values())
+    if unknown:
+        print(f"no original is mapped to {', '.join(sorted(unknown))}", file=sys.stderr)
+        return 1
+    for source_name, product_id in selected.items():
         src_path = args.src / source_name
         if not src_path.is_file():
             print(f"MISSING {source_name} -> {product_id}.webp", file=sys.stderr)
@@ -229,7 +246,7 @@ def main() -> int:
             over += 1
         print(f"{flag:4} {len(data):5} B  q={quality:2}  {dest.name}  <- {source_name}")
 
-    print(f"total {total} B  ({len(SOURCES)} files, {over} over cap)")
+    print(f"total {total} B  ({len(selected)} files, {over} over cap)")
     return 1 if over else 0
 
 

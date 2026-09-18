@@ -238,7 +238,7 @@ test("non-RC component auto-save retains ordinary saved feedback", async () => {
   });
   await env.settle();
 
-  const toggle = env.element("enable-arm1");
+  const toggle = env.element("enable-drive");
   toggle.checked = true;
   await toggle.emit("change");
   await env.fireTimer(300);
@@ -300,7 +300,7 @@ test("restart remains pending after a later non-RC component save", async () => 
   await rcToggle.emit("change");
   await env.fireTimer(300);
 
-  const nonRcToggle = env.element("enable-arm1");
+  const nonRcToggle = env.element("enable-drive");
   nonRcToggle.checked = true;
   await nonRcToggle.emit("change");
   await env.fireTimer(300);
@@ -310,10 +310,10 @@ test("restart remains pending after a later non-RC component save", async () => 
 });
 
 test("an RC change queued behind an in-flight save cannot lose the restart cue", async () => {
-  const config = (rcCh1Enabled, arm1Enabled) => ({
+  const config = (rcCh1Enabled, driveEnabled) => ({
     components: {
       rcCh1: { enabled: rcCh1Enabled },
-      arm1: { enabled: arm1Enabled },
+      drive: { enabled: driveEnabled },
     },
     system: {},
   });
@@ -334,7 +334,7 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
   });
   await env.settle();
 
-  const nonRcToggle = env.element("enable-arm1");
+  const nonRcToggle = env.element("enable-drive");
   nonRcToggle.checked = true;
   await nonRcToggle.emit("change");
   const firstSave = env.startTimer(300);
@@ -408,7 +408,7 @@ test("WARNING #1: restart cue must survive a later save failure", async () => {
 
   // Trigger a failed save attempt
   firstSaveSucceeds = false;
-  const nonRcToggle = env.element("enable-arm1");
+  const nonRcToggle = env.element("enable-drive");
   nonRcToggle.checked = true;
   await nonRcToggle.emit("change");
   await env.fireTimer(300);
@@ -619,7 +619,7 @@ test("WARNING #3: reverting to boot-active value must clear restart cue", async 
 // greyed out for exactly that window; since #404 it is on Maintenance, so the
 // guard has to hold across two surfaces loaded into one session.
 test("Restart waits for a component change still on its way to the controller", async () => {
-  const config = { components: { arm1: { enabled: false } }, system: {} };
+  const config = { components: { drive: { enabled: false } }, system: {} };
   const posts = [];
   let answerSave = null;
   const env = loadInteractiveModule([...CONFIGURATION, "maintenance.js"], async (method, path) => {
@@ -636,8 +636,8 @@ test("Restart waits for a component change still on its way to the controller", 
   await env.settle();
   const reboots = () => posts.filter((path) => path === "/api/reboot").length;
 
-  env.element("enable-arm1").checked = true;
-  await env.element("enable-arm1").emit("change");
+  env.element("enable-drive").checked = true;
+  await env.element("enable-drive").emit("change");
   await env.element("reboot-button").emit("click");
   assert.equal(reboots(), 0, "a change still waiting to be sent is not restarted away");
   assert.match(env.element("reboot-feedback").textContent, /saving/i, "and the press says why nothing happened");

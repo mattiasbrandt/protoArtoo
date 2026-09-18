@@ -1416,7 +1416,7 @@ Updates supported config fields and persists to NVS.
 - Supported form fields include:
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
-- rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus)`, `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
+- rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`
 - components (Component Member): `soundMember` — a Component Registry part id
   (`dy_sv5w`, `mp3_trigger`, `chirp`), from the `sound` category of
@@ -1425,9 +1425,9 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"soundMember is not a sound module this firmware can drive"}`.
   Independent of `enableAudio`: the toggle says a sound module is fitted, the
   member says which product it is. Saved immediately, **takes effect at the next
-  reboot** like a component toggle. Setup's Audio control is that enable
-  toggle plus the live driver name; it does not POST `soundMember`. There is
-  not yet a Configuration-page picker for this field (#369).
+  reboot** like a component toggle. Configuration's Component Picker writes
+  it from the Sound family's cards, which guided Setup shows as its step; its
+  "Not fitted" card is `enableAudio=false` (#369).
 - droid build (ADR 0047): `domeDesign` + `domeVariant`, and `bodyDesign` +
   `bodyVariant`. Each half is sent as a **pair** — a variant means nothing
   without the design it belongs to — and each must name a design the catalog

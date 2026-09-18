@@ -72,6 +72,13 @@ enum RcInputMode : uint8_t {
     RC_INPUT_STANDARD_PWM = 0,
     RC_INPUT_SINGLE_SBUS,
     RC_INPUT_DUAL_SBUS,
+    // An ELRS receiver (CRSF on the wire) is fitted, and the controller reads
+    // no input from it yet (#369). A stored answer, not a decoder: the RC path
+    // treats it exactly as no receiver present - rcInputStepStartupPlan()
+    // starts no decoder and no RC task for a mode it does not read, so drive
+    // stays on DriveTask's own zero frames and the failsafe layers are those of
+    // a droid with no radio.
+    RC_INPUT_ELRS,
 };
 
 enum DomeUartOwner : uint8_t {

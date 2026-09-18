@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 9f30be3d9359a7e9ae0ce46c0c85827f6aed18b75217af3ac0ab0ae3f6ab78ea
+ * Source digest: sha256 d1ad64368e70fdbc46c971627e4de058d5762a0d06125ee464fa9fe4ddcac918
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,7 +54,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "9f30be3d9359a7e9ae0ce46c0c85827f6aed18b75217af3ac0ab0ae3f6ab78ea",
+    "sourceSha256": "d1ad64368e70fdbc46c971627e4de058d5762a0d06125ee464fa9fe4ddcac918",
     "designs": [
       {
         "id": "mk4",
@@ -62,6 +62,7 @@
         "short": "MK4",
         "blurb": "The MK4 astromech most builders here printed \u2014 six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.",
         "card": "supported",
+        "picture": "mrbaddeley",
         "preselected": true,
         "defaultVariant": "complex",
         "variants": [
@@ -147,6 +148,7 @@
         "short": "MK4.1",
         "blurb": "MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only \u2014 pick MK4 Basic or Complex for the body.",
         "card": "supported",
+        "picture": "mrbaddeley",
         "halves": [
           "dome"
         ],
@@ -196,6 +198,7 @@
         "short": "MK3",
         "blurb": "We intend to carry it. Not yet.",
         "card": "roadmap",
+        "picture": "mrbaddeley",
         "seeds": null
       },
       {

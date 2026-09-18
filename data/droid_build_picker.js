@@ -145,6 +145,11 @@
     }
     if (chosen) plate.classList.add("is-chosen");
 
+    // The design's picture, when the catalog names one: MrBaddeley's designs
+    // share his (docs/droid-parts.yaml `picture:`, #369). A design without one
+    // is words alone. The lookup is data/product_art.js's, the Component
+    // Picker's own.
+    if (design.picture && window.PAProductArt) face.appendChild(window.PAProductArt.frame(design.picture));
     const head = element("span", "droid-build-card-head");
     if (roadmap) head.appendChild(pill("Roadmap"));
     if (design.preselected) head.appendChild(pill("Default"));
@@ -246,9 +251,6 @@
 
     const body = element("div", "droid-build-body");
     HALVES.forEach((half) => body.appendChild(renderHalf(half, build, interactive)));
-    // Under the cards, never in a tooltip: the one sentence this step turns on.
-    body.appendChild(element("p", "note note-info droid-build-boundary",
-      "This seeds your parts, it does not fence them."));
     mount.body.replaceChildren(body);
 
     if (mount.summary) {

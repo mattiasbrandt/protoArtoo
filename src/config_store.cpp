@@ -280,6 +280,7 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     // on the one its build names (PA_AUDIO_DRIVER), which is all that flag
     // still decides.
     snap->system.sound_member = componentCategoryDefaultMember(COMPONENT_CATEGORY_SOUND);
+    snap->system.rc_member = componentCategoryDefaultMember(COMPONENT_CATEGORY_RADIO_CONTROLLER);
 
     snap->system.rc_pwm_drive_speed = defaultPwmBinding(1);
     snap->system.rc_pwm_drive_steer = defaultPwmBinding(2);
@@ -1334,7 +1335,7 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
 
         // RC Input Mode
         case ConfigKey::RC_INPUT_MODE:
-            return (value >= 0 && value <= RC_INPUT_DUAL_SBUS) ? ConfigValidationResult::OK
+            return (value >= 0 && value <= RC_INPUT_ELRS) ? ConfigValidationResult::OK
                                                                 : ConfigValidationResult::INVALID_VALUE;
 
         // Component Member. Not a numeric range: the only valid values are the
@@ -1342,13 +1343,16 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         // this switch does not carry a second copy of the lineup. A roadmap row
         // and a member from another family are both rejected here, which is why
         // the picker can offer the registry's rows and trust the reply.
-        case ConfigKey::SOUND_MEMBER: {
+        case ConfigKey::SOUND_MEMBER:
+        case ConfigKey::RC_MEMBER: {
             if (value < 0 || value > 255) {
                 return ConfigValidationResult::OUT_OF_RANGE;
             }
+            const ComponentCategoryId family = key == ConfigKey::SOUND_MEMBER
+                                                   ? COMPONENT_CATEGORY_SOUND
+                                                   : COMPONENT_CATEGORY_RADIO_CONTROLLER;
             const ComponentPartEntry* part = componentPartByValue((uint8_t)value);
-            return (part != nullptr && part->category == COMPONENT_CATEGORY_SOUND &&
-                    componentPartIsSelectable(*part))
+            return (part != nullptr && part->category == family && componentPartIsSelectable(*part))
                        ? ConfigValidationResult::OK
                        : ConfigValidationResult::INVALID_VALUE;
         }
