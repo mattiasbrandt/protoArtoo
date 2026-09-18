@@ -21,16 +21,26 @@
 
          The promise line is EMPTY here and written by data/wiring.js. Both
          sentences have exactly one home, so this screen's header and the
-         printable bench copy's header (#353) cannot come to say different
+         printable bench copy's header (#366) cannot come to say different
          things - which is the same defect, one level up, as a page keeping its
          own copy of a pin number.
 
-         There is no .acts here on purpose: Wiring writes nothing. -->
+         The one act saves that bench copy to this computer, and it writes
+         nothing to the droid: Wiring is still a reference. It is a link, not
+         a button, because the file is a download the browser hands over, and
+         it stays unavailable until the droid has answered, since there is no
+         sheet to save before then. The plate headings below are repeated in
+         the saved file by data/wiring.js (wiringSheetFile) and must read the
+         same there. -->
     <div class="title">
       <div>
         <h1>Wiring</h1>
         <p class="question">I am holding a servo lead: which output does it go to, and which part will it move?</p>
         <p class="wiring-promise" id="wiring-promise"></p>
+      </div>
+      <div class="acts wiring-acts">
+        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Save a printable sheet</a>
+        <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
 
