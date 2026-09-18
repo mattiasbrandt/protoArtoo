@@ -2,9 +2,9 @@
 //
 // The single declaration of every Component Family and its members. Firmware
 // tables, the identity manifest and the operator lineup all derive from these
-// rows, so a product is added here and nowhere else. The content is #303's
-// resolved lineup, verbatim: seven categories, twenty-one products, nine of
-// them roadmap.
+// rows, so a product is added here and nowhere else. The content began as
+// #303's resolved lineup (seven categories, twenty-one products, nine of them
+// roadmap); the Radio Controller rows were redrawn as radios on #369.
 //
 // This file is an unguarded X-macro manifest, intentionally included
 // repeatedly. Define BOTH PA_COMPONENT_CATEGORY and PA_COMPONENT_PART before
@@ -86,13 +86,15 @@
 // The seven categories (#303, resolved by the operator 2026-09-07).
 // -----------------------------------------------------------------------------
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_CONTROLLER,       "body_controller",       "Body Controller",       nullptr)
-PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_RADIO_CONTROLLER,      "radio_controller",      "Radio Controller",      nullptr)
+// The Radio Controller's member is the radio a builder holds (operator,
+// 2026-09-18 on #369). "rc_member" is its NVS key (ConfigKey::RC_MEMBER).
+PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_RADIO_CONTROLLER,      "radio_controller",      "Radio Controller",      "rc_member")
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "body_servo_controller", "Body servo controller", nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_ROTATION,         "dome_rotation",         "Dome Rotation",         nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_CONTROLLER,       "dome_controller",       "Dome Controller",       nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_FOOT_DRIVE,            "foot_drive",            "Foot Drive",            nullptr)
-// Sound is the only family carrying more than one selectable member, so it is
-// the only one with a Component Member setting. "snd_member" is its NVS key
+// Sound carries more than one selectable member, so it has a Component Member
+// setting. "snd_member" is its NVS key
 // (include/config_store.h, ConfigKey::SOUND_MEMBER); 10 characters, clear of
 // the 15-character Preferences ceiling.
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_SOUND,                 "sound",                 "Sound",                 "snd_member")
@@ -107,24 +109,40 @@ PA_COMPONENT_PART( 1, "artoo_pcb",  "Artoo PCB (artoo.uk)",   COMPONENT_CATEGORY
 PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_FIREBEETLE2))
 
 // -----------------------------------------------------------------------------
-// Radio Controller -- the RC gear the droid is driven with. Three supported
-// rows: Standard PWM, single SBUS and dual SBUS all ship today
-// (docs/pin_map.md, src/tasks/rc_input.cpp), and single-or-dual is
-// configuration rather than a second product.
+// Radio Controller -- the RC Radio a builder holds and the RC Receiver it
+// talks to, both members of this one category (CONTEXT.md "RC Radio";
+// operator, 2026-09-18 on #369).
+//
+// The radios are the family's cards and its Component Member (rc_member). A
+// radio row declares the `rc_receiver` protocol: the controller never hears the
+// radio itself, only the receiver it talks to. "RC Radio" is the glossary's
+// generic term and the answer for every radio not listed by name; its card is
+// pictured with a RadioMaster TX16S.
+//
+// The receivers are the chosen radio's sub-selection, and the protocol each
+// declares is the wire the controller reads - which is what picking one
+// writes, as rc_input_mode. ELRS is selectable and the controller reads no
+// input from it yet: with it chosen the RC path behaves exactly as with no
+// receiver fitted (src/tasks/rc_input_step.cpp starts no decoder for a mode it
+// does not read). Its ids still say `transmitter`, which the glossary avoids;
+// renaming them moves the photographs, their handler and the drawings, and is
+// recorded on #369 rather than done here.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 3, "hotrc_ds650",         "HotRC DS-650",         COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 3, "hotrc_ds650",         "HotRC DS-650",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART(22, "rc_radio",            "RC Radio",           COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",    COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Receiver - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
 PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Receiver - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
-PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
 
 // -----------------------------------------------------------------------------
 // Body servo controller -- what drives the body's servos. The first row is the
-// MCU's own LEDC PWM and is named for what a builder sees, not for the
-// peripheral: "LEDC does not make sense for an operator" (operator, 2026-09-18
-// on #369). The spec sheets keep the technical name.
+// MCU's own LEDC PWM on the body controller board's GPIO, and is named for what
+// a builder sees rather than for the peripheral: "LEDC does not make sense for
+// an operator" (operator, 2026-09-18 on #369). Its card borrows the running
+// board's picture. The spec sheets keep the technical name.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Built-in servo outputs", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Body controller board GPIO", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
 PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 

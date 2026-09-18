@@ -600,7 +600,10 @@ void test_configValidate_rc_input_mode() {
     result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_DUAL_SBUS);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
 
-    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_DUAL_SBUS + 1);
+    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_ELRS);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
+
+    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_ELRS + 1);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE, (uint8_t)result);
 }
 

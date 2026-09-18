@@ -45,6 +45,8 @@ const char* rcModeToString(RcInputMode mode) {
             return "standard_pwm";
         case RC_INPUT_SINGLE_SBUS:
             return "single_sbus";
+        case RC_INPUT_ELRS:
+            return "elrs";
         case RC_INPUT_DUAL_SBUS:
         default:
             return "dual_sbus";
@@ -65,6 +67,10 @@ bool parseRcInputMode(const char* raw, RcInputMode* out) {
     }
     if (strcmp(raw, "dual_sbus") == 0) {
         *out = RC_INPUT_DUAL_SBUS;
+        return true;
+    }
+    if (strcmp(raw, "elrs") == 0) {
+        *out = RC_INPUT_ELRS;
         return true;
     }
     return false;
@@ -377,7 +383,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     if (configParamHas(params, "rcInputMode")) {
         RcInputMode mode;
         if (!parseRcInputMode(configParamGet(params, "rcInputMode"), &mode)) {
-            setError(result, "rcInputMode must be standard_pwm, single_sbus, or dual_sbus");
+            setError(result, "rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs");
             return;
         }
         working->system.rc_input_mode = mode;
@@ -406,6 +412,22 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->system.sound_member = member->value;
         appendApplied(&result->applied, "[CFG] soundMember updated to %s (takes effect at reboot)",
                       member->name);
+        result->changed = true;
+    }
+
+    // The Radio Controller Component Member, by the same rule as soundMember
+    // above: a registry id from the radio family that the registry calls
+    // selectable, never echoed back in the refusal.
+    if (configParamHas(params, "rcMember")) {
+        const char* memberId = configParamGet(params, "rcMember");
+        const ComponentPartEntry* member = componentPartById(memberId);
+        if (member == nullptr || member->category != COMPONENT_CATEGORY_RADIO_CONTROLLER ||
+            !componentPartIsSelectable(*member)) {
+            setError(result, "rcMember is not a radio this firmware lists");
+            return;
+        }
+        working->system.rc_member = member->value;
+        appendApplied(&result->applied, "[CFG] rcMember updated to %s", member->name);
         result->changed = true;
     }
 

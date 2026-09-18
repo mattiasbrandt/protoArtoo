@@ -12,6 +12,9 @@
 #define RC_INPUT_STANDARD_PWM 0
 #define RC_INPUT_SINGLE_SBUS 1
 #define RC_INPUT_DUAL_SBUS 2
+// include/robot_state.h RC_INPUT_ELRS: an ELRS receiver is fitted and the
+// controller reads no input from it yet (#369).
+#define RC_INPUT_ELRS 3
 
 void setUp() {}
 void tearDown() {}
@@ -83,6 +86,24 @@ void test_task_enabled_at_boot_when_rc_component_6_is_on() {
                                            false, false, false, true);
 
     TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+// ELRS is a stored answer the controller reads nothing from (#369). With
+// every channel switched on and both routes tried, it must plan exactly what
+// no receiver plans: no RC task, no SBUS decoder on either pin and no drive
+// watchdog source. DriveTask then keeps sending its own 50 Hz zero frames and
+// the estop latch is untouched, because nothing in the RC path runs at all.
+void test_elrs_plans_no_input_whatever_is_switched_on() {
+    for (int route = 0; route < 2; ++route) {
+        RcInputActiveConfig in = makeActiveRc(RC_INPUT_ELRS, route == 1, true, true, true,
+                                               true, true, true);
+        const RcInputStartupPlan plan = rcInputStepStartupPlan(in);
+
+        TEST_ASSERT_FALSE(plan.taskEnabled);
+        TEST_ASSERT_FALSE(plan.driveSbusEnabled);
+        TEST_ASSERT_FALSE(plan.domeSbusEnabled);
+        TEST_ASSERT_TRUE(plan.driveWatchdogSource == DriveWatchdogSource::NONE);
+    }
 }
 
 void test_single_sbus_parks_when_only_unselected_receiver_is_on() {
@@ -942,6 +963,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_task_disabled_at_boot_when_all_rc_components_off);
+    RUN_TEST(test_elrs_plans_no_input_whatever_is_switched_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_1_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_2_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_3_is_on);

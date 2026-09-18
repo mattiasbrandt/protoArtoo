@@ -67,7 +67,8 @@ void test_every_roadmap_row_is_present_and_carries_no_driver() {
                                       COMPONENT_PARTS[i].id);
         }
     }
-    TEST_ASSERT_EQUAL_size_t(9, roadmap);
+    // Nine at #303; eight since the ELRS receiver became selectable (#369).
+    TEST_ASSERT_EQUAL_size_t(8, roadmap);
 }
 
 // DFPlayer Mini is the named case: AUDIO_DFPLAYER used to be an #error, and is
@@ -137,11 +138,12 @@ void test_part_values_and_ids_are_unique_and_nonzero() {
     }
 }
 
-// #303's resolved lineup: seven categories, twenty-one products.
+// #303's resolved lineup was seven categories and twenty-one products; #369
+// added the generic RC Radio, so twenty-two.
 void test_the_registry_carries_the_whole_lineup() {
     TEST_ASSERT_EQUAL_size_t(7, COMPONENT_CATEGORY_TABLE_SIZE);
     TEST_ASSERT_EQUAL_size_t(7, (size_t)COMPONENT_CATEGORY_COUNT);
-    TEST_ASSERT_EQUAL_size_t(21, COMPONENT_PART_COUNT);
+    TEST_ASSERT_EQUAL_size_t(22, COMPONENT_PART_COUNT);
     for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
         TEST_ASSERT_NOT_NULL_MESSAGE(componentCategory(COMPONENT_PARTS[i].category),
                                      COMPONENT_PARTS[i].id);

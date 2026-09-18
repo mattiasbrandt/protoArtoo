@@ -184,8 +184,15 @@ enum class ConfigKey : uint8_t {
     // numeric range -- see configValidate().
     SOUND_MEMBER = 103,
 
+    // The Radio Controller family's Component Member: which radio the builder
+    // drives with. Beside RC_INPUT_MODE rather than inside it: the member says
+    // which product it is, the mode says how its receiver is wired to the
+    // controller (operator, 2026-09-18 on #369). Validated against the
+    // Component Registry like SOUND_MEMBER.
+    RC_MEMBER = 104,
+
     // Total count for array bounds
-    _COUNT = 104,
+    _COUNT = 105,
 };
 
 struct DriveConfig {
@@ -382,6 +389,12 @@ struct SystemConfig {
     // it can drive instead of going silent. Staged at reboot like a Component
     // Toggle; include/component_registry.h holds the contract.
     uint8_t sound_member;
+    // Which radio the droid is driven with: a Component Registry part `value`
+    // in the Radio Controller family. Nothing on the controller branches on it
+    // - the receiver is read according to rc_input_mode - so it is the
+    // builder's statement of their product, kept on the droid so every browser
+    // shows the same one.
+    uint8_t rc_member;
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
@@ -438,9 +451,9 @@ struct ConfigSnapshot {
     WifiConfig wifi;
 };
 
-// 912 bytes, measured - and pinned here because two comments elsewhere had
+// 916 bytes, measured - and pinned here because two comments elsewhere had
 // drifted from it and one of them was load-bearing. Every by-value crossing of
-// this struct contributes a 912-byte stack frame: three nested frames on the
+// this struct contributes a 916-byte stack frame: three nested frames on the
 // serial config-write path each carried one, which is how the Console task's
 // chain grew past its stack and panicked both boards (#226). The serializer
 // called it 744 B and ConfigCommitOutcome called itself small.
@@ -451,6 +464,13 @@ struct ConfigSnapshot {
 // fields. A shrink needs no re-measurement to be safe, because every chain this
 // struct is on gets shorter; the number is still updated here so the next
 // reader is not told a frame is bigger than it is.
+//
+// #369 grew it to 916 B: SystemConfig.rc_member, the Radio Controller's
+// Component Member. One byte, but SystemConfig had no hole left for it (it is
+// 2-byte aligned and ends flush), so the struct grows by two and
+// ConfigSnapshot, 4-byte aligned, by four. The Console chain was re-walked
+// with tools/check_task_stack_chains.py against the linked image before this
+// number moved.
 //
 // The same number on both chip targets and on the host compiler: every member
 // is an integral, float, enum or char array type, so this struct's alignment
@@ -464,7 +484,7 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
-static_assert(sizeof(ConfigSnapshot) == 912,
+static_assert(sizeof(ConfigSnapshot) == 916,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

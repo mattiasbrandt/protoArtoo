@@ -91,11 +91,21 @@ IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
 // a Component Picker reads one lineup from the controller instead of keeping
 // its own (ADR 0042 as amended 2026-09-09).
 void handleComponentsGet(WebRequest& req) {
-    // Pin the active member before the send. Sound is the only family with one
-    // today; a family without a member setting reports active_member null,
+    // Pin the active members before the send. Sound and the Radio Controller
+    // have one; a family without a member setting reports active_member null,
     // which is what never pinning it gives.
     componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_SOUND,
                                          configCacheReadActiveSoundMember());
+    // The radio member drives nothing on the controller, so there is no boot
+    // latch to report: the saved choice is the active one.
+    {
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        const ComponentPartEntry* radio =
+            componentResolveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER, snap.system.rc_member);
+        componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER,
+                                             radio != nullptr ? radio->value : 0);
+    }
 
     if (!req.sendChunked("application/json", fillComponentRegistryJson)) {
         webSendJsonError(req, 500, "response alloc failed");

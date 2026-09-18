@@ -19,6 +19,8 @@ const char* rcInputModeLabel(RcInputMode mode) {
             return "standard_pwm";
         case RC_INPUT_SINGLE_SBUS:
             return "single_sbus";
+        case RC_INPUT_ELRS:
+            return "elrs";
         case RC_INPUT_DUAL_SBUS:
         default:
             return "dual_sbus";

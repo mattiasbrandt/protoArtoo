@@ -1945,7 +1945,7 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
-// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus (rcInputMode).
+// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus|elrs (rcInputMode).
 // The registry used to name this row's executor as rcMapApply, which handles
 // the RC BINDING table rather than the input-mode enum; it now names
 // configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
@@ -1964,6 +1964,9 @@ static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* 
                 break;
             case RC_INPUT_SINGLE_SBUS:
                 mode = "single_sbus";
+                break;
+            case RC_INPUT_ELRS:
+                mode = "elrs";
                 break;
             case RC_INPUT_DUAL_SBUS:
             default:
