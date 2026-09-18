@@ -76,9 +76,15 @@ const makeElement = () => ({
 const bootConfiguration = ({ set, assetsReady }) => {
   const parsed = configurationDocument(set);
   const windowListeners = new Map();
+  // The shell takes a surface the operator has left out of the document and
+  // keeps its nodes; from then on the document cannot find them by id.
+  let attached = true;
 
   const documentMock = {
-    getElementById: (id) => (PANEL_IDS.has(id) || id.startsWith("art-") ? parsed.getElementById(id) : makeElement()),
+    getElementById: (id) => {
+      if (PANEL_IDS.has(id) || id.startsWith("art-")) return attached ? parsed.getElementById(id) : null;
+      return makeElement();
+    },
     querySelector: () => makeElement(),
     querySelectorAll: () => [],
     createElement: () => makeElement(),
@@ -175,7 +181,17 @@ const bootConfiguration = ({ set, assetsReady }) => {
   // Which of the three the panel shows, by the same class the stylesheet hides.
   const showing = () => ["art", "image", "placeholder"].filter((name) => !panel[name].classList.contains("hidden"));
 
-  return { panel, announceBoard, showing };
+  return {
+    panel,
+    announceBoard,
+    showing,
+    leave: () => {
+      attached = false;
+    },
+    returnTo: () => {
+      attached = true;
+    },
+  };
 };
 
 test("default set: before assets-ready, the photograph waits in data-deferred-src", () => {
@@ -201,3 +217,22 @@ test("default set: after assets-ready (a late identity retry), the photograph's 
   assert.deepStrictEqual(showing(), ["image"], "a loaded photograph replaces the placeholder");
 });
 
+
+// The shell replays the identity to every surface it mounts, so the board
+// picture's listener hears it while the builder is on another screen. On the
+// legacy set that used to find no drawing - the panel was out of the document -
+// ask for a photograph the set does not have, and leave the placeholder for the
+// builder to come back to (#404).
+test("legacy set: the drawing is still there after the builder has been on another screen", () => {
+  const { panel, announceBoard, showing, leave, returnTo } = bootConfiguration({ set: "legacy", assetsReady: true });
+
+  announceBoard("artoo_esp32");
+  assert.deepStrictEqual(showing(), ["art"], "the legacy set draws the board");
+
+  leave();
+  announceBoard("artoo_esp32");
+  returnTo();
+
+  assert.deepStrictEqual(showing(), ["art"], "the drawing is what the builder comes back to");
+  assert.strictEqual(panel.image.src, undefined, "and no photograph was asked for while they were away");
+});

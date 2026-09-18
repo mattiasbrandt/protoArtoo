@@ -327,6 +327,15 @@ const BOARD_LABELS = {
   // setup.html inlines the set's sprite, and only the legacy set's carries
   // symbols.
   const updateBoardImage = (identity) => {
+    // This listener outlives the surface being on screen, and the shell replays
+    // the identity to every surface it mounts - so it also fires while the
+    // operator is reading another one. The panel is then out of the document,
+    // the drawing's symbol cannot be found, and the lookup below would fall
+    // through to a photograph the legacy set does not carry: the builder came
+    // back to "No photo of this board yet" where the drawing had been. The
+    // board never changes within a session, so there is nothing to repaint
+    // off screen.
+    if (boardImage && document.getElementById("board-image") !== boardImage) return;
     if (!boardImage || !identity || !identity.board) {
       showBoardPlaceholder("Checking which board this is…");
       return;
