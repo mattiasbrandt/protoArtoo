@@ -222,6 +222,11 @@ what gets verified, that one decides how honestly each piece is done.
   timing, a boot). A cell a native seam test already proves, a second adapter for a
   guard that lives in the shared core, a both-boards duplicate of a board-independent
   behaviour: cut it, and say so.
+- **A web test earns its place the same way.** `node:test` coverage under
+  `test/test_web/` is sized by the same three: a safety invariant, a shipped
+  defect, or a behaviour only the harness can see (abort ownership, a session,
+  "this surface does not write"). Copy, order, timing constants and layout are
+  not a criterion and do not get a `test()`; the operator is looking at the screen.
 - **All boxes ticked closes the ticket.** A ticket whose every criterion is ticked
   closes in the same pass. It does not stay open for one unobtainable number, a row
   nobody can run, or "in case something turns up". The remainder is a one-line note
@@ -542,7 +547,10 @@ hashes of the three verifier scripts (`tools/slice_verify.py`,
 comment. The coordinator checks that block's provenance against the branch -
 cheap, and per slice - and runs the gate itself **once per wave, on the merged
 tree**, rather than re-running it behind every slice. Divergence at either point
-marks the slice unverified. Waiver flags are coordinator-granted only. Contract,
+marks the slice unverified. Waiver flags (`--expect-gate-edit`,
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`) are
+coordinator-granted only; `--expect-test-shrink` is the one that lets a slice
+delete tests or test files, and its ACK names the count and every file. Contract,
 evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
@@ -576,6 +584,13 @@ size budget. Avoid low-value tests that only mirror implementation details.
 `test/test_web/`, read `test/test_web/README.md`. A suite is vacuous until a
 production-code mutation turns it red; bug-fix coverage additionally requires
 red against the pre-fix commit. Green alone is a claim, not evidence.
+A web test is an invariant that is still true after the ticket is forgotten, not
+the acceptance list typed out as `test()` blocks: "Verification Scale" decides
+how many there are, and the README names the three things that earn one. One
+invariant, in a file named for the surface, and one mutation that kills it - the
+mechanical kill stays, a patch per checkbox does not. A `data/` change whose
+only content is copy or layout has no invariant to add; the coordinator grants
+`--expect-no-new-tests` for it rather than the worker inventing a receipt.
 
 Classify verification status explicitly — use only these labels:
 

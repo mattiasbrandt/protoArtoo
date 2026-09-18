@@ -62,8 +62,21 @@ rules it replaces actually deleted, did you miss call sites, is the result
 simpler to read than what was there. A module added beside the thing it was
 meant to replace is not the ticket, however well tested it is. Write focused
 tests, not exhaustive suites, and do not polish them; you will not be
-rejected for test naming, structure or volume, and you will be rejected for
+rejected for test naming or structure, and you will be rejected for
 production code that does not do the job.
+
+DO NOT TRANSCRIBE THE ACCEPTANCE LIST INTO TESTS. A web test is an invariant
+that is still true after this ticket is forgotten: a safety invariant, a
+defect this repo has shipped, or a behaviour only the harness can see
+(test/test_web/README.md "What earns a test here"). Copy, heading words, chip
+order, timing constants and visual anatomy stay on the ticket - the operator
+is looking at the screen and the critic reads your production diff. A
+`test_<surface>_<ticket>.js` that lists the checkboxes as test() blocks, with
+a mutation patch per checkbox, is a receipt file and a reject. You will not be
+rejected for the number of real invariants you cover; that protection does not
+reach a checkbox dump. Name the file for the surface or the contract, add to
+the surface's existing file when it has one, and carry ONE mutation per
+changed data/*.js file.
 
 Weight your evidence toward BEHAVIOUR, not coverage. The gate's floor is ONE
 native test per production change - a floor, not a target, and nobody counts
@@ -207,8 +220,9 @@ VERIFICATION (software-verified cap)
   patch touches, or an edit to any of the three verifier scripts
   (tools/slice_verify.py, tools/mutation_verify.py,
   tools/web_load_trace.cjs). The waiver flags
-  (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations) are
-  coordinator-granted in this brief only - never self-granted; every ACK is
+  (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations,
+  --expect-test-shrink) are coordinator-granted in this brief only - never
+  self-granted; every ACK is
   visible in the block. The coordinator re-runs the same command and
   compares blocks, provenance included.
 - All pasted evidence carries process exit codes - never a hand-summarised
@@ -220,7 +234,9 @@ VERIFICATION (software-verified cap)
 - Tests you add or change must be PROVEN ABLE TO FAIL before you report
   green: for bug fixes, run them against the pre-fix commit and show red;
   then mutate the production code you fixed and show red. Web tests follow
-  test/test_web/README.md exactly. Mutation evidence is the gate block run
+  test/test_web/README.md: what earns a test, and one kill per changed
+  data/*.js file, not a patch per checkbox. Mutation evidence is the gate
+  block run
   with --mutations - the gate applies each patch itself and fails unless
   every mutation is KILLED by assertion and every changed web production JS
   file is hit by at least one patch. Author patches against HEAD (edit,

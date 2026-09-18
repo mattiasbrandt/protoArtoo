@@ -42,7 +42,8 @@ the critic protocol and costs nothing. The duplicate was buying a check that
 the merged-tree run already performs. The gate runs the native suite, the web
 suite (`make test-web` semantics: process exit code and `# cancelled` decide,
 never the TAP `# fail` line), the mutation stage, the firmware build, drift
-and diff checks, and fails on deleted test files or a shrinking test total. A
+and diff checks, and fails on deleted test files or a shrinking test total
+unless the run carries `--expect-test-shrink`. A
 flat test total over production changes also fails: `data/` changes must grow
 the web suite and `src/`/`include/` changes the native suite. A diff touching
 web production JS must carry mutation patches via `--mutations` (files or a
@@ -51,12 +52,20 @@ requires every patch KILLED and every changed JS file hit by at least one
 patch, and folds the verdict into the block — a passing block implies killed
 mutations. Its diff checks compare merge-base..HEAD, so commit before running
 it; build-stamped working-tree changes to `data/*version.json` are ignored by
-design. Editing `tools/slice_verify.py`, `tools/mutation_verify.py` or
+design. **One kill per changed `data/*.js` file is the evidence** - the patch
+that breaks the invariant the slice's test was written for. A directory of
+patches per ticket, one per acceptance checkbox, is not asked for and is not
+better evidence (`test/test_web/README.md`, #406). Editing
+`tools/slice_verify.py`, `tools/mutation_verify.py` or
 `tools/web_load_trace.cjs` inside a slice fails the gate; `--expect-gate-edit` is for coordinator-sanctioned
 gate work only. The waiver flags — `--expect-gate-edit`,
-`--expect-no-new-tests`, `--expect-no-mutations` — are granted by the
-coordinator in the brief, never self-granted by a worker, and every ACK is
-visible in the block.
+`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink` — are
+granted by the coordinator in the brief, never self-granted by a worker, and
+every ACK is visible in the block. `--expect-test-shrink` (#406) passes a
+shrinking native or web total and deleted test files; the ACK lines carry how
+many tests went and the path of every deleted file, so the coordinator reads
+the deletion list in the block against the list it granted. It is for thinning
+ticket receipts out of a suite, never for making room for a failing test.
 
 **The mutation stage (#405).** `tools/mutation_verify.py` owns its node
 processes: one `node --test` per test file, concurrency 1, 60 s each. Per patch
