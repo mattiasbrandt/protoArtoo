@@ -350,6 +350,9 @@
     standard_pwm: ["pwm"],
     single_sbus: ["sbus1", "sbus2"],
     dual_sbus: ["sbus1", "sbus2"],
+    // An ELRS receiver the controller reads nothing from yet (#369): no
+    // channel arrives, so there is none to map.
+    elrs: [],
   };
 
   const channelKeyOf = (source, channel) => `${source}:${Number(channel)}`;
@@ -520,6 +523,7 @@
     standard_pwm: "Standard PWM",
     single_sbus: "Single SBUS",
     dual_sbus: "Dual SBUS",
+    elrs: "ELRS, not read yet",
   };
 
   const modeLabel = (mode) => MODE_LABEL[mode] || mode;

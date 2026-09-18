@@ -639,8 +639,12 @@ const BOARD_LABELS = {
           const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
           if (labelDescSpan) {
             // Use parentNode.removeChild for compatibility with test mocks
-            if (labelDescSpan.parentNode) {
-              labelDescSpan.parentNode.removeChild(labelDescSpan);
+            const note = labelDescSpan.parentNode;
+            if (note) {
+              note.removeChild(labelDescSpan);
+              // A note that said only where to wire it now says nothing, and
+              // an empty note is a bar with no words in it (#369).
+              if (!String(note.textContent || "").trim()) note.classList?.add("hidden");
             }
           }
         }

@@ -208,7 +208,8 @@
         <div class="component-picker" data-component-family="body_servo_controller"></div>
         <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
         <p class="hint">Tick each arm you fitted and pick its servo. The type sets how far the output swings.</p>
-        <div class="component-row" data-feature-entry="system.config.enable_arm1">
+        <div class="output-plates">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_arm1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
@@ -224,7 +225,7 @@
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_arm2">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_arm2">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
             <span class="toggle-slider"></span>
@@ -240,10 +241,12 @@
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
+        </div>
 
         <div class="sect"><h3>AUX outputs</h3><span class="sub">3 spare lines</span></div>
         <p class="hint">Spare outputs for a servo, a light or a smoke unit. Only one can carry an LED strip.</p>
-        <div class="component-row" data-feature-entry="system.config.enable_aux1">
+        <div class="output-plates">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
             <span class="toggle-slider"></span>
@@ -263,7 +266,7 @@
             <option value="rgb">LED strip</option>
           </select>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_aux2">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux2">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-aux2" name="enableAux2">
             <span class="toggle-slider"></span>
@@ -283,7 +286,7 @@
             <option value="rgb">LED strip</option>
           </select>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_aux3">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux3">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-aux3" name="enableAux3">
             <span class="toggle-slider"></span>
@@ -303,18 +306,20 @@
             <option value="rgb">LED strip</option>
           </select>
         </div>
+        </div>
 
         </div>
         <div data-setup-step="rc">
         <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive it with</span></div>
         <div class="component-picker" data-component-family="radio_controller"></div>
-        <p class="note note-info component-consequence">Saved at once. The droid switches receiver after a restart.</p>
+        <p class="note note-info component-consequence">The RC Receiver is saved at once and takes effect after a restart.</p>
         <div class="sect"><h3>RC Receiver Channels</h3><span class="sub">6 channels, applied after a restart</span></div>
         <div class="note note-info" role="note">
           <div>Tick the channels wired to the receiver.</div>
           <div>Saved at once. The droid uses them after a restart.</div>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch1">
+        <div class="output-plates">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
             <span class="toggle-slider"></span>
@@ -322,7 +327,7 @@
             <span class="toggle-status" id="status-rc-ch1">Off</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch2">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch2">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
             <span class="toggle-slider"></span>
@@ -330,7 +335,7 @@
             <span class="toggle-status" id="status-rc-ch2">Off</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch3">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch3">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
             <span class="toggle-slider"></span>
@@ -338,7 +343,7 @@
             <span class="toggle-status" id="status-rc-ch3">Off</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch4">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch4">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
             <span class="toggle-slider"></span>
@@ -346,7 +351,7 @@
             <span class="toggle-status" id="status-rc-ch4">Off</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch5">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch5">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
             <span class="toggle-slider"></span>
@@ -354,13 +359,14 @@
             <span class="toggle-status" id="status-rc-ch5">Off</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_rc_ch6">
+        <div class="component-row output-plate" data-feature-entry="system.config.enable_rc_ch6">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
             <span class="toggle-slider"></span>
             <span class="toggle-label">RC Channel 6 <span class="component-badge" id="badge-enable_rc_ch6"></span></span>
             <span class="toggle-status" id="status-rc-ch6">Off</span>
           </label>
+        </div>
         </div>
         <p class="hint">In Stationary mode, Single SBUS or Standard PWM is enough. Dual SBUS is not needed.</p>
 

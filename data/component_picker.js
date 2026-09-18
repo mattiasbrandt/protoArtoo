@@ -13,9 +13,10 @@
 // IT RENDERS THE REGISTRY, IT DOES NOT RESTATE IT. The lineup is read from the
 // controller (GET /api/identity/components): every Component Registry row is a
 // card, whatever its status, so a product nothing drives yet is visible as
-// planned rather than missing. Nothing here names a product id. What a host
-// adds is only what the registry cannot know: which Component Toggle stands
-// behind the family on this page, and what still works when it is off.
+// planned rather than missing. What a host adds is only what the registry
+// cannot know: which Component Toggle stands behind the family on this page,
+// and what still works when it is off. Product ids appear in one place here,
+// PRODUCT_SUB_SELECTIONS, which says what a card carries under it.
 //
 // THREE CARD KINDS, each an option id. A `supported` card is a product, a
 // `roadmap` card is a product we intend to carry, and `not-fitted` is the
@@ -49,45 +50,71 @@
   // where the saved choice is read back. The registry names the family's NVS
   // key; the form field and the config payload's shape are this page's API
   // (docs/api.md "POST /api/config").
+  //
+  // `stagedAtReboot`: the member only takes over when the controller restarts,
+  // so a chosen card that is not yet the one running says so. The sound module
+  // is; the RC Radio is a statement of which product the builder holds and
+  // changes nothing on the controller, so it is never pending.
   const MEMBER_FIELDS = {
     sound: {
       param: "soundMember",
       saved: (config) => config?.components?.audio?.member,
+      stagedAtReboot: true,
+    },
+    radio_controller: {
+      param: "rcMember",
+      saved: (config) => config?.rc?.member,
     },
   };
 
-  // A family whose answer is a protocol setting rather than a member: the
-  // card's Component Protocol token decides what the pick writes. A protocol
-  // with variants is answered as a sub-selection under its chosen card, the
-  // shape a Design Variant has under its design (#368) - the Radio
-  // Controller's SBUS is one receiver or two (operator, 2026-09-18 on #369).
-  // The droid stores the protocol, not which product speaks it, so where two
-  // cards share one the builder's own press decides which is lit this visit.
-  const PROTOCOL_FIELDS = {
-    radio_controller: {
-      param: "rcInputMode",
-      saved: (config) => config?.rc?.inputMode,
-      protocols: {
-        standard_pwm: { variants: [{ id: "standard_pwm" }] },
-        sbus: {
-          label: "SBUS receivers",
-          variants: [
-            { id: "single_sbus", label: "Single SBUS" },
-            { id: "dual_sbus", label: "Dual SBUS" },
-          ],
-        },
-      },
+  // The RC Receiver a chosen RC Radio talks to (CONTEXT.md "RC Radio", "RC
+  // Receiver"). The receivers are rows of the Radio Controller family, told
+  // apart from the radios by the wire they declare, and picking one writes
+  // the controller's rcInputMode. `modes[0]` is what a pick writes; a second
+  // SBUS receiver is the one choice that is not a receiver product, so it
+  // sits under a chosen SBUS as its own small choice (operator, 2026-09-18 on
+  // #369).
+  const RC_RECEIVER = {
+    heading: "RC Receiver",
+    param: "rcInputMode",
+    saved: (config) => config?.rc?.inputMode,
+    wires: {
+      standard_pwm: { short: "PWM", modes: ["standard_pwm"] },
+      sbus: { short: "SBUS", modes: ["single_sbus", "dual_sbus"] },
+      crsf: { short: "ELRS", modes: ["elrs"], caption: "Not read yet" },
     },
+    second: {
+      wire: "sbus",
+      label: "Second SBUS receiver",
+      options: [
+        { mode: "single_sbus", label: "Not fitted" },
+        { mode: "dual_sbus", label: "Fitted" },
+      ],
+    },
+  };
+
+  // What a product's card carries under it. Declared once, beside the lineup,
+  // so it arrives with the product row rather than living in the drawing code.
+  //   receivers  the RC Receiver wires this radio can be answered with; one
+  //              wire is settled and written with the radio (the HotRC DS-650
+  //              is an SBUS radio, operator 2026-09-18 on #369)
+  //   planned    a choice that belongs to a roadmap product, shown as planned:
+  //              nothing is stored and no firmware value exists for it
+  //   borrowsArt the family whose running member's picture this card shows:
+  //              the body controller board's GPIO is that board, so its card
+  //              is pictured with whichever Body Controller this image runs on
+  //              (operator, 2026-09-18 on #369)
+  const PRODUCT_SUB_SELECTIONS = {
+    esp32_gpio_ledc: { borrowsArt: "body_controller" },
+    hotrc_ds650: { receivers: ["sbus"] },
+    rc_radio: { receivers: ["standard_pwm", "sbus", "crsf"] },
+    xbox_controller: { planned: { label: "Connection", options: ["Wired USB", "Wireless adapter USB"] } },
   };
 
   const ROADMAP_SENTENCE = "We intend to carry it. Not yet.";
 
   let lineup = null;
   let config = null;
-  // Which card the builder last pressed, per family, where two cards share
-  // what the droid stores (PROTOCOL_FIELDS). Only ever a tiebreak between
-  // cards that already agree with the droid's answer.
-  const pressed = {};
   const mounts = [];
   const listeners = new Set();
 
@@ -95,6 +122,19 @@
   // What the lineup and the droid say
   // ---------------------------------------------------------------------------
   const partsOf = (family) => (lineup?.parts || []).filter((part) => part.category === family);
+  // An RC Receiver row is drawn under a radio, never as a card of its own.
+  const isReceiverRow = (part) => Object.hasOwn(RC_RECEIVER.wires, part.protocol);
+  const cardPartsOf = (family) => partsOf(family).filter((part) => !isReceiverRow(part));
+  // The product whose picture a card shows: its own, or - where it borrows -
+  // the member of that family this image runs on, found in the lineup rather
+  // than from identity.board, which names the build and not the product.
+  const artIdFor = (id) => {
+    const family = PRODUCT_SUB_SELECTIONS[id]?.borrowsArt;
+    if (!family) return id;
+    return partsOf(family).find((part) => part.included === true)?.id || null;
+  };
+  const wireOfMode = (mode) =>
+    Object.keys(RC_RECEIVER.wires).find((wire) => RC_RECEIVER.wires[wire].modes.includes(mode)) || null;
   const categoryOf = (family) => (lineup?.categories || []).find((category) => category.id === family) || null;
 
   // Can the controller be told to use it. The firmware refuses anything else
@@ -111,13 +151,7 @@
   // A family is CHOSEN on this page when a pick writes something: its Component
   // Toggle, its Component Member, or both. A family with neither is shown, not
   // asked - the Body Controller is the board this image runs on.
-  const isChoosable = (entry) =>
-    Boolean(entry.toggleId || MEMBER_FIELDS[entry.family] || PROTOCOL_FIELDS[entry.family]);
-
-  // The protocol a stored setting value belongs to, and the variant it is.
-  const protocolOfValue = (field, value) =>
-    Object.keys(field.protocols).find((protocol) =>
-      field.protocols[protocol].variants.some((variant) => variant.id === value)) || null;
+  const isChoosable = (entry) => Boolean(entry.toggleId || MEMBER_FIELDS[entry.family]);
 
   // Which option the droid holds for a family, or null for none.
   const chosenOption = (entry) => {
@@ -126,12 +160,6 @@
     if (toggle && !toggle.checked) return NOT_FITTED;
     const member = MEMBER_FIELDS[entry.family];
     if (member) return member.saved(config) || null;
-    const protocolField = PROTOCOL_FIELDS[entry.family];
-    if (protocolField) {
-      const protocol = protocolOfValue(protocolField, protocolField.saved(config));
-      const speaking = partsOf(entry.family).filter((part) => isSelectable(part) && part.protocol === protocol);
-      return (speaking.find((part) => part.id === pressed[entry.family]) || speaking[0])?.id || null;
-    }
     // A toggle and no member: the family has one product this image drives,
     // and the toggle being on is that product being fitted (ADR 0042).
     const selectable = partsOf(entry.family).filter(isSelectable);
@@ -147,7 +175,9 @@
     if (part.included !== true) return isChoosable(entry) ? "not-included" : "available";
     if (chosen === part.id) {
       const active = categoryOf(entry.family)?.active_member;
-      return MEMBER_FIELDS[entry.family] && active && active !== part.id ? "chosen-after-restart" : "chosen";
+      return MEMBER_FIELDS[entry.family]?.stagedAtReboot && active && active !== part.id
+        ? "chosen-after-restart"
+        : "chosen";
     }
     // Shown, not asked: the one product of its family this image carries. It
     // takes the chosen treatment and no chip - its name already says what it
@@ -156,8 +186,11 @@
     return "available";
   };
 
+  // "declined" is a chosen Not fitted card: the answer is lit like any other,
+  // and it never says Fitted.
   const BADGES = {
     chosen: "Fitted",
+    declined: "",
     "chosen-after-restart": "After restart",
     planned: "Roadmap",
     "not-included": "Not included",
@@ -170,7 +203,7 @@
     const entry = mounts.find((mount) => mount.family === family);
     if (!entry || !lineup) return "";
     if (!isChoosable(entry)) {
-      const shown = partsOf(family).filter(isSelectable);
+      const shown = cardPartsOf(family).filter(isSelectable);
       return shown.length === 1 ? shown[0].name : "";
     }
     const chosen = chosenOption(entry);
@@ -232,6 +265,8 @@
     // card in a family that is shown rather than asked are words and a picture.
     const asButton = kind !== KIND_ROADMAP && isChoosable(entry);
     const pressable = asButton && interactive && state !== "not-included";
+    const artId = artIdFor(id);
+    const hasPicture = kind !== KIND_NOT_FITTED && Boolean(artId) && !entry.noPicture.has(artId);
 
     const plate = element(kind === KIND_ROADMAP ? "article" : "div", "droid-build-plate component-plate");
     plate.dataset.option = id;
@@ -253,9 +288,11 @@
       });
     }
 
-    // "Not fitted" is words alone: what still works is the whole card
-    // (operator, 2026-09-18 on #369). The grid keeps it its row's height.
-    if (kind !== KIND_NOT_FITTED) face.appendChild(artFrame(id));
+    // "Not fitted", and a product that has no picture by design, are words
+    // alone (operator, 2026-09-18 on #369); the grid keeps each its row's
+    // height. A product whose picture this set simply lacks keeps its frame,
+    // empty, so it lays out like its neighbours and never reads as greyed.
+    if (hasPicture) face.appendChild(artFrame(artId));
     const head = element("span", "droid-build-card-head");
     const badge = BADGES[state] || "";
     if (badge) head.appendChild(pill(badge));
@@ -264,44 +301,109 @@
     if (blurb) face.appendChild(element("span", "droid-build-card-blurb", blurb));
     plate.appendChild(face);
 
-    const protocolField = PROTOCOL_FIELDS[entry.family];
-    const protocol = option.protocol ? protocolField?.protocols[option.protocol] : null;
-    if (chosen === id && protocol && protocol.variants.length > 1) {
-      plate.appendChild(variantRow(entry, protocolField, protocol, interactive));
-    }
+    const sub = PRODUCT_SUB_SELECTIONS[id];
+    if (sub?.receivers && chosen === id) plate.appendChild(receiverBlock(entry, sub, interactive));
+    if (sub?.planned) plate.appendChild(plannedBlock(sub.planned));
     return plate;
   };
 
-  // The chosen card's variants, as the Droid Build draws a design's: the
-  // shared segmented control under the card's words, behind a seam.
-  const variantRow = (entry, field, protocol, interactive) => {
-    const current = field.saved(config);
-    const block = element("div", "droid-build-variant-block");
-    block.appendChild(element("span", "droid-build-variant-label", protocol.label));
+  // The sub-selection's frame: under the card's words, behind a seam, the way
+  // the Droid Build draws a design's variants (#368).
+  const subBlock = (label) => {
+    const block = element("div", "droid-build-variant-block component-sub");
+    block.appendChild(element("span", "droid-build-variant-label", label));
+    return block;
+  };
+
+  // A chosen radio's RC Receiver: small receiver cards when the radio can be
+  // any of several, one settled line when it is only one, and under an SBUS
+  // answer the second-receiver choice.
+  const receiverBlock = (entry, sub, interactive) => {
+    const mode = RC_RECEIVER.saved(config);
+    const wire = wireOfMode(mode);
+    let block;
+    if (sub.receivers.length === 1) {
+      const settled = sub.receivers[0];
+      block = subBlock(`${RC_RECEIVER.heading}: ${RC_RECEIVER.wires[settled].short}`);
+    } else {
+      block = subBlock(RC_RECEIVER.heading);
+      const cards = element("div", "component-receivers");
+      cards.setAttribute("role", "radiogroup");
+      cards.setAttribute("aria-label", RC_RECEIVER.heading);
+      partsOf(entry.family)
+        .filter((part) => isReceiverRow(part) && sub.receivers.includes(part.protocol))
+        .forEach((part) => cards.appendChild(receiverCard(entry, part, wire, interactive)));
+      block.appendChild(cards);
+    }
+    if (wire === RC_RECEIVER.second.wire && sub.receivers.includes(wire)) {
+      block.appendChild(secondReceiverRow(mode, interactive));
+    }
+    return block;
+  };
+
+  const receiverCard = (entry, part, wire, interactive) => {
+    const on = part.protocol === wire;
+    const card = element("button", "component-receiver");
+    card.type = "button";
+    card.dataset.option = part.id;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", on ? "true" : "false");
+    if (on) card.classList.add("is-chosen");
+    card.disabled = !interactive || !isSelectable(part);
+    card.addEventListener("click", () => {
+      if (on) return;
+      pickReceiver(part.protocol);
+    });
+    if (!entry.noPicture.has(part.id)) card.appendChild(artFrame(part.id));
+    card.appendChild(element("span", "component-receiver-label", part.name));
+    const caption = RC_RECEIVER.wires[part.protocol].caption;
+    if (caption) card.appendChild(element("span", "component-receiver-caption", caption));
+    return card;
+  };
+
+  const secondReceiverRow = (mode, interactive) => {
+    const { second } = RC_RECEIVER;
+    const wrap = element("div", "component-sub-second");
+    wrap.appendChild(element("span", "droid-build-variant-label", second.label));
     const row = element("div", "seg droid-build-variants");
     row.setAttribute("role", "radiogroup");
-    row.setAttribute("aria-label", protocol.label);
-    protocol.variants.forEach((variant) => {
-      const on = current === variant.id;
-      const button = element("button", "droid-build-variant", variant.label);
+    row.setAttribute("aria-label", second.label);
+    second.options.forEach((option) => {
+      const on = mode === option.mode;
+      const button = element("button", "droid-build-variant", option.label);
       button.type = "button";
-      button.dataset.variant = variant.id;
+      button.dataset.variant = option.mode;
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", on ? "true" : "false");
       if (on) button.classList.add("active");
       button.disabled = !interactive;
       button.addEventListener("click", () => {
         if (on) return;
-        window.PAConfiguration?.applyComponentPick({ params: { [field.param]: variant.id } });
+        window.PAConfiguration?.applyComponentPick({ params: { [RC_RECEIVER.param]: option.mode } });
       });
       row.appendChild(button);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  };
+
+  // A roadmap product's own choice, shown as planned: spans in the segmented
+  // row, not buttons, because nothing can be chosen yet and nothing is stored.
+  const plannedBlock = (planned) => {
+    const block = subBlock(planned.label);
+    const row = element("div", "seg droid-build-variants component-planned-row");
+    row.setAttribute("aria-label", planned.label);
+    planned.options.forEach((label) => {
+      const option = element("span", "droid-build-variant component-link-roadmap", label);
+      option.title = ROADMAP_SENTENCE;
+      row.appendChild(option);
     });
     block.appendChild(row);
     return block;
   };
 
   const optionsFor = (entry, chosen) => {
-    const options = partsOf(entry.family).map((part) => {
+    const options = cardPartsOf(entry.family).map((part) => {
       const state = stateOf(entry, part, chosen);
       let blurb = "";
       if (state === "planned") blurb = ROADMAP_SENTENCE;
@@ -312,7 +414,6 @@
         kind: part.status === KIND_ROADMAP ? KIND_ROADMAP : KIND_SUPPORTED,
         id: part.id,
         name: part.name,
-        protocol: part.protocol,
         blurb,
         state,
       };
@@ -323,7 +424,7 @@
         id: NOT_FITTED,
         name: "Not fitted",
         blurb: entry.notFitted,
-        state: chosen === NOT_FITTED ? "chosen" : "available",
+        state: chosen === NOT_FITTED ? "declined" : "available",
       });
     }
     return options;
@@ -364,20 +465,12 @@
     const member = MEMBER_FIELDS[entry.family];
     const params = {};
     if (member && optionId !== NOT_FITTED) params[member.param] = optionId;
-    const protocolField = PROTOCOL_FIELDS[entry.family];
-    if (protocolField) {
-      const part = partsOf(entry.family).find((candidate) => candidate.id === optionId);
-      const protocol = protocolField.protocols[part?.protocol];
-      if (!protocol) return;
-      pressed[entry.family] = optionId;
-      // A card speaking the protocol the droid already has changes nothing on
-      // the droid: it only says which product it is. Otherwise the protocol's
-      // first variant is written, and its sub-selection appears under it.
-      if (protocolOfValue(protocolField, protocolField.saved(config)) === part.protocol) {
-        renderAll();
-        return;
-      }
-      params[protocolField.param] = protocol.variants[0].id;
+    // A radio that can only be answered with one RC Receiver writes it in the
+    // same save, unless the droid already has it (a second SBUS receiver is
+    // kept).
+    const settled = PRODUCT_SUB_SELECTIONS[optionId]?.receivers;
+    if (settled?.length === 1 && wireOfMode(RC_RECEIVER.saved(config)) !== settled[0]) {
+      params[RC_RECEIVER.param] = RC_RECEIVER.wires[settled[0]].modes[0];
     }
     window.PAConfiguration.applyComponentPick({
       toggleId: entry.toggleId || "",
@@ -387,6 +480,16 @@
     // Drawn from the toggle straight away; the member is drawn once the droid
     // has answered, because until then it is not the droid's answer.
     renderAll();
+  };
+
+  // An RC Receiver pick: the wire's first mode, unless the droid already reads
+  // that wire (which keeps a second SBUS receiver).
+  const pickReceiver = (wire) => {
+    if (!config || !window.PAConfiguration) return;
+    if (wireOfMode(RC_RECEIVER.saved(config)) === wire) return;
+    window.PAConfiguration.applyComponentPick({
+      params: { [RC_RECEIVER.param]: RC_RECEIVER.wires[wire].modes[0] },
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -414,7 +517,8 @@
    * A host is an element carrying data-component-family (the registry
    * category id). data-component-toggle names the id of the Component Toggle
    * behind it on this page, and data-component-not-fitted says what still works
-   * when it is off; a host without a toggle is shown, not asked.
+   * when it is off; a host without a toggle or a member is shown, not asked.
+   * data-component-no-picture lists the products drawn as words alone.
    *
    * @param {ParentNode} root
    */
@@ -425,6 +529,10 @@
         family: host.dataset.componentFamily,
         toggleId: host.dataset.componentToggle || "",
         notFitted: host.dataset.componentNotFitted || "",
+        // Products that have no picture in any asset set, by design rather
+        // than for want of one (test/test_tools/test_product_art.py
+        // NO_PICTURE says the same).
+        noPicture: new Set((host.dataset.componentNoPicture || "").split(/\s+/).filter(Boolean)),
       };
       mounts.push(entry);
       render(entry);

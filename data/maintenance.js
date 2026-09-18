@@ -325,6 +325,8 @@
 
     if (rc.sbusTimeoutMs !== undefined) p.set('sbusTimeoutMs', rc.sbusTimeoutMs);
     if (rc.inputMode !== undefined) p.set('rcInputMode', rc.inputMode);
+    // The RC Radio, the Radio Controller's Component Member (#369).
+    if (rc.member !== undefined) p.set('rcMember', rc.member);
     if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
 
     [

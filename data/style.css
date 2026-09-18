@@ -7808,3 +7808,190 @@ button.droid-build-card:disabled {
 .component-row.component-toggle-backing {
   display: none;
 }
+
+/* A link option the project intends to carry (ELRS under an RC Radio): shown
+   in the segmented row it belongs to, and not a control - a span, dimmed to
+   the "settled no" family, with no pointer. */
+.seg > .component-link-roadmap {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 var(--space-lg);
+  color: var(--text-faint);
+  font-size: var(--fs-cell);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-plate);
+  opacity: var(--avail-dim-settled);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+   Output plates (#369): the utility arms, the AUX outputs and the RC receiver
+   channels, drawn in the picker's plate language instead of a row of
+   switches (operator, 2026-09-18). Each is still the same checkbox, the same
+   type selector and the same save; only the drawing changes.
+
+   The plate IS the switch: its head is the <label>, so a press anywhere on it
+   toggles the checkbox, and a switched-on output takes the chosen treatment
+   (the interaction blue), exactly as a picked card does. The slider is not
+   drawn. The Availability Family classes on the row still apply - a plate
+   this image cannot run dims like any other - so nothing here restyles them.
+   --------------------------------------------------------------------------- */
+.output-plates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-md);
+  margin-block: var(--space-md);
+}
+
+.output-plates > .component-row.output-plate {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  background-image: none;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.output-plates > .component-row.output-plate:hover {
+  border-color: var(--text-faint);
+}
+
+.output-plates > .component-row.output-plate:has(input[type="checkbox"]:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+}
+
+.output-plates > .component-row.output-plate:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.output-plate .toggle-switch {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+}
+
+.output-plate .toggle-slider {
+  display: none;
+}
+
+.output-plate .toggle-label {
+  font-weight: 600;
+}
+
+/* The state word, read like a plate's readout: mono, and lit on an output
+   that is switched on. */
+.output-plate .toggle-status {
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.output-plate:has(input[type="checkbox"]:checked) .toggle-status {
+  color: var(--accent-bright);
+}
+
+/* The component type sits under the name as the plate's sub-selection, the
+   whole width of the plate. */
+.output-plate .type-segmented {
+  display: flex;
+  justify-content: stretch;
+  width: 100%;
+}
+
+.output-plate .type-segmented .seg-option {
+  flex: 1 1 0;
+  padding-inline: var(--space-xs);
+}
+
+/* A chosen RC Radio's RC Receiver (#369): small receiver cards inside the
+   radio's plate, the same plate language one size down - a picture, the
+   name, and the interaction blue on the receiver the droid reads. */
+.component-receivers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: var(--space-xs);
+}
+
+.component-receiver {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.component-receiver:hover:not(:disabled) {
+  border-color: var(--text-faint);
+}
+
+.component-receiver.is-chosen {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--well));
+  color: var(--text);
+}
+
+.component-receiver:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.component-receiver:disabled {
+  cursor: default;
+}
+
+.component-receiver .component-card-art {
+  border-color: var(--border);
+}
+
+.component-receiver-label {
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.component-receiver-caption {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.06em;
+}
+
+.component-sub-second {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+/* A roadmap product's own options wrap inside its plate rather than run past
+   it: the labels are longer than a segment's and nothing here is pressed. */
+.seg.component-planned-row {
+  flex-wrap: wrap;
+}
+
+.seg.component-planned-row > .component-link-roadmap {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-xs) var(--space-sm);
+  white-space: normal;
+  text-align: center;
+}
