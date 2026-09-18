@@ -172,7 +172,7 @@ The six CH headers (CH1–CH6) support three mutually exclusive wiring modes:
 | Single SBUS    | SBUS → CH1 (GPIO 15)               | Up to 16           |
 | Dual SBUS      | SBUS1 → CH1 (GPIO 15), SBUS2 → CH2 (GPIO 13) | Up to 32  |
 
-Configure the active mode from the RC Setup page (`rc_mode` setting).
+Configure the active mode from the RC Control page (`rc_mode` setting).
 
 In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
@@ -185,7 +185,7 @@ In SBUS modes, CH3–CH6 (GPIO 2, 4, 12, 27) are unused:
 
 ### RC Binding Defaults
 
-The RC mapping profile is persisted in NVS and configurable from the RC Setup page.
+The RC mapping profile is persisted in NVS and configurable from the RC Control page.
 Factory defaults:
 
 | Runtime profile | Action | Default binding | Notes |

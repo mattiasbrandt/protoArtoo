@@ -510,7 +510,7 @@ With arguments it writes:
 < id=9 type=result status=ok outcome=staged-until-reboot
 ```
 
-The fields are checked together, the way the Setup page checks them: ask for
+The fields are checked together, the way the WiFi page checks them: ask for
 `mode=client` when there is no station network name — neither saved nor on the
 line — and the whole command is refused, naming the field it wanted, rather
 than the mode being kept on its own. What you leave out keeps its saved value.

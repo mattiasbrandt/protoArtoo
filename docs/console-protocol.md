@@ -387,7 +387,7 @@ and a rename is a protocol break for a readability problem.
   range, type, enum and grouped rules are identical.
 - Grouped settings are validated as one configuration: `wifi.config.settings`
   rejects a `mode=client` without a usable SSID as a whole, naming the failing
-  field, exactly as the setup page does.
+  field, exactly as the WiFi page does.
 - A write reports `applied`, `staged-until-reboot`, or an explicit persistence
   failure; a restart-required condition is reported, never assumed.
 - There is no raw key/value escape hatch into the settings store.

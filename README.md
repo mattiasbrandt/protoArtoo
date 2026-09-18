@@ -313,9 +313,9 @@ The dome has no local sound module. The body is the sole audio authority.
 **Operator Web Interface**
 - Desktop-first and tablet-second browser workflow — no app required
 - Home dashboard with drive mode, mood selector, and live status
-- Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
+- Sound page, RC diagnostics, servo control, dome control, configuration, maintenance, and firmware update pages
 - Real-time page updates — reconnects automatically when switching back to the tab
-- Runtime log level selector (Errors / Warnings / Info / Debug) on Setup page — no reflash required
+- Runtime log level selector (Errors / Warnings / Info / Debug) in the Dashboard's Controller Console — no reflash required
 
 **Controller Console**
 - Type a command to the droid from the dashboard's Live Logs panel or over a serial

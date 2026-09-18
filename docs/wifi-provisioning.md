@@ -41,7 +41,7 @@ up (see "Changing AP settings" below).
 ## Choosing an ongoing WiFi mode
 
 The WiFi page (`/wifi.html`) is the one place to view and change network
-settings — the Setup page only links to it.
+settings — Configuration's guided Setup only links to it.
 
 ### WiFi Client Mode (recommended)
 
@@ -49,7 +49,7 @@ The controller joins your existing WiFi network. From the **WiFi Client
 Settings** section, enter your network name and password, then save.
 
 Once applied, reach the controller at `http://artoo.local` (or your droid's
-custom mDNS name, if you've set one on the Setup page) or its IP address from
+custom mDNS name, if you've set one on the Configuration page) or its IP address from
 your router.
 
 **WPA3-only WiFi networks are not supported; use WPA2 or WPA2/WPA3 mixed
