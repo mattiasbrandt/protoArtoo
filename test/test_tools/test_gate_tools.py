@@ -376,7 +376,7 @@ class LikelySet(unittest.TestCase):
 
 
 class ShortestFirst(unittest.TestCase):
-    SLOW = "test/test_web/test_status_plate_346.js"
+    SLOW = "test/test_web/test_status_plate.js"
 
     def test_unknown_duration_runs_before_the_seeded_slow_file(self):
         # Named to sort after the slow file, so only the seed can put it first.

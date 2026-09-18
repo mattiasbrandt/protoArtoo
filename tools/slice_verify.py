@@ -125,7 +125,7 @@ VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
 # tools/check_action_registry_drift.py. Same exclusion principle as
 # VERSION_JSON_RE above, different reason: build artefact vs uncoverable-by-
 # construction. .html and .css are deliberately NOT here - the web suite does
-# read .html (see test/test_web/test_issue_117_recovery_visibility.js), so
+# read .html (see test/test_web/test_recovery_visibility.js), so
 # those stay answerable.
 GENERATED_DATA_RE = re.compile(r"^data/console_help\.txt$")
 WEB_PRODUCTION_RE = re.compile(r"^data/")
@@ -158,7 +158,7 @@ BUILD_TIMEOUT = 1800
 NATIVE_TEST_TIMEOUT = 1800
 WEB_TEST_TIMEOUT = 300
 # The mutation runner starts one node per test file, so its deadline is per
-# file. The slowest file at HEAD is 16.1 s (test_status_plate_346.js, #405).
+# file. The slowest file at HEAD is 16.1 s (test_status_plate.js, #405).
 MUTATION_FILE_TIMEOUT = 60
 # Memory ceiling for a test subprocess, the same shape as the timeout above and
 # there for the case the timeout structurally cannot catch.

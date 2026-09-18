@@ -25,7 +25,7 @@
 
   // How many Learned Sequences the controller stores. Mirrors SEQ_STORE_MAX in
   // include/seq_store_index.h, which is what actually refuses the save;
-  // test/test_web/test_seq_capacity_382.js holds the two together (#382).
+  // test/test_web/test_seq_capacity.js holds the two together (#382).
   const LEARNED_SEQUENCE_CAP = 10;
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)

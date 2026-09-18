@@ -2,7 +2,7 @@
 // test/test_web/helpers/parts_surface.js
 //
 // Boots the shipped Operator Shell with the shipped Parts surface against a
-// fake droid, the way test_outputs_table_362.js does inside its own file, and
+// fake droid, the way test_outputs_table.js does inside its own file, and
 // adds what a Find by Moving run needs the droid to answer: a nudgesDone count
 // on every Output, POST /api/servo, a status stream the test can push an estop
 // onto, and a PAApi.gateControls the shipped one's shape. Kept beside the

@@ -147,7 +147,7 @@ static void test_free_floor_leaves_room_for_the_outgoing_copy() {
 static void test_store_holds_ten_learned_sequences() {
     // Operator decision, 2026-09-13 (#382): ten, on both boards. Sixteen
     // full-size sequences never fitted beside the artoo-esp32's web image, and
-    // data/seq.js shows this same number (test_seq_capacity_382.js).
+    // data/seq.js shows this same number (test_seq_capacity.js).
     TEST_ASSERT_EQUAL_UINT8(10, SEQ_STORE_MAX);
 }
 
