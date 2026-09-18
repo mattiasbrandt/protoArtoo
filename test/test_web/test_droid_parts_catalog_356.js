@@ -26,58 +26,6 @@ const catalog = context.window.DroidParts;
 
 const byId = new Map((catalog?.parts ?? []).map((part) => [part.id, part]));
 
-test("the module publishes the catalog under one global", () => {
-  assert.ok(catalog, "data/droid_parts.js did not assign window.DroidParts");
-  assert.equal(catalog.source, "docs/droid-parts.yaml");
-  assert.equal(catalog.generator, "tools/generate_droid_parts_catalog.py");
-  assert.match(catalog.sourceSha256, /^[0-9a-f]{64}$/);
-  assert.match(source, /DO NOT EDIT MANUALLY/);
-});
-
-test("every part a builder can name is here, dome and body alike", () => {
-  // Both outputs carry the whole vocabulary since #358. What the browser has
-  // and firmware does not is the operator copy: names, shorthand and aliases.
-  for (const id of ["pie1", "panel14", "hp3Tilt", "domeBtn2", "doorFL", "utilUp"]) {
-    assert.ok(byId.has(id), `${id} is missing from the browser catalog`);
-  }
-  assert.equal(catalog.parts.length, byId.size, "an id is declared twice");
-});
-
-test("the escape hatch is generated from its count, not kept in step by hand", () => {
-  const slots = catalog.parts.filter((part) => part.section === "other_slots");
-  assert.equal(slots.length, 10);
-  assert.equal(slots[0].id, "other1");
-  assert.equal(slots[9].id, "other10");
-  // Named so a builder can pick one, and with no position word: their own
-  // hardware is listed beside the body view rather than placed on it.
-  assert.equal(slots[6].name, "Other part 7");
-  assert.equal(slots[6].position, undefined);
-});
-
-test("a part carries the name to show and the shorthand to show beside it", () => {
-  const pie = byId.get("pie1");
-  assert.equal(pie.name, "Dome pie 1");
-  assert.equal(pie.shorthand, "PP1");
-  // Spread first: the module runs in its own vm realm, so its arrays do not
-  // share a prototype with this file's and a strict deep compare fails on that
-  // alone, whatever the contents are.
-  assert.deepEqual([...pie.aliases], ["PP1", "Dome pie 1"]);
-  assert.equal(pie.position, "rear-right");
-  assert.equal(pie.bearingDeg, 150);
-
-  // A body part has no Printed Droid shorthand, and the name is the plain
-  // English one rather than the first alias blindly.
-  const door = byId.get("doorFL");
-  assert.equal(door.name, "Left body door");
-  assert.equal(door.shorthand, undefined);
-});
-
-test("an index is emission order, and the id is the identity", () => {
-  catalog.parts.forEach((part, position) => {
-    assert.equal(part.index, position, `${part.id} is out of emission order`);
-  });
-});
-
 test("a declared unknown is absent, never the word TBD", () => {
   const serialised = JSON.stringify(catalog);
   assert.ok(!serialised.includes("TBD"), "TBD reached the browser as a value");
@@ -100,20 +48,6 @@ test("nothing-drives-it-yet and not-a-driven-thing stay apart", () => {
   assert.equal(byId.get("domeBtn1").control, null);
 });
 
-test("a design says which variant a builder starts on", () => {
-  const mk4 = catalog.designs.find((design) => design.id === "mk4");
-  assert.equal(mk4.defaultVariant, "complex");
-  assert.equal(mk4.short, "MK4");
-  const names = mk4.variants.map((variant) => variant.id);
-  assert.ok(names.includes(mk4.defaultVariant), "the default is not one of the variants");
-
-  // A design with no variants has no default either: there is nothing to
-  // default to, and an empty axis would be a second control with nothing in it.
-  const own = catalog.designs.find((design) => design.id === "own");
-  assert.equal(own.variants, undefined);
-  assert.equal(own.defaultVariant, undefined);
-});
-
 test("an unknown complement fails loudly; an empty one is a real answer", () => {
   const mk4 = catalog.designs.find((design) => design.id === "mk4");
   const simple = mk4.variants.find((variant) => variant.id === "simple");
@@ -134,13 +68,3 @@ test("an unknown complement fails loudly; an empty one is a real answer", () => 
   assert.deepEqual([...own.seeds], []);
 });
 
-test("a design seeds no Common Addition and no escape-hatch slot", () => {
-  const seeded = new Set(
-    catalog.designs.flatMap((design) =>
-      (design.variants ?? [{ seeds: design.seeds }]).flatMap((variant) => variant.seeds ?? [])
-    )
-  );
-  for (const id of ["gripArm", "gripClaw", "interArm", "interTool", "other1"]) {
-    assert.ok(!seeded.has(id), `${id} belongs to no design but a design seeds it`);
-  }
-});

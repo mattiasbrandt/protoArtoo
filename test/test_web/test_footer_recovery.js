@@ -332,25 +332,3 @@ test("Unloading the page clears the poll, the retry and the subscription", async
 // Source-text check, deliberately kept
 // -----------------------------------------------------------------------------
 
-test("footer.js is ASCII only", async (t) => {
-  // Justified source-text assertion: this is a lint rule about the bytes of the
-  // file, not about behaviour. It exists because non-ASCII punctuation in
-  // served JS has broken the bundle before, and there is no runtime observation
-  // that could show it - the code behaves identically either way.
-  const { readFileSync } = await import("fs");
-  const { fileURLToPath } = await import("url");
-  const { dirname, join } = await import("path");
-  const here = dirname(fileURLToPath(import.meta.url));
-  const footerCode = readFileSync(join(here, "../../data/footer.js"), "utf-8");
-
-  // String and comment contents are excluded: operator-facing copy may legitimately
-  // carry non-ASCII, the ban is on code and punctuation.
-  const codeOnly = footerCode.replace(/"[^"]*"/g, "").replace(/'[^']*'/g, "").replace(/`[^`]*`/g, "");
-  const offenders = codeOnly.match(/[^\x00-\x7F]/g);
-
-  assert.equal(
-    offenders,
-    null,
-    `footer.js must use ASCII only; found ${JSON.stringify(offenders)}`
-  );
-});

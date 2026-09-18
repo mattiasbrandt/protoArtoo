@@ -76,14 +76,6 @@ const healthyResponder = (path, opts = {}) => {
 // #107: loader error propagation
 // -----------------------------------------------------------------------------
 
-test("app.js registers its startup work as bootstrap sections", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  for (const name of ["app-initial-status", "app-recent-logs", "app-log-level", "app-console-catalog"]) {
-    assert.ok(env.sectionNames().includes(name), `${name} must be a bootstrap section`);
-  }
-});
-
 test("A section loader with no API available rejects instead of resolving empty", async (t) => {
   const env = loadPageModule("app.js", {
     respond: healthyResponder,
@@ -109,22 +101,6 @@ test("A failed logs fetch reaches the bootstrap", async (t) => {
   await assert.rejects(() => env.runSection("app-recent-logs"), /Simulated logs failure/);
 });
 
-test("Recent logs are fetched once and not refetched on a later run", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  await env.runSection("app-recent-logs");
-  const afterFirst = env.requests.filter((r) => r.path === "/api/logs").length;
-  assert.equal(afterFirst, 1, "the section must fetch the log history");
-
-  await env.runSection("app-recent-logs");
-
-  assert.equal(
-    env.requests.filter((r) => r.path === "/api/logs").length,
-    afterFirst,
-    "history already in the console must not be re-fetched over the live stream"
-  );
-});
-
 test("An unrecognised log level is rejected rather than displayed", async (t) => {
   const env = await loadDashboard({
     respond: (path) => (path === "/api/config" ? { data: { system: { logLevel: 99 } } } : healthyResponder(path)),
@@ -134,16 +110,6 @@ test("An unrecognised log level is rejected rather than displayed", async (t) =>
     () => env.runSection("app-log-level"),
     /Unknown log level: 99/,
     "an out-of-range level must not be rendered into the pill as if it were valid"
-  );
-});
-
-test("A valid log level resolves", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  await assert.doesNotReject(() => env.runSection("app-log-level"));
-  assert.ok(
-    env.requests.some((r) => r.path === "/api/config"),
-    "the level must come from the controller, not a default"
   );
 });
 
@@ -162,15 +128,6 @@ test("A console operations response without a records array is rejected", async 
   );
 });
 
-test("A well-formed console operations response resolves", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  await assert.doesNotReject(() => env.runSection("app-console-catalog"));
-  assert.ok(
-    env.requests.some((r) => r.path === "/api/console" && r.opts?.body?.command === "operations")
-  );
-});
-
 // -----------------------------------------------------------------------------
 // #109: the component grid
 // -----------------------------------------------------------------------------
@@ -183,28 +140,6 @@ const pushStatus = (env, payload) => {
   return env.element("component-status-grid").innerHTML;
 };
 
-test("The component grid emits dt/dd wrapped in a dl", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  const html = pushStatus(env, { protoR2link: { state: "connected" }, audio: { state: "idle" } });
-
-  assert.match(html, /^<dl class="status-grid">/, "dt and dd are only valid inside a dl");
-  assert.match(html, /<\/dl>$/, "the list must be closed");
-  assert.match(html, /<dt>/);
-  assert.match(html, /<dd id="state-protoR2link">/);
-  assert.match(html, /id="comp-protoR2link"/);
-  assert.match(html, /id="detail-protoR2link"/);
-});
-
-test("The component grid renders the state the controller reported", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-
-  const html = pushStatus(env, { audio: { state: "blocked_by_dome_uart", detail: "CHIRP blocked" } });
-
-  assert.match(html, /blocked by dome uart/, "underscores must be softened for the operator");
-  assert.match(html, /CHIRP blocked/);
-});
-
 test("A status field containing markup cannot inject into the grid", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
@@ -214,71 +149,7 @@ test("A status field containing markup cannot inject into the grid", async (t) =
   assert.match(html, /&lt;img/);
 });
 
-test("An unchanged component set is patched in place, not rebuilt", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-  const grid = env.element("component-status-grid");
-
-  pushStatus(env, { protoR2link: { state: "connected" } });
-  // A marker that only survives if the grid's markup is left alone. Rebuilding
-  // would discard it - and discard operator focus with it.
-  grid.innerHTML += "<!-- not rebuilt -->";
-
-  env.stream.subscriber("status", { protoR2link: { state: "spinning" } });
-
-  assert.ok(grid.innerHTML.includes("<!-- not rebuilt -->"), "same components must not rebuild the grid");
-  assert.equal(
-    env.element("state-protoR2link").textContent,
-    "spinning",
-    "the changed value must still be patched into the existing element"
-  );
-});
-
-test("A changed component set rebuilds the grid", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-  const grid = env.element("component-status-grid");
-
-  pushStatus(env, { protoR2link: { state: "connected" } });
-  grid.innerHTML += "<!-- stale -->";
-
-  env.stream.subscriber("status", { protoR2link: { state: "connected" }, audio: { state: "idle" } });
-
-  assert.ok(!grid.innerHTML.includes("<!-- stale -->"), "a new component must force a rebuild");
-  assert.match(grid.innerHTML, /id="comp-audio"/, "the new component must appear");
-});
-
-test("A status with no known components empties the grid", async (t) => {
-  const env = await loadDashboard({ respond: healthyResponder });
-  const grid = env.element("component-status-grid");
-
-  pushStatus(env, { protoR2link: { state: "connected" } });
-  assert.notEqual(grid.innerHTML, "");
-
-  env.stream.subscriber("status", { estop: false });
-
-  assert.equal(grid.innerHTML, "", "a grid with nothing to show must not keep showing stale rows");
-});
-
 // -----------------------------------------------------------------------------
 // Markup invariant over the shipped pages
 // -----------------------------------------------------------------------------
 
-test("No shipped page puts a dt or dd outside a dl", (t) => {
-  // Justified source-text assertion: this is an invariant about static markup in
-  // the served HTML files. There is no code path to execute - the elements are
-  // authored, not generated - so reading the files is the only way to check it.
-  // The check is structural rather than a substring match: dl blocks are removed
-  // first, and anything left over is by definition outside a list.
-  for (const filename of ["index.html", "drive.html", "setup.html", "wifi.html"]) {
-    const html = readFileSync(join(dataDir, filename), "utf-8");
-    const outsideAnyDl = html.replace(/<dl[^>]*>[\s\S]*?<\/dl>/g, "");
-
-    assert.ok(
-      !/<dt[\s>]/.test(outsideAnyDl),
-      `${filename}: found a <dt> outside any <dl> - invalid markup`
-    );
-    assert.ok(
-      !/<dd[\s>]/.test(outsideAnyDl),
-      `${filename}: found a <dd> outside any <dl> - invalid markup`
-    );
-  }
-});

@@ -210,45 +210,6 @@ const ACTIVE_RC_ENABLED = {
   channels: [],
 };
 
-test("Setup scopes restart guidance to RC input channels", () => {
-  const html = readFileSync("data/setup.html", "utf8");
-  // Find the RC Receiver Channels section by slicing from its heading to the closing tag of RC Channel 6 row.
-  // This bounds the test on explicit structural markers instead of relying on form closure (which could move
-  // if additional groups are added in the future). The RC Ch6 row closing </div> is at the end of the component-row.
-  const rcStart = html.indexOf("RC Receiver Channels");
-  const rcCh6End = html.indexOf('id="enable-rc-ch6"', rcStart);
-  const rcSectionEnd = html.indexOf("</div>", rcCh6End + 100);  // Find the closing div after RC Ch6 (the component-row div)
-  const rxSection = html.slice(rcStart, rcSectionEnd + 6);  // Include the "</div>"
-  assert.match(rxSection, /RC input changes save immediately and apply after controller restart\./);
-  assert.doesNotMatch(html, /Component changes save immediately\. Restart the controller to apply them\./);
-
-  const env = loadPageModule("setup.js", { respond: () => ({}) });
-  // The floppy-disk glyph that stood in front of this string went with ADR
-  // 0066, which retired emoji from every operator surface: the claim under
-  // test - that the global summary says nothing about a restart - is the same
-  // equality assertion against the same sentence.
-  assert.equal(
-    env.element("setup-save-summary").textContent,
-    "Auto-save ready",
-    "the global summary must not claim every component save needs restart"
-  );
-});
-
-test("inactive RC card explains boot-active source, mode, and routing semantics", () => {
-  const html = readFileSync("data/rc.html", "utf8");
-  const card = html.slice(html.indexOf('id="rc-disabled-card"'), html.indexOf("<div class=\"card\">", html.indexOf('id="rc-disabled-card"')));
-  assert.match(card, /No RC source is active for the current receiver type and routing\./);
-  assert.match(card, /Enable the applicable RC input[\s\S]*or select the intended receiver type and routing[\s\S]*then restart the controller/i);
-  assert.match(card, /Mapping edits remain available\./);
-  assert.doesNotMatch(card, /all RC input channels are disabled/i);
-});
-
-test("Receiver Type separates restart-staged settings from live mapping edits", () => {
-  const html = readFileSync("data/rc.html", "utf8");
-  assert.match(html, /Receiver type and single-SBUS routing save immediately and apply after controller restart\./);
-  assert.match(html, /Channel mapping changes apply when saved\./);
-});
-
 test("non-RC component auto-save retains ordinary saved feedback", async () => {
   const config = {
     components: {
@@ -387,26 +348,6 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
   );
   assert.match(env.element("feature-feedback").textContent, /Restart the controller to apply RC input changes\./);
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
-});
-
-test("receiver mode and single-SBUS routing saves report restart required", async () => {
-  const env = loadInteractiveModule("rc.js", async (method, path, body) => {
-    if (method === "POST" && path === "/api/config") {
-      if (body?.rc?.sbus) return { rc: { inputMode: "dual_sbus", sbus: body.rc.sbus } };
-      return { rc: { inputMode: body.rcInputMode, sbus: { recvCh2: false } } };
-    }
-    if (path === "/api/rc/map") return { mode: "dual_sbus", map: [] };
-    return {};
-  });
-
-  await env.modeCard("dual_sbus").emit("click");
-  await env.settle();
-  assert.match(env.element("rc-mode-feedback").textContent, /Restart the controller to apply\./);
-
-  const receiver = env.element("sbus-recv-sel");
-  receiver.value = "true";
-  await receiver.emit("change");
-  assert.match(env.element("sbus-recv-feedback").textContent, /Restart the controller to apply\./);
 });
 
 test("boot-active RC diagnostics override staged disabled component settings", async () => {

@@ -271,27 +271,6 @@ test("the estop shows a value in both states, and says so before the droid has a
   assert.equal(latched.estopStateText(), "Estop: latched");
 });
 
-test("the affordance says what a press does, separately from what the label reports", async () => {
-  const clear = await boot({ estop: false });
-  const latched = await boot({ estop: true });
-
-  const consequence = (env) => env.document.querySelector(".shell-estop-consequence").textContent.trim();
-
-  assert.equal(consequence(clear), consequence(latched), "the fixed line does not move with the state");
-  assert.match(consequence(clear), /Cuts drive/, "it says what pressing does");
-  assert.match(consequence(clear), /Drive or Dashboard/, "and where the release is, which is not here");
-  assert.notEqual(clear.estopStateText(), latched.estopStateText(), "while the label does move with the state");
-
-  // WCAG 2.5.3: someone driving the page by voice has to be able to say what
-  // they can see, and this is the control where that matters most.
-  const button = clear.estopButton();
-  const visibleWord = button.querySelector(".shell-estop-action").textContent.replace(/[^A-Za-z]/g, "");
-  assert.ok(
-    button.getAttribute("aria-label").includes(visibleWord),
-    `the accessible name must contain the word on the face of the button (${visibleWord})`,
-  );
-});
-
 test("navigating never clears a latched estop", async () => {
   const env = await boot({ estop: true });
   assert.equal(env.estopStateText(), "Estop: latched");

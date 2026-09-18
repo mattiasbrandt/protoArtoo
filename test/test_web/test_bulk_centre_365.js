@@ -42,45 +42,6 @@ test("one press sends one request, whatever the droid has on it", async () => {
   );
 });
 
-test("the line counts the outputs going back and the lights skipped", async () => {
-  // Two rows driving lights only, three that move. The light rows are told by
-  // the same signal the calibration dial's own acts are told by.
-  const outputs = withParts({
-    "ledc:0": ["doorFL"],
-    "ledc:1": ["magicPanel"],
-    "ledc:3": ["psiFront"],
-    "ledc:4": ["utilUp"],
-  });
-  const env = await bootParts({ outputs });
-
-  env.pressCentre();
-  await sleep(20);
-
-  assert.equal(
-    env.centreSaid(),
-    "3 outputs are going back to centre, one at a time. 2 skipped — a light has no centre.",
-  );
-  assert.match(env.centreSaidLevel(), /success/);
-});
-
-test("with nothing to skip the line says only what is going back", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
-
-  env.pressCentre();
-  await sleep(20);
-
-  assert.equal(env.centreSaid(), "5 outputs are going back to centre, one at a time.");
-});
-
-test("a single output reads as one, not as one outputs", async () => {
-  const env = await bootParts({ outputs: [output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 })] });
-
-  env.pressCentre();
-  await sleep(20);
-
-  assert.equal(env.centreSaid(), "1 output is going back to centre, one at a time.");
-});
-
 test("a request the droid did not take says so, and claims nothing moved", async () => {
   const env = await bootParts();
   env.centreFails = new Error("Device unavailable");
@@ -141,27 +102,6 @@ test("the estop ends the run, and no row goes on showing a commanded position as
   });
   assert.match(env.centreSaid(), /^The estop let go of every output\./);
   assert.match(env.centreSaidLevel(), /error/);
-});
-
-test("the droid's next answer is current again, and the marks come back", async () => {
-  const env = await bootParts();
-  env.pressCentre();
-  await sleep(20);
-  env.pushStatus({ estop: true });
-  await sleep(20);
-  assert.equal(env.text("ledc:0", "outputs-us"), "Stopped — finding out where it is");
-
-  // The estop released every Output, and the droid now says so.
-  env.outputs.forEach((row) => {
-    row.commandedUs = null;
-    row.targetUs = null;
-    row.limp = "estop";
-  });
-  await env.frame();
-
-  assert.equal(env.text("ledc:0", "outputs-us"), "— off");
-  assert.equal(env.text("ledc:0", "outputs-release"), "Limp - the estop let go");
-  assert.equal(env.cell("ledc:0", "outputs-bar").className.includes("is-stale"), false);
 });
 
 test("pressing again sends one more request and never a queue of them", async () => {

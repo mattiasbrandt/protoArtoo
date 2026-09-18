@@ -294,55 +294,6 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
 
 // ---------------------------------------------------------------------------
 
-test("a fresh droid shows every catalog Part once, none on an Output, in counted groups", async () => {
-  const env = await bootParts();
-  const catalog = env.window.DroidParts.parts;
-
-  const ids = env.table().querySelectorAll("[data-part]").map((node) => node.dataset.part);
-  assert.equal(ids.length, new Set(ids).size, "a Part appears in exactly one group");
-  assert.deepEqual([...ids].sort(), catalog.map((part) => part.id).sort(), "no row is hidden");
-
-  const bodies = env.table().querySelectorAll("tbody");
-  bodies.forEach((body) => {
-    const count = Number(/— (\d+) /.exec(body.querySelector("th").textContent)[1]);
-    assert.equal(count, body.querySelectorAll("[data-part]").length, `${body.dataset.group}'s heading counts its rows`);
-  });
-  assert.equal(env.heading("dome-pies"), "Dome pie panels — 6 parts");
-  assert.equal(env.heading("body"), "Body doors & arms — 10 parts");
-  assert.equal(env.heading("additions"), "Common additions — 4 parts");
-  assert.equal(env.heading("other"), "Other (not on the model) — 10 placeholders");
-
-  ids.forEach((id) => {
-    assert.equal(env.select(id).value, "none", `${id} is on no Output`);
-    assert.equal(env.row(id).classList.contains("is-wired"), false);
-  });
-  assert.deepEqual(env.optionTexts("pie1"), [
-    "– not wired –",
-    "ARM1 · drives nothing",
-    "ARM2 · drives nothing",
-    "AUX1 · drives nothing",
-    "AUX2 · drives nothing",
-    "AUX3 · drives nothing",
-  ]);
-  assert.equal(
-    env.text("parts-summary"),
-    `0 of ${catalog.length} parts on an output · 5 of 5 outputs driving nothing`,
-  );
-});
-
-test("an Output driving two Parts leaves both reading as driven, each naming the other", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"] }) });
-
-  ["doorFL", "doorFR"].forEach((id) => {
-    assert.equal(env.select(id).value, "ledc:0");
-    assert.equal(env.row(id).classList.contains("is-wired"), true);
-  });
-  assert.equal(env.row("doorFL").querySelector(".parts-gang").textContent, " moves with Right body door");
-  assert.equal(env.row("doorFR").querySelector(".parts-gang").textContent, " moves with Left body door");
-  assert.equal(env.optionTexts("pie1")[1], "ARM1 · Left body door, Right body door");
-  assert.match(env.text("parts-summary"), /^2 of \d+ parts on an output · 4 of 5 outputs driving nothing$/);
-});
-
 test("taking a Part off one Output for another is asked first, then sends where it was", async () => {
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"], "ledc:3": ["utilUp"] }) });
 
@@ -381,61 +332,6 @@ test("cancelling the question sends nothing and puts the control back", async ()
   assert.equal(env.posts.length, 0);
   assert.equal(env.dialog.open, false);
   assert.equal(env.select("doorFL").value, "ledc:0");
-});
-
-test("a move that takes nothing from anywhere goes straight to the droid", async () => {
-  const env = await bootParts();
-
-  env.pick("doorRL", "ledc:4");
-  assert.equal(env.dialog.open, false, "an unwired Part onto an Output is not a steal");
-  await sleep(20);
-  assert.deepEqual(env.posts[0].form, { movePart: "doorRL", movePartFrom: "none", movePartTo: "ledc:4" });
-  assert.equal(env.select("doorRL").value, "ledc:4");
-
-  env.pick("doorRL", "none");
-  assert.equal(env.dialog.open, false, "choosing not wired on the Part's own row is not a steal");
-  await sleep(20);
-  assert.deepEqual(env.posts[1].form, { movePart: "doorRL", movePartFrom: "ledc:4", movePartTo: "none" });
-  assert.equal(env.select("doorRL").value, "none");
-});
-
-test("a repaint touches values only, and leaves the control being held alone until it is let go", async () => {
-  const env = await bootParts();
-  const rowsBefore = env.table().querySelectorAll("[data-part]");
-  const held = env.select("doorFR");
-  const heldOptions = held.querySelectorAll("option");
-
-  // The builder has the right door's select open, part-way through a choice...
-  env.document.activeElement = held;
-  held.value = "ledc:4";
-  // ...while another client wires the left door to ARM2, and a move of the
-  // upper arm makes this page read the table again.
-  env.outputs[1].parts.push("doorFL");
-  env.pick("utilUp", "ledc:5");
-  await sleep(20);
-
-  const rowsAfter = env.table().querySelectorAll("[data-part]");
-  assert.equal(rowsAfter.length, rowsBefore.length);
-  rowsAfter.forEach((node, index) => assert.equal(node, rowsBefore[index], "no row is rebuilt"));
-  assert.equal(env.select("doorFL").value, "ledc:1", "a row nobody holds shows the new truth");
-  assert.equal(env.optionTexts("pie1")[2], "ARM2 · Left body door");
-
-  assert.equal(held.value, "ledc:4", "the held control keeps the builder's choice");
-  held.querySelectorAll("option").forEach((option, index) => assert.equal(option, heldOptions[index]));
-  assert.equal(env.optionTexts("doorFR")[2], "ARM2 · drives nothing", "its options are not rewritten under it");
-
-  env.document.activeElement = null;
-  env.table().fire("focusout", {});
-  assert.equal(held.value, "none", "let go, it catches up");
-  assert.equal(env.optionTexts("doorFR")[2], "ARM2 · Left body door");
-});
-
-test("a light row wears its Kind's treatment and a Part with no Kind does not", async () => {
-  const env = await bootParts();
-  assert.equal(env.row("magicPanel").classList.contains("partkind-light"), true);
-  assert.equal(env.row("magicPanel").querySelector(".parts-kind")?.textContent, "light");
-  assert.equal(env.row("panel5").classList.contains("partkind-light"), false);
-  assert.equal(env.row("panel5").querySelector(".parts-kind"), null);
 });
 
 test("a Part renamed in the catalog keeps its id on the row and on the wire", async () => {

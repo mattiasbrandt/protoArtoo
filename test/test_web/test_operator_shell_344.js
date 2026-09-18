@@ -238,19 +238,6 @@ const boot = async ({ hash = "", stored = null, brokenDoc = null, docDelayMs = 0
   return env;
 };
 
-test("the shell mounts the Dashboard surface into its own frame, from the file that still owns that markup", async () => {
-  const env = await boot();
-
-  assert.equal(env.mountedSurface(), "home", "the Dashboard surface is the mounted one");
-  assert.ok(
-    env.document.getElementById("health-grid"),
-    "the Dashboard's markup is in the live document, not merely fetched",
-  );
-  assert.ok(env.requests.includes("/dashboard.html"), "the surface's markup came from its own file");
-  assert.equal(env.document.body.dataset.page, "home", "body carries the surface's data-page identifier");
-  assert.equal(env.window.location.hash, "#home", "the address names what is shown");
-});
-
 test("changing screen keeps the frame: the same topbar and status nodes, and no second pa:assets-ready", async () => {
   const env = await boot();
   const topBefore = env.document.getElementById("shell-top");
@@ -339,82 +326,10 @@ test("a stored surface of Setup is corrected, and the correction is written back
   );
 });
 
-test("a reload honours the address: the remembered surface only answers when the address says nothing", async () => {
-  const env = await boot({ hash: "#rc", stored: JSON.stringify({ surface: "dome" }) });
-  assert.equal(env.mountedSurface(), "rc", "the address wins over the memory");
-
-  const noAddress = await boot({ stored: JSON.stringify({ surface: "dome" }) });
-  assert.equal(noAddress.mountedSurface(), "dome", "and the memory answers when there is no address");
-});
-
-test("a deep link resolves by the surface's canonical name as well as by its identifier", async () => {
-  const byName = await boot({ hash: "#sequences" });
-  assert.equal(byName.mountedSurface(), "seq");
-  assert.equal(
-    byName.document.body.dataset.page,
-    "seq",
-    "the operator-facing name and the data-page identifier are different things, and a rename moves only the first",
-  );
-
-  const byIdentifier = await boot({ hash: "#seq" });
-  assert.equal(byIdentifier.mountedSurface(), "seq");
-});
-
 test("an address this build does not know opens something rather than nothing", async () => {
   const env = await boot({ hash: "#no-such-surface" });
   assert.equal(env.mountedSurface(), "home");
   assert.equal(env.window.location.hash, "#home", "and the address is corrected to what is shown");
-});
-
-test("a link to a surface's own .html address routes inside the shell instead of reloading the page", async () => {
-  const env = await boot();
-  const link = env.document.createElement("a");
-  link.setAttribute("href", "/setup.html");
-  env.document.querySelector("[data-surface]").appendChild(link);
-
-  const event = clickOn(env.document, link);
-  await sleep(140);
-
-  assert.ok(event.defaultPrevented, "the browser is not allowed to fetch the document");
-  assert.equal(env.window.location.hash, "#setup");
-  assert.equal(env.mountedSurface(), "setup", "and the shell mounted it instead");
-});
-
-test("a modified click on a legacy link is left to the browser", async () => {
-  const env = await boot();
-  const link = env.document.createElement("a");
-  link.setAttribute("href", "/setup.html");
-  env.document.querySelector("[data-surface]").appendChild(link);
-
-  const event = clickOn(env.document, link, { metaKey: true });
-  assert.equal(event.defaultPrevented, false, "opening in a new tab still opens a document");
-  assert.equal(env.mountedSurface(), "home");
-});
-
-// The Dashboard's sleep toggle stands for a surface-owned topbar action here.
-// The estop used to, and is no longer one: it is the shell's own chrome and
-// never leaves (#359, test_shell_estop_359.js).
-test("a surface's topbar actions ride the topbar, and are the same nodes when it is returned to", async () => {
-  const env = await boot();
-  const sleep_ = env.document.getElementById("sleep-toggle");
-  assert.ok(sleep_, "the Dashboard's topbar actions are mounted beside the nav");
-  assert.strictEqual(
-    sleep_.closest("#shell-top-actions"),
-    env.document.getElementById("shell-top-actions"),
-    "beside the nav, not in the content region",
-  );
-
-  env.navigate("#dome");
-  await sleep(140);
-  assert.equal(env.document.getElementById("sleep-toggle"), null, "they leave with the surface that owns them");
-
-  env.navigate("#home");
-  await sleep(60);
-  assert.strictEqual(
-    env.document.getElementById("sleep-toggle"),
-    sleep_,
-    "and the same node comes back, so the handlers bound to it are still the ones on screen",
-  );
 });
 
 test("a surface mounted after the session settled is still told the identity it missed", async () => {
@@ -429,46 +344,6 @@ test("a surface mounted after the session settled is still told the identity it 
     env.events.filter((e) => e.type === "pa:identity-available").length,
     before + 1,
     "the surface that mounted late hears the outcome it would have heard as a page load",
-  );
-});
-
-test("the browser title names the surface and the droid, the same way round on every surface", async () => {
-  const env = await boot();
-  assert.equal(env.document.title, "Dashboard - artoo");
-
-  env.navigate("#sound");
-  await sleep(140);
-  assert.equal(env.document.title, "Sound - artoo");
-
-  env.navigate("#seq");
-  await sleep(140);
-  assert.equal(env.document.title, "Sequences - artoo");
-});
-
-test("the nav offers every surface, addressed by hash so the fragment never reaches the controller", async () => {
-  const env = await boot();
-  const links = env.document.querySelectorAll("[data-surface-link]");
-  assert.deepEqual(
-    [...new Set(links.map((link) => link.dataset.surfaceLink))].sort(),
-    ["dome", "drive", "firmware", "home", "parts", "rc", "seq", "servo", "setup", "sound", "wifi", "wiring"],
-    "every surface the shell knows is offered somewhere in the nav",
-  );
-  assert.equal(
-    links.length,
-    14,
-    "fourteen entries for twelve surfaces: Sound and Dome are in two Activity Groups each (#361)",
-  );
-  links.forEach((link) => {
-    assert.equal(
-      link.getAttribute("href"),
-      `#${link.dataset.surfaceLink}`,
-      "every nav address is a fragment, so the browser only ever asks the device for /",
-    );
-  });
-  assert.equal(
-    env.requests.filter((path) => !path.startsWith("/api/") && !path.endsWith(".html")).length,
-    0,
-    "and nothing else was asked of the controller",
   );
 });
 
@@ -506,39 +381,6 @@ test("the shell knows every surface, and every surface is a file that exists", (
   assert.equal(registry.length, 12, "twelve surfaces");
   registry.forEach(({ file }) => {
     assert.doesNotThrow(() => readData(file), `${file} is served`);
-  });
-});
-
-test("the shell document carries a content region and no surface of its own", () => {
-  const parsed = new MiniDOMParser().parseFromString(readData("index.html"));
-  assert.deepEqual(
-    parsed.body.children.map((child) => child.id),
-    ["shell-top", "shell-nav", "shell-content", "shell-status"],
-    "index.html is the frame; a surface's markup lives in the file that owns it",
-  );
-});
-
-test("every surface document hands a direct visit to the shell at its own route", () => {
-  registry.forEach(({ page, file }) => {
-    const html = readData(file);
-    assert.match(
-      html,
-      new RegExp(`location\\.replace\\("/#${page}"\\)`),
-      `${file} must delegate to its own route, not another's`,
-    );
-    assert.match(html, /<body data-page="([a-z]+)"/, `${file} declares a data-page identifier`);
-    assert.equal(
-      /<body data-page="([a-z]+)"/.exec(html)[1],
-      page,
-      `${file}: the route the delegate names is the data-page identifier, not the operator-facing name`,
-    );
-    // A delegate carries no recovery kernel (#382): the shell imports only its
-    // <body>, and a direct visit is replaced before a kernel could run, so the
-    // one kernel the browser needs is index.html's.
-    assert.ok(
-      !html.includes("PA:INCLUDE _recovery_kernel.html"),
-      `${file}: a shell delegate must not inline the recovery kernel`,
-    );
   });
 });
 

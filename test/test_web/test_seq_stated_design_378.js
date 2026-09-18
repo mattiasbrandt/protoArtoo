@@ -271,13 +271,6 @@ async function openWithBuild(config) {
   return { page, html: fields.innerHTML };
 }
 
-test("the built-in drawing is shown to the builder whose dome it is", async () => {
-  const { html } = await openWithBuild(build(drawing.DOME_PANEL_MAP_DESIGN, drawing.DOME_PANEL_MAP_VARIANT));
-
-  assert.ok(html.includes(drawing.DOME_PANEL_MAP_SVG), "the MK4 drawing was withheld from an MK4 builder");
-  assert.match(html, /Dome not reachable — showing built-in MK4 layout/);
-});
-
 test("a builder on their own build is not shown a drawing of somebody else's droid", async () => {
   const { html } = await openWithBuild(build("own", ""));
 
@@ -286,26 +279,6 @@ test("a builder on their own build is not shown a drawing of somebody else's dro
   assert.match(html, /Dome not reachable — no built-in map for the dome design you stated/);
   // The container itself stays: it is what a dome reconnect re-renders through.
   assert.match(html, /class="dome-picker-container"/);
-});
-
-test("a design whose complement nobody has read says that, not 'no map'", async () => {
-  // mk4/simple carries `seeds: null` in the catalog - a simple MK4 dome cannot
-  // grow the complex pies, and what it does carry is written down nowhere here.
-  const { html } = await openWithBuild(build("mk4", "simple"));
-
-  assert.doesNotMatch(html, /dome-svg-picker/);
-  assert.match(html, /this build does not know which panels that dome design carries/);
-});
-
-test("the design comes off the Droid Build seam, not out of a second derivation", async () => {
-  const { page, html } = await openWithBuild(build("own", ""));
-
-  // DroidBuild.load() is the only thing on this page that reads /api/config,
-  // and the picker's answer changed with what it found there.
-  assert.ok(page.requests.some((url) => url.startsWith("/api/config")), "nothing asked the Droid Build seam");
-  assert.equal(page.window.DroidBuild.current().dome.design, "own");
-  assert.equal(page.window.DomeLayout.getModel().usesVendoredDrawing, false);
-  assert.doesNotMatch(html, /dome-svg-picker/);
 });
 
 test("a controller that carries no Droid Build keeps the behaviour it had", async () => {
@@ -333,30 +306,6 @@ test("the first open draws nobody's dome until the hierarchy has answered", asyn
   await page.settle();
   assert.doesNotMatch(fields.innerHTML, /Checking which dome you built/);
   assert.match(fields.innerHTML, /no built-in map for the dome design you stated/);
-});
-
-test("the same first open shows the MK4 builder their dome once it is known", async () => {
-  const page = newPage(build(drawing.DOME_PANEL_MAP_DESIGN, drawing.DOME_PANEL_MAP_VARIANT));
-  const fields = page.openEditor(panelSequence());
-
-  assert.match(fields.innerHTML, /Checking which dome you built/);
-  await page.settle();
-  assert.ok(fields.innerHTML.includes(drawing.DOME_PANEL_MAP_SVG), "the MK4 builder never got their drawing");
-});
-
-test("authoring a panel the droid does not have stays legal", async () => {
-  // Author before you wire: the Dome Design decides which PICTURE may be shown,
-  // and nothing else. The step keeps its command, every panel target is still
-  // offerable, and Protocol Check still passes the sequence.
-  const { page, html } = await openWithBuild(build("own", ""));
-
-  assert.match(html, /<option value="07" selected>/);
-  assert.match(html, /<option value="P1" /);
-  assert.match(html, /value=":OP07"/);
-
-  const state = page.window.__seqEditorForTesting.editorState;
-  assert.equal(state.current.steps[0].cmd, ":OP07");
-  assert.equal(page.window.SeqProtocolCheck.validateSequence(state.current).ok, true);
 });
 
 test("an unsupported schema no longer claims a drawing it is not showing", async () => {

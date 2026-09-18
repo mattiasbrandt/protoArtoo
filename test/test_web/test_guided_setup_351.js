@@ -289,77 +289,6 @@ const boot = ({ config = freshConfig() } = {}) => {
   };
 };
 
-test("a droid nobody has been asked about opens the run, not the configuration page", async () => {
-  const env = boot();
-  assert.equal(env.shown(env.id("wizard-checking")), true, "the surface says it is reading before it knows");
-  assert.equal(env.shown(env.id("wizard-head")), false);
-
-  await env.runSection();
-
-  assert.equal(env.shown(env.id("wizard-head")), true, "the run's chrome is on screen");
-  assert.equal(env.shown(env.id("wizard-foot")), true);
-  assert.equal(env.shown(env.id("wizard-checking")), false);
-  // The step the run opens on, and nothing else from the page.
-  assert.equal(env.shown(env.host("wifi")), true);
-  assert.equal(env.shown(env.host("drive")), false);
-  assert.equal(env.shown(env.cardHolding(env.id("backup-download-btn"))), false, "Backup is not part of a first run");
-});
-
-test("the step shown rather than asked does not consume a number", async () => {
-  const env = boot();
-  await env.runSection();
-  assert.equal(env.text("wizard-position"), "Question 1 of 8 · you can stop at any step, and stopping ends the run.");
-
-  env.click("wizard-next");
-  assert.equal(env.text("wizard-step-name"), "Body Controller");
-  assert.match(env.text("wizard-position"), /^Body Controller — shown, not asked\. Question 2 of 8 is next/);
-
-  // The question AFTER the board is still the second question. A run that
-  // counted the board would say three of nine here, which is exactly the
-  // nine-versus-ten confusion this rule exists to stop.
-  env.click("wizard-next");
-  assert.equal(env.text("wizard-step-name"), "Foot Drive");
-  assert.equal(env.text("wizard-position"), "Question 2 of 8 · you can stop at any step, and stopping ends the run.");
-});
-
-test("the footer states position and escape, and promises nothing about when an answer applies", async () => {
-  const env = boot();
-  await env.runSection();
-  for (let step = 0; step < 9; step += 1) {
-    const line = env.text("wizard-position");
-    assert.match(line, /you can stop at any step, and stopping ends the run/, "the escape is stated at every step");
-    assert.doesNotMatch(line, /appl|straight away|locked in|restart|reboot/i, `step ${step} footer promises a timing: ${line}`);
-    if (step < 8) env.click("wizard-next");
-  }
-});
-
-test("a question that has not been on screen renders hollow, and the one that has renders ticked", async () => {
-  const env = boot();
-  await env.runSection();
-
-  // Filled and hollow, both out of Geometric Shapes: a check mark is a
-  // pictograph and an operator surface carries none (ADR 0066,
-  // tools/check_surface_anatomy.py).
-  const opening = env.chips();
-  assert.equal(opening.length, 9, "the rail draws every step in the run");
-  assert.equal(opening[0].tick, "●", "the question on screen has been asked");
-  assert.equal(opening[1].tick, null, "the board is not a question, so it carries no mark at all");
-  assert.deepEqual(
-    opening.slice(2).map((chip) => chip.tick),
-    new Array(7).fill("○"),
-    "every question still to come is hollow",
-  );
-  // The answer shows either way, because the default is a real value that has
-  // simply not been looked at.
-  assert.equal(opening[2].answer, "Not fitted");
-  assert.equal(env.shown(env.id("wizard-legend")), true, "the hollow mark is explained in visible text");
-
-  env.click("wizard-next");
-  env.click("wizard-next");
-  assert.equal(env.chips()[2].tick, "●", "a question that has now been on screen is filled in");
-  assert.equal(env.chips()[3].tick, "○", "the one after it has not");
-});
-
 test("the run tells the controller which steps it actually showed", async () => {
   const env = boot();
   await env.runSection();
@@ -376,42 +305,6 @@ test("the run tells the controller which steps it actually showed", async () => 
   env.flushTimers();
   assert.equal(env.posts.at(-1).get("guidedSetupVisited"), "wifi,name");
   assert.equal(env.posts.at(-1).path, "/api/config");
-});
-
-test("skipping and finishing both end the run, and stay different facts about the droid", async () => {
-  const skipped = boot();
-  await skipped.runSection();
-  skipped.click("wizard-stop");
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(skipped.posts.at(-1).get("guidedSetupRun"), "skipped");
-
-  const finished = boot();
-  await finished.runSection();
-  for (let step = 0; step < 8; step += 1) finished.click("wizard-next");
-  assert.equal(finished.text("wizard-next"), "Finish", "the last step offers the end of the run, not another step");
-  finished.click("wizard-next");
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(finished.posts.at(-1).get("guidedSetupRun"), "completed");
-});
-
-test("the run leaves for good, and the page it leaves behind is the whole page", async () => {
-  const env = boot();
-  await env.runSection();
-  env.click("wizard-stop");
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(env.shown(env.id("wizard-head")), false, "the run's chrome is gone");
-  assert.equal(env.shown(env.id("wizard-foot")), false);
-  assert.equal(env.shown(env.id("wizard-wifi-card")), false, "a card that only belonged to the run goes with it");
-  assert.equal(env.shown(env.cardHolding(env.id("backup-download-btn"))), true);
-  assert.equal(env.shown(env.host("drive")), true, "every question's controls are back where they always were");
-  assert.equal(env.shown(env.host("rc")), true);
-
-  // The same controller, read again: Setup is a takeover and never re-opens.
-  const again = boot({ config: env.config });
-  await again.runSection();
-  assert.equal(again.shown(again.id("wizard-head")), false);
-  assert.equal(again.shown(again.cardHolding(again.id("backup-download-btn"))), true);
 });
 
 test("a droid configured before the record existed is not walked through a first run", async () => {

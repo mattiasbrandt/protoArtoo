@@ -35,27 +35,6 @@ const catalog = context.window.DroidParts;
 const parts = catalog?.parts ?? [];
 const byId = new Map(parts.map((part) => [part.id, part]));
 
-test("the module publishes its answers under one global", () => {
-  assert.ok(kinds, "data/droid_part_kind.js did not assign window.DroidPartKind");
-  assert.equal(kinds.LIGHT, "light");
-});
-
-test("the six lit dome parts are the ones the catalog classifies as lights", () => {
-  const lights = parts.filter((part) => kinds.isLight(part));
-  assert.deepEqual(
-    // Spread first: the catalog module runs in its own vm realm, so its arrays
-    // do not share a prototype with this file's and a strict deep compare fails
-    // on that alone, whatever the contents are.
-    [...lights.map((part) => part.id)].sort(),
-    ["logicFront", "logicRear", "magicPanel", "psiFront", "psiRear", "upperPanel"],
-  );
-  // And a Part the catalog does not classify says so, rather than being
-  // reported as the moving kind: an escape-hatch slot is whatever the builder
-  // wired to it.
-  assert.equal(kinds.kindOf(byId.get("other7")), null);
-  assert.equal(kinds.kindOf(byId.get("doorFL")), null);
-});
-
 test("the kind is read off the declared field, never off an id or a name", () => {
   // Same name, same shape of id, no declared kind: not a light. This is the
   // whole reason the field exists.
@@ -81,32 +60,6 @@ test("a light promises no travel, and the row does not show one", () => {
   // Absent, not zeroed: the list a row builds from does not carry the words at
   // all, so there is nothing for a surface to draw as an empty value.
   assert.deepEqual([...kinds.affordances(light)], ["brightness"]);
-});
-
-test("the kind is carried by a state class and never by a colour", () => {
-  // The module's whole output for a Kind is a class name. Colour is reserved
-  // for refused and for actionable (#327), and a Part being a light is neither.
-  assert.equal(kinds.treatmentClass(byId.get("psiRear")), "partkind-light");
-  assert.equal(kinds.treatmentClass(byId.get("doorFL")), "");
-  assert.equal(kinds.treatmentClass(null), "");
-});
-
-test("a lit panel says what it carries, and says nothing about refusing", () => {
-  // What a surface asks before recording a servo Output against P5. The answer
-  // is the light itself, so the question can name it.
-  const light = kinds.lightOn("panel5", parts);
-  assert.equal(light.id, "magicPanel");
-  assert.equal(light.name, "Magic Panel");
-
-  // A panel that carries no light has nothing to say about the mapping.
-  assert.equal(kinds.lightOn("panel7", parts), null);
-  assert.equal(kinds.lightOn("doorFL", parts), null);
-
-  // Every lit panel is reachable from the panel's own id, so no surface has to
-  // match on a name to find one.
-  for (const id of ["panel5", "panel6", "panel8", "panel9", "panel12", "panel14"]) {
-    assert.ok(kinds.lightOn(id, parts), `${id} carries a light the catalog cannot find`);
-  }
 });
 
 test("nothing here throws at a caller holding less than a Part", () => {

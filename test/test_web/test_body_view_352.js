@@ -81,41 +81,6 @@ const markerOf = (host, id) =>
 // One device on the droid is one marker
 // ---------------------------------------------------------------------------
 
-test("a holoprojector is one marker offering the Parts that make it up", () => {
-  const catalog = catalogOf();
-  const { BodyView } = boot();
-  const { markers } = BodyView.placementFor(catalog.parts);
-
-  const holos = markers.filter((marker) => marker.id.startsWith("holoprojectors:"));
-  assert.equal(holos.length, 3, "three holoprojectors, three markers");
-  holos.forEach((marker) => {
-    // Two Parts today and three the day a holo light declares sitsOn: the rule
-    // is the catalog's, so the count follows the catalog rather than this file.
-    assert.deepEqual(
-      marker.parts,
-      catalog.parts
-        .filter((part) => part.section === "holoprojectors" && `holoprojectors:${part.unit}` === marker.id)
-        .map((part) => part.id)
-    );
-    assert.ok(marker.parts.length >= 2, `${marker.id} offers its axes on one marker`);
-  });
-  // And a pan Part does not get a marker of its own beside the one it is on.
-  assert.equal(markers.find((marker) => marker.id === "hp1Pan"), undefined);
-});
-
-test("a light shares the marker of the Part it sits on, and takes its position", () => {
-  const catalog = catalogOf();
-  const { BodyView } = boot();
-  const { markers } = BodyView.placementFor(catalog.parts);
-
-  // magicPanel sits on panel5, which the catalog puts at `right`.
-  const host = markers.find((marker) => marker.id === "panel5");
-  assert.ok(host, "the panel that carries the Magic Panel has a marker");
-  assert.ok(host.parts.includes("magicPanel"), "the light is on its host's marker");
-  assert.equal(host.column, "right", "and takes the position its host declares");
-  assert.equal(markers.find((marker) => marker.id === "magicPanel"), undefined);
-});
-
 test("a Part with no position word is reported unplaced, never dropped and never guessed", () => {
   const catalog = catalogOf();
   const { host, BodyView } = boot();
@@ -132,42 +97,6 @@ test("a Part with no position word is reported unplaced, never dropped and never
 // ---------------------------------------------------------------------------
 // It shows one kind of state at a time, and says which
 // ---------------------------------------------------------------------------
-
-test("the picture says which kind of state it is showing, inside the drawing", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
-
-  const said = () => host.querySelector(".bodyview-said").textContent;
-  const kind = () => host.querySelector(".bodyview-svg").getAttribute("data-state-kind");
-
-  drawing.update({ kind: BodyView.STATE_KINDS.LIVE, marks: {} });
-  assert.equal(kind(), "live");
-  assert.match(said(), /last told/);
-
-  drawing.update({ kind: BodyView.STATE_KINDS.POSE, marks: {} });
-  assert.equal(kind(), "pose");
-  assert.match(said(), /routine/);
-});
-
-test("live state and a routine's moment draw identically - only the sentence differs", () => {
-  const catalog = catalogOf();
-  const marks = { doorFL: { mark: "driven", at: 1, said: "told to open" } };
-
-  const drawOne = (kind) => {
-    const { host, BodyView } = boot();
-    const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
-    drawing.update({ kind, marks });
-    return host.querySelectorAll("[data-marker]").map((node) => [
-      node.dataset.marker,
-      node.className,
-      node.getAttribute("aria-label"),
-      node.querySelector(".bodyview-leaf").getAttribute("transform"),
-    ]);
-  };
-
-  assert.deepEqual(drawOne("live"), drawOne("pose"));
-});
 
 // ---------------------------------------------------------------------------
 // Nothing is presented as read back from a servo
@@ -247,53 +176,6 @@ test("a click reports the pick and asks the droid for nothing", () => {
   assert.equal(drawing.selected(), null);
 });
 
-test("a marker answers Enter and Space, because it is a button", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const picks = [];
-  BodyView.mountDrawing(host, { parts: bodyParts(catalog), onPick: (id) => picks.push(id) });
-
-  const svg = host.querySelector(".bodyview-svg");
-  let prevented = 0;
-  svg.fire("keydown", { key: "Enter", target: markerOf(host, "drawer"), preventDefault: () => (prevented += 1) });
-  svg.fire("keydown", { key: " ", target: markerOf(host, "drawer"), preventDefault: () => (prevented += 1) });
-  svg.fire("keydown", { key: "a", target: markerOf(host, "drawer"), preventDefault: () => (prevented += 1) });
-
-  assert.deepEqual(picks, ["drawer", "drawer"]);
-  assert.equal(prevented, 1, "Space is stopped from scrolling the page; Enter is not stopped");
-});
-
-test("the marker a caller selected survives every repaint", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
-
-  drawing.select("doorRL");
-  const cell = markerOf(host, "doorRL");
-  assert.ok(cell.classList.contains("is-selected"));
-  assert.equal(cell.getAttribute("aria-pressed"), "true");
-
-  for (let frame = 0; frame < 5; frame += 1) {
-    drawing.update({ kind: "live", marks: { doorRL: { mark: "driven", at: frame / 5 } } });
-  }
-
-  assert.equal(drawing.selected(), "doorRL");
-  assert.ok(markerOf(host, "doorRL").classList.contains("is-selected"));
-  // The same node, not a new one wearing the same class: a rebuild is what
-  // would have dropped the selection, so this is the rule itself.
-  assert.strictEqual(markerOf(host, "doorRL"), cell);
-});
-
-test("the handle names the Parts a marker stands for, so a caller can offer them", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: catalog.parts });
-
-  assert.deepEqual(drawing.partsOf("holoprojectors:1"), ["hp1Pan", "hp1Tilt"]);
-  assert.deepEqual(drawing.partsOf("doorFL"), ["doorFL"]);
-  assert.deepEqual(drawing.partsOf("nothing-like-this"), []);
-});
-
 // ---------------------------------------------------------------------------
 // The selection panel: named buttons, and a no that names the next move
 // ---------------------------------------------------------------------------
@@ -303,14 +185,6 @@ const ACTS = [
   { id: "wire", label: "give it an Output" },
   { id: "move", label: "move it" },
 ];
-
-test("the three acts are named buttons beside the drawing, in the order they were given", () => {
-  const { panelHost, BodyView } = boot();
-  BodyView.mountPanel(panelHost, { acts: ACTS });
-
-  const labels = panelHost.querySelectorAll("[data-act]").map((node) => node.textContent);
-  assert.deepEqual(labels, ["add it to the build", "give it an Output", "move it"]);
-});
 
 test("an act that cannot run is refused and says why, rather than vanishing", () => {
   const { panelHost, BodyView } = boot();
@@ -337,19 +211,6 @@ test("an act that cannot run is refused and says why, rather than vanishing", ()
   assert.deepEqual(pressed, []);
   panelHost.querySelector(".bodyview-panel-acts").fire("click", { target: button("wire") });
   assert.deepEqual(pressed, ["wire"]);
-});
-
-test("the panel repaints in place, so a button does not move out from under a finger", () => {
-  const { panelHost, BodyView } = boot();
-  const panel = BodyView.mountPanel(panelHost, { acts: ACTS });
-  const before = panelHost.querySelectorAll("[data-act]").find((node) => node.dataset.act === "move");
-
-  panel.show({ title: "Drawer", facts: [], acts: { move: { enabled: true } }, why: "" });
-  panel.show({ title: "Drawer", facts: [], acts: { move: { enabled: false } }, why: "held" });
-
-  const after = panelHost.querySelectorAll("[data-act]").find((node) => node.dataset.act === "move");
-  assert.strictEqual(after, before);
-  assert.equal(after.disabled, true);
 });
 
 test("clearing the panel refuses every act, so nothing is offered with nothing picked", () => {

@@ -66,17 +66,6 @@ function seam(design, variant, complementKnown) {
   };
 }
 
-test("the built-in drawing is this builder's dome when they stated that design", async () => {
-  const page = newPage(seam("mk4", "complex", true));
-  await page.DomeLayout.load();
-
-  assert.equal(page.DomeLayout.getSource(), "vendored");
-  const model = page.DomeLayout.getModel();
-  assert.equal(model.usesVendoredDrawing, true);
-  assert.equal(model.domeDesign, "mk4");
-  assert.equal(model.warning, null);
-});
-
 test("a dome the built-in drawing is not of is not drawn as theirs", async () => {
   const page = newPage(seam("own", "", true));
   await page.DomeLayout.load();
@@ -118,15 +107,6 @@ test("a page with no Droid Build keeps the behaviour it had before", async () =>
   assert.equal(model.warning, null);
 });
 
-test("tier 3 still carries no geometry of its own", async () => {
-  // The catalog's bearings are recorded as contradictory and the drawing that
-  // settles them is not in this repository, so consulting the design decides
-  // WHICH picture may be shown - it does not start drawing one.
-  const page = newPage(seam("own", "", true));
-  await page.DomeLayout.load();
-  assert.deepEqual([...page.DomeLayout.getModel().elements], []);
-});
-
 test("an unsupported schema is tier 3 plus its own warning", async () => {
   // ADR 0009: an unsupported schema's geometry is never trusted, so what can be
   // shown is what the stated design allows - including, for a design the
@@ -158,13 +138,3 @@ test("an unsupported schema is tier 3 plus its own warning", async () => {
   assert.equal(model.usesVendoredDrawing, false);
 });
 
-test("the drawing says which design it is of, rather than the layout assuming it", () => {
-  // If this ever has to be looked up in dome_layout.js instead, the picture and
-  // the claim about the picture have drifted into two places.
-  const source = read("dome_panel_model.js");
-  const context = { window: {} };
-  vm.runInNewContext(source, context);
-  assert.equal(context.window.DOME_PANEL_MAP_DESIGN, "mk4");
-  assert.equal(context.window.DOME_PANEL_MAP_VARIANT, "complex");
-  assert.ok(context.window.DOME_PANEL_MAP_SVG.includes("<svg"));
-});

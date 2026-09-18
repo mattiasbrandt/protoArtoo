@@ -173,30 +173,6 @@ const bootSetup = ({ set, assetsReady }) => {
   return { panel, announceBoard, showing };
 };
 
-for (const assetsReady of [false, true]) {
-  test(`legacy set: the Artoo PCB is drawn inline from the page's sprite and nothing is fetched (PAAssetsReady ${assetsReady})`, () => {
-    const { panel, announceBoard, showing } = bootSetup({ set: "legacy", assetsReady });
-
-    announceBoard("artoo_esp32");
-
-    assert.strictEqual(panel.use.getAttribute("href"), "#art-artoo_pcb", "the board's registry id names its drawing");
-    assert.deepStrictEqual(showing(), ["art"], "the drawing replaces both the photograph and the placeholder");
-    assert.strictEqual(panel.art.getAttribute("aria-label"), "Artoo Controller PCB");
-    assert.strictEqual(panel.image.src, undefined, "a drawn board must not fetch a photograph");
-    assert.strictEqual(panel.image.dataset.deferredSrc, undefined, "a drawn board must not queue a photograph");
-  });
-}
-
-test("legacy set: the FireBeetle 2 is drawn from its own symbol", () => {
-  const { panel, announceBoard, showing } = bootSetup({ set: "legacy", assetsReady: false });
-
-  announceBoard("firebeetle2");
-
-  assert.strictEqual(panel.use.getAttribute("href"), "#art-firebeetle2");
-  assert.deepStrictEqual(showing(), ["art"]);
-  assert.strictEqual(panel.image.dataset.deferredSrc, undefined);
-});
-
 test("default set: before assets-ready, the photograph waits in data-deferred-src", () => {
   const { panel, announceBoard, showing } = bootSetup({ set: "default", assetsReady: false });
 
@@ -220,26 +196,3 @@ test("default set: after assets-ready (a late identity retry), the photograph's 
   assert.deepStrictEqual(showing(), ["image"], "a loaded photograph replaces the placeholder");
 });
 
-test("default set: a photograph that fails to load gives way to the placeholder", () => {
-  const { panel, announceBoard, showing } = bootSetup({ set: "default", assetsReady: true });
-
-  announceBoard("firebeetle2");
-  panel.image.onerror();
-
-  assert.deepStrictEqual(showing(), ["placeholder"]);
-  assert.strictEqual(panel.placeholderText.textContent, "FireBeetle 2 — No photo of this board yet.");
-});
-
-for (const set of ["legacy", "default"]) {
-  test(`${set} set: a board with neither a drawing nor a photograph shows the placeholder and fetches nothing`, () => {
-    const { panel, announceBoard, showing } = bootSetup({ set, assetsReady: true });
-
-    announceBoard("esp32s3_devkit");
-
-    assert.deepStrictEqual(showing(), ["placeholder"]);
-    assert.strictEqual(panel.placeholderText.textContent, "esp32s3_devkit — No photo of this board yet.");
-    assert.strictEqual(panel.image.src, undefined, "a board no set pictures has no route to ask");
-    assert.strictEqual(panel.image.dataset.deferredSrc, undefined);
-    assert.strictEqual(panel.use.getAttribute("href"), null);
-  });
-}

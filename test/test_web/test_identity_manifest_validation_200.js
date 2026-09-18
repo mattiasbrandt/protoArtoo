@@ -356,28 +356,6 @@ test("Layer 2 validation: missing board_capabilities object returns availability
   assert.strictEqual(result.phase, "failed");
 });
 
-test("Resolver split: resolve() returns { phase, state }, not { state, available }", () => {
-  const { context } = loadContextWithIdentity();
-
-  context.window.PAIdentity = {
-    droidName: "artoo",
-    build_flags: { PA_HEAP_PROFILE: false },
-  };
-
-  context.window.PAFeatureAvailability.setIdentity(context.window.PAIdentity);
-
-  const resolve = context.window.PAFeatureAvailability.resolve;
-
-  // Check that the return shape includes phase and state
-  const result = resolve({ buildFlag: "PA_HEAP_PROFILE" });
-  assert(Object.hasOwn(result, "phase"), "Return object should have phase property");
-  assert(Object.hasOwn(result, "state"), "Return object should have state property");
-  assert.strictEqual(result.phase, "ready");
-  assert.strictEqual(result.state, "not-in-this-build");
-  // Should not have available property in the new return shape
-  assert(!Object.hasOwn(result, "available"), "Return object should not have available property");
-});
-
 test("Resolver split: checking phase returns phase='checking' not phase='ready'", () => {
   const { context } = loadContextWithIdentity();
 

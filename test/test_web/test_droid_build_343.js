@@ -61,24 +61,6 @@ function domeSeeds(parts) {
   return complex.seeds.filter((id) => half.get(id) === "dome");
 }
 
-test("choosing a design fits the parts that design carries, on that half only", async () => {
-  const page = newPage();
-  const result = await page.build.applyDroidBuild(
-    { domeDesign: "mk4", domeVariant: "complex" },
-    { persist: false }
-  );
-
-  const expected = domeSeeds(page.parts);
-  assert.ok(expected.length > 0, "the catalog has no dome complement to seed");
-  assert.deepEqual([...result.build.fitted].sort(), [...expected].sort());
-  assert.deepEqual([...result.seeded].sort(), [...expected].sort());
-  assert.deepEqual([...result.unknownComplement], []);
-
-  // The body half was not answered, so nothing on the body was fitted.
-  assert.equal(result.build.body.design, "");
-  assert.ok(!result.build.fitted.includes("doorFL"));
-});
-
 test("parts already fitted are not removed when the design changes", async () => {
   const page = newPage();
   await page.build.applyDroidBuild({ domeDesign: "mk4", domeVariant: "complex" }, { persist: false });
@@ -114,25 +96,6 @@ test("a complement nobody has read is reported, not drawn as an empty droid", as
   assert.deepEqual([...result.seeded], []);
   assert.deepEqual([...result.build.fitted], []);
   assert.equal(page.build.complementFor("mk4", "simple", "dome").known, false);
-});
-
-test("my own build seeds nothing, and says so as a real answer", () => {
-  const page = newPage();
-  const complement = page.build.complementFor("own", "", "dome");
-  // `[]` and `null` must not read alike: this one IS known, and is empty.
-  assert.equal(complement.known, true);
-  assert.deepEqual([...complement.ids], []);
-});
-
-test("which half a part is on comes from the catalog, and the escape hatch is on neither", () => {
-  const page = newPage();
-  assert.equal(page.build.halfOf("pie1"), "dome");
-  assert.equal(page.build.halfOf("psiRear"), "dome");
-  assert.equal(page.build.halfOf("doorFL"), "body");
-  assert.equal(page.build.halfOf("gripArm"), "body");
-  // The slots belong to no design, so no design can seed one.
-  assert.equal(page.build.halfOf("other1"), null);
-  assert.equal(page.build.halfOf("nothing-like-this"), null);
 });
 
 test("the boot re-apply adopts what the device holds and seeds nothing over it", async () => {

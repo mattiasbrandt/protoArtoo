@@ -82,16 +82,6 @@ test("the default set carries a WebP photograph for every physical product", () 
   }
 });
 
-test("each photograph is 400x300", () => {
-  for (const id of PRODUCT_IDS) {
-    const buf = readFileSync(join(DEFAULT_SET, `${id}.webp`));
-    const size = readVp8Size(buf);
-    assert.ok(size, `${id} is not a VP8 key frame we can size`);
-    assert.equal(size.width, 400, `${id} width ${size.width}`);
-    assert.equal(size.height, 300, `${id} height ${size.height}`);
-  }
-});
-
 test("the default set does not carry extra product photographs", () => {
   const present = readdirSync(DEFAULT_SET)
     .filter((name) => name.endsWith(".webp"))

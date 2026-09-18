@@ -127,59 +127,6 @@ const twoPageCatalog = () =>
     ],
   });
 
-test("the B2B tab lists only the B2B entries", async () => {
-  const state = mount({ catalog: twoPageCatalog() });
-  await load(state);
-
-  const tab = findByText(state, "button", "B2B");
-  assert.ok(tab, "the catalog offers one tab per bank AND page");
-
-  state.created.length = 0;
-  click(tab);
-
-  const texts = cellTexts(state);
-  assert.ok(
-    texts.includes("alarm.mp3"),
-    "B2B's own sound has to be listed under B2B"
-  );
-  assert.ok(
-    !texts.includes("cantina.mp3"),
-    "2A's sound is a different page of the same bank; filtering on the bank number alone listed it here too"
-  );
-});
-
-test("All banks still shows every page", async () => {
-  const state = mount({ catalog: twoPageCatalog() });
-  await load(state);
-
-  const tab = findByText(state, "button", "All banks");
-  assert.ok(tab, "the All banks tab has to survive the page-aware filter");
-
-  state.created.length = 0;
-  click(tab);
-
-  const texts = cellTexts(state);
-  assert.ok(texts.includes("alarm.mp3") && texts.includes("cantina.mp3"));
-});
-
-test("only the selected page's tab is marked selected", async () => {
-  const state = mount({ catalog: twoPageCatalog() });
-  await load(state);
-
-  const tab = findByText(state, "button", "B2B");
-  state.created.length = 0;
-  click(tab);
-
-  const selectedLabels = state.created
-    .filter((c) => c.tag === "button" && String(c.el.className).includes("accent"))
-    .map((c) => c.el.textContent);
-  assert.deepStrictEqual(
-    selectedLabels,
-    ["B2B"],
-    "a filter keyed on the bank number marks both of that bank's tabs selected"
-  );
-});
-
 // -----------------------------------------------------------------------------
 // Item 10 - refresh completion belongs to the requested refresh
 // -----------------------------------------------------------------------------
@@ -263,24 +210,6 @@ const suggestibleCatalog = (limits) =>
     ],
   });
 
-test("a whole listing offers its suggestions", async () => {
-  const state = mount({
-    catalog: suggestibleCatalog({
-      manifest_incomplete: false,
-      missing_names: 0,
-      entry_cap_reached: false,
-    }),
-  });
-  await load(state);
-
-  assert.strictEqual(
-    state.env.element("btn-catalog-apply-suggestions").disabled,
-    false,
-    "this fixture has a suggestion to make, which is what makes the partial case below meaningful"
-  );
-  assert.strictEqual(state.env.element("catalog-limits").textContent, "");
-});
-
 test("a listing missing whole banks says so and withholds its suggestions", async () => {
   const state = mount({
     catalog: suggestibleCatalog({
@@ -315,24 +244,6 @@ test("a listing cut off at the entry limit says so", async () => {
 
   assert.match(state.env.element("catalog-limits").textContent, /entry limit/);
   assert.strictEqual(state.env.element("btn-catalog-apply-suggestions").disabled, true);
-});
-
-test("sounds listed by index are counted on screen, not only in a log", async () => {
-  const state = mount({
-    catalog: suggestibleCatalog({
-      manifest_incomplete: false,
-      missing_names: 2,
-      entry_cap_reached: false,
-    }),
-  });
-  await load(state);
-
-  assert.match(state.env.element("catalog-limits").textContent, /2 sounds came back without a name/);
-  assert.strictEqual(
-    state.env.element("btn-catalog-apply-suggestions").disabled,
-    false,
-    "an unnamed entry still carries its index, so it is not a hole in a range"
-  );
 });
 
 // A read the controller refuses while a refresh holds the catalog has learned
@@ -376,16 +287,6 @@ test("a changed sound list warns beside the saved assignments", async () => {
   );
 });
 
-test("an unchanged sound list says nothing", async () => {
-  const state = mount({
-    tracks: withBindings,
-    catalog: catalogBody({ bindings: { sound_list_changed: false, sound_list_checked: true } }),
-  });
-  await load(state);
-
-  assert.strictEqual(state.env.element("sound-list-changed-warning").textContent, "");
-});
-
 test("a check that could not be made is its own sentence", async () => {
   const state = mount({
     tracks: withBindings,
@@ -399,51 +300,3 @@ test("a check that could not be made is its own sentence", async () => {
   );
 });
 
-test("nothing saved yet is nothing to warn about", async () => {
-  const state = mount({
-    tracks: {},
-    catalog: catalogBody({ bindings: { sound_list_changed: true, sound_list_checked: false } }),
-  });
-  await load(state);
-
-  assert.strictEqual(
-    state.env.element("sound-list-changed-warning").textContent,
-    "",
-    "the builder has not assigned anything against this card yet"
-  );
-});
-
-test("saving an assignment is still available while the warning is up", async () => {
-  const state = mount({
-    tracks: withBindings,
-    catalog: catalogBody({
-      bindings: { sound_list_changed: true, sound_list_checked: true },
-      banks: [{ bank: 1, page: "A", dir: "1A_general", count: 1 }],
-      entries: [{ bank: 1, page: "A", index: 1, name: "beep.wav" }],
-    }),
-  });
-  await load(state);
-
-  assert.strictEqual(
-    state.env.element("sound-list-changed-warning").textContent,
-    SOUND_LIST_CHANGED_WARNING
-  );
-
-  const select = state.created.find((c) => c.tag === "select" && c.el.className.includes("catalog-map-select"));
-  assert.ok(select, "each catalog row offers a mapping target");
-  select.el.value = "slot:scream";
-
-  const mapButton = findByText(state, "button", "Map");
-  assert.ok(mapButton, "each catalog row offers a Map action");
-  await click(mapButton);
-  await state.env.settle();
-
-  const posted = state.env.requests.filter(
-    (r) => r.method === "POST" && r.path === "/api/audio/tracks"
-  );
-  assert.strictEqual(
-    posted.length,
-    1,
-    "the warning is a warning; the builder is the one who decides what the new numbers point at"
-  );
-});

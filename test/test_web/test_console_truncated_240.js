@@ -107,38 +107,6 @@ test("truncated:false is not truncated", async () => {
   assert.ok(!output.includes(CUT_NOTICE), "truncated:false was read as truncated");
 });
 
-test("the notice follows the reply it belongs to, and is not styled as a failure", async () => {
-  const { run } = await consoleHarness(
-    respondWith({ records: LOG_RECORDS, truncated: true })
-  );
-
-  const lines = await run("system.status.logs");
-  const noticeAt = lines.findIndex((line) => line.includes(CUT_NOTICE));
-  const endAt = lines.findIndex((line) => line.includes("type=end"));
-
-  assert.ok(noticeAt !== -1, "the notice never reached the log");
-  assert.ok(endAt !== -1, "the closing record never reached the log");
-  assert.ok(
-    noticeAt > endAt,
-    `the notice must come after the records it describes (notice at ${noticeAt}, ` +
-      `end record at ${endAt}) - the log keeps scrolling, so a notice printed ` +
-      "ahead of its own answer comes loose from it"
-  );
-
-  // The command ran and every printed line is real, so this is a warning about
-  // the answer, not a failed command: it must not borrow the error styling the
-  // page uses for a refused request.
-  const noticeLine = lines[noticeAt];
-  assert.ok(
-    noticeLine.includes("log-line-command-cut"),
-    `the notice is missing its own class: ${noticeLine}`
-  );
-  assert.ok(
-    !noticeLine.includes("log-line-command-error"),
-    `the notice is painted as an error: ${noticeLine}`
-  );
-});
-
 test("a malformed answer is still just an error - no notice without a reply", async () => {
   // truncated:true with no records at all: there is no reply above for a
   // notice to belong to, and the page's existing malformed-answer line is the

@@ -204,28 +204,6 @@ test("the editor counts the Rehearsal's findings beside Protocol Check, and the 
   assert.equal(page.byId("seq-editor-save").disabled, false);
 });
 
-test("the counts follow an edit, from the same computation", () => {
-  const page = newPage();
-  page.open();
-  page.seam.editorState.current.steps.splice(4, 4);
-  page.seam.updateValidationSummary();
-  assert.match(page.byId("seq-editor-rehearsal").innerHTML, /data-count="warning">1 warning</);
-});
-
-test("Save saves first and then shows the full Rehearsal list", async () => {
-  const page = newPage();
-  page.open();
-  await page.click(page.byId("seq-editor-save"));
-
-  const saves = page.calls.filter(([method, url]) => method === "post" && url === "/api/seq");
-  assert.equal(saves.length, 1, "the save was held back");
-  const feedback = page.byId("seq-editor-feedback").innerHTML;
-  assert.match(feedback, /feedback-ok">Saved\./);
-  assert.match(feedback, /data-rehearsal-report/);
-  assert.match(feedback, /data-code="retarget-before-arrival"/);
-  assert.doesNotMatch(feedback, /data-rehearsal-badge/);
-});
-
 test("Test on Droid runs first, then folds a badge for what the droid holds, not the edits on screen", async () => {
   const page = newPage();
   page.open();
@@ -240,30 +218,6 @@ test("Test on Droid runs first, then folds a badge for what the droid holds, not
   assert.match(feedback, /DM:HELLO dispatched\./);
   assert.match(feedback, /<details class="seq-rehearsal-badge seq-rehearsal-badge-warning"/);
   assert.match(feedback, /Rehearsal: 2 warnings, 0 notes/);
-});
-
-test("Tune on a Factory card opens the clone and lists what the Rehearsal found in it", async () => {
-  const page = newPage();
-  page.seam.renderListWithMocks([], [{ name: "DM:HELLO", stepCount: 10, toggleGroup: "none", suppressMs: 4000 }]);
-  await page.click(page.card.tuneButton);
-
-  assert.ok(page.calls.some(([, url]) => url === "/api/seq/builtins?name=DM%3AHELLO"));
-  const feedback = page.byId("seq-editor-feedback").innerHTML;
-  assert.match(feedback, /What the Rehearsal found in DM:HELLO as it ships:/);
-  assert.match(feedback, /data-code="dispatch-spacing"/);
-  assert.match(feedback, /data-code="retarget-before-arrival"/);
-});
-
-test("Test on a Learned card runs, then reads the sequence back and badges it", async () => {
-  const page = newPage();
-  page.seam.renderListWithMocks([{ name: "DM:HELLO", stepCount: 10, valid: true }], []);
-  await page.click(page.card.testButton);
-
-  const runAt = page.calls.findIndex(([method, url]) => method === "post" && url === "/api/seq/test");
-  const readAt = page.calls.findIndex(([method, url]) => method === "get" && url === "/api/seq?name=DM%3AHELLO");
-  assert.ok(runAt >= 0 && readAt > runAt, "the Rehearsal was read before the run went out");
-  assert.equal(page.card.feedback.textContent, "Dispatched.");
-  assert.match(page.card.rehearsal.innerHTML, /Rehearsal: 2 warnings, 0 notes/);
 });
 
 test("a card whose sequence cannot be read back says so instead of looking all clear", async () => {

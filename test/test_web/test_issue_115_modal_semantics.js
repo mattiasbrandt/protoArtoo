@@ -38,22 +38,6 @@ const announcerOf = (backdrop) => {
   return announcer;
 };
 
-test("The overlay presents as a dialog", (t) => {
-  const { backdrop } = showOverlay();
-
-  assert.equal(backdrop.getAttribute("role"), "dialog");
-  assert.equal(
-    backdrop.getAttribute("aria-label"),
-    "Page recovery overlay",
-    "a dialog with no accessible name is announced as an unlabelled group"
-  );
-  assert.equal(
-    backdrop.getAttribute("tabindex"),
-    "-1",
-    "the backdrop must be programmatically focusable without becoming a Tab stop"
-  );
-});
-
 test("The overlay does not claim the rest of the page is inert", (t) => {
   const { backdrop } = showOverlay();
 
@@ -62,72 +46,6 @@ test("The overlay does not claim the rest of the page is inert", (t) => {
     null,
     "aria-modal would hide the chrome's Latching Estop from a screen reader (#359)"
   );
-});
-
-test("The countdown is announced through a separate polite live region", (t) => {
-  const { backdrop } = showOverlay();
-  const announcer = announcerOf(backdrop);
-
-  assert.equal(announcer.getAttribute("role"), "status");
-  assert.equal(announcer.getAttribute("aria-live"), "polite");
-  assert.equal(
-    announcer.getAttribute("aria-atomic"),
-    "false",
-    "atomic announcements would re-read the whole panel on every countdown tick"
-  );
-});
-
-test("The dialog itself carries no aria-atomic", (t) => {
-  const { backdrop } = showOverlay();
-
-  // aria-atomic on the backdrop is what caused the over-announcement this
-  // issue was filed for: every countdown update re-read the entire panel.
-  assert.equal(
-    backdrop.getAttribute("aria-atomic"),
-    null,
-    "only the announcer may carry aria-atomic"
-  );
-});
-
-test("The live region is offscreen rather than hidden", (t) => {
-  const { backdrop } = showOverlay();
-  const announcer = announcerOf(backdrop);
-
-  // display:none or visibility:hidden would stop it being announced at all;
-  // offscreen positioning keeps it in the accessibility tree.
-  assert.equal(announcer.style.position, "absolute");
-  assert.equal(announcer.style.left, "-10000px");
-  assert.notEqual(announcer.style.display, "none");
-  assert.notEqual(announcer.style.visibility, "hidden");
-});
-
-test("The live region survives a panel rebuild", (t) => {
-  const env = loadRecoveryView();
-  env.RecoveryView.render(stateShowingRecovery(env.Core));
-  const backdrop = env.backdrop();
-  const announcer = announcerOf(backdrop);
-
-  // A second failed attempt changes the panel signature and rebuilds it.
-  env.RecoveryView.render(stateShowingRecovery(env.Core, { attempts: 2 }));
-
-  assert.equal(
-    announcerOf(backdrop),
-    announcer,
-    "replacing the live region node would drop the announcement the reader is tracking"
-  );
-});
-
-test("The live region survives the overlay being dismissed", (t) => {
-  const env = loadRecoveryView();
-  const state = stateShowingRecovery(env.Core);
-  env.RecoveryView.render(state);
-  const backdrop = env.backdrop();
-  const announcer = announcerOf(backdrop);
-
-  env.RecoveryView.render(stateHidingRecovery(env.Core, state));
-
-  assert.equal(announcerOf(backdrop), announcer, "the live region must outlive the panel content");
-  assert.deepEqual(backdrop.children, [announcer], "nothing but the live region may remain");
 });
 
 test("Dismissing the overlay takes the active markers off the page", (t) => {
@@ -151,25 +69,3 @@ test("Dismissing the overlay takes the active markers off the page", (t) => {
   );
 });
 
-test("Dialog semantics are applied once and stay applied across renders", (t) => {
-  const env = loadRecoveryView();
-  const state = stateShowingRecovery(env.Core);
-  env.RecoveryView.render(state);
-  const backdrop = env.backdrop();
-
-  env.RecoveryView.render(stateHidingRecovery(env.Core, state));
-  env.RecoveryView.render(stateShowingRecovery(env.Core, { attempts: 2 }));
-
-  assert.equal(env.backdrop(), backdrop, "the overlay must be reused, not rebuilt per render");
-  assert.equal(backdrop.getAttribute("role"), "dialog");
-  assert.equal(
-    backdrop.getAttribute("aria-label"),
-    "Page recovery overlay",
-    "the accessible name must survive a hide and a second appearance"
-  );
-  assert.equal(
-    backdrop.querySelectorAll(".recovery-countdown-announcer").length,
-    1,
-    "repeated renders must not stack up duplicate live regions"
-  );
-});

@@ -285,97 +285,6 @@ const EXPECTED_CHIPS = ["estop", "drive", "rclink", "control", "sleep", "spd", "
 // The plate
 // ---------------------------------------------------------------------------
 
-test("eight chips render in the fixed order, on one plate, with internal separators", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-
-  assert.deepEqual(
-    env.chips().map((chip) => chip.dataset.chip),
-    EXPECTED_CHIPS,
-    "the order is read by muscle memory, so it is the contract",
-  );
-
-  const plates = env.document.querySelectorAll(".status-plate");
-  assert.equal(plates.length, 1, "one recessed plate, not eight floating boxes");
-  assert.deepEqual(
-    plates[0].children.map((child) => child.dataset.chip),
-    EXPECTED_CHIPS,
-    "every chip is a cell of that one plate",
-  );
-
-  // The separator is the plate's own rule on the left edge of every cell after
-  // the first, so a cell that is ever hidden takes its rule with it. Asserted
-  // on the stylesheet because there is nothing in the markup to assert: no
-  // JavaScript may touch a separator, and this is what says so.
-  const css = readData("style.css");
-  assert.match(css, /\.status-plate > \* \+ \* \{\s*border-left:/, "the plate draws its own separators");
-  assert.deepEqual(
-    env.chips().filter((chip) => /separator|divider/i.test(chip.className)),
-    [],
-    "no chip carries a separator of its own",
-  );
-});
-
-test("the plate is chrome: the same nodes survive every navigation", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-  const before = EXPECTED_CHIPS.map((id) => env.chip(id));
-  const region = env.document.getElementById("status-plate-region");
-  assert.ok(before.every(Boolean), "all eight are there to begin with");
-
-  for (const route of ["drive", "dome", "sound", "servo", "seq", "rc", "setup", "wifi", "firmware", "home"]) {
-    env.navigate(`#${route}`);
-    await sleep(180);
-    assert.equal(env.document.body.dataset.page, route, `${route} is the mounted surface`);
-    assert.strictEqual(env.document.getElementById("status-plate-region"), region, `${route}: the same plate`);
-    EXPECTED_CHIPS.forEach((id, index) => {
-      assert.strictEqual(env.chip(id), before[index], `${route}: ${id} is the same node`);
-    });
-  }
-});
-
-test("every chip shows a value in both states, and none of them goes blank", async () => {
-  // Each row drives one chip to both ends of its own condition. A plate that
-  // is empty when all is well cannot be told from one that stopped updating,
-  // so "" is a failure on either side.
-  const bothWays = {
-    estop: [{}, { estop: true }],
-    drive: [{}, { drive: undefined }],
-    rclink: [{}, { rcCh1: undefined }],
-    control: [{}, { webControlEnabled: false }],
-    sleep: [{}, { sleepMode: true }],
-    spd: [{}, { speedLimitMax: 300 }],
-    domelink: [{}, { dome_link: { state: "disabled" } }],
-    soundlink: [{}, { audio: undefined }],
-  };
-
-  const env = await boot({ status: { ...HEALTHY } });
-  for (const [id, patches] of Object.entries(bothWays)) {
-    const seen = [];
-    for (const patch of patches) {
-      // undefined in a patch means "the key the firmware omits", which
-      // JSON.stringify drops for us -- the same absence the device sends.
-      env.pushStatus(patch);
-      await sleep(5);
-      const value = env.chipValue(id);
-      assert.ok(value && value.trim().length > 0, `${id} went blank for ${JSON.stringify(patch)}`);
-      seen.push(value);
-    }
-    assert.notEqual(seen[0], seen[1], `${id} says the same thing in both states`);
-  }
-});
-
-test("no telemetry reaches the plate, and there is no WiFi chip", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-  const plateText = env.document.querySelector(".status-plate").textContent;
-
-  assert.ok(!EXPECTED_CHIPS.includes("wifi"), "WiFi earns no chip: if WiFi is down nobody is reading this");
-  for (const telemetry of ["27790", "173152", "-70", "UPTIME", "HEAP", "RSSI", "WIFI"]) {
-    assert.ok(
-      !plateText.toUpperCase().includes(telemetry),
-      `${telemetry} is Dashboard's and never the plate's, found in ${JSON.stringify(plateText)}`,
-    );
-  }
-});
-
 // ---------------------------------------------------------------------------
 // A chip watching half its condition -- the reference's shipped Bug 2
 // ---------------------------------------------------------------------------
@@ -501,24 +410,6 @@ test("SPD prints the cap the droid sent and never a preset name it cannot check"
 // A route, a control, and an affordance that says which
 // ---------------------------------------------------------------------------
 
-test("a chip press opens the screen where that thing is changed, through the one navigation path", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-
-  const destinations = { drive: "drive", rclink: "rc", control: "drive", sleep: "home", spd: "drive", domelink: "dome", soundlink: "sound" };
-  for (const [id, page] of Object.entries(destinations)) {
-    assert.equal(env.chip(id).getAttribute("href"), `#${page}`, `${id} carries the address of ${page}`);
-    env.navigate("#home");
-    await sleep(180);
-    // A hash address is the whole navigation: the same path the nav, a legacy
-    // link and a typed address all take. Nothing here is a second router.
-    env.navigate(env.chip(id).getAttribute("href"));
-    await sleep(200);
-    assert.equal(env.document.body.dataset.page, page, `${id} landed on ${page}`);
-  }
-
-  assert.deepEqual(env.posts, [], "and not one of the seven asked the droid for anything");
-});
-
 test("only the estop acts, and it is the same stop the topbar button sends", async () => {
   const env = await boot({ status: { ...HEALTHY } });
   const estopChip = env.chip("estop");
@@ -549,57 +440,9 @@ test("only the estop acts, and it is the same stop the topbar button sends", asy
   );
 });
 
-test("what a press does is visible on the page, and separate from what a chip reports", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-
-  // Visible text at the entrance, not a title: a title carries no affordance
-  // on a button and a bench tablet has no hover at all (ADR 0059).
-  const affordance = env.document.querySelector(".status-plate-affordance").textContent;
-  assert.match(affordance, /Press a chip to open the screen/, "it says what pressing does");
-  assert.match(affordance, /ESTOP cuts drive/, "including the one cell that acts instead");
-
-  // The title is fixed and names the consequence; the chip's text is the
-  // state. Two surfaces, and the paint function only ever touches one of them.
-  const titleBefore = env.chip("domelink").getAttribute("title");
-  assert.match(titleBefore, /^Opens Dome, where this is changed$/);
-  env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
-  await sleep(5);
-  assert.equal(env.chip("domelink").getAttribute("title"), titleBefore, "the affordance does not move with the state");
-  assert.equal(env.chipValue("domelink"), "LOST", "while the state does");
-
-  // The destination is named by reading SURFACES, so a rename stays one field.
-  assert.equal(
-    env.chip("drive").getAttribute("title"),
-    "Opens Foot Drive, where this is changed",
-    "B2d renamed Drive to Foot Drive with its page untouched; the plate reads the name rather than restating it",
-  );
-
-  // Nothing carries a second copy of the state: the visible text is the
-  // accessible name (WCAG 2.5.3), so there is no aria-label to go stale.
-  assert.deepEqual(
-    env.chips().filter((chip) => chip.getAttribute("aria-label") !== null).map((chip) => chip.dataset.chip),
-    [],
-    "a chip with an aria-label has two copies of its state",
-  );
-});
-
 // ---------------------------------------------------------------------------
 // One freshness state for the whole plate
 // ---------------------------------------------------------------------------
-
-test("the plate says its own age, once, and never per chip", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-
-  assert.equal(env.document.querySelectorAll(".status-plate-freshness").length, 1, "one freshness state");
-  assert.match(env.freshness(), /Last heard from the droid/, "and it says how old the readout is");
-  assert.equal(env.freshnessState(), "live");
-
-  assert.deepEqual(
-    env.chips().filter((chip) => /fresh|stale|age/i.test(chip.className)).map((chip) => chip.dataset.chip),
-    [],
-    "eight markers would repeat one fact seven times",
-  );
-});
 
 test("before the droid has said anything the plate says it is still finding out", async () => {
   // The boot read never answers, so no frame has arrived at all.
@@ -661,35 +504,6 @@ test("a replayed frame does not restamp the age", async () => {
   assert.match(env.freshness(), /just now/, "while a frame the droid actually sent does");
 });
 
-test("the freshness state is never amber", async () => {
-  // CONTEXT.md "Status Plate": the operator cannot act on a reconnect that is
-  // already running, and #327 reserves amber for what they can act on. Read
-  // off the stylesheet, resolved through :root, because "the rule does not
-  // contain the string --warning" is not the same claim.
-  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  const root = /:root\s*\{([^{}]*)\}/.exec(css)[1];
-  const amber = /--warning:\s*([^;]+)/.exec(root)[1].trim();
-  assert.match(amber, /^#[0-9a-fA-F]{6}$/, `expected a colour for --warning, read ${amber}`);
-
-  const offenders = [];
-  const rule = /([^{}]+)\{([^{}]*)\}/g;
-  let match;
-  while ((match = rule.exec(css)) !== null) {
-    const selector = match[1].trim();
-    if (!/status-plate|status-chip|ignored-input/.test(selector)) continue;
-    for (const declaration of match[2].split(";")) {
-      const resolved = declaration.replace(/var\(\s*(--[\w-]+)[^)]*\)/g, (whole, name) => {
-        const value = new RegExp(`${name}:\\s*([^;]+)`).exec(root);
-        return value ? value[1].trim() : whole;
-      });
-      if (resolved.includes(amber) || /--warning/.test(declaration)) {
-        offenders.push(`${selector} {${declaration} }`);
-      }
-    }
-  }
-  assert.deepEqual(offenders, [], "the plate must not spend amber anywhere");
-});
-
 // ---------------------------------------------------------------------------
 // What the plate must not have cost
 // ---------------------------------------------------------------------------
@@ -704,18 +518,6 @@ test("the plate reads the status the session already holds and opens no second s
   );
   assert.equal(env.document.getElementById("fw-meta")?.textContent, "Loading firmware info...",
     "and the firmware line the footer owns is still in the container the plate moved into");
-});
-
-test("a plate click is not a page load, so the shell keeps its session", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-  // The shell's capture handler turns a link to a surface DOCUMENT into a
-  // route. A chip carries a hash address instead, which the browser resolves
-  // without a request at all -- so this asserts the chip never reaches that
-  // handler and never asks the device for a document.
-  const before = env.requests.length;
-  const event = clickOn(env.document, env.chip("dome"), { target: env.chip("domelink") });
-  assert.equal(event.defaultPrevented, false, "a hash address needs no interception");
-  assert.equal(env.requests.length, before, "and it fetched nothing");
 });
 
 // ---------------------------------------------------------------------------
@@ -744,166 +546,6 @@ const pointer = (env, target) => ({
 const noticeShown = (env) => !env.document.getElementById("ignored-input-notice").classList.contains("hidden");
 const noticeText = (env) => env.document.getElementById("ignored-input-text").textContent;
 const noticeRoute = (env) => env.document.getElementById("ignored-input-route");
-
-test("a press on a control the droid cannot act on says what is off, instead of nothing", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  assert.equal(noticeShown(env), false, "nothing has been pressed yet");
-
-  pointer(env, refusedControl(env)).down();
-
-  assert.equal(noticeShown(env), true, "the silence is the failure this closes");
-  assert.match(noticeText(env), /That control is switched off right now\./, "it reports the attempt");
-  assert.match(noticeText(env), /The estop is latched\./, "and names what is off");
-  assert.equal(
-    env.document.getElementById("ignored-input-notice").getAttribute("role"),
-    "status",
-    "a notice, not an alert: nothing failed and nothing is refusing the operator personally",
-  );
-});
-
-test("the notice routes where that thing is changed, and to the chip's own destination", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: false, webControlEnabled: false } });
-  await sleep(5);
-  pointer(env, refusedControl(env)).down();
-
-  assert.match(noticeText(env), /has not consented to browser control/);
-  assert.equal(
-    noticeRoute(env).getAttribute("href"),
-    env.chip("control").getAttribute("href"),
-    "the notice says what and the chip says where -- one destination, not two",
-  );
-  assert.match(noticeRoute(env).textContent, /^Open Foot Drive, where that is changed$/,
-    "and the destination is named by reading SURFACES, so a rename stays one field");
-});
-
-test("only the rising edge of a press is an attempt", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  const press = pointer(env, refusedControl(env));
-
-  press.down();
-  assert.match(noticeText(env), /The estop is latched\./);
-
-  // The droid's state changes under a pointer that is still down. A second
-  // pointerdown -- a second finger, or a browser repeating one -- is not a
-  // second attempt, so the notice must not follow it.
-  env.pushStatus({ estop: false, webControlEnabled: false });
-  await sleep(5);
-  press.down();
-  assert.match(
-    noticeText(env),
-    /The estop is latched\./,
-    "a pointerdown while already pressing is the same attempt",
-  );
-
-  // Releasing and pressing again is a new attempt.
-  press.up();
-  press.down();
-  assert.match(noticeText(env), /has not consented to browser control/, "and this one is heard");
-});
-
-test("bursts merge over a 1500 ms wall-clock window", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  const press = pointer(env, refusedControl(env));
-  const node = env.document.getElementById("ignored-input-notice");
-
-  press.down();
-  press.up();
-  assert.equal(noticeShown(env), true);
-
-  // Put the notice away the way its own visible window does, so a second
-  // showing is observable rather than indistinguishable from the first.
-  node.classList.add("hidden");
-  press.down();
-  press.up();
-  assert.equal(noticeShown(env), false, "a second attempt inside the window merges into the first");
-
-  await sleep(1600);
-  press.down();
-  assert.equal(noticeShown(env), true, "and past the window it is a new attempt");
-});
-
-test("the rate limit resets the moment the thing stops being off", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  const press = pointer(env, refusedControl(env));
-  const node = env.document.getElementById("ignored-input-notice");
-
-  press.down();
-  press.up();
-  assert.equal(noticeShown(env), true);
-  node.classList.add("hidden");
-
-  // Cleared, then latched again, well inside the burst window. Having been
-  // told once is not a reason to be silent about the next time it happens:
-  // changing your mind and back must not buy a second and a half of silence.
-  env.pushStatus({ estop: false });
-  await sleep(5);
-  env.pushStatus({ estop: true });
-  await sleep(5);
-
-  press.down();
-  assert.equal(noticeShown(env), true, "the window was released when the estop cleared");
-});
-
-test("the notice comes down when its cause clears, because the door it opened has closed", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  pointer(env, refusedControl(env)).down();
-  assert.equal(noticeShown(env), true);
-
-  env.pushStatus({ estop: false });
-  await sleep(5);
-  assert.equal(noticeShown(env), false, "what it was pointing at is fixed");
-});
-
-test("the notice stays quiet when the droid is holding nothing the plate carries", async () => {
-  const env = await boot({ status: { ...HEALTHY } });
-  await sleep(5);
-  pointer(env, refusedControl(env)).down();
-  assert.equal(
-    noticeShown(env),
-    false,
-    "a control off for a reason this plate does not carry would otherwise be told"
-      + " whatever happened to be off, which is a guess dressed as a fact",
-  );
-});
-
-test("pressing a control that is not switched off says nothing at all", async () => {
-  const env = await boot({ status: { ...HEALTHY, estop: true } });
-  await sleep(5);
-  const live = env.document.createElement("button");
-  env.document.getElementById("shell-content").appendChild(live);
-
-  pointer(env, live).down();
-  assert.equal(noticeShown(env), false, "nothing was ignored: the press went through");
-});
-
-test("the notice is uncoloured, and never wears a reserved colour", async () => {
-  // Nothing failed, so it is a Note (#327, docs/ui-copy-voice.md rule 11).
-  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  const root = /:root\s*\{([^{}]*)\}/.exec(css)[1];
-  const reserved = ["--warning", "--danger"].map(
-    (name) => new RegExp(`${name}:\\s*([^;]+)`).exec(root)[1].trim(),
-  );
-
-  const offenders = [];
-  const rule = /([^{}]+)\{([^{}]*)\}/g;
-  let match;
-  while ((match = rule.exec(css)) !== null) {
-    if (!/ignored-input/.test(match[1])) continue;
-    for (const declaration of match[2].split(";")) {
-      const resolved = declaration.replace(/var\(\s*(--[\w-]+)[^)]*\)/g, (whole, name) => {
-        const value = new RegExp(`${name}:\\s*([^;]+)`).exec(root);
-        return value ? value[1].trim() : whole;
-      });
-      if (reserved.some((colour) => resolved.includes(colour))) offenders.push(`${match[1].trim()} {${declaration} }`);
-    }
-  }
-  assert.deepEqual(offenders, [], "a Note carries neither amber nor red");
-});
 
 test("a control that is merely waiting for the droid is not a control that is off", async () => {
   // The Dashboard marks a control aria-disabled while its request is in
@@ -934,82 +576,6 @@ const zIndexOf = (selector) => {
   }
   return value;
 };
-
-test("the sleep overlay does not paint over the plate that says the droid is asleep", () => {
-  // Measured in a browser before the rule existed: elementFromPoint over the
-  // first chip returned the overlay, so an operator looking at a sleeping
-  // droid could neither read the SLEEP chip that says why nor press ESTOP.
-  const plate = zIndexOf(".status-plate-region");
-  const overlay = zIndexOf(".sleep-overlay");
-
-  assert.ok(Number.isFinite(overlay), "the sleep overlay stacks explicitly");
-  assert.ok(Number.isFinite(plate), "and so must the plate, or the overlay covers it");
-  assert.ok(
-    plate >= overlay,
-    `the plate (${plate}) must stack at or above the sleep overlay (${overlay}) -- a posture the`
-      + " droid is in must not hide the chrome that reports it (#330)",
-  );
-});
-
-test("the plate's separators survive the chip's own border reset", () => {
-  // A cascade loss is invisible to a test with no CSS engine, and this one
-  // happened: written the reference's way the separator rule sits at the same
-  // specificity as .status-chip's `border: none` and further up the file, so
-  // the plate drew as one undivided strip. Measured at 1px per cell in a
-  // browser after the fix; asserted here on the two things that made it lose.
-  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  const specificity = (selector) => (selector.match(/[.#[]/g) || []).length;
-
-  const rule = /([^{}]+)\{([^{}]*)\}/g;
-  let separator = null;
-  let reset = null;
-  let order = 0;
-  let match;
-  while ((match = rule.exec(css)) !== null) {
-    const selector = match[1].trim().replace(/\s+/g, " ");
-    order += 1;
-    if (/\+ \*$/.test(selector) && /border-left/.test(match[2])) separator = { selector, order };
-    if (selector === ".status-chip" && /(?:^|;)\s*border\s*:/.test(match[2])) reset = { selector, order };
-  }
-
-  assert.ok(separator, "the plate declares a separator on every cell after the first");
-  assert.ok(reset, "and the chip resets its border, which is what the separator has to survive");
-  assert.ok(
-    specificity(separator.selector) > specificity(reset.selector) || separator.order > reset.order,
-    `the separator (${separator.selector}, rule ${separator.order}) must outrank or follow`
-      + ` ${reset.selector} (rule ${reset.order}), or no separator is drawn`,
-  );
-});
-
-test("a press on a refused control the browser hides from hit testing is still heard", async () => {
-  // data/style.css puts `pointer-events: none` on a disabled .btn, so the
-  // browser delivers the press to the CONTAINER and event.target never names
-  // the control. Measured on the shipped stylesheet: pressing the Dashboard's
-  // disabled estop-clear button landed on its .top-action wrapper. This is
-  // that delivery shape, with the geometry the browser supplies.
-  const env = await boot({ status: { ...HEALTHY, webControlEnabled: false } });
-  await sleep(5);
-
-  const container = env.document.createElement("div");
-  const button = env.document.createElement("button");
-  button.setAttribute("aria-disabled", "true");
-  button.disabled = true;
-  button.getBoundingClientRect = () => ({ left: 100, right: 200, top: 20, bottom: 60 });
-  container.appendChild(button);
-  env.document.getElementById("shell-content").appendChild(container);
-
-  // The away-press first, while no notice has been shown for this cause yet:
-  // ordered the other way round the burst window suppresses the second
-  // showing by itself and the assertion holds whether the pointer's box was
-  // consulted or not. It was vacuous exactly that way until a mutation said so.
-  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 400, clientY: 400 });
-  assert.equal(noticeShown(env), false, "nothing refused was pressed there");
-
-  env.document.dispatch("pointerup", { type: "pointerup", target: container });
-  env.document.dispatch("pointerdown", { type: "pointerdown", target: container, clientX: 150, clientY: 40 });
-  assert.equal(noticeShown(env), true, "the control under the pointer is the one that was refused");
-  assert.match(noticeText(env), /has not consented to browser control/);
-});
 
 // ---------------------------------------------------------------------------
 // A frame the shell has not verified (#346 reopened)

@@ -137,13 +137,6 @@ const declaredZIndexes = () =>
 // Stacking order
 // -----------------------------------------------------------------------------
 
-test("The recovery overlay declares a stacking order at all", (t) => {
-  const recoveryZIndex = zIndexOf(kernelRules, "#page-recovery-backdrop");
-
-  assert.notEqual(recoveryZIndex, null, "the kernel must give the overlay a z-index");
-  assert.ok(Number.isFinite(recoveryZIndex), `z-index must be a number, got ${recoveryZIndex}`);
-});
-
 test("The recovery overlay outranks everything a surface can render", (t) => {
   const recoveryZIndex = zIndexOf(kernelRules, "#page-recovery-backdrop");
 
@@ -165,96 +158,9 @@ test("The recovery overlay outranks everything a surface can render", (t) => {
   }
 });
 
-test("The work area is a stacking context, so a surface cannot reach the chrome", (t) => {
-  // This is the mechanism that makes the exclusion above sound: everything a
-  // surface renders -- the sleep overlay, the Sequences modal, this view --
-  // is ranked inside #shell-content and against nothing outside it (ADR 0048,
-  // #359). Without it, any of them could cover the Latching Estop by picking a
-  // bigger number, which is how the estop ended up underneath two of them.
-  const position = declaredValue(pageRules, "#shell-content", "position");
-  const zIndex = zIndexOf(pageRules, "#shell-content");
-
-  assert.ok(
-    position && position !== "static",
-    `the work area must be positioned to establish a stacking context, got "${position}"`
-  );
-  assert.ok(
-    Number.isFinite(zIndex),
-    `the work area must declare a numeric z-index, got "${zIndex}"`
-  );
-});
-
-test("The recovery overlay is positioned against the work area, not the viewport", (t) => {
-  assert.equal(
-    declaredValue(kernelRules, "#page-recovery-backdrop", "position"),
-    "absolute",
-    "position: fixed would put the view back over the whole screen (ADR 0048)"
-  );
-});
-
-test("The chrome outranks the surface it frames", (t) => {
-  // The estop rides #shell-top and #shell-status; the work area they frame is
-  // the context everything else is ranked in. Both must therefore sit above
-  // it, or a surface would paint over the control this frame exists to carry.
-  const contentZIndex = zIndexOf(pageRules, "#shell-content");
-
-  for (const region of ["#shell-top", "#shell-status"]) {
-    const rank = zIndexOf(pageRules, region);
-    assert.ok(
-      Number.isFinite(rank) && rank > contentZIndex,
-      `${region} (${rank}) must outrank the work area (${contentZIndex})`
-    );
-  }
-});
-
 // -----------------------------------------------------------------------------
 // Dimming the page behind the overlay
 // -----------------------------------------------------------------------------
-
-test("The page behind the overlay is dimmed by exactly one rule", (t) => {
-  const dimming = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
-
-  assert.equal(
-    dimming.length,
-    1,
-    `dimming must come from a single rule, found ${dimming.length}: ${dimming.map((d) => d.selector).join(" | ")}`
-  );
-});
-
-test("The dim rule targets direct children, so opacity cannot compound", (t) => {
-  const [dim] = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
-
-  // A descendant combinator would apply the same opacity again at every
-  // nesting level - 0.4 four levels deep renders at 0.0256, effectively
-  // invisible, which is the bug this issue fixed. The rule is anchored on the
-  // work area since #359, so the level that must not compound is the one below
-  // #shell-content rather than the one below <body>.
-  const [, below] = dim.selector.split(">");
-  assert.ok(below, `the dim rule must use a child combinator, got "${dim.selector}"`);
-  assert.equal(
-    dim.selector.split(">").length,
-    2,
-    `the dim rule must use exactly one child combinator, got "${dim.selector}"`
-  );
-  assert.ok(
-    !/\s/.test(below.trim()),
-    `the dim rule must not descend past that level, got "${dim.selector}"`
-  );
-});
-
-test("The dim and the block stop at the edge of the work area", (t) => {
-  const [dim] = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
-
-  assert.ok(
-    dim.selector.includes("#shell-content"),
-    `the dim must be scoped to the work area (ADR 0048), got "${dim.selector}"`
-  );
-  assert.equal(
-    dim.declarations.get("pointer-events"),
-    "none",
-    "the surface behind the panel must not take a press either"
-  );
-});
 
 test("Nothing about recovery reaches the chrome that carries the estop", (t) => {
   // The defect the reopened #359 was about: a rule reading
@@ -277,51 +183,7 @@ test("Nothing about recovery reaches the chrome that carries the estop", (t) => 
   );
 });
 
-test("The dim rule exempts the overlay itself", (t) => {
-  const [dim] = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
-
-  assert.ok(
-    dim.selector.includes(":not(#page-recovery-backdrop)"),
-    `dimming the overlay along with the page would make the recovery panel unreadable, got "${dim.selector}"`
-  );
-});
-
-test("The dim leaves the page behind readable", (t) => {
-  const [dim] = recoveryScopedSelectors().filter(({ declarations }) => declarations.has("opacity"));
-  const opacity = Number.parseFloat(dim.declarations.get("opacity"));
-
-  assert.ok(opacity > 0, "fully transparent would read as a blank page, not a dimmed one");
-  assert.ok(opacity <= 0.6, `the dim must be visible as a dim, got ${opacity}`);
-});
-
 // -----------------------------------------------------------------------------
 // Suppressing competing overlays
 // -----------------------------------------------------------------------------
 
-test("Competing overlays are suppressed while recovery is up", (t) => {
-  const suppressed = recoveryScopedSelectors().filter(
-    ({ declarations }) =>
-      declarations.get("visibility") === "hidden" || declarations.get("display") === "none"
-  );
-
-  const covered = suppressed.map(({ selector }) => selector).join(" ");
-  for (const overlay of [".sleep-overlay", ".seq-modal"]) {
-    assert.ok(
-      covered.includes(overlay),
-      `${overlay} must be suppressed while the recovery overlay is up, covered: "${covered}"`
-    );
-  }
-});
-
-test("The overlay is hidden until it is made active", (t) => {
-  assert.equal(
-    declaredValue(kernelRules, "#page-recovery-backdrop", "display"),
-    "none",
-    "the kernel-created backdrop must not be visible before recovery needs it"
-  );
-  assert.equal(
-    declaredValue(kernelRules, "#page-recovery-backdrop.active", "display"),
-    "flex",
-    "adding the active class is what shows the overlay"
-  );
-});

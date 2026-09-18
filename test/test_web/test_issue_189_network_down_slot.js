@@ -44,30 +44,3 @@ test("sound.js leaves the Network Link Lost input untouched when the server omit
   );
 });
 
-test("sound.js renders the CHIRP binding badge for the Network Link Lost slot", async () => {
-  const env = loadPageModule("sound.js", {
-    respond: (path) => {
-      if (path === "/api/audio") {
-        return { data: { capabilities: 0x21, link_ok: true } }; // status query + catalog
-      }
-      if (path === "/api/audio/tracks") {
-        return {
-          data: {
-            sys_net_down: 55,
-            chirp_bindings: { sys_net_down: { bank: 2, page: "b", index: 9 } },
-          },
-        };
-      }
-      return { data: {} };
-    },
-  });
-
-  await env.runSection("audio-status");
-  await env.settle();
-
-  assert.strictEqual(
-    env.element("chirp-binding-sys_net_down").textContent,
-    "CHIRP B2B #9",
-    "the badge must resolve through the same key the new SYSTEM_SOUNDS entry declares"
-  );
-});

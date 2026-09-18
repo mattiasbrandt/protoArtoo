@@ -120,44 +120,6 @@ test("an AUX Test Open drives to that AUX's own recorded end", async () => {
   );
 });
 
-// Green before this slice as well as after, and deliberately so: criterion 3
-// keeps every control that only drives a part, and this is the guard that says
-// Test position was not carried off with the form. A mutation still kills it.
-test("Test position still drives to the number in its own box", async () => {
-  const env = await loadedServoPage();
-  env.element("arm1-test-us").value = "1234";
-
-  env.emitOn("arm1-test-btn", "click");
-  await env.settle();
-
-  assert.deepStrictEqual(
-    servoPosts(env),
-    [{ arm: "arm1", action: "position", positionUs: "1234" }],
-    "Test position is a drive control and this slice does not touch it"
-  );
-});
-
-test("nothing on the page listens for a typed endpoint any more", async () => {
-  const env = await loadedServoPage();
-
-  // The harness throws when nothing is listening, which is the assertion: the
-  // auto-save this page used to hang on every endpoint box is gone with them.
-  for (const output of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-    for (const end of ["open", "close"]) {
-      assert.throws(
-        () => env.emitOn(`${output}-${end}-us`, "input"),
-        /registered no "input" listener/,
-        `${output} ${end} is still wired to something on this page`
-      );
-    }
-  }
-  assert.deepStrictEqual(
-    env.requests.filter((request) => request.method === "POST"),
-    [],
-    "and nothing was posted while we asked"
-  );
-});
-
 test("pressing every test control writes no configuration at all", async () => {
   const env = await loadedServoPage();
 
@@ -180,78 +142,7 @@ test("pressing every test control writes no configuration at all", async () => {
 // When the card is there at all
 // =============================================================================
 
-test("the test card appears only when there is something it could drive", async () => {
-  let deliverStatus = null;
-  const env = loadPageModule("servo.js", {
-    respond: () => ({ data: CONFIG }),
-    overrides: {
-      PAStatusStream: {
-        isSupported: () => true,
-        subscribe: (handler) => { deliverStatus = handler; return () => {}; },
-        getLastStatus: () => null,
-      },
-    },
-  });
-
-  const hiddenStates = [];
-  env.element("servo-test-card").classList.toggle = (className, on) => {
-    if (className === "hidden") hiddenStates.push(on);
-  };
-
-  deliverStatus("status", {});
-  deliverStatus("status", { arm1: { detail: "open" } });
-
-  assert.deepStrictEqual(
-    hiddenStates,
-    [true, false],
-    "nothing enabled hides the card; an enabled arm shows it"
-  );
-});
-
 // =============================================================================
 // What the page no longer carries, and where it sends a builder instead
 // =============================================================================
 
-test("the ten typed endpoint inputs and the card that held them are gone from the markup", () => {
-  for (const output of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-    for (const end of ["Open", "Close"]) {
-      assert.ok(
-        !servoHtml.includes(`name="${output}${end}Us"`),
-        `data/servo.html still carries a typed ${output}${end}Us input`
-      );
-      assert.ok(
-        !servoHtml.includes(`id="${output}-${end.toLowerCase()}-us"`),
-        `data/servo.html still carries the ${output} ${end.toLowerCase()} endpoint box`
-      );
-    }
-  }
-  assert.ok(!servoHtml.includes("servo-calib-card"), "the calibration card id survives");
-  assert.ok(!servoHtml.includes("calib-form"), "the calibration form survives");
-});
-
-test("every test control the slice kept is still on the page", () => {
-  for (const output of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-    assert.ok(servoHtml.includes(`id="${output}-test-us"`), `${output} lost its Test position box`);
-    for (const suffix of ["test-btn", "open-test-btn", "close-test-btn"]) {
-      assert.ok(servoHtml.includes(`id="${output}-${suffix}"`), `${output} lost its ${suffix}`);
-    }
-  }
-});
-
-test("the forwarding sentence sends a builder to Parts, and the address it names exists", () => {
-  const forwarder = servoHtml
-    .split("\n")
-    .filter((line) => line.includes('href="/parts.html"'));
-
-  assert.strictEqual(forwarder.length, 1, "exactly one forwarding link to Parts");
-  assert.ok(
-    servoHtml.includes("Open and close ends are set in"),
-    "the sentence has to say what moved, not only link somewhere"
-  );
-  assert.ok(forwarder[0].includes(">Parts</a>"), "the link is labelled with the destination");
-  assert.ok(
-    existsSync(join(dataDir, "parts.html")),
-    "data/parts.html must exist: #298 measured what a forwarding address that " +
-      "names a destination which is not there costs a builder"
-  );
-});

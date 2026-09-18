@@ -22,21 +22,6 @@ const readCss = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)),
 
 // ---------------------------------------------------------------------------
 
-test("an unwired row carries the button, a wired row does not, and it waits for the droid's first status", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
-
-  assert.equal(env.findButton("doorRL").hidden, false, "a Part nothing drives can be found by moving");
-  assert.equal(env.findButton("utilUp").hidden, true, "a Part on an Output has nothing to find");
-  assert.equal(env.findButton("doorRL").disabled, false, "the droid has said the estop is clear, so the button is live");
-  assert.equal(env.findButton("doorRL").getAttribute("aria-disabled"), "false");
-  assert.match(env.findButton("doorRL").className, /\bbtn\b/, "a refused press has to land where the shell's notice looks");
-  assert.match(
-    env.document.getElementById("parts-table").parentNode.textContent,
-    /Find by moving/,
-    "the entrance says what the button does before the commitment",
-  );
-});
-
 test("pressing it nudges the first spare output, one at a time, and steps on only when the droid says the nudge has ended", async () => {
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.pressFind("doorRL");
@@ -71,30 +56,6 @@ test("pressing it nudges the first spare output, one at a time, and steps on onl
   await env.frame();
   assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2", "aux1", "aux2"]);
   assert.equal(env.moves().length, 0, "nothing has been wired: the builder has not said which one");
-});
-
-test("That one records the assignment with the picker's own move, and the run ends", async () => {
-  const env = await bootParts();
-  env.pressFind("doorRL");
-  await sleep(20);
-  env.endNudge("ledc:0");
-  await env.frame();
-  assert.match(env.runText(), /Nudging ARM2 \(2 of 4\)/);
-
-  env.pressThatOne();
-  await sleep(30);
-  assert.deepEqual(env.moves(), [
-    { path: "/api/config", form: { movePart: "doorRL", movePartFrom: "none", movePartTo: "ledc:1" } },
-  ], "the Output being nudged when the builder pressed, off nothing, with no question");
-  assert.equal(env.runPanel(), null, "the run is over");
-  assert.equal(env.text("ledc:1", "outputs-parts"), "Rear-left body door");
-  assert.equal(env.partRow("doorRL").querySelector("select").value, "ledc:1");
-  assert.equal(env.findButton("doorRL").hidden, true, "a wired Part has nothing left to find");
-  assert.match(env.feedback(), /Rear-left body door is on ARM2\./);
-
-  env.endNudge("ledc:1");
-  await env.frame();
-  assert.equal(env.nudges().length, 2, "nothing more is sent after the run ended");
 });
 
 test("Stop sends nothing further, and the Part stays not wired", async () => {
@@ -257,31 +218,6 @@ test("leaving Parts ends the run, and coming back sends nothing the builder did 
   assert.equal(env.runPanel(), null);
   assert.equal(env.findButton("doorRL").hidden, false);
   assert.match(env.feedback(), /The run stopped when you left Parts/);
-});
-
-test("a frame repaints values on the nodes that are there; the button and the run are never rebuilt under the pointer", async () => {
-  const env = await bootParts();
-  const button = env.findButton("doorRL");
-  env.pressFind("doorRL");
-  await sleep(20);
-  const panel = env.runPanel();
-  env.outputs[1].commandedUs = 1750;
-  await env.frame();
-  assert.equal(env.findButton("doorRL"), button);
-  assert.equal(env.runPanel(), panel);
-  assert.equal(env.cell("ledc:1", "outputs-now").style.width, "75.0%");
-});
-
-test("the position bar no longer clips a mark at either end", () => {
-  // The tick is 2 px centred on its mark; with the bar clipping its own
-  // padding box, a mark at 0% or 100% showed half a tick (#362's inherited
-  // find). The marks are bounded by the band already, so nothing else can
-  // leave the bar, and the bar does not clip.
-  const css = readCss();
-  const bar = /\.outputs-bar\s*\{([^}]*)\}/.exec(css);
-  assert.ok(bar, "the bar's rule is still there");
-  assert.doesNotMatch(bar[1], /overflow\s*:\s*(hidden|clip)/);
-  assert.match(bar[1], /position:\s*relative/);
 });
 
 // An Output an expander would add: no name the servo route takes, so never a

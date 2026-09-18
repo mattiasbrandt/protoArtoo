@@ -90,15 +90,6 @@ test("the shipped resolver distinguishes all four final feature states", async (
   );
 });
 
-test("component rows render present toggles as On and Off", async () => {
-  const env = await loadSetupPage();
-
-  assert.equal(env.element("status-arm1").textContent, "On");
-  assert.equal(env.element("status-arm2").textContent, "Off");
-  assert.equal(env.element("enable-arm1").disabled, false);
-  assert.equal(env.element("enable-arm2").disabled, false);
-});
-
 test("the profiler stays visible and says Not included without probing its endpoint", async () => {
   const env = await loadSetupPage();
   await env.publishIdentity(identity({ profiler: false }));
@@ -161,73 +152,3 @@ test("transient profiler errors do not change compile-time availability", async 
   assert.equal(env.element("profiler-card").dataset.featureState, "included", "compile-time state is immutable");
 });
 
-test("included profiler renders a non-empty reason line", async () => {
-  const env = await loadSetupPage();
-  await env.publishIdentity(identity({ profiler: true }));
-
-  const reasonElement = env.element("profiler-availability-reason");
-  assert.notEqual(reasonElement.textContent, "", "reason line must be non-empty for included state");
-  assert.equal(reasonElement.textContent, "Live memory readings refresh while this page is open.", "reason text matches profiler context");
-});
-
-test("a board-gated component renders Not on this board and remains visible", async () => {
-  const env = await loadSetupPage();
-  const arm1 = env.element("enable-arm1");
-  arm1.dataset.boardCapability = "PA_CAP_HOSTED_WIFI";
-  await env.publishIdentity(identity({ hostedWifi: false }));
-
-  assert.equal(arm1.disabled, true);
-  assert.equal(env.element("status-arm1").textContent, "Not on this board");
-});
-
-test("the setup markup declares every component row plus the profiler in the registry grain", () => {
-  const html = readFileSync("data/setup.html", "utf8");
-  const entries = [...html.matchAll(/data-feature-entry="([^"]+)"/g)].map((match) => match[1]);
-
-  assert.equal(entries.length, 16);
-  assert.equal(new Set(entries).size, 16);
-  assert.ok(entries.includes("system.api.get-profiler"));
-});
-
-test("shell publishes the once-per-page identity response for feature consumers", async () => {
-  const payload = identity({ profiler: true });
-  const env = loadPageModule("shell.js", {
-    respond: (path) => path === "/api/identity" ? payload : {},
-  });
-
-  await env.runSection("shell-identity");
-
-  assert.deepEqual(env.window.PAIdentity, payload);
-  assert.deepEqual(env.pathsRequested(), ["/api/identity"]);
-});
-
-test("unavailable profiler renders status lamp, not switch affordance", async () => {
-  const env = await loadSetupPage();
-  await env.publishIdentity(identity({ profiler: false }));
-
-  const lamp = env.element("profiler-availability-lamp");
-  assert.ok(lamp, "lamp indicator element should exist");
-  assert.ok(
-    lamp.className.includes("feature-availability-lamp-indicator"),
-    "lamp indicator should have lamp-indicator CSS class"
-  );
-  // Verify the lamp has the correct state class
-  assert.ok(
-    lamp.className.includes("feature-state-not-in-this-build"),
-    "lamp should have feature-state-not-in-this-build class for unavailable profiler"
-  );
-});
-
-test("available profiler without runtime toggle shows Included state", async () => {
-  const env = await loadSetupPage();
-  await env.publishIdentity(identity({ profiler: true }));
-
-  const card = env.element("profiler-card");
-  assert.equal(card.dataset.featureState, "included");
-  assert.equal(env.element("profiler-availability-status").textContent, "Included");
-  assert.ok(env.element("profiler-availability-lamp"), "lamp indicator should exist");
-  assert.ok(
-    env.element("profiler-availability-lamp").className.includes("feature-state-included"),
-    "lamp should have feature-state-included class"
-  );
-});

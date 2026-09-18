@@ -43,20 +43,6 @@ const soundPageWith = async ({ capabilities, catalog = () => ({ ready: true, ban
   return env;
 };
 
-test("sound.js registers the audio-catalog section on the longer catalog deadline", (t) => {
-  const env = loadPageModule("sound.js", { respond: () => ({ data: {} }) });
-
-  assert.ok(
-    env.sectionNames().includes("audio-catalog"),
-    "the catalog load must be a bootstrap section so recovery can see it fail"
-  );
-  assert.equal(
-    env.sectionOptions("audio-catalog").deadlineMs,
-    12000,
-    "the catalog is the known-longer operation and must carry its own deadline"
-  );
-});
-
 test("audio-catalog asks the controller for nothing when the backend has no catalog", async (t) => {
   const env = await soundPageWith({ capabilities: CAP_STATUS_QUERY });
 

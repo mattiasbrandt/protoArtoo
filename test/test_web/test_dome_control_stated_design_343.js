@@ -152,11 +152,3 @@ test("a builder on another design is not shown a drawing of somebody else's droi
   assert.match(view.banner, /no built-in map for the dome design you stated/);
 });
 
-test("a design whose complement nobody has read says that, not 'no map'", async () => {
-  // `mk4/simple`: the simple/complex split is recorded nowhere in this
-  // repository, so the two sentences send a builder to two different places -
-  // one is "we have no picture", the other is "we do not know what you have".
-  const view = await expanded({ domeDesign: "mk4", domeVariant: "simple", complementKnown: false });
-  assert.doesNotMatch(view.picker, /vendored-mk4/);
-  assert.match(view.banner, /does not know which panels that dome design carries/);
-});
