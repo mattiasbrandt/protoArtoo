@@ -634,7 +634,10 @@
         const shown = drawn.has(entry.id);
         node.setAttribute("display", shown ? "inline" : "none");
         if (!shown) return;
-        node.setAttribute("transform", `translate(0 ${legendTop + rows * GEOMETRY.legendRowHeight})`);
+        node.setAttribute(
+          "transform",
+          `translate(${GEOMETRY.facePadding} ${legendTop + rows * GEOMETRY.legendRowHeight})`
+        );
         rows += 1;
       });
       const height = rows === 0 ? faceHeight : legendTop + rows * GEOMETRY.legendRowHeight;
