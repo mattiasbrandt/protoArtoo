@@ -193,7 +193,7 @@
     {
       id: "maintain",
       label: "Maintain",
-      hint: "check the controller over and keep it up to date",
+      hint: "check it over, keep it current",
       members: [
         // The other half of what was one Setup page (#288, #404).
         "maintenance",
@@ -901,7 +901,7 @@
              same seam, so the plate reads as one instrument. -->
         <div class="status-plate-fresh">
           <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Still finding out what the droid is doing.</p>
-          <p class="status-plate-affordance">Press a chip to open the screen where that thing is changed. ESTOP cuts drive right here.</p>
+          <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP cuts drive right here.</p>
         </div>
       </div>
     `;
@@ -1287,7 +1287,7 @@
     {
       id: "control",
       chip: "control",
-      says: "This droid has not consented to browser control yet",
+      says: "Web control is off on this droid",
       active: (status) => status.webControlEnabled !== true,
     },
   ];
@@ -1505,7 +1505,7 @@
   resumedNote.className = "surface-resumed";
   resumedNote.setAttribute("role", "status");
   resumedNote.textContent =
-    "Showing what this screen last read - it stopped asking while you were on another screen, and is asking again now.";
+    "Last reading from before you left. Asking the droid again now.";
 
   // Ids are not unique across surfaces -- Firmware and Maintenance both carry
   // #reboot-button, Dashboard and Maintenance both carry #reboot-feedback -- so

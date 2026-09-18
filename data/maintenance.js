@@ -33,24 +33,24 @@
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
       return;
     }
-    if (!confirm("Reboot the controller? The web interface will be unavailable for about 10 seconds.")) {
+    if (!confirm("Restart the controller? This page drops for about 10 seconds.")) {
       return;
     }
     if (!window.PAApi) return;
-    setFeedbackState(rebootFeedback, "Sending reboot command...");
+    setFeedbackState(rebootFeedback, "Sending restart...");
     try {
       await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 5000 });
-      setFeedbackState(rebootFeedback, "Reboot command sent. Wait ~10 seconds and refresh...", "success");
+      setFeedbackState(rebootFeedback, "Restart sent. Back in about 10 seconds.", "success");
       // Start countdown
       let seconds = 12;
       const countdown = setInterval(() => {
         seconds--;
         if (rebootFeedback && seconds > 0) {
-          rebootFeedback.textContent = `Rebooting... ${seconds}s until ready`;
+          rebootFeedback.textContent = `Restarting... ${seconds}s`;
         } else {
           clearInterval(countdown);
           if (rebootFeedback) {
-            rebootFeedback.textContent = "Controller should be back online. Refresh the page.";
+            rebootFeedback.textContent = "Controller should be back. Refresh the page.";
           }
         }
       }, 1000);
@@ -171,7 +171,7 @@
       setLight(diagHeapLargestLight, lampForState(heapLargestState));
     }
     if (diagMemoryNote) {
-      diagMemoryNote.textContent = `Memory Min is a historical low-water mark since boot; current low-water mark is ${heapMinKb} KB.`;
+      diagMemoryNote.textContent = `Lowest free memory since boot: ${heapMinKb} KB.`;
     }
     setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
   };
@@ -271,7 +271,7 @@
       const audio_mood_map = extract(moodMapRes, 'audio_mood_map');
 
       if (failed.length > 0) {
-        setFeedback(`Failed to fetch: ${failed.join(', ')}. Backup aborted.`, 'error');
+        setFeedback(`No backup saved: the droid did not send ${failed.join(', ')}.`, 'error');
         return;
       }
 
@@ -501,7 +501,7 @@
 
     const anyRestored = lines.some((l) => l.includes(': restored'));
     const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial'));
-    if (anyRestored) lines.push('Reboot recommended to apply all restored settings.');
+    if (anyRestored) lines.push('Restart the controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     restoreBtn.disabled = false;
   };
@@ -515,14 +515,14 @@
       try {
         backup = JSON.parse(e.target.result);
       } catch {
-        setFeedback('Invalid file: not valid JSON.', 'error');
+        setFeedback('Not a backup file: it is not JSON. Nothing restored.', 'error');
         parsedBackup = null;
         showRestorePanel(false);
         return;
       }
 
       if (!backup.schema) {
-        setFeedback('Invalid backup: missing schema field. Restore blocked.', 'error');
+        setFeedback('Not a backup file: it has no schema. Nothing restored.', 'error');
         parsedBackup = null;
         showRestorePanel(false);
         return;
@@ -555,7 +555,7 @@
 
       if (backup.schema > 1) {
         setFeedback(
-          `Warning: backup schema ${backup.schema} is newer than schema 1. Restore may be incomplete.`,
+          `This backup is from newer firmware (schema ${backup.schema}). Some of it may not restore.`,
           'warning',
         );
       } else {

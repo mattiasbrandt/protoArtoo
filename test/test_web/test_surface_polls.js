@@ -362,7 +362,7 @@ for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
 //
 // This is the defect that reopened #360. Every one of these sites caught its
 // own rejection, so the registry was handed a fulfilled promise for a read
-// that never happened and took the "Showing what this screen last read" note
+// that never happened and took the "Last reading from before you left" note
 // down over values from before the operator left. The assertion is made
 // against the shipped module, through its own failing transport, because that
 // is the only place the swallow could hide.
@@ -831,7 +831,7 @@ test("a surface that came back says it is showing what it last read, until it an
   await sleep(140);
   assert.match(
     env.noteText() || "",
-    /Showing what this screen last read/,
+    /Last reading from before you left/,
     "a returned surface must not let values from before read as live ones",
   );
 
@@ -872,7 +872,7 @@ test("a returned surface whose refresh fails keeps saying what it is showing", a
   assert.ok(poll.calls.count > asked, "the poll asked again on the way back in");
   assert.match(
     env.noteText() || "",
-    /Showing what this screen last read/,
+    /Last reading from before you left/,
     "nothing answered, so the note stays up over the values from before",
   );
 });
@@ -900,7 +900,7 @@ test("a surface with two polls keeps its note up until both have answered", asyn
   assert.ok(status.calls.count > 1 && module.calls.count > 1, "both polls asked again");
   assert.match(
     env.noteText() || "",
-    /Showing what this screen last read/,
+    /Last reading from before you left/,
     "one poll of two answering is not the surface answering",
   );
 

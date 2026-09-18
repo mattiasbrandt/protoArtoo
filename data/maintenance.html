@@ -27,7 +27,7 @@
 
     <!-- Serial Connection Status -->
     <div class="card">
-      <div class="sect"><h2>Serial links</h2><span class="sub">three lanes off this controller</span></div>
+      <div class="sect"><h2>Serial links</h2><span class="sub">S1, S2, S3</span></div>
       <div class="health-grid">
         <div class="health-item">
           <div class="indicator" id="serial-s1-light"></div>
@@ -45,43 +45,43 @@
           <span class="indicator-text" id="serial-s3-state">...</span>
         </div>
       </div>
-      <p class="hint">S1 is UART1 at 115200 baud, S2 the sound serial at 9600 (which pins it uses depends on the module), S3 UART2 at 9600.</p>
+      <p class="hint">S1 at 115200 baud, S2 at 9600 on the sound module's pins, S3 at 9600.</p>
       <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Diagnostics -->
     <div class="card">
-      <div class="sect"><h2>Diagnostics</h2><span class="sub">what the controller is using right now</span></div>
+      <div class="sect"><h2>Diagnostics</h2><span class="sub">live memory</span></div>
       <dl class="status-grid">
           <div class="status-item">
             <dt>Uptime</dt>
             <dd><span id="diag-uptime">...</span></dd>
-            <span class="hint">Controller runtime since boot</span>
+            <span class="hint">since boot</span>
           </div>
           <div class="status-item">
             <dt>Memory free</dt>
             <dd><span class="indicator" id="diag-heap-free-light"></span><span id="diag-heap-free">...</span></dd>
-            <span class="hint">Current free heap</span>
+            <span class="hint">free now</span>
           </div>
           <div class="status-item">
             <dt>Memory min since boot</dt>
             <dd><span class="indicator" id="diag-heap-min-light"></span><span id="diag-heap-min">...</span></dd>
-            <span class="hint">Low-water mark</span>
+            <span class="hint">lowest since boot</span>
           </div>
           <div class="status-item">
             <dt>Largest block</dt>
             <dd><span class="indicator" id="diag-heap-largest-light"></span><span id="diag-heap-largest">...</span></dd>
-            <span class="hint">Fragmentation indicator</span>
+            <span class="hint">small means fragmented</span>
           </div>
       </dl>
-      <p id="diag-memory-note" class="hint">Memory Min is the lowest free heap seen since boot (historical low-water mark).</p>
+      <p id="diag-memory-note" class="hint">Lowest free memory since boot.</p>
     </div>
 
     <!-- Memory Profiler availability is declared by /api/identity. -->
     <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
          data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
       <div class="feature-availability-header">
-        <div class="sect"><h2>Memory profiler</h2><span class="sub">where controller memory is going</span></div>
+        <div class="sect"><h2>Memory profiler</h2><span class="sub">memory by task</span></div>
         <div class="feature-availability-rail">
           <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
           <div id="profiler-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
@@ -130,7 +130,7 @@
             </div>
         </dl>
 
-        <div class="sect"><h3>Task stack headroom</h3><span class="sub">least free stack each task has had</span></div>
+        <div class="sect"><h3>Task stack headroom</h3><span class="sub">lowest free stack per task</span></div>
         <div class="prof-table-wrap">
           <table id="prof-hwm-table" class="prof-table">
             <thead>
@@ -145,7 +145,7 @@
         </div>
 
         <div id="prof-task-heap-section" hidden>
-          <div class="sect"><h3>Task heap</h3><span class="sub">per-task heap use, where the build records it</span></div>
+          <div class="sect"><h3>Task heap</h3><span class="sub">per task, if recorded</span></div>
           <div class="prof-table-wrap">
             <table id="prof-heap-table" class="prof-table">
               <thead>
@@ -161,7 +161,7 @@
           </div>
         </div>
 
-        <div class="sect"><h3>Mode snapshots</h3><span class="sub">the low-water mark inside each window</span></div>
+        <div class="sect"><h3>Mode snapshots</h3><span class="sub">lowest per window</span></div>
         <p id="prof-current-window" class="hint" hidden></p>
         <div class="prof-table-wrap">
           <table id="prof-snap-table" class="prof-table">
@@ -183,7 +183,7 @@
     <!-- Backup & Restore -->
     <div class="card">
       <div class="sect"><h2>Backup</h2><span class="sub">a copy on your computer</span></div>
-      <p class="prose">Save what you made on this controller to a file, or put a saved file back. A restore <b>replaces</b> the parts you tick and never merges into them, so what you end up with is what the file holds.</p>
+      <p class="prose">Save this controller's work to a file, or put a saved file back. A restore <b>replaces</b> the parts you tick; it never merges.</p>
 
       <div class="button-row button-row-compact">
         <button id="backup-download-btn" class="btn" type="button">Download backup</button>
@@ -224,7 +224,7 @@
     <!-- System Controls -->
     <div class="card">
       <div class="sect"><h2>Restart</h2><span class="sub">about ten seconds off the air</span></div>
-      <p class="prose">Some hardware answers only take effect when the controller starts again. Restarting cuts every output and reopens the page's connection; nothing you have saved is lost.</p>
+      <p class="hint">Some hardware changes apply only after a restart. Every output cuts out; nothing saved is lost.</p>
       <div class="button-row button-row-compact">
         <button id="reboot-button" class="btn danger" type="button">Restart the controller</button>
       </div>
