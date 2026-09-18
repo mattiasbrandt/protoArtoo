@@ -1793,6 +1793,7 @@ entries:
   executor: captureAudioStatusSnapshot
   fields:
   - driver
+  - output
   - capabilities
   - link_ok
   - active

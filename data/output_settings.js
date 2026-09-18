@@ -19,6 +19,12 @@
 // Wiring's sheet itself stays a reference: data/wiring.js generates the
 // document and writes nothing. This module is the one thing on that surface
 // that writes, and it writes only these fields.
+//
+// WHEN EACH VIEW'S ANSWER BITES differs, and each view says so in the one
+// timing vocabulary (data/apply_timing.js, #370). Whether an output is in use,
+// and which AUX line the LED strip leaves on, are read once at start (ADR 0027,
+// src/tasks/aux_led.cpp); which servo an output carries lands on its Servo
+// Output row and bounds the very next move (configCommitApplied()).
 // =============================================================================
 (() => {
   "use strict";
@@ -40,7 +46,13 @@
   const AUX_NONE = { id: "none", label: "None" };
   const LED_STRIP = "rgb";
 
+  const TIMING = window.PAApplyTiming;
+  const VIEW_TIMING = { "in-use": TIMING.AT_REBOOT, type: TIMING.IMMEDIATE };
+
   let state = null;  // { [id]: { enabled, type } }
+  // What the droid started with, as first read: the in-use ticks and the
+  // strip's line, the two answers that wait for the next start.
+  let started = null;
   const views = [];
   const listeners = new Set();
   let saveTimer = null;
@@ -71,13 +83,27 @@
     const routed = OUTPUTS.find((output) => output.pin === pin);
     if (routed) next[routed.id].type = LED_STRIP;
     state = next;
+    if (!started) started = startedFrom(state);
     renderAll();
+  };
+
+  const startedFrom = (answer) => ({
+    enabled: OUTPUTS.map((output) => answer[output.id].enabled).join(","),
+    ledPin: ledPinOf(answer),
+  });
+
+  // A saved in-use tick or strip line the droid has not started with yet.
+  const waitingOnStart = () => {
+    if (!started || !state) return false;
+    const now = startedFrom(state);
+    return now.enabled !== started.enabled || now.ledPin !== started.ledPin;
   };
 
   // The line the strip leaves the controller on: the in-use AUX line set to
   // LED strip, or none (0) - what Configuration derived from its own rows.
-  const ledPin = () =>
-    OUTPUTS.find((output) => output.aux && state[output.id].enabled && state[output.id].type === LED_STRIP)?.pin || 0;
+  const ledPinOf = (answer) =>
+    OUTPUTS.find((output) => output.aux && answer[output.id].enabled && answer[output.id].type === LED_STRIP)?.pin || 0;
+  const ledPin = () => ledPinOf(state);
 
   const fields = () => {
     const out = {};
@@ -107,7 +133,9 @@
     try {
       const result = await window.PAApi.postForm("/api/config", fields(), { timeoutMs: 5000 });
       adopt(result.data);
-      setFeedback(`Saved at ${new Date().toLocaleTimeString()}. The droid uses it after a restart.`, "success");
+      // When it takes effect is the timing line's to say, just above: this
+      // line says only that the droid took it (operator, 2026-09-19 on #370).
+      setFeedback(`Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[outputs] save failed:", error);
       setFeedback(window.PAApi.messageFor(error), "error");
@@ -214,7 +242,10 @@
     }
     const plates = element("div", "output-plates");
     OUTPUTS.forEach((output) => plates.appendChild(view.plate(output)));
-    view.body.replaceChildren(plates);
+    // When this view's answer bites, beside the outputs it asks about.
+    const timing = element("p", "apply-timing");
+    TIMING.paint(timing, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
+    view.body.replaceChildren(plates, timing);
   };
 
   const renderAll = () => {
@@ -254,7 +285,7 @@
    */
   const mount = (kind, hosts) => {
     if (!hosts?.body || !hosts?.feedback) return;
-    const view = { ...hosts, plate: kind === "type" ? typePlate : inUsePlate };
+    const view = { ...hosts, kind: kind === "type" ? "type" : "in-use", plate: kind === "type" ? typePlate : inUsePlate };
     views.push(view);
     render(view);
     ensureLoaded();

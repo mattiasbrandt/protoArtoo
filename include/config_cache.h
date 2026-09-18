@@ -251,6 +251,13 @@ bool configCacheReadActiveComponentToggle(size_t bitIndex);
 void configCacheSetActiveSoundMember(uint8_t memberValue);
 uint8_t configCacheReadActiveSoundMember();
 
+// configCacheReadSoundMember: the Sound Component Member the builder last
+// SAVED, as a Component Registry part `value` - the picked module, where the
+// pair above answers the running one. One field under the lock rather than a
+// whole configCacheRead(), because its readers are status handlers whose
+// frames are measured (#370).
+uint8_t configCacheReadSoundMember();
+
 // =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================

@@ -479,7 +479,12 @@
       }
 
       if (modDriver) modDriver.textContent = d.driver ?? "—";
-      if (modLink) {
+      // Sound switched off at boot has no module to answer, so no answer is
+      // not a fault to paint red (#370): the link says it is off.
+      if (modLink && d.output === "off") {
+        modLink.textContent = "Sound is off";
+        modLink.dataset.state = "disabled";
+      } else if (modLink) {
         const ok = Boolean(d.link_ok);
         modLink.textContent = ok ? "OK" : "No response";
         modLink.dataset.state = ok ? "ok" : "error";
@@ -2299,6 +2304,14 @@
     if (!soundStateBadge) return;
     if (!s2Enabled) {
       soundStateBadge.textContent = "Disabled";
+      soundStateBadge.dataset.state = "disabled";
+      return;
+    }
+    // Saved on, but off this boot: no module is behind it. The line is the
+    // firmware's ("<picked> picked · sound is off", #370), and a press below
+    // is refused with where to switch it on.
+    if (data.audio.output === "off") {
+      soundStateBadge.textContent = data.audio.detail;
       soundStateBadge.dataset.state = "disabled";
       return;
     }

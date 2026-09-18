@@ -70,6 +70,8 @@ const BOARD_LABELS = {
   const identityFeedback = document.getElementById("identity-feedback");
   const identityActions = document.getElementById("identity-actions");
   const identityDiagnosis = document.getElementById("identity-diagnosis");
+  const auxLedApplyTiming = document.getElementById("aux-led-apply-timing");
+  const mdnsApplyTiming = document.getElementById("mdns-apply-timing");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -92,12 +94,24 @@ const BOARD_LABELS = {
   let rcChangeGeneration = 0;
   let savedRcChangeGeneration = 0;
   let rcRestartPending = false;
-  let bootActiveRcComponents = {};  // Snapshot of boot-active RC component state from /api/rc
+  // What the droid is running, as this page first read it: every Component
+  // Toggle and the LED strip's count. Each is read once at start (ADR 0027), so
+  // a saved value that differs from this one is a change still waiting for the
+  // droid, and one put back to it is not (#370). The RC half of this is what
+  // "restart required" has always been computed from.
+  let bootActiveToggles = {};
+  let bootActiveLedCount = null;
   // The receiver type the droid booted with, and the one it has saved since.
   // Chosen on the Radio Controller cards (data/component_picker.js), and like
   // a channel toggle it takes effect only after a restart.
   let bootActiveRcMode = null;
   let savedRcMode = null;
+  // The config the droid last answered with, which is what "saved" means below.
+  let lastSaved = null;
+  // The hostname choice the droid started with, and the one saved since.
+  let bootActiveMdnsUseName = null;
+  let savedMdnsUseName = null;
+  const TIMING = window.PAApplyTiming;
   // Auto-save state
   let saveTimeout = null;
   const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
@@ -154,7 +168,16 @@ const BOARD_LABELS = {
   // to hear and publish; this surface only shows the name and says it arrived.
   const receiveIdentity = (identity) => {
     renderIdentity(identity);
+    noteMdnsUseName(identity);
     setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
+  };
+
+  // The hostname is read once, when mDNS starts with the network.
+  const noteMdnsUseName = (identity) => {
+    if (typeof identity?.mdnsUseName !== "boolean") return;
+    if (bootActiveMdnsUseName === null) bootActiveMdnsUseName = identity.mdnsUseName;
+    savedMdnsUseName = identity.mdnsUseName;
+    paintRowTimings();
   };
 
   // Perform lazy diagnosis of identity failure after assets are ready.
@@ -291,6 +314,7 @@ const BOARD_LABELS = {
       body.set("mdnsUseName", identityMdnsCheckbox?.checked ? "true" : "false");
       const result = await window.PAApi.postForm("/api/identity", body, { timeoutMs: 5000 });
       renderIdentity(result.data);
+      noteMdnsUseName(result.data);
       window.dispatchEvent(new CustomEvent("pa:identity-updated", { detail: result.data }));
       setIdentityFeedback(`Identity saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
@@ -453,11 +477,13 @@ const BOARD_LABELS = {
   const renderFeatures = (payload) => {
     const components = payload?.components || {};
 
-    // Capture boot-active RC state on the first load (when the page initializes)
-    const isInitialLoad = Object.keys(bootActiveRcComponents).length === 0;
+    // Capture what the droid is running on the first load (when the page
+    // initializes)
+    const isInitialLoad = Object.keys(bootActiveToggles).length === 0;
     if (isInitialLoad) {
-      captureBootActiveRcState(payload);
+      captureBootActiveState(payload);
     }
+    lastSaved = payload || null;
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
     const togglePayload = {
@@ -553,19 +579,23 @@ const BOARD_LABELS = {
     updateAuxLedConfigVisibility();
     updateEnabledSummary();
     setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
+    paintRowTimings();
+    notifyTimingChange();
   };
 
-  const captureBootActiveRcState = (config) => {
-    // Snapshot RC component enabled states at page load (boot-active truth).
-    // Later, if saved state matches this, no restart is actually needed.
+  const captureBootActiveState = (config) => {
+    // Snapshot every Component Toggle, the receiver type and the LED strip's
+    // count at page load (boot-active truth). Later, if saved state matches
+    // this, nothing is waiting on the next start.
     if (typeof config?.rc?.inputMode === "string") bootActiveRcMode = config.rc.inputMode;
     if (config?.components) {
-      for (const key of RC_TOGGLE_KEYS) {
+      for (const key of Object.keys(featureToggles)) {
         if (config.components[key] !== undefined) {
-          bootActiveRcComponents[key] = Boolean(config.components[key]?.enabled);
+          bootActiveToggles[key] = Boolean(config.components[key]?.enabled);
         }
       }
     }
+    if (config?.aux_led_count !== undefined) bootActiveLedCount = Number(config.aux_led_count);
   };
 
   const checkIfRcRestartNeeded = () => {
@@ -577,12 +607,63 @@ const BOARD_LABELS = {
       const toggle = featureToggles[key];
       if (!toggle || !toggle.input) continue;
       const currentValue = Boolean(toggle.input.checked);
-      const bootActiveValue = bootActiveRcComponents[key];
+      const bootActiveValue = bootActiveToggles[key];
       if (bootActiveValue !== undefined && currentValue !== bootActiveValue) {
         return true;
       }
     }
     return false;
+  };
+
+  // A saved Component Toggle the droid has not started with yet.
+  const toggleWaiting = (key) => {
+    const booted = bootActiveToggles[key];
+    const saved = lastSaved?.components?.[key]?.enabled;
+    return booted !== undefined && saved !== undefined && Boolean(saved) !== booted;
+  };
+
+  // Which step hosts on this surface hold a saved change the droid has not
+  // caught up with, keyed as guided Setup keys its steps (data-setup-step).
+  // The sound module and the network are the firmware's own answer - it
+  // reports what it bound at start beside what is saved - and the rest compare
+  // against what this page first read.
+  const WAITING = {
+    wifi: () => Boolean(lastSaved?.wifi?.pendingApply),
+    drive: () => toggleWaiting("drive"),
+    domerot: () => toggleWaiting("domeEsc"),
+    domectl: () => toggleWaiting("protoR2link"),
+    sound: () => {
+      const audio = lastSaved?.components?.audio;
+      const memberWaiting = Boolean(audio?.member && audio?.activeMember && audio.member !== audio.activeMember);
+      return toggleWaiting("audio") || memberWaiting;
+    },
+    rc: () => rcRestartPending,
+  };
+  const isPending = (stepKey) => Boolean(WAITING[stepKey]?.());
+
+  const ledCountWaiting = () =>
+    bootActiveLedCount !== null && Number(lastSaved?.aux_led_count) !== bootActiveLedCount;
+
+  // The latest timing any waiting change on this page is held to: what a save
+  // line and the save pill say.
+  const waitingTiming = () => {
+    if (rcRestartPending) return TIMING.RESTART_REQUIRED;
+    const stagedWaiting = Object.keys(WAITING).some((stepKey) => stepKey !== "rc" && isPending(stepKey));
+    return stagedWaiting || ledCountWaiting() ? TIMING.AT_REBOOT : TIMING.IMMEDIATE;
+  };
+
+  const timingListeners = new Set();
+  const notifyTimingChange = () => timingListeners.forEach((listener) => listener());
+
+  // The rows on this surface that are not a guided step: the LED strip's count
+  // is read once when the strip starts (src/tasks/aux_led.cpp), and the
+  // hostname once when mDNS starts with the network (src/web/web_server.cpp),
+  // where the name beside it is read live.
+  const paintRowTimings = () => {
+    TIMING.paint(auxLedApplyTiming, TIMING.AT_REBOOT, { pending: ledCountWaiting() });
+    TIMING.paint(mdnsApplyTiming, TIMING.AT_REBOOT, {
+      pending: bootActiveMdnsUseName !== null && savedMdnsUseName !== bootActiveMdnsUseName,
+    });
   };
 
   const loadFeatures = async () => {
@@ -639,14 +720,15 @@ const BOARD_LABELS = {
         // Check if UI values match boot-active: if so, restart is not needed
         rcRestartPending = checkIfRcRestartNeeded();
       }
+      // What the save says is what is still waiting on the droid after it:
+      // a change put back to what the droid started with waits on nothing.
       const savedAt = new Date().toLocaleTimeString();
-      if (rcRestartPending) {
-        setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply RC input changes.`, "success");
-        setSaveSummary(`Saved at ${savedAt} · restart required`, "warn");
-      } else {
-        setFeatureFeedback(`Saved at ${savedAt}`, "success");
-        setSaveSummary(`Saved at ${savedAt}`, "ok");
-      }
+      const timing = waitingTiming();
+      setFeatureFeedback(TIMING.saved(timing, savedAt), "success");
+      const summary = TIMING.pill(timing, savedAt);
+      setSaveSummary(summary.text, summary.state);
+      paintRowTimings();
+      notifyTimingChange();
     } catch (error) {
       console.error("[configuration] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
@@ -702,7 +784,13 @@ const BOARD_LABELS = {
     saveScheduled = false;
     saveFeatures();
   };
-  window.PAConfiguration = { applyComponentPick };
+  // isPending and onChange are guided Setup's (data/setup.js): it draws each
+  // step's timing line and asks here whether that step has a change waiting.
+  const onChange = (listener) => {
+    timingListeners.add(listener);
+    return () => timingListeners.delete(listener);
+  };
+  window.PAConfiguration = { applyComponentPick, isPending, onChange };
 
   // Attach listeners to all toggles and selects
   Object.keys(featureToggles).forEach((key) => {

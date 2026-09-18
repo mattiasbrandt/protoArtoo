@@ -756,7 +756,12 @@ Returns live audio module status.
   - `driver`: the active sound module's display name, exactly as its driver
     reports it - `DY-SV5W`, `MP3Trigger` or `CHIRP Audio Trigger`. Which one is running is
     the Sound Component Member, chosen at runtime; see
-    `GET /api/identity/components`.
+    `GET /api/identity/components`. With sound off (`output: "off"`) it is
+    the product name of the module the builder picked instead, since no
+    driver is running.
+  - `output`: `on`, or `off` when audio output was switched off at boot and
+    no sound task runs; every play and sound action is then refused with
+    `409` (#370).
   - `capabilities`: the `AUDIO_CAP_*` bitmask declared on that module's
     Component Registry row. Clients branch on a bit, never on `driver`.
   - `play_state`: `stop`, `playing`, `paused`, or `unknown`. On the MP3 Trigger
@@ -776,7 +781,7 @@ curl -s http://artoo.local/api/audio
 #### Example response
 
 ```json
-{"driver":"DY-SV5W","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0}
+{"driver":"DY-SV5W","output":"on","capabilities":15,"link_ok":true,"active":false,"play_state":"stop","device":"FLASH","total_tracks":999,"current_track":0,"missing_track":0}
 ```
 
 ### POST /api/audio
@@ -799,6 +804,8 @@ Action endpoint.
 - Errors:
 - `400` missing/invalid action or missing required action field
 - `400` unknown action error (`play|stop|volume|dollar` are accepted)
+- `409` `{"ok":false,"error":"Sound is off. Switch it on in Configuration, then restart the droid."}`
+  when audio output is off this boot (every action)
 - `503` `{"ok":false,"error":"audio command queue full"}`
 - `500` `{"ok":false,"error":"volume applied but NVS save failed"}`
 
@@ -859,7 +866,9 @@ curl -s -X POST http://artoo.local/api/audio \
 Queues audio-module status query.
 
 - Success: `200` `{"ok":true}`
-- Error: `503` `{"ok":false,"error":"audio command queue full"}`
+- Errors:
+- `409` sound is off this boot (the same answer as `POST /api/audio`)
+- `503` `{"ok":false,"error":"audio command queue full"}`
 
 #### Example request
 
@@ -1083,6 +1092,7 @@ Queues catalog refresh.
 - Success: `200` `{"ok":true}`
 - Errors:
 - `404` unsupported backend
+- `409` sound is off this boot (the same answer as `POST /api/audio`)
 - `503` queue full
 
 #### Example request
@@ -1110,6 +1120,7 @@ Plays CHIRP tuple.
 - `423` sleeping
 - `404` unsupported backend
 - `400` missing/invalid fields
+- `409` sound is off this boot (the same answer as `POST /api/audio`)
 - `503` queue full
 
 #### Example request

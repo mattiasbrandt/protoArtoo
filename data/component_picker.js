@@ -51,19 +51,21 @@
   // key; the form field and the config payload's shape are this page's API
   // (docs/api.md "POST /api/config").
   //
-  // `stagedAtReboot`: the member only takes over when the controller restarts,
-  // so a chosen card that is not yet the one running says so. The sound module
-  // is; the RC Radio is a statement of which product the builder holds and
-  // changes nothing on the controller, so it is never pending.
+  // `applies`: when a pick of the member takes effect, in the one timing
+  // vocabulary (data/apply_timing.js, #370). The sound module is bound once at
+  // start (ADR 0042), so a chosen card that is not yet the one running says so;
+  // the RC Radio is a statement of which product the builder holds and changes
+  // nothing on the controller, so it is never waiting on anything.
   const MEMBER_FIELDS = {
     sound: {
       param: "soundMember",
       saved: (config) => config?.components?.audio?.member,
-      stagedAtReboot: true,
+      applies: window.PAApplyTiming.AT_REBOOT,
     },
     radio_controller: {
       param: "rcMember",
       saved: (config) => config?.rc?.member,
+      applies: window.PAApplyTiming.IMMEDIATE,
     },
   };
 
@@ -183,8 +185,9 @@
     if (part.included !== true) return isChoosable(entry) ? "not-included" : "available";
     if (chosen === part.id) {
       const active = categoryOf(entry.family)?.active_member;
-      return MEMBER_FIELDS[entry.family]?.stagedAtReboot && active && active !== part.id
-        ? "chosen-after-restart"
+      const applies = MEMBER_FIELDS[entry.family]?.applies;
+      return applies && applies !== window.PAApplyTiming.IMMEDIATE && active && active !== part.id
+        ? "chosen-waiting"
         : "chosen";
     }
     // Shown, not asked: the one product of its family this image carries. It
@@ -195,16 +198,21 @@
   };
 
   // "declined" is a chosen Not fitted card: the answer is lit like any other,
-  // and it never says Fitted.
+  // and it never says Fitted. "chosen-waiting" is a chosen member the droid
+  // has not started on yet, and its badge is composed from the member's timing
+  // rather than typed here.
   const BADGES = {
     chosen: "Fitted",
     declined: "",
-    "chosen-after-restart": "After restart",
     planned: "Roadmap",
     "not-included": "Not included",
     present: "",
     available: "",
   };
+  const badgeFor = (entry, state) =>
+    state === "chosen-waiting"
+      ? window.PAApplyTiming.badge(MEMBER_FIELDS[entry.family].applies)
+      : BADGES[state] || "";
 
   // The family's answer in the fewest words, for guided Setup's rail.
   const answerFor = (family) => {
@@ -274,7 +282,7 @@
     // empty, so it lays out like its neighbours and never reads as greyed.
     if (hasPicture) face.appendChild(artFrame(artId));
     const head = element("span", "droid-build-card-head");
-    const badge = BADGES[state] || "";
+    const badge = badgeFor(entry, state);
     if (badge) head.appendChild(pill(badge));
     face.appendChild(head);
     face.appendChild(element("span", "droid-build-card-label", name));

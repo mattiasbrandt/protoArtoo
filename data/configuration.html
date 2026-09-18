@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/product_art.js,/droid_build_picker.js,/component_picker.js,/configuration.js,/setup.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/product_art.js,/apply_timing.js,/droid_build_picker.js,/component_picker.js,/configuration.js,/setup.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -86,6 +86,7 @@
     <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
       <div class="sect"><h2>WiFi</h2><span class="sub" id="wizard-wifi-state">finding out</span></div>
       <div data-setup-step="wifi">
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <p class="note" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
         <div class="button-row button-row-compact">
           <a class="btn" href="#wifi">Change the network in WiFi</a>
@@ -113,6 +114,7 @@
     <div class="card">
       <div class="sect"><h2>Droid Build</h2><span class="sub" id="droid-build-summary">finding out</span></div>
       <div data-setup-step="build">
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <div id="droid-build-body"></div>
         <div id="droid-build-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
@@ -134,6 +136,7 @@
 
         <div data-setup-step="drive">
         <div class="sect"><h3>Foot Drive</h3><span class="sub">the feet</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="foot_drive" data-component-toggle="enable-drive"
              data-component-not-fitted="The droid is a statue. Sticks move, wheels don't."></div>
         <div class="note note-info" role="note">
@@ -151,6 +154,7 @@
         </div>
         <div data-setup-step="domerot">
         <div class="sect"><h3>Dome Rotation</h3><span class="sub">what turns the dome</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="dome_rotation" data-component-toggle="enable-dome-esc"
              data-component-not-fitted="The dome sits still through every sequence."></div>
         <div class="note note-info" role="note">
@@ -168,6 +172,7 @@
         </div>
         <div data-setup-step="domectl">
         <div class="sect"><h3>Dome Controller</h3><span class="sub">the board in the dome, over protoR2link</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="dome_controller" data-component-toggle="enable-protor2link"
              data-component-not-fitted="The body drives, and the dome gets no light, panel or sound cues."></div>
         <div class="note note-info" role="note">
@@ -185,10 +190,10 @@
         </div>
         <div data-setup-step="sound">
         <div class="sect"><h3>Sound</h3><span class="sub">the droid's voice</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <p class="hint">Say which sound module the droid is built with. The sounds themselves live on the module; this only decides how the controller asks for them.</p>
         <div class="component-picker" data-component-family="sound" data-component-toggle="enable-audio"
              data-component-not-fitted="Sequences still run start to finish, in silence."></div>
-        <p class="note note-info component-consequence"><strong>This picks which module the controller talks to, not which sounds it has.</strong> Those live on the module itself. Takes effect after the controller restarts; the finish step says when.</p>
         <div class="note note-info" role="note">
           <span id="label-desc-enable_audio" class="component-label-desc">Wire it to <strong id="label-enable_audio"></strong>.</span>
         </div>
@@ -209,9 +214,9 @@
         </div>
         <div data-setup-step="rc">
         <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive it with</span></div>
+        <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="radio_controller"
              data-component-receiver-channels="rc-channel-plates"></div>
-        <p class="note note-info component-consequence">The RC Receiver and its channels are saved at once and take effect after a restart.</p>
         <!-- The channel ticks belong to the chosen RC Receiver (operator,
              2026-09-18 on #369): the Component Picker moves this block into
              that receiver's answer and shows the rows its mode reads. Declared
@@ -291,12 +296,15 @@
         <span id="aux-led-preview-text" class="hint"></span>
       </div>
       <p id="aux-led-preview-note" class="hint"></p>
+      <p class="note hidden apply-timing" id="aux-led-apply-timing"></p>
     </div>
 
     <div class="card">
       <div class="sect"><h2>Droid identity</h2><span class="sub">name and hostname</span></div>
       <p class="hint">The name lives on the droid, so any computer meets the same droid.</p>
-      <div class="identity-grid" data-setup-step="name">
+      <div data-setup-step="name">
+      <p class="note hidden apply-timing" data-apply-timing></p>
+      <div class="identity-grid">
         <label class="field" for="droid-name-input">
           <span>Droid name</span>
           <input id="droid-name-input" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protoartoo">
@@ -306,6 +314,8 @@
           <span>Use as network hostname (mDNS)</span>
         </label>
         <button id="identity-save-button" class="btn identity-save-button" type="button">Save</button>
+      </div>
+      <p class="note hidden apply-timing" id="mdns-apply-timing"></p>
       </div>
       <div id="identity-actions"></div>
       <div id="identity-diagnosis" class="hint" role="status" aria-live="polite" aria-atomic="true"></div>

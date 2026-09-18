@@ -61,20 +61,31 @@
   // second list to keep in step (r2d2-astromech-simulator v1.79.0,
   // src/js/config/wizard.js:50).
   //
-  // Four fields, all required, and `why` is CONTENT rather than a doc comment: a
+  // Five fields, all required, and `why` is CONTENT rather than a doc comment: a
   // step nobody can explain cannot exist, and an explanation on the same object
-  // cannot drift from the step it explains. A fifth field - when this answer
-  // takes effect - is #370's, and is deliberately not guessed at here.
+  // cannot drift from the step it explains.
+  //
+  // `applies` is the fifth: WHEN the answer takes effect, as a value from the
+  // one timing vocabulary (data/apply_timing.js), never as a sentence - the
+  // sentence is composed where it is shown, beside the question. It is read off
+  // what the firmware's Commit Step does with the keys the step writes (#370):
+  // a step writing several keys applies as late as the latest of them. A step
+  // that does not state it is not drawn at all (see renderable below), because
+  // a default here would be the blanket promise this field replaced.
   //
   // `answer` reads the controls the step itself shows, so the rail says what the
   // builder is looking at rather than what a second copy of the state believes.
   // ---------------------------------------------------------------------------
-  const STEPS = [
+  const TIMING = window.PAApplyTiming;
+  const DECLARED = [
     {
       key: "wifi",
       title: "WiFi",
       q: "Which network does this droid join?",
       why: "Every screen you drive from, and every new firmware, comes over this link.",
+      // A Staged Network Switch: saved on WiFi, joined at the next start
+      // (ADR 0015); the config read says when one is waiting (wifi.pendingApply).
+      applies: TIMING.AT_REBOOT,
       answer: () => wifiAnswer,
     },
     {
@@ -85,6 +96,7 @@
       // and only what is SHOWN may differ between boards (ADR 0065).
       q: () => (boardLabel ? `This is your ${boardLabel}.` : "This is the board doing the work."),
       why: "Nothing to pick: this firmware was built for this board. Everything after this plugs into it.",
+      applies: TIMING.NOTHING,
       answer: () => boardLabel,
     },
     {
@@ -92,6 +104,9 @@
       title: "Droid Build",
       q: "Which droid did you build?",
       why: "Your droid starts with the parts its design carries. Dome and body can come from different designs.",
+      // The Droid Build is written straight onto the live answer every surface
+      // reads (configCommitApplied(), ADR 0047).
+      applies: TIMING.IMMEDIATE,
       // The picker's own summary, so the rail and the cards read one answer
       // (data/droid_build_picker.js).
       answer: () => window.DroidBuildPicker?.summary() || "",
@@ -101,6 +116,8 @@
       title: "Foot Drive",
       q: "What moves the feet?",
       why: "Off: the droid is a statue. Sticks move, wheels don't.",
+      // Every Component Toggle is read once at start (ADR 0027).
+      applies: TIMING.AT_REBOOT,
       answer: () => pickedIn("foot_drive"),
     },
     {
@@ -108,6 +125,7 @@
       title: "Dome Rotation",
       q: "What turns the dome?",
       why: "Off, the dome sits still through every sequence.",
+      applies: TIMING.AT_REBOOT,
       answer: () => pickedIn("dome_rotation"),
     },
     {
@@ -115,6 +133,7 @@
       title: "Dome Controller",
       q: "What runs the board up in the dome?",
       why: "Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.",
+      applies: TIMING.AT_REBOOT,
       answer: () => pickedIn("dome_controller"),
     },
     {
@@ -125,6 +144,7 @@
       title: "Body servo controller",
       q: "The board's own outputs drive the body's servos.",
       why: "Nothing to pick here. Mark the arms and AUX lines you wired on Wiring.",
+      applies: TIMING.NOTHING,
       answer: () => pickedIn("body_servo_controller"),
     },
     {
@@ -132,6 +152,11 @@
       title: "Radio Controller",
       q: "What do you drive it with?",
       why: "The droid listens only to the channels you tick. Leave an unwired channel off.",
+      // The RC Radio itself changes nothing on the controller, but the receiver
+      // and its channel ticks are projected once at start into the settings the
+      // droid is driven on (rcInputActiveConfigFromSystem()), so the builder
+      // restarts it to drive on a change.
+      applies: TIMING.RESTART_REQUIRED,
       answer: () => pickedIn("radio_controller"),
     },
     {
@@ -139,6 +164,9 @@
       title: "Sound",
       q: "What gives the droid its voice?",
       why: "Off, sequences still run start to finish, in silence.",
+      // The toggle, and the Sound Component Member bound once at start
+      // (ADR 0042).
+      applies: TIMING.AT_REBOOT,
       answer: () => pickedIn("sound"),
     },
     {
@@ -146,9 +174,25 @@
       title: "Name",
       q: "What is this droid called?",
       why: "The name lives on the droid, so any computer meets the same droid.",
+      // The name is read live. The hostname beside it is not, and says so on
+      // its own row (data/configuration.js).
+      applies: TIMING.IMMEDIATE,
       answer: () => document.getElementById("droid-name-input")?.value || "",
     },
   ];
+
+  // A step is drawn only when every required field is there and its timing is
+  // one the vocabulary knows. A step that fails is left out of the run - not
+  // drawn with a guessed timing - and says why in the console, so the gap is
+  // found by whoever added it rather than by a builder reading a false promise.
+  const renderable = (step) => {
+    const missing = ["key", "title", "q", "why"].filter((field) => !step[field]);
+    if (!TIMING.isStated(step.applies)) missing.push("applies");
+    if (missing.length === 0) return true;
+    console.error(`[setup] step "${step.key || "?"}" is not drawn: it has no ${missing.join(", ")}`);
+    return false;
+  };
+  const STEPS = DECLARED.filter(renderable);
 
   // A step is in the COUNT unless its key says otherwise. Every number the run
   // shows is arithmetic on the array above and none is ever typed: the planning
@@ -269,6 +313,25 @@
 
     hosts.forEach((host) => {
       show(host, phase === "ended" || host === currentHost);
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // When each answer bites (#370)
+  //
+  // Beside the question that asks it, in the step's own host, so the line is on
+  // screen with the question during the run and stays with the same control on
+  // Configuration once the run has ended. Whether a saved change is still
+  // waiting for the droid is Configuration's to say: it holds what the droid
+  // started with and compares against it (data/configuration.js).
+  // ---------------------------------------------------------------------------
+  const paintTimings = () => {
+    const hosts = stepHosts();
+    STEPS.forEach((step) => {
+      const host = hosts.find((candidate) => candidate.dataset.setupStep === step.key);
+      TIMING.paint(host?.querySelector("[data-apply-timing]"), step.applies, {
+        pending: Boolean(window.PAConfiguration?.isPending(step.key)),
+      });
     });
   };
 
@@ -503,6 +566,10 @@
   window.ComponentPicker?.onChange(() => {
     if (!runHasEnded()) renderRail();
   });
+  // A save, or the droid's answer to one, can start or end a change waiting
+  // on the next start - whether or not the run is still live.
+  window.PAConfiguration?.onChange(paintTimings);
+  paintTimings();
 
   // ---------------------------------------------------------------------------
   // What the run opens on

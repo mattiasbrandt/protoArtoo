@@ -8059,3 +8059,51 @@ button.output-setting-head:focus-visible {
 .feature-availability-panel.availability-finding-out:focus-within {
   opacity: 1;
 }
+
+/* When an answer takes effect (#370, data/apply_timing.js): a .note under the
+   question it belongs to, set off from whatever the question shows next. */
+.apply-timing {
+  margin: 0 0 var(--space-md);
+}
+
+/* The chosen RC Receiver's channel ticks, redrawn so their words fit (#370,
+   operator 2026-09-19). #369's squares put the channel name, the board's
+   header label and the state on one line in a 72 px column, and the state ran
+   out of the plate. Here the state sits under the name, the column is wide
+   enough for "CH 6" and "OFF" at any width, and the header label is not
+   repeated: on the Artoo it reads "CH1" beside "CH 1", the same words twice. */
+.component-sub-channels .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+}
+
+.component-sub-channels .output-plate .toggle-switch {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2xs);
+  min-height: 0;
+  padding-block: var(--space-2xs);
+}
+
+.component-sub-channels .output-plate .toggle-status {
+  margin-left: 0;
+}
+
+.component-sub-channels .output-plate .component-badge {
+  display: none;
+}
+
+/* On a phone the card grid is one column, and #369's two-column radio plate
+   would open a second one off the edge of the screen. */
+@media (max-width: 520px) {
+  .component-cards > .component-plate:has(.component-sub-channels, .component-receivers) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The droid's name, its hostname tick and Save stack on a phone: the three
+   fixed columns above need 546 px and ran off a 390 px screen. */
+@media (max-width: 600px) {
+  .identity-grid {
+    grid-template-columns: 1fr;
+  }
+}

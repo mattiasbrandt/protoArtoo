@@ -194,7 +194,7 @@ const loadInteractiveModule = (files, respond) => {
 };
 
 // The component toggles' surface, as its page loads it.
-const CONFIGURATION = ["feature_availability.js", "configuration.js"];
+const CONFIGURATION = ["feature_availability.js", "apply_timing.js", "configuration.js"];
 
 const SAVED_RC_DISABLED = {
   rc: { inputMode: "single_sbus", sbus: { recvCh2: false } },
@@ -272,7 +272,7 @@ test("RC component auto-save reports that controller restart is required", async
   await toggle.emit("change");
   await env.fireTimer(300);
 
-  assert.match(env.element("feature-feedback").textContent, /Restart the controller to apply RC input changes\./);
+  assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
@@ -305,7 +305,7 @@ test("restart remains pending after a later non-RC component save", async () => 
   await nonRcToggle.emit("change");
   await env.fireTimer(300);
 
-  assert.match(env.element("feature-feedback").textContent, /Restart the controller to apply RC input changes\./);
+  assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
@@ -355,7 +355,7 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
     ["false", "true"],
     "the first response must not overwrite the newer RC toggle before the queued request is built"
   );
-  assert.match(env.element("feature-feedback").textContent, /Restart the controller to apply RC input changes\./);
+  assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
@@ -484,7 +484,7 @@ test("WARNING #2: stale response must not overwrite newer RC pending state", asy
   // The restart cue must reflect the NEWER state (rcCh2 pending), not the stale response
   assert.match(
     env.element("feature-feedback").textContent,
-    /Restart the controller to apply RC input changes\./,
+    /Restart the droid to use it\./,
     "pending state must not be overwritten by stale response"
   );
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
@@ -570,7 +570,7 @@ test("generation guard prevents corrupted savedGeneration affecting future saves
 
   assert.match(
     env.element("feature-feedback").textContent,
-    /Restart the controller to apply RC input changes\./,
+    /Restart the droid to use it\./,
     "guard protects savedGeneration even when final rcRestartPending is the same"
   );
   assert.match(env.element("setup-save-summary").textContent, /restart required/);

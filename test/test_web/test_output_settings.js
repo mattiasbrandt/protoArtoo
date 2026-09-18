@@ -12,7 +12,10 @@
 //     carries every output's fields as Configuration's rows always did;
 //   - one LED strip: the controller routes the strip down one AUX line, so
 //     giving it to a second line takes it off the first, and the route sent is
-//     the line that now carries it. Sending two, or none, is the defect.
+//     the line that now carries it. Sending two, or none, is the defect;
+//   - when each view's answer bites (#370): an in-use tick is read once at
+//     start, so a changed one says it is waiting and one put back does not;
+//     a servo type bounds the next move, so Servos never says it is waiting.
 // =============================================================================
 
 import { test } from "node:test";
@@ -73,6 +76,7 @@ const boot = () => {
   };
   const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout };
   context.globalThis = context;
+  vm.runInNewContext(readFileSync(join(dataDir, "apply_timing.js"), "utf8"), context);
   vm.runInNewContext(readFileSync(join(dataDir, "output_settings.js"), "utf8"), context);
   vm.runInNewContext(readFileSync(join(dataDir, "wiring_outputs.js"), "utf8"), context);
   window.PAOutputSettings.mount("type", {
@@ -134,4 +138,21 @@ test("giving the LED strip to a second AUX line takes it off the first, and rout
   assert.notEqual(form.aux2Type, "rgb", "only one line carries the strip");
   assert.equal(form.aux_led_pin, "3", "and the route names the line that now carries it");
   assert.match(env.servos("aux2").textContent, /MG996R|None/, "Servos offers AUX 2 a servo again");
+});
+
+test("an in-use tick waits for the next start until it is put back; a servo type never waits", async () => {
+  const env = boot();
+  await env.settle();
+  const wiringLine = () => env.wiring("aux1").parentElement.parentElement.querySelector(".apply-timing");
+  const servosLine = () => env.servos("aux1").parentElement.parentElement.querySelector(".apply-timing");
+  assert.equal(wiringLine().dataset.pending, "false", "nothing is waiting on a fresh read");
+
+  env.inUse("aux1").fire("click", {});
+  await env.flush();
+  assert.equal(wiringLine().dataset.pending, "true", "the droid still runs the outputs it started with");
+  assert.equal(servosLine().dataset.pending, "false", "Servos' answer is used at once");
+
+  env.inUse("aux1").fire("click", {});
+  await env.flush();
+  assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
 });

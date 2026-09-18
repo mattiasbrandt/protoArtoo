@@ -12,6 +12,8 @@
 #include "audio_chirp.h"
 #include "audio_dy_sv5w.h"
 #include "audio_mp3trigger.h"
+#include "audio_task.h"    // audioGetDriverName(), audioGetCapabilities()
+#include "config_cache.h"  // configCacheReadActiveAudioEnabled(), configCacheReadSoundMember()
 #include "logging.h"
 
 static const char* TAG = "Sound";
@@ -90,4 +92,32 @@ void audioBindSoundMember(uint8_t storedMemberValue) {
 
 const ActiveSoundMember& audioActiveSoundMember() {
     return s_active;
+}
+
+// "\xC2\xB7" is the middle dot every operator surface separates a pill's parts
+// with, spelled as UTF-8 bytes so this file stays ASCII.
+const char AUDIO_SOUND_OFF_STATUS_TAIL[] = " picked \xC2\xB7 sound is off";
+
+const char AUDIO_SOUND_OFF_REASON[] = "Sound is off. Switch it on in Configuration, then restart the droid.";
+
+bool audioSoundOn() {
+    return configCacheReadActiveAudioEnabled();
+}
+
+SoundStatusIdentity audioSoundStatusIdentity() {
+    if (audioSoundOn()) {
+        return {true, audioGetDriverName(), audioGetCapabilities()};
+    }
+    // componentResolveMember() substitutes the build default for a saved value
+    // this image cannot drive, the same resolution setup() binds with, so the
+    // name is always a product this droid could run.
+    const ComponentPartEntry* picked =
+        componentResolveMember(COMPONENT_CATEGORY_SOUND, configCacheReadSoundMember());
+    if (picked == nullptr) {
+        // Only an image with no selectable Sound member at all, which the
+        // static_assert above makes unbuildable; name the bound driver rather
+        // than nothing.
+        return {false, s_active.driver->driverName(), s_active.driver->capabilities()};
+    }
+    return {false, picked->name, picked->capabilities};
 }

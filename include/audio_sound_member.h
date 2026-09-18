@@ -59,3 +59,42 @@ void audioBindSoundMember(uint8_t storedMemberValue);
 // console handlers and from AudioTask: the binding is written once, before any
 // task exists, and never moves again.
 const ActiveSoundMember& audioActiveSoundMember();
+
+// -----------------------------------------------------------------------------
+// Sound switched off (#370, operator 2026-09-19: "Say it's off")
+//
+// With audio output off at boot AudioTask is never created (src/main.cpp,
+// ADR 0027), so nothing drains the audio queue and nothing drives a module.
+// Every operator surface answers that the same way: a status names the module
+// the builder PICKED and says sound is off - never the driver bound at boot,
+// which on such a board is a module nobody is using - and a play or sound
+// action is refused with the reason below instead of answering "queued" onto a
+// queue nothing reads. The sequence engine and the other internal callers keep
+// the queue helpers' accepted-and-discarded answer: sequences still run start
+// to finish, in silence.
+// -----------------------------------------------------------------------------
+
+// The refusal, in the words the operator approved. One copy, read by the
+// Console and the web handlers alike.
+extern const char AUDIO_SOUND_OFF_REASON[];
+
+// Is audio output on for this boot? The boot-latched toggle, not the saved
+// one: switching sound on takes effect at the next start.
+bool audioSoundOn();
+
+// What a status surface names. With sound on it is the running driver and
+// what it supports; with sound off it is the picked member's product name and
+// the capabilities the Component Registry declares for it.
+struct SoundStatusIdentity {
+    bool on;
+    const char* driver;
+    uint8_t capabilities;
+};
+SoundStatusIdentity audioSoundStatusIdentity();
+
+// The status line a surface shows with sound off, in the words the operator
+// approved: "<picked> picked", a middle dot, "sound is off". This is the tail
+// after the product name, kept beside the refusal so each is one copy. GET
+// /api/status writes the name and this tail straight into its body rather than
+// through a line buffer on the status builder's measured frame.
+extern const char AUDIO_SOUND_OFF_STATUS_TAIL[];

@@ -26,6 +26,17 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Every answer says when it takes effect.** Each Setup question and each
+  Configuration setting carries one line beside it: used at once, used from the
+  droid's next start, or saved and needing a restart. Once you change something
+  that is still waiting, the line says the droid runs the old setting until
+  then. Only a restart you have to perform reads amber, with the way to
+  Maintenance's Restart. Change it back and the line clears.
+- **Sound switched off says it is off.** On a droid whose sound is off, Sound,
+  the Dashboard and the Console name the module you picked and say sound is
+  off, instead of naming a module nobody is using. Playing a track or sending a
+  sound command is refused with where to switch sound on, instead of answering
+  "queued" to a module that never hears it.
 - **A Wiring screen that says what this droid will actually drive.** A new
   destination beside Parts, and it is a reference: it writes nothing and no
   button on it reaches the droid. It reads the loom off the Body Controller that

@@ -22,6 +22,7 @@ const dataDir = join(root, "data");
 const SCRIPTS = [
   "feature_availability.js",
   "product_art.js",
+  "apply_timing.js",
   "component_picker.js",
   "configuration.js",
   "setup.js",
