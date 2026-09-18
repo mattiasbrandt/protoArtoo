@@ -129,8 +129,8 @@
     } else {
       setText(
         domeWebNote,
-        `Web control is ${webControlEnabled ? "on" : "off"}. That consent is the feet's — ` +
-          "the dome turns on the radio and inside a sequence either way.",
+        `Web control is ${webControlEnabled ? "on" : "off"}. It only gates the feet; ` +
+          "the dome still turns on the radio and in a sequence.",
       );
     }
 

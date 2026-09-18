@@ -16,12 +16,11 @@
   </head>
   <body data-page="dome">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Every act
-         here is named beside the thing it acts on, so the title carries none. -->
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named
+         beside the thing it acts on, so the title carries none. -->
     <div class="title">
       <div>
         <h1>Dome</h1>
-        <p class="question">Which way is the dome being turned, and how fast is it allowed to go?</p>
       </div>
     </div>
 
@@ -30,7 +29,7 @@
          told apart by treatment and never by hue. -->
     <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Dome rotation</h2><span class="sub">switched off in Setup</span></div>
-      <p class="prose"><b>The dome motor is switched off.</b> Nothing here reaches it until <b>Dome ESC</b> is switched on in <a class="setup-link" href="/setup.html">Setup</a> — the dome sits still through every sequence, however the show is written.</p>
+      <p class="note"><b>Off:</b> the dome stays put, even through a sequence. <a class="setup-link" href="/setup.html">Switch Dome ESC on in Setup</a></p>
     </div>
 
     <!-- What the dome is being told to do, right now. A readout and nothing
@@ -61,16 +60,15 @@
 
     <!-- Dome ESC settings -->
     <div class="card">
-      <div class="sect"><h2>Dome ESC</h2><span class="sub">saved on the droid as you change them</span></div>
-      <p class="prose">The pulse widths the controller drives the dome's speed controller between, and the share of that range it is allowed to use. Every change here is written to the droid as you make it.</p>
+      <div class="sect"><h2>Dome ESC</h2><span class="sub">saved as you change</span></div>
       <div class="note note-info" role="note">
-        The ESC's own calibration, its PWM frequency and its voltage cutoff are set from the <b>ISD Go</b> app over Bluetooth, not from here. These four numbers only decide how wide a pulse the controller sends it.
+        The ESC's calibration, PWM frequency and voltage cutoff live in the <b>ISD Go</b> app, over Bluetooth. These four numbers only set the pulse the controller sends.
       </div>
       <form id="esc-form" class="form-grid settings-grid">
         <label class="field">
           <span>Neutral pulse (µs)</span>
           <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">The width that means stop. Get it wrong and the dome creeps when nothing is asking it to turn.</span>
+          <span class="hint">The width that means stop. Wrong, and the dome creeps on its own.</span>
         </label>
         <label class="field">
           <span>Minimum pulse (µs)</span>
@@ -85,7 +83,7 @@
         <label class="field">
           <span>Speed limit (%)</span>
           <input id="dome-speed-limit" class="compact-number" name="domeEscSpeedLimitPct" type="number" min="0" max="100" step="1">
-          <span class="hint">A share of the range above: 20 is a slow scan, 100 is as fast as the dome ever turns.</span>
+          <span class="hint">A share of the range above. 20 is a slow scan, 100 is as fast as the dome turns.</span>
         </label>
         <div class="button-row">
           <button id="reload-esc-button" class="btn" type="button">Reload</button>
@@ -96,8 +94,8 @@
 
     <!-- Random dome movement -->
     <div class="card">
-      <div class="sect"><h2>Random movement</h2><span class="sub">what the dome does when nobody is asking</span></div>
-      <p class="prose">With nothing on the sticks and no sequence running, the droid turns its own dome now and then. Off, the dome is perfectly still between commands, which reads as switched off rather than as idle.</p>
+      <div class="sect"><h2>Random movement</h2><span class="sub">idle turns</span></div>
+      <p class="hint">Only while the sticks are still and no sequence runs.</p>
       <form id="rnd-dome-form" class="form-grid settings-grid">
         <!-- A tick, not a field: .field is a grid, so a checkbox laid out as one
              of its rows stretched to the whole column and drew a 60 px box.
@@ -129,7 +127,7 @@
           <span>Longest pause (s)</span>
           <input id="dome-rnd-pause-max" class="compact-number" name="domeEscRndPauseMax"
             type="number" min="1" max="120" step="1">
-          <span class="hint">The most. A wide gap between the two reads as a droid thinking; a narrow one reads as a metronome.</span>
+          <span class="hint">The most. Set it close to the shortest and the dome ticks like a clock.</span>
         </label>
         <div class="button-row">
           <button id="reload-rnd-button" class="btn" type="button">Reload</button>
