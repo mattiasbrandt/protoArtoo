@@ -16,17 +16,16 @@
   </head>
   <body data-page="servo">
 
-    <!-- The title, and the question this surface answers (ADR 0066). The acts
-         are all on the rows they act on, so the title carries none. -->
+    <!-- The title is the name in the nav (ADR 0066). The acts are all on the
+         rows they act on, so the title carries none. -->
     <div class="title">
       <div>
         <h1>Servos</h1>
-        <p class="question">Which arm or AUX output do you want to move right now?</p>
         <!-- A moved thing leaves a forwarding address. The typed calibration
              form stood on this page until #400 took it off: an end is set by
              driving the part, on the surface that knows which part an output
              drives. -->
-        <p class="forward">Open and close ends are set in <a href="/parts.html">Parts</a> now: press Calibrate on the output that drives the part, and drive it to each end.</p>
+        <p class="forward">Open and close ends live in <a href="/parts.html">Parts</a> now. Press Calibrate on the output and drive the part to each end.</p>
       </div>
     </div>
 
@@ -43,14 +42,14 @@
          Family treatment, because the switch is one screen away. -->
     <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Utility arms</h2><span class="sub">none switched on</span></div>
-      <p class="prose"><b>No arm servo is switched on.</b> Switch on ARM1, ARM2 or both in <a class="setup-link" href="/setup.html">Setup</a>, and the arm controls come back here.</p>
+      <p class="note"><b>No arm switched on.</b> <a class="setup-link" href="/setup.html">Switch ARM1 or ARM2 on in Setup</a></p>
     </div>
 
     <!-- AUX (AUX1 / AUX2 / AUX3) -->
     <div class="card" id="aux-controls-card">
       <div class="sect"><h2>AUX outputs</h2><span class="sub" id="aux-controls-summary">finding out</span></div>
       <div id="aux-controls-container"></div>
-      <p class="hint">What is on each AUX line - a servo, an LED strip, nothing - is said in <a class="setup-link" href="/setup.html">Setup</a>. An AUX line carrying an LED strip has no position to drive, so it carries no buttons.</p>
+      <p class="hint">Say what is on each AUX line in <a class="setup-link" href="/setup.html">Setup</a>. An LED strip has no position, so it gets no buttons.</p>
       <div id="aux-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
@@ -62,10 +61,10 @@
          /api/config, rather than to a number typed on this page -- so what they
          show is what the droid will actually do when something says open. -->
     <div class="card hidden" id="servo-test-card">
-      <div class="sect"><h2>Test a servo</h2><span class="sub">one output at a time, changing nothing</span></div>
+      <div class="sect"><h2>Test a servo</h2><span class="sub">one at a time</span></div>
 
       <div class="note note-act">
-        <b>Every button here moves real hardware.</b> Check the arms and panels are clear of hands and scenery before you press one.
+        <b>Every button here moves hardware.</b> Keep hands clear of the arms and panels.
       </div>
 
       <!-- ARM1 (shown only when ARM1 enabled) -->
@@ -133,7 +132,7 @@
         </span>
       </div>
 
-      <p class="hint">A typed width is sent as it stands and is not recorded anywhere: nothing on this page writes a calibration.</p>
+      <p class="hint">A typed width is sent once and saved nowhere.</p>
       <!-- Still the calibration line, on a card that no longer sets one: Test
            Open and Test Close drive to the ends read from /api/config, so
            whether that read landed is exactly what a builder needs told here. -->

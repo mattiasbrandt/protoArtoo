@@ -220,7 +220,7 @@
     if (enabled.length === 0) {
       renderedAuxIds = "none";
       auxControlsContainer.innerHTML =
-        `<p class="prose"><b>No AUX output is switched on.</b> ${setupActionHtml("Switch one on")} and its controls appear here.</p>`;
+        `<p class="note"><b>No AUX output switched on.</b> ${setupActionHtml("Switch one on")}.</p>`;
       return;
     }
 
@@ -238,8 +238,7 @@
 
       auxControlsContainer.innerHTML = rows.length > 0
         ? rows.join("")
-        : "<p class=\"prose\"><b>Nothing here to drive.</b> The AUX outputs that are switched on have nothing recorded on them, " +
-          "so this page has no servo to move and no strip to name.</p>";
+        : "<p class=\"note\"><b>Nothing to drive.</b> The AUX outputs that are on have nothing set on them.</p>";
       return;
     }
 
