@@ -16,13 +16,12 @@
   </head>
   <body data-page="sound">
 
-    <!-- The title, the question this surface answers, and the one act that
-         belongs beside it rather than beside a card: which of the two workspaces
+    <!-- The title, which is the name in the nav, and the one act that belongs
+         beside it rather than beside a card: which of the two workspaces
          this page is in decides what the whole surface shows (ADR 0066). -->
     <div class="title">
       <div>
         <h1>Sound</h1>
-        <p class="question">What can the droid say, and what makes it say each thing?</p>
       </div>
       <div class="acts">
         <div class="sound-view-toggle">
@@ -37,7 +36,7 @@
 
     <!-- The module itself: what is fitted, and whether it is answering. -->
     <div class="card">
-      <div class="sect"><h2>Audio module</h2><span class="sub">read back over the module's serial link</span></div>
+      <div class="sect"><h2>Audio module</h2><span class="sub">from the module</span></div>
       <p class="hint" id="mod-query-note"></p>
       <p class="hint hidden" id="mp3-wire-note"></p>
       <p class="hint hidden" id="mp3-missing-track" role="status" aria-live="polite"></p>
@@ -55,7 +54,7 @@
         <summary>
           <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
           <h3>More detail</h3>
-          <span class="sub">what the module reports about itself</span>
+          <span class="sub">the module's own report</span>
         </summary>
         <div class="disclose-body">
           <div class="sound-details">
@@ -88,7 +87,7 @@
          (CONTEXT.md): the card names the move and routes to it. -->
     <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Sound</h2><span class="sub">switched off in Setup</span></div>
-      <p class="prose"><b>The droid's voice is switched off.</b> Nothing on this page reaches the module until <b>Audio</b> is switched on in <a class="setup-link" href="/setup.html">Setup</a> — sequences still run start to finish, in silence.</p>
+      <p class="note"><b>Off:</b> the droid is mute. Sequences still run, in silence. <a class="setup-link" href="/setup.html">Switch Audio on in Setup</a></p>
     </div>
 
     <div class="card sound-global-controls">
@@ -107,7 +106,7 @@
         <button class="btn" id="btn-random-on" type="button">Random on</button>
         <button class="btn" id="btn-random-off" type="button">Random off</button>
       </div>
-      <p class="hint">Stop ends the track that is playing and nothing else. Idle chatter keeps coming back until <b>Random off</b> or the Quiet mood stops it.</p>
+      <p class="hint">Stop ends this track only. Chatter comes back until <b>Random off</b> or the Quiet mood.</p>
 
       <div id="global-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -140,14 +139,14 @@
           </tbody>
         </table>
       </div>
-      <p class="hint">Boot Sound (<b>$B</b>) is the startup track you name here. Boot Complete is a system event with its own track, played automatically once the controller is up — two different things that both happen at boot.</p>
+      <p class="hint">Boot Sound (<b>$B</b>) is the startup track you name here. Boot Complete is its own system sound, played once the controller is up.</p>
     </div>
 
 
     <!-- CHIRP catalog (visible only when the fitted module can be asked for one) -->
     <div id="chirp-catalog-card" class="card hidden">
-      <div class="sect"><h2>CHIRP catalog</h2><span class="sub">read off the module's own card</span></div>
-      <p class="prose">Every clip the fitted CHIRP knows about, by bank. Map one into a named slot, a system event or a category range, and the droid plays it wherever that slot is used.</p>
+      <div class="sect"><h2>CHIRP catalog</h2><span class="sub">from the module's card</span></div>
+      <p class="hint">Every clip on the CHIRP, by bank. Map one to a named slot, a system event or a category range.</p>
       <div class="button-row button-row-compact">
         <button id="btn-catalog-refresh" class="btn" type="button">Refresh catalog</button>
         <button id="btn-catalog-apply-suggestions" class="btn" type="button">Apply suggestions</button>
@@ -194,7 +193,7 @@
     <!-- Sound categories -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>Sound categories</h2><span class="sub">a track range each</span></div>
-      <p class="prose">Idle chatter is drawn at random from a category's range. Set both Min and Max to 0 and that category never plays.</p>
+      <p class="hint">Chatter picks at random from a category's range. Min and Max both 0, and it never plays.</p>
       <p class="hint hidden" id="mp3-range-warning" role="status"></p>
       <div class="sound-table-wrap">
         <table class="sound-table">
@@ -216,8 +215,8 @@
 
     <!-- Mood mapping -->
     <div class="card sound-advanced-card">
-      <div class="sect"><h2>Mood mapping</h2><span class="sub">which categories each mood draws from</span></div>
-      <p class="prose">A mood is a set of categories the droid is allowed to chatter from. Tick a category under a mood and that mood can pick from its range.</p>
+      <div class="sect"><h2>Mood mapping</h2><span class="sub">categories per mood</span></div>
+      <p class="hint">Tick a category under a mood, and that mood may chatter from it.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
@@ -241,8 +240,8 @@
     </div>
     <!-- System sounds -->
     <div class="card sound-advanced-card">
-      <div class="sect"><h2>System sounds</h2><span class="sub">what the droid says by itself</span></div>
-      <p class="prose">The clips the controller plays on its own — at boot, and when the drive state changes. Track 0 keeps that event silent.</p>
+      <div class="sect"><h2>System sounds</h2><span class="sub">automatic sounds</span></div>
+      <p class="hint">Played at boot and when the drive state changes. Track 0 keeps the event silent.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
@@ -262,8 +261,8 @@
 
     <!-- Direct track -->
     <div class="card">
-      <div class="sect"><h2>Direct track</h2><span class="sub">for finding out what is on the card</span></div>
-      <p class="prose">Play any track number straight from the module, without going through a name, a category or a sequence. Nothing here is recorded: it is how you find out which clip is which.</p>
+      <div class="sect"><h2>Direct track</h2><span class="sub">find a clip</span></div>
+      <p class="hint">Plays any track number straight off the card. Nothing is saved.</p>
       <div class="sound-inline-row tight">
         <input type="number" id="direct-track" min="1" max="65535" value="1"
                class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
@@ -276,8 +275,8 @@
     <div class="sound-advanced-grid">
     <!-- Random playback range -->
     <div class="card sound-advanced-card">
-      <div class="sect"><h2>Random range</h2><span class="sub">the pool random playback draws from</span></div>
-      <p class="prose">With random playback on, the droid picks a track from this range. It is written to the droid and takes effect at the next random event, not at once.</p>
+      <div class="sect"><h2>Random range</h2><span class="sub">random pool</span></div>
+      <p class="hint">Random playback picks from this range. Saved, it takes effect at the next random sound.</p>
       <div class="sound-inline-row wrap">
         <div>
           <label class="form-label" for="rand-min">Min track</label>
@@ -296,8 +295,8 @@
 
     <!-- Mood sound intervals -->
     <div class="card sound-advanced-card">
-      <div class="sect"><h2>Chatter intervals</h2><span class="sub">how often each mood speaks up</span></div>
-      <p class="prose">How long the droid waits between random sounds in each mood. Set 0 and that mood never chatters. Written to the droid, and picked up on the next timer cycle.</p>
+      <div class="sect"><h2>Chatter intervals</h2><span class="sub">seconds per mood</span></div>
+      <p class="hint">Seconds between random sounds. Set 0 and that mood never chatters.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>

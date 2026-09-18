@@ -460,7 +460,7 @@
       modQueryNote.textContent = "";
       return;
     }
-    modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
+    modQueryNote.textContent = "Read at boot. Poll to refresh, but not while a track plays.";
   };
 
   const updateModuleStatus = async ({ handle = null } = {}) => {
@@ -514,7 +514,7 @@
       if (soundStateBadge && soundHardwareEnabled) {
         const linkOk = Boolean(d.link_ok);
         if (d.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-          soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
+          soundStateBadge.textContent = "No status: the dome link holds the port";
           soundStateBadge.dataset.state = "idle";
           if (modLink) {
             modLink.textContent = "protoR2link using UART";
@@ -2305,7 +2305,7 @@
     if (data.audio && typeof data.audio.link_ok === "boolean") {
       if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
         if (modLink) { modLink.textContent = "protoR2link using UART"; modLink.dataset.state = "warn"; }
-        soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
+        soundStateBadge.textContent = "No status: the dome link holds the port";
         soundStateBadge.dataset.state = "idle";
       } else if (!data.audio.link_ok) {
         if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
