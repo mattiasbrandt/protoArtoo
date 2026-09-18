@@ -53,8 +53,6 @@
   // What the droid started with, as first read: the in-use ticks and the
   // strip's line, the two answers that wait for the next start.
   let started = null;
-  // The latest timing among the changes the next save carries.
-  let unsavedTiming = TIMING.NOTHING;
   const views = [];
   const listeners = new Set();
   let saveTimer = null;
@@ -131,15 +129,13 @@
       return;
     }
     saving = true;
-    const carried = unsavedTiming;
-    unsavedTiming = TIMING.NOTHING;
     setFeedback("Saving…");
     try {
       const result = await window.PAApi.postForm("/api/config", fields(), { timeoutMs: 5000 });
       adopt(result.data);
-      // A change put back to what the droid started with waits on nothing.
-      const timing = carried === TIMING.AT_REBOOT && !waitingOnStart() ? TIMING.IMMEDIATE : carried;
-      setFeedback(TIMING.saved(TIMING.latest(timing, TIMING.IMMEDIATE), new Date().toLocaleTimeString()), "success");
+      // When it takes effect is the timing line's to say, just above: this
+      // line says only that the droid took it (operator, 2026-09-19 on #370).
+      setFeedback(`Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[outputs] save failed:", error);
       setFeedback(window.PAApi.messageFor(error), "error");
@@ -156,9 +152,8 @@
 
   // Picking is applying: the change is drawn at once and saved after a short
   // settle, so a builder ticking three lines sends one request, not three.
-  const change = (view, id, patch) => {
+  const change = (id, patch) => {
     if (!state) return;
-    unsavedTiming = TIMING.latest(unsavedTiming, VIEW_TIMING[view.kind]);
     Object.assign(state[id], patch);
     // One LED strip: setting it on one AUX line takes it off the others.
     if (patch.type === LED_STRIP) {
@@ -197,7 +192,7 @@
 
   // Wiring's plate: the output, whether it is in use, and on an AUX line
   // whether it carries a servo or the LED strip.
-  const inUsePlate = (view, output) => {
+  const inUsePlate = (output) => {
     const answer = state[output.id];
     const plate = element("div", "output-plate output-setting");
     plate.dataset.output = output.id;
@@ -207,21 +202,21 @@
     press.setAttribute("aria-pressed", answer.enabled ? "true" : "false");
     press.appendChild(element("span", "toggle-label", output.name));
     press.appendChild(element("span", "toggle-status", answer.enabled ? "In use" : "Not used"));
-    press.addEventListener("click", () => change(view, output.id, { enabled: !answer.enabled }));
+    press.addEventListener("click", () => change(output.id, { enabled: !answer.enabled }));
     plate.appendChild(press);
     if (output.aux) {
       const carries = answer.type === LED_STRIP ? LED_STRIP : "servo";
       plate.appendChild(segmented(`${output.name} carries`, [
         { id: "servo", label: "Servo" },
         { id: LED_STRIP, label: "LED strip" },
-      ], carries, (value) => change(view, output.id, { type: value === LED_STRIP ? LED_STRIP : AUX_NONE.id })));
+      ], carries, (value) => change(output.id, { type: value === LED_STRIP ? LED_STRIP : AUX_NONE.id })));
     }
     return plate;
   };
 
   // Servos' plate: which servo the output carries. An AUX line set to LED
   // strip has no servo, and says where that is answered.
-  const typePlate = (view, output) => {
+  const typePlate = (output) => {
     const answer = state[output.id];
     const plate = element("div", "output-plate output-setting");
     plate.dataset.output = output.id;
@@ -236,7 +231,7 @@
     }
     const options = output.aux ? [AUX_NONE, ...SERVO_TYPES] : SERVO_TYPES;
     plate.appendChild(segmented(`${output.name} servo`, options, answer.type,
-      (value) => change(view, output.id, { type: value })));
+      (value) => change(output.id, { type: value })));
     return plate;
   };
 
@@ -246,7 +241,7 @@
       return;
     }
     const plates = element("div", "output-plates");
-    OUTPUTS.forEach((output) => plates.appendChild(view.plate(view, output)));
+    OUTPUTS.forEach((output) => plates.appendChild(view.plate(output)));
     // When this view's answer bites, beside the outputs it asks about.
     const timing = element("p", "apply-timing");
     TIMING.paint(timing, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
