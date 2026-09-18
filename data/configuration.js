@@ -418,6 +418,11 @@ const BOARD_LABELS = {
         "feature-state-identity-unavailable",
       );
       row.classList.add(`feature-state-${result.state}`);
+      // The family the state is painted in, which the state class cannot say
+      // for an identity that will never be read (data/feature_availability.js).
+      row.classList.remove(...window.PAFeatureAvailability.FAMILY_CLASSES);
+      const family = window.PAFeatureAvailability.familyClassFor(result.state);
+      if (family) row.classList.add(family);
       row.dataset.featureState = result.state;
       setRowControlsAvailable(row, toggle.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);

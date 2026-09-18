@@ -112,6 +112,26 @@
       return "";
     };
 
+    // The Availability Family a resolved state is painted in (CONTEXT.md
+    // "Availability Family"), where the state class alone cannot say it. An
+    // identity that could not be read is two different answers: a controller
+    // that did not respond is retryable and still being found out, and one
+    // that answered with a manifest this page cannot read is terminal - no
+    // later request will change it - so it is settled, and drawn as settled.
+    // So is a manifest that arrived without the key asked for (resolve()
+    // above). The copy already told them apart (reasonFor); this is the same
+    // split for the paint (#341, #369). Every other state's family is carried
+    // by its own class, so this names none.
+    const FAMILY_CLASSES = Object.freeze(["availability-finding-out", "availability-settled-no"]);
+    const familyClassFor = (state) => {
+      if (state === "checking") return "availability-finding-out";
+      if (state === "identity-unavailable") {
+        const terminal = phase === "ready" || identityErrorReason === "incompatible";
+        return terminal ? "availability-settled-no" : "availability-finding-out";
+      }
+      return "";
+    };
+
     const notify = () => listeners.forEach((listener) => listener());
 
     const setIdentity = (nextIdentity) => {
@@ -138,6 +158,8 @@
       isFeatureAvailable,
       labelFor,
       reasonFor,
+      familyClassFor,
+      FAMILY_CLASSES,
       setIdentity,
       setIdentityError,
       subscribe,

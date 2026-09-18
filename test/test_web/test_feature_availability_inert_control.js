@@ -278,16 +278,61 @@ test("an unavailable component toggle ignores even a scripted change event", asy
 test("the same component toggle saves once its build requirement is present", async () => {
   const env = loadInteractiveSurfaces();
   await env.settle();
-  const arm1 = env.element("enable-arm1");
-  arm1.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.publishIdentity(true);
 
-  assert.equal(arm1.disabled, false);
-  arm1.checked = false;
-  await arm1.emit("change");
+  assert.equal(drive.disabled, false);
+  drive.checked = false;
+  await drive.emit("change");
   await env.fireTimer(300);
 
   const saves = env.requests.filter((request) => request.method === "POST" && request.path === "/api/config");
   assert.equal(saves.length, 1);
-  assert.equal(saves[0].body.get("enableArm1"), "false");
+  assert.equal(saves[0].body.get("enableDrive"), "false");
+});
+
+// B1's fourth answer (#341, applied on #369). An identity that failed is two
+// different answers: a controller that did not respond may yet, and one that
+// answered with a manifest this page cannot read never will. The copy always
+// told them apart; the paint said "still finding out" for both, so a settled
+// no breathed as if an answer were coming. Both paint sites - a Configuration
+// row and the Maintenance profiler card - must carry the family.
+const tracked = (element) => {
+  const classes = new Set();
+  element.classList = {
+    add: (...names) => names.forEach((name) => classes.add(name)),
+    remove: (...names) => names.forEach((name) => classes.delete(name)),
+    contains: (name) => classes.has(name),
+    toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
+  };
+  return classes;
+};
+
+const paintFor = async (reason) => {
+  const env = loadInteractiveSurfaces();
+  await env.settle();
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const row = { dataset: {}, querySelectorAll: () => [], appendChild() {} };
+  const rowClasses = tracked(row);
+  drive.closest = () => row;
+  const cardClasses = tracked(env.element("profiler-card"));
+  env.window.dispatchEvent({ type: "pa:identity-unavailable", detail: { reason } });
+  await env.settle();
+  return { rowClasses, cardClasses };
+};
+
+test("an identity that will never be read is painted settled, and one still connecting is still finding out", async () => {
+  const terminal = await paintFor("incompatible");
+  const retrying = await paintFor("no-response");
+
+  for (const [where, classes] of [["row", terminal.rowClasses], ["card", terminal.cardClasses]]) {
+    assert.ok(classes.has("availability-settled-no"), `a terminal failure's ${where} is settled no`);
+    assert.ok(!classes.has("availability-finding-out"), `and its ${where} is not still finding out`);
+  }
+  for (const [where, classes] of [["row", retrying.rowClasses], ["card", retrying.cardClasses]]) {
+    assert.ok(classes.has("availability-finding-out"), `a retryable failure's ${where} is still finding out`);
+    assert.ok(!classes.has("availability-settled-no"), `and its ${where} is not settled`);
+  }
 });
