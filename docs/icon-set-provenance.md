@@ -69,7 +69,9 @@ no symbol, which is the failure this list would otherwise hide.
 | `chevron-right` | a disclosure's open/closed marker |
 | `arrow-left`, `arrow-right` | Foot Drive's pad, the pair turned a quarter for forward and reverse |
 
-The #398 prototype (`prototypes/395-surface-anatomy/chrome.js`, merged) holds
+The #398 prototype (`git show 83acf0db:prototypes/395-surface-anatomy/chrome.js`;
+the prototype left the tree for the gitignored `tasks/prototypes/` on
+2026-09-18) holds
 the full twenty-two paths it took from the same package, including the two this
 image does not carry - `play-outline` and `pause`. A slice that needs one copies
 its path in beside the others rather than fetching a package to read it again.

@@ -149,8 +149,9 @@ Settled in the same grilling, 2026-09-18:
 This does **not** reopen the instrument-panel identity, the slots (title,
 section, work area, acts, feedback), ADR 0059's required explanation field,
 or the ban on firmware vocabulary. The field stays; the sentence gets
-shorter. The prototype under `prototypes/395-surface-anatomy/` still shows
-the question line; that line is historical.
+shorter. The prototype (`prototypes/395-surface-anatomy/`, in git history at
+`83acf0db`; local copies now live under the gitignored `tasks/prototypes/`)
+still shows the question line; that line is historical.
 
 The copy sweep that lands this is [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407). D1 (#348) still
 owns "every no names your next move"; this amendment owns the register of

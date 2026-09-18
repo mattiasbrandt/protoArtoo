@@ -149,7 +149,8 @@ an unpaid rule is cut. Kept here because they are good craft when they fit.
 Every operator surface is the same shape, so a builder who has learned one
 screen has learned them all (`CONTEXT.md` **Surface Anatomy**, ADR 0066). The
 decision is that ADR's; the shape is below; the numbers are tokens declared once
-in `data/style.css`; and `prototypes/395-surface-anatomy/` is the drawn
+in `data/style.css`; and `prototypes/395-surface-anatomy/` (in git history at
+`83acf0db`; local copies under the gitignored `tasks/prototypes/`) is the drawn
 reference the operator picked, except its page-question line, which the
 2026-09-18 amendment retired. A surface that departs from this is a defect,
 not a taste.

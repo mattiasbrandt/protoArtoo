@@ -12,7 +12,9 @@ answered.
 **The slice it proposed already exists as a prototype.** ADR 0057 resolved #289
 against a built artifact rather than an argument, and that artifact —
 `prototypes/289-sequence-timeline/cantina-timeline.html` on
-`epic/operator-experience` (`51bca564`) — is a read-only timeline of real
+`epic/operator-experience` (`51bca564`; the directory left the tree for the
+gitignored `tasks/prototypes/` on 2026-09-18, so read it with
+`git show 51bca564:prototypes/289-sequence-timeline/cantina-timeline.html`) — is a read-only timeline of real
 `DM:CANTINA` data with a scrubbable playhead, a dome SVG posing at it, a beat
 grid, grouped lanes with an `N of M` count, two lane filters, and an
 authored-versus-expanded toggle. The research's whole justification for a
