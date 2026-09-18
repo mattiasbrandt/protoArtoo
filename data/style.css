@@ -634,9 +634,8 @@ nav > a {
    reaches for what is below; a new part earns its place here.
    =========================================================================== */
 
-/* The title is the name in the nav. .title .question is leftover markup;
-   the copy sweep removes it. The acts sit beside the title, named for what
-   they do to the thing on this screen. */
+/* The title is the name in the nav, and nothing sits under it. The acts sit
+   beside the title, named for what they do to the thing on this screen. */
 .title {
   display: flex;
   flex-wrap: wrap;
@@ -644,12 +643,6 @@ nav > a {
   justify-content: space-between;
   gap: var(--space-md) var(--space-xl);
   margin-bottom: var(--space-xl);
-}
-
-.title .question {
-  margin-top: var(--space-2xs);
-  max-width: var(--measure);
-  color: var(--text-dim);
 }
 
 .title .acts {
