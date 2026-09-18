@@ -1049,7 +1049,7 @@ and dependent work stops.
 | 7 | **Do `begin()`'s queries lose the UART race on artoo-esp32?** Section 14.5. #396: `begin()` uses GPIO-sampled RX and does not open UART2. | Firmware race closed. A boot-link listen against a fitted module is still a community report, not a ticket. |
 | 8 | **Should `sendQuery()` skip leading non-`'='` bytes?** Section 14.6. #396: `readLine()` skips `'X'`/`'x'`/`'E'` until `'='`. | Done in firmware. Native IO-seam tests cover the skip. |
 | 9 | **Is `AUDIO_TRACK_HAPPY = 3` right?** Section 9.2. It sits in the community's *general* band, not the *happy* band, while every other named default lands where the table says. | An operator decision about which clip should answer `$H`, not a research result. |
-| 10 | **Does anything test that the Device row is hidden for a `0x0D` module?** `test_sound_capability_consumers_340.js` pins `TRACK_COUNT` both ways but not `DEVICE_TYPE`. | Add the mirror case to the existing web test; it is four lines beside the ones already there. |
+| 10 | **Does anything test that the Device row is hidden for a `0x0D` module?** `test_sound_capability_consumers.js` pins `TRACK_COUNT` both ways but not `DEVICE_TYPE`. | Add the mirror case to the existing web test; it is four lines beside the ones already there. |
 
 ## 17. Sources
 
@@ -1088,7 +1088,7 @@ and dependent work stops.
   `include/audio_dollar_parser.h`, `data/sound.js`
 - `test/test_native/test_audio_mp3trigger/`, `test_audio_io_seam/`,
   `test_audio_sound_member/`, `test_component_registry/`,
-  `test/test_web/test_sound_capability_consumers_340.js`
+  `test/test_web/test_sound_capability_consumers.js`
 - `docs/sound_playback.md`, `docs/api.md`, `docs/status.md`, `docs/goal.md`,
   `CONTEXT.md`, ADR 0027, ADR 0042
 - [`dy-sv5w-sound.md`](dy-sv5w-sound.md), [`dfplayer-mini-sound.md`](dfplayer-mini-sound.md)

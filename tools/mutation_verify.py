@@ -19,7 +19,7 @@ file, concurrency 1:
      that does not cover exactly the test files on disk, a patched file no
      test opens, a patched file that is not data/*.js
   2. shortest-first, by the cached wall time of each file's last run here.
-     An unknown time sorts first; test_status_plate_346.js is seeded at
+     An unknown time sorts first; test_status_plate.js is seeded at
      16.1 s so it starts at the back on a cold cache
   3. one `node --test` child per file, 60 s each, under the same memory
      ceiling as the gate's web run; stop at the first clean assertion kill
@@ -93,7 +93,7 @@ LABEL_WIDTH = 34
 # HEAD on 2026-09-18 (#405). Without it a cold cache runs the 16 s file first,
 # which is the whole cost the ordering exists to avoid. Do not add the other
 # slow files here; their times arrive with their first run.
-SEED_DURATIONS_MS = {"test/test_web/test_status_plate_346.js": 16100}
+SEED_DURATIONS_MS = {"test/test_web/test_status_plate.js": 16100}
 
 # Per-file outcomes.
 KILL = "kill"

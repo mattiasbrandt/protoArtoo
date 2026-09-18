@@ -136,7 +136,10 @@ from the epic's coordination section (it changes at Phase 5 closure).
 - Fence files mechanically, not just in prose: put the exact gate invocation
   in the ticket's pinned comment — `--fenced <pathspecs>`, the `--mutations`
   expectation for web slices, and any waiver flag you are sanctioning
-  (`--expect-no-new-tests`, `--expect-no-mutations`). The gate then rejects a
+  (`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`;
+  a `data/` slice that is only copy or layout has no invariant to add, so grant
+  `--expect-no-new-tests` rather than let the worker invent a receipt). The
+  gate then rejects a
   fenced-file edit, a flat test total, or missing mutation coverage in the
   worker's own run, before review.
 
@@ -203,8 +206,10 @@ reporting passes that never ran. In the worker's worktree, personally:
 
    Then read the block itself: every changed web production JS file appears in
    the mutation table, every row KILLED, and **no waiver ACK you did not grant**
-   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations` - an
-   unsanctioned ACK is an automatic reject). Any of those disagreeing is the
+   (`--expect-gate-edit`, `--expect-no-new-tests`, `--expect-no-mutations`,
+   `--expect-test-shrink` - an unsanctioned ACK is an automatic reject; under a
+   granted `--expect-test-shrink`, read the deleted files the ACK names against
+   the list you granted). Any of those disagreeing is the
    trigger to re-run the full gate on that one slice, with the worker's exact
    invocation, and compare character for character.
 
@@ -232,12 +237,21 @@ reporting passes that never ran. In the worker's worktree, personally:
 
    The gate is a mechanical floor, and it is automated - running it costs no
    iterations. **Do not spend rejection cycles on top of it arguing test
-   design.** Never reject a slice for test naming, structure, tidiness or
-   volume; ask for focused tests, not exhaustive suites. Test quality is
+   design.** Never reject a slice for test naming, structure or tidiness,
+   or for the number of real invariants it covers. Test quality is
    minor next to source quality - if a rejection is about the tests rather
    than the code, it had better be because the tests prove nothing, not
    because they could be prettier. Iteration spent on test design is
    iteration not spent on the change itself.
+
+   **Ticket receipts are the exception, and they are a reject** (#406,
+   `test/test_web/README.md` "What earns a test here"): web tests that
+   transcribe the acceptance list - copy, heading words, chip order, timing
+   constants, visual anatomy - a `test_*_<ticket>.js` as the slice's only
+   coverage, or a mutation patch per checkbox. Ask for the one invariant
+   (safety, a shipped defect, harness-only) in the surface's file with one
+   kill, and for the rest to be deleted, not tidied. An ugly name on a real
+   invariant still passes.
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,

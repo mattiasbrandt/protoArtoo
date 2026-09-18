@@ -190,7 +190,7 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
     // surface run on its own needs it the way it needs PAApi or PABootstrap
     // (data/shell.js, estopIsLatched). It is stated here rather than lifted,
     // because shell.js is an IIFE that needs a whole frame to evaluate -- and
-    // test_shell_estop_359.js holds this copy to the shipped one by booting
+    // test_shell_estop.js holds this copy to the shipped one by booting
     // the real shell and comparing both against the same frames, so the pair
     // cannot drift silently.
     PAEstop: { isLatched: (status) => status.estop === true },

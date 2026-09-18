@@ -6,6 +6,37 @@ mode is the **vacuous test** - a test that cannot fail. Work from this
 assumption: your suite is vacuous until a mutation of production code turns it
 red.
 
+## What earns a test here
+
+A web test earns its place the way a bench row does (AGENTS.md "Verification
+Scale"). It is one of three things:
+
+1. A **safety invariant** the change could violate. `the sheet writes nothing
+   to the droid`. A frame missing a safety field is not read as safe. E-Stop
+   cannot be cancelled by someone else's abort.
+2. A **defect this repo has actually shipped.** #148 and #149 are the model:
+   the test is red on the bad commit.
+3. A behaviour **only the harness can see**: who owns an abort, what a session
+   does, that a surface does not write.
+
+Everything else is a **ticket test** - the acceptance list typed out as
+`test()` blocks - and does not get written. Copy, heading words, chip order, a
+1500 ms window, visual anatomy, emoji-or-word, an implementation helper: the
+operator is looking at the screen, and the critic reads the production diff.
+Those stay on the ticket.
+
+The check: is the test still true after the issue number is forgotten? If it
+only restates what the ticket asked for this week, it is a receipt.
+
+One invariant, in a file named for the surface or the contract
+(`test_status_plate.js`, `test_paapi_cancellation.js`), never for the ticket.
+The ticket number may sit in a comment. When the surface already has a file,
+add to it. Plus **one** mutation that kills it. A slice that touches `data/`
+still adds at least one test (the gate's `delta +0` floor); that floor is one
+test, not one per checkbox.
+
+## Mutations
+
 A **mutation** is a small bug planted in production code on purpose - invert a
 flag, delete a stop() call - to test the tests: if the suite stays green with
 the bug in place, the tests are vacuous for that behavior. A good suite
@@ -62,26 +93,29 @@ likely-set, no stop-early - for debugging a verdict you do not believe.
 - **vm-hosting the browser host:** `unref()` every timer the code under test
   schedules, or its retry clock holds the `node:test` process open forever.
 
-## Prove the suite can fail - required before reporting green
+## Prove the test can fail - required before reporting green
 
-1. **Calibrate against the known-bad commit.** Extract the pre-fix files
-   (`git show <bad>:data/<module>.js`) into a scratch tree beside a copy of the
-   new tests and run them there. The tests covering the defect must be red; a
-   test that passes on the bad commit covers nothing.
-2. **Mutate production code, never assertions.** One mutation at a time, each
-   reverting one fix aspect; every mutation must turn at least one test red.
-   Include **stealth mutations** - behavior changes that leave every asserted
-   string byte-identical (invert a flag assignment, swap a return value). These
-   are what defeat source-text assertions.
-3. **Pristine green on both sides.** Full suite green before mutating and after
-   restoring. Commit the fix before running any script that restores files via
-   `git checkout` - restore targets the last commit, and uncommitted work is
-   wiped silently.
+One kill per changed `data/*.js` file. Not one per checkbox, not one per
+aspect of the fix.
 
-Report the calibration result alongside the green run; mutation evidence is
-the gate block itself, run with `--mutations`. If a mutation turns nothing
-red, fix the test - a gap explained away ("logically correct per the
-specification") is how both rejected attempts shipped.
+1. **Mutate production code, never assertions.** Plant the bug that breaks the
+   invariant you wrote the test for, and watch that test go red. That patch is
+   the one the gate runs.
+2. **For a bug fix, run the new test against the known-bad commit.** Extract
+   the pre-fix files (`git show <bad>:data/<module>.js`) into a scratch tree
+   beside a copy of the new test. It must be red there; a test that passes on
+   the bad commit covers nothing.
+3. **Commit before running anything that restores files via `git checkout`** -
+   restore targets the last commit, and uncommitted work is wiped silently.
+
+A **stealth mutation** - a behavior change that leaves every asserted string
+byte-identical (invert a flag assignment, swap a return value) - is the tool
+for one risk: a test that asserts source text. Reach for it when that is the
+risk. It is not a quota.
+
+Mutation evidence is the gate block itself, run with `--mutations`. If the
+mutation turns nothing red, fix the test - a gap explained away ("logically
+correct per the specification") is how both rejected attempts shipped.
 
 ## Traps that shipped real bugs here
 
