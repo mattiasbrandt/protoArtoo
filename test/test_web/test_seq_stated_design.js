@@ -276,7 +276,7 @@ test("a builder on their own build is not shown a drawing of somebody else's dro
 
   assert.doesNotMatch(html, /dome-svg-picker/, "the MK4 drawing was shown as this builder's dome");
   // And the empty picker says why, rather than leaving a gap.
-  assert.match(html, /Dome not reachable — no built-in map for the dome design you stated/);
+  assert.match(html, /Dome not reachable\. No built-in map for your dome design/);
   // The container itself stays: it is what a dome reconnect re-renders through.
   assert.match(html, /class="dome-picker-container"/);
 });
@@ -287,7 +287,7 @@ test("a controller that carries no Droid Build keeps the behaviour it had", asyn
   const { html } = await openWithBuild({});
 
   assert.match(html, /dome-svg-picker/);
-  assert.match(html, /Dome not reachable — showing built-in MK4 layout/);
+  assert.match(html, /Dome not reachable\. Showing the built-in MK4 map/);
 });
 
 test("the first open draws nobody's dome until the hierarchy has answered", async () => {
@@ -305,7 +305,7 @@ test("the first open draws nobody's dome until the hierarchy has answered", asyn
   // reopening anything: DomeLayout.onChange() re-renders it.
   await page.settle();
   assert.doesNotMatch(fields.innerHTML, /Checking which dome you built/);
-  assert.match(fields.innerHTML, /no built-in map for the dome design you stated/);
+  assert.match(fields.innerHTML, /No built-in map for your dome design/);
 });
 
 test("an unsupported schema no longer claims a drawing it is not showing", async () => {
@@ -318,5 +318,5 @@ test("an unsupported schema no longer claims a drawing it is not showing", async
 
   assert.doesNotMatch(html, /dome-svg-picker/);
   assert.match(html, /schema 99 not supported/);
-  assert.doesNotMatch(html, /showing built-in MK4 layout/);
+  assert.doesNotMatch(html, /Showing the built-in MK4 map/);
 });

@@ -301,7 +301,7 @@
         html += sequences.map((seq) => renderSeqCard(seq)).join("");
       } else {
         html += '<h3 class="seq-section-heading">Your sequences</h3>';
-        html += '<p class="prose seq-section-empty"><b>Nothing of your own yet.</b> Tune one of the factory sequences below and it lands here.</p>';
+        html += '<p class="hint seq-section-empty"><b>Nothing of your own yet.</b> Tune a factory sequence below and it lands here.</p>';
       }
 
       // "Factory sequences" section
@@ -1093,12 +1093,12 @@
             // version), so "not reachable" would send the operator chasing the wrong
             // problem. Show the schema warning for that case.
             if (!layoutAnswered) {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built — the panel map follows</div>`;
+              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built. The panel map follows.</div>`;
             } else if (layoutSource === 'unsupported') {
               const schemaWarning = window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported");
               sourceNotice = showsBuiltIn
-                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — showing built-in MK4 layout</div>`
-                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — and no built-in map for the dome design you stated</div>`;
+                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. Showing the built-in MK4 map.</div>`
+                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. No built-in map for your dome design.</div>`;
             } else if (!showsBuiltIn) {
               // Two different jobs for the builder, so two different sentences - the
               // same two the dashboard's dome card gives (data/dome_control.js): one
@@ -1106,10 +1106,10 @@
               // your dome carries at all", and only the second sends somebody to the
               // design files.
               sourceNotice = domeLayout.complementKnown === false
-                ? `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — this build does not know which panels that dome design carries</div>`
-                : `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — no built-in map for the dome design you stated</div>`;
+                ? `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. This build does not know which panels your dome carries.</div>`
+                : `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. No built-in map for your dome design.</div>`;
             } else {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
+              sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. Showing the built-in MK4 map.</div>`;
             }
           }
 
@@ -1676,22 +1676,22 @@
     let message = "";
     if (severity === "disabled") {
       const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : "";
-      message = `${elementId} is disabled on the connected dome${reason} — this step still runs, but the dome may ignore it.`;
+      message = `${elementId} is disabled on the dome${reason}. The step runs; the dome may ignore it.`;
     } else if (severity === "inactive") {
-      message = `${elementId} is not currently active — this step still runs, but the dome may ignore it.`;
+      message = `${elementId} is not active. The step runs; the dome may ignore it.`;
     } else if (severity === "in_layout_false") {
-      message = `${elementId} is not in the selected layout — this step still runs, but may not be available.`;
+      message = `${elementId} is not in the selected layout. The step runs, but may do nothing.`;
     } else if (severity === "unverified") {
-      message = `${elementId} availability unverified — this step still runs, but the dome state is unknown.`;
+      message = `${elementId} is not confirmed on the dome. The step runs anyway.`;
     } else if (severity === "unmapped") {
-      message = `${elementId} is unmapped to command targets — this step cannot be authored.`;
+      message = `No command reaches ${elementId}, so this step cannot be authored.`;
     } else {
-      message = `${elementId} is not available — this step may not execute as expected.`;
+      message = `${elementId} is not available. This step may not run as expected.`;
     }
 
     // Special case: excluded-but-active diagnostic
     if (elem.in_layout === false && elem.active === true) {
-      message = `${elementId} is excluded from the selected layout but the dome reports it active (layout/runtime mismatch) — this step may behave unexpectedly.`;
+      message = `${elementId} is out of the selected layout, but the dome says it is active. This step may misbehave.`;
     }
 
     return message;
