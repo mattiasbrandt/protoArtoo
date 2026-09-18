@@ -2,9 +2,9 @@
 // data/configuration.js
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
-// The hardware component toggles and their component types, the LED strip
-// route, the Body Controller picture and the droid's name. Auto-saves on every
-// change.
+// The Droid Build, the hardware component toggles and their component types,
+// the LED strip route, the Body Controller picture and the droid's name.
+// Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
 // questions are these same controls (data/setup.js, which this surface also
@@ -801,6 +801,9 @@ const BOARD_LABELS = {
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
       renderFeatures(result.data);
+      // The Droid Build rides on the same payload, so the step below draws the
+      // droid's own answer without asking the controller a second time.
+      window.DroidBuild?.adopt(result.data);
     } catch (error) {
       console.error("[configuration] loadFeatures failed:", error);
       setFeatureFeedback(`Failed to load component settings: ${window.PAApi.messageFor(error)}`, "error");
@@ -945,6 +948,13 @@ const BOARD_LABELS = {
 
 
   initSegmentedTypeControls();
+  // The Droid Build step, drawn into its host on this surface; guided Setup
+  // shows that same host as a step of its run (data/setup.js).
+  window.DroidBuildPicker?.mount({
+    body: document.getElementById("droid-build-body"),
+    summary: document.getElementById("droid-build-summary"),
+    feedback: document.getElementById("droid-build-feedback"),
+  });
   window.PAFeatureAvailability.subscribe(() => {
     updateAllToggleStatuses();
     updateEnabledSummary();

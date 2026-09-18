@@ -7675,3 +7675,95 @@ body[data-page="wiring"] .wiring-tier > * + * {
   font-size: var(--fs-hint);
   color: var(--text-faint);
 }
+
+
+/* ---------------------------------------------------------------------------
+   The Droid Build step (#368): a Dome Design and a Body Design, each a row of
+   design cards with its variant under it (data/droid_build_picker.js).
+
+   Its own block, added whole, so no shared rule above changes. The variant row
+   is the shared .seg control and the roadmap card takes the shared "settled
+   no" treatment (.availability-settled-no); nothing here restyles either.
+
+   THE CHOSEN CARD IS LIT BY THE INTERACTION BLUE, because it is a selection
+   and nothing else (docs/ui-copy-voice.md rule 20). A roadmap card is not a
+   dimmer version of a button: it is a plate with no hover, no pointer and no
+   focus ring, because there is nothing on it to press.
+   --------------------------------------------------------------------------- */
+.droid-build-half + .droid-build-half {
+  margin-top: var(--space-lg);
+}
+
+.droid-build-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-sm);
+  margin-block: var(--space-sm);
+}
+
+.droid-build-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-cell);
+  text-align: left;
+}
+
+button.droid-build-card {
+  cursor: pointer;
+}
+
+button.droid-build-card:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+button.droid-build-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.droid-build-card.is-chosen {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+  color: var(--text);
+}
+
+/* Before the droid's answer has been read, a card is not a control yet. */
+button.droid-build-card:disabled {
+  cursor: default;
+}
+
+.droid-build-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.droid-build-card-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.droid-build-card-blurb {
+  line-height: 1.5;
+}
+
+.droid-build-variants {
+  max-width: 360px;
+  margin-bottom: var(--space-sm);
+}
+
+.droid-build-unknown,
+.droid-build-dome-differs,
+.droid-build-boundary {
+  margin-block: var(--space-sm);
+}
