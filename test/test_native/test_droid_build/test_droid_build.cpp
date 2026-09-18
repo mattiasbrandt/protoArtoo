@@ -60,14 +60,15 @@ void test_a_fresh_controller_starts_on_the_pre_selected_design(void) {
     TEST_ASSERT_EQUAL_UINT32(DROID_BUILD_DEFAULT_FITTED_COUNT,
                              (uint32_t)droidFittedPartsCount(build.fitted));
     TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "pie1"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "utilUp"));
+    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "bodyPanel1"));
 }
 
 void test_a_common_addition_is_not_seeded_by_any_design(void) {
     const DroidBuildConfig build = defaults();
-    // The four arms with no CAD name belong to no design, so a fresh controller
-    // does not claim they are on the droid - the builder fits them.
-    for (const char* id : {"gripArm", "gripClaw", "interArm", "interTool"}) {
+    // Every arm is optional and belongs to no design - the two utility arms
+    // included since the operator's verified mapping (#409) - so a fresh
+    // controller does not claim any is on the droid; the builder fits them.
+    for (const char* id : {"gripArm", "gripClaw", "interArm", "interTool", "utilUp", "utilLo"}) {
         TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, id));
         // ... and they are still Parts this build can name.
         TEST_ASSERT_TRUE(droidPartIdIsKnown(id));
@@ -108,8 +109,11 @@ void test_a_part_this_build_cannot_name_is_not_fitted(void) {
 // ── The vocabulary gate on a stated design ───────────────────────────────────
 
 void test_a_design_the_catalog_declares_is_known_at_its_own_variants(void) {
-    TEST_ASSERT_TRUE(droidDesignVariantIsKnown("mk4", "simple"));
+    TEST_ASSERT_TRUE(droidDesignVariantIsKnown("mk4", "basic"));
     TEST_ASSERT_TRUE(droidDesignVariantIsKnown("mk4", "complex"));
+    // `simple` is no longer a variant: it is the spelling `basic` was stored
+    // under, and it is read as `basic` on the way in (test below), never kept.
+    TEST_ASSERT_FALSE(droidDesignVariantIsKnown("mk4", "simple"));
     TEST_ASSERT_FALSE(droidDesignVariantIsKnown("mk4", "ornate"));
     // A design with no variant set is answered with no variant, and an empty
     // string is that answer rather than a missing one.
@@ -141,9 +145,25 @@ void test_an_id_too_long_for_the_field_is_refused_not_truncated(void) {
 
 // ── The stored form ──────────────────────────────────────────────────────────
 
+// A droid or a backup that answered before MK4's sparse variant was renamed
+// stored `simple`. It reads back as `basic`, never reset to the default: that
+// would quietly change what a builder said their droid is (#409).
+void test_a_stored_legacy_variant_reads_as_the_variant_it_became(void) {
+    DroidDesignChoice choice = {};
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&choice, "mk4", "simple"));
+    TEST_ASSERT_EQUAL_STRING("mk4", choice.design);
+    TEST_ASSERT_EQUAL_STRING("basic", choice.variant);
+    TEST_ASSERT_TRUE(droidDesignChoiceIsKnown(choice));
+    // Only the design that renamed it: another design's `simple` is not
+    // rewritten, and stays unknown.
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&choice, "own", "simple"));
+    TEST_ASSERT_EQUAL_STRING("simple", choice.variant);
+    TEST_ASSERT_FALSE(droidDesignChoiceIsKnown(choice));
+}
+
 void test_every_field_round_trips_through_storage(void) {
     DroidBuildConfig saved = defaults();
-    TEST_ASSERT_TRUE(droidDesignChoiceSet(&saved.dome, "mk4", "simple"));
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&saved.dome, "mk4", "basic"));
     TEST_ASSERT_TRUE(droidDesignChoiceSet(&saved.body, "own", ""));
     TEST_ASSERT_TRUE(droidFittedPartsFit(&saved.fitted, "gripArm"));
 
@@ -158,7 +178,7 @@ void test_every_field_round_trips_through_storage(void) {
 
     TEST_ASSERT_TRUE(droidBuildRepairReportIsClean(report));
     TEST_ASSERT_EQUAL_STRING("mk4", loaded.dome.design);
-    TEST_ASSERT_EQUAL_STRING("simple", loaded.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("basic", loaded.dome.variant);
     TEST_ASSERT_EQUAL_STRING("own", loaded.body.design);
     TEST_ASSERT_EQUAL_STRING("", loaded.body.variant);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)droidFittedPartsCount(saved.fitted),
@@ -307,6 +327,7 @@ int main(int, char**) {
     RUN_TEST(test_a_mismatched_pairing_is_an_ordinary_droid);
     RUN_TEST(test_an_id_too_long_for_the_field_is_refused_not_truncated);
 
+    RUN_TEST(test_a_stored_legacy_variant_reads_as_the_variant_it_became);
     RUN_TEST(test_every_field_round_trips_through_storage);
     RUN_TEST(test_a_controller_that_has_never_been_answered_takes_the_default);
     RUN_TEST(test_a_droid_with_nothing_fitted_is_an_answer_and_survives);

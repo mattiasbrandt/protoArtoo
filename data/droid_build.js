@@ -27,8 +27,10 @@
  * catalog records as unknown carries `seeds: null`, never `[]`; `own`
  * legitimately carries `[]`. Seeding nothing silently from the first is the
  * one outcome that is wrong, so this module reports it as `unknownComplement`
- * and fits nothing, rather than quietly producing an empty droid. `mk4/simple`
- * is that case today.
+ * and fits nothing, rather than quietly producing an empty droid. A variant
+ * may also give its seeds per half, `{dome, body}`, when one half is known and
+ * the other is not: `mk4/basic` knows its body and not yet its dome (#409), so
+ * a Basic body seeds and a Basic dome reports unknownComplement.
  */
 
 (function () {
@@ -98,6 +100,11 @@
       seeds = variant ? variant.seeds : undefined;
     } else {
       seeds = design.seeds;
+    }
+    // A per-half pair answers each half on its own: one half can be read out
+    // of the design files while the other is not yet (#409).
+    if (seeds && !Array.isArray(seeds) && typeof seeds === 'object') {
+      seeds = seeds[half];
     }
     // null is the catalog's declared unknown and undefined is a variant this
     // design does not publish; neither is an empty complement.

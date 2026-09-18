@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 3ae06f66274e5dde4fb0f2b3a4673aa2e36e982c2519cae4493f3aba9a4e3028
+// Source digest: sha256 2d0698665c77a0fbe277e816ffa0ec2384ea06814a3fa40b3df77a20d378dd0a
 //
 // The Droid Parts Catalog's id vocabulary, and only that. A Part is
 // identity; an Output Address is only wiring, so there is no parts table
@@ -46,7 +46,7 @@
 #include <stddef.h>
 #include <string.h>
 
-constexpr size_t DROID_PART_COUNT = 58;
+constexpr size_t DROID_PART_COUNT = 65;
 
 // The longest id here, so a consumer sizing a buffer against the vocabulary
 // reads the number rather than counting the table.
@@ -87,13 +87,20 @@ inline constexpr const char* const DROID_PART_IDS[DROID_PART_COUNT] = {
     "hp3Tilt",  // holoprojectors
     "domeBtn1",  // dome_fixtures
     "domeBtn2",  // dome_fixtures
+    "bodyPanel1",  // body_doors
+    "bodyPanel2",  // body_doors
+    "bodyPanel3",  // body_doors
+    "bodyPanel4",  // body_doors
+    "bodyPanel5",  // body_doors
+    "bodyPanel6",  // body_doors
+    "bodyPanel7",  // body_doors
+    "bodyPanel8",  // body_doors
     "chargebay",  // body_doors
     "dataport",  // body_doors
     "doorFL",  // body_doors
     "doorFR",  // body_doors
     "doorRL",  // body_doors
     "doorRR",  // body_doors
-    "drawer",  // body_doors
     "smallDoor",  // body_doors
     "gripArm",  // body_arms
     "gripClaw",  // body_arms
@@ -159,14 +166,14 @@ inline const char* droidPartIdAt(size_t index) {
 // an MK4 dome is an ordinary droid rather than an error, so nothing below
 // compares one half against the other (ADR 0047, #333).
 // -----------------------------------------------------------------------------
-constexpr size_t DROID_DESIGN_COUNT = 2;
+constexpr size_t DROID_DESIGN_COUNT = 3;
 
 // The longest design id and the longest variant id, so a struct storing an
 // answer sizes its fields against the vocabulary rather than against a guess.
-constexpr size_t DROID_DESIGN_ID_MAX_LEN = 3;
+constexpr size_t DROID_DESIGN_ID_MAX_LEN = 4;
 constexpr size_t DROID_VARIANT_ID_MAX_LEN = 7;
 
-inline constexpr const char* const DROID_DESIGN_VARIANTS_MK4[] = {"simple", "complex"};
+inline constexpr const char* const DROID_DESIGN_VARIANTS_MK4[] = {"basic", "complex"};
 
 // A design and the variant set that is its own. `variants` is nullptr where a
 // design declares none, which is a different statement from an empty set: the
@@ -179,6 +186,7 @@ struct DroidDesignRow {
 
 inline constexpr DroidDesignRow DROID_DESIGNS[DROID_DESIGN_COUNT] = {
     {"mk4", DROID_DESIGN_VARIANTS_MK4, 2},
+    {"mk41", nullptr, 0},
     {"own", nullptr, 0},
 };
 
@@ -222,6 +230,43 @@ inline bool droidDesignVariantIsKnown(const char* designId, const char* variant)
 }
 
 // -----------------------------------------------------------------------------
+// The spellings a variant was stored under before it was renamed
+//
+// A Droid Build is stored verbatim on the device and in every backup, so a
+// renamed variant keeps its old spelling readable here rather than resetting
+// every droid that answered it (the catalog's `legacy_ids`, #409).
+// -----------------------------------------------------------------------------
+struct DroidVariantLegacyRow {
+    const char* design;
+    const char* legacy;
+    const char* variant;
+};
+
+constexpr size_t DROID_VARIANT_LEGACY_COUNT = 1;
+
+inline constexpr DroidVariantLegacyRow DROID_VARIANT_LEGACY[DROID_VARIANT_LEGACY_COUNT] = {
+    {"mk4", "simple", "basic"},
+};
+
+// -----------------------------------------------------------------------------
+// droidDesignVariantCanonical()
+// The variant id a stored spelling names today: the input itself unless it is
+// a legacy spelling of this design's, in which case the variant it became.
+// -----------------------------------------------------------------------------
+inline const char* droidDesignVariantCanonical(const char* designId, const char* variant) {
+    if (designId == nullptr || variant == nullptr) {
+        return variant;
+    }
+    for (size_t i = 0; i < DROID_VARIANT_LEGACY_COUNT; ++i) {
+        if (strcmp(DROID_VARIANT_LEGACY[i].design, designId) == 0 &&
+            strcmp(DROID_VARIANT_LEGACY[i].legacy, variant) == 0) {
+            return DROID_VARIANT_LEGACY[i].variant;
+        }
+    }
+    return variant;
+}
+
+// -----------------------------------------------------------------------------
 // The answer a fresh controller starts on
 //
 // The catalog's pre-selected design at its own default variant, for both
@@ -236,7 +281,7 @@ inline bool droidDesignVariantIsKnown(const char* designId, const char* variant)
 constexpr const char* DROID_BUILD_DEFAULT_DESIGN = "mk4";
 constexpr const char* DROID_BUILD_DEFAULT_VARIANT = "complex";
 
-constexpr size_t DROID_BUILD_DEFAULT_FITTED_COUNT = 44;
+constexpr size_t DROID_BUILD_DEFAULT_FITTED_COUNT = 49;
 
 inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DEFAULT_FITTED_COUNT] = {
     "pie1",
@@ -278,9 +323,14 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
     "doorRL",
     "doorRR",
     "dataport",
-    "chargebay",
     "smallDoor",
-    "drawer",
-    "utilUp",
-    "utilLo",
+    "chargebay",
+    "bodyPanel1",
+    "bodyPanel2",
+    "bodyPanel3",
+    "bodyPanel4",
+    "bodyPanel5",
+    "bodyPanel6",
+    "bodyPanel7",
+    "bodyPanel8",
 };

@@ -127,7 +127,7 @@ class GeneratorRefusals(unittest.TestCase):
 
     def test_a_scalar_seeds_value_that_is_not_the_declared_unknown(self):
         """`TBD` is the one permitted non-list; anything else is a typo."""
-        self.scratch.edit("\n        seeds: TBD", "\n        seeds: soon")
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
         self.assertRefused("neither a list nor TBD")
 
     def test_a_design_with_variants_and_no_default(self):
@@ -167,8 +167,23 @@ class GeneratorRefusals(unittest.TestCase):
     def test_a_design_pre_selected_onto_a_complement_nobody_has_read(self):
         """Pre-selecting a variant whose seeds are TBD would bring a fresh
         controller up claiming a design and fitting nothing."""
-        self.scratch.edit("default_variant: complex", "default_variant: simple")
+        self.scratch.edit("default_variant: complex", "default_variant: basic")
         self.assertRefused("cannot start on a complement nobody has read")
+
+    def test_a_part_seeded_into_the_wrong_half(self):
+        """A per-half complement is split by the section a part is declared in;
+        a dome part listed as body would be fitted to the wrong Design (#409)."""
+        self.scratch.edit(
+            "body: [doorFL, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]",
+            "body: [pie1, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]",
+        )
+        self.assertRefused("seeds parts that are not in the body half")
+
+    def test_a_legacy_spelling_that_is_also_a_live_variant(self):
+        """A stored answer must name one variant: a legacy id that is also a
+        live variant id would mean two things on the way in (#409)."""
+        self.scratch.edit("legacy_ids: [simple]", "legacy_ids: [complex]")
+        self.assertRefused("legacy_ids that are ambiguous")
 
     def test_a_design_id_that_is_not_an_identifier(self):
         """A design id is stored verbatim in device config and becomes a C
@@ -189,13 +204,13 @@ class GeneratorRefusals(unittest.TestCase):
     def test_every_problem_is_reported_in_one_pass(self):
         """A broken catalog is fixed once, not one message per run."""
         self.scratch.edit("id: doorFL,", "id: door-FL,")
-        self.scratch.edit("\n        seeds: TBD", "\n        seeds: soon")
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
         problems = self.assertRefused("is not an unquoted identifier")
         self.assertIn("neither a list nor TBD", problems)
 
     def test_a_bad_catalog_writes_nothing(self):
         """Refusal happens before any output is written (tools/build.js:31)."""
-        self.scratch.edit("\n        seeds: TBD", "\n        seeds: soon")
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
         with self.assertRaises(gen.CatalogError):
             self.scratch.generate()
         self.assertFalse(self.scratch.firmware.exists())
@@ -211,7 +226,7 @@ class GeneratorRefusals(unittest.TestCase):
             text.replace("control: body-ledc", "control: dome-link"), encoding="utf-8"
         )
         after, _ = self.scratch.generate()
-        self.assertIn("DROID_PART_COUNT = 58", after)
+        self.assertIn("DROID_PART_COUNT = 65", after)
         self.assertEqual(
             [line for line in after.splitlines() if "Source digest" not in line],
             [line for line in before.splitlines() if "Source digest" not in line],
@@ -292,9 +307,12 @@ class GeneratorPromises(unittest.TestCase):
         _, browser = self.scratch.generate()
         payload = browser_payload(browser)
         self.assertNotIn("TBD", json.dumps(payload))
-        simple = payload["designs"][0]["variants"][0]
-        self.assertEqual(simple["id"], "simple")
-        self.assertIsNone(simple["seeds"], "an unknown complement must not be an empty one")
+        basic = payload["designs"][0]["variants"][0]
+        self.assertEqual(basic["id"], "basic")
+        # Per half (#409): the unknown dome half is null, never [], while the
+        # known body half is a list.
+        self.assertIsNone(basic["seeds"]["dome"], "an unknown complement must not be an empty one")
+        self.assertIsInstance(basic["seeds"]["body"], list)
 
     def test_both_outputs_carry_the_stamp_and_their_provenance(self):
         firmware, browser = self.scratch.generate()
@@ -402,7 +420,7 @@ class GeneratorPromises(unittest.TestCase):
         self.assertIn("data/droid_parts.js", help_text)
 
     def test_a_refusal_exits_one_and_says_every_problem_on_stderr(self):
-        self.scratch.edit("\n        seeds: TBD", "\n        seeds: soon")
+        self.scratch.edit("\n          dome: TBD", "\n          dome: soon")
         # Every path the entry point resolves is pointed at the scratch tree, so
         # a run that unexpectedly succeeded still could not touch the repo.
         with contextlib.ExitStack() as stack:

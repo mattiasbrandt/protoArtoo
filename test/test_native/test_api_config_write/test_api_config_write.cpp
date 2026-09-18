@@ -392,7 +392,7 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
     configCacheApplyDroidBuild(before);
 
     const WebRequestTestParam params[] = {
-        {"domeDesign", "mk4"}, {"domeVariant", "simple"},
+        {"domeDesign", "mk4"}, {"domeVariant", "basic"},
         {"fittedParts", "utilUp,gripArm"},
     };
     WebRequestTestBackend backend;
@@ -405,7 +405,7 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     DroidBuildConfig after = {};
     configCacheReadDroidBuild(&after);
-    TEST_ASSERT_EQUAL_STRING("simple", after.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("basic", after.dome.variant);
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(after.fitted));
     // The half the request said nothing about is untouched: changing a Dome
     // Design says nothing about the body.
@@ -414,8 +414,33 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
 
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
-    TEST_ASSERT_EQUAL_STRING("simple", doc["droidBuild"]["domeVariant"]);
+    TEST_ASSERT_EQUAL_STRING("basic", doc["droidBuild"]["domeVariant"]);
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
+}
+
+// A backup saved before MK4's sparse variant was renamed carries `simple`.
+// Restoring it goes through this route, and the answer lands as `basic` rather
+// than being refused or reset (#409).
+void test_a_restored_legacy_variant_lands_as_the_variant_it_became() {
+    DroidBuildConfig before = {};
+    droidBuildDefaults(&before);
+    configCacheApplyDroidBuild(before);
+
+    const WebRequestTestParam params[] = {
+        {"bodyDesign", "mk4"}, {"bodyVariant", "simple"},
+    };
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    DroidBuildConfig after = {};
+    configCacheReadDroidBuild(&after);
+    TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
+    TEST_ASSERT_EQUAL_STRING("basic", after.body.variant);
 }
 
 // The criterion this whole decision turns on, asked of the running route: after
@@ -580,6 +605,7 @@ int main() {
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
     RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
+    RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);
     RUN_TEST(test_the_part_vocabulary_is_unchanged_by_a_droid_build_write);
     RUN_TEST(test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);

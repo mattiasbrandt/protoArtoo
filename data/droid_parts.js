@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 3ae06f66274e5dde4fb0f2b3a4673aa2e36e982c2519cae4493f3aba9a4e3028
+ * Source digest: sha256 2d0698665c77a0fbe277e816ffa0ec2384ea06814a3fa40b3df77a20d378dd0a
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,20 +54,34 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "3ae06f66274e5dde4fb0f2b3a4673aa2e36e982c2519cae4493f3aba9a4e3028",
+    "sourceSha256": "2d0698665c77a0fbe277e816ffa0ec2384ea06814a3fa40b3df77a20d378dd0a",
     "designs": [
       {
         "id": "mk4",
         "label": "MrBaddeley MK4",
         "short": "MK4",
-        "blurb": "The MK4 astromech most builders here printed \u2014 six pie panels, fourteen side panels, three holoprojectors, and the body doors and utility arms that go with them.",
+        "blurb": "The MK4 astromech most builders here printed \u2014 six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.",
         "preselected": true,
         "defaultVariant": "complex",
         "variants": [
           {
-            "id": "simple",
-            "label": "Simple",
-            "seeds": null
+            "id": "basic",
+            "label": "Basic",
+            "seeds": {
+              "dome": null,
+              "body": [
+                "doorFL",
+                "doorFR",
+                "doorRL",
+                "doorRR",
+                "dataport",
+                "smallDoor",
+                "chargebay"
+              ]
+            },
+            "legacyIds": [
+              "simple"
+            ]
           },
           {
             "id": "complex",
@@ -112,14 +126,64 @@
               "doorRL",
               "doorRR",
               "dataport",
-              "chargebay",
               "smallDoor",
-              "drawer",
-              "utilUp",
-              "utilLo"
+              "chargebay",
+              "bodyPanel1",
+              "bodyPanel2",
+              "bodyPanel3",
+              "bodyPanel4",
+              "bodyPanel5",
+              "bodyPanel6",
+              "bodyPanel7",
+              "bodyPanel8"
             ]
           }
         ]
+      },
+      {
+        "id": "mk41",
+        "label": "MrBaddeley MK4.1",
+        "short": "MK4.1",
+        "blurb": "MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only \u2014 pick MK4 Basic or Complex for the body.",
+        "seeds": {
+          "dome": [
+            "pie1",
+            "pie2",
+            "pie3",
+            "pie4",
+            "pie5",
+            "pie6",
+            "panel1",
+            "panel2",
+            "panel3",
+            "panel4",
+            "panel5",
+            "panel6",
+            "panel7",
+            "panel8",
+            "panel9",
+            "panel10",
+            "panel11",
+            "panel12",
+            "panel13",
+            "panel14",
+            "magicPanel",
+            "upperPanel",
+            "psiRear",
+            "logicRear",
+            "logicFront",
+            "psiFront",
+            "hp1Pan",
+            "hp1Tilt",
+            "hp2Pan",
+            "hp2Tilt",
+            "hp3Pan",
+            "hp3Tilt",
+            "domeBtn1",
+            "domeBtn2"
+          ],
+          "body": []
+        }
       },
       {
         "id": "own",
@@ -646,116 +710,200 @@
       },
       {
         "index": 34,
+        "id": "bodyPanel1",
+        "section": "body_doors",
+        "name": "Body panel 1",
+        "half": "body",
+        "aliases": [
+          "Body panel 1"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 35,
+        "id": "bodyPanel2",
+        "section": "body_doors",
+        "name": "Body panel 2",
+        "half": "body",
+        "aliases": [
+          "Body panel 2"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 36,
+        "id": "bodyPanel3",
+        "section": "body_doors",
+        "name": "Body panel 3",
+        "half": "body",
+        "aliases": [
+          "Body panel 3"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 37,
+        "id": "bodyPanel4",
+        "section": "body_doors",
+        "name": "Body panel 4",
+        "half": "body",
+        "aliases": [
+          "Body panel 4"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 38,
+        "id": "bodyPanel5",
+        "section": "body_doors",
+        "name": "Body panel 5",
+        "half": "body",
+        "aliases": [
+          "Body panel 5"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 39,
+        "id": "bodyPanel6",
+        "section": "body_doors",
+        "name": "Body panel 6",
+        "half": "body",
+        "aliases": [
+          "Body panel 6"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 40,
+        "id": "bodyPanel7",
+        "section": "body_doors",
+        "name": "Body panel 7",
+        "half": "body",
+        "aliases": [
+          "Body panel 7"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 41,
+        "id": "bodyPanel8",
+        "section": "body_doors",
+        "name": "Body panel 8",
+        "half": "body",
+        "aliases": [
+          "Body panel 8"
+        ],
+        "control": "none"
+      },
+      {
+        "index": 42,
         "id": "chargebay",
         "section": "body_doors",
         "name": "Chargebay door",
         "half": "body",
         "aliases": [
           "Chargebay door",
-          "Charge bay"
+          "Charge bay",
+          "Charge Bay"
         ],
         "position": "front-right",
         "control": "none",
         "cadName": "ChargingBayDoor"
       },
       {
-        "index": 35,
+        "index": 43,
         "id": "dataport",
         "section": "body_doors",
         "name": "Dataport door",
         "half": "body",
         "aliases": [
           "Dataport door",
-          "Dataport"
+          "Dataport",
+          "Data Port",
+          "Large Data Port (LDP)",
+          "LDP"
         ],
         "position": "front-left",
         "control": "none",
         "cadName": "DataPortDoor"
       },
       {
-        "index": 36,
+        "index": 44,
         "id": "doorFL",
         "section": "body_doors",
         "name": "Left body door",
         "half": "body",
         "aliases": [
           "Left body door",
-          "FL door"
+          "FL door",
+          "Left Front Breadpan"
         ],
         "position": "front-left",
         "control": "none",
         "cadName": "FLBreadpanDoor"
       },
       {
-        "index": 37,
+        "index": 45,
         "id": "doorFR",
         "section": "body_doors",
         "name": "Right body door",
         "half": "body",
         "aliases": [
           "Right body door",
-          "FR door"
+          "FR door",
+          "Right Front Breadpan"
         ],
         "position": "front-right",
         "control": "none",
         "cadName": "FRBreadpandoor"
       },
       {
-        "index": 38,
+        "index": 46,
         "id": "doorRL",
         "section": "body_doors",
         "name": "Rear-left body door",
         "half": "body",
         "aliases": [
           "Rear-left body door",
-          "RL door"
+          "RL door",
+          "Left Rear Breadpan"
         ],
         "position": "rear-left",
         "control": "none",
         "cadName": "RLBreadpanDoor"
       },
       {
-        "index": 39,
+        "index": 47,
         "id": "doorRR",
         "section": "body_doors",
         "name": "Rear-right body door",
         "half": "body",
         "aliases": [
           "Rear-right body door",
-          "RR door"
+          "RR door",
+          "Right Rear Breadpan"
         ],
         "position": "rear-right",
         "control": "none",
         "cadName": "RRBreadpandoor"
       },
       {
-        "index": 40,
-        "id": "drawer",
-        "section": "body_doors",
-        "name": "Drawer",
-        "half": "body",
-        "aliases": [
-          "Drawer"
-        ],
-        "position": "front",
-        "control": "none",
-        "cadName": "Drawer"
-      },
-      {
-        "index": 41,
+        "index": 48,
         "id": "smallDoor",
         "section": "body_doors",
         "name": "Small long door",
         "half": "body",
         "aliases": [
-          "Small long door"
+          "Small long door",
+          "Small Door"
         ],
         "position": "front",
         "control": "none",
         "cadName": "SmallLongDoor"
       },
       {
-        "index": 42,
+        "index": 49,
         "id": "gripArm",
         "section": "body_arms",
         "name": "Gripper arm",
@@ -768,7 +916,7 @@
         "cadName": null
       },
       {
-        "index": 43,
+        "index": 50,
         "id": "gripClaw",
         "section": "body_arms",
         "name": "Gripper claw",
@@ -781,7 +929,7 @@
         "cadName": null
       },
       {
-        "index": 44,
+        "index": 51,
         "id": "interArm",
         "section": "body_arms",
         "name": "Interface arm",
@@ -794,7 +942,7 @@
         "cadName": null
       },
       {
-        "index": 45,
+        "index": 52,
         "id": "interTool",
         "section": "body_arms",
         "name": "Interface tool",
@@ -807,7 +955,7 @@
         "cadName": null
       },
       {
-        "index": 46,
+        "index": 53,
         "id": "utilLo",
         "section": "body_arms",
         "name": "Lower utility arm",
@@ -820,7 +968,7 @@
         "cadName": "LowerUtilityArm"
       },
       {
-        "index": 47,
+        "index": 54,
         "id": "utilUp",
         "section": "body_arms",
         "name": "Upper utility arm",
@@ -833,7 +981,7 @@
         "cadName": "UpperUtilityArm"
       },
       {
-        "index": 48,
+        "index": 55,
         "id": "other1",
         "section": "other_slots",
         "name": "Other part 1",
@@ -841,7 +989,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 49,
+        "index": 56,
         "id": "other2",
         "section": "other_slots",
         "name": "Other part 2",
@@ -849,7 +997,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 50,
+        "index": 57,
         "id": "other3",
         "section": "other_slots",
         "name": "Other part 3",
@@ -857,7 +1005,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 51,
+        "index": 58,
         "id": "other4",
         "section": "other_slots",
         "name": "Other part 4",
@@ -865,7 +1013,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 52,
+        "index": 59,
         "id": "other5",
         "section": "other_slots",
         "name": "Other part 5",
@@ -873,7 +1021,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 53,
+        "index": 60,
         "id": "other6",
         "section": "other_slots",
         "name": "Other part 6",
@@ -881,7 +1029,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 54,
+        "index": 61,
         "id": "other7",
         "section": "other_slots",
         "name": "Other part 7",
@@ -889,7 +1037,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 55,
+        "index": 62,
         "id": "other8",
         "section": "other_slots",
         "name": "Other part 8",
@@ -897,7 +1045,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 56,
+        "index": 63,
         "id": "other9",
         "section": "other_slots",
         "name": "Other part 9",
@@ -905,7 +1053,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 57,
+        "index": 64,
         "id": "other10",
         "section": "other_slots",
         "name": "Other part 10",

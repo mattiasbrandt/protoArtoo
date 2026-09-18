@@ -84,18 +84,34 @@ test("parts already fitted are not removed when the design changes", async () =>
 test("a complement nobody has read is reported, not drawn as an empty droid", async () => {
   const page = newPage();
   const result = await page.build.applyDroidBuild(
-    { domeDesign: "mk4", domeVariant: "simple" },
+    { domeDesign: "mk4", domeVariant: "basic" },
     { persist: false }
   );
 
-  // `mk4/simple` carries `seeds: null` in the catalog: the split between
-  // MrBaddeley's simple and complex exports is recorded nowhere in this
-  // repository. Seeding nothing silently would read as "your dome carries no
-  // panels", which is a claim nobody has the evidence for.
+  // An `mk4/basic` dome carries `seeds.dome: null` in the catalog: which parts
+  // a Basic dome has is not yet read out of MrBaddeley's files (#409). Seeding
+  // nothing silently would read as "your dome carries no panels", which is a
+  // claim nobody has the evidence for.
   assert.deepEqual([...result.unknownComplement], ["dome"]);
   assert.deepEqual([...result.seeded], []);
   assert.deepEqual([...result.build.fitted], []);
-  assert.equal(page.build.complementFor("mk4", "simple", "dome").known, false);
+  assert.equal(page.build.complementFor("mk4", "basic", "dome").known, false);
+});
+
+test("a per-half complement answers each half on its own", () => {
+  // `mk4/basic` knows its body and not yet its dome (#409): asking for the
+  // body must not inherit the dome's unknown, and asking for the dome must not
+  // be answered with the body's parts.
+  const page = newPage();
+  const body = page.build.complementFor("mk4", "basic", "body");
+  assert.equal(body.known, true);
+  assert.deepEqual(
+    [...body.ids].sort(),
+    ["chargebay", "dataport", "doorFL", "doorFR", "doorRL", "doorRR", "smallDoor"]
+  );
+  const dome = page.build.complementFor("mk4", "basic", "dome");
+  assert.equal(dome.known, false);
+  assert.deepEqual([...dome.ids], []);
 });
 
 test("the boot re-apply adopts what the device holds and seeds nothing over it", async () => {

@@ -9,10 +9,10 @@ unclaimed. Both are asserted here, against the real file, because the catalog
 is the source the generator reads: a typo in a seed list would otherwise reach
 firmware as a missing part rather than as a failure here.
 
-`seeds: TBD` is a declared unknown, not a hole to fill in - the split between
-MrBaddeley's simple and complex MK4 exports is recorded nowhere in this
-repository. It is asserted as the ONLY permitted non-list form so that a
-future scalar typo is still caught.
+`seeds: TBD` is a declared unknown, not a hole to fill in - an MK4 Basic
+dome's parts are not yet read out of MrBaddeley's files. It is asserted as the
+ONLY permitted non-list form, whole or per half (`{dome, body}`, #409), so that
+a future scalar typo is still caught.
 """
 
 import sys
@@ -63,10 +63,22 @@ def common_addition_ids(doc):
 
 
 def seed_groups(design):
-    """(variant id or None, seeds) for each thing that can carry a complement."""
+    """(where, seeds) for each list that can carry a complement.
+
+    A per-half pair (#409) is two groups, one per half, so every check below
+    reads a list or the scalar TBD whichever form the catalog used.
+    """
+    groups = []
     if "variants" in design:
-        return [(v["id"], v["seeds"]) for v in design["variants"]]
-    return [(None, design["seeds"])]
+        raw = [(v["id"], v["seeds"]) for v in design["variants"]]
+    else:
+        raw = [(None, design["seeds"])]
+    for variant_id, seeds in raw:
+        if isinstance(seeds, dict):
+            groups += [(f"{variant_id}/{half}", seeds[half]) for half in ("dome", "body")]
+        else:
+            groups.append((variant_id, seeds))
+    return groups
 
 
 class DroidPartsDesigns(unittest.TestCase):
@@ -127,6 +139,11 @@ class DroidPartsDesigns(unittest.TestCase):
                 continue
             default = design["default_variant"]
             seeds = next(v["seeds"] for v in design["variants"] if v["id"] == default)
+            if isinstance(seeds, dict):
+                self.assertNotIn(
+                    "TBD", seeds.values(), f"{design['id']}/{default} has an unknown half"
+                )
+                seeds = seeds["dome"] + seeds["body"]
             self.assertIsInstance(
                 seeds, list, f"{design['id']}/{default} is the default but its seeds are {seeds!r}"
             )
@@ -154,6 +171,17 @@ class DroidPartsDesigns(unittest.TestCase):
                 self.assertEqual(
                     claimed, [], f"{design['id']}/{variant_id} seeds Common Additions: {claimed}"
                 )
+
+    def test_no_design_seeds_an_arm(self):
+        """Every body arm is optional and never fitted by default - the two
+        utility arms included (operator's verified mapping, 2026-09-18, #409)."""
+        arms = [row["id"] for row in self.doc["body_arms"]]
+        for design in self.designs:
+            for where, seeds in seed_groups(design):
+                if seeds == "TBD":
+                    continue
+                claimed = sorted(set(seeds) & set(arms))
+                self.assertEqual(claimed, [], f"{design['id']}/{where} seeds arms: {claimed}")
 
     def test_other_slots_sit_outside_every_design(self):
         prefix = self.doc["other_slots"]["id_prefix"]

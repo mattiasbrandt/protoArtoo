@@ -37,9 +37,12 @@ nothing can resolve:
     (SERVO_OUTPUT_PART_ID_MAX, include/servo_output_row.h). An id that cannot be
     stored against an output is an id no output can ever claim, and since #358
     every declared id is storable, so every declared id is measured.
-  - `seeds:` that is neither a list of declared part ids nor the scalar `TBD`.
-    `TBD` generates as `null` rather than as `[]`, so a consumer reaching for an
-    unknown complement throws instead of quietly seeding an empty droid.
+  - `seeds:` that is neither a list of declared part ids nor the scalar `TBD`,
+    nor a `{dome: ..., body: ...}` pair of those, one per half, where each id
+    belongs to the half it is listed under. `TBD` generates as `null` rather
+    than as `[]`, so a consumer reaching for an unknown complement throws
+    instead of quietly seeding an empty droid. The pair exists because one half
+    can be known while the other is not (MK4 Basic, operator 2026-09-18, #409).
   - a `kind:` outside PART_KINDS below. A Part Kind decides what a surface shows
     for a Part, so a misspelled one reads as "no kind declared" and the Part
     quietly gets the treatment of something it is not.
@@ -195,7 +198,12 @@ DESIGN_KEYS = frozenset(
     ("id", "preselected", "label", "short", "blurb", "note", "variants",
      "default_variant", "seeds")
 )
-VARIANT_KEYS = frozenset(("id", "label", "seeds"))
+# `legacy_ids`: spellings a variant was stored under before it was renamed. A
+# Droid Build is stored verbatim on the device and in every backup, so a rename
+# that dropped the old spelling would quietly reset every droid that answered
+# it. Firmware reads each legacy id as the variant it now names (#409:
+# MrBaddeley calls MK4's sparse body "Basic"; it was stored as `simple`).
+VARIANT_KEYS = frozenset(("id", "label", "seeds", "legacy_ids"))
 OTHER_SLOT_KEYS = frozenset(("count", "id_prefix", "label_prefix", "control"))
 
 # A catalog id is an unquoted identifier, the same shape
@@ -516,14 +524,45 @@ def resolve_hosts(parts, problems):
                 part[field] = host[field]
 
 
-def read_designs(doc, declared_ids, problems):
-    """The design rows, with each complement checked against the declared parts."""
+def read_designs(doc, declared_ids, problems, halves=None):
+    """The design rows, with each complement checked against the declared parts.
+
+    `halves` maps a part id to the half of the droid its section puts it in;
+    it is what a per-half complement is checked against.
+    """
+    halves = halves or {}
     designs = doc.get("designs")
     if not isinstance(designs, list) or not designs:
         problems.append("designs: missing or empty")
         return []
 
     def read_seeds(where, seeds):
+        """One list for both halves, or a {dome, body} pair where one half can
+        be known while the other is not. A pair generates as a pair, so a
+        consumer asking for one half never reads the other half's unknown."""
+        if not isinstance(seeds, dict):
+            return read_list(where, seeds)
+        if set(seeds) != {"dome", "body"}:
+            problems.append(
+                f"{where}: per-half seeds carry exactly `dome` and `body` "
+                f"(found {sorted(seeds)})"
+            )
+            return None
+        pair = {}
+        for half in ("dome", "body"):
+            ids = read_list(f"{where}/{half}", seeds[half])
+            if ids is not None:
+                stray = [i for i in ids if halves.get(i) != half]
+                if stray:
+                    problems.append(
+                        f"{where}/{half}: seeds parts that are not in the {half} "
+                        f"half: {stray}"
+                    )
+                    ids = None
+            pair[half] = ids
+        return pair
+
+    def read_list(where, seeds):
         """A list of declared part ids, or the declared unknown as null."""
         if seeds == TBD:
             return None
@@ -622,16 +661,35 @@ def read_designs(doc, declared_ids, problems):
             if "seeds" not in variant:
                 problems.append(f"{where}/{variant_id}: declares no complement")
                 continue
-            variant_rows.append(
-                {
-                    "id": variant_id,
-                    "label": label,
-                    "seeds": read_seeds(f"{where}/{variant_id}", variant["seeds"]),
-                }
-            )
+            legacy_ids = variant.get("legacy_ids", [])
+            if not isinstance(legacy_ids, list) or not all(
+                isinstance(i, str) and ID_RE.match(i) for i in legacy_ids
+            ):
+                problems.append(
+                    f"{where}/{variant_id}: legacy_ids is not a list of identifiers"
+                )
+                legacy_ids = []
+            variant_row = {
+                "id": variant_id,
+                "label": label,
+                "seeds": read_seeds(f"{where}/{variant_id}", variant["seeds"]),
+            }
+            # Emitted only where there is one: an empty list on every variant
+            # would read as a field every variant has an answer for.
+            if legacy_ids:
+                variant_row["legacyIds"] = list(legacy_ids)
+            variant_rows.append(variant_row)
         variant_ids = [v["id"] for v in variant_rows]
         if len(set(variant_ids)) != len(variant_ids):
             problems.append(f"{where}: declares a variant id twice")
+        # A legacy spelling that is also a live variant, or that two variants
+        # both claim, would make one stored answer mean two things.
+        legacy_all = [i for v in variant_rows for i in v.get("legacyIds", [])]
+        clash = sorted(
+            {i for i in legacy_all if i in variant_ids or legacy_all.count(i) > 1}
+        )
+        if clash:
+            problems.append(f"{where}: legacy_ids that are ambiguous: {clash}")
         if default_variant is None:
             problems.append(
                 f"{where}: declares variants but not which one a builder starts on"
@@ -667,6 +725,8 @@ def read_designs(doc, declared_ids, problems):
                 (v["seeds"] for v in chosen["variants"] if v["id"] == default_variant),
                 None,
             )
+            if isinstance(seeds, dict) and None in seeds.values():
+                seeds = None
             if default_variant is not None and seeds is None:
                 problems.append(
                     f"designs/{chosen['id']}: is pre-selected at variant "
@@ -697,7 +757,8 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
     declared_ids = {part["id"] for part in parts}
     parts.extend(read_other_slots(doc, control_paths, declared_ids, problems))
     resolve_hosts(parts, problems)
-    designs = read_designs(doc, declared_ids, problems)
+    halves = {part["id"]: SECTION_HALVES.get(part.get("section")) for part in parts}
+    designs = read_designs(doc, declared_ids, problems, halves)
 
     # EVERY declared id is measured, not just the ones the body drives today.
     # Since #358 the generated vocabulary is what the catalog declares, so any id
@@ -885,10 +946,28 @@ def design_header_lines(catalog):
         )
     else:
         default_seeds = preselected["seeds"]
+    # A per-half complement is emitted as one list, dome half first: firmware
+    # holds only this one complement, and load_catalog has already refused a
+    # pre-selected default with either half unknown.
+    if isinstance(default_seeds, dict):
+        default_seeds = default_seeds["dome"] + default_seeds["body"]
 
     design_id_longest = max(len(d["id"]) for d in designs)
-    variant_ids = [v["id"] for d in designs for v in d.get("variants", [])]
+    # Legacy spellings count too: a stored `simple` has to fit the field it is
+    # read into before it can be recognised and renamed.
+    variant_ids = [
+        i
+        for d in designs
+        for v in d.get("variants", [])
+        for i in [v["id"], *v.get("legacyIds", [])]
+    ]
     variant_longest = max((len(v) for v in variant_ids), default=0)
+    legacy_rows = [
+        (d["id"], legacy, v["id"])
+        for d in designs
+        for v in d.get("variants", [])
+        for legacy in v.get("legacyIds", [])
+    ]
 
     lines = [
         "// -----------------------------------------------------------------------------",
@@ -974,6 +1053,54 @@ def design_header_lines(catalog):
         "        }",
         "    }",
         "    return false;",
+        "}",
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// The spellings a variant was stored under before it was renamed",
+        "//",
+        "// A Droid Build is stored verbatim on the device and in every backup, so a",
+        "// renamed variant keeps its old spelling readable here rather than resetting",
+        "// every droid that answered it (the catalog's `legacy_ids`, #409).",
+        "// -----------------------------------------------------------------------------",
+        "struct DroidVariantLegacyRow {",
+        "    const char* design;",
+        "    const char* legacy;",
+        "    const char* variant;",
+        "};",
+        "",
+        f"constexpr size_t DROID_VARIANT_LEGACY_COUNT = {len(legacy_rows)};",
+        "",
+    ]
+    if legacy_rows:
+        lines.append(
+            "inline constexpr DroidVariantLegacyRow "
+            "DROID_VARIANT_LEGACY[DROID_VARIANT_LEGACY_COUNT] = {"
+        )
+        for design_id, legacy, variant in legacy_rows:
+            lines.append(f'    {{"{design_id}", "{legacy}", "{variant}"}},')
+        lines.append("};")
+    else:
+        lines.append(
+            "inline constexpr const DroidVariantLegacyRow* DROID_VARIANT_LEGACY = nullptr;"
+        )
+    lines += [
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// droidDesignVariantCanonical()",
+        "// The variant id a stored spelling names today: the input itself unless it is",
+        "// a legacy spelling of this design's, in which case the variant it became.",
+        "// -----------------------------------------------------------------------------",
+        "inline const char* droidDesignVariantCanonical(const char* designId, const char* variant) {",
+        "    if (designId == nullptr || variant == nullptr) {",
+        "        return variant;",
+        "    }",
+        "    for (size_t i = 0; i < DROID_VARIANT_LEGACY_COUNT; ++i) {",
+        "        if (strcmp(DROID_VARIANT_LEGACY[i].design, designId) == 0 &&",
+        "            strcmp(DROID_VARIANT_LEGACY[i].legacy, variant) == 0) {",
+        "            return DROID_VARIANT_LEGACY[i].variant;",
+        "        }",
+        "    }",
+        "    return variant;",
         "}",
         "",
         "// -----------------------------------------------------------------------------",

@@ -50,11 +50,13 @@ test("nothing-drives-it-yet and not-a-driven-thing stay apart", () => {
 
 test("an unknown complement fails loudly; an empty one is a real answer", () => {
   const mk4 = catalog.designs.find((design) => design.id === "mk4");
-  const simple = mk4.variants.find((variant) => variant.id === "simple");
+  const basic = mk4.variants.find((variant) => variant.id === "basic");
   const complex = mk4.variants.find((variant) => variant.id === "complex");
 
-  assert.equal(simple.seeds, null, "an unknown complement must not be an empty one");
-  assert.throws(() => simple.seeds.forEach(() => {}), TypeError);
+  // Per half (#409): a Basic dome is not yet read, a Basic body is.
+  assert.equal(basic.seeds.dome, null, "an unknown complement must not be an empty one");
+  assert.throws(() => basic.seeds.dome.forEach(() => {}), TypeError);
+  assert.ok(Array.isArray(basic.seeds.body));
 
   // The default seeds a real complement, so nobody is ever pre-selected onto
   // a droid with nothing on it.

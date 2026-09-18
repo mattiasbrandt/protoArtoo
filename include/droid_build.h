@@ -265,6 +265,11 @@ inline uint8_t droidFittedPartsParse(const char* raw, DroidFittedParts* out) {
 // Copy an answer into a half, truncating nothing: an id that does not fit is
 // refused rather than stored short, because a truncated id names a design the
 // catalog never declared.
+//
+// A variant stored under a spelling the catalog has since renamed is copied in
+// as the variant it became (`simple` -> `basic`, #409). Every stored answer and
+// every restored backup enters through here, so this is the one place an old
+// spelling has to be recognised for none of them to reset.
 // -----------------------------------------------------------------------------
 inline bool droidDesignChoiceSet(DroidDesignChoice* choice, const char* design,
                                  const char* variant) {
@@ -275,7 +280,8 @@ inline bool droidDesignChoiceSet(DroidDesignChoice* choice, const char* design,
         return false;
     }
     snprintf(choice->design, sizeof(choice->design), "%s", design);
-    snprintf(choice->variant, sizeof(choice->variant), "%s", variant);
+    snprintf(choice->variant, sizeof(choice->variant), "%s",
+             droidDesignVariantCanonical(design, variant));
     return true;
 }
 
