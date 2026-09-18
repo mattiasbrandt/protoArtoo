@@ -1,7 +1,8 @@
 # A body view shows what the droid is doing, and a click on it only ever selects
 
-Status: accepted (2026-09-09, issue #317). Describes the **target** model; none of
-it is implemented yet.
+Status: accepted (2026-09-09, issue #317), amended 2026-09-18 (#408): the droid
+is drawn as a recognisable R2, and the "arrangement, not a likeness" rule is
+withdrawn. Every other decision here stands. C4a (#352) built the renderer.
 
 ## Context
 
@@ -59,13 +60,24 @@ intent and they draw identically, so a view that mixed them would ask a builder 
 remember which half they were looking at — the defect #298 spent a ticket undoing.
 The routine half works for all forty parts today; the live half has two.
 
-**The droid is drawn as an arrangement, not as a likeness.** Parts as shapes at
-nominal positions on a front face and a rear face. A recognisable MK-series
-silhouette would be artwork per design, and it would show someone else's droid to
-the builder #333 provided for — one *"on a droid that is nobody's published
-design"*. The reference's own rule for its board pictures is the right one here:
-*"a photo is the promise 'this is what yours looks like', and a drawing is 'this
-is the KIND of thing'."*
+**The droid is drawn as R2, recognisably.** *(Amended 2026-09-18, operator,
+#408.)* A front view and a rear view that a builder knows at a glance, with each
+part drawn where it sits on the droid. The starting point is the operator's
+reference drawing (`tasks/prototypes/r2d2_vector_transparent.svg`, a flat front
+view), and parts are named the way Printed Droid's terminology names them.
+
+One drawing serves every builder, and **it draws only the parts this builder's
+droid has.** The **Body Design** variant decides that: an MK4 Complex body shows
+its doors and hatches, a Simple body does not show doors it never had, and a
+**Common Addition** appears only once it is added. The drawing says which variant
+it is showing.
+
+*Withdrawn:* the 2026-09-09 rule that the droid be "an arrangement, not a
+likeness" — parts as shapes at nominal positions, and no recognisable silhouette
+because it would be "artwork per design" and "someone else's droid". It produced
+pictures no builder recognised as their droid, and every R2 build shares the
+body shape; what differs between builds is which parts exist, which the variant
+already answers.
 
 **A part can be moved from the drawing, on a deliberate press.** Picking a part
 and pressing runs it through its travel and back, as one command. Same shape as
@@ -99,12 +111,13 @@ of colour on this surface.
 - **A body view for finding a part**, which is the ticket's own framing. Rejected
   on the naming measurement above: a picture earns its place on the dome because
   `P7` is a number, and the body's names already carry their location.
-- **A recognisable body silhouette.** Best for pointing at a door. Rejected: it is
-  artwork per design, and #333 deliberately provided for a droid that is nobody's
-  published design.
+- **A recognisable body silhouette.** Rejected 2026-09-09 as artwork per design;
+  **taken on 2026-09-18** (see the amended decision above).
+- **Parts as shapes at nominal positions, with no silhouette** (the 2026-09-09
+  decision). Withdrawn 2026-09-18: nobody recognised the result as their droid.
 - **A silhouette where we have one, an arrangement otherwise.** Rejected: two
-  drawings to build and keep in step, and a view whose whole character changes
-  with what the builder said they built.
+  drawings to build and keep in step. Still rejected: there is one drawing, and
+  the variant decides which parts are on it.
 - **No drawing at all — parts as a grid showing state**, which is what the
   reference actually ships for the body, and which does this job with no artwork
   and scales to any board. Genuinely competitive once the job is *seeing many at
