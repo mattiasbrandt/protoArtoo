@@ -13,6 +13,7 @@
 #include <string>
 
 #include "api_config_apply.h"
+#include "component_registry.h"
 #include "drive_speed_preset.h"
 
 namespace {
@@ -101,6 +102,40 @@ void test_configApply_rcInputMode_enum_reject(void) {
     TEST_ASSERT_TRUE(result.error.hasError);
     TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs",
                              result.error.message);
+}
+
+// The RC Radio is the Radio Controller's Component Member (#369): a registry id
+// from that family that the registry calls selectable, and nothing else - a
+// sound module and a roadmap radio are both refused, by the rule the picker's
+// lineup comes from.
+void test_configApply_rcMember_takes_a_radio_and_refuses_anything_else(void) {
+    std::map<std::string, std::string> radio = {{"rcMember", "rc_radio"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&radio), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(componentPartById("rc_radio")->value, snap.system.rc_member);
+
+    for (const char* refused : {"dy_sv5w", "xbox_controller", "nonsense"}) {
+        std::map<std::string, std::string> m = {{"rcMember", refused}};
+        ConfigSnapshot other = makeDefaultSnap();
+        const uint8_t before = other.system.rc_member;
+        ConfigApplyResult refusedResult;
+        configApply(makeSource(&m), &other, false, &refusedResult);
+        TEST_ASSERT_TRUE_MESSAGE(refusedResult.error.hasError, refused);
+        TEST_ASSERT_EQUAL_STRING("rcMember is not a radio this firmware lists", refusedResult.error.message);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(before, other.system.rc_member, refused);
+    }
+}
+
+// An ELRS receiver is stored like any other receiver type (#369).
+void test_configApply_rcInputMode_accepts_elrs(void) {
+    std::map<std::string, std::string> m = {{"rcInputMode", "elrs"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, snap.system.rc_input_mode);
 }
 
 void test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject(void) {
@@ -597,6 +632,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_speedLimitMax_out_of_range_rejected);
     RUN_TEST(test_configApply_stationary_bool_reject);
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
+    RUN_TEST(test_configApply_rcMember_takes_a_radio_and_refuses_anything_else);
+    RUN_TEST(test_configApply_rcInputMode_accepts_elrs);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);
