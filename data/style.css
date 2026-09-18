@@ -931,7 +931,7 @@ body[data-page="firmware"] .card > * + * {
 }
 
 /* .card.disabled-card is the whole-page form of "off": a page whose component
-   is switched off in Setup. It is an Availability Family member and wears the
+   is switched off in Configuration. It is an Availability Family member and wears the
    "change it here" treatment declared with the other three, further down. */
 
 .card-header-row {
