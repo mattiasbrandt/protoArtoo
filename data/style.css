@@ -8099,3 +8099,11 @@ button.output-setting-head:focus-visible {
     grid-column: 1 / -1;
   }
 }
+
+/* The droid's name, its hostname tick and Save stack on a phone: the three
+   fixed columns above need 546 px and ran off a 390 px screen. */
+@media (max-width: 600px) {
+  .identity-grid {
+    grid-template-columns: 1fr;
+  }
+}
