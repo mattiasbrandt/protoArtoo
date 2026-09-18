@@ -3,7 +3,9 @@
 
 Runs the checks required by AGENTS.md's verification section and prints a
 stable, copy-pasteable block. Workers paste the block verbatim into their
-status comment; a reviewer re-runs the same command and compares.
+status comment; the coordinator checks the block's provenance against the
+branch per slice and runs the gate itself once per wave, on the merged tree
+(docs/agents/slice-gate.md).
 
 Diff checks compare merge-base(<base>, HEAD) against HEAD — committed work
 only, so commit the slice before running the gate. Working-tree changes are
@@ -1303,7 +1305,7 @@ def main() -> int:
     # that never needed a waiver, and AGENTS.md's rule that an unsanctioned
     # waiver ACK is an automatic reject had nothing to detect. Printing them
     # puts every consumed waiver in the pasted block, where the coordinator's
-    # character-for-character re-run comparison sees it.
+    # read of the block sees it.
     acknowledged = [r for r in results if r.passed and r.notes]
     if failures or acknowledged:
         print()
