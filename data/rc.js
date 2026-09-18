@@ -723,7 +723,11 @@
     };
 
     let html = '';
-    if (mode === 'standard_pwm') {
+    if ((SOURCE_OPTIONS[mode] || []).length === 0) {
+      // A receiver the controller reads nothing from (ELRS, #369): no channel
+      // arrives, so none is offered to map.
+      html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no channel arrives, so there is none to map.</p>`;
+    } else if (mode === 'standard_pwm') {
       html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
     } else {
       html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)

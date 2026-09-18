@@ -46,3 +46,19 @@ test("a receiver nobody switched on reads unlit, never green", async () => {
   assert.match(html, /not switched on/);
 });
 
+
+// An ELRS receiver is a stored answer the controller reads nothing from
+// (#369): no channel arrives from it, so RC Control must not offer SBUS
+// channels to bind to - a binding made there would answer to nothing.
+test("an ELRS receiver offers no channel to map", async () => {
+  const env = loadRc(
+    { rc: { inputMode: "elrs" }, components: RC_COMPONENTS },
+    { sources: { sbus1: { enabled: false }, sbus2: { enabled: false }, pwm: { enabled: false } } },
+  );
+  await env.runSection("rc-mode-mapping");
+  await env.settle();
+
+  const list = env.element("rc-channel-items").innerHTML;
+  assert.doesNotMatch(list, /rc-channel-item/, "no channel is offered");
+  assert.match(list, /no channel arrives/);
+});
