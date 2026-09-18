@@ -7994,3 +7994,50 @@ button.droid-build-card:disabled {
   white-space: normal;
   text-align: center;
 }
+
+/* The chosen RC Receiver's channel ticks (#369): the output plates, one size
+   down, inside the radio's plate. A row the mode does not read is hidden by
+   the picker, and this block is only ever shown inside that answer. */
+.component-sub-channels {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.component-sub-channels .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-xs);
+  margin-block: 0;
+}
+
+.component-sub-channels .output-plates > .component-row.output-plate {
+  padding: var(--space-2xs) var(--space-sm);
+}
+
+.component-sub-channels .output-plates > .component-row.output-plate[hidden],
+.output-plates.component-receiver-channels:not(.component-sub-channels .output-plates) {
+  display: none;
+}
+
+/* A chosen radio carrying its RC Receiver answer takes two columns, so the
+   receiver cards and channel ticks have room beside each other. */
+.component-cards > .component-plate:has(.component-sub-channels, .component-receivers) {
+  grid-column: span 2;
+}
+
+/* The two-column radio plate keeps its picture the size of its neighbours'. */
+.component-cards > .component-plate:has(.component-sub-channels, .component-receivers) > .component-card > .component-card-art {
+  max-height: 188px;
+}
+
+.component-sub-channels .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+
+.component-sub-channels .output-plate .toggle-label {
+  white-space: nowrap;
+}
+
+.component-sub-channels .output-plate .toggle-status {
+  letter-spacing: 0.06em;
+}

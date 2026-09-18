@@ -83,6 +83,19 @@
       sbus: { short: "SBUS", modes: ["single_sbus", "dual_sbus"] },
       crsf: { short: "ELRS", modes: ["elrs"], caption: "Not read yet" },
     },
+    // Which channel ticks the chosen receiver reads, by mode - the firmware's
+    // own rule, rcSourceEnabledForMode() (src/web/rc_diagnostics_snapshot.cpp):
+    // PWM reads CH1-CH6, one SBUS receiver rides on CH1 or on CH2 when the RC
+    // page routes it there, two SBUS receivers need CH1 and CH2, and ELRS reads
+    // nothing. A tick the mode needs is never hidden: an SBUS receiver with its
+    // input off reads nothing.
+    channels: (mode, config) => {
+      if (mode === "standard_pwm") return [1, 2, 3, 4, 5, 6];
+      if (mode === "single_sbus") return config?.rc?.sbus?.recvCh2 ? [2] : [1];
+      if (mode === "dual_sbus") return [1, 2];
+      return [];
+    },
+    channelsLabel: "Channels",
     second: {
       wire: "sbus",
       label: "Second SBUS receiver",
@@ -335,10 +348,30 @@
         .forEach((part) => cards.appendChild(receiverCard(entry, part, wire, interactive)));
       block.appendChild(cards);
     }
+    const channels = receiverChannels(entry, mode, sub.receivers.includes(wire));
+    if (channels) block.appendChild(channels);
     if (wire === RC_RECEIVER.second.wire && sub.receivers.includes(wire)) {
       block.appendChild(secondReceiverRow(mode, interactive));
     }
     return block;
+  };
+
+  // The channel ticks the chosen receiver reads, moved in from the page (the
+  // host names the block) and filtered to the rows its mode needs. The rows
+  // are Configuration's own inputs, so their keys and save do not change.
+  const receiverChannels = (entry, mode, answered) => {
+    const plates = entry.receiverChannels;
+    if (!plates || !answered) return null;
+    const wanted = RC_RECEIVER.channels(mode, config);
+    if (wanted.length === 0) return null;
+    plates.querySelectorAll("[data-feature-entry]").forEach((row) => {
+      const channel = Number(String(row.dataset.featureEntry).replace(/^.*enable_rc_ch/, ""));
+      row.hidden = !wanted.includes(channel);
+    });
+    const wrap = element("div", "component-sub-channels");
+    wrap.appendChild(element("span", "droid-build-variant-label", RC_RECEIVER.channelsLabel));
+    wrap.appendChild(plates);
+    return wrap;
   };
 
   const receiverCard = (entry, part, wire, interactive) => {
@@ -533,6 +566,11 @@
         // than for want of one (test/test_tools/test_product_art.py
         // NO_PICTURE says the same).
         noPicture: new Set((host.dataset.componentNoPicture || "").split(/\s+/).filter(Boolean)),
+        // The block of channel ticks a chosen RC Receiver carries, found once
+        // while it is still where the page declared it.
+        receiverChannels: host.dataset.componentReceiverChannels
+          ? document.getElementById(host.dataset.componentReceiverChannels)
+          : null,
       };
       mounts.push(entry);
       render(entry);
