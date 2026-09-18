@@ -1610,11 +1610,11 @@
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
+        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
         confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
         sbusRecvSel.value = confirmedSbusRecvValue;
-        setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
+        setSbusRecvFeedback(`Not saved: ${window.PAApi.messageFor(error)}`, "error", 2000);
       }
     });
   }
