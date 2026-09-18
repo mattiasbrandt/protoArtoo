@@ -154,11 +154,6 @@
   // (src/web/api_config_apply.cpp), so this is the same rule, not a second one.
   const isSelectable = (part) => part.status === KIND_SUPPORTED && part.included === true;
 
-  // Is there a picture of it. Asked of the document, never of the build: the
-  // legacy asset set inlines a symbol per product, the default set's partial is
-  // empty and the photograph is served instead (ADR 0065).
-  const artSymbolFor = (id) => document.getElementById(`art-${id}`);
-
   const toggleFor = (entry) => (entry.toggleId ? document.getElementById(entry.toggleId) : null);
 
   // A family is CHOSEN on this page when a pick writes something: its Component
@@ -236,37 +231,9 @@
 
   const pill = (text) => element("span", "status-pill pill-info", text);
 
-  // The picture frame. Always drawn, the same size whatever fills it, and
-  // decorative: the product's name is in text on the card.
-  const artFrame = (id) => {
-    const frame = element("span", "component-card-art");
-    frame.setAttribute("aria-hidden", "true");
-    if (!id) return frame;
-    if (artSymbolFor(id)) {
-      const svgNs = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(svgNs, "svg");
-      svg.setAttribute("viewBox", "0 0 400 300");
-      svg.setAttribute("focusable", "false");
-      const use = document.createElementNS(svgNs, "use");
-      use.setAttribute("href", `#art-${id}`);
-      svg.appendChild(use);
-      frame.appendChild(svg);
-      return frame;
-    }
-    const image = element("img");
-    image.alt = "";
-    // A photograph this set does not carry leaves the frame empty, never
-    // dimmed: a missing picture is a cosmetic gap, not a part the board
-    // cannot take (CONTEXT.md "Component Picker").
-    image.onerror = () => image.remove();
-    // Image fetches wait for the one-shot deferred-asset sweep, so the event
-    // stream opens before they compete for the controller's connections; a
-    // card drawn after that sweep sets its source directly (#202).
-    if (window.PAAssetsReady) image.src = `/${id}.webp`;
-    else image.dataset.deferredSrc = `/${id}.webp`;
-    frame.appendChild(image);
-    return frame;
-  };
+  // The picture frame and its lookup are data/product_art.js's, shared with
+  // the Droid Build's design cards.
+  const artFrame = (id) => window.PAProductArt.frame(id);
 
   // One option, drawn as one plate: the picture, a pill saying what state it
   // is in, the product's name, and the one sentence a state owes. The plate
