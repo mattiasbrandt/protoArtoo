@@ -205,10 +205,15 @@ jobs:
         continue-on-error: true
         run: make check-component-drift
 
+      - name: 📌 Pin drift
+        id: pin-drift
+        continue-on-error: true
+        run: make check-pin-drift
+
       # The Surface Anatomy's two mechanical rules (#399, ADR 0066): no
       # pictograph on a surface the sweep has reached, and every icon
       # reference resolving against the sprite data/shell.js injects. It runs
-      # here, beside the other two report-never-rewrite checks, because an
+      # here, beside the other three report-never-rewrite checks, because an
       # unresolved <use> renders an empty box and says nothing at all.
       - name: 🎨 Surface Anatomy
         id: surface-anatomy
@@ -241,6 +246,7 @@ jobs:
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
           COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
+          PIN_DRIFT_OUTCOME: ${{ steps.pin-drift.outcome }}
           ANATOMY_OUTCOME: ${{ steps.surface-anatomy.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
@@ -275,6 +281,7 @@ jobs:
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
             row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
+            row "$PIN_DRIFT_OUTCOME" "Pin drift"            "make check-pin-drift"
             row "$ANATOMY_OUTCOME"  "Surface Anatomy"      "make check-surface-anatomy"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
@@ -302,6 +309,7 @@ jobs:
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
           COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
+          PIN_DRIFT_OUTCOME: ${{ steps.pin-drift.outcome }}
           ANATOMY_OUTCOME: ${{ steps.surface-anatomy.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
@@ -326,6 +334,7 @@ jobs:
           check "$ANALYSIS_OUTCOME"     "static-analysis"
           check "$DRIFT_OUTCOME"        "action-drift"
           check "$COMPONENT_DRIFT_OUTCOME" "component-drift"
+          check "$PIN_DRIFT_OUTCOME"    "pin-drift"
           check "$ANATOMY_OUTCOME"      "surface-anatomy"
           check "$WEB_OUTCOME"          "web-tests"
           check "$TOOLING_OUTCOME"      "tooling-tests"
