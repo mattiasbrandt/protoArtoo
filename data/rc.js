@@ -21,7 +21,6 @@
   const LEARN_PWM_THRESHOLD = 200;
   // ─────────────────────────────────────────────────────────────────────────
   
-  const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcModeSummary = document.getElementById("rc-mode-summary");
@@ -502,8 +501,6 @@
       pressedLevel,
     };
   };
-
-  let debouncedSaveRcMode = () => {};
 
   const actionTargetFromToken = (token) => actionTargets.find((item) => item.token === token) || null;
 
@@ -1181,34 +1178,10 @@
     });
   };
 
-  const saveRcMode = async () => {
-    if (!rcInputModeHidden) return;
-    const mode = rcInputModeHidden.value;
-    setModeFeedback('Saving...');
-    try {
-      const result = await window.PAApi.postForm('/api/config', { rcInputMode: mode }, { timeoutMs: 5000 });
-      const savedMode = getRcModeFromConfig(result.data);
-      switchRcMode(savedMode);
-      await loadMappings();
-      setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, 'success');
-    } catch (error) {
-      setModeFeedback(window.PAApi.messageFor(error), 'error');
-    }
-  };
-
-  debouncedSaveRcMode = window.PAUtils.debounce(saveRcMode, 250);
-
-  // Which receiver this page is about, painted in one place: the card that is
-  // lit, and the section head that names it. loadRcMode's success path used to
-  // carry its own copy of the card loop, so on a droid that answered
-  // "single_sbus" the cards said Single SBUS and the head still said Standard
-  // PWM. Found in a browser at 1440 px.
+  // Which receiver this page is about, painted in one place: the section head
+  // that names it. The receiver is chosen on Configuration's Radio Controller
+  // cards (#369); this page reads it and never writes it.
   const paintModeSelection = (mode) => {
-    rcModeCards.forEach((card) => {
-      const selected = card.dataset.mode === mode;
-      card.classList.toggle('selected', selected);
-      card.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    });
     if (rcModeSummary) rcModeSummary.textContent = modeLabel(mode);
   };
 
@@ -1223,29 +1196,6 @@
     renderLivePreview();
     renderEditor();
   };
-
-  rcModeCards.forEach((card) => {
-    card.addEventListener('click', () => {
-      const mode = card.dataset.mode;
-      if (mode && rcInputModeHidden) {
-        rcInputModeHidden.value = mode;
-        switchRcMode(mode);
-        debouncedSaveRcMode();
-      }
-    });
-
-    card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        const mode = card.dataset.mode;
-        if (mode && rcInputModeHidden) {
-          rcInputModeHidden.value = mode;
-          switchRcMode(mode);
-          debouncedSaveRcMode();
-        }
-      }
-    });
-  });
 
   const loadRcMode = async ({ handle = null } = {}) => {
     try {

@@ -107,6 +107,11 @@ const BOARD_LABELS = {
   let savedRcChangeGeneration = 0;
   let rcRestartPending = false;
   let bootActiveRcComponents = {};  // Snapshot of boot-active RC component state from /api/rc
+  // The receiver type the droid booted with, and the one it has saved since.
+  // Chosen on the Radio Controller cards (data/component_picker.js), and like
+  // a channel toggle it takes effect only after a restart.
+  let bootActiveRcMode = null;
+  let savedRcMode = null;
   // Auto-save state
   let saveTimeout = null;
   const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
@@ -532,6 +537,7 @@ const BOARD_LABELS = {
     if (isInitialLoad) {
       captureBootActiveRcState(payload);
     }
+    if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
     const togglePayload = {
       enableArm1: components.arm1?.enabled,
@@ -661,6 +667,7 @@ const BOARD_LABELS = {
   const captureBootActiveRcState = (config) => {
     // Snapshot RC component enabled states at page load (boot-active truth).
     // Later, if saved state matches this, no restart is actually needed.
+    if (typeof config?.rc?.inputMode === "string") bootActiveRcMode = config.rc.inputMode;
     if (config?.components) {
       for (const key of RC_TOGGLE_KEYS) {
         if (config.components[key] !== undefined) {
@@ -674,6 +681,7 @@ const BOARD_LABELS = {
     // Check if UI values match boot-active truth.
     // If the operator has changed an RC toggle away from boot-active, restart is needed.
     // If they've reverted it back to boot-active, no restart is needed.
+    if (bootActiveRcMode && savedRcMode && savedRcMode !== bootActiveRcMode) return true;
     for (const key of RC_TOGGLE_KEYS) {
       const toggle = featureToggles[key];
       if (!toggle || !toggle.input) continue;
@@ -803,6 +811,7 @@ const BOARD_LABELS = {
     }
     Object.assign(pendingPickParams, params);
     featureEditGeneration += 1;
+    if (Object.hasOwn(params, "rcInputMode")) rcChangeGeneration += 1;
     setSavePending(true);
     clearTimeout(saveTimeout);
     saveTimeout = null;

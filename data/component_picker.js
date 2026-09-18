@@ -20,8 +20,8 @@
 // THREE CARD KINDS, each an option id. A `supported` card is a product, a
 // `roadmap` card is a product we intend to carry, and `not-fitted` is the
 // answer "nothing in this category" - a card, not a checkbox. The kind never
-// drives the badge: a card's STATE does (chosen, planned, not included, on this
-// board), which is what keeps a planned card from reading as a declined one.
+// drives the badge: a card's STATE does (chosen, planned, not included), which
+// is what keeps a planned card from reading as a declined one.
 // A roadmap card is static content, never a disabled button, so there is
 // nothing on it to press.
 //
@@ -56,10 +56,38 @@
     },
   };
 
+  // A family whose answer is a protocol setting rather than a member: the
+  // card's Component Protocol token decides what the pick writes. A protocol
+  // with variants is answered as a sub-selection under its chosen card, the
+  // shape a Design Variant has under its design (#368) - the Radio
+  // Controller's SBUS is one receiver or two (operator, 2026-09-18 on #369).
+  // The droid stores the protocol, not which product speaks it, so where two
+  // cards share one the builder's own press decides which is lit this visit.
+  const PROTOCOL_FIELDS = {
+    radio_controller: {
+      param: "rcInputMode",
+      saved: (config) => config?.rc?.inputMode,
+      protocols: {
+        standard_pwm: { variants: [{ id: "standard_pwm" }] },
+        sbus: {
+          label: "SBUS receivers",
+          variants: [
+            { id: "single_sbus", label: "Single SBUS" },
+            { id: "dual_sbus", label: "Dual SBUS" },
+          ],
+        },
+      },
+    },
+  };
+
   const ROADMAP_SENTENCE = "We intend to carry it. Not yet.";
 
   let lineup = null;
   let config = null;
+  // Which card the builder last pressed, per family, where two cards share
+  // what the droid stores (PROTOCOL_FIELDS). Only ever a tiebreak between
+  // cards that already agree with the droid's answer.
+  const pressed = {};
   const mounts = [];
   const listeners = new Set();
 
@@ -83,7 +111,13 @@
   // A family is CHOSEN on this page when a pick writes something: its Component
   // Toggle, its Component Member, or both. A family with neither is shown, not
   // asked - the Body Controller is the board this image runs on.
-  const isChoosable = (entry) => Boolean(entry.toggleId || MEMBER_FIELDS[entry.family]);
+  const isChoosable = (entry) =>
+    Boolean(entry.toggleId || MEMBER_FIELDS[entry.family] || PROTOCOL_FIELDS[entry.family]);
+
+  // The protocol a stored setting value belongs to, and the variant it is.
+  const protocolOfValue = (field, value) =>
+    Object.keys(field.protocols).find((protocol) =>
+      field.protocols[protocol].variants.some((variant) => variant.id === value)) || null;
 
   // Which option the droid holds for a family, or null for none.
   const chosenOption = (entry) => {
@@ -92,6 +126,12 @@
     if (toggle && !toggle.checked) return NOT_FITTED;
     const member = MEMBER_FIELDS[entry.family];
     if (member) return member.saved(config) || null;
+    const protocolField = PROTOCOL_FIELDS[entry.family];
+    if (protocolField) {
+      const protocol = protocolOfValue(protocolField, protocolField.saved(config));
+      const speaking = partsOf(entry.family).filter((part) => isSelectable(part) && part.protocol === protocol);
+      return (speaking.find((part) => part.id === pressed[entry.family]) || speaking[0])?.id || null;
+    }
     // A toggle and no member: the family has one product this image drives,
     // and the toggle being on is that product being fitted (ADR 0042).
     const selectable = partsOf(entry.family).filter(isSelectable);
@@ -109,8 +149,10 @@
       const active = categoryOf(entry.family)?.active_member;
       return MEMBER_FIELDS[entry.family] && active && active !== part.id ? "chosen-after-restart" : "chosen";
     }
-    // Shown, not asked: the one product of its family this image carries.
-    if (!isChoosable(entry) && partsOf(entry.family).filter(isSelectable).length === 1) return "on-this-board";
+    // Shown, not asked: the one product of its family this image carries. It
+    // takes the chosen treatment and no chip - its name already says what it
+    // is (operator, 2026-09-18 on #369).
+    if (!isChoosable(entry) && partsOf(entry.family).filter(isSelectable).length === 1) return "present";
     return "available";
   };
 
@@ -119,7 +161,7 @@
     "chosen-after-restart": "After restart",
     planned: "Roadmap",
     "not-included": "Not included",
-    "on-this-board": "On this board",
+    present: "",
     available: "",
   };
 
@@ -197,7 +239,7 @@
     plate.dataset.state = state;
     if (state === "planned") plate.classList.add("availability-settled-no");
     if (state === "not-included") plate.classList.add("availability-change-elsewhere");
-    if (chosen === id) plate.classList.add("is-chosen");
+    if (chosen === id || state === "present") plate.classList.add("is-chosen");
 
     const face = element(asButton ? "button" : "div", "droid-build-card component-card");
     if (asButton) {
@@ -211,7 +253,9 @@
       });
     }
 
-    face.appendChild(artFrame(kind === KIND_NOT_FITTED ? null : id));
+    // "Not fitted" is words alone: what still works is the whole card
+    // (operator, 2026-09-18 on #369). The grid keeps it its row's height.
+    if (kind !== KIND_NOT_FITTED) face.appendChild(artFrame(id));
     const head = element("span", "droid-build-card-head");
     const badge = BADGES[state] || "";
     if (badge) head.appendChild(pill(badge));
@@ -219,7 +263,41 @@
     face.appendChild(element("span", "droid-build-card-label", name));
     if (blurb) face.appendChild(element("span", "droid-build-card-blurb", blurb));
     plate.appendChild(face);
+
+    const protocolField = PROTOCOL_FIELDS[entry.family];
+    const protocol = option.protocol ? protocolField?.protocols[option.protocol] : null;
+    if (chosen === id && protocol && protocol.variants.length > 1) {
+      plate.appendChild(variantRow(entry, protocolField, protocol, interactive));
+    }
     return plate;
+  };
+
+  // The chosen card's variants, as the Droid Build draws a design's: the
+  // shared segmented control under the card's words, behind a seam.
+  const variantRow = (entry, field, protocol, interactive) => {
+    const current = field.saved(config);
+    const block = element("div", "droid-build-variant-block");
+    block.appendChild(element("span", "droid-build-variant-label", protocol.label));
+    const row = element("div", "seg droid-build-variants");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", protocol.label);
+    protocol.variants.forEach((variant) => {
+      const on = current === variant.id;
+      const button = element("button", "droid-build-variant", variant.label);
+      button.type = "button";
+      button.dataset.variant = variant.id;
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", on ? "true" : "false");
+      if (on) button.classList.add("active");
+      button.disabled = !interactive;
+      button.addEventListener("click", () => {
+        if (on) return;
+        window.PAConfiguration?.applyComponentPick({ params: { [field.param]: variant.id } });
+      });
+      row.appendChild(button);
+    });
+    block.appendChild(row);
+    return block;
   };
 
   const optionsFor = (entry, chosen) => {
@@ -230,7 +308,14 @@
       else if (state === "not-included") {
         blurb = window.PAFeatureAvailability?.reasonFor("not-in-this-build", part.name) || "";
       }
-      return { kind: part.status === KIND_ROADMAP ? KIND_ROADMAP : KIND_SUPPORTED, id: part.id, name: part.name, blurb, state };
+      return {
+        kind: part.status === KIND_ROADMAP ? KIND_ROADMAP : KIND_SUPPORTED,
+        id: part.id,
+        name: part.name,
+        protocol: part.protocol,
+        blurb,
+        state,
+      };
     });
     if (entry.toggleId) {
       options.push({
@@ -279,6 +364,21 @@
     const member = MEMBER_FIELDS[entry.family];
     const params = {};
     if (member && optionId !== NOT_FITTED) params[member.param] = optionId;
+    const protocolField = PROTOCOL_FIELDS[entry.family];
+    if (protocolField) {
+      const part = partsOf(entry.family).find((candidate) => candidate.id === optionId);
+      const protocol = protocolField.protocols[part?.protocol];
+      if (!protocol) return;
+      pressed[entry.family] = optionId;
+      // A card speaking the protocol the droid already has changes nothing on
+      // the droid: it only says which product it is. Otherwise the protocol's
+      // first variant is written, and its sub-selection appears under it.
+      if (protocolOfValue(protocolField, protocolField.saved(config)) === part.protocol) {
+        renderAll();
+        return;
+      }
+      params[protocolField.param] = protocol.variants[0].id;
+    }
     window.PAConfiguration.applyComponentPick({
       toggleId: entry.toggleId || "",
       enabled: optionId !== NOT_FITTED,

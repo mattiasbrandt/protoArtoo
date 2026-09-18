@@ -140,17 +140,7 @@
       title: "Radio Controller",
       q: "What do you drive it with?",
       why: "The droid listens only to the channels you tick. Leave an unwired channel off.",
-      answer: () => {
-        const fitted = countFitted([
-          "enable-rc-ch1",
-          "enable-rc-ch2",
-          "enable-rc-ch3",
-          "enable-rc-ch4",
-          "enable-rc-ch5",
-          "enable-rc-ch6",
-        ]);
-        return fitted === 0 ? "No channels" : `${fitted} channels`;
-      },
+      answer: () => pickedIn("radio_controller"),
     },
     {
       key: "sound",

@@ -4892,76 +4892,6 @@ body[data-page="maintenance"] .status-item .hint {
    wear amber, which read as "something is wrong" for a mode the operator chose
    on purpose; both now look selected the same way. */
 
-/* ---- Board image on setup page ---- */
-.board-image-wrap {
-  text-align: center;
-  padding: var(--space-md) 0 var(--space-2xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 260px;
-}
-
-.board-image-wrap img {
-  max-width: 100%;
-  max-height: 260px;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  object-fit: contain;
-}
-
-.board-image-wrap img.hidden {
-  display: none;
-}
-
-/* The legacy asset set's line drawing, drawn inline from the sprite setup.html
-   includes (ADR 0065). Framed like the photograph, at the photograph's 4:3 and
-   no taller, so the panel reads the same on either board. Its strokes are
-   currentColor; the global .hidden rule hides it. */
-.board-image-wrap .board-art {
-  width: min(100%, 346px);
-  height: auto;
-  aspect-ratio: 4 / 3;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.board-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  max-height: 260px;
-  min-height: 100px;
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border);
-  background: var(--well);
-  gap: var(--space-sm);
-  padding: var(--space-md);
-}
-
-.board-placeholder.hidden {
-  display: none;
-}
-
-/* An empty picture plate is a board-shaped hole, and the icon says which shape
-   it is: the sprite's own chip, inheriting the text colour, with the sentence
-   under it as its label (ADR 0066). It was a 48 px emoji keyboard glyph. */
-.board-placeholder-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--text-faint);
-}
-
-.board-placeholder-text {
-  font-size: var(--fs-body);
-  color: var(--text-dim);
-  text-align: center;
-  max-width: 240px;
-}
-
 @media (max-width: 500px) {
   .mood-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -7832,6 +7762,13 @@ button.droid-build-card:disabled {
    .availability-change-elsewhere for one this image does not carry), never
    the frame's.
    --------------------------------------------------------------------------- */
+/* Every row of cards is as tall as the tallest card in the family, so a
+   "Not fitted" card - words alone - holds its row's height (operator,
+   2026-09-18 on #369). */
+.droid-build-cards.component-cards {
+  grid-auto-rows: 1fr;
+}
+
 .component-picker + .note,
 .component-picker + .component-consequence {
   margin-top: 0;

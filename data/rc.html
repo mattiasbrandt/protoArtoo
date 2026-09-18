@@ -35,32 +35,23 @@
          and change. -->
     <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>RC input</h2><span class="sub">no source is live</span></div>
-      <p class="note"><b>No RC source live for this receiver type and routing.</b> Switch the input on in <a class="setup-link" href="/setup.html">Configuration</a>, or pick the right receiver below and restart; mappings still edit.</p>
+      <p class="note"><b>No RC source live for this receiver type and routing.</b> Switch the input on, or pick the right receiver, in <a class="setup-link" href="#configuration">Configuration</a> and restart; mappings still edit.</p>
     </div>
 
     <!-- The receiver type comes first: it decides what every other card on this
-         page is even about. -->
+         page is even about. It is SHOWN here and chosen in one place, the
+         Radio Controller cards on Configuration (data/component_picker.js),
+         so there is one control for it rather than two that can disagree
+         (operator, 2026-09-18 on #369). -->
     <div class="card">
       <div class="sect"><h2>Receiver type</h2><span class="sub" id="rc-mode-summary">finding out</span></div>
       <!-- Two save moments on one page, told apart where the builder picks
            (docs/ui-copy-voice.md rule 9). -->
       <div class="note note-info" role="note">
-        Receiver type and SBUS input save at once and take effect after a restart. Mappings take effect when saved.
+        The SBUS input saves at once and takes effect after a restart. Mappings take effect when saved.
       </div>
-
-      <div class="rc-mode-grid" role="group" aria-label="Receiver type">
-        <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-title">Standard PWM</div>
-          <div class="rc-mode-desc">Six PWM leads from an ordinary receiver</div>
-        </div>
-        <div class="rc-mode-card" data-mode="single_sbus" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-title">Single SBUS</div>
-          <div class="rc-mode-desc">One SBUS receiver on one lead, up to 18 channels</div>
-        </div>
-        <div class="rc-mode-card" data-mode="dual_sbus" tabindex="0" role="button" aria-pressed="false">
-          <div class="rc-mode-title">Dual SBUS</div>
-          <div class="rc-mode-desc">Two SBUS receivers — the first drives the feet, the second the dome and AUX</div>
-        </div>
+      <div class="button-row button-row-compact">
+        <a class="btn" href="#configuration">Change the receiver in Configuration</a>
       </div>
 
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
