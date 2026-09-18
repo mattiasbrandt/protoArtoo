@@ -299,7 +299,7 @@ test("the first open draws nobody's dome until the hierarchy has answered", asyn
   const fields = page.openEditor(panelSequence());
 
   assert.doesNotMatch(fields.innerHTML, /dome-svg-picker/, "a dome was drawn before anyone knew whose it was");
-  assert.match(fields.innerHTML, /Checking which dome you built/);
+  assert.match(fields.innerHTML, /Checking which dome you built\. The panel map follows\./);
 
   // And the picker fills itself in when the answer arrives, without the builder
   // reopening anything: DomeLayout.onChange() re-renders it.
@@ -318,5 +318,5 @@ test("an unsupported schema no longer claims a drawing it is not showing", async
 
   assert.doesNotMatch(html, /dome-svg-picker/);
   assert.match(html, /schema 99 not supported/);
-  assert.doesNotMatch(html, /showing built-in MK4 layout/);
+  assert.doesNotMatch(html, /Showing the built-in MK4 map/);
 });
