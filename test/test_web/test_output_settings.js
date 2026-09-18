@@ -73,6 +73,7 @@ const boot = () => {
   };
   const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout };
   context.globalThis = context;
+  vm.runInNewContext(readFileSync(join(dataDir, "apply_timing.js"), "utf8"), context);
   vm.runInNewContext(readFileSync(join(dataDir, "output_settings.js"), "utf8"), context);
   vm.runInNewContext(readFileSync(join(dataDir, "wiring_outputs.js"), "utf8"), context);
   window.PAOutputSettings.mount("type", {

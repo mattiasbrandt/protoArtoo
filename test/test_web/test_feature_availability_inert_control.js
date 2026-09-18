@@ -187,7 +187,7 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
   }
   vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
   element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
-  for (const file of ["feature_availability.js", "configuration.js", "maintenance.js"]) {
+  for (const file of ["feature_availability.js", "apply_timing.js", "configuration.js", "maintenance.js"]) {
     vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
   }
 

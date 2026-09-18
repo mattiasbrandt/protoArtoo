@@ -8059,3 +8059,9 @@ button.output-setting-head:focus-visible {
 .feature-availability-panel.availability-finding-out:focus-within {
   opacity: 1;
 }
+
+/* When an answer takes effect (#370, data/apply_timing.js): a .note under the
+   question it belongs to, set off from whatever the question shows next. */
+.apply-timing {
+  margin: 0 0 var(--space-md);
+}

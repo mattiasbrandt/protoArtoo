@@ -46,6 +46,7 @@ const SURFACES = {
       "droid_build.js",
       "dome_layout.js",
       "product_art.js",
+      "apply_timing.js",
       "droid_build_picker.js",
       "component_picker.js",
       "configuration.js",
