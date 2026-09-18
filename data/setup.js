@@ -44,8 +44,10 @@
   const textOf = (value) => (typeof value === "function" ? value() : value);
 
   const checked = (id) => Boolean(document.getElementById(id)?.checked);
-  const fittedOrNot = (id) => (checked(id) ? "Fitted" : "Not fitted");
   const countFitted = (ids) => ids.filter(checked).length;
+  // A component family's answer is the picker's own, so the rail and the
+  // cards read one answer (data/component_picker.js).
+  const pickedIn = (family) => window.ComponentPicker?.answerFor(family) || "";
 
   // ---------------------------------------------------------------------------
   // The steps - ONE ordered array
@@ -101,21 +103,21 @@
       title: "Foot Drive",
       q: "What moves the feet?",
       why: "Off: the droid is a statue. Sticks move, wheels don't.",
-      answer: () => fittedOrNot("enable-drive"),
+      answer: () => pickedIn("foot_drive"),
     },
     {
       key: "domerot",
       title: "Dome Rotation",
       q: "What turns the dome?",
       why: "Off, the dome sits still through every sequence.",
-      answer: () => fittedOrNot("enable-dome-esc"),
+      answer: () => pickedIn("dome_rotation"),
     },
     {
       key: "domectl",
       title: "Dome Controller",
       q: "What runs the board up in the dome?",
       why: "Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.",
-      answer: () => fittedOrNot("enable-protor2link"),
+      answer: () => pickedIn("dome_controller"),
     },
     {
       key: "servos",
@@ -155,7 +157,7 @@
       title: "Sound",
       q: "What gives the droid its voice?",
       why: "Off, sequences still run start to finish, in silence.",
-      answer: () => fittedOrNot("enable-audio"),
+      answer: () => pickedIn("sound"),
     },
     {
       key: "name",
@@ -512,6 +514,11 @@
   // The Droid Build is not a form control: it changes through its seam, and
   // the seam tells every surface when it has.
   window.DroidBuild?.onChange(() => {
+    if (!runHasEnded()) renderRail();
+  });
+  // Nor is a Component Picker card: a pick, or the droid's answer to one,
+  // redraws the cards and then says so here.
+  window.ComponentPicker?.onChange(() => {
     if (!runHasEnded()) renderRail();
   });
 

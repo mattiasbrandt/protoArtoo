@@ -2,8 +2,8 @@
 // data/configuration.js
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
-// The Droid Build, the hardware component toggles and their component types,
-// the LED strip route, the Body Controller picture and the droid's name.
+// The Droid Build, the Component Picker's families and the toggles behind
+// them, the component types, the LED strip route and the droid's name.
 // Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
@@ -15,11 +15,10 @@
 // What a builder calls the board this image runs on. `identity.board` names the
 // firmware build and is not an operator-facing word, and the identity manifest
 // carries no name beside it, so this is where the two meet. File scope rather
-// than inside the module below, because two things on this surface read it - the
-// board picture and guided Setup's board step, which data/setup.js draws over
-// this surface and which loads after this file - and a second copy is a second
-// thing to keep in step (include/component_registry.inc holds the product names;
-// this is the shorter word the surfaces use).
+// than inside the module below, because guided Setup's board step reads it -
+// data/setup.js draws over this surface and loads after this file - and a
+// second copy is a second thing to keep in step (include/component_registry.inc
+// holds the product names; this is the shorter word the surfaces use).
 const BOARD_LABELS = {
   artoo_esp32: "Artoo Controller",
   firebeetle2: "FireBeetle 2",
@@ -280,120 +279,7 @@ const BOARD_LABELS = {
         performIdentityDiagnosis();
       }, { once: true });
     }
-    // Show placeholder when identity is unavailable
-    showBoardPlaceholder("Could not tell which board this is.");
   });
-
-  // ---- Board picture ----
-
-  // identity.board names the firmware build, but a board's pictures are filed
-  // under its Component Registry id (include/component_registry.inc, the Body
-  // Controller family), and for the Artoo PCB the two tokens differ.
-  const BOARD_PRODUCT_IDS = {
-    artoo_esp32: "artoo_pcb",
-    firebeetle2: "firebeetle2",
-  };
-
-  const boardArt = document.getElementById("board-art");
-  const boardArtUse = document.getElementById("board-art-use");
-  const boardImage = document.getElementById("board-image");
-  const boardPlaceholder = document.getElementById("board-image-placeholder");
-  const boardPlaceholderText = document.getElementById("board-placeholder-text");
-
-  const showBoardPlaceholder = (text) => {
-    if (boardArt) boardArt.classList.add("hidden");
-    if (boardImage) boardImage.classList.add("hidden");
-    if (boardPlaceholder) {
-      boardPlaceholder.classList.remove("hidden");
-      if (boardPlaceholderText) boardPlaceholderText.textContent = text;
-    }
-  };
-
-  const showBoardImage = () => {
-    if (boardArt) boardArt.classList.add("hidden");
-    if (boardImage) boardImage.classList.remove("hidden");
-    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
-  };
-
-  const showBoardArt = () => {
-    if (boardImage) boardImage.classList.add("hidden");
-    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
-    boardArt.classList.remove("hidden");
-  };
-
-  // The picture comes from this build's asset set (ADR 0065), in the order every
-  // product card follows: the line drawing, else the photograph, else the
-  // placeholder. Which set was built is read from the document, not declared:
-  // setup.html inlines the set's sprite, and only the legacy set's carries
-  // symbols.
-  const updateBoardImage = (identity) => {
-    // This listener outlives the surface being on screen, and the shell replays
-    // the identity to every surface it mounts - so it also fires while the
-    // operator is reading another one. The panel is then out of the document,
-    // the drawing's symbol cannot be found, and the lookup below would fall
-    // through to a photograph the legacy set does not carry: the builder came
-    // back to "No photo of this board yet" where the drawing had been. The
-    // board never changes within a session, so there is nothing to repaint
-    // off screen.
-    if (boardImage && document.getElementById("board-image") !== boardImage) return;
-    if (!boardImage || !identity || !identity.board) {
-      showBoardPlaceholder("Checking which board this is…");
-      return;
-    }
-
-    const boardId = identity.board;
-    const boardLabel = BOARD_LABELS[boardId] || boardId;
-    const productId = BOARD_PRODUCT_IDS[boardId];
-    if (!productId) {
-      // Not a registry product, so no set has a drawing or a photograph of it,
-      // and there is no /<id>.webp route to ask.
-      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
-      return;
-    }
-
-    if (boardArt && boardArtUse && document.getElementById(`art-${productId}`)) {
-      // Drawn from the page's own sprite: nothing is fetched, so the
-      // deferred-asset gate below has nothing to hold back.
-      boardArtUse.setAttribute("href", `#art-${productId}`);
-      boardArt.setAttribute("aria-label", `${boardLabel} PCB`);
-      showBoardArt();
-      return;
-    }
-
-    const imageSrc = `/${productId}.webp`;
-
-    // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
-    boardImage.onload = () => {
-      showBoardImage();
-    };
-
-    boardImage.onerror = () => {
-      // Board has no photo yet; show placeholder with board name
-      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
-    };
-
-    // Set alt and title before setting src
-    boardImage.alt = `${boardLabel} PCB`;
-    boardImage.title = `${boardLabel} PCB`;
-
-    // Use data-deferred-src so image load is gated by announceAssetsOnce(), which ensures
-    // /api/events SSE opens before image fetches compete for the connection.
-    // Identity can resolve after the one-shot deferred-asset sweep has already run
-    // (a section that is visibly waiting to retry already counts as settled), so a
-    // late data-deferred-src would never be swept.
-    if (window.PAAssetsReady) boardImage.src = imageSrc;
-    else boardImage.dataset.deferredSrc = imageSrc;
-  };
-
-  // Listen for identity available event and update board image
-  window.addEventListener("pa:identity-available", (event) => {
-    updateBoardImage(event.detail);
-  });
-
-  // Also check cache at initialization time (if identity came before this script ran)
-  if (window.PAIdentity) {
-    updateBoardImage(window.PAIdentity);
-  }
 
   const saveIdentity = async () => {
     if (!window.PAApi || !identityNameInput) return;
@@ -435,6 +321,11 @@ const BOARD_LABELS = {
   // so it gets the right answer however the two surfaces were mounted.
   let savePending = false;
   window.PAConfigurationSave = { isPending: () => savePending };
+
+  // Fields a Component Picker pick carries beside the toggles - today the
+  // Sound Component Member. They ride the next save and are cleared once it has
+  // been sent, so a pick is never held back for a later one (#369).
+  let pendingPickParams = {};
 
   const setSavePending = (pending) => {
     savePending = pending;
@@ -801,6 +692,7 @@ const BOARD_LABELS = {
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
       renderFeatures(result.data);
+      window.ComponentPicker?.adopt(result.data);
       // The Droid Build rides on the same payload, so the step below draws the
       // droid's own answer without asking the controller a second time.
       window.DroidBuild?.adopt(result.data);
@@ -819,6 +711,7 @@ const BOARD_LABELS = {
     }
 
     saveInFlight = true;
+    let carriedPick = false;
     const requestEditGeneration = featureEditGeneration;
     const requestRcChangeGeneration = rcChangeGeneration;
     setFeatureFeedback("Saving...");
@@ -840,9 +733,13 @@ const BOARD_LABELS = {
       if (auxLedCountInput) {
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
+      Object.entries(pendingPickParams).forEach(([field, value]) => body.set(field, value));
+      carriedPick = Object.keys(pendingPickParams).length > 0;
+      pendingPickParams = {};
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       if (featureEditGeneration === requestEditGeneration) {
         renderFeatures(result.data);
+        window.ComponentPicker?.adopt(result.data);
       }
       // Guard RC restart state: only update if this request's RC generation is newer than the last saved one
       if (requestRcChangeGeneration > savedRcChangeGeneration) {
@@ -861,6 +758,9 @@ const BOARD_LABELS = {
     } catch (error) {
       console.error("[configuration] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
+      // A refused pick is read back rather than left on screen: the cards
+      // then show what the droid holds, not the answer it did not take.
+      if (carriedPick) loadFeatures();
       // Preserve pending restart status: don't downgrade from warn to error state if restart was already pending
       if (rcRestartPending) {
         setSaveSummary("Save failed, but restart still required", "warn");
@@ -890,6 +790,26 @@ const BOARD_LABELS = {
       saveFeatures(...args);
     }, 300);
   };
+
+  // A Component Picker pick (data/component_picker.js). Picking is applying:
+  // the toggle behind the family is set, and the save goes now, carrying any
+  // member field with it, through the same save every toggle on this page uses.
+  const applyComponentPick = ({ toggleId = "", enabled = true, params = {} } = {}) => {
+    const key = Object.keys(featureToggles).find((name) => featureToggles[name].input?.id === toggleId);
+    if (key) {
+      featureToggles[key].input.checked = enabled;
+      updateToggleStatus(key);
+      updateEnabledSummary();
+    }
+    Object.assign(pendingPickParams, params);
+    featureEditGeneration += 1;
+    setSavePending(true);
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    saveScheduled = false;
+    saveFeatures();
+  };
+  window.PAConfiguration = { applyComponentPick };
 
   // Attach listeners to all toggles and selects
   Object.keys(featureToggles).forEach((key) => {
@@ -955,6 +875,9 @@ const BOARD_LABELS = {
     summary: document.getElementById("droid-build-summary"),
     feedback: document.getElementById("droid-build-feedback"),
   });
+  // The Component Picker, drawn into every component family's host on this
+  // surface; guided Setup shows those same hosts as its steps (data/setup.js).
+  window.ComponentPicker?.mount(document);
   window.PAFeatureAvailability.subscribe(() => {
     updateAllToggleStatuses();
     updateEnabledSummary();

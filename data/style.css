@@ -7815,3 +7815,59 @@ button.droid-build-card:disabled {
 .droid-build-boundary {
   margin-block: var(--space-sm);
 }
+
+/* ---------------------------------------------------------------------------
+   The Component Picker (#369): each component family's products as cards
+   (data/component_picker.js).
+
+   Its own block, added whole. A card IS a Droid Build plate (#368) - the same
+   .droid-build-plate / .droid-build-card anatomy the operator approved as the
+   look of a picker card - so this block adds only what a product card has and
+   a design card does not: its picture.
+
+   The picture frame is the same size whatever fills it - a drawing, a
+   photograph, or nothing - and it carries no dimming of its own, so a card
+   missing its picture lays out identically and never reads as greyed. Greyed
+   is the plate's state class (.availability-settled-no for a roadmap product,
+   .availability-change-elsewhere for one this image does not carry), never
+   the frame's.
+   --------------------------------------------------------------------------- */
+.component-picker + .note,
+.component-picker + .component-consequence {
+  margin-top: 0;
+}
+
+.component-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+  color: var(--text);
+}
+
+.component-card-art svg,
+.component-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* A product whose card is shown on this image but that it does not carry:
+   the "change it elsewhere" family, drawn on a plate's whole seam rather
+   than on a row's left rail. */
+.droid-build-plate.availability-change-elsewhere {
+  border-style: dashed;
+}
+
+/* The Component Toggle behind a family whose cards are its control. It stays
+   in the form, because it is the value the save sends; the cards are what the
+   builder sees and presses. */
+.component-row.component-toggle-backing {
+  display: none;
+}

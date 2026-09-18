@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/droid_build_picker.js,/configuration.js,/setup.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/feature_availability.js,/droid_parts.js,/droid_build.js,/dome_layout.js,/droid_build_picker.js,/component_picker.js,/configuration.js,/setup.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,7 +17,7 @@
   <body data-page="configuration">
 
     <!-- The asset set's product drawings (ADR 0065). The legacy set inlines a
-         symbol per product here and the board picture below draws one; the
+         symbol per product here and every Component Picker card draws one; the
          default set's partial is empty, so that build shows the photograph.
          It sits in the body because the Operator Shell mounts only a
          surface's body, and the drawings must be in the document to be drawn. -->
@@ -93,18 +93,16 @@
       </div>
     </div>
 
-    <!-- The board this image is running on. One card, never two: the Component
-         Registry gates the two Body Controllers on PA_BOARD, so an image
-         carries exactly one of them and the other is not offered or mentioned. -->
+    <!-- The board this image is running on, beside the other Body Controller
+         as a peer product (operator, 2026-09-12 on #369). Shown, not asked:
+         the family has no member setting, because the running image IS the
+         answer, so the board it was built for reads "On this board" and the
+         other is simply a product. The cards are the Component Picker's
+         (data/component_picker.js). -->
     <div class="card">
-      <div class="sect"><h2>Body Controller</h2><span class="sub">one per image</span></div>
-      <div class="board-image-wrap" id="board-image-panel" data-setup-step="_board">
-        <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
-        <img id="board-image" alt="" title="">
-        <div id="board-image-placeholder" class="board-placeholder">
-          <svg class="i board-placeholder-icon" aria-hidden="true" focusable="false"><use href="#i-chip"/></svg>
-          <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
-        </div>
+      <div class="sect"><h2>Body Controller</h2><span class="sub">the board doing the work</span></div>
+      <div data-setup-step="_board">
+        <div class="component-picker" data-component-family="body_controller"></div>
       </div>
     </div>
 
@@ -122,22 +120,26 @@
 
     <!-- What is fitted. Every category in this card is a data-setup-step host,
          and the guided run shows the same host as its step, so a category has
-         one home on this page and two ways of being shown (#404). That is the
-         seam the Component Picker (#369) is built into: one function drawing a
-         category into its host, differing only in who redraws after a pick -
-         the run's rail, or this card's own summary. -->
+         one home on this page and two ways of being shown (#404). Each carries
+         a Component Picker host (data/component_picker.js): the family's
+         products as cards, drawn once, whichever way the host is shown.
+
+         Where a family's answer is a Component Toggle, the toggle stays in the
+         form as the value the save sends, and its row is hidden: the cards are
+         the control, and "Not fitted" is one of them rather than a checkbox. -->
     <div class="card">
       <div class="sect"><h2>Hardware components</h2><span class="sub" id="setup-enabled-summary">finding out</span></div>
-      <p class="hint">Tick what is bolted to this droid. Off, the controller never talks to it.</p>
+      <p class="hint">Pick what is bolted to this droid. Not fitted, the controller never talks to it.</p>
       <form id="feature-form">
 
         <div data-setup-step="drive">
         <div class="sect"><h3>Foot Drive</h3><span class="sub">the feet</span></div>
+        <div class="component-picker" data-component-family="foot_drive" data-component-toggle="enable-drive"
+             data-component-not-fitted="The droid is a statue. Sticks move, wheels don't."></div>
         <div class="note note-info" role="note">
-          <span>Off: the droid is a statue. Sticks move, wheels don't.</span>
-          <span id="label-desc-enable_drive" class="component-label-desc"> Wire it to <strong id="label-enable_drive"></strong>.</span>
+          <span id="label-desc-enable_drive" class="component-label-desc">Wire it to <strong id="label-enable_drive"></strong>.</span>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_drive">
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_drive">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-drive" name="enableDrive">
             <span class="toggle-slider"></span>
@@ -148,12 +150,13 @@
 
         </div>
         <div data-setup-step="domerot">
-        <div class="sect"><h3>Dome rotation</h3><span class="sub">the dome ESC</span></div>
+        <div class="sect"><h3>Dome Rotation</h3><span class="sub">what turns the dome</span></div>
+        <div class="component-picker" data-component-family="dome_rotation" data-component-toggle="enable-dome-esc"
+             data-component-not-fitted="The dome sits still through every sequence."></div>
         <div class="note note-info" role="note">
-          <span>Off, the dome sits still through every sequence.</span>
-          <span id="label-desc-enable_dome_esc" class="component-label-desc"> Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
+          <span id="label-desc-enable_dome_esc" class="component-label-desc">Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_dome_esc">
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_dome_esc">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-dome-esc" name="enableDomeEsc">
             <span class="toggle-slider"></span>
@@ -164,12 +167,13 @@
 
         </div>
         <div data-setup-step="domectl">
-        <div class="sect"><h3>protoR2link</h3><span class="sub">link to the dome board</span></div>
+        <div class="sect"><h3>Dome Controller</h3><span class="sub">the board in the dome, over protoR2link</span></div>
+        <div class="component-picker" data-component-family="dome_controller" data-component-toggle="enable-protor2link"
+             data-component-not-fitted="The body drives, and the dome gets no light, panel or sound cues."></div>
         <div class="note note-info" role="note">
-          <span>Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.</span>
-          <span id="label-desc-enable_protor2link" class="component-label-desc"> Wire it to <strong id="label-enable_protor2link"></strong>.</span>
+          <span id="label-desc-enable_protor2link" class="component-label-desc">Wire it to <strong id="label-enable_protor2link"></strong>.</span>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_protor2link">
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_protor2link">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-protor2link" name="enableProtoR2link">
             <span class="toggle-slider"></span>
@@ -180,12 +184,15 @@
 
         </div>
         <div data-setup-step="sound">
-        <div class="sect"><h3>Audio</h3><span class="sub">the droid's voice</span></div>
+        <div class="sect"><h3>Sound</h3><span class="sub">the droid's voice</span></div>
+        <p class="hint">Say which sound module the droid is built with. The sounds themselves live on the module; this only decides how the controller asks for them.</p>
+        <div class="component-picker" data-component-family="sound" data-component-toggle="enable-audio"
+             data-component-not-fitted="Sequences still run start to finish, in silence."></div>
+        <p class="note note-info component-consequence"><strong>This picks which module the controller talks to, not which sounds it has.</strong> Those live on the module itself. Takes effect after the controller restarts; the finish step says when.</p>
         <div class="note note-info" role="note">
-          <span>Your droid's voice. Off, sequences still run start to finish, in silence.</span>
-          <span id="label-desc-enable_audio" class="component-label-desc"> Wire it to <strong id="label-enable_audio"></strong>.</span>
+          <span id="label-desc-enable_audio" class="component-label-desc">Wire it to <strong id="label-enable_audio"></strong>.</span>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_audio">
+        <div class="component-row component-toggle-backing" data-feature-entry="system.config.enable_audio">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-audio" name="enableAudio">
             <span class="toggle-slider"></span>
@@ -197,6 +204,8 @@
 
         </div>
         <div data-setup-step="servos">
+        <div class="sect"><h3>Body servo controller</h3><span class="sub">what drives the body's servos</span></div>
+        <div class="component-picker" data-component-family="body_servo_controller"></div>
         <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
         <p class="hint">Tick each arm you fitted and pick its servo. The type sets how far the output swings.</p>
         <div class="component-row" data-feature-entry="system.config.enable_arm1">
@@ -297,6 +306,8 @@
 
         </div>
         <div data-setup-step="rc">
+        <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive it with</span></div>
+        <div class="component-picker" data-component-family="radio_controller"></div>
         <div class="sect"><h3>RC Receiver Channels</h3><span class="sub">6 channels, applied after a restart</span></div>
         <div class="note note-info" role="note">
           <div>Tick the channels wired to the receiver.</div>
