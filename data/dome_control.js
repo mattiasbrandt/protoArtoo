@@ -297,13 +297,13 @@
       let message = '';
       if (severity === 'disabled') {
         const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
-        message = `${elementId} is disabled${reason} — the dome may ignore this command`;
+        message = `${elementId} is off${reason}. The dome may ignore it.`;
       } else if (severity === 'inactive') {
-        message = `${elementId} is not currently active — the dome may ignore this command`;
+        message = `${elementId} is not active. The dome may ignore it.`;
       } else if (severity === 'unverified') {
-        message = `${elementId} availability unverified — the dome state is unknown`;
+        message = `${elementId} unconfirmed. The dome has not said.`;
       } else if (severity === 'unmapped') {
-        message = `${elementId} is unmapped — cannot actuate`;
+        message = `${elementId} is not mapped. Nothing to move.`;
       } else {
         message = `${elementId} is not available`;
       }
@@ -425,9 +425,9 @@
       if (source === 'live') {
         // No banner for live
       } else if (source === 'cached') {
-        banner = '<div class="note dome-source-banner">Last known layout — drawn from what the dome said the last time it answered, not from the dome in front of you.</div>';
+        banner = '<div class="note dome-source-banner">Last layout the dome sent. It may have changed since.</div>';
       } else if (source === 'unsupported') {
-        banner = '<div class="note note-act dome-source-banner">Unsupported layout schema — showing the built-in map instead.</div>';
+        banner = '<div class="note note-act dome-source-banner">The dome sent a layout this page cannot read. Showing the built-in map.</div>';
       } else if (source === 'stated-design') {
         // Tier 3 with a dome the built-in drawing is not of. Two different
         // jobs for the builder, so two different sentences: one is "we have no
@@ -435,10 +435,10 @@
         // carries at all" — and the second is the one somebody has to go and
         // read out of the design files (ADR 0047).
         banner = model?.complementKnown === false
-          ? '<div class="note note-act dome-source-banner">Dome not reachable — and this build does not know which panels that dome design carries.</div>'
-          : '<div class="note note-act dome-source-banner">Dome not reachable — there is no built-in map for the dome design you stated.</div>';
+          ? '<div class="note note-act dome-source-banner">Dome not reachable. This build does not know which panels your dome carries.</div>'
+          : '<div class="note note-act dome-source-banner">Dome not reachable. No built-in map for your dome design.</div>';
       } else if (source === 'vendored') {
-        banner = '<div class="note note-act dome-source-banner">Dome not reachable — showing MK4 built-in layout.</div>';
+        banner = '<div class="note note-act dome-source-banner">Dome not reachable. Showing the built-in MK4 map.</div>';
       }
       return banner;
     }

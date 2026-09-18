@@ -76,7 +76,7 @@ test("move it sends one command naming the output, and no width", async () => {
   pick(env, "doorFL");
 
   assert.equal(actButton(env, "move").disabled, false);
-  assert.match(panelWhy(env), /out to its open end, across to its close end and back/);
+  assert.match(panelWhy(env), /runs the part open, then closed, then back/);
 
   pressAct(env, "move");
   await sleep(20);
@@ -105,7 +105,7 @@ test("move it is refused under a latched estop, and says which no it is", async 
 
   assert.equal(actButton(env, "move").disabled, true);
   assert.equal(actButton(env, "move").getAttribute("aria-disabled"), "true");
-  assert.match(panelWhy(env), /estop is latched/);
+  assert.match(panelWhy(env), /Estop latched/);
 
   pressAct(env, "move");
   await sleep(20);
@@ -115,7 +115,7 @@ test("move it is refused under a latched estop, and says which no it is", async 
   env.pushStatus({ estop: false });
   await sleep(20);
   assert.equal(actButton(env, "move").disabled, false);
-  assert.match(panelWhy(env), /out to its open end/);
+  assert.match(panelWhy(env), /runs the part open/);
 });
 
 test("give it an Output routes to the row's own picker and writes nothing", async () => {

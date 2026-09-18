@@ -16,19 +16,18 @@
   </head>
   <body data-page="firmware">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Which
-         versions are on the droid right now is the footer's, on every screen,
+    <!-- The title is the name in the nav (ADR 0066). Which versions are on
+         the droid right now is the footer's, on every screen,
          so this surface carries the putting-there and not the reading-off. -->
     <div class="title">
       <div>
         <h1>Firmware</h1>
-        <p class="question">How do you put a new build on the droid without reaching for a cable?</p>
       </div>
     </div>
 
     <div class="card">
       <div class="sect"><h2>Controller firmware</h2><span class="sub">the program the droid runs</span></div>
-      <p class="prose">The controller's own code: drive, dome, sound, the radio and this web server. It arrives as one <code>.bin</code> the build produced, goes into the spare half of the flash, and only becomes the running firmware once the whole file has landed.</p>
+      <p class="prose">The controller's own code: drive, dome, sound, the radio and this web server. It lands in the spare half of the flash and runs only once the whole file is in.</p>
       <div class="note note-act">
         <b>Keep the power on until the droid has restarted by itself.</b> Cutting power part-way through, or refreshing this page, leaves half an image behind.
       </div>
@@ -53,9 +52,9 @@
 
     <div class="card">
       <div class="sect"><h2>Web UI files</h2><span class="sub">these pages, as one image</span></div>
-      <p class="prose">Every screen you are reading, packed into one filesystem image. It is a separate upload from the firmware above because the two change at different rates: a copy fix is a new web UI and the same controller code.</p>
+      <p class="prose">Every screen you are reading, packed into one image.</p>
       <div class="note note-act">
-        <b>Keep the power on until the droid has restarted by itself.</b> A part-written filesystem leaves no web UI at all: the droid still drives and the serial Console still answers, but nothing in a browser does.
+        <b>Keep the power on until the droid has restarted by itself.</b> A half-written image leaves no web UI. The droid still drives, and the serial Console still answers.
       </div>
       <div class="form-grid">
         <label class="field">
@@ -80,12 +79,12 @@
          on its own plate with the consequence beside it
          (docs/ui-copy-voice.md rule 12). -->
     <div class="card">
-      <div class="sect"><h2>Reboot</h2><span class="sub">about ten seconds off the air</span></div>
-      <p class="prose">Start the controller again without cutting its power. Reach for it when a page stops answering and neither upload above is running; everything you have saved survives, and nothing is written or erased.</p>
+      <div class="sect"><h2>Reboot</h2><span class="sub">ten seconds off air</span></div>
+      <p class="hint">Everything you saved survives. Reach for it when a page stops answering.</p>
       <div class="button-row button-row-compact">
         <button id="reboot-button" class="btn danger" type="button">Reboot the controller</button>
       </div>
-      <p class="hint">Refused while an upload is in flight, because a reboot part-way through one is exactly what leaves a half-written image behind.</p>
+      <p class="hint">Refused during an upload. A reboot mid-upload leaves half an image.</p>
       <div id="fw-reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No reboot asked for yet.</div>
     </div>
 

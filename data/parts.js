@@ -208,16 +208,11 @@
     `<span class="sub outputs-tiers" role="status" aria-live="polite">` +
     TIERS.map((tier) => `<span class="outputs-tier" data-tier="${tier.id}">${tier.label} — finding out</span>`).join("") +
     `</span></div>` +
-    `<p class="prose">Every output on the controller, in the order the leads plug in, with every part on it - ` +
-    `a lead split to two doors names both. Pick a part in a row to put it on that output; if the part is on ` +
-    `another output, this page asks before it moves it.</p>` +
+    `<p class="hint">Every output, in the order the leads plug in. Pick a part in a row to put it on that output.</p>` +
     // Rule 7 of the maker voice, at the entrance: what the two marks are, and
     // what they are not. Nothing on this droid reads a servo back.
-    `<p class="hint">The bar is where the controller is driving that servo right now and the tick is where the ` +
-    `move ends, so the gap between them is the move still to go. Both are what the controller told the servo, ` +
-    `not a reading: nothing on this droid can feel where a servo really is, so a jammed one shows exactly what ` +
-    `a free one does. Both tables read the droid once a second while this page is open, and <b>pulses off</b> ` +
-    `makes an output limp at once, wherever it happens to be.</p>` +
+    `<p class="hint">The bar is where the servo is being driven, the tick where the move ends; both are what ` +
+    `the controller <b>told</b> it. <b>Pulses off</b> leaves an output limp where it is.</p>` +
     // Back to centre, and its one line of answer. The button starts refused for
     // the reason every act on this page does: it must not run on a guess about
     // the estop, and the droid has not said yet.
@@ -225,8 +220,8 @@
     `<button class="btn outputs-centre" type="button" ` +
     `aria-label="Put every output back to the centre recorded for it" disabled aria-disabled="true">` +
     `back to centre</button>` +
-    `<p class="feedback" role="status" aria-live="polite">Every output goes back to the centre you ` +
-    `recorded for it, one at a time, so the whole droid moving at once cannot brown out the servos.</p>` +
+    `<p class="feedback" role="status" aria-live="polite">Each output goes to its own centre, one at a ` +
+    `time, so the servos do not brown out.</p>` +
     `</div>` +
     `<div class="parts-table-wrap" id="outputs-table"></div>`;
   tableRegion.parentNode.appendChild(outputsSection);
@@ -486,7 +481,7 @@
     // invisible, which is the one thing this table must never be.
     const unknown = outputs.flatMap((output) => output.parts).filter((id) => !partById.has(id));
     if (unknown.length) {
-      text += ` · the droid also drives ${unknown.join(", ")}, which this page's parts list does not know - upload the filesystem that matches the firmware`;
+      text += ` · also drives ${unknown.join(", ")}, unknown to this page - upload the matching web UI`;
     }
     summary.textContent = text;
     // The droid has answered again, which is the only thing a run steps on.
@@ -792,7 +787,7 @@
     const candidates = spareOutputs();
     if (!candidates.length) {
       showFeedback(
-        "Nothing to nudge: every output with a pulse on it already drives a part, and an output with no pulse cannot twitch.",
+        "Nothing to nudge. Every output with a pulse already drives a part.",
         "warning"
       );
       return;
@@ -928,9 +923,9 @@
   // widths the droid refuses.
   const COMPONENT_SAID = {
     mg996r: "what an MG996R takes",
-    mg90s: "what an MG90S takes, which is everything a servo will",
-    rgb: "the cautious range - what is recorded here is an LED strip, not a servo",
-    none: "the cautious range, because nothing is recorded as fitted here",
+    mg90s: "what an MG90S takes, the full servo range",
+    rgb: "the cautious range: this is recorded as an LED strip",
+    none: "the cautious range: nothing is recorded as fitted",
   };
 
   const bandSentence = (output) => {
@@ -952,11 +947,8 @@
   dialPanel.hidden = true;
   dialPanel.innerHTML =
     `<h4 class="cal-title"></h4>` +
-    `<p class="desc">Drive the part until it looks right, then press the button for the end you are ` +
-    `setting. The part keeps being driven while you look and listen, so you can hear a servo fighting ` +
-    `its linkage. The droid lets go on its own a few seconds after this page stops asking, and ten ` +
-    `minutes after it took the output whatever this page does - either way it goes limp where it is ` +
-    `and says so below.</p>` +
+    `<p class="desc">Drive the part until it looks right, then press the end you are setting. The ` +
+    `servo holds while you watch, and goes limp a few seconds after you leave or after ten minutes.</p>` +
     `<p class="cal-band"></p>` +
     `<div class="cal-drive">` +
     `<button class="btn cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
@@ -1631,17 +1623,17 @@
       // The droid has not said yet, which is not the same as a latched estop:
       // the acts are held either way, and only one of them is something the
       // builder can do anything about.
-      why = "Finding out whether the droid is stopped. Move it waits until it answers.";
+      why = "Finding out if the droid is stopped. Move it waits for the answer.";
     } else if (estopLatched) {
-      why = "The estop is latched, so nothing moves until it is cleared.";
+      why = "Estop latched. Nothing moves until it is cleared.";
     } else if (travelPart === null && unwired.length > 0) {
-      why = "Nothing drives it yet - give it an output first, then you can move it from here.";
+      why = "Nothing drives it yet. Give it an output first.";
     } else if (travelPart === null && parts.every((id) => kinds?.isLight(partById.get(id)))) {
-      why = "A light has no travel to run through, so there is nothing to move.";
+      why = "A light has no travel. Nothing to move.";
     } else if (travelPart === null) {
-      why = "Its ends are not measured yet - press Calibrate on the output that drives it, below.";
+      why = "Ends not measured yet. Press Calibrate on its output, below.";
     } else {
-      why = `Move it runs this part out to its open end, across to its close end and back to where it is now, on ${outputLabel(travelOutput)}.`;
+      why = `Move it runs the part open, then closed, then back, on ${outputLabel(travelOutput)}.`;
     }
 
     return {

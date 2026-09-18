@@ -61,8 +61,8 @@
   let saveQueued = false;
   let currentSpeedLimitMax = null;
   let currentSpeedPreset = null;
-  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
-  const s1EnableInSetup = setupActionText("Enable S1 — Drive");
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
+  const s1EnableInConfiguration = setupActionText("Enable S1 — Drive");
 
   const FAILSAFE_SOURCE_LABELS = {
     0: "None",
@@ -191,7 +191,7 @@
   const postCommand = async (path, label) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
-      window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInConfiguration}.`, "warning");
       return;
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
@@ -216,7 +216,7 @@
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInConfiguration}.`, "warning");
       return;
     }
     try {
@@ -233,7 +233,7 @@
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInConfiguration}.`, "warning");
       return;
     }
     if (estopLatched) {
@@ -344,8 +344,8 @@
         // not spoken yet, the other is a droid whose feet were never switched
         // on, and only the second has anything for the builder to do.
         hbNoData.textContent = driveHardwareEnabled
-          ? "Nothing from the wheel controller yet. It reports once it is powered and talking to this board."
-          : `The feet are switched off, so there is no wheel controller to hear from — ${s1EnableInSetup}.`;
+          ? "Nothing from the wheel controller yet. It reports once powered and wired."
+          : `Feet off, so no wheel controller to hear. ${s1EnableInConfiguration}.`;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";

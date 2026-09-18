@@ -56,44 +56,44 @@
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   const HARDCODED_ACTION_TARGETS = [
-    { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward/reverse drive speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left/right steering (analog axis)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Dome rotation speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between stationary and driving mode', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Toggle arm 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Toggle arm 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Toggle aux 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: false, testable: false, safetyCritical: false },
-    { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
-    { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Toggle cosmetic sleep mode while keeping drive safety active', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play one random track from configured general range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_chatty', label: 'Random Chatty', group: 'Sound', description: 'Play one random track from configured chatty range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_happy', label: 'Random Happy', group: 'Sound', description: 'Play one random track from configured happy range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_processing', label: 'Random Processing', group: 'Sound', description: 'Play one random track from configured processing range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_sad', label: 'Random Sad', group: 'Sound', description: 'Play one random track from configured sad range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_sentimental', label: 'Random Sentimental', group: 'Sound', description: 'Play one random track from configured sentimental range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_humming', label: 'Random Humming', group: 'Sound', description: 'Play one random track from configured humming range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_scream', label: 'Random Scream', group: 'Sound', description: 'Play one random track from configured scream range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_surprised', label: 'Random Surprised', group: 'Sound', description: 'Play one random track from configured surprised range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_alert', label: 'Random Alert', group: 'Sound', description: 'Play one random track from configured alert range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_snarky', label: 'Random Snarky', group: 'Sound', description: 'Play one random track from configured snarky range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'sound_rand_whistle', label: 'Random Whistle', group: 'Sound', description: 'Play one random track from configured whistle range', disabled: false, testable: true, safetyCritical: false },
-    { token: 'estop', label: 'Emergency Stop', group: 'Safety', description: 'Immediately stop all drive output and latch estop', disabled: false, testable: false, safetyCritical: true },
-    { token: 'droid_seq_scream', label: 'Scream', group: 'Sequences', description: 'SE01 - scream audio and body sequence, then forward :SE01 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_wave', label: 'Wave', group: 'Sequences', description: 'SE02 - body wave sequence, then forward :SE02 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_fast_wave', label: 'Fast Wave', group: 'Sequences', description: 'SE03 - fast wave sequence, then forward :SE03 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_open_wave', label: 'Open Wave', group: 'Sequences', description: 'SE04 - open wave sequence, then forward :SE04 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_beep_cantina', label: 'Beep Cantina', group: 'Sequences', description: 'SE05 - short Cantina audio with body wave, then forward :SE05 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_faint', label: 'Faint', group: 'Sequences', description: 'SE06 - faint audio with body park sequence, then forward :SE06 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_cantina', label: 'Cantina Dance', group: 'Sequences', description: 'SE07 - long Cantina audio with body wave, then forward :SE07 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_leia', label: 'Leia Message', group: 'Sequences', description: 'SE08 - Leia audio with body sequence, then forward :SE08 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_disco', label: 'Disco', group: 'Sequences', description: 'SE09 - disco audio ($D) with body wave, then forward :SE09 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15 - screams audio only on body side, then forward :SE15 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16 - body wave sequence, then forward :SE16 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow -> Normal -> Turbo', disabled: false, testable: true, safetyCritical: false },
+    { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward and back on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left and right on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Turn the dome. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between Stationary and Driving. Stationary locks the feet.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Swing arm 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Swing arm 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Swing AUX 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Swing AUX 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Swing AUX 3 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Play a numbered body sequence, usually SE30 to SE36.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Play a dome show by name, like DM:FLUTTER. The Sequences page lists them all.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send one Marcduino command to the dome.', disabled: false, testable: false, safetyCritical: false },
+    { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Sleep or wake. Drive stays awake either way.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play a random General sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_chatty', label: 'Random Chatty', group: 'Sound', description: 'Play a random Chatty sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_happy', label: 'Random Happy', group: 'Sound', description: 'Play a random Happy sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_processing', label: 'Random Processing', group: 'Sound', description: 'Play a random Processing sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_sad', label: 'Random Sad', group: 'Sound', description: 'Play a random Sad sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_sentimental', label: 'Random Sentimental', group: 'Sound', description: 'Play a random Sentimental sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_humming', label: 'Random Humming', group: 'Sound', description: 'Play a random Humming sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_scream', label: 'Random Scream', group: 'Sound', description: 'Play a random Scream sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_surprised', label: 'Random Surprised', group: 'Sound', description: 'Play a random Surprised sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_alert', label: 'Random Alert', group: 'Sound', description: 'Play a random Alert sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_snarky', label: 'Random Snarky', group: 'Sound', description: 'Play a random Snarky sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_whistle', label: 'Random Whistle', group: 'Sound', description: 'Play a random Whistle sound.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'estop', label: 'Emergency Stop', group: 'Safety', description: 'Stop the feet now and latch the estop.', disabled: false, testable: false, safetyCritical: true },
+    { token: 'droid_seq_scream', label: 'Scream', group: 'Sequences', description: 'SE01. A scream, and the body and dome join in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wave', label: 'Wave', group: 'Sequences', description: 'SE02. A body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_fast_wave', label: 'Fast Wave', group: 'Sequences', description: 'SE03. A fast wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_open_wave', label: 'Open Wave', group: 'Sequences', description: 'SE04. An open wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_beep_cantina', label: 'Beep Cantina', group: 'Sequences', description: 'SE05. Short Cantina with a body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_faint', label: 'Faint', group: 'Sequences', description: 'SE06. A faint: the body parks, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_cantina', label: 'Cantina Dance', group: 'Sequences', description: 'SE07. Long Cantina with a body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_leia', label: 'Leia Message', group: 'Sequences', description: 'SE08. The Leia message, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_disco', label: 'Disco', group: 'Sequences', description: 'SE09. Disco music with a body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15. Screams from the body, and the dome does its part.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16. A body wave, and the dome joins in.', disabled: false, testable: true, safetyCritical: false },
+    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Step the speed preset: Slow, Normal, Turbo, and round again.', disabled: false, testable: true, safetyCritical: false },
   ];
 
   // ==== ACTION TEST OUTCOME (#220) BEGIN ====
@@ -253,12 +253,12 @@
   // so a change to either is made to both by hand (#354).
   const MARCDUINO_SEQUENCES = [
     { id: 30, name: "Utility arm open-and-close", description: "Both utility arms swing out, then flick in and out twice before they close (5 s)." },
-    { id: 31, name: "All body panels open and close", description: "Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+    { id: 31, name: "All body panels open and close", description: "Every body door and arm opens and works, then folds away in order (14 s)." },
     { id: 32, name: "All body doors wiggle-close", description: "The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
     { id: 33, name: "Use gripper arm", description: "The left breadpan door opens and the gripper arm rises and snaps its claw three times, then folds away (8 s)." },
     { id: 34, name: "Use interface tool", description: "The right breadpan door opens and the interface arm rises and works its tool three times, then folds away (9 s)." },
     { id: 35, name: "Ping-pong body doors", description: "The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
-    { id: 36, name: "BT-1 two-gripper sequence", description: "BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },
+    { id: 36, name: "BT-1 two-gripper sequence", description: "Both breadpan doors open and both grippers snap together five times, then fold away (7 s)." },
   ];
 
   // Factory dome sequences (fallback when /api/seq/list is unavailable)
@@ -272,14 +272,14 @@
     { payload: 'DM:OVERLOAD',  label: 'Overload',             description: 'Failure logics, panels sluggishly drift (12 s)' },
     { payload: 'DM:HEART',     label: 'Heart',                description: 'Rainbow holos, sweet logic message (10 s)' },
     { payload: 'DM:ALARM',     label: 'Alarm',                description: 'Pulsing red holos and logics (10 s)' },
-    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco sequence delegating to SE09 (46 s)' },
+    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco lights and music (46 s)' },
     { payload: 'DM:VADER',     label: 'Imperial March',       description: 'Imperial March -- red logics/holos (47 s)' },
     { payload: 'DM:ROCKMARCH', label: 'Rock March',           description: 'Imperial March alternate visual (47 s)' },
     { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Logic text greeting, then P1 opens and closes (4 s)' },
     { payload: 'DM:LEIA',      label: 'Leia',                 description: 'Front holo Leia effect, logic Leia mode (36 s)' },
     { payload: 'DM:CANTINA',   label: 'Cantina',              description: '130 BPM alternating panel dance (17 s)' },
     { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
-    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Delegate to a random SE sequence' },
+    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Plays a random sequence' },
   ];
 
   // Cached learned sequences (fetched on demand)
@@ -775,7 +775,7 @@
 
     if (!selectedChannel) {
       rcLivePreviewContent.innerHTML =
-        '<p class="prose"><b>No channel is selected.</b> Pick one in the list below and what it is sending shows up here.</p>';
+        '<p class="note"><b>No channel selected.</b> Pick one below to see what it sends.</p>';
       return;
     }
 
@@ -1414,7 +1414,7 @@
 
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      setEditorFeedback('Detect mode unavailable: enable an RC channel in Setup.', 'warning');
+      setEditorFeedback('Detect mode unavailable: enable an RC channel in Configuration.', 'warning');
       return;
     }
     learnActive = true;
@@ -1610,11 +1610,11 @@
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
+        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
         confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
         sbusRecvSel.value = confirmedSbusRecvValue;
-        setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
+        setSbusRecvFeedback(`Not saved: ${window.PAApi.messageFor(error)}`, "error", 2000);
       }
     });
   }

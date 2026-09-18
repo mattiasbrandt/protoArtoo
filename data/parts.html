@@ -11,17 +11,15 @@
   </head>
   <body data-page="parts">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Every act
-         on this page is named beside the row it acts on, so the title carries
+    <!-- The title is the name in the nav (ADR 0066). Every act on this page is named beside the row it acts on, so the title carries
          none of its own. -->
     <div class="title">
       <div>
         <h1>Parts</h1>
-        <p class="question">Which output moves each part, and what does each output move?</p>
         <!-- A moved thing leaves a forwarding address. The typed calibration
              form left Servos under #400: an end is set by driving the part,
              which is a thing only this surface knows how to ask for. -->
-        <p class="forward">Looking for the typed calibration that was on <a href="/servo.html">Servos</a>? An end is set here now: press Calibrate on the output that drives the part.</p>
+        <p class="forward">Typed calibration moved here from <a href="/servo.html">Servos</a>. Press Calibrate on the output that drives the part.</p>
       </div>
     </div>
 
@@ -37,8 +35,8 @@
         <h2>Your droid</h2>
         <span class="sub" id="bodyview-summary" role="status" aria-live="polite">Finding out what your droid is doing...</span>
       </div>
-      <p class="prose">Every part on one picture, so you can see what is open, what is closed and what nothing drives without reading rows one at a time. Pick a part on the drawing and the panel beside it names that part and what you can do with it.</p>
-      <p class="hint">What you see is what the controller <b>told</b> each part, never a reading taken from it: nothing on this droid can feel where a servo really is, so a jammed part draws exactly what a free one does. A part nothing is driving shows no position at all rather than a dimmed one, because a dimmed mark is still a claim. Parts with no place on the droid - the spare slots - are not on the picture and are in the table below.</p>
+      <p class="hint">Pick a part on the drawing to act on it. Spare slots are in the table below.</p>
+      <p class="hint">Each part shows what the controller <b>told</b> it. A jammed part draws the same as a free one.</p>
       <div class="bodyview">
         <div class="bodyview-drawing" id="bodyview-drawing"></div>
         <div class="bodyview-panel-host" id="bodyview-panel"></div>
@@ -54,8 +52,8 @@
         <h2>Parts</h2>
         <span class="sub" id="parts-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
       </div>
-      <p class="prose">Pick an output to wire a part. A part is only ever on one output, so picking a new one <b>moves</b> it, and this page asks first before it takes a part off the output it is on. One output can drive several parts that always move together, like two doors on one lead.</p>
-      <p class="hint">A part nothing drives yet carries <b>Find by moving</b>: the droid twitches each spare output a little, one at a time, about wherever it sits, and you press That one when the part moves. Stop ends the run at any moment, and so does the estop.</p>
+      <p class="note">A part lives on one output; picking a new one <b>moves</b> it. One output can drive several parts, like two doors on one lead.</p>
+      <p class="hint"><b>Find by moving</b> twitches each spare output in turn. Press That one when your part moves; Stop or the estop ends the run.</p>
       <div class="parts-table-wrap" id="parts-table"></div>
       <p class="feedback" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>

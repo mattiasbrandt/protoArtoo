@@ -16,23 +16,21 @@
   </head>
   <body data-page="drive">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Every act
-         here is named beside the thing it acts on, so the title carries none of
-         its own; the three that act on the droid rather than on this screen are
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named
+         beside the thing it acts on, so the title carries none of its own; the three that act on the droid rather than on this screen are
          the Dashboard's and ride the topbar (#344). -->
     <div class="title">
       <div>
         <h1>Foot Drive</h1>
-        <p class="question">Is the droid free to move, and how fast will the feet go?</p>
       </div>
     </div>
 
-    <!-- Foot Drive switched off in Setup. An Availability Family "change it
+    <!-- Foot Drive switched off in Configuration. An Availability Family "change it
          here" (CONTEXT.md): the card names the move and routes to it, and the
          treatment comes from .disabled-card rather than from a hue. -->
     <div id="drive-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <div class="sect"><h2>Foot Drive</h2><span class="sub">switched off in Setup</span></div>
-      <p class="prose"><b>The feet are switched off.</b> Nothing on this page reaches the wheels until <b>Foot Drive</b> is switched on in <a class="setup-link" href="/setup.html">Setup</a> — the sticks move and the droid stands there.</p>
+      <div class="sect"><h2>Foot Drive</h2><span class="sub">switched off in Configuration</span></div>
+      <p class="note"><b>Off:</b> the droid is a statue. Sticks move, wheels don't. <a class="setup-link" href="/setup.html">Switch Foot Drive on in Configuration</a></p>
     </div>
 
     <!-- Safety, first on the page. Stopping the droid is the Operator Shell's
@@ -42,12 +40,12 @@
          than appearing bare (docs/ui-copy-voice.md rule 8). -->
     <div class="card danger">
       <div class="sect"><h2>Safety</h2><span class="sub">Failsafe &middot; <span id="status-failsafe-label">finding out</span></span></div>
-      <p class="prose">Stopping the droid is on the top bar, on every screen. Clearing the stop is here, because letting a latched droid move again should take a surface you went to on purpose.</p>
+      <p class="hint">Stop is on the top bar, on every screen. Clearing it is here.</p>
       <div class="button-row drive-safety-actions">
         <button id="enable-web-control-button" class="btn accent" type="button">Enable web control</button>
         <button id="disable-web-control-button" class="btn" type="button">Disable web control</button>
       </div>
-      <p class="hint">Web control is the droid's consent to be driven from a browser. With it off the pad below sends nothing at all; the radio is unaffected either way.</p>
+      <p class="hint">Off, the pad below sends nothing. The radio drives either way.</p>
       <div class="recovery-row">
         <button id="clear-estop-button" class="btn" type="button">Clear estop</button>
         <span class="why">Refused unless the estop is actually latched.</span>
@@ -58,21 +56,20 @@
     <!-- Speed preset -->
     <div class="card">
       <div class="sect"><h2>Speed preset</h2><span class="sub" id="preset-summary">finding out</span></div>
-      <p class="prose">Three speed limits to swap between with one press. A preset is a posture you chose rather than a symptom, so the one you are on is marked and nothing here goes coloured (CONTEXT.md "Status Colour"). The limits themselves are set further down.</p>
       <div class="rc-mode-grid drive-preset-grid" role="group" aria-label="Speed preset">
         <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="slow" type="button" aria-label="Apply slow speed preset" aria-pressed="false">
           <div class="rc-mode-title">Slow</div>
-          <div class="rc-mode-desc">Precision, indoor pace</div>
+          <div class="rc-mode-desc">Tight spaces, indoors</div>
           <span class="preset-limit-value" id="preset-value-slow"></span>
         </button>
         <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="normal" type="button" aria-label="Apply normal speed preset" aria-pressed="false">
           <div class="rc-mode-title">Normal</div>
-          <div class="rc-mode-desc">Balanced default profile</div>
+          <div class="rc-mode-desc">Everyday pace</div>
           <span class="preset-limit-value" id="preset-value-normal"></span>
         </button>
         <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="turbo" type="button" aria-label="Apply turbo speed preset" aria-pressed="false">
           <div class="rc-mode-title">Turbo</div>
-          <div class="rc-mode-desc">Fast profile for open runs</div>
+          <div class="rc-mode-desc">Open floor only</div>
           <span class="preset-limit-value" id="preset-value-turbo"></span>
         </button>
       </div>
@@ -81,7 +78,7 @@
 
     <!-- Live drive output -->
     <div class="card" id="live-output-card">
-      <div class="sect"><h2>Live drive output</h2><span class="sub">what the controller is sending the wheels</span></div>
+      <div class="sect"><h2>Live drive output</h2><span class="sub">sent to the wheels</span></div>
       <div class="drive-sliders-row">
         <div class="drive-vslider-wrap">
           <div class="drive-vslider-track">
@@ -100,13 +97,13 @@
           <div class="drive-vslider-value" id="throttle-value">0</div>
         </div>
       </div>
-      <p class="hint">Both bars are what the controller <b>told</b> the wheels, not a reading taken off them — nothing on this droid measures what the feet actually did, so a wheel jammed against a table leg shows exactly what a free one does.</p>
+      <p class="hint">What the controller <b>told</b> the wheels. A jammed wheel reads the same as a free one.</p>
     </div>
 
     <!-- Drive controller -->
     <div class="card" id="hoverboard-card">
-      <div class="sect"><h2>Drive controller</h2><span class="sub">what the wheel controller last sent back</span></div>
-      <p class="prose" id="hb-no-data">Nothing from the wheel controller yet.</p>
+      <div class="sect"><h2>Drive controller</h2><span class="sub">wheel controller's last reply</span></div>
+      <p class="note" id="hb-no-data">Nothing from the wheel controller yet.</p>
       <!-- The readouts ARE the grid. A .status-grid wrapping an unclassed
            <dl> makes the list the one grid item and every reading stacks at
            full width, which is what this card did: four plates, one per row,
@@ -142,8 +139,8 @@
          is the Latching Estop in the topbar, and a second one down here would
          read as a safety control it is not. -->
     <div class="card">
-      <div class="sect"><h2>Drive controls</h2><span class="sub">hold to drive, release to stop</span></div>
-      <p class="prose">Hold a direction and the droid keeps going; let go and it stops. If commands stop arriving the droid stops on its own after the <b>web control timeout</b> set below, so a browser that freezes does not leave the feet running.</p>
+      <div class="sect"><h2>Drive controls</h2><span class="sub">hold to drive</span></div>
+      <p class="hint">Let go and it stops. A frozen browser stops the feet after the <b>web control timeout</b> below.</p>
       <div class="dpad-grid">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button"><svg class="i dpad-icon dpad-up" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg>Forward</button>
@@ -160,8 +157,7 @@
 
     <!-- Drive settings -->
     <div class="card">
-      <div class="sect"><h2>Drive settings</h2><span class="sub">saved on the droid as you change them</span></div>
-      <p class="prose">The speed cap and the three preset limits the buttons above swap between. Every change here is written to the droid as you make it, so there is nothing to press afterwards.</p>
+      <div class="sect"><h2>Drive settings</h2><span class="sub">saved as you change</span></div>
       <form id="config-form" class="form-grid settings-grid">
         <label class="field">
           <span>Maximum speed limit</span>
@@ -169,12 +165,12 @@
             <input id="speed-limit-max" name="speedLimitMax" type="range" min="0" max="600" step="5">
           </div>
           <span class="drive-readout" id="speed-limit-max-readout">—</span>
-          <span class="hint">The largest number the controller will ever send the wheels, 0 to 600. Lower is slower and more forgiving of a wall.</span>
+          <span class="hint">The most the controller ever sends the wheels, 0 to 600. Lower is kinder to walls.</span>
         </label>
         <label class="field">
           <span>Web control timeout (ms)</span>
           <input id="web-drive-timeout" name="webDriveTimeoutMs" class="compact-number" type="number" min="100" max="5000" step="50">
-          <span class="hint">How long the droid keeps moving on the last command it heard. Miss the next one by this long and it stops itself.</span>
+          <span class="hint">How long the feet run on the last command heard. Then they stop.</span>
         </label>
         <label class="field">
           <span>Slow preset limit</span>
@@ -197,8 +193,8 @@
           </div>
           <span class="drive-readout" id="speed-preset-turbo-readout">—</span>
         </label>
-        <p class="hint preset-hint">Each preset is a speed cap the buttons at the top of this page jump to. Give them three different numbers: two presets sharing a number cannot be told apart once one is applied.</p>
-        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Preset limits must be distinct. Duplicate values make preset switching ambiguous.</div>
+        <p class="hint preset-hint">The caps the preset buttons jump to. Use three different numbers, or two presets look the same.</p>
+        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Two presets share a number. Once applied, you cannot tell them apart.</div>
       </form>
       <div id="config-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>

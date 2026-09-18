@@ -853,7 +853,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:SE30", kSe30Steps, SEQ_STEPCOUNT(kSe30Steps), 5000, TOGGLE_NONE, nullptr, 0,
       ":SE30 - Both utility arms swing out, then flick in and out twice before they close (5 s)." },
     { "DM:SE31", kSe31Steps, SEQ_STEPCOUNT(kSe31Steps), 14000, TOGGLE_NONE, nullptr, 0,
-      ":SE31 - Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
+      ":SE31 - Every body door and arm opens and works, then folds away in order (14 s)." },
     { "DM:SE32", kSe32Steps, SEQ_STEPCOUNT(kSe32Steps), 5000, TOGGLE_NONE, nullptr, 0,
       ":SE32 - The breadpan doors, dataport and utility arms spring open, then wiggle shut (4 s)." },
     { "DM:SE33", kSe33Steps, SEQ_STEPCOUNT(kSe33Steps), 9000, TOGGLE_NONE, nullptr, 0,
@@ -863,7 +863,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:SE35", kSe35Steps, SEQ_STEPCOUNT(kSe35Steps), 13000, TOGGLE_NONE, nullptr, 0,
       ":SE35 - The two breadpan doors take turns opening, faster and then slower, then both close (13 s)." },
     { "DM:SE36", kSe36Steps, SEQ_STEPCOUNT(kSe36Steps), 8000, TOGGLE_NONE, nullptr, 0,
-      ":SE36 - BT-1's two grippers: both breadpan doors open, both arms rise and snap their claws together five times, then fold away (7 s)." },
+      ":SE36 - Both breadpan doors open and both grippers snap together five times, then fold away (7 s)." },
 };
 static constexpr uint8_t kCatalogSize =
     (uint8_t)(sizeof(kCatalog) / sizeof(kCatalog[0]));

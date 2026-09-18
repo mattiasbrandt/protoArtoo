@@ -460,7 +460,7 @@
       modQueryNote.textContent = "";
       return;
     }
-    modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
+    modQueryNote.textContent = "Read at boot. Poll to refresh, but not while a track plays.";
   };
 
   const updateModuleStatus = async ({ handle = null } = {}) => {
@@ -514,7 +514,7 @@
       if (soundStateBadge && soundHardwareEnabled) {
         const linkOk = Boolean(d.link_ok);
         if (d.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-          soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
+          soundStateBadge.textContent = "No status: the dome link holds the port";
           soundStateBadge.dataset.state = "idle";
           if (modLink) {
             modLink.textContent = "protoR2link using UART";
@@ -644,7 +644,7 @@
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Audio in Configuration.", false);
       return false;
     }
     try {
@@ -661,7 +661,7 @@
   const postTrack = async (key, track, feedbackEl, binding = null) => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Audio in Configuration.", false);
       return false;
     }
     try {
@@ -694,7 +694,7 @@
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       if (!quiet) {
-        showFeedback(feedbackEl || globalFb, "Category updates unavailable: enable S2 — Audio in Setup.", false);
+        showFeedback(feedbackEl || globalFb, "Category updates unavailable: enable S2 — Audio in Configuration.", false);
       }
       return false;
     }
@@ -723,7 +723,7 @@
   const postPlayBanked = async (bank, page, index, feedbackEl, label = "Catalog") => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Playback unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(feedbackEl || globalFb, "Playback unavailable: enable S2 — Audio in Configuration.", false);
       return false;
     }
     try {
@@ -2305,7 +2305,7 @@
     if (data.audio && typeof data.audio.link_ok === "boolean") {
       if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
         if (modLink) { modLink.textContent = "protoR2link using UART"; modLink.dataset.state = "warn"; }
-        soundStateBadge.textContent = "Status unavailable: protoR2link is using UART";
+        soundStateBadge.textContent = "No status: the dome link holds the port";
         soundStateBadge.dataset.state = "idle";
       } else if (!data.audio.link_ok) {
         if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
@@ -2445,7 +2445,7 @@
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
     const value = Number.parseInt(document.getElementById("direct-track")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(directFb, "Direct play unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(directFb, "Direct play unavailable: enable S2 — Audio in Configuration.", false);
       return;
     }
     if (!value || value < 1 || value > 65535) {
@@ -2459,7 +2459,7 @@
   document.getElementById("btn-rand-save")?.addEventListener("click", async () => {
     const minVal = Number.parseInt(document.getElementById("rand-min")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(randFb, "Random range unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(randFb, "Random range unavailable: enable S2 — Audio in Configuration.", false);
       return;
     }
     const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
@@ -2496,7 +2496,7 @@
 
   document.getElementById("btn-int-save")?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      showFeedback(intFb, "Interval updates unavailable: enable S2 — Audio in Setup.", false);
+      showFeedback(intFb, "Interval updates unavailable: enable S2 — Audio in Configuration.", false);
       return;
     }
     for (const field of INT_FIELDS) {
@@ -2522,7 +2522,7 @@
 
   moodMapSaveBtn?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      setMoodMapStatus("Mood mapping unavailable: enable S2 — Audio in Setup.", false);
+      setMoodMapStatus("Mood mapping unavailable: enable S2 — Audio in Configuration.", false);
       return;
     }
     if (!moodMapApiAvailable) {

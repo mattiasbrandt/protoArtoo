@@ -160,9 +160,9 @@
     { id: "aux3", name: "AUX 3", label: "AUX3" },
   ];
 
-  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
   const setupActionHtml = window.PAUi?.setupActionHtml
-    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`);
+    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Configuration</a>`);
   const isServoType = (type) => type === "mg996r" || type === "mg90s";
   const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
 
@@ -220,7 +220,7 @@
     if (enabled.length === 0) {
       renderedAuxIds = "none";
       auxControlsContainer.innerHTML =
-        `<p class="prose"><b>No AUX output is switched on.</b> ${setupActionHtml("Switch one on")} and its controls appear here.</p>`;
+        `<p class="note"><b>No AUX output switched on.</b> ${setupActionHtml("Switch one on")}.</p>`;
       return;
     }
 
@@ -238,8 +238,7 @@
 
       auxControlsContainer.innerHTML = rows.length > 0
         ? rows.join("")
-        : "<p class=\"prose\"><b>Nothing here to drive.</b> The AUX outputs that are switched on have nothing recorded on them, " +
-          "so this page has no servo to move and no strip to name.</p>";
+        : "<p class=\"note\"><b>Nothing to drive.</b> The AUX outputs that are on have nothing set on them.</p>";
       return;
     }
 

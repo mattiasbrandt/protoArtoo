@@ -162,7 +162,7 @@
   });
   const KIND_SAID = Object.freeze({
     live: "Showing: what the droid was last told",
-    pose: "Showing: what this routine says at this moment",
+    pose: "Showing: this moment of the routine",
   });
 
   // Markup is built ONCE, as a string, and every later frame writes onto the

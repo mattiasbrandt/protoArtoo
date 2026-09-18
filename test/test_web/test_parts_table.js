@@ -361,5 +361,5 @@ test("a move the droid refuses says the droid's reason and shows the table as it
 
 test("a Part the droid drives and the page does not know is named, never dropped", async () => {
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["domeEye"] }) });
-  assert.match(env.text("parts-summary"), /the droid also drives domeEye/);
+  assert.match(env.text("parts-summary"), /also drives domeEye/);
 });
