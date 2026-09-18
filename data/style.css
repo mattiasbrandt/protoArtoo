@@ -624,18 +624,19 @@ nav > a {
    The Surface Anatomy (ADR 0066, CONTEXT.md "Surface Anatomy").
 
    The parts every operator surface is drawn from, so a builder who has learned
-   one screen has learned them all: a title with the question it answers, the
-   acts beside it, section heads whose subtitle is a count, a state, a
-   provenance or a purpose, the work area, and a feedback line saying what just
-   happened.
+   one screen has learned them all: a title that is the name in the nav (the
+   page-question line was retired 2026-09-18, ADR 0066), the acts beside it,
+   section heads whose subtitle is a count, a state or a provenance, the work
+   area, and a feedback line saying what just happened.
 
    #399 declared these parts once, here, and drew all thirteen surfaces onto
    them rather than letting any of them grow a block of its own. A new surface
    reaches for what is below; a new part earns its place here.
    =========================================================================== */
 
-/* The title, and the question the surface answers. The acts sit beside it,
-   named for what they do to the thing on this screen. */
+/* The title is the name in the nav. .title .question is leftover markup;
+   the copy sweep removes it. The acts sit beside the title, named for what
+   they do to the thing on this screen. */
 .title {
   display: flex;
   flex-wrap: wrap;
@@ -7207,9 +7208,8 @@ body[data-page="setup"] .status-item .hint {
    question and a family is told apart by treatment, never by hue.
    --------------------------------------------------------------------------- */
 
-/* The bounded promise, under the question. The anatomy's third line in a
-   .title, styled like .forward rather than like .question: the question is the
-   builder's own words and this is the sheet declaring what it is. */
+/* The bounded promise under the Wiring title. The sheet declaring what this
+   image will actually drive, in the dim voice. */
 .wiring-promise {
   margin-top: var(--space-sm);
   max-width: var(--measure);

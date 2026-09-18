@@ -1,10 +1,13 @@
 # Maker Voice — operator-facing copy and layout guide
 
 Every piece of operator-facing text — UI labels, help text, hints, toasts,
-error messages, wizard steps, release notes — is written in **maker voice**:
-the language of a droid builder at the bench, never firmware or backend
-vocabulary. The test for every sentence: **would a maker with no firmware
-knowledge get this on first read?** If not, rewrite it before shipping.
+error messages, wizard steps, action-registry descriptions, console help,
+release notes — is written in **maker voice**: short droid English. The
+language of a builder at the bench, and of the droid in front of them. Never
+firmware vocabulary, never a narrative, never a philosophy.
+
+The test for every sentence: **would a maker with no firmware knowledge get
+this on first read, in one breath?** If not, rewrite it before shipping.
 
 This file has two halves, and they answer two halves of one question. **The
 rules** below say how a sentence is written. **The anatomy**, further down,
@@ -14,62 +17,90 @@ the wrong place is a consequence line nobody read (ADR 0066). Neither half
 defines terms: operator vocabulary lives in `CONTEXT.md`, and the anatomy's own
 term is **Surface Anatomy** there.
 
+Operator decision, 2026-09-18 on #175, after seeing the first anatomy pages:
+the literary reading of these rules is retired. Contrast-and-feel essays,
+wellness questions and why-paragraphs were allowed by the old examples and
+are now a defect.
+
+## The register
+
+One or two short sentences. Dry. Physical. Droid, dome, feet, bay, hatch,
+panel. A bit of astromech in the words, never in a speech.
+
+The model line:
+
+> Off: the droid is a statue. Sticks move, wheels don't.
+
+Stop there. Do not explain how it *reads*, what it *means*, or why the screen
+is shaped that way.
+
+Length is a rule, not a taste:
+
+- A **note** or **hint** is one or two sentences.
+- A **subtitle** is a count, a state or a provenance — or a 2-4 word label.
+- A **title** is the name in the nav. Nothing under it.
+- `.prose` exists only for an act that is irreversible or can strand the
+  droid (flash, restore, wipe). Still one or two sentences.
+
+A third sentence is two notes, or it is too long.
+
 ## The rules
 
 1. **End every parameter in its physical consequence.**
    The number alone is not an explanation; say what it does to the droid.
+   Then stop.
    - Flat: `suppressMs: cooldown period after sequence`
-   - Maker: `Suppress is how long the droid ignores repeat triggers after a
-     sequence ends — too short and a bouncy switch plays it twice.`
+   - Maker: `Suppress: ignore a second trigger after the sequence. Too short
+     and a bouncy switch plays it twice.`
 
-2. **Define by contrast and feel, not by category.**
-   Say what a thing is *as opposed to* its neighbour, and what it looks like
-   on the droid.
+2. **Name the part, then what it does.**
+   Not what it is *as opposed to*, not what it *feels like*.
    - Flat: `Flutter mode: rapid panel actuation`
-   - Maker: `Flutter is excitement, not opening — the panel trembles around
-     closed and must be followed by a real close.`
+   - Maker: `Flutter: the panel shivers closed. Follow it with a close.`
+   - Not: `Flutter is excitement, not opening.`
 
 3. **State units concretely once, then stop leaning on them.**
-   - `Dome speed is in percent of the ESC's full rate; 20 is a slow scan,
-     100 is as fast as the dome ever turns.`
+   - `Dome speed is percent of full ESC. 20 is a slow scan. 100 is as fast
+     as the dome turns.`
 
 4. **Explain the surface in the same breath as the data.**
-   Help text covers how the screen behaves, not only what fields mean:
-   `The name column stays pinned while you scroll, so the output you are
-   testing never leaves the screen.`
+   How the screen behaves, not a tour of the page:
+   `The name column stays pinned while you scroll.`
 
 5. **Fold safety into the sentence, not a warning box.**
    - Flat: `Warning: value may exceed servo limits`
-   - Maker: `Positions are clamped to the ends you measured — a shared
-     sequence can never push your servo past them.`
+   - Maker: `Positions stay inside the ends you measured.`
 
 6. **Plain imperative verbs**: tick, name, pick, press, drag, type, watch.
    The operator does things to the droid; the copy says which thing.
    Backend nouns (dispatch, task, NVS, handler, payload) stay in code and
    internal docs.
 
-7. **Be honest about model vs reality in one clause.**
-   When a control acts on a simulation, a cached value, or a disconnected
-   device, the copy says so where the operator is looking:
-   `The bar shows the last position the controller reported — unplug the
-   dome and it is a memory, not a measurement.`
+7. **Be honest about stale or disconnected in one short clause.**
+   When a control shows a cached value or a disconnected device, say so
+   where the operator is looking:
+   `Last position the Body Controller saw. Unplugged, it is stale.`
+   - Not: `unplug the dome and it is a memory, not a measurement.`
 
-8. **A heading carries a count, a state or a purpose — never appears bare.**
-   The second line answers the question the heading raises.
+8. **A heading carries a count or a state — never a clause.**
+   The second line is computed from the droid, or a 2-4 word label if
+   nothing to count. Never a purpose sentence.
    - Flat: `Outputs`
    - Maker: `Outputs — 13 assigned, 3 spare`
+   - Label, when nothing counts: `the droid's voice` / `idle turns`
+   - Not: `what the dome does when nobody is asking`
    *(#298's inventory recorded heading violations.)*
 
 9. **Two easily-confused nouns are defined together, at the point of
-   confusion** — not in separate paragraphs a reader must assemble.
-   `Saving keeps the sequence in your library. Put on the droid is what
-   decides which sequences it can actually fire.`
-   *(`CONTEXT.md`'s Flagged Ambiguities ledger exists because this recurs.)*
+    confusion** — not in separate paragraphs a reader must assemble.
+    `Saving keeps the sequence in your library. Put on the droid is what
+    it can actually fire.`
+    *(`CONTEXT.md`'s Flagged Ambiguities ledger exists because this recurs.)*
 
 10. **A warning opens with the fact, and the consequence is physical and
     specific** — never "may cause damage". This sharpens rules 1 and 5.
     - Flat: `Warning: acceleration limit may be unsafe`
-    - Maker: `0 means unlimited, which on a panel means it slams.`
+    - Maker: `0 means unlimited. On a panel, it slams.`
 
 11. **Only a refusal names a severity.** Colour carries the rest: red is
     stopped or refused, amber is you can do something about this, a Note is
@@ -81,10 +112,24 @@ term is **Surface Anatomy** there.
     the entrance.** Beside the control, before the commitment, never only in
     a confirmation and never hover-only — a `title` on a button carries no
     affordance, and a tablet at the bench has no hover at all (ADR 0059).
+    The field is still required. The sentence is still short.
 
 13. **A value the builder has never set says so**, and is visually distinct
     from one they set. Not by colour — #327 reserves those. Where the value
     has a richer provenance, that detail goes in its explanation.
+
+## Do not write
+
+These shipped, or the old examples licensed them. They are defects:
+
+| Defect | Example |
+|---|---|
+| Wellness | `What is the droid doing right now, and is it well?` |
+| Perception essay | `which reads as switched off rather than as idle` |
+| Design talk | `A preset is a posture you chose rather than a symptom` |
+| Philosophy | `it is a memory, not a measurement` |
+| Architecture of the page | `they change at different rates: a copy fix is a new web UI` |
+| A page question under the title | `Is the droid free to move, and how fast will the feet go?` |
 
 ## Patterns worth reaching for
 
@@ -105,28 +150,33 @@ Every operator surface is the same shape, so a builder who has learned one
 screen has learned them all (`CONTEXT.md` **Surface Anatomy**, ADR 0066). The
 decision is that ADR's; the shape is below; the numbers are tokens declared once
 in `data/style.css`; and `prototypes/395-surface-anatomy/` is the drawn
-reference the operator picked. A surface that departs from this is a defect,
+reference the operator picked, except its page-question line, which the
+2026-09-18 amendment retired. A surface that departs from this is a defect,
 not a taste.
 
 The rules continue the numbering above, because they are the same gate: a
 review that reads the words and not the layout has read half the page.
 
-14. **A surface opens with its name and the question it answers.**
-    One `.title`, an `<h1>` that is the name in the nav, and a `.question`
-    under it in the builder's words — not a description of the screen.
+14. **A surface opens with its name.**
+    One `.title`, an `<h1>` that is the name in the nav. No question, no
+    tagline, no second sentence under the heading. Theme and explanation sit
+    in notes and hints.
     - Flat: `Foot Drive` / `Drive configuration and telemetry`
-    - Maker: `Foot Drive` / *Is the droid free to move, and how fast will the
+    - Maker: `Foot Drive`
+    - Not: `Foot Drive` / *Is the droid free to move, and how fast will the
       feet go?*
 
 15. **A section head never appears bare, and its subtitle is computed.**
     `.sect` holds an `<h2>` (or `<h3>` for a section inside one) and a `.sub`.
-    This is rule 8 in markup: the subtitle is a count, a state, a provenance or
-    a purpose. A count or a state is read off what the droid answered, never
+    This is rule 8 in markup: the subtitle is a count, a state or a
+    provenance. A count or a state is read off what the droid answered, never
     typed into the markup — a constant looks right on every screenshot and is
-    wrong on every droid.
+    wrong on every droid. A static section with nothing to count gets a 2-4
+    word label, never a clause.
     - `Parts` / *58 parts · 4 on an output · 54 not wired*
     - `Safety` / *Failsafe · clear*
-    - `Web UI files` / *these pages, as one image*
+    - `Audio` / *the droid's voice*
+    - Not: `Random movement` / *what the dome does when nobody is asking*
 
 16. **The work area is a table, a picture or a form, and only one of them.**
     It sits on a `.card` — one instrument plate, chamfered, with a seam all
@@ -147,12 +197,15 @@ review that reads the words and not the layout has read half the page.
     the bottom of a tall surface answer 900 px away from the button that was
     pressed.
 
-19. **Three voices, and each has one job.** `.prose` is the why, at the one
-    reading measure (`--measure`, 70 ch). `.hint` is the cue directly under a
-    control, in the mono voice. A `.note` is the consequence beside a choice,
-    and takes exactly two colours: `.note-act` amber says act on this,
-    `.note-info` blue says here is information. Emphasis is weight, never
-    colour.
+19. **Three voices, and each has one job.** `.hint` is the cue directly under a
+    control, in the mono voice, one or two sentences. A `.note` is the
+    consequence beside a choice, one or two sentences, and takes exactly two
+    colours: `.note-act` amber says act on this, `.note-info` blue says here
+    is information. Emphasis is weight, never colour.
+    `.prose` is not the why of every card. It is the one or two sentences on
+    an irreversible or stranding act — flash, restore, wipe — at the one
+    reading measure (`--measure`, 70 ch). Anywhere else, a why-paragraph is a
+    defect: cut it, or fold the fact into the note.
 
 20. **Colour reports how a thing is doing, and nothing else.** Four signal
     colours, from `CONTEXT.md` **Status Colour**: `--success` nominal,
@@ -234,10 +287,11 @@ endpoint-typed versus endpoint-measured, saved-but-not-yet-applied.
 
 Copy review is part of code review for any change touching operator-facing
 text: read the new text as a maker, flag any sentence that needs firmware
-knowledge to parse, and check rule 1 on every parameter mentioned. Layout
-review is the same pass: check the head carries a subtitle (rule 15), the
-consequence sits where the builder meets the control (rules 12 and 19), and
-nothing new reports a state in the blue (rule 20).
+knowledge to parse, flag any sentence that is a narrative or a third line, and
+check rule 1 on every parameter mentioned. Layout review is the same pass:
+check the title has no question under it (rule 14), the head carries a
+subtitle (rule 15), the consequence sits where the builder meets the control
+(rules 12 and 19), and nothing new reports a state in the blue (rule 20).
 
 **This gate is not the mechanism, and on its own it did not hold** — #298's
 inventory is what shipped past it. Three things are enforced instead of
@@ -251,8 +305,9 @@ reviewed (ADR 0059):
   and a vocabulary checker reports them.
 
 What remains for the gate is what no grep can judge: whether a sentence names
-a consequence, whether an explanation is where a builder meets the control,
-and one name per concept for terms that cannot be enumerated.
+a consequence in one or two lines, whether an explanation is where a builder
+meets the control, and one name per concept for terms that cannot be
+enumerated.
 
 The layout half is enforced the same way, and the split is the same. Two things
 are checked rather than reviewed — `make check-surface-anatomy` on pictographs

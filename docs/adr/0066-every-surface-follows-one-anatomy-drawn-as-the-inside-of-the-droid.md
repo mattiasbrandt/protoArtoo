@@ -2,8 +2,10 @@
 
 Status: accepted (2026-09-13, issue #395; identity direction continued by the
 operator on 2026-09-14; **amended 2026-09-16** - see *Amendment: health signals
-read as droid LEDs*). Describes the **target**; the first mockups exist locally
-and none of it ships yet.
+read as droid LEDs*; **amended 2026-09-18** - see *Amendment: the title is the
+name, and the copy is short droid English*). Describes the **target**; the
+anatomy sweep has landed on `epic/operator-experience`; the 2026-09-18 copy
+amendment has not.
 
 ## Context
 
@@ -37,12 +39,13 @@ of those patterns; nothing had adopted the layout half.
 
 ## Decision
 
-**Every surface follows one Surface Anatomy** (`CONTEXT.md`): title with the
-question it answers, sections whose heading carries a count, a state, a
-provenance or a purpose, the work area, the acts named beside what they act on,
-a feedback line. The structure is the reference project's, adapted to a live
-controller and to the shell #325 decided; it is not a pane composition and it
-does not reopen #325 or #327.
+**Every surface follows one Surface Anatomy** (`CONTEXT.md`): a title that is
+the name in the nav (the page-question line was retired on 2026-09-18),
+sections whose heading carries a count, a state or a provenance, the work
+area, the acts named beside what they act on, a feedback line. The structure
+is the reference project's, adapted to a live controller and to the shell
+#325 decided; it is not a pane composition and it does not reopen #325 or
+#327.
 
 **The identity is the inside of the droid: an instrument panel.** Dark surfaces,
 the dome's panel lines as structure, the droid's blue as the single accent, mono
@@ -118,6 +121,41 @@ Signal** answers it by making a thing never asked read grey, which is the one
 thing `health_signals.js` does not currently distinguish - it folds unknown into
 `warn`.
 
+## Amendment (2026-09-18): the title is the name, and the copy is short droid English
+
+The Decision above, and `docs/ui-copy-voice.md` rules 2, 14 and 19, licensed a
+literary register: a question under every title, a why-paragraph on every
+card, and contrast-and-feel essays as the model line. On seeing the first
+anatomy pages in Playwright, the operator reversed the copy half:
+
+> "I actually dont like it very much... way too narrative and almost
+> philosophical in its wording... end up with just bad phrase. Basically I
+> want the text note/descriptions to be short and concise. simple and star
+> wars droid/astromech themed"
+
+Settled in the same grilling, 2026-09-18:
+
+- **Register:** short droid English. One or two dry sentences. Droid, dome,
+  feet, bay. Physical. The model line is *Off: the droid is a statue. Sticks
+  move, wheels don't.*
+- **Title:** the name in the nav. The `.question` line is gone.
+- **`.prose`:** only where the act is irreversible or can strand the droid
+  (flash, restore, wipe). Still one or two sentences.
+- **Subtitles:** a count, a state or a provenance, computed from the droid.
+  A static section gets a 2-4 word label, never a clause.
+- **Scope:** everything a builder reads — UI, action-registry descriptions,
+  console help, wizard why-strings, operator docs.
+
+This does **not** reopen the instrument-panel identity, the slots (title,
+section, work area, acts, feedback), ADR 0059's required explanation field,
+or the ban on firmware vocabulary. The field stays; the sentence gets
+shorter. The prototype under `prototypes/395-surface-anatomy/` still shows
+the question line; that line is historical.
+
+The copy sweep that lands this is [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407). D1 (#348) still
+owns "every no names your next move"; this amendment owns the register of
+the words, not the routing of a no.
+
 ## Considered options
 
 - **Keep going and retrofit at the end of Wave 2 or Wave 3.** Cheapest to plan;
@@ -146,6 +184,9 @@ thing `health_signals.js` does not currently distinguish - it folds unknown into
   rewritten **Status Colour**; the sweep ticket (#399) owns landing the tokens
   in `data/style.css`, and every brief that describes a status indicator in
   blue is repaired at its next refresh.
+- Per the 2026-09-18 amendment, `CONTEXT.md` **Surface Anatomy** drops the
+  page question; **Maker Voice** is the register; `docs/ui-copy-voice.md`
+  replaces the literary examples. The live strings wait on [#407](https://github.com/mattiasbrandt/protoArtoo/issues/407).
 - A prototype ticket under #175 owns the mockup pass and carries the anatomy's
   pattern library with its citations, so an implementer does not re-derive it;
   the sweep ticket is minted from the approved mockup and inherits it.
