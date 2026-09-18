@@ -114,36 +114,55 @@
 
   const pill = (text) => element("span", "status-pill pill-info", text);
 
-  const designCard = (half, design, chosen, interactive) => {
+  // One design, drawn as one plate: a pill saying what kind of card it is, the
+  // design's short form as a mono readout, its name, its one sentence - and,
+  // under the design shown, its Design Variants as the sub-selection that
+  // belongs to it (operator, 2026-09-18 on #368). The plate is the unit the
+  // anatomy's picker cards are (docs/ui-copy-voice.md, ADR 0066); the press is
+  // a button inside it, because the variants are buttons too and a button may
+  // not hold another.
+  const designPlate = (half, design, choice, shown, interactive) => {
     const roadmap = design.card === CARD_ROADMAP;
-    // A roadmap card is static content, never a control: no button, no
+    const chosen = choice?.design === design.id;
+    const plate = element(roadmap ? "article" : "div", "droid-build-plate");
+    plate.dataset.option = design.id;
+
+    // A roadmap plate is static content, never a control: no button, no
     // listener, nothing a press could reach (CONTEXT.md "Component Picker").
-    const card = element(roadmap ? "div" : "button", "droid-build-card");
-    card.dataset.design = design.id;
+    const face = element(roadmap ? "div" : "button", "droid-build-card");
+    face.dataset.design = design.id;
     if (roadmap) {
-      card.classList.add("availability-settled-no");
+      plate.classList.add("availability-settled-no");
     } else {
-      card.type = "button";
-      card.setAttribute("role", "radio");
-      card.setAttribute("aria-checked", chosen ? "true" : "false");
-      if (chosen) card.classList.add("is-chosen");
-      card.disabled = !interactive;
-      card.addEventListener("click", () => {
+      face.type = "button";
+      face.setAttribute("role", "radio");
+      face.setAttribute("aria-checked", chosen ? "true" : "false");
+      face.disabled = !interactive;
+      face.addEventListener("click", () => {
         if (chosen) return;
         choose(half, design.id, design.defaultVariant || "");
       });
     }
+    if (chosen) plate.classList.add("is-chosen");
 
     const head = element("span", "droid-build-card-head");
-    head.appendChild(element("span", "droid-build-card-label", design.label));
     if (roadmap) head.appendChild(pill("Roadmap"));
     if (design.preselected) head.appendChild(pill("Default"));
-    card.appendChild(head);
-    card.appendChild(element("span", "droid-build-card-blurb", design.blurb));
-    return card;
+    head.appendChild(element("span", "droid-build-card-readout", design.short));
+    face.appendChild(head);
+    face.appendChild(element("span", "droid-build-card-label", design.label));
+    face.appendChild(element("span", "droid-build-card-blurb", design.blurb));
+    plate.appendChild(face);
+
+    if (shown?.design === design.id && Array.isArray(design.variants)) {
+      plate.appendChild(variantRow(half, design, shown, interactive));
+    }
+    return plate;
   };
 
   const variantRow = (half, design, choice, interactive) => {
+    const block = element("div", "droid-build-variant-block");
+    block.appendChild(element("span", "droid-build-variant-label", "Design Variant"));
     // The shared segmented control: one recess, the chosen answer lit.
     const row = element("div", "seg droid-build-variants");
     row.setAttribute("role", "radiogroup");
@@ -163,7 +182,8 @@
       });
       row.appendChild(button);
     });
-    return row;
+    block.appendChild(row);
+    return block;
   };
 
   const renderHalf = (half, build, interactive) => {
@@ -191,16 +211,7 @@
     cards.setAttribute("role", "radiogroup");
     cards.setAttribute("aria-label", half.title);
     offeredFor(half.key).forEach((design) => {
-      // One option per design: its card, and - on the design shown - its
-      // variants directly under it, as the sub-selection that belongs to it
-      // (operator, 2026-09-18 on #368). A design with no variants has none.
-      const option = element("div", "droid-build-option");
-      option.dataset.option = design.id;
-      option.appendChild(designCard(half, design, choice?.design === design.id, interactive));
-      if (shown?.design === design.id && Array.isArray(design.variants)) {
-        option.appendChild(variantRow(half, design, shown, interactive));
-      }
-      cards.appendChild(option);
+      cards.appendChild(designPlate(half, design, choice, shown, interactive));
     });
     section.appendChild(cards);
 
