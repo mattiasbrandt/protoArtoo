@@ -807,10 +807,15 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 
 // the allocation does not move; the floor holds by 1488 B.
 constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4656;
 constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4656 -> 5820 -> 6144
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8320;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8320 -> 10400 -> 10752
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5776;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 7220 -> 7680
+// Re-derived 2026-09-18 (#369): Console 8320 -> 8352 and WebEvents 5776 ->
+// 5792. ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member,
+// the Radio Controller's Component Member, and both chains carry a snapshot by
+// value; the pre-slice base walks 8320 and 5776 on this chip. The rule lands
+// on the steps the stacks already are, so neither allocation moves.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8352;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8352 -> 10440 -> 10752
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5792;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5792 -> 7240 -> 7680
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
 constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
 // HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this

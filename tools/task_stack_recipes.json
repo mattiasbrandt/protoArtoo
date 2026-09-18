@@ -344,15 +344,16 @@
             "embeddedCliProcess"
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
-          "chain_bytes": 8320,
-          "product_bytes": 8320,
-          "profiler_bytes": 8320,
+          "chain_bytes": 8352,
+          "product_bytes": 8352,
+          "profiler_bytes": 8352,
           "components": {
-            "onCliCommand": 7856,
+            "onCliCommand": 7888,
             "consoleTask": 368,
             "embeddedCliProcess": 96
           },
-          "rule": "applied"
+          "rule": "applied",
+          "note": "Re-derived 2026-09-18 (#369) from 8320: ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member, and this chain carries a snapshot by value. The coordinator's firebeetle2 walk at ec8557b1 gave 8352 against 8320 at the pre-slice base 367e4abb. onCliCommand's 7888 is that total less the two stitched frames, which hold no snapshot; the profiler image was not walked and is recorded equal to the product image, the same struct being in both. The stack stays 10752 (8352 -> 10440 -> 10752)."
         }
       },
       "note": "Re-walked after #226 wave 10 (323c4a20) merged fourteen sound.config rows into src/console/console_module.cpp. That merge put a new deepest branch on this chain: consoleExecuteCommand -> consoleWriteAudioTracksField (1216 B) -> audioTracksCommitApplied (1280 B) -> audioQueueRefreshBindings -> the newlib snprintf/_dtoa_r tail. The chain rose from 7024 to 7360 on ESP32 and from 7136 to 7984 on the ESP32-P4 - different amounts for the same source change, because the Xtensa walk is a lower bound and the new branch is partly invisible on an image that emits a third of its function bodies as data. The ESP32-P4 stack moves to 10240 with it; the ESP32 arm's 9216 still satisfies the rule."
@@ -382,11 +383,11 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 5776,
-          "product_bytes": 5776,
-          "profiler_bytes": 5776,
+          "chain_bytes": 5792,
+          "product_bytes": 5792,
+          "profiler_bytes": 5792,
           "rule": "applied",
-          "note": "The one arm original #256 had to move: 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on RISC-V, so the chain sat past the inherited 6144 before the 25% margin. Re-walked 2026-09-13 (#256 reopen) at 5776, still within 7680."
+          "note": "The one arm original #256 had to move: 4096 overflowed on ESP32 in _dtoa_r, and that frame is 160 -> 416 B on RISC-V, so the chain sat past the inherited 6144 before the 25% margin. Re-walked 2026-09-13 (#256 reopen) at 5776, still within 7680. Re-derived 2026-09-18 (#369) to 5792: ConfigSnapshot grew 912 -> 916 B for rc_member, and the coordinator's firebeetle2 walk at ec8557b1 gave 5792 against 5776 at the pre-slice base 367e4abb. The profiler image was not walked and is recorded equal to the product image, the same struct being in both. The stack stays 7680 (5792 -> 7240 -> 7680)."
         }
       }
     },
