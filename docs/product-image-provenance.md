@@ -19,9 +19,10 @@ Encoded 400x300 WebP, dark ground `#0c1525`, at most 8 KiB
 | `artoo_pcb.webp` | Artoo PCB (artoo.uk) | supported | Operator-supplied product photograph of Steve Wagg's Artoo Controller v1.1 with its ESP32 clone fitted. The board design is Steve's (LICENSE item 2, https://artoo.uk). | Used with the hardware this firmware already credits. |
 | `firebeetle2.webp` | FireBeetle 2 (ESP32-P4) | supported | Operator-supplied DFRobot product photograph of the FireBeetle 2 ESP32-P4 and its carrier. | Manufacturer product image, used to identify the board. |
 | `hotrc_ds650.webp` | HotRC DS-650 | supported | Operator-supplied listing photograph of a pistol-grip RC radio (branded Havcybin on this shot) with a HotRC F-06A in frame. The registry row is the HotRC DS-650. | Manufacturer / listing photograph, used to identify the class of RC radio. |
+| `rc_radio.webp` | RC Radio | supported | Operator-supplied product photograph of a RadioMaster TX16S handset (`tasks/product-images/elrs-radio.png`), illustrating the generic RC Radio card (#369). It was held back while the Radio Controller rows were receivers, because a handset is not a receiver. | Manufacturer product image, used to identify the class of RC radio. |
 | `rc_transmitter_pwm.webp` | RC Receiver - PWM | supported | Operator-supplied product photograph of a HotRC F-06A PWM receiver. The photograph is of the box in the droid, which is what protoArtoo reads. | Manufacturer product image, used to identify the receiver. |
 | `rc_transmitter_sbus.webp` | RC Receiver - SBUS | supported | Operator-supplied product photograph of an SBUS receiver. | Manufacturer product image, used to identify the receiver. |
-| `rc_transmitter_elrs.webp` | RC Receiver - ELRS | roadmap | Operator-supplied product photograph of an ELRS receiver (SuperP-class). `tasks/product-images/elrs-radio.png` is a handset and was not encoded. | Manufacturer product image, used to identify the receiver. |
+| `rc_transmitter_elrs.webp` | RC Receiver - ELRS | supported | Operator-supplied product photograph of an ELRS receiver (SuperP-class). The controller reads no ELRS input yet (#369). | Manufacturer product image, used to identify the receiver. |
 | `xbox_controller.webp` | Xbox Controller | roadmap | Operator-supplied photograph of a white Xbox 360 wired controller. EXIF: Nikon D7000, Adobe Photoshop CS5, 2014-08-29. Photographer not named on the file. | Third-party photograph; copyright holder unknown. Used only as product identification on a picker card. |
 | `pca9685.webp` | PCA9685 | roadmap | Operator-supplied product photograph of a 16-channel PCA9685 expander board. | Manufacturer / listing photograph, used to identify the board. |
 | `pololu_maestro.webp` | Pololu Maestro | roadmap | Operator-supplied product photograph of a Pololu Maestro. | Manufacturer product image, used to identify the board. |
@@ -41,4 +42,4 @@ Not photographed:
 
 | Product | Why |
 |---|---|
-| ESP32 GPIO (LEDC) | The MCU's own PWM. There is no separate product to hold. |
+| Body controller board GPIO (`esp32_gpio_ledc`, ESP32 GPIO / LEDC) | The MCU's own PWM. There is no separate product to hold; its card shows the running Body Controller's picture (#369). |
