@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-surface-anatomy check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -160,6 +160,12 @@ check-parts-drift: ## Ad hoc check that the parts catalog and its generated outp
 # operator reads all three the same way (#340).
 check-component-drift: ## Check the Component Registry manifest against the firmware and the browser
 	python3 tools/check_component_registry_drift.py
+
+# include/config.h against docs/pin_map.md, board by board, in the same
+# report-never-rewrite shape. Which file is right on which board is read from
+# the document's Source of Truth Contract, and each finding names it (#367).
+check-pin-drift: ## Check the pins in config.h against the wiring in docs/pin_map.md
+	python3 tools/check_pin_drift.py
 
 # The Surface Anatomy's two mechanical rules - no pictograph on a swept surface,
 # and every icon reference resolving against the sprite - in the same
