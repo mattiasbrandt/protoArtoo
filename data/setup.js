@@ -43,8 +43,6 @@
   // that grows a reader does not also grow a branch at every site that shows it.
   const textOf = (value) => (typeof value === "function" ? value() : value);
 
-  const checked = (id) => Boolean(document.getElementById(id)?.checked);
-  const countFitted = (ids) => ids.filter(checked).length;
   // A component family's answer is the picker's own, so the rail and the
   // cards read one answer (data/component_picker.js).
   const pickedIn = (family) => window.ComponentPicker?.answerFor(family) || "";
@@ -120,20 +118,14 @@
       answer: () => pickedIn("dome_controller"),
     },
     {
-      key: "servos",
+      // Shown, not asked, since the arms and AUX lines moved to Wiring and
+      // Servos (#369): what drives the servos is the board's own outputs, and
+      // nothing on this step is a choice.
+      key: "_servos",
       title: "Body servo controller",
-      q: "What moves the arms and the spare outputs?",
-      why: "Two utility arms, and three spare lines for a servo, a light or a smoke unit.",
-      answer: () => {
-        const fitted = countFitted([
-          "enable-arm1",
-          "enable-arm2",
-          "enable-aux1",
-          "enable-aux2",
-          "enable-aux3",
-        ]);
-        return fitted === 0 ? "None fitted" : `${fitted} fitted`;
-      },
+      q: "The board's own outputs drive the body's servos.",
+      why: "Nothing to pick here. Mark the arms and AUX lines you wired on Wiring.",
+      answer: () => pickedIn("body_servo_controller"),
     },
     {
       key: "rc",

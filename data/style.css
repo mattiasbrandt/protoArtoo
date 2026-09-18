@@ -1598,15 +1598,13 @@ input.input-narrow {
    Each family also has a bare .availability-* class, so a surface that arrives
    later wears its family directly instead of editing these shared rules.
 
-   One state is not yet split at the source. identity-unavailable covers two
-   different failures - a transport failure that is retryable, and a manifest
-   the controller could not describe, which is terminal - and CONTEXT.md puts
-   the first in "still finding out" and the second in "settled no". The copy
-   already tells them apart (data/setup.js reasonFor()), but the DOM carries a
-   single feature-state-identity-unavailable class for both, so CSS cannot.
-   It is dressed as "still finding out" here, which is the reading its own
-   label ("Availability unknown") makes, until the element carries the
-   distinction. */
+   One state covers two families. identity-unavailable is a transport failure
+   that is retryable, or a manifest the controller could not describe, which
+   is terminal - and CONTEXT.md puts the first in "still finding out" and the
+   second in "settled no". It is dressed as "still finding out" here, and the
+   element also carries its family class (data/feature_availability.js
+   familyClassFor(), #369), which the "B1's fourth answer" block near the end
+   of this file uses to draw the terminal case as settled. */
 .feature-availability-row {
   position: relative;
   flex-wrap: wrap;
@@ -1743,11 +1741,6 @@ input.input-narrow {
   background:
     repeating-linear-gradient(135deg, color-mix(in srgb, var(--lift) 6%, transparent) 0 5px, transparent 5px 10px),
     var(--surface-alt);
-}
-
-.feature-availability-row .seg-option:disabled {
-  cursor: not-allowed;
-  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
 }
 
 .feature-availability-panel {
@@ -1894,68 +1887,6 @@ input.input-narrow {
 
 .feature-availability-content[aria-hidden="true"] {
   display: none;
-}
-
-.type-segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2xs);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  padding: var(--space-2xs);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  background: var(--well);
-  min-height: 44px;
-}
-
-.type-segmented .seg-option {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: var(--radius-plate);
-  padding: var(--space-sm) var(--space-md);
-  font: inherit;
-  font-size: var(--fs-cell);
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  min-height: 34px;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
-}
-
-.type-segmented .seg-option:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--lift) 5%, transparent);
-}
-
-/* The option chosen, lit by the interaction accent the way every other
-   segmented control on the droid lights one (.seg > button.active). It was
-   --success, which made an answer the builder gave read as a health signal and
-   put a green on something you can press. */
-.type-segmented .seg-option.is-active {
-  color: var(--text);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.type-segmented .seg-option:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-.type-select.type-select-native {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-  pointer-events: none;
 }
 
 .type-select {
@@ -7902,19 +7833,6 @@ button.droid-build-card:disabled {
   color: var(--accent-bright);
 }
 
-/* The component type sits under the name as the plate's sub-selection, the
-   whole width of the plate. */
-.output-plate .type-segmented {
-  display: flex;
-  justify-content: stretch;
-  width: 100%;
-}
-
-.output-plate .type-segmented .seg-option {
-  flex: 1 1 0;
-  padding-inline: var(--space-xs);
-}
-
 /* A chosen RC Radio's RC Receiver (#369): small receiver cards inside the
    radio's plate, the same plate language one size down - a picture, the
    name, and the interaction blue on the receiver the droid reads. */
@@ -8040,4 +7958,104 @@ button.droid-build-card:disabled {
 
 .component-sub-channels .output-plate .toggle-status {
   letter-spacing: 0.06em;
+}
+
+/* ---------------------------------------------------------------------------
+   The arm and AUX outputs on Wiring and Servos (#369,
+   data/output_settings.js): the same output plates, with the plate's head as
+   the press on Wiring and the servo type as the shared segmented control
+   under it. An output in use takes the chosen treatment, as a switched-on
+   output did on Configuration.
+   --------------------------------------------------------------------------- */
+.output-plates > .output-setting {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--surface-alt);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.output-plates > .output-setting.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-alt));
+}
+
+.output-setting-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+button.output-setting-head {
+  cursor: pointer;
+}
+
+button.output-setting-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.output-setting .toggle-label {
+  font-weight: 600;
+}
+
+.output-setting .toggle-status {
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.output-setting.is-on .toggle-status {
+  color: var(--accent-bright);
+}
+
+.output-setting .output-seg > button {
+  padding-inline: var(--space-xs);
+}
+
+.output-setting-note {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   B1's fourth answer, applied (#341, #369): an identity that will never be
+   read is SETTLED NO, and one still being fetched is STILL FINDING OUT. The
+   element now carries the family (data/feature_availability.js
+   familyClassFor), so the terminal case leaves the dotted, breathing
+   "finding out" dress the state class alone gave it. And "still finding
+   out" is dimmed, so like every dimmed family it lifts on hover and focus:
+   a builder can still read what they cannot yet act on.
+   --------------------------------------------------------------------------- */
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no {
+  border-left-style: solid;
+  border-left-color: transparent;
+  opacity: var(--avail-dim-settled);
+}
+
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no:hover,
+.feature-availability-row.feature-state-identity-unavailable.availability-settled-no:focus-within,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no:hover,
+.feature-availability-panel.feature-state-identity-unavailable.availability-settled-no:focus-within {
+  opacity: 0.85;
+}
+
+.availability-finding-out:hover,
+.availability-finding-out:focus-within,
+.feature-availability-row.availability-finding-out:hover,
+.feature-availability-row.availability-finding-out:focus-within,
+.feature-availability-panel.availability-finding-out:hover,
+.feature-availability-panel.availability-finding-out:focus-within {
+  opacity: 1;
 }

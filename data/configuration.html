@@ -203,111 +203,9 @@
         </div>
 
         </div>
-        <div data-setup-step="servos">
+        <div data-setup-step="_servos">
         <div class="sect"><h3>Body servo controller</h3><span class="sub">what drives the body's servos</span></div>
         <div class="component-picker" data-component-family="body_servo_controller"></div>
-        <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
-        <p class="hint">Tick each arm you fitted and pick its servo. The type sets how far the output swings.</p>
-        <div class="output-plates">
-        <div class="component-row output-plate" data-feature-entry="system.config.enable_arm1">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enable-arm1" name="enableArm1">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Utility Arm 1 <span class="component-badge" id="badge-enable_arm1"></span></span>
-            <span class="toggle-status" id="status-arm1">Off</span>
-          </label>
-          <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="Utility Arm 1 component type">
-            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-          </div>
-          <select class="type-select type-select-native" id="type-arm1" title="Component type connected to Utility Arm 1" aria-label="Utility Arm 1 component type" tabindex="-1" aria-hidden="true">
-            <option value="mg996r">MG996R (standard)</option>
-            <option value="mg90s">MG90S (micro)</option>
-          </select>
-        </div>
-        <div class="component-row output-plate" data-feature-entry="system.config.enable_arm2">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enable-arm2" name="enableArm2">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Utility Arm 2 <span class="component-badge" id="badge-enable_arm2"></span></span>
-            <span class="toggle-status" id="status-arm2">Off</span>
-          </label>
-          <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="Utility Arm 2 component type">
-            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-          </div>
-          <select class="type-select type-select-native" id="type-arm2" title="Component type connected to Utility Arm 2" aria-label="Utility Arm 2 component type" tabindex="-1" aria-hidden="true">
-            <option value="mg996r">MG996R (standard)</option>
-            <option value="mg90s">MG90S (micro)</option>
-          </select>
-        </div>
-        </div>
-
-        <div class="sect"><h3>AUX outputs</h3><span class="sub">3 spare lines</span></div>
-        <p class="hint">Spare outputs for a servo, a light or a smoke unit. Only one can carry an LED strip.</p>
-        <div class="output-plates">
-        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux1">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enable-aux1" name="enableAux1">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 1 <span class="component-badge" id="badge-enable_aux1"></span></span>
-            <span class="toggle-status" id="status-aux1">Off</span>
-          </label>
-          <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX 1 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX 1" aria-label="AUX 1 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
-        </div>
-        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux2">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enable-aux2" name="enableAux2">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 2 <span class="component-badge" id="badge-enable_aux2"></span></span>
-            <span class="toggle-status" id="status-aux2">Off</span>
-          </label>
-          <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX 2 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX 2" aria-label="AUX 2 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
-        </div>
-        <div class="component-row output-plate" data-feature-entry="system.config.enable_aux3">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enable-aux3" name="enableAux3">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 3 <span class="component-badge" id="badge-enable_aux3"></span></span>
-            <span class="toggle-status" id="status-aux3">Off</span>
-          </label>
-          <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX 3 component type">
-            <button type="button" class="seg-option is-active" data-value="none">None</button>
-            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
-            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
-          </div>
-          <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX 3" aria-label="AUX 3 component type" tabindex="-1" aria-hidden="true">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">LED strip</option>
-          </select>
-        </div>
-        </div>
-
         </div>
         <div data-setup-step="rc">
         <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive it with</span></div>
@@ -380,7 +278,7 @@
     <!-- LED Strip -->
     <div class="card">
       <div class="sect"><h2>LED strip</h2><span class="sub" id="aux-led-route-status">Not routed</span></div>
-      <p class="hint">Switch on an AUX line above and pick <b>LED strip</b> on it. One line carries the strip; the rest stay servo outputs.</p>
+      <p class="hint">Set an AUX line in use and carrying the <b>LED strip</b> on <a class="setup-link" href="#wiring">Wiring</a>. One line carries the strip; the rest stay servo outputs.</p>
       <div class="led-route">
         <label class="field" for="aux-led-count">
           <span>LED strip count</span>

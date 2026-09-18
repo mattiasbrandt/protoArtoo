@@ -3,7 +3,8 @@
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
 // The Droid Build, the Component Picker's families and the toggles behind
-// them, the component types, the LED strip route and the droid's name.
+// them, the LED strip's count and route, and the droid's name. The arm and
+// AUX outputs moved to Wiring and Servos (data/output_settings.js, #369).
 // Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
@@ -34,11 +35,6 @@ const BOARD_LABELS = {
     state: "off",
   });
   const featureToggles = {
-    arm1:        featureToggle("arm1", "Utility Arm 1"),
-    arm2:        featureToggle("arm2", "Utility Arm 2"),
-    aux1:        featureToggle("aux1", "AUX 1"),
-    aux2:        featureToggle("aux2", "AUX 2"),
-    aux3:        featureToggle("aux3", "AUX 3"),
     domeEsc:     featureToggle("dome-esc", "Dome ESC"),
     rcCh1:       featureToggle("rc-ch1", "RC Channel 1"),
     rcCh2:       featureToggle("rc-ch2", "RC Channel 2"),
@@ -51,18 +47,13 @@ const BOARD_LABELS = {
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
-  // Component type selects — maps API key to select element
-  const typeSelects = {
-    arm1Type: document.getElementById("type-arm1"),
-    arm2Type: document.getElementById("type-arm2"),
-    aux1Type: document.getElementById("type-aux1"),
-    aux2Type: document.getElementById("type-aux2"),
-    aux3Type: document.getElementById("type-aux3"),
-  };
-  const AUX_RGB_SELECT_KEYS = ["aux1Type", "aux2Type", "aux3Type"];
-  const AUX_RGB_PIN_BY_KEY = { aux1Type: 1, aux2Type: 2, aux3Type: 3 };
-  const AUX_RGB_LABEL_BY_KEY = { aux1Type: "AUX1", aux2Type: "AUX2", aux3Type: "AUX3" };
-  const AUX_RGB_TOGGLE_KEY_BY_TYPE = { aux1Type: "aux1", aux2Type: "aux2", aux3Type: "aux3" };
+  // The arm and AUX outputs - in use, servo type, LED strip line - are set on
+  // Wiring and Servos now (data/output_settings.js, #369). This surface keeps
+  // the LED strip's count and preview, and reads where the strip is routed
+  // from the saved config rather than deriving it: it no longer holds the AUX
+  // rows it was derived from, and never sends aux_led_pin.
+  const AUX_LINE_LABELS = { 1: "AUX1", 2: "AUX2", 3: "AUX3" };
+  let routedAuxPin = 0;
 
   const featureFeedback = document.getElementById("feature-feedback");
   const auxLedCountInput = document.getElementById("aux-led-count");
@@ -82,11 +73,6 @@ const BOARD_LABELS = {
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
-    enableArm1:        "arm1",
-    enableArm2:        "arm2",
-    enableAux1:        "aux1",
-    enableAux2:        "aux2",
-    enableAux3:        "aux3",
     enableDomeEsc:     "domeEsc",
     enableRcCh1:       "rcCh1",
     enableRcCh2:       "rcCh2",
@@ -351,77 +337,9 @@ const BOARD_LABELS = {
     return normalized;
   };
 
-  const segmentedTypeControls = Array.from(document.querySelectorAll(".type-segmented[data-target]"));
-
-  const syncSegmentedControl = (control) => {
-    if (!control) return;
-    const targetId = control.dataset.target || "";
-    const target = document.getElementById(targetId);
-    if (!target) return;
-    const selected = String(target.value || "");
-    control.querySelectorAll(".seg-option[data-value]").forEach((button) => {
-      const isActive = button.dataset.value === selected;
-      button.classList.toggle("is-active", isActive);
-      button.setAttribute("aria-pressed", isActive ? "true" : "false");
-    });
-  };
-
-  const syncAllSegmentedControls = () => {
-    segmentedTypeControls.forEach((control) => syncSegmentedControl(control));
-  };
-
-  const initSegmentedTypeControls = () => {
-    segmentedTypeControls.forEach((control) => {
-      const targetId = control.dataset.target || "";
-      const target = document.getElementById(targetId);
-      if (!target) return;
-
-      control.addEventListener("click", (event) => {
-        const button = event.target.closest(".seg-option[data-value]");
-        if (!button) return;
-        const nextValue = String(button.dataset.value || "");
-        if (target.value !== nextValue) {
-          target.value = nextValue;
-          target.dispatchEvent(new Event("change", { bubbles: true }));
-        } else {
-          syncSegmentedControl(control);
-        }
-      });
-
-      target.addEventListener("change", () => syncSegmentedControl(control));
-      syncSegmentedControl(control);
-    });
-  };
-
-  const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => {
-    const toggleKey = AUX_RGB_TOGGLE_KEY_BY_TYPE[key];
-    const toggle = featureToggles[toggleKey];
-    const enabled = Boolean(toggle?.available && toggle.input?.checked);
-    return enabled && typeSelects[key]?.value === "rgb";
-  });
-
-  const deriveAuxLedPinFromTypes = () => {
-    const rgbKey = getRgbAuxKeys()[0];
-    return rgbKey ? AUX_RGB_PIN_BY_KEY[rgbKey] : 0;
-  };
-
-  const enforceSingleRgbAux = (changedKey = "") => {
-    const rgbKeys = getRgbAuxKeys();
-    if (rgbKeys.length <= 1) return;
-    const keepKey = changedKey && rgbKeys.includes(changedKey) ? changedKey : rgbKeys[0];
-    rgbKeys.forEach((key) => {
-      if (key !== keepKey && typeSelects[key]) {
-        typeSelects[key].value = "none";
-      }
-    });
-    const keptLabel = AUX_RGB_LABEL_BY_KEY[keepKey] || "selected AUX";
-    setFeatureFeedback(`Only one AUX line can drive LED strip output. Keeping ${keptLabel}.`, "warning");
-  };
-
   const updateAuxLedConfigVisibility = () => {
-    const rgbKeys = getRgbAuxKeys();
-    const rgbKey = rgbKeys[0] || "";
-    const hasRgb = Boolean(rgbKey);
+    const line = AUX_LINE_LABELS[routedAuxPin] || "";
+    const hasRgb = Boolean(line);
 
     if (auxLedCountInput) {
       auxLedCountInput.disabled = !hasRgb;
@@ -432,12 +350,10 @@ const BOARD_LABELS = {
     // operator 2026-09-16). The two readouts say the same fact at two lengths -
     // the section head says where, the pill beside the count says which line.
     if (auxLedRouteStatus) {
-      auxLedRouteStatus.textContent = hasRgb
-        ? `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]} LED`
-        : "Not routed";
+      auxLedRouteStatus.textContent = hasRgb ? `Routed via ${line} LED` : "Not routed";
     }
     if (auxLedRouteBadge) {
-      auxLedRouteBadge.textContent = hasRgb ? AUX_RGB_LABEL_BY_KEY[rgbKey] : "Not routed";
+      auxLedRouteBadge.textContent = hasRgb ? line : "Not routed";
     }
   };
 
@@ -540,11 +456,6 @@ const BOARD_LABELS = {
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
     const togglePayload = {
-      enableArm1: components.arm1?.enabled,
-      enableArm2: components.arm2?.enabled,
-      enableAux1: components.aux1?.enabled,
-      enableAux2: components.aux2?.enabled,
-      enableAux3: components.aux3?.enabled,
       enableDomeEsc: components.domeEsc?.enabled,
       enableRcCh1: components.rcCh1?.enabled,
       enableRcCh2: components.rcCh2?.enabled,
@@ -567,19 +478,6 @@ const BOARD_LABELS = {
       updateToggleStatus(toggleKey);
     });
 
-    const typePayload = {
-      arm1Type: components.arm1?.type,
-      arm2Type: components.arm2?.type,
-      aux1Type: components.aux1?.type,
-      aux2Type: components.aux2?.type,
-      aux3Type: components.aux3?.type,
-    };
-    Object.entries(typeSelects).forEach(([apiKey, select]) => {
-      if (select && typePayload[apiKey] !== undefined) {
-        select.value = String(typePayload[apiKey] || "none");
-      }
-    });
-
     // Populate component labels (badges and descriptions) from the config response.
     // Maps API keys to internal component names used for ID lookups.
     const apiKeyToComponentName = {
@@ -587,11 +485,6 @@ const BOARD_LABELS = {
       audio: "enable_audio",
       protoR2link: "enable_protor2link",
       domeEsc: "enable_dome_esc",
-      arm1: "enable_arm1",
-      arm2: "enable_arm2",
-      aux1: "enable_aux1",
-      aux2: "enable_aux2",
-      aux3: "enable_aux3",
       rcCh1: "enable_rc_ch1",
       rcCh2: "enable_rc_ch2",
       rcCh3: "enable_rc_ch3",
@@ -605,11 +498,6 @@ const BOARD_LABELS = {
       audio: components.audio?.label,
       protoR2link: components.protoR2link?.label,
       domeEsc: components.domeEsc?.label,
-      arm1: components.arm1?.label,
-      arm2: components.arm2?.label,
-      aux1: components.aux1?.label,
-      aux2: components.aux2?.label,
-      aux3: components.aux3?.label,
       rcCh1: components.rcCh1?.label,
       rcCh2: components.rcCh2?.label,
       rcCh3: components.rcCh3?.label,
@@ -651,13 +539,7 @@ const BOARD_LABELS = {
       }
     });
 
-    const auxLedPin = Number(payload?.aux_led_pin || 0);
-    const routedRgbKey = auxLedPin >= 1 && auxLedPin <= 3 ? AUX_RGB_SELECT_KEYS[auxLedPin - 1] : "";
-    if (routedRgbKey && typeSelects[routedRgbKey]) {
-      typeSelects[routedRgbKey].value = "rgb";
-    }
-    enforceSingleRgbAux(routedRgbKey);
-    syncAllSegmentedControls();
+    routedAuxPin = Number(payload?.aux_led_pin || 0);
 
     if (auxLedCountInput && payload?.aux_led_count !== undefined) {
       auxLedCountInput.value = String(payload.aux_led_count);
@@ -735,13 +617,6 @@ const BOARD_LABELS = {
           body.set(paramKey, toggle.input.checked ? "true" : "false");
         }
       });
-      Object.entries(typeSelects).forEach(([apiKey, select]) => {
-        const toggleKey = apiKey.replace(/Type$/, "");
-        if (select && featureToggles[toggleKey]?.available !== false) {
-          body.set(apiKey, select.value);
-        }
-      });
-      body.set("aux_led_pin", String(deriveAuxLedPinFromTypes()));
       if (auxLedCountInput) {
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
@@ -836,23 +711,6 @@ const BOARD_LABELS = {
           rcChangeGeneration += 1;
         }
         updateEnabledSummary();
-        if (["aux1", "aux2", "aux3"].includes(key)) {
-          updateAuxLedConfigVisibility();
-        }
-        debouncedSave();
-      });
-    }
-  });
-
-  Object.entries(typeSelects).forEach(([typeKey, select]) => {
-    if (select) {
-      select.addEventListener("change", () => {
-        featureEditGeneration += 1;
-        if (AUX_RGB_SELECT_KEYS.includes(typeKey)) {
-          enforceSingleRgbAux(typeKey);
-          updateAuxLedConfigVisibility();
-        }
-        syncAllSegmentedControls();
         debouncedSave();
       });
     }
@@ -880,7 +738,6 @@ const BOARD_LABELS = {
   }
 
 
-  initSegmentedTypeControls();
   // The Droid Build step, drawn into its host on this surface; guided Setup
   // shows that same host as a step of its run (data/setup.js).
   window.DroidBuildPicker?.mount({

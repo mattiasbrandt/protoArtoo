@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/servo.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/output_settings.js,/servo.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -29,6 +29,15 @@
       </div>
     </div>
 
+    <!-- Which servo each arm and AUX line carries (operator, 2026-09-18 on
+         #369): drawn by data/output_settings.js, the same answer Wiring's
+         in-use ticks are part of, so the two cannot disagree. -->
+    <div class="card">
+      <div class="sect"><h2>Servo on each output</h2><span class="sub">sets how far it swings</span></div>
+      <div id="servo-types-body"></div>
+      <div id="servo-types-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <!-- Arm Controls (ARM1 / ARM2 only) -->
     <div class="card hidden" id="arm-controls-card">
       <div class="sect"><h2>Utility arms</h2><span class="sub" id="arm-controls-summary">finding out</span></div>
@@ -42,14 +51,14 @@
          Family treatment, because the switch is one screen away. -->
     <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Utility arms</h2><span class="sub">none switched on</span></div>
-      <p class="note"><b>No arm switched on.</b> <a class="setup-link" href="/setup.html">Switch ARM1 or ARM2 on in Configuration</a></p>
+      <p class="note"><b>No arm switched on.</b> <a class="setup-link" href="#wiring">Mark ARM1 or ARM2 in use on Wiring</a></p>
     </div>
 
     <!-- AUX (AUX1 / AUX2 / AUX3) -->
     <div class="card" id="aux-controls-card">
       <div class="sect"><h2>AUX outputs</h2><span class="sub" id="aux-controls-summary">finding out</span></div>
       <div id="aux-controls-container"></div>
-      <p class="hint">Say what is on each AUX line in <a class="setup-link" href="/setup.html">Configuration</a>. An LED strip has no position, so it gets no buttons.</p>
+      <p class="hint">Say what is on each AUX line on <a class="setup-link" href="#wiring">Wiring</a>. An LED strip has no position, so it gets no buttons.</p>
       <div id="aux-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 

@@ -127,8 +127,38 @@ test("pressing every test control writes no configuration at all", async () => {
   assert.deepStrictEqual(
     env.requests.filter((request) => request.method === "POST" && request.path === "/api/config"),
     [],
-    "Servos reads /api/config and never writes it -- an end is set on Parts"
+    "the test controls write no configuration -- an end is set on Parts"
   );
+});
+
+// =============================================================================
+// The servo on each output, set on this page (#369)
+// =============================================================================
+
+// The servo type moved here from Configuration, drawn by data/output_settings.js
+// and shared with Wiring's in-use ticks. When that answer changes, this page's
+// own AUX rows follow it at once: a line just given the LED strip has no
+// position, so it must stop offering Open and Close - a press there would send
+// a servo command down an LED strip's data line.
+test("an AUX line given the LED strip stops offering servo moves the moment the answer changes", async () => {
+  let listener = null;
+  const PAOutputSettings = { mount() {}, onChange: (fn) => { listener = fn; } };
+  const env = loadPageModule("servo.js", { respond: () => ({ data: CONFIG }), overrides: { PAOutputSettings } });
+  await env.runSection("servo-calibration");
+  await env.settle();
+  assert.ok(listener, "Servos follows the shared outputs answer");
+  assert.match(env.element("aux-controls-container").innerHTML, /data-arm="aux2"/, "AUX 2 starts as a servo");
+
+  listener({
+    arm1: { enabled: true, type: "mg996r" },
+    arm2: { enabled: false, type: "mg996r" },
+    aux1: { enabled: true, type: "mg996r" },
+    aux2: { enabled: true, type: "rgb" },
+    aux3: { enabled: true, type: "mg996r" },
+  });
+  const rows = env.element("aux-controls-container").innerHTML;
+  assert.doesNotMatch(rows, /data-arm="aux2"/, "no servo control is left on the LED strip line");
+  assert.match(rows, /data-arm="aux1"/, "and the other lines keep theirs");
 });
 
 // =============================================================================

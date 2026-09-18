@@ -73,7 +73,7 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
     }
     return elements.get(id);
   };
-  const config = { components: { arm1: { enabled: true } }, system: {} };
+  const config = { components: { drive: { enabled: true } }, system: {} };
   const identityPayload = identity || {
     droidName: "artoo",
     mdnsUseName: true,
@@ -260,15 +260,15 @@ test("shell identity failure reaches Maintenance and keeps profiler traffic fail
 test("an unavailable component toggle ignores even a scripted change event", async () => {
   const env = loadInteractiveSurfaces();
   await env.settle();
-  const arm1 = env.element("enable-arm1");
-  arm1.dataset.buildFlag = "PA_HEAP_PROFILE";
+  const drive = env.element("enable-drive");
+  drive.dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.publishIdentity(false);
 
-  assert.equal(arm1.disabled, true);
-  assert.equal(env.element("status-arm1").textContent, "Not included");
+  assert.equal(drive.disabled, true);
+  assert.equal(env.element("status-drive").textContent, "Not included");
 
-  arm1.checked = false;
-  await arm1.emit("change");
+  drive.checked = false;
+  await drive.emit("change");
   await env.settle();
 
   assert.equal(env.timers.some((timer) => timer.ms === 300), false);
