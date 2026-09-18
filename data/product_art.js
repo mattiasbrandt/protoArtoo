@@ -14,13 +14,21 @@
 (() => {
   "use strict";
 
+  // The drawings a page has found. A set is fixed for the life of the image,
+  // so a symbol found once is there for good - but a surface the builder has
+  // left is out of the document, and a card redrawn then cannot find it. Were
+  // that to fall through to a photograph, the legacy set, which carries none,
+  // would leave the builder an empty frame where the drawing was (#404).
+  const drawn = new Set();
+
   // The frame is decorative: every card names its product or design in text.
   const frame = (id) => {
     const box = document.createElement("span");
     box.className = "component-card-art";
     box.setAttribute("aria-hidden", "true");
     if (!id) return box;
-    if (document.getElementById(`art-${id}`)) {
+    if (document.getElementById(`art-${id}`)) drawn.add(id);
+    if (drawn.has(id)) {
       const svgNs = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(svgNs, "svg");
       svg.setAttribute("viewBox", "0 0 400 300");

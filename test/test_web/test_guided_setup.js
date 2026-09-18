@@ -45,7 +45,9 @@ const SURFACES = {
       "droid_parts.js",
       "droid_build.js",
       "dome_layout.js",
+      "product_art.js",
       "droid_build_picker.js",
+      "component_picker.js",
       "configuration.js",
       "setup.js",
     ],
@@ -160,6 +162,7 @@ const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = 
         : [],
     querySelector: () => makeStub(),
     createElement: (tag) => parsed.createElement(tag),
+    createElementNS: (_ns, tag) => parsed.createElement(tag),
     createTextNode: () => makeStub(),
     addEventListener() {},
     removeEventListener() {},
@@ -453,6 +456,34 @@ test("a restore puts back the sound module and the droid build, which it used to
   assert.equal(restored.get("bodyDesign"), "mk3");
   assert.equal(restored.get("bodyVariant"), "simple");
   assert.equal(restored.get("fittedParts"), "domePie1,bodyDoorL");
+});
+
+// The radio a builder holds is the Radio Controller's Component Member (#369),
+// saved beside the receiver type. A restore that dropped it would put the droid
+// back on the default radio while the builder's receiver setting came back.
+test("a restore puts back which RC Radio the droid is driven with", async () => {
+  const restored = await restoreParamsFor({ rc: { member: "rc_radio", inputMode: "standard_pwm" } });
+  assert.equal(restored.get("rcMember"), "rc_radio");
+  assert.equal(restored.get("rcInputMode"), "standard_pwm");
+});
+
+// Which picture a design card shows is the catalog's to say (docs/droid-parts.yaml
+// `picture:`, #369): every MrBaddeley design shares his, and a design that
+// names none - "my own build" - is words alone. On the legacy set that picture
+// is the page's own drawing.
+test("a design card shows the picture its catalog row names, and my own build shows none", async () => {
+  const env = boot();
+  await env.runSection();
+  await env.settle();
+  const plates = env.id("droid-build-body").querySelectorAll("[data-option]");
+  const picture = (design) =>
+    plates.find((plate) => plate.getAttribute("data-option") === design)?.querySelector("use")?.getAttribute("href");
+  for (const design of ["mk4", "mk41", "mk3"]) {
+    assert.equal(picture(design), "#art-mrbaddeley", `${design} shows MrBaddeley's picture`);
+  }
+  const own = plates.find((plate) => plate.getAttribute("data-option") === "own");
+  assert.ok(own, "my own build is on the step");
+  assert.equal(own.querySelector(".component-card-art"), null, "and it carries no picture at all");
 });
 
 // =============================================================================
