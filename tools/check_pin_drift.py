@@ -421,7 +421,7 @@ def authority_sentence(board: str, authority: dict[str, Authority], doc: Path) -
     entry = authority.get(board)
     config_name, doc_name = rel(CONFIG_H), rel(PIN_MAP)
     names = {config_name, doc_name}
-    ranked = [(source, reason) for source, reason in entry.ranked] if entry else []
+    ranked = entry.ranked if entry else []
     pair = [(source, reason) for source, reason in ranked if source in names]
     if len(pair) != 2:
         return (
@@ -478,8 +478,8 @@ def check(config: Path = CONFIG_H, doc: Path = PIN_MAP, lanes_path: Path = BOARD
                     continue  # documented, and not a pin the firmware drives
             else:
                 errors.append(
-                    f"{name}: {where} states GPIO {claim.gpio} for a row this check cannot join "
-                    f"to a {rel(config)} pin. Next move: map the row in ROW_NAMES in "
+                    f"{name}: {where} in `{claim.section}` states {describe(claim.gpio)} for a row "
+                    f"this check cannot join to a {rel(config)} pin. Next move: map the row in ROW_NAMES in "
                     "tools/check_pin_drift.py, or put the PIN_* name in the row"
                 )
                 continue
