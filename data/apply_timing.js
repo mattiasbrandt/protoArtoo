@@ -138,7 +138,7 @@
     if (said.route) {
       const route = document.createElement("a");
       route.className = "setup-link";
-      route.href = said.route.href;
+      route.setAttribute("href", said.route.href);
       route.textContent = `${said.route.label}.`;
       element.appendChild(route);
     }
