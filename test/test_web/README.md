@@ -35,6 +35,11 @@ add to it. Plus **one** mutation that kills it. A slice that touches `data/`
 still adds at least one test (the gate's `delta +0` floor); that floor is one
 test, not one per checkbox.
 
+**If the `data/` change is copy or layout, do not invent a test to clear the
+floor.** It has no invariant to add. Stop and ask the coordinator for
+`--expect-no-new-tests`; a waiver is never self-granted, and a test written
+only to turn `delta +0` green is a receipt and a reject.
+
 ## Mutations
 
 A **mutation** is a small bug planted in production code on purpose - invert a

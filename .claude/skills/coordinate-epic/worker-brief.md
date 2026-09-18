@@ -20,6 +20,11 @@ small code pattern showing how the problem was already solved elsewhere. Work
 from that. It is there precisely so you do not have to reach the same quality
 by iteration.
 
+Verbatim strings are for the production surface, not for test() titles or
+assertions. A test-shaped acceptance list - "assert the four words", "one test
+per checkbox" - is a defect in the ticket: say so on the issue, and do not
+implement it as coverage.
+
 This project's planning research is gitignored and absent from a worktree by
 default. Under `tasks/` here you will find only the files THIS ticket cites,
 copied in by the coordinator at the paths the ticket writes; the rest of
@@ -77,6 +82,10 @@ rejected for the number of real invariants you cover; that protection does not
 reach a checkbox dump. Name the file for the surface or the contract, add to
 the surface's existing file when it has one, and carry ONE mutation per
 changed data/*.js file.
+
+If your data/ change is copy or layout, do not invent a test to clear the
+gate's delta +0 floor. It has no invariant to add. Stop and ask the
+coordinator for --expect-no-new-tests.
 
 Weight your evidence toward BEHAVIOUR, not coverage. The gate's floor is ONE
 native test per production change - a floor, not a target, and nobody counts
@@ -223,8 +232,9 @@ VERIFICATION (software-verified cap)
   (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations,
   --expect-test-shrink) are coordinator-granted in this brief only - never
   self-granted; every ACK is
-  visible in the block. The coordinator re-runs the same command and
-  compares blocks, provenance included.
+  visible in the block. The coordinator checks the block's provenance
+  against your branch and runs the gate itself once per wave, on the
+  merged tree (docs/agents/slice-gate.md).
 - All pasted evidence carries process exit codes - never a hand-summarised
   pass/fail line, and never a grep of the TAP `# fail` line (hangs vanish
   from it; the exit code is the signal).
