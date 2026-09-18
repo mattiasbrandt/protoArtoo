@@ -103,6 +103,23 @@ def lock_path() -> Path:
     return Path(os.environ.get(LOCK_PATH_ENV) or DEFAULT_LOCK_PATH)
 
 
+def held_env_for(path: Path) -> str:
+    """The environment variable that says "an ancestor holds this lock".
+
+    The pio lock keeps its documented name. Any other lock file taken through
+    build_lock(lock_path=...) - the web-test lock in tools/slice_verify.py - gets
+    a name of its own, so holding one lock never reads as holding the other.
+    """
+    if path == lock_path():
+        return HELD_ENV
+    stem = "".join(ch if ch.isalnum() else "_" for ch in path.name.upper())
+    return f"PROTOARTOO_LOCK_HELD_{stem}"
+
+
+# build_lock()'s `lock_path` parameter shadows lock_path() inside it.
+_pio_lock_path = lock_path
+
+
 def wait_seconds() -> float:
     raw = os.environ.get(WAIT_ENV)
     if not raw:
@@ -283,7 +300,7 @@ def acquire(path: Path, timeout: float, command: list[str] | None = None) -> int
 
 
 @contextlib.contextmanager
-def build_lock(command: list[str] | None = None):
+def build_lock(command: list[str] | None = None, lock_path: Path | None = None):
     """Hold the machine-wide PlatformIO build lock for the duration of the block.
 
     `command` is what the caller is about to run; it is recorded in the lock
@@ -291,9 +308,14 @@ def build_lock(command: list[str] | None = None):
     caller already holds the lock (PROTOARTOO_PIO_LOCK_HELD), and a loud
     failure when it detects that an outer `flock(1)` holds it without having
     said so.
+
+    `lock_path` takes a different lock file with the same mechanism; the
+    default is the pio lock. It is a separate lock, not a nested one: its held
+    marker is held_env_for(lock_path), never PROTOARTOO_PIO_LOCK_HELD.
     """
-    path = lock_path()
-    if os.environ.get(HELD_ENV) == "1":
+    path = lock_path if lock_path is not None else _pio_lock_path()
+    held_env = held_env_for(path)
+    if os.environ.get(held_env) == "1":
         # The outer holder is usually a hand-typed `flock(1)`, which cannot
         # write a record of its own; ours names the worktree and target that
         # are actually building inside its window.
@@ -303,17 +325,17 @@ def build_lock(command: list[str] | None = None):
     if inherited_lock_fd(path) is not None:
         refuse_nested(path)
     fd = acquire(path, wait_seconds(), command)
-    previous = os.environ.get(HELD_ENV)
+    previous = os.environ.get(held_env)
     # Everything spawned under us is inside the lock; saying so keeps a nested
     # `make` or gate run from queueing behind the lock we are already holding.
-    os.environ[HELD_ENV] = "1"
+    os.environ[held_env] = "1"
     try:
         yield
     finally:
         if previous is None:
-            os.environ.pop(HELD_ENV, None)
+            os.environ.pop(held_env, None)
         else:
-            os.environ[HELD_ENV] = previous
+            os.environ[held_env] = previous
         os.close(fd)  # closing the last descriptor releases the flock(2) lock
 
 
