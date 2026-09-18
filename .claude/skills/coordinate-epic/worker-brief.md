@@ -204,7 +204,9 @@ VERIFICATION (software-verified cap)
   suite, the web suite, the mutation stage, the build, and the diff checks;
   it fails on deleted test files, a shrinking test total, a flat test total
   over production changes, a changed web production JS file no mutation
-  patch touches, or an edit to either verifier script. The waiver flags
+  patch touches, or an edit to any of the three verifier scripts
+  (tools/slice_verify.py, tools/mutation_verify.py,
+  tools/web_load_trace.cjs). The waiver flags
   (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations) are
   coordinator-granted in this brief only - never self-granted; every ACK is
   visible in the block. The coordinator re-runs the same command and

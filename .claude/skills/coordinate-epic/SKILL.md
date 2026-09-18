@@ -165,8 +165,9 @@ reporting passes that never ran. In the worker's worktree, personally:
    git rev-parse HEAD                      # == the block's HEAD sha
    git rev-parse <base>                    # == the block's merge-base TOO
    git diff --shortstat <base>...HEAD      # == the block's diff size
-   git hash-object tools/slice_verify.py tools/mutation_verify.py
-                                           # == the block's gate and mut hashes
+   git hash-object tools/slice_verify.py tools/mutation_verify.py \
+                   tools/web_load_trace.cjs
+                                           # == the block's gate, mut and trace hashes
    git status --porcelain                  # clean but for data/*version.json
    ```
 
@@ -215,9 +216,9 @@ reporting passes that never ran. In the worker's worktree, personally:
    **Why, so nobody restores the duplicate.** Measured on #175, 2026-09-17: the
    coordinator re-ran the full gate behind **18** accepted slices and found **0**
    divergences. Each re-run was a second copy of the most expensive thing in the
-   repo - the mutation stage runs the whole web suite once per patch, 28 times
-   on a slice like #346 - serialised behind a machine-wide build lock, while
-   every rejection that epic produced came from step 0, which costs nothing.
+   repo - the mutation stage ran the whole web suite once per patch (until
+   #405), 28 times on a slice like #346 - serialised behind a machine-wide
+   build lock, while every rejection that epic produced came from step 0, which costs nothing.
    Spend the iteration on the production diff, not on a second identical block.
    Then every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
@@ -366,28 +367,27 @@ contiguous multi-command window, brief
 `cat /tmp/protoartoo-pio.lock` names the current or last holder and the chip
 target it was building. That is where to start when an image size moves.
 
-**The lock covers pio, and NOTHING else - the web and mutation stages run
-unserialised.** `tools/slice_verify.py` passes `lock=True` at exactly two call
-sites, both PlatformIO; `run_web_tests()` does not, and neither does the
-mutation stage, which runs the **whole web suite once per patch**. So two
-workers finishing slices at the same time run two full web suites - and on a
-mutation slice, dozens - against one machine's memory, with nothing holding
-them apart.
+**The pio lock covers pio, and nothing else; the gate's web stages have their
+own lock (#405).** `tools/slice_verify.py` passes `lock=True` only at its
+PlatformIO call sites. `run_web_tests()` and the mutation stage hold
+`/tmp/protoartoo-webtest.lock` instead - a separate lock, never nested in the
+pio one - so two workers' gates run their web suites and mutation stages one
+after the other rather than side by side. A hand-typed `make test-web` takes
+neither lock.
 
-Measured 2026-09-18: two concurrent `test-web` runs from two worktrees put
-eight V8 isolates on an 8-core box while `app.slice` sat against its
-`MemoryMax`; the cgroup returned ENOMEM to userspace, and V8 treats an
+Measured 2026-09-18, before that lock: two concurrent `test-web` runs from two
+worktrees put eight V8 isolates on an 8-core box while `app.slice` sat against
+its `MemoryMax`; the cgroup returned ENOMEM to userspace, and V8 treats an
 allocation failure inside the scavenger as fatal. **A test process died that
 had nothing wrong with it** - run alone, the same file passed 25/25 in 1.5 s.
 The victim is whoever allocates next, not whoever is greedy, so the crash
 names an innocent slice.
 
-**This is the coordinator's to manage, not the worker's.** A worker running the
-gate plainly is doing what its brief says. Until the web and mutation stages
-take the lock too, **stagger the gate runs**: do not let two workers reach
-their verification step together, and treat a slice's gate run as a serialised
-resource in the same way a device session is. A memory-starvation failure in
-another worker's slice is not a defect in the slice it lands on.
+**What is left is the coordinator's to manage, not the worker's.** The gate now
+serialises its own web stages, so gate runs no longer need staggering for that.
+A web suite someone runs by hand, outside the gate, still is not serialised
+against anything. A memory-starvation failure in another worker's slice is not
+a defect in the slice it lands on.
 
 The framework packages are shared by every worktree and are rebuilt **in
 place**, so one worktree's build changes what another links. The rebuild is
@@ -413,8 +413,9 @@ a budgets file's `baseline_*` fields are stamped at one commit, so comparing
 against them charges earlier slices' bytes to this one.
 
 **The gate hashes itself into every block**, and you accept a slice by matching
-blocks character for character. Land changes to the verifier scripts between
-waves, with no worker mid-slice - otherwise its block and your re-run diverge
+blocks character for character. Land changes to the three verifier scripts
+(`tools/slice_verify.py`, `tools/mutation_verify.py`,
+`tools/web_load_trace.cjs`) between waves, with no worker mid-slice - otherwise its block and your re-run diverge
 on the hash, and a clean slice reads as tampered.
 
 ### Parallel epics

@@ -536,7 +536,9 @@ locally when specifically investigating a static analysis issue.
 **Worker slice gate:** after committing a slice, run
 `python3 tools/slice_verify.py --base <base-ref>` with the `--fenced` pathspecs,
 `--mutations` patches and any waiver flag the coordinator's brief names, and paste
-its full block verbatim — provenance lines included — into the issue status
+its full block verbatim — provenance lines included, which carry the blob
+hashes of the three verifier scripts (`tools/slice_verify.py`,
+`tools/mutation_verify.py`, `tools/web_load_trace.cjs`) — into the issue status
 comment. The coordinator checks that block's provenance against the branch -
 cheap, and per slice - and runs the gate itself **once per wave, on the merged
 tree**, rather than re-running it behind every slice. Divergence at either point
