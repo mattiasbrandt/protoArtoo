@@ -1,7 +1,7 @@
 # A body view shows what the droid is doing, and a click on it only ever selects
 
 Status: accepted (2026-09-09, issue #317), amended 2026-09-18 (#408): the droid
-is drawn as a recognisable R2, and the "arrangement, not a likeness" rule is
+is drawn as a recognisable R2-D2, and the "arrangement, not a likeness" rule is
 withdrawn. Every other decision here stands. C4a (#352) built the renderer.
 
 ## Context
@@ -60,17 +60,19 @@ intent and they draw identically, so a view that mixed them would ask a builder 
 remember which half they were looking at — the defect #298 spent a ticket undoing.
 The routine half works for all forty parts today; the live half has two.
 
-**The droid is drawn as R2, recognisably.** *(Amended 2026-09-18, operator,
-#408.)* A front view and a rear view that a builder knows at a glance, with each
-part drawn where it sits on the droid. The starting point is the operator's
-reference drawing (`tasks/prototypes/r2d2_vector_transparent.svg`, a flat front
-view), and parts are named the way Printed Droid's terminology names them.
+**The droid is drawn as R2-D2, recognisably.** *(Amended 2026-09-18, operator,
+#408.)* The drawing is based on the actual R2-D2, the Star Wars astromech droid:
+a front view and a rear view a builder knows at a glance, with each part drawn
+where it sits. The starting point is the operator's reference drawing
+(`tasks/prototypes/r2d2_vector_transparent.svg`, a flat front view), and parts are
+named the way Printed Droid's terminology names them.
 
-One drawing serves every builder, and **it draws only the parts this builder's
-droid has.** The **Body Design** variant decides that: an MK4 Complex body shows
-its doors and hatches, a Simple body does not show doors it never had, and a
-**Common Addition** appears only once it is added. The drawing says which variant
-it is showing.
+**The features drawn follow the builder's design origin:** the **Body Design** and
+its **Design Variant**, for example MrBaddeley MK4 Complex or MK4 Simple. A
+Complex body shows its doors and hatches; a Simple body does not show doors it
+never had; a **Common Addition** appears only once it is added. The droid shape
+is R2-D2's for every builder, and the drawing says which design and variant it
+is showing.
 
 *Withdrawn:* the 2026-09-09 rule that the droid be "an arrangement, not a
 likeness" — parts as shapes at nominal positions, and no recognisable silhouette
