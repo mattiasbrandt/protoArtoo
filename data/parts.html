@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/parts.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/body_view.js,/parts.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,6 +22,26 @@
              form left Servos under #400: an end is set by driving the part,
              which is a thing only this surface knows how to ask for. -->
         <p class="forward">Looking for the typed calibration that was on <a href="/servo.html">Servos</a>? An end is set here now: press Calibrate on the output that drives the part.</p>
+      </div>
+    </div>
+
+    <!-- The picture, at the head of the surface: a builder reads what the whole
+         droid is doing off it before they read a row (ADR 0063, #352). It is a
+         state display and not a part finder - a body part's name already
+         carries its location - so it is drawn to be read at a glance rather
+         than pointed at. The drawing and the panel beside it are written into
+         this card by data/body_view.js; a click on the picture only ever
+         selects, and the three acts are the named buttons in that panel. -->
+    <div class="card">
+      <div class="sect">
+        <h2>Your droid</h2>
+        <span class="sub" id="bodyview-summary" role="status" aria-live="polite">Finding out what your droid is doing...</span>
+      </div>
+      <p class="prose">Every part on one picture, so you can see what is open, what is closed and what nothing drives without reading rows one at a time. Pick a part on the drawing and the panel beside it names that part and what you can do with it.</p>
+      <p class="hint">What you see is what the controller <b>told</b> each part, never a reading taken from it: nothing on this droid can feel where a servo really is, so a jammed part draws exactly what a free one does. A part nothing is driving shows no position at all rather than a dimmed one, because a dimmed mark is still a claim. Parts with no place on the droid - the spare slots - are not on the picture and are in the table below.</p>
+      <div class="bodyview">
+        <div class="bodyview-drawing" id="bodyview-drawing"></div>
+        <div class="bodyview-panel-host" id="bodyview-panel"></div>
       </div>
     </div>
 

@@ -3,7 +3,7 @@
 //
 // Servo control API endpoint
 //   POST /api/servo         - Control arm servos
-//                             (open/close/position/stop/nudge/hold/release)
+//                             (open/close/position/stop/nudge/travel/hold/release)
 //   POST /api/servo/centre  - Put every Servo Output back to centre, paced by
 //                             the Sequence Coordinator (#318, #365)
 //
@@ -100,6 +100,12 @@ constexpr ServoActionSpec kServoActions[] = {
     // Pulses off (ADR 0043, ADR 0064, #364): the Output goes limp where it is.
     // No width, because a release commands no position at all.
     {"release", SERVO_CMD_RELEASE, 0, false, false},
+    // A Part run through its travel and back (ADR 0063, #352): the one command
+    // a deliberate press on a body view sends. No width travels with it either
+    // -- ServoTask reads the ends off the Output's own row (include/
+    // servo_travel.h) -- and one output only, because a press is about one
+    // Part and the broadcast would run two parts through their travel at once.
+    {"travel", SERVO_CMD_TRAVEL, 0, false, true},
 };
 
 const ServoActionSpec* findAction(const char* action) {
@@ -134,7 +140,7 @@ void handleServoPost(WebRequest& req) {
     if (spec == nullptr) {
         webSendJsonError(
             req, 400,
-            "Invalid action. Use: open, close, stop, position, nudge, hold, or release");
+            "Invalid action. Use: open, close, stop, position, nudge, travel, hold, or release");
         return;
     }
 

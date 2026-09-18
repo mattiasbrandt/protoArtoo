@@ -3,7 +3,7 @@
 //
 // Controller Console direct-action executors - servo domain: open, close,
 // set-position and stop (#221 remainder), nudge (#363), hold and release
-// (#364), and the bulk centre (#365). Split out of
+// (#364), the bulk centre (#365), and travel (#352). Split out of
 // src/console/console_module.cpp by #257 so this domain's rows can be extended
 // without colliding with the other domains' files.
 //
@@ -139,6 +139,19 @@ static void consoleExecuteServoNudge(uint32_t requestId, const char* operationNa
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_NUDGE, args, source, sink);
 }
 
+// servo.action.travel (#352, ADR 0063): a Part run through its recorded travel
+// and back, reached from the Console as well as from a body view's press. It
+// carries a target and nothing else, for the same two reasons a nudge does: the
+// registry's enum for it excludes "both", because a press is about one Part and
+// the broadcast would run two parts through their travel at once, and no width,
+// because ServoTask reads the two ends off the Output's own row
+// (include/servo_travel.h) so that no source can name a position for it.
+static void consoleExecuteServoTravel(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink) {
+    consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_TRAVEL, args, source, sink);
+}
+
 // servo.action.hold (#364, ADR 0064): the calibration dial's hold, reached from
 // the Console as well as from the dial. It carries a position_us like
 // set-position and goes through the same width check, because a hold IS a drive
@@ -251,6 +264,7 @@ static const ConsoleDirectActionExecutorEntry g_servoDirectActionExecutors[] = {
     {"servo.action.set-position", consoleExecuteServoSetPosition},
     {"servo.action.stop", consoleExecuteServoStop},
     {"servo.action.nudge", consoleExecuteServoNudge},
+    {"servo.action.travel", consoleExecuteServoTravel},
     {"servo.action.hold", consoleExecuteServoHold},
     {"servo.action.release", consoleExecuteServoRelease},
     {"servo.action.centre-all", consoleExecuteServoCentreAll},

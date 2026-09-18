@@ -553,12 +553,12 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:12 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: Web+RC. webControlEnabled guard at api_servo.cpp:82. Queue guarded.
+  notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
 - name: servo.action.open
   type: action
   registry_api_path: /api/servo
@@ -579,12 +579,12 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:12 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: Web+RC. webControlEnabled guard at api_servo.cpp:82. Queue guarded.
+  notes: Web+RC. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
 - name: servo.action.set-position
   type: action
   registry_api_path: /api/servo
@@ -608,12 +608,12 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:12 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: Web-API. webControlEnabled guard at api_servo.cpp:82. Position 500-2500us. Queue guarded.
+  notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Position 500-2500us. Queue guarded.
 - name: servo.action.nudge
   type: action
   registry_api_path: /api/servo
@@ -634,12 +634,38 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
   - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:95 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:60 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   - src/tasks/servo_task.cpp - SERVO_CMD_NUDGE case in processCommand() -> beginNudge(); the pair from include/servo_nudge.h
   executor_or_core: servoCmdQueue
   missing_metadata: []
   notes: Web-API (#363, ADR 0050). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask computes the +-100 us pair inside SERVO_BAND_STD from the pin. target=both refused with 400 at the route and at ServoTask. Queue guarded.
+- name: servo.action.travel
+  type: action
+  registry_api_path: /api/servo
+  registry_cpp_enum: null
+  registry_cpp_file: include/robot_state.h
+  registry_sse_event: null
+  registry_nvs_key: null
+  registry_params:
+  - name: target
+    type: string
+    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    required: true
+  registry_requires_web_control: false
+  registry_sources:
+  - web_api
+  registry_marcduino_cmd: null
+  anchor_kind: api
+  evidence:
+  - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/tasks/servo_task.cpp:809 - SERVO_CMD_TRAVEL case in processCommand() -> beginTravel(); the two ends from include/servo_travel.h
+  executor_or_core: servoCmdQueue
+  missing_metadata: []
+  notes: Web-API (#352, ADR 0063). No webControlEnabled guard, like every /api/servo action (ADR 0064). No width param - ServoTask reads the Endpoint Pair off the Output's row, so no source can name a position. Refused on an output with no pulse, on one no row describes, and on one whose calibrated bit is unset. target=both refused with 400 at the route and at ServoTask. Does not touch nudgesDone. Queue guarded.
 - name: servo.action.hold
   type: action
   registry_api_path: /api/servo
@@ -664,8 +690,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
   - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:114 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:61 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   - src/tasks/servo_task.cpp:689 - case SERVO_CMD_HOLD in processCommand() -> holdArm() at :558
   - src/tasks/servo_task.cpp:588 - expireHolds() applies both bounds each frame; the rule is include/servo_hold.h
   executor_or_core: servoCmdQueue
@@ -691,8 +717,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:104 - webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost)
   - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:114 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:61 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   - src/tasks/servo_task.cpp:699 - case SERVO_CMD_RELEASE in processCommand() -> releaseArm() at :506
   - src/drivers/ledc_pwm.cpp:187 - ledcPwmRelease() writes duty 0, the one place a pulse comes off a pin
   executor_or_core: servoCmdQueue
@@ -714,8 +740,8 @@ rows:
   evidence:
   - src/web/web_seam_routes.cpp:112 - webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost)
   - include/api_servo.h:52 - void handleServoCentrePost(WebRequest& req)
-  - src/web/api_servo.cpp:212 - void handleServoCentrePost(WebRequest& req) {
-  - src/web/api_servo.cpp:214 - robotState.bulkCentreRequest = SRC_WEB_API
+  - src/web/api_servo.cpp:218 - void handleServoCentrePost(WebRequest& req) {
+  - src/web/api_servo.cpp:220 - robotState.bulkCentreRequest = SRC_WEB_API
   - src/tasks/sequence_dispatcher.cpp:570 - sequenceBulkCentreStart() on the Coordinator's next tick
   - src/tasks/sequence_dispatcher.cpp:582 - centreOneOutput(), one Output per turn
   - include/sequence_bulk_centre.h:66 - SEQ_CADENCE_FLOOR_MS, the pace the sweep holds
@@ -736,12 +762,12 @@ rows:
   anchor_kind: api
   evidence:
   - src/web/web_seam_routes.cpp:90 - webRegisterRoute("/api/servo", kPost, handleServoPost)
-  - include/api_servo.h:12 - void handleServoPost(WebRequest& req)
-  - src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {
-  - src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)
+  - include/api_servo.h:38 - void handleServoPost(WebRequest& req)
+  - src/web/api_servo.cpp:122 - void handleServoPost(WebRequest& req) {
+  - src/web/api_servo.cpp:63 - xQueueSend(servoCmdQueue, &cmd, 0) in servoSubmitCommand()
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: Web-API. webControlEnabled guard at api_servo.cpp:82. Queue guarded.
+  notes: Web-API. No webControlEnabled guard, like every /api/servo action (ADR 0064). Queue guarded.
 - name: servo.action.toggle-arm1
   type: action
   registry_api_path: null

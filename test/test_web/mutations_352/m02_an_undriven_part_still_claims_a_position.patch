@@ -1,0 +1,13 @@
+diff --git i/data/body_view.js w/data/body_view.js
+index 5111539a..d8dd9ef2 100644
+--- i/data/body_view.js
++++ w/data/body_view.js
+@@ -446,7 +446,7 @@
+         // A position is drawn only where there is a recorded travel for it to
+         // be a fraction of. Everything else has NO leaf -- absent, not dimmed,
+         // because a dimmed position mark is still a claim.
+-        const at = token === MARKS.DRIVEN && typeof mark.at === "number" ? mark.at : null;
++        const at = typeof mark.at === "number" ? mark.at : 0;
+         node.cell.classList.toggle("has-position", at !== null);
+         if (at !== null) {
+           const { x, y } = markerAt(node.marker, FACES.findIndex((face) => face.id === node.marker.face));

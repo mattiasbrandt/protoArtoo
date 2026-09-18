@@ -108,6 +108,10 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     nudgeFails: null, // set to an Error to make the next POST /api/servo fail
     configFails: null, // the same for the next POST /api/config
     centreFails: null, // the same for the next POST /api/servo/centre
+    // What the device holds as the Droid Build. A fresh controller comes up on
+    // the pre-selected design with that design's complement fitted, which is
+    // what data/droid_build.js adopts at boot.
+    droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: [] },
   };
 
   const windowListeners = new Map();
@@ -163,6 +167,10 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
         if (path === "/api/identity") return { data: IDENTITY };
         if (path === "/api/status") return { data: { ...env.status } };
         if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(env.outputs) } };
+        // The Droid Build the device holds (ADR 0047). data/droid_build.js
+        // reads it once per page and the body view's "add it to the build" act
+        // writes it back through POST /api/config.
+        if (path === "/api/config") return { ok: true, data: { droidBuild: structuredClone(env.droidBuild) } };
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
       },
@@ -244,6 +252,12 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
             const wasOpen = row.openUs;
             row.openUs = row.closeUs;
             row.closeUs = wasOpen;
+            return { ok: true, status: 200, data: {} };
+          }
+          // The Fitted Parts go whole, because they are a set and there is no
+          // partial form of one (data/droid_build.js).
+          if (typeof form.fittedParts === "string") {
+            env.droidBuild.fitted = form.fittedParts === "" ? [] : form.fittedParts.split(",");
             return { ok: true, status: 200, data: {} };
           }
           // The firmware's move: off whatever Output had the Part, onto the
@@ -344,11 +358,17 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   };
   context.globalThis = context;
 
+  // Every script data/parts.html declares, because that is what a browser
+  // loads: a map that left one out would run these suites against a Parts page
+  // the device never serves. #352 added the Droid Build and the body view to
+  // the chain.
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": readData("droid_parts.js"),
     "/droid_part_kind.js": readData("droid_part_kind.js"),
+    "/droid_build.js": readData("droid_build.js"),
+    "/body_view.js": readData("body_view.js"),
     "/parts.js": readData("parts.js"),
   };
   document.onAttach = (node) => {

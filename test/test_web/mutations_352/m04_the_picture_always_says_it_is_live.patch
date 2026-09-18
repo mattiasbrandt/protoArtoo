@@ -1,0 +1,13 @@
+diff --git i/data/body_view.js w/data/body_view.js
+index 5111539a..0a91719c 100644
+--- i/data/body_view.js
++++ w/data/body_view.js
+@@ -425,7 +425,7 @@
+     const update = (model) => {
+       const state = model || {};
+       const kind = state.kind === STATE_KINDS.POSE ? STATE_KINDS.POSE : STATE_KINDS.LIVE;
+-      said.textContent = state.said || KIND_SAID[kind];
++      said.textContent = state.said || KIND_SAID.live;
+       svg.setAttribute("data-state-kind", kind);
+       const marks = state.marks || {};
+       nodes.forEach((node, markerId) => {

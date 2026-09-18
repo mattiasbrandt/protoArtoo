@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 5e699921..890e35ea 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1717,7 +1717,7 @@
+       started(
+         window.PAApi.postForm(
+           "/api/servo",
+-          { arm: pick.travelOutput.name.toLowerCase(), action: "travel" },
++          { arm: pick.travelOutput.name.toLowerCase(), action: "travel", positionUs: "2000" },
+           { timeoutMs: 4000 }
+         ).then(
+           () => {

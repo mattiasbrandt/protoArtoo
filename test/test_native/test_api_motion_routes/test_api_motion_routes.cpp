@@ -912,6 +912,54 @@ void test_servo_nudge_refuses_the_broadcast_arm() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge takes one arm"));
 }
 
+// A body view's press (#352, ADR 0063): a travel names an arm and nothing else.
+// The two ends come off the Output's own row, so no width is taken from the
+// request and none can be smuggled in to make the move something other than the
+// travel the builder recorded.
+void test_servo_travel_takes_an_arm_and_no_width() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "travel"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// A press on a body view is about ONE Part, so the ARM1+ARM2 broadcast is
+// refused at the door with a reason naming the action - running two parts
+// through their travel on one press is the thing this refusal prevents.
+void test_servo_travel_refuses_the_broadcast_arm() {
+    const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "travel"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A travel takes one arm"));
+}
+
+// The refusal an unknown action gets names travel among the actions there are,
+// so a caller that mistyped it is told what this endpoint actually takes.
+void test_servo_unknown_action_names_travel() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "sweep"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "travel"));
+}
+
 // The calibration dial's hold (#364, ADR 0064): a width, like a position, and
 // the hold is what differs. The page sends one of these a second while the dial
 // is open, which is what keeps the short expiry from firing.
@@ -1195,6 +1243,9 @@ int main(int, char**) {
     RUN_TEST(test_servo_position_without_a_value_is_rejected);
     RUN_TEST(test_servo_nudge_takes_an_arm_and_no_width);
     RUN_TEST(test_servo_nudge_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_travel_takes_an_arm_and_no_width);
+    RUN_TEST(test_servo_travel_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_unknown_action_names_travel);
     RUN_TEST(test_servo_hold_takes_an_arm_and_a_width);
     RUN_TEST(test_servo_hold_without_a_width_is_rejected);
     RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);

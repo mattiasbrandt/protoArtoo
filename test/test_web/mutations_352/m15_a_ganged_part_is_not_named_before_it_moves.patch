@@ -1,0 +1,13 @@
+diff --git i/data/parts.js w/data/parts.js
+index 5e699921..18a70004 100644
+--- i/data/parts.js
++++ w/data/parts.js
+@@ -1713,7 +1713,7 @@
+     }
+     if (actId === "move" && pick.travelPart !== null) {
+       const label = partLabel(pick.travelPart);
+-      const gang = pick.travelOutput.parts.filter((id) => id !== pick.travelPart);
++      const gang = [];
+       started(
+         window.PAApi.postForm(
+           "/api/servo",
