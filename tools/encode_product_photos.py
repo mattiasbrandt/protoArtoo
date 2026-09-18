@@ -68,6 +68,10 @@ SOURCES = {
     "mp3-trigger.jpg": "mp3_trigger",
     "chirp-audio-trigger.jpg": "chirp",
     "dfplayer-mini.jpg": "dfplayer_mini",
+    # Not a Component Registry product: the one picture every MrBaddeley
+    # design card in the Droid Build shows (docs/droid-parts.yaml `picture:`,
+    # #369). Its corners are dark, so the ground is kept and it is fitted whole.
+    "mrbaddeley-printed-droids.png": "mrbaddeley",
 }
 
 

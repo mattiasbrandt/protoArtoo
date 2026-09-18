@@ -240,6 +240,9 @@ designs:
     preselected: true
     card: supported
     label: MrBaddeley MK4
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
     short: MK4
     blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.
     note: >-
@@ -287,6 +290,9 @@ designs:
     # would be a body nobody can build (#409).
     halves: [dome]
     label: MrBaddeley MK4.1
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
     short: MK4.1
     blurb: MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only — pick MK4 Basic or Complex for the body.
     note: >-
@@ -312,6 +318,9 @@ designs:
     # has read.
     card: roadmap
     label: MrBaddeley MK3
+    # One picture for every MrBaddeley design: his "Printed Droids" poster in
+    # the default asset set, an R2 blueprint drawing in the legacy set (#369).
+    picture: mrbaddeley
     short: MK3
     blurb: We intend to carry it. Not yet.
     # Which parts an MK3 carries has not been read out of MrBaddeley's files -
