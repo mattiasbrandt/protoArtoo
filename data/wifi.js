@@ -316,22 +316,22 @@
     if (posture.networkRecovery) {
       setPendingSummary("Recovery");
       if (postureDesc) {
-        postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
+        postureDesc.textContent = "Network Recovery Mode: a power-cycle opened WiFi Provisioning for now. Your saved Device WiFi Settings are untouched; fix them below, save, then reboot.";
       }
     } else if (posture.stateName === "provisioning") {
       setPendingSummary("Provisioning");
       if (postureDesc) {
-        postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
+        postureDesc.textContent = "WiFi Provisioning is temporary. The droid waits for saved Device WiFi Settings.";
       }
     } else if (pendingApply) {
       setPendingSummary("Pending apply");
       if (postureDesc) {
-        postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings are staged but not active yet.`;
+        postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings wait for a reboot.`;
       }
     } else if (posture.stateName === "client-failure") {
       setPendingSummary("Client not connected");
       if (postureDesc) {
-        postureDesc.textContent = "WiFi Client Mode is active, but the controller is not connected to the saved network.";
+        postureDesc.textContent = "WiFi Client Mode is on, but the droid has not joined the saved network.";
       }
     } else {
       setPendingSummary("Active");
@@ -341,8 +341,8 @@
         // (ADR 0015, self-build only) — compiled from secrets.h at build time.
         postureDesc.textContent =
           posture.staConnected && !posture.provisioned
-            ? `WiFi Client Mode is active (from secrets.h at build time, dev only) — not saved Device WiFi Settings.`
-            : `${modeLabel(wifi.mode)} settings are applied.`;
+            ? `WiFi Client Mode, joined with the build's own credentials (dev only). No Device WiFi Settings are saved.`
+            : `${modeLabel(wifi.mode)} settings are running.`;
       }
     }
 
@@ -355,7 +355,7 @@
     const wifi = state.wifiConfig;
     const diag = state.diagnostics || {};
     if (!wifi) {
-      applyGuidance.textContent = "Still finding out how you get back to the droid after a reboot.";
+      applyGuidance.textContent = "Finding out how you get back to the droid after a reboot.";
       return;
     }
 
@@ -375,42 +375,42 @@
 
     if (posture.networkRecovery) {
       applyGuidance.textContent = wifi.pendingApply
-        ? `Network Recovery Mode is active. Corrected Device WiFi Settings are saved — connect to ${provisioningApName}, open ${apAddress}, then use Reboot to Apply below to return to ${modeLabel(wifi.mode)}.`
-        : `Network Recovery Mode is active from a local power-cycle gesture. Your saved Device WiFi Settings are unchanged — connect to ${provisioningApName}, open ${apAddress}, fix Client network / AP settings below, save, then reboot to return to them.`;
+        ? `Network Recovery Mode is on and your fixes are saved. Join ${provisioningApName}, open ${apAddress}, then Reboot to Apply to return to ${modeLabel(wifi.mode)}.`
+        : `Network Recovery Mode is on; saved settings are unchanged. Join ${provisioningApName}, open ${apAddress}, fix the settings below, save, then reboot.`;
       return;
     }
 
     if (posture.stateName === "provisioning") {
       applyGuidance.textContent =
-        `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${provisioningApName} and open ${apAddress}.`;
+        `WiFi Provisioning is temporary, not Standalone AP Mode. Join ${provisioningApName}, open ${apAddress}, save settings below, then reboot.`;
       return;
     }
 
     if (wifi.pendingApply) {
       if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
         applyGuidance.textContent =
-          `Saved Standalone AP Mode is pending. Reboot the controller to apply it, then connect to ${apName}, open ${pendingApAddress}, and use ${pendingOtaApTarget} for OTA while your computer is on that AP.`;
+          `After the reboot, join ${apName} and open ${pendingApAddress}. OTA goes to ${pendingOtaApTarget} while you are on that network.`;
       } else {
         applyGuidance.textContent =
-          `Saved WiFi Client Mode is pending. Reboot the controller to apply it, then reconnect from the WiFi network at ${hostAddress} or ${staAddress}.`;
+          `After the reboot, reach the droid on your network at ${hostAddress} or ${staAddress}.`;
       }
       return;
     }
 
     if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
       applyGuidance.textContent =
-        `Standalone AP Mode is active. Connect to ${apName}, open ${apAddress}, and use ${activeOtaApTarget} for OTA while your computer is on that AP.`;
+        `Join ${apName} and open ${apAddress}. OTA goes to ${activeOtaApTarget} while you are on that network.`;
       return;
     }
 
     if (posture.stateName === "client-failure") {
       applyGuidance.textContent =
-        `WiFi Client Mode is active but not connected. This is a client-mode connection problem, not Standalone AP Mode; check the saved network or use Network Recovery Mode to repair settings.`;
+        `Not joined. Check the saved network, or use Network Recovery Mode to fix it.`;
       return;
     }
 
     applyGuidance.textContent =
-      `WiFi Client Mode is active. Open ${hostAddress} or ${staAddress}.`;
+      `Open ${hostAddress} or ${staAddress}.`;
   };
 
   const loadIdentity = async ({ handle = null } = {}) => {

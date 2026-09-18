@@ -16,13 +16,11 @@
   </head>
   <body data-page="wifi">
 
-    <!-- The title, and the question this surface answers (ADR 0066). Every act
-         here is named beside the thing it acts on, so the title carries none of
+    <!-- The title is the name in the nav (ADR 0066). Every act here is named beside the thing it acts on, so the title carries none of
          its own. -->
     <div class="title">
       <div>
         <h1>WiFi</h1>
-        <p class="question">How does the droid get on the network, and where will you find it?</p>
       </div>
     </div>
 
@@ -33,7 +31,7 @@
          "Status Colour"). -->
     <div class="card" id="wifi-posture-card">
       <div class="sect"><h2>Network posture</h2><span class="sub" id="wifi-pending-summary">finding out</span></div>
-      <p class="prose" id="wifi-posture-desc">Still finding out how this droid is on the network.</p>
+      <p class="note" id="wifi-posture-desc">Finding out how the droid is on the network.</p>
       <!-- The readouts ARE the grid. A .status-grid wrapping an unclassed <dl>
            makes the list the one grid item and every reading sits at full
            width; Setup and Foot Drive both carry <dl class="status-grid">, and
@@ -64,7 +62,7 @@
           <dd id="wifi-ap-ip">&mdash;</dd>
         </div>
       </dl>
-      <p class="hint">Signal is how loudly the droid hears the network it joined. Closer to zero is stronger; below -85 dBm this page starts dropping out mid-load.</p>
+      <p class="hint">Closer to zero is stronger. Below -85 dBm, pages drop out mid-load.</p>
     </div>
 
     <!-- Two easily-confused things, defined side by side at the point of
@@ -94,27 +92,26 @@
 
     <div class="card" id="wifi-settings-card">
       <div class="sect"><h2>Device WiFi settings</h2><span class="sub">saved now &middot; active at the next boot</span></div>
-      <p class="prose">What the droid keeps, which is not what it is doing. Saving writes these to the droid and changes nothing on the air; the connection you are reading this over only changes when the controller reboots.</p>
       <form id="wifi-settings-form" novalidate>
-        <div class="sect"><h3>Mode</h3><span class="sub">one of two, and it decides the rest</span></div>
+        <div class="sect"><h3>Mode</h3><span class="sub">pick one</span></div>
         <div class="wifi-mode-options" role="radiogroup" aria-label="WiFi mode">
           <label class="wifi-mode-option" for="wifi-mode-client">
             <input id="wifi-mode-client" name="wifiMode" type="radio" value="client" required>
             <span>
               <span class="wifi-mode-title">WiFi Client Mode</span>
-              <span class="hint">The droid joins a network you already have, and you reach it by its own name from any machine on that network.</span>
+              <span class="hint">The droid joins your network. Reach it by name from any machine on it.</span>
             </span>
           </label>
           <label class="wifi-mode-option" for="wifi-mode-standalone-ap">
             <input id="wifi-mode-standalone-ap" name="wifiMode" type="radio" value="standalone_ap" required>
             <span>
               <span class="wifi-mode-title">Standalone AP Mode</span>
-              <span class="hint">The droid makes a network of its own and your computer joins that one, with no router in between. This is the mode for a field away from home.</span>
+              <span class="hint">The droid hosts its own network and you join it. For a field away from home.</span>
             </span>
           </label>
         </div>
 
-        <div class="sect"><h3>Client network</h3><span class="sub">the network the droid joins</span></div>
+        <div class="sect"><h3>Client network</h3><span class="sub">the network it joins</span></div>
         <div class="wifi-settings-grid">
           <label class="field" for="wifi-sta-ssid">
             <span>Network name</span>
@@ -129,7 +126,7 @@
           </label>
         </div>
 
-        <div class="sect"><h3>The droid's own network</h3><span class="sub">the network the droid hosts</span></div>
+        <div class="sect"><h3>The droid's own network</h3><span class="sub">the network it hosts</span></div>
         <div class="wifi-settings-grid">
           <label class="field" for="wifi-ap-ssid">
             <span>Network name</span>
@@ -157,11 +154,11 @@
          (docs/ui-copy-voice.md rule 12). -->
     <div class="card" id="wifi-apply-card">
       <div class="sect"><h2>Staged network switch</h2><span class="sub" id="wifi-apply-state">finding out</span></div>
-      <p class="prose" id="wifi-apply-guidance">Still finding out how you get back to the droid after a restart.</p>
+      <p class="prose" id="wifi-apply-guidance">Finding out how you get back to the droid after a reboot.</p>
       <div class="button-row button-row-compact">
         <button id="wifi-apply-reboot-button" class="btn danger" type="button" disabled>Reboot to Apply</button>
       </div>
-      <p class="hint">Refused while nothing is staged. A reboot drops every page open on this droid, including this one, so read the line above before you press it.</p>
+      <p class="hint">Refused while nothing is staged. The reboot drops this page; read the line above first.</p>
       <div id="wifi-apply-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
