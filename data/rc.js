@@ -1414,7 +1414,7 @@
 
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      setEditorFeedback('Detect mode unavailable: enable an RC channel in Setup.', 'warning');
+      setEditorFeedback('Detect mode unavailable: enable an RC channel in Configuration.', 'warning');
       return;
     }
     learnActive = true;

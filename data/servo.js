@@ -160,9 +160,9 @@
     { id: "aux3", name: "AUX 3", label: "AUX3" },
   ];
 
-  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
   const setupActionHtml = window.PAUi?.setupActionHtml
-    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`);
+    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Configuration</a>`);
   const isServoType = (type) => type === "mg996r" || type === "mg90s";
   const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
 

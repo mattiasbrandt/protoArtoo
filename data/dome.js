@@ -47,7 +47,7 @@
   // the three was a health signal, which is the only thing that may take a
   // signal colour (CONTEXT.md "Status Colour"):
   //
-  //   the dome motor switched on or off in Setup is an AVAILABILITY FAMILY,
+  //   the dome motor switched on or off in Configuration is an AVAILABILITY FAMILY,
   //   "change it here", and those are told apart by treatment and never by hue
   //   - it read green when on and amber when off, and amber promises the
   //     builder something is wrong rather than that they made a choice;
@@ -121,7 +121,7 @@
 
     setText(
       domeHardwareState,
-      domeHardwareEnabled ? "switched on" : "switched off in Setup",
+      domeHardwareEnabled ? "switched on" : "switched off in Configuration",
     );
 
     if (!webControlStatusKnown) {
@@ -135,7 +135,7 @@
     }
 
     if (!domeHardwareEnabled) {
-      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
+      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME — Dome ESC in Configuration.", "warning");
     } else if (!webControlStatusKnown) {
       showFeedback(domeFeedback, "Waiting for live status frame...");
     } else {
@@ -267,7 +267,7 @@
   const saveEscConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(escFeedback, "Dome settings unavailable: enable DOME — Dome ESC in Setup.", "warning");
+      showFeedback(escFeedback, "Dome settings unavailable: enable DOME — Dome ESC in Configuration.", "warning");
       return;
     }
 
@@ -333,7 +333,7 @@
   const saveRndDomeConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
-      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME — Dome ESC in Setup.", "warning");
+      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME — Dome ESC in Configuration.", "warning");
       return;
     }
 
