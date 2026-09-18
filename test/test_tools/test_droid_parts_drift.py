@@ -185,14 +185,14 @@ class DriftIsReported(unittest.TestCase):
             '        "id": "doorFL",\n        "section": "body_doors",\n',
             '        "section": "body_doors",\n',
         )
-        self.assertFails("parts[36] carries no id")
+        self.assertFails("parts[44] carries no id")
 
     def test_a_table_that_outran_its_own_count(self):
         """The one shape of hand damage that still compiles: an id appended past
         the count a consumer sizes its buffer against."""
-        self.scratch.edit(self.scratch.firmware, "DROID_PART_COUNT = 58;",
-                          "DROID_PART_COUNT = 57;")
-        self.assertFails("DROID_PART_COUNT is 57 and the table holds 58 ids")
+        self.scratch.edit(self.scratch.firmware, "DROID_PART_COUNT = 65;",
+                          "DROID_PART_COUNT = 64;")
+        self.assertFails("DROID_PART_COUNT is 64 and the table holds 65 ids")
 
     def test_a_part_kind_no_browser_module_reads(self):
         """`light` with nothing consulting it gives six Parts the treatment of
@@ -211,8 +211,8 @@ class DriftIsReported(unittest.TestCase):
     def test_a_broken_catalog_is_reported_rather_than_raised(self):
         """An operator running this has a catalog to fix either way, and a
         traceback is a worse way to be told."""
-        self.scratch.edit(self.scratch.catalog, "\n        seeds: TBD",
-                          "\n        seeds: soon")
+        self.scratch.edit(self.scratch.catalog, "\n          dome: TBD",
+                          "\n          dome: soon")
         self.assertFails("neither a list nor TBD")
 
 

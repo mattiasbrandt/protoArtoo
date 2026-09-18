@@ -80,11 +80,11 @@ test("a dome the built-in drawing is not of is not drawn as theirs", async () =>
   assert.match(model.warning, /not the design you stated/);
 });
 
-test("the variant decides it too: a simple dome is not the complex drawing", async () => {
-  // `mk4/simple` carries `seeds: null` in the catalog - nobody has read what a
-  // simple MK4 dome carries - so this is the case that must not be answered
-  // with the complex picture OR with an empty one.
-  const page = newPage(seam("mk4", "simple", false));
+test("the variant decides it too: a basic dome is not the complex drawing", async () => {
+  // An `mk4/basic` dome is unknown in the catalog - nobody has read what a
+  // basic MK4 dome carries (#409) - so this is the case that must not be
+  // answered with the complex picture OR with an empty one.
+  const page = newPage(seam("mk4", "basic", false));
   await page.DomeLayout.load();
 
   assert.equal(page.DomeLayout.getSource(), "stated-design");

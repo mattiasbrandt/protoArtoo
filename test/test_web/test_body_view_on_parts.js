@@ -49,10 +49,10 @@ const measuredArm1 = () =>
 test("a part nothing drives makes no claim about where it is", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
 
-  const drawer = marker(env, "drawer");
-  assert.ok(drawer.classList.contains("is-undriven"));
-  assert.equal(drawer.classList.contains("has-position"), false);
-  assert.match(drawer.getAttribute("aria-label"), /nothing drives it yet/);
+  const smallDoor = marker(env, "smallDoor");
+  assert.ok(smallDoor.classList.contains("is-undriven"));
+  assert.equal(smallDoor.classList.contains("has-position"), false);
+  assert.match(smallDoor.getAttribute("aria-label"), /nothing drives it yet/);
 });
 
 test("a click only selects: the panel fills and the droid is asked for nothing", async () => {
@@ -122,11 +122,11 @@ test("give it an Output routes to the row's own picker and writes nothing", asyn
   const env = await bootParts({ outputs: measuredArm1() });
   const before = env.posts.length;
 
-  pick(env, "drawer");
+  pick(env, "smallDoor");
   pressAct(env, "wire");
 
   assert.equal(env.posts.length, before, "a route is not a write");
-  assert.strictEqual(env.document.activeElement, env.partRow("drawer").querySelector("select"));
-  assert.match(env.feedback(), /Choose the output that moves Drawer/);
+  assert.strictEqual(env.document.activeElement, env.partRow("smallDoor").querySelector("select"));
+  assert.match(env.feedback(), /Choose the output that moves Small long door/);
 });
 

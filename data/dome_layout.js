@@ -206,7 +206,7 @@
    *
    *   the built-in drawing IS their dome  -> show it, as this tier always has
    *   it is a drawing of another design   -> do not show it as theirs
-   *   this build does not record what     -> say so; `mk4/simple` is that case
+   *   this build does not record what     -> say so; an `mk4/basic` dome is that case
    *     their design and variant carry       today, and drawing an empty dome
    *                                          would read as "you fitted nothing"
    *

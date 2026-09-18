@@ -217,7 +217,7 @@ test("clearing the panel refuses every act, so nothing is offered with nothing p
   const { panelHost, BodyView } = boot();
   const panel = BodyView.mountPanel(panelHost, { acts: ACTS });
 
-  panel.show({ title: "Drawer", facts: [], acts: { move: { enabled: true } }, why: "" });
+  panel.show({ title: "Small long door", facts: [], acts: { move: { enabled: true } }, why: "" });
   panel.clear("Pick a part on the drawing.");
 
   panelHost.querySelectorAll("[data-act]").forEach((node) => {

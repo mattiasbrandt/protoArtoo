@@ -42,7 +42,7 @@
 #   vocabulary is the union of every design's complement plus the parts no
 #   design lists.
 #   One seed list serves both halves of the answer. A builder states a Dome
-#   Design and a Body Design separately — an MK4 complex dome on an MK4 simple
+#   Design and a Body Design separately — an MK4 complex dome on an MK4 basic
 #   body is an ordinary droid, not an edge case — so a reader takes the dome
 #   half of a design's seeds for the Dome Design and the body half for the
 #   Body Design. Which half a part belongs to is the section it is declared in
@@ -52,9 +52,11 @@
 #   `default_variant`, one field per design rather than one per half: a Dome
 #   Design and a Body Design are answered separately and each carries its own
 #   design row, so one field already lets a builder run a complex dome on a
-#   simple body (operator decision 2026-09-10, #356).
-#   A part no design lists is a Common Addition: the four arms with
-#   `cad_name: null`, offered to every droid whatever it was built from. The
+#   basic body (operator decision 2026-09-10, #356).
+#   A part no design lists is a Common Addition, offered to every droid
+#   whatever it was built from and never fitted by default: all six body arms
+#   (the two utility arms, and the gripper and interface arms with their claw
+#   and tool; operator's verified mapping, 2026-09-18, #409). The
 #   `other_slots` escape hatch at the foot of this file sits outside every
 #   design too.
 #   Adding a design is one block here and no edit to any part row — the
@@ -90,9 +92,16 @@
 #               that is empty or unknown.
 #   seeds:      the part ids a design — or one of its variants — puts on the
 #               droid. A variant carries its own seeds because a variant is
-#               not cosmetic: a simple dome cannot grow the complex pies, so
-#               drawing the maximal complement at a simple-dome builder would
+#               not cosmetic: a basic dome cannot grow the complex pies, so
+#               drawing the maximal complement at a basic-dome builder would
 #               promise parts they can never fit.
+#               A variant may also give its seeds per half, as
+#               `{dome: ..., body: ...}`, each half a list or `TBD`, when one
+#               half is known and the other is not (MK4 Basic, #409).
+#   legacy_ids: on a variant, the ids it was stored under before a rename.
+#               A stored Droid Build names its variant verbatim, so firmware
+#               reads each legacy id as the variant it became rather than
+#               resetting the droid (`simple` became `basic`, #409).
 #               `seeds: TBD` means the complement is not known here and must
 #               not be guessed. It is a scalar rather than a short list on
 #               purpose: a reader expecting a list fails loudly instead of
@@ -209,29 +218,34 @@ designs:
     preselected: true
     label: MrBaddeley MK4
     short: MK4
-    blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the body doors and utility arms that go with them.
+    blurb: The MK4 astromech most builders here printed — six pie panels, fourteen side panels, three holoprojectors, and the breadpan and body doors that go with them.
     note: >-
       The MK4 dome also carries 6 small inner pies, which have no PP shorthand.
       This catalog declares no part ids for them, so no variant can seed them
       yet; the count lived in the header block this section replaced and is
       kept here until they are declared as parts.
-    # Complex, because it is the only MK4 variant with a complement today: a
-    # builder pre-selected onto `simple` would be pre-selected onto a seed list
-    # nobody has read out of MrBaddeley's exports yet (operator decision
-    # 2026-09-10, #356).
+    # Complex, because it is the only MK4 variant whose whole complement is
+    # known: Basic's dome half is still unread (operator decisions 2026-09-10,
+    # #356, and 2026-09-18, #409).
     default_variant: complex
     variants:
-      - id: simple
-        label: Simple
-        # TBD: which of the parts below a simple MK4 build carries. The split
-        # between MrBaddeley's simple and complex MK4 exports is recorded
-        # nowhere in this repository, so it must be read out of those design
-        # files before it is written here — do not guess it (#337).
-        seeds: TBD
+      - id: basic
+        label: Basic
+        # MrBaddeley's name for MK4's sparse variant. It was stored as `simple`
+        # until 2026-09-18, and a stored `simple` still reads as `basic` (#409).
+        legacy_ids: [simple]
+        seeds:
+          # A Basic dome carries fewer parts than a Complex one, and which ones
+          # is not yet read out of MrBaddeley's files — do not guess it (#337,
+          # operator 2026-09-18).
+          dome: TBD
+          # The operator's verified mapping, 2026-09-18 (#409): the four
+          # breadpans, the Data Port, the Small Door and the Charge Bay.
+          body: [doorFL, doorFR, doorRL, doorRR, dataport, smallDoor, chargebay]
       - id: complex
         label: Complex
-        # The maximal MK4 complement: every part declared below except the
-        # four Common Additions, which belong to no design.
+        # The maximal MK4 complement. Every arm is a Common Addition and is
+        # never seeded (operator's verified mapping, 2026-09-18, #409).
         seeds: [pie1, pie2, pie3, pie4, pie5, pie6,                       # PP1..PP6
                 panel1, panel2, panel3, panel4, panel5, panel6, panel7,   # P1..P14
                 panel8, panel9, panel10, panel11, panel12, panel13, panel14,
@@ -239,9 +253,30 @@ designs:
                 logicRear, logicFront, psiFront,
                 hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,        # HP1..HP3
                 domeBtn1, domeBtn2,                                       # dome fixtures
-                doorFL, doorFR, doorRL, doorRR,                           # body doors
-                dataport, chargebay, smallDoor, drawer,
-                utilUp, utilLo]                                           # body arms
+                doorFL, doorFR, doorRL, doorRR,                           # breadpans
+                dataport, smallDoor, chargebay,                           # body doors
+                bodyPanel1, bodyPanel2, bodyPanel3, bodyPanel4,           # Body Panels 1-8
+                bodyPanel5, bodyPanel6, bodyPanel7, bodyPanel8]
+
+  - id: mk41
+    label: MrBaddeley MK4.1
+    short: MK4.1
+    blurb: MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only — pick MK4 Basic or Complex for the body.
+    note: >-
+      Added on the operator's direction, 2026-09-18 (#409). MK4.1 has no
+      variant split, so it declares no variants. Its dome half copies the MK4
+      Complex dome because no MK4.1 part list has been read yet — unverified,
+      replace it when one is. It is a dome design only, so its body half seeds
+      nothing, on purpose.
+    seeds:
+      dome: [pie1, pie2, pie3, pie4, pie5, pie6,
+             panel1, panel2, panel3, panel4, panel5, panel6, panel7,
+             panel8, panel9, panel10, panel11, panel12, panel13, panel14,
+             magicPanel, upperPanel, psiRear,
+             logicRear, logicFront, psiFront,
+             hp1Pan, hp1Tilt, hp2Pan, hp2Tilt, hp3Pan, hp3Tilt,
+             domeBtn1, domeBtn2]
+      body: []
 
   - id: own
     label: My own build
@@ -317,17 +352,34 @@ dome_fixtures:            # orientation references — not servos
   - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: front }
   - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: front }
 
+# The operator's verified mapping, 2026-09-18 (#409): each row carries
+# MrBaddeley's name for the part, and Printed Droid's where it has one, as
+# aliases beside the name protoArtoo shows. `drawer` was removed on that
+# mapping: it is not a part of the droid. A stored Droid Build or Output that
+# still names it drops it on read and reports the drop.
 body_doors:
-  - { id: doorFL,    cad_name: FLBreadpanDoor,  aliases: ["Left body door", "FL door"],       position: front-left,  control: none }
-  - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door"],      position: front-right, control: none }
-  - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door"],  position: rear-left,   control: none }
-  - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door"], position: rear-right,  control: none }
-  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport"],       position: front-left,  control: none }
-  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay"],    position: front-right, control: none }
-  - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door"],                 position: front,       control: none }
-  - { id: drawer,    cad_name: Drawer,          aliases: ["Drawer"],                          position: front,       control: none }
+  - { id: doorFL,    cad_name: FLBreadpanDoor,  aliases: ["Left body door", "FL door", "Left Front Breadpan"],       position: front-left,  control: none }
+  - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door", "Right Front Breadpan"],     position: front-right, control: none }
+  - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door", "Left Rear Breadpan"],   position: rear-left,   control: none }
+  - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door", "Right Rear Breadpan"], position: rear-right,  control: none }
+  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport", "Data Port", "Large Data Port (LDP)", "LDP"], position: front-left,  control: none }
+  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay", "Charge Bay"],             position: front-right, control: none }
+  - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door", "Small Door"],                         position: front,       control: none }
+  # MK4 Complex only. Where each sits is not yet written down: it is placed
+  # when the body picture is picked (#408), and an unplaced part is listed
+  # beside the drawing rather than put somewhere plausible.
+  - { id: bodyPanel1, cad_name: TBD, aliases: ["Body panel 1"], control: none }
+  - { id: bodyPanel2, cad_name: TBD, aliases: ["Body panel 2"], control: none }
+  - { id: bodyPanel3, cad_name: TBD, aliases: ["Body panel 3"], control: none }
+  - { id: bodyPanel4, cad_name: TBD, aliases: ["Body panel 4"], control: none }
+  - { id: bodyPanel5, cad_name: TBD, aliases: ["Body panel 5"], control: none }
+  - { id: bodyPanel6, cad_name: TBD, aliases: ["Body panel 6"], control: none }
+  - { id: bodyPanel7, cad_name: TBD, aliases: ["Body panel 7"], control: none }
+  - { id: bodyPanel8, cad_name: TBD, aliases: ["Body panel 8"], control: none }
 
 body_arms:
+  # Every arm is a Common Addition: optional, never fitted by default, and
+  # offered to every droid (operator's verified mapping, 2026-09-18, #409).
   - { id: utilUp,    cad_name: UpperUtilityArm, aliases: ["Upper utility arm"], position: front, control: body-ledc,
       note: one of the two MG996R utility arm servos protoArtoo already drives }
   - { id: utilLo,    cad_name: LowerUtilityArm, aliases: ["Lower utility arm"], position: front, control: body-ledc,
