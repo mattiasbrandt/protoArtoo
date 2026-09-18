@@ -74,7 +74,7 @@
       key: "wifi",
       title: "WiFi",
       q: "Which network does this droid join?",
-      why: "The droid is either on a network of yours or broadcasting its own. This is the link every screen you drive it from comes down, and the one new firmware arrives over.",
+      why: "Every screen you drive from, and every new firmware, comes over this link.",
       answer: () => wifiAnswer,
     },
     {
@@ -84,35 +84,35 @@
       // would be one more of the hardcoded artoo-only sentences #348 is counting,
       // and only what is SHOWN may differ between boards (ADR 0065).
       q: () => (boardLabel ? `This is your ${boardLabel}.` : "This is the board doing the work."),
-      why: "Nothing to pick here — the board is whichever one this firmware was built for. It is named so the rest of the run reads against the right thing: everything after this describes something plugged into this board.",
+      why: "Nothing to pick: this firmware was built for this board. Everything after this plugs into it.",
       answer: () => boardLabel,
     },
     {
       key: "drive",
       title: "Foot Drive",
       q: "What moves the feet?",
-      why: "Leave this off and the droid is a statue — the sticks move, the wheels don't.",
+      why: "Off: the droid is a statue. Sticks move, wheels don't.",
       answer: () => fittedOrNot("enable-drive"),
     },
     {
       key: "domerot",
       title: "Dome Rotation",
       q: "What turns the dome?",
-      why: "Off, the dome sits still through every sequence, however the show is written.",
+      why: "Off, the dome sits still through every sequence.",
       answer: () => fittedOrNot("enable-dome-esc"),
     },
     {
       key: "domectl",
       title: "Dome Controller",
       q: "What runs the board up in the dome?",
-      why: "This is the link that carries light, panel and sound cues up to the dome's own board. Off, the body still drives — the dome just stops listening.",
+      why: "Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.",
       answer: () => fittedOrNot("enable-protor2link"),
     },
     {
       key: "servos",
       title: "Body servo controller",
       q: "What moves the arms and the spare outputs?",
-      why: "The outputs in the body: two utility arms, and three spare lines for whatever you have on them — a servo, a light, a smoke unit.",
+      why: "Two utility arms, and three spare lines for a servo, a light or a smoke unit.",
       answer: () => {
         const fitted = countFitted([
           "enable-arm1",
@@ -128,7 +128,7 @@
       key: "rc",
       title: "Radio Controller",
       q: "What do you drive it with?",
-      why: "The channels you tick are the ones the droid listens to. A channel with nothing wired to it is better left off than left guessing.",
+      why: "The droid listens only to the channels you tick. Leave an unwired channel off.",
       answer: () => {
         const fitted = countFitted([
           "enable-rc-ch1",
@@ -152,7 +152,7 @@
       key: "name",
       title: "Name",
       q: "What is this droid called?",
-      why: "The name is stored on the droid rather than in this browser, so a second computer or a cleared cache meets the same droid.",
+      why: "The name lives on the droid, so any computer meets the same droid.",
       answer: () => document.getElementById("droid-name-input")?.value || "",
     },
   ];
@@ -352,10 +352,10 @@
       chip.appendChild(answerSlot);
 
       chip.title = question
-        ? `Question ${questionsThrough(index)} of ${total} — ${step.title}${answer ? ` · ${answer}` : ""}${
-            seen ? "" : "\nNot asked yet — this is the default, not something you have confirmed."
+        ? `Question ${questionsThrough(index)} of ${total} · ${step.title}${answer ? ` · ${answer}` : ""}${
+            seen ? "" : "\nNot asked yet: the default, not your answer."
           }`
-        : `${step.title} — shown, not asked${answer ? ` · ${answer}` : ""}`;
+        : `${step.title} · shown, not asked${answer ? ` · ${answer}` : ""}`;
 
       chip.addEventListener("click", () => goTo(index));
       railHost.appendChild(chip);
@@ -366,7 +366,7 @@
     // has been on screen, because then it explains nothing.
     show(legend, anyUnseen);
     if (legend && anyUnseen) {
-      legend.textContent = "A filled mark is an answer you gave. A hollow one is a question you have not been asked yet, showing the default.";
+      legend.textContent = "Filled: you answered it. Hollow: not asked yet, showing the default.";
     }
   };
 
@@ -381,11 +381,11 @@
     // different question for every step and belongs beside the step that owns it
     // (#370); a blanket promise here would be false for at least three of them.
     const total = questionCount();
-    const escape = "you can stop at any step, and stopping ends the run";
+    const escape = "stop at any step to end the run";
     if (position) {
       position.textContent = isQuestion(step)
         ? `Question ${questionsThrough(current)} of ${total} · ${escape}.`
-        : `${step.title} — shown, not asked. Question ${Math.min(questionsThrough(current) + 1, total)} of ${total} is next · ${escape}.`;
+        : `${step.title}, shown, not asked · question ${Math.min(questionsThrough(current) + 1, total)} of ${total} next · ${escape}.`;
     }
 
     const last = current >= STEPS.length - 1;
@@ -464,7 +464,7 @@
     } catch (error) {
       console.error("[setup] guided setup run end failed:", error);
       setFeedback(
-        `The droid did not record that setup is done, so the run is still open: ${window.PAApi.messageFor(error)}`,
+        `The droid did not save the end of setup, so the run is still open: ${window.PAApi.messageFor(error)}`,
         "error",
       );
       ending = false;
@@ -507,32 +507,32 @@
   const renderWifiStep = (config) => {
     const wifi = config?.wifi || {};
     const state = document.getElementById("wizard-wifi-state");
-    const prose = document.getElementById("wizard-wifi-prose");
+    const line = document.getElementById("wizard-wifi-prose");
     const ssid = String(wifi.staSsid || "");
     if (!wifi.provisioned) {
       wifiAnswer = "Its own network";
       if (state) state.textContent = "not given a network yet";
-      if (prose) {
-        prose.textContent =
-          "You are on the droid's own network — it has none of yours saved. Give it one and you can reach it from anywhere the network reaches.";
+      if (line) {
+        line.textContent =
+          "You are on the droid's own network. Give it yours and reach it from anywhere that network does.";
       }
       return;
     }
     if (wifi.mode === "standalone_ap") {
       wifiAnswer = "Standalone AP Mode";
       if (state) state.textContent = "its own network, on purpose";
-      if (prose) {
-        prose.textContent =
-          "This droid is set to broadcast its own network rather than join one of yours. That is a choice, not a gap — you reach it by connecting to the droid.";
+      if (line) {
+        line.textContent =
+          "The droid broadcasts its own network, on purpose. Connect to the droid to reach it.";
       }
       return;
     }
     wifiAnswer = ssid || "WiFi Client Mode";
     if (state) state.textContent = ssid ? `joins ${ssid}` : "set to join a network";
-    if (prose) {
-      prose.textContent = ssid
-        ? `This droid joins ${ssid}. That is the network every screen you drive it from comes down.`
-        : "This droid is set to join a network of yours.";
+    if (line) {
+      line.textContent = ssid
+        ? `The droid joins ${ssid}. Every screen you drive from comes over it.`
+        : "The droid is set to join a network of yours.";
     }
   };
 
@@ -583,9 +583,9 @@
     loadRun().catch((error) => {
       console.error("[setup] guided run unavailable:", error);
       const checking = document.getElementById("wizard-checking");
-      const prose = checking?.querySelector(".prose");
-      if (prose) {
-        prose.textContent = `Could not ask the droid whether it has been set up: ${window.PAApi.messageFor(error)}`;
+      const line = checking?.querySelector(".hint");
+      if (line) {
+        line.textContent = `No answer on whether this droid is set up: ${window.PAApi.messageFor(error)}`;
       }
     });
 

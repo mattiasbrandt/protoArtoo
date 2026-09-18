@@ -991,7 +991,7 @@ const BOARD_LABELS = {
     // it is the strip's own live colour rather than a state.
     if (!available) {
       auxLedPreviewText.textContent = `LED strip on AUX${pin} unavailable`;
-      auxLedPreviewNote.textContent = "The strip is recorded here, but the controller has no output driver for it.";
+      auxLedPreviewNote.textContent = "The strip is recorded, but the controller could not start it.";
       return;
     }
 

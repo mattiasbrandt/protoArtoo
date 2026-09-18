@@ -65,7 +65,7 @@
          --------------------------------------------------------------------- -->
     <div class="card" id="wizard-checking">
       <div class="sect"><h2>Setup</h2><span class="sub">reading this droid</span></div>
-      <p class="prose">Finding out whether this droid has been set up yet.</p>
+      <p class="hint">Finding out whether this droid is set up.</p>
     </div>
 
     <div class="card hidden" id="wizard-head">
@@ -75,7 +75,7 @@
       <div class="wizard-rail" id="wizard-rail" role="group" aria-label="The questions in this run"></div>
       <p class="hint wizard-legend hidden" id="wizard-legend"></p>
       <div class="sect"><h2 id="wizard-question">Setting this droid up</h2><span class="sub" id="wizard-step-name"></span></div>
-      <p class="prose" id="wizard-why"></p>
+      <p class="note" id="wizard-why"></p>
     </div>
 
     <!-- Step 1. The run continues the flow that started when the builder gave
@@ -86,7 +86,7 @@
     <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
       <div class="sect"><h2>WiFi</h2><span class="sub" id="wizard-wifi-state">finding out</span></div>
       <div data-setup-step="wifi">
-        <p class="prose" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
+        <p class="note" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
         <div class="button-row button-row-compact">
           <a class="btn" href="#wifi">Change the network in WiFi</a>
         </div>
@@ -97,7 +97,7 @@
          Registry gates the two Body Controllers on PA_BOARD, so an image
          carries exactly one of them and the other is not offered or mentioned. -->
     <div class="card">
-      <div class="sect"><h2>Body Controller</h2><span class="sub">this image carries one board</span></div>
+      <div class="sect"><h2>Body Controller</h2><span class="sub">one per image</span></div>
       <div class="board-image-wrap" id="board-image-panel" data-setup-step="_board">
         <svg id="board-art" class="board-art hidden" viewBox="0 0 400 300" role="img"><use id="board-art-use"></use></svg>
         <img id="board-image" alt="" title="">
@@ -116,13 +116,13 @@
          the run's rail, or this card's own summary. -->
     <div class="card">
       <div class="sect"><h2>Hardware components</h2><span class="sub" id="setup-enabled-summary">finding out</span></div>
-      <p class="prose">Say what is actually bolted to this droid. A component switched off is a component the controller never talks to, so the surfaces that use it say what is missing rather than failing quietly.</p>
+      <p class="hint">Tick what is bolted to this droid. Off, the controller never talks to it.</p>
       <form id="feature-form">
 
         <div data-setup-step="drive">
-        <div class="sect"><h3>Foot Drive</h3><span class="sub">what moves the feet</span></div>
+        <div class="sect"><h3>Foot Drive</h3><span class="sub">the feet</span></div>
         <div class="note note-info" role="note">
-          <span>Leave this off and the droid is a statue — the sticks move, the wheels don't.</span>
+          <span>Off: the droid is a statue. Sticks move, wheels don't.</span>
           <span id="label-desc-enable_drive" class="component-label-desc"> Wire it to <strong id="label-enable_drive"></strong>.</span>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_drive">
@@ -136,9 +136,9 @@
 
         </div>
         <div data-setup-step="domerot">
-        <div class="sect"><h3>Dome rotation</h3><span class="sub">what turns the dome</span></div>
+        <div class="sect"><h3>Dome rotation</h3><span class="sub">the dome ESC</span></div>
         <div class="note note-info" role="note">
-          <span>Off, the dome sits still through every sequence, however the show is written.</span>
+          <span>Off, the dome sits still through every sequence.</span>
           <span id="label-desc-enable_dome_esc" class="component-label-desc"> Wire it to <strong id="label-enable_dome_esc"></strong>.</span>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_dome_esc">
@@ -152,9 +152,9 @@
 
         </div>
         <div data-setup-step="domectl">
-        <div class="sect"><h3>protoR2link</h3><span class="sub">the link to the dome's own board</span></div>
+        <div class="sect"><h3>protoR2link</h3><span class="sub">link to the dome board</span></div>
         <div class="note note-info" role="note">
-          <span>Carries light, panel and sound cues up to the dome's own board. Off, the body still drives — the dome just stops listening.</span>
+          <span>Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.</span>
           <span id="label-desc-enable_protor2link" class="component-label-desc"> Wire it to <strong id="label-enable_protor2link"></strong>.</span>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_protor2link">
@@ -186,7 +186,7 @@
         </div>
         <div data-setup-step="servos">
         <div class="sect"><h3>Utility arms</h3><span class="sub">2 arms, one servo each</span></div>
-        <p class="hint">Tick the arms you have fitted, and say which servo is on each one. The type decides the widths the controller will drive that output between.</p>
+        <p class="hint">Tick each arm you fitted and pick its servo. The type sets how far the output swings.</p>
         <div class="component-row" data-feature-entry="system.config.enable_arm1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
@@ -221,7 +221,7 @@
         </div>
 
         <div class="sect"><h3>AUX outputs</h3><span class="sub">3 spare lines</span></div>
-        <p class="hint">Spare outputs for whatever you have on them — a servo, a light, a smoke unit. Only one AUX line at a time can carry an LED strip.</p>
+        <p class="hint">Spare outputs for a servo, a light or a smoke unit. Only one can carry an LED strip.</p>
         <div class="component-row" data-feature-entry="system.config.enable_aux1">
           <label class="toggle-switch">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
@@ -287,8 +287,8 @@
         <div data-setup-step="rc">
         <div class="sect"><h3>RC Receiver Channels</h3><span class="sub">6 channels, applied after a restart</span></div>
         <div class="note note-info" role="note">
-          <div>Tick the channels you actually have wired to the receiver.</div>
-          <div>RC input changes save immediately and apply after controller restart.</div>
+          <div>Tick the channels wired to the receiver.</div>
+          <div>Saved at once. The droid uses them after a restart.</div>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch1">
           <label class="toggle-switch">
@@ -338,7 +338,7 @@
             <span class="toggle-status" id="status-rc-ch6">Off</span>
           </label>
         </div>
-        <p class="hint">In Stationary mode, Dual SBUS is usually unnecessary — Single SBUS or Standard PWM is the lighter answer.</p>
+        <p class="hint">In Stationary mode, Single SBUS or Standard PWM is enough. Dual SBUS is not needed.</p>
 
         </div>
       </form>
@@ -351,7 +351,7 @@
     <!-- LED Strip -->
     <div class="card">
       <div class="sect"><h2>LED strip</h2><span class="sub" id="aux-led-route-status">Not routed</span></div>
-      <p class="prose">A strip is routed by switching on AUX 1, AUX 2 or AUX 3 above and recording <b>LED strip</b> as what is on it. One AUX line carries the strip; the rest stay servo outputs.</p>
+      <p class="hint">Switch on an AUX line above and pick <b>LED strip</b> on it. One line carries the strip; the rest stay servo outputs.</p>
       <div class="led-route">
         <label class="field" for="aux-led-count">
           <span>LED strip count</span>
@@ -367,8 +367,8 @@
     </div>
 
     <div class="card">
-      <div class="sect"><h2>Droid identity</h2><span class="sub">what this droid answers to</span></div>
-      <p class="prose">The name is the droid's, not the browser's: it is stored on the controller, so a second computer or a cleared cache meets the same droid.</p>
+      <div class="sect"><h2>Droid identity</h2><span class="sub">name and hostname</span></div>
+      <p class="hint">The name lives on the droid, so any computer meets the same droid.</p>
       <div class="identity-grid" data-setup-step="name">
         <label class="field" for="droid-name-input">
           <span>Droid name</span>
