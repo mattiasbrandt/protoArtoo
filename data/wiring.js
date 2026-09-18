@@ -166,7 +166,7 @@
   // next move" that a wrong link quietly breaks (CONTEXT.md "Availability
   // Family": 16 strings once named a destination a builder could not reach).
   const setupRouteHtml = (action) =>
-    window.PAUi?.setupActionHtml?.(action) ?? `${esc(action)} in Setup`;
+    window.PAUi?.setupActionHtml?.(action) ?? `${esc(action)} in Configuration`;
 
   // Where a Part is put on an Output. Parts is the surface that owns that act,
   // and it is a destination that exists.
