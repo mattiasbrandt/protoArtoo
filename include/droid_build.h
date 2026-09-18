@@ -6,9 +6,9 @@
 //
 // A Droid Build is a Dome Design and a Body Design, each at a Design Variant,
 // together with the Fitted Parts they seeded and any Common Addition the
-// builder added. The two halves are answered independently: an MK3 body under
-// an MK4 dome is an ordinary droid, so nothing here compares one half against
-// the other, and no answer to one half constrains the other.
+// builder added. The two halves are answered independently: an MK4.1 dome on
+// an MK4 Basic body is an ordinary droid, so nothing here compares one half
+// against the other, and no answer to one half constrains the other.
 //
 // A DESIGN SEEDS, IT NEVER FENCES. The Fitted Parts are the truth; a design is
 // a running start at them. Nothing downstream is gated on this structure: a
