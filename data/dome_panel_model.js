@@ -27,7 +27,7 @@
  * picture: an MK4 complex dome is what these fourteen ring panels and six pies
  * ARE, so showing them to a builder who stated anything else would be a drawing
  * of somebody else's droid presented as theirs. The variant is named too - a
- * basic MK4 dome cannot grow the complex pies, so this drawing promises parts
+ * simple MK4 dome cannot grow the complex pies, so this drawing promises parts
  * that builder can never fit.
  */
 
