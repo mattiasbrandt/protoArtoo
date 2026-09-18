@@ -318,6 +318,12 @@ void loadConfigToState() {
     // builder's droid meet the answer this controller holds, from any browser.
     DroidBuildRepairReport droidBuildRepair = {};
     configLoadDroidBuild(prefs, &droidBuildRepair);
+    // Guided Setup's record loads the same way and for the same reason (#351):
+    // nothing below reads it, and it is here so the surfaces that report on a
+    // droid can tell a category the builder declared not fitted from one they
+    // were never asked about.
+    GuidedSetupRepairReport guidedSetupRepair = {};
+    configLoadGuidedSetup(prefs, &guidedSetupRepair);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
@@ -354,6 +360,17 @@ void loadConfigToState() {
                     droidBuildRepair.domeRepaired ? "default" : "kept",
                     droidBuildRepair.bodyRepaired ? "default" : "kept",
                     (unsigned)droidBuildRepair.partsDropped);
+    }
+
+    // A guided Setup record that came back shorter than it went in. Said out
+    // loud rather than swallowed: a dropped step key is a step the builder WAS
+    // shown that this controller can no longer say they were, which is the same
+    // untruth the record exists to prevent, arriving from the other side.
+    if (!guidedSetupRepairReportIsClean(guidedSetupRepair)) {
+        PA_LOG_WARN("config",
+                    "guided setup record repaired: run=%s, %u step key(s) this build cannot read",
+                    guidedSetupRepair.runRepaired ? "reset" : "kept",
+                    (unsigned)guidedSetupRepair.stepsDropped);
     }
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)

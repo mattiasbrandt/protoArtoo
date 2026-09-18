@@ -124,6 +124,18 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 void configCacheReadDroidBuild(DroidBuildConfig* out);
 void configCacheApplyDroidBuild(const DroidBuildConfig& build);
 
+// Guided Setup (#351): where the run stands, and which steps have been on
+// screen. Outside ConfigSnapshot beside the Droid Build, filled by
+// configLoadGuidedSetup() on the boot path and changed at runtime only by the
+// Commit Step.
+//
+// No firmware behaviour branches on it either. It exists so that the surfaces
+// which report on a droid can tell a category the builder DECLARED not fitted
+// from one they were never asked about - a difference that is invisible in the
+// toggles themselves, because both read false.
+void configCacheReadGuidedSetup(GuidedSetupConfig* out);
+void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided);
+
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);

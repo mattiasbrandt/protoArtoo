@@ -461,6 +461,54 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         result->changed = true;
     }
 
+    // Guided Setup's record (#351): where the run stands, and which of its steps
+    // the builder has actually been shown.
+    //
+    // Nothing downstream is gated on either. Firmware stores this record and
+    // checks its FORM - a run state this image can name, step keys made of
+    // characters a key may contain - because an arbitrary request string would
+    // otherwise reach NVS and come back out in a JSON payload. Which steps EXIST
+    // is the browser's question, not this one's: the run is drawn there and the
+    // list grows (include/guided_setup.h).
+    //
+    // The refusals do not echo what was asked for, for the reason the sound
+    // member refusal above gives: setError() takes a literal and the message
+    // lands in a JSON error body.
+    if (configParamHas(params, "guidedSetupRun")) {
+        GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
+        if (!guidedSetupRunFromId(configParamGet(params, "guidedSetupRun"), &run)) {
+            setError(result, "guidedSetupRun must be not-run, skipped or completed");
+            return;
+        }
+        result->guidedSetup.run = run;
+        result->guidedSetup.runChanged = true;
+        appendApplied(&result->applied, "[CFG] guidedSetupRun updated to %s",
+                      guidedSetupRunId(run));
+        result->changed = true;
+    }
+
+    // The visited list arrives whole. An EMPTY value is a real answer - the run
+    // has been drawn and nothing has been shown yet - and is applied; the field
+    // being absent is what means "this request is not about the visited record".
+    // A key this image cannot read is refused rather than dropped: a shortened
+    // record would report a step the builder WAS shown as one they never were,
+    // which is the untruth the record exists to prevent.
+    if (configParamHas(params, "guidedSetupVisited")) {
+        guidedSetupDefaults(&result->guidedSetup.visited);
+        const size_t dropped = guidedSetupVisitedSet(&result->guidedSetup.visited,
+                                                     configParamGet(params, "guidedSetupVisited"));
+        if (dropped > 0) {
+            setError(result,
+                     "guidedSetupVisited must be a comma-separated list of step keys, each at "
+                     "most 12 characters of a-z, 0-9 and _");
+            return;
+        }
+        result->guidedSetup.visited.recorded = true;
+        result->guidedSetup.visitedChanged = true;
+        appendApplied(&result->applied, "[CFG] guidedSetupVisited updated");
+        result->changed = true;
+    }
+
     // A Part's place on the Outputs (ADR 0050, #347). All three fields or none:
     // a move that names only where a Part is going cannot say which Output it is
     // taking the Part away from, and that half is the one a builder has to be

@@ -20,6 +20,7 @@
 
 #include "config.h"
 #include "droid_build.h"       // DroidBuildConfig / DroidBuildRepairReport, for the load below
+#include "guided_setup.h"      // GuidedSetupConfig / GuidedSetupRepairReport, for the load below
 #include "robot_state.h"
 #include "servo_output_row.h"  // ServoOutputRepairReport, for the load below
 
@@ -511,6 +512,17 @@ bool configSaveServoOutputs(Preferences& prefs);
 // *report says what a stored answer this image cannot name cost.
 void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report);
 bool configSaveDroidBuild(Preferences& prefs);
+
+// configLoadGuidedSetup / configSaveGuidedSetup: where the guided Setup run
+// stands, and which of its steps have been on screen (#351). Outside
+// ConfigSnapshot for the same reason the Droid Build above is, and on their own
+// NVS keys -- see include/config_serializer.h. Caller opens Preferences with
+// begin() before calling.
+//
+// configLoadGuidedSetup fills the live record read by configCacheReadGuidedSetup();
+// *report says what a stored record this image cannot read cost.
+void configLoadGuidedSetup(Preferences& prefs, GuidedSetupRepairReport* report);
+bool configSaveGuidedSetup(Preferences& prefs);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);

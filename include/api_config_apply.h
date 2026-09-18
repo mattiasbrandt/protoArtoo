@@ -31,6 +31,7 @@
 #include "api_param_source.h"
 #include "config_cache.h"
 #include "droid_build.h"
+#include "guided_setup.h"
 #include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
 
 struct ConfigApplyError {
@@ -115,6 +116,28 @@ struct ConfigPartMove {
     ServoOutputPartMove move = {};
 };
 
+// What the request asked of guided Setup's record (#351).
+//
+// Two independent facts, so two flags. A step being marked visited is the
+// browser saying "this question has now actually been on screen", and it happens
+// many times during one run; the run ending happens once. A request that carries
+// one must not be read as saying anything about the other.
+//
+// The record lives outside ConfigSnapshot on its own NVS keys, like the Droid
+// Build above, so the core validates it here and the Commit Step merges it onto
+// the live record through configCacheApplyGuidedSetup().
+//
+// The visited list arrives WHOLE rather than as an addition, for the reason the
+// Fitted Parts do: the browser holds the run, an add-one wire would need a
+// remove-one to match it, and replacing the list keeps the two ends from drifting
+// into disagreement about what has been shown.
+struct ConfigGuidedSetupEdit {
+    bool runChanged = false;
+    bool visitedChanged = false;
+    GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
+    GuidedSetupConfig visited = {};
+};
+
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
     ConfigApplyError error;
@@ -122,6 +145,7 @@ struct ConfigApplyResult {
     ConfigAppliedFields applied;
     ConfigServoOutputEdits servoOutputs;
     ConfigDroidBuildEdit droidBuild;
+    ConfigGuidedSetupEdit guidedSetup;
     ConfigPartMove partMove;
 };
 

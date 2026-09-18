@@ -39,6 +39,25 @@ the patch releases, whose notes live on their own GitHub Release.
   it says so on the page and on every picture, and the shared rail is explained
   rather than drawn. Nothing on it is kept by hand, so it cannot go stale
   against the firmware the way a wiring document does.
+- **Set the droid up in one guided pass.** A freshly flashed controller now
+  walks you through what your droid is made of, one question at a time, starting
+  from the WiFi you already gave it. A rail along the top shows the questions,
+  which one you are on and what each currently answers, and you can jump to any
+  of them. The board you are running on is shown rather than asked, because it
+  is whichever one the firmware was built for.
+
+  The run remembers which questions it actually put in front of you. Every
+  component starts switched off, so an untouched question reads "not fitted" —
+  a statement about your droid you never made. A question you have not been
+  asked yet is drawn with a hollow mark rather than a filled one, and what it
+  shows is labelled as the default rather than as your answer.
+
+  Setup is a one-off. Reaching the last question finishes the run, and so does
+  pressing Stop here at any point: the droid keeps whatever you answered, and
+  Setup does not ask again. The two are kept apart, so a droid you answered and
+  a droid you walked away from are still different afterwards. All of it travels
+  with Backup and Restore like any other setting.
+
 - **Put the whole droid back to centre with one press.** Parts has a Back to
   centre button above the outputs table. Every output goes to the centre you
   recorded for it — its own centre, not a fixed middle — and the droid does them

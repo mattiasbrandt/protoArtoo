@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 1db4f97a..2fc5f76f 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -2189,7 +2189,7 @@ const BOARD_LABELS = {
+         // with the text around it, and needs nobody's permission.
+         const tick = document.createElement("span");
+         tick.className = seen ? "wizard-tick" : "wizard-tick is-unseen";
+-        tick.textContent = seen ? "●" : "○";
++        tick.textContent = "●";
+         label.appendChild(tick);
+       }
+       const title = document.createElement("span");

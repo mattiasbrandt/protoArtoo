@@ -705,6 +705,56 @@ void addDroidBuildFields(JsonDocument& doc) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// addGuidedSetupFields()
+// Guided Setup's record: where the run stands, and which of its steps the
+// builder has been shown (#351).
+//
+// Out here with the others because it lives outside ConfigSnapshot, on its own
+// NVS keys - see include/config_serializer.h - so a pure snapshot serializer
+// cannot see it.
+//
+// `recorded` is the field that looks redundant and is not. A controller
+// configured before guided Setup existed carries no record at all, and an empty
+// `visited` array on its own cannot say whether that means "the run has shown
+// nothing yet" or "the run has never been drawn here". Only the second of those
+// may be read as "these answers were given before the record existed, and are
+// real"; the browser, which is the only end that knows what the steps are, makes
+// that call and needs this bit to make it.
+//
+// The run goes out as a token rather than its stored number for the reason the
+// Fitted Parts go out as ids: firmware and the browser module ship in two
+// separate steps ('make ota' and 'make uploadfs'), so a number is the one form
+// that could mean a different thing at each end of the wire.
+void addGuidedSetupFields(JsonDocument& doc) {
+    GuidedSetupConfig guided = {};
+    configCacheReadGuidedSetup(&guided);
+
+    JsonObject guidedSetup = doc["guidedSetup"].to<JsonObject>();
+    guidedSetup["run"] = guidedSetupRunId(guided.run);
+    guidedSetup["recorded"] = guided.recorded;
+
+    JsonArray visited = guidedSetup["visited"].to<JsonArray>();
+    const char* cursor = guided.visited;
+    while (*cursor != '\0') {
+        const char* comma = strchr(cursor, ',');
+        const size_t span = (comma != nullptr) ? (size_t)(comma - cursor) : strlen(cursor);
+        // A mutable char array, deliberately: ArduinoJson stores a `const char*`
+        // by pointer and DUPLICATES a `char*`, and this buffer is gone by the
+        // time the document serializes. That is the same rule the Droid Build
+        // fields above rely on when they assign a local struct's char array.
+        char key[GUIDED_SETUP_STEP_KEY_MAX + 1] = {};
+        if (span > 0 && span <= GUIDED_SETUP_STEP_KEY_MAX) {
+            memcpy(key, cursor, span);
+            visited.add(key);
+        }
+        if (comma == nullptr) {
+            break;
+        }
+        cursor = comma + 1;
+    }
+}
+
 // The config snapshot response, shared by the read route and the write route's
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
@@ -723,6 +773,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     addServoOutputFields(doc);
     addAudioMemberFields(doc);
     addDroidBuildFields(doc);
+    addGuidedSetupFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
@@ -876,6 +927,24 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         configCacheApplyDroidBuild(droidBuild);
     }
 
+    // Guided Setup's record, onto the live one (#351). Each half of it is merged
+    // rather than replaced, for the reason the Droid Build's halves are: marking
+    // a step visited says nothing about whether the run has ended, and ending the
+    // run says nothing about which steps were shown - so a request carrying one
+    // must leave the other exactly as it stood.
+    if (result.guidedSetup.runChanged || result.guidedSetup.visitedChanged) {
+        GuidedSetupConfig guided = {};
+        configCacheReadGuidedSetup(&guided);
+        if (result.guidedSetup.runChanged) {
+            guided.run = result.guidedSetup.run;
+        }
+        if (result.guidedSetup.visitedChanged) {
+            guided.recorded = true;
+            memcpy(guided.visited, result.guidedSetup.visited.visited, sizeof(guided.visited));
+        }
+        configCacheApplyGuidedSetup(guided);
+    }
+
     // Sync stationary mode with edge detection and drive-on cue. Safe to call
     // unconditionally: when the request omits "stationary", configApply() left
     // working->system.stationary at the cache value read before the call, which
@@ -924,6 +993,17 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     if ((result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
          result.droidBuild.fittedChanged) &&
         !configSaveDroidBuild(prefs)) {
+        prefs.end();
+        outcome.persisted = false;
+        return outcome;
+    }
+    // Only where the request said something about it, for the reason the Droid
+    // Build above is written only then: an absent visited record is what tells
+    // the next boot that guided Setup has never been drawn on this controller,
+    // and writing one on every config POST would spend that distinction on a
+    // request that was about the log level.
+    if ((result.guidedSetup.runChanged || result.guidedSetup.visitedChanged) &&
+        !configSaveGuidedSetup(prefs)) {
         prefs.end();
         outcome.persisted = false;
         return outcome;

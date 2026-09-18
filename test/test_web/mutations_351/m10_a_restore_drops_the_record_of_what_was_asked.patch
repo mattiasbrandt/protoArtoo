@@ -1,0 +1,13 @@
+diff --git i/data/setup.js w/data/setup.js
+index 92f7df44..7ee20e51 100644
+--- i/data/setup.js
++++ w/data/setup.js
+@@ -1474,7 +1474,7 @@ const BOARD_LABELS = {
+     // No exclusion list, and one rule decides it: Setup appears when the droid is
+     // not set up.
+     const guided = cfg?.guidedSetup || {};
+-    if (guided.run !== undefined) p.set('guidedSetupRun', guided.run);
++    if (guided.run === undefined) p.set('guidedSetupRun', guided.run);
+     if (Array.isArray(guided.visited)) {
+       // A run that showed nothing is a real answer and is written as the
+       // sentinel; an empty form value would not survive the round trip as one.
