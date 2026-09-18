@@ -52,18 +52,6 @@
     <!-- Diagnostics -->
     <div class="card">
       <div class="sect"><h2>Diagnostics</h2><span class="sub">what the controller is using right now</span></div>
-      <form id="diag-form" class="form-grid">
-        <label class="field" for="log-level-select">
-          <span>Log verbosity</span>
-          <select id="log-level-select" name="logLevel">
-            <option value="1">1 — Error only (loss of function)</option>
-            <option value="2">2 — Warning (faults and safety warnings — recommended minimum)</option>
-            <option value="3">3 — Info (normal boot and service messages)</option>
-            <option value="4">4 — Debug (verbose, for development and fault diagnosis)</option>
-          </select>
-        </label>
-      </form>
-      <p class="hint">A new level applies to what gets logged at once. How deep the log history goes (16–48 lines) follows the saved level after the next restart.</p>
       <dl class="status-grid">
           <div class="status-item">
             <dt>Uptime</dt>
@@ -87,7 +75,6 @@
           </div>
       </dl>
       <p id="diag-memory-note" class="hint">Memory Min is the lowest free heap seen since boot (historical low-water mark).</p>
-      <div id="diag-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Memory Profiler availability is declared by /api/identity. -->

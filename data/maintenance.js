@@ -2,8 +2,8 @@
 // data/maintenance.js
 //
 // Maintenance: inspecting and repairing a controller that is already configured
-// (CONTEXT.md "Maintenance", #288). The serial lanes, the diagnostics and the
-// log level, the Memory Profiler, Backup & Restore, Restart - and the single
+// (CONTEXT.md "Maintenance", #288). The serial lanes, the diagnostics, the
+// Memory Profiler, Backup & Restore, Restart - and the single
 // deliberate way back into guided Setup, for a builder who skipped it or
 // rebuilt the droid wholesale (#297).
 //
@@ -14,17 +14,11 @@
 (() => {
   const rebootButton = document.getElementById("reboot-button");
   const rebootFeedback = document.getElementById("reboot-feedback");
-  const logLevelSelect = document.getElementById("log-level-select");
-  const diagFeedback = document.getElementById("diag-feedback");
 
   const setFeedbackState = (element, message, variant = "") => {
     if (!element) return;
     element.textContent = message;
     element.className = variant ? `feedback ${variant}` : "feedback";
-  };
-
-  const setDiagFeedback = (message, variant = "") => {
-    setFeedbackState(diagFeedback, message, variant);
   };
 
   // Reboot functionality
@@ -69,47 +63,6 @@
   if (rebootButton) {
     rebootButton.addEventListener("click", handleReboot);
   }
-
-  // --- Diagnostics: log level selector ---
-  const saveLogLevel = async () => {
-    if (!logLevelSelect || !window.PAApi) return;
-    setDiagFeedback("Saving...");
-    try {
-      const body = new URLSearchParams();
-      body.set("logLevel", logLevelSelect.value);
-      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      if (result.data?.system?.logLevel !== undefined) {
-        logLevelSelect.value = String(result.data.system.logLevel);
-      }
-      setDiagFeedback(`Log level saved at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (error) {
-      console.error("[maintenance] saveLogLevel failed:", error);
-      setDiagFeedback(window.PAApi.messageFor(error), "error");
-    }
-  };
-
-  if (logLevelSelect) {
-    logLevelSelect.addEventListener("change", saveLogLevel);
-  }
-
-  // The saved level, so the selector opens on what the controller will use
-  // rather than on its first option. It came with the component settings while
-  // the two shared a page (#404); on its own it is one read of the same
-  // endpoint.
-  const loadLogLevel = async () => {
-    if (!logLevelSelect || !window.PAApi) return;
-    try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
-      if (result.data?.system?.logLevel !== undefined) {
-        logLevelSelect.value = String(result.data.system.logLevel);
-      }
-    } catch (error) {
-      console.error("[maintenance] loadLogLevel failed:", error);
-      setDiagFeedback(`Could not read the saved log level: ${window.PAApi.messageFor(error)}`, "error");
-    }
-  };
-
-  loadLogLevel();
 
   // --- Serial connection status ---
   const serialS1 = document.getElementById("serial-s1-state");
