@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const { mkdirSync } = require('node:fs');
 
-const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/setup.html';
+const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/maintenance.html';
 const HEADLESS = process.env.HEADLESS === 'true';
 const ARTIFACT_DIR = 'output/playwright/issue-186';
 

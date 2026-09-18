@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/setup.html';
+const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/configuration.html';
 const HEADLESS = process.env.HEADLESS === 'true';
 
 (async () => {

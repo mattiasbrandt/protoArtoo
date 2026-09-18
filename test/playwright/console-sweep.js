@@ -4,7 +4,8 @@ const { chromium } = require("playwright");
 
 const BASE = process.env.BASE || "http://10.0.0.22";
 const PAGES = ["index.html","drive.html","dome.html","sound.html","servo.html",
-               "seq.html","rc.html","setup.html","wifi.html","firmware.html"];
+               "seq.html","rc.html","configuration.html","maintenance.html","setup.html",
+               "wifi.html","firmware.html"];
 const SETTLE_MS = Number(process.env.SETTLE_MS || 6000);
 
 (async () => {
