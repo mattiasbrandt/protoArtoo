@@ -246,9 +246,6 @@
 
     const body = element("div", "droid-build-body");
     HALVES.forEach((half) => body.appendChild(renderHalf(half, build, interactive)));
-    // Under the cards, never in a tooltip: the one sentence this step turns on.
-    body.appendChild(element("p", "note note-info droid-build-boundary",
-      "This seeds your parts, it does not fence them."));
     mount.body.replaceChildren(body);
 
     if (mount.summary) {

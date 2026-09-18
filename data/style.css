@@ -7741,8 +7741,7 @@ button.droid-build-card:disabled {
 }
 
 .droid-build-unknown,
-.droid-build-dome-differs,
-.droid-build-boundary {
+.droid-build-dome-differs {
   margin-block: var(--space-sm);
 }
 
