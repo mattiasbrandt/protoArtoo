@@ -60,14 +60,15 @@ void test_a_fresh_controller_starts_on_the_pre_selected_design(void) {
     TEST_ASSERT_EQUAL_UINT32(DROID_BUILD_DEFAULT_FITTED_COUNT,
                              (uint32_t)droidFittedPartsCount(build.fitted));
     TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "pie1"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "utilUp"));
+    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "bodyPanel1"));
 }
 
 void test_a_common_addition_is_not_seeded_by_any_design(void) {
     const DroidBuildConfig build = defaults();
-    // The four arms with no CAD name belong to no design, so a fresh controller
-    // does not claim they are on the droid - the builder fits them.
-    for (const char* id : {"gripArm", "gripClaw", "interArm", "interTool"}) {
+    // Every arm is optional and belongs to no design - the two utility arms
+    // included since the operator's verified mapping (#409) - so a fresh
+    // controller does not claim any is on the droid; the builder fits them.
+    for (const char* id : {"gripArm", "gripClaw", "interArm", "interTool", "utilUp", "utilLo"}) {
         TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, id));
         // ... and they are still Parts this build can name.
         TEST_ASSERT_TRUE(droidPartIdIsKnown(id));
