@@ -924,8 +924,6 @@ nav > a {
 body[data-page="servo"] .card > * + *,
 body[data-page="parts"] .card > * + *,
 body[data-page="parts"] .outputs-section > * + *,
-body[data-page="setup"] .card > * + *,
-body[data-page="setup"] #feature-form > * + *,
 body[data-page="drive"] .card > * + *,
 body[data-page="dome"] .card > * + *,
 body[data-page="sound"] .card > * + *,
@@ -3911,50 +3909,22 @@ label.sound-search-field {
   white-space: nowrap;
 }
 
-/* The serial lanes report a SENTENCE rather than a word - "Connected (UART, hb
-   rx 812 / tx 810)" is four times the length of the Dashboard's "Mounted" - so
-   these rows take a wider column and let the reading wrap. Found in a browser
-   at 1440 px, where the S3 reading ran off the right-hand edge of its plate
-   against the shared rule's white-space: nowrap. */
-body[data-page="setup"] .health-grid {
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-}
-
-body[data-page="setup"] .health-item {
-  height: auto;
-  padding-block: var(--space-2xs);
-}
-
-body[data-page="setup"] .indicator-text {
-  white-space: normal;
-  text-align: right;
-}
-
-/* A readout whose state is a light: the light sits with the value, the way a
-   Status Plate cell carries its own, and the value stays ink. */
-body[data-page="setup"] .status-item dd {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-body[data-page="setup"] .status-item .hint {
-  display: block;
-  margin-top: var(--space-2xs);
-}
-
 /* Configuration and Maintenance, the two surfaces #404 split the Setup page
-   into. What the two rule groups above do for Setup - the anatomy's spacing
-   ladder, and the serial lanes and memory readouts that read as a sentence
-   beside a light - these carry to the surface each card now lives on: the
-   component form and its cards to Configuration, the lanes and the readouts
-   to Maintenance. */
+   into. The anatomy's spacing ladder, as the list of swept surfaces above
+   gives it: the component form and its cards on Configuration, every card on
+   Maintenance. */
 body[data-page="configuration"] .card > * + *,
 body[data-page="configuration"] #feature-form > * + *,
 body[data-page="maintenance"] .card > * + * {
   margin-top: var(--space-md);
 }
 
+/* The serial lanes report a SENTENCE rather than a word - "Connected (UART, hb
+   rx 812 / tx 810)" is four times the length of the Dashboard's "Mounted" - so
+   these rows take a wider column and let the reading wrap. Found in a browser
+   at 1440 px, where the S3 reading ran off the right-hand edge of its plate
+   against the shared rule's white-space: nowrap. The lanes are Maintenance's
+   since #404. */
 body[data-page="maintenance"] .health-grid {
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
 }
@@ -3969,6 +3939,8 @@ body[data-page="maintenance"] .indicator-text {
   text-align: right;
 }
 
+/* A readout whose state is a light: the light sits with the value, the way a
+   Status Plate cell carries its own, and the value stays ink. */
 body[data-page="maintenance"] .status-item dd {
   display: flex;
   align-items: center;
