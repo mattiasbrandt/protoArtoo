@@ -119,9 +119,12 @@ PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CAT
 PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
-// Body servo controller -- what drives the body's servos.
+// Body servo controller -- what drives the body's servos. The first row is the
+// MCU's own LEDC PWM and is named for what a builder sees, not for the
+// peripheral: "LEDC does not make sense for an operator" (operator, 2026-09-18
+// on #369). The spec sheets keep the technical name.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "ESP32 GPIO (LEDC)", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Built-in servo outputs", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
 PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 
