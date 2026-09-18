@@ -14,14 +14,12 @@
   </head>
   <body data-page="home">
 
-    <!-- The title, and the question this surface answers (ADR 0066). The acts
-         are not here: the Dashboard's three act on the DROID rather than on
+    <!-- The title is the name in the nav (ADR 0066). The acts are not here: the Dashboard's three act on the DROID rather than on
          anything this screen shows, so they ride the topbar beside the estop
          (#344, the template at the foot of this file). -->
     <div class="title">
       <div>
         <h1>Dashboard</h1>
-        <p class="question">What is the droid doing right now, and is it well?</p>
       </div>
     </div>
 
@@ -62,10 +60,10 @@
         <div class="ctl">
           <h3>Operation mode <span class="now" id="opmode-now">...</span></h3>
           <div class="seg opmode-grid" role="group" aria-label="Operation mode">
-            <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Full movement control with tank-style steering" aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
-            <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Dome rotation and sound system focus - drive locked" aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
+            <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Feet on. The sticks drive the droid." aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
+            <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Feet locked. Dome and sound still work." aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
           </div>
-          <p class="hint">Stationary locks the feet. The dome and sound keep working, so a droid on a stand still performs.</p>
+          <p class="hint">Stationary locks the feet. Dome and sound still work.</p>
           <div id="opmode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
 
@@ -77,7 +75,7 @@
             <button class="btn mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
             <button class="btn mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
           </div>
-          <p class="hint">Mid-Awake: sound chatter on, holoprojectors parked. Quiet stops the chatter and switches the holos off; Awake+ moves them with their lights on.</p>
+          <p class="hint">Quiet hushes the droid and parks the holos. Each step up adds chatter, then holo movement, then holo lights.</p>
           <div id="mood-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
 
@@ -93,7 +91,7 @@
       </section>
 
       <section>
-        <div class="sect"><h2>Readouts</h2><span class="sub">what the plate leaves off</span></div>
+        <div class="sect"><h2>Readouts</h2><span class="sub">not on the plate</span></div>
         <dl class="readouts">
           <div class="readout">
             <dt>Memory free</dt>
@@ -167,7 +165,7 @@
       <button id="dome-control-header" class="dome-control-header" aria-expanded="false" aria-controls="dome-control-body">
         <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
         <h2>Dome panels</h2>
-        <span class="sub">open and close them from here</span>
+        <span class="sub">open and close</span>
       </button>
       <div id="dome-control-body" class="dome-control-body disclose-body hidden">
         <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -212,7 +210,7 @@
           <div id="estop-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         <div class="top-action">
-          <button class="btn power-toggle top-action-button" id="sleep-toggle" type="button" title="Park the droid's cosmetic subsystems" aria-label="Toggle sleep mode" aria-pressed="false">
+          <button class="btn power-toggle top-action-button" id="sleep-toggle" type="button" title="Rest lights, panels and chatter. Drive stays awake." aria-label="Toggle sleep mode" aria-pressed="false">
             <svg class="i" aria-hidden="true" focusable="false"><use href="#i-power-sleep"/></svg><span id="sleep-toggle-label">Sleep</span>
           </button>
           <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -229,7 +227,7 @@
     <div id="sleep-overlay" class="sleep-overlay" aria-live="polite" aria-hidden="true">
       <div class="sleep-overlay-panel">
         <h2>Sleep Mode Active</h2>
-        <p>Cosmetic subsystems are parked. Drive and safety controls remain active.</p>
+        <p>Lights, panels and chatter rest. Drive and the estop stay awake.</p>
         <button class="btn accent" id="sleep-overlay-wake" aria-label="Wake droid">Wake Droid</button>
       </div>
     </div>

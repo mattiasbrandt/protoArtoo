@@ -142,13 +142,13 @@ async function expanded(options) {
 test("the built-in drawing is shown to the builder whose dome it is", async () => {
   const view = await expanded({ domeDesign: "mk4", domeVariant: "complex" });
   assert.match(view.picker, /vendored-mk4/);
-  assert.match(view.banner, /showing MK4 built-in layout/);
+  assert.match(view.banner, /Showing the built-in MK4 map/);
 });
 
 test("a builder on another design is not shown a drawing of somebody else's droid", async () => {
   const view = await expanded({ domeDesign: "own", domeVariant: "", complementKnown: true });
   assert.doesNotMatch(view.picker, /vendored-mk4/, "the MK4 drawing was shown as theirs");
   // And the card says why, rather than leaving an empty space.
-  assert.match(view.banner, /no built-in map for the dome design you stated/);
+  assert.match(view.banner, /No built-in map for your dome design/);
 });
 

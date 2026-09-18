@@ -91,7 +91,7 @@ test("a WiFi signal nothing measured is not printed as a very strong one", async
   await alone.runSection("app-initial-status");
   await alone.settle();
   assert.equal(alone.element("readout-wifi").innerHTML, "--", "nothing measured prints as nothing");
-  assert.match(alone.element("readout-wifi-detail").textContent, /nothing measured/);
+  assert.match(alone.element("readout-wifi-detail").textContent, /Nothing to measure/);
 });
 
 // A Dashboard fed by the stream alone, so a frame can simply leave a field out.

@@ -166,7 +166,7 @@
       // Only the label moves: the icon beside it is an element, and writing
       // textContent over the button would take it with the word.
       if (sleepToggleLabel) sleepToggleLabel.textContent = isSleeping ? "Wake" : "Sleep";
-      sleepToggle.title = isSleeping ? "Wake the droid's cosmetic subsystems" : "Park the droid's cosmetic subsystems";
+      sleepToggle.title = isSleeping ? "Wake lights, panels and chatter" : "Rest lights, panels and chatter. Drive stays awake.";
       // Waking a sleeping droid is the one primary act on this surface, so the
       // button takes the interaction blue while the droid is asleep and is a
       // plain control the rest of the time. It used to take `danger` AND
@@ -248,7 +248,7 @@
 
     componentStatusCard.classList.remove("hidden");
     if (componentSummary) {
-      componentSummary.textContent = `${active.length} ${active.length === 1 ? "component" : "components"} the controller reports`;
+      componentSummary.textContent = `${active.length} reported`;
     }
 
     // Build signature: component IDs + flags that affect transport lines
@@ -275,7 +275,7 @@
         let transportLine = "";
         if (key === "protoR2link" && payload.dome_link?.state === "connected") {
           if (payload.dome_link?.uart_owned_by_dome === true) {
-            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by protoR2link")}</div>`;
+            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("Holds the serial port the sound module shares.")}</div>`;
           }
         }
         if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
@@ -283,7 +283,7 @@
           // unconditionally, which was wrong on a DY-SV5W or MP3 Trigger droid
           // even before the sound module became a runtime choice.
           const moduleName = entry?.driver || "Sound module";
-          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml(moduleName + " RX unavailable while protoR2link owns UART2")}</div>`;
+          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml(moduleName + " cannot answer: the dome link holds its port.")}</div>`;
         }
         return `
         <div class="status-item" id="comp-${key}">
@@ -462,7 +462,7 @@
     const largest = kilobytes(payload.heapLargest8bit);
     setText(
       readoutHeapDetail,
-      largest === null ? "" : `largest single piece ${largest} kB - which is what Health judges memory on`,
+      largest === null ? "" : `largest free piece ${largest} kB. The Memory light reads this one.`,
     );
 
     // wifiRssi is only set while the droid is joined to a network as a station;
@@ -478,8 +478,8 @@
     setText(
       readoutWifiDetail,
       joined
-        ? "to the network this droid joined"
-        : "nothing measured this: the droid is not joined to a network",
+        ? "on the network the droid joined"
+        : "Not on a network. Nothing to measure.",
     );
   };
 
