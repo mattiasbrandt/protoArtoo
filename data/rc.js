@@ -249,7 +249,8 @@
   // The seven body routines. Each description is the purpose the firmware
   // catalog gives DM:SE<id> (src/tasks/sequence_catalog.cpp), word for word
   // after its ":SE<id> - " prefix, so the picker and the droid describe the same
-  // routine; test_rc_body_routine_descriptions.js holds the two together (#354).
+  // routine. No test holds the two together (#406: copy is read in the diff),
+  // so a change to either is made to both by hand (#354).
   const MARCDUINO_SEQUENCES = [
     { id: 30, name: "Utility arm open-and-close", description: "Both utility arms swing out, then flick in and out twice before they close (5 s)." },
     { id: 31, name: "All body panels open and close", description: "Every body door and arm: the doors open, both arms rise and work their tools, the dataport opens, then everything folds away in order (14 s)." },
