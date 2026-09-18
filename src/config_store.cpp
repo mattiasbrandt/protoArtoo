@@ -790,6 +790,15 @@ uint8_t configCacheReadActiveSoundMember() {
     return result;
 }
 
+// See declaration comment in config_cache.h.
+uint8_t configCacheReadSoundMember() {
+    uint8_t result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = configCache.system.sound_member;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
 // Live log level, published on every cache apply. Read lock-free by the log
 // macros: a single aligned byte is atomic on this core, and the log path runs
 // on Core 1 real-time loops where a critical section per suppressed log call

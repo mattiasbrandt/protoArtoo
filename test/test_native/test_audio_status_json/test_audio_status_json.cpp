@@ -37,7 +37,7 @@ static int formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* d
                                         uint8_t capabilities, bool linkOk, bool active,
                                         uint8_t playState, uint8_t device,
                                         uint16_t totalTracks, uint16_t currentTrack) {
-    return formatAudioStatusJson(buf, bufSize, driverName, capabilities, linkOk, active, playState,
+    return formatAudioStatusJson(buf, bufSize, driverName, true, capabilities, linkOk, active, playState,
                                  device, totalTracks, currentTrack, 0, "available",
                                  "Sound module RX is available");
 }
@@ -151,14 +151,14 @@ void test_capabilities_zero_driver() {
 
 void test_missing_track_field() {
     char buf[256];
-    formatAudioStatusJson(buf, sizeof(buf), "MP3Trigger", 0x0D, true, true, 0x00, 0xFF,
+    formatAudioStatusJson(buf, sizeof(buf), "MP3Trigger", true, 0x0D, true, true, 0x00, 0xFF,
                           10, 99, 99, "available", "Sound module RX is available");
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"missing_track\":99"));
 }
 
 void test_rx_diagnostics_fields_present() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
-    formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, false, false, 0xFF, 0x03,
+    formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false, 0xFF, 0x03,
                           0, 0, 0, kBlockedRxToken, kBlockedRxDetail);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Status unavailable: DomeLink is using UART\""));
@@ -173,7 +173,7 @@ void test_blocked_rx_answer_parses_and_fits() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
     // The case reproduced on #397: RX blocked by the dome link, so link_ok and
     // active are both false and the detail is the long sentence.
-    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, false, false,
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false,
                                        0xFF, 0x03, 24, 0, 0, kBlockedRxToken, kBlockedRxDetail);
 
     TEST_ASSERT_LESS_THAN_UINT(AUDIO_STATUS_JSON_BUF_SIZE, (unsigned)needed);
@@ -192,7 +192,7 @@ void test_blocked_rx_answer_parses_and_fits() {
 
 void test_the_old_256_byte_buffer_was_too_small_and_says_so() {
     char buf[256];
-    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, CAPS_CHIRP, false, false,
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false,
                                        0xFF, 0x03, 24, 0, 0, kBlockedRxToken, kBlockedRxDetail);
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT_MESSAGE(
@@ -206,7 +206,8 @@ void test_the_old_256_byte_buffer_was_too_small_and_says_so() {
 
 void test_worst_case_every_field_still_fits() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
-    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, 0xFF, false, false, 0xFF,
+    // Sound off answers "off", the longer of the two output words.
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, false, 0xFF, false, false, 0xFF,
                                        0xFE, 65535, 65535, 65535, kBlockedRxToken,
                                        kBlockedRxDetail);
 

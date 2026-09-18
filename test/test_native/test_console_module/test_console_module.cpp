@@ -55,6 +55,7 @@
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "component_registry.h"
 #include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
                                     // proves the table matches configApply() by
                                     // driving the real Apply Core, not a comment's promise
@@ -323,6 +324,9 @@ void setUp() {
     // observation globals (track-stop, query-status, every $-letter dollar
     // shortcut and the raw dollar-command passthrough).
     g_test_audio_queue_ok = true;
+    // Audio output on for this boot, so the sound rows below reach their queue
+    // stubs; the sound-off tests switch it off themselves (#370).
+    configCacheSetActiveAudioEnabled(true);
     g_test_audio_play_track_calls = 0;
     g_test_audio_last_track = 0;
     g_test_audio_volume_calls = 0;
@@ -491,7 +495,7 @@ void test_dome_status_current_carries_real_state() {
 
 void test_sound_three_way_field_match() {
     char json[256];
-    formatAudioStatusJson(json, sizeof(json), "TEST", 0, true, false, 0, 0, 0, 0, 0, "ok", "ok");
+    formatAudioStatusJson(json, sizeof(json), "TEST", true, 0, true, false, 0, 0, 0, 0, 0, "ok", "ok");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("sound.status.current");
 
@@ -3570,6 +3574,59 @@ void test_sound_play_track_blocked_while_sleeping() {
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
 }
 
+// Sound switched off at boot (#370): AudioTask was never created, so nothing
+// drains the queue. Every row that would send the module a command answers
+// with the reason and sends nothing - never "ok outcome=queued" onto a queue
+// nobody reads, which is what sound.action.play-track answered on the bench.
+void test_sound_rows_are_refused_with_the_reason_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+    const char* rows[] = {
+        "sound.action.play-track track=1",
+        "sound.action.set-volume volume=10",
+        "sound.action.play-track-scream",
+        "sound.action.dollar-command cmd=$R",
+        "sound.action.track-stop",
+        "sound.action.query-status",
+        "sound.api.refresh-catalog",
+        "sound.api.play-banked bank=1 page=A index=1",
+    };
+    for (const char* row : rows) {
+        g_cap = CapturedRecord{};
+        runQuery(row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_STATUS_ERR, g_cap.status, row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome, row);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason, row);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(
+            "Sound is off. Switch it on in Configuration, then restart the droid.",
+            capturedValue("detail"), row);
+    }
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_stop_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_query_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_refresh_catalog_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_banked_calls);
+}
+
+// With sound off the status names the module the builder picked, not the
+// driver bound at boot, and says sound is off (#370; measured on both boards
+// in the 2026-09-11 comments on #370).
+void test_sound_status_names_the_picked_module_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+    ConfigSnapshot snap = {};
+    snap.system.sound_member = componentPartById("mp3_trigger")->value;
+    configCacheApply(snap);
+
+    runQuery("sound.status.current");
+
+    TEST_ASSERT_EQUAL_STRING("MP3 Trigger", capturedValue("driver"));
+    TEST_ASSERT_EQUAL_STRING("off", capturedValue("output"));
+    char caps[8];
+    snprintf(caps, sizeof(caps), "%u", (unsigned)componentPartCapabilities("mp3_trigger"));
+    TEST_ASSERT_EQUAL_STRING(caps, capturedValue("capabilities"));
+}
+
 void test_sound_play_track_reports_a_full_queue() {
     g_test_audio_queue_ok = false;
 
@@ -5451,6 +5508,8 @@ int main(int, char**) {
     RUN_TEST(test_sound_play_track_queues_and_carries_the_track_number);
     RUN_TEST(test_sound_play_track_rejects_an_out_of_range_track);
     RUN_TEST(test_sound_play_track_blocked_while_sleeping);
+    RUN_TEST(test_sound_rows_are_refused_with_the_reason_while_sound_is_off);
+    RUN_TEST(test_sound_status_names_the_picked_module_while_sound_is_off);
     RUN_TEST(test_sound_play_track_reports_a_full_queue);
     RUN_TEST(test_sound_set_volume_applies_and_persists);
     RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);

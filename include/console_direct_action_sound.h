@@ -46,6 +46,32 @@
                                            // api_audio_mood_map_apply.h/api_audio_category_range_apply.h
                                            // for audioMoodMapApply()/audioCategoryRangeApply()
 #include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "audio_sound_member.h"           // audioSoundOn(), AUDIO_SOUND_OFF_REASON
+
+// With audio output off at boot nothing drains the audio queue, so every row
+// below that would send the module a command is refused with the reason, never
+// answered "queued" onto a queue nobody reads (#370). Called last, just before
+// the send, so a malformed line still gets its own answer. The reason is the
+// same sentence POST /api/audio answers with (include/audio_sound_member.h),
+// carried as a field beside COMPONENT_DISABLED - the owning toggle is off -
+// because the reason token alone cannot say where to switch it on.
+static bool consoleRefusedWhileSoundOff(uint32_t requestId, const char* operationName,
+                                        const ConsoleRecordSink* sink) {
+    if (audioSoundOn()) {
+        return false;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "detail", AUDIO_SOUND_OFF_REASON);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                          CONSOLE_REASON_COMPONENT_DISABLED);
+    }
+    return true;
+}
 
 // sound.action.play-track: track=<1..999> - the same audioQueuePlayTrack()
 // call handleAudioPost()'s action=play branch makes (src/web/api_audio.cpp);
@@ -92,6 +118,9 @@ static void consoleExecuteSoundPlayTrack(uint32_t requestId, const char* operati
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueuePlayTrack((uint16_t)track, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -133,6 +162,9 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     AudioSetVolumeCommitOutcome commit =
         audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
     if (!commit.queued) {
@@ -209,6 +241,9 @@ static void consoleExecuteSoundDollarShortcut(uint32_t requestId, const char* op
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueDollar(dollarCmd, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -403,6 +438,9 @@ static void consoleExecuteSoundDollarCommand(uint32_t requestId, const char* ope
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueDollar(cmd, consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -437,6 +475,9 @@ static void consoleExecuteSoundTrackStop(uint32_t requestId, const char* operati
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueTrackStop(consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -472,6 +513,9 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
         return;
     }
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueQueryStatus(consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -651,6 +695,9 @@ static void consoleExecuteSoundRefreshCatalog(uint32_t requestId, const char* op
         consoleAnswerCatalogUnsupported(requestId, sink);
         return;
     }
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueueRefreshCatalog(consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -722,6 +769,9 @@ static void consoleExecuteSoundPlayBanked(uint32_t requestId, const char* operat
     consoleParamParseNumeric(CONSOLE_PARAM_TYPE_UINT16, consoleArgsFind(args, "index"), &index);
     const char page = consoleArgsFind(args, "page")[0];
 
+    if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
+        return;
+    }
     if (!audioQueuePlayTrackBanked((uint16_t)index, (uint8_t)bank, page,
                                    consoleCommandSourceFor(source))) {
         if (sink->onRecordResult) {

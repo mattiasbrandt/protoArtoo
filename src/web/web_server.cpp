@@ -27,6 +27,7 @@
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/audio_task.h"
+#include "../../include/audio_sound_member.h"
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
@@ -663,12 +664,23 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         if (enableS2Sound) {
             const char* rxStatusText = audioRxStatusToken(audioRxStatus);
             const char* rxDetail = audioRxStatusDetail(audioRxStatus);
+            // Sound saved on but off this boot has no module behind it: the
+            // block names the picked module and says sound is off rather than
+            // reporting a driver nobody is using as "idle" (#370).
+            const SoundStatusIdentity sound = audioSoundStatusIdentity();
+            const char* state = !sound.on ? "off" : (audioActive ? "playing" : "idle");
+            // Off, the detail is the picked name followed by the shared tail
+            // (AUDIO_SOUND_OFF_STATUS_TAIL), written straight into the body
+            // rather than composed into a buffer on this frame.
+            const char* detailName = !sound.on ? sound.driver : "";
+            const char* detailText =
+                !sound.on ? AUDIO_SOUND_OFF_STATUS_TAIL
+                : audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART
+                    ? rxDetail
+                    : (audioActive ? "Playback active" : "Ready, no active playback");
             int _n = snprintf(pos, remaining,
-                              ",\"audio\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
-                              audioActive ? "playing" : "idle",
-                              audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART ? rxDetail :
-                                  (audioActive ? "Playback active" : "Ready, no active playback"),
-                              audioGetDriverName(),
+                              ",\"audio\":{\"state\":\"%s\",\"detail\":\"%s%s\",\"driver\":\"%s\",\"output\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
+                              state, detailName, detailText, sound.driver, sound.on ? "on" : "off",
                               audioLinkOk ? "true" : "false", rxStatusText, rxDetail);
             if (_n > 0 && _n < (int)remaining) {
                 pos += _n;

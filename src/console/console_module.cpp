@@ -41,6 +41,7 @@
 #include "api_status.h"
 #include "api_audio.h"
 #include "audio_task.h"
+#include "audio_sound_member.h"  // audioSoundStatusIdentity() - sound.status.current with sound off (#370)
 #include "rc_diagnostics_snapshot.h"
 #include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot() -
                                  // the Zone Snapshot behind GET /api/validation
@@ -711,10 +712,15 @@ static void consoleExecuteSoundStatusCurrent(uint32_t requestId, const ConsoleRe
 
     char tempBuf[16] = {};
 
+    // With sound off this names the module the builder picked and says so,
+    // never the driver bound at boot (#370, include/audio_sound_member.h) -
+    // the same answer GET /api/audio gives.
+    const SoundStatusIdentity sound = audioSoundStatusIdentity();
     if (sink->onRecordField) {
-        sink->onRecordField(requestId, "driver", audioGetDriverName());
+        sink->onRecordField(requestId, "driver", sound.driver);
+        sink->onRecordField(requestId, "output", sound.on ? "on" : "off");
     }
-    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)audioGetCapabilities());
+    snprintf(tempBuf, sizeof(tempBuf), "%u", (unsigned)sound.capabilities);
     if (sink->onRecordField) sink->onRecordField(requestId, "capabilities", tempBuf);
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "link_ok", snap.linkOk ? "true" : "false");

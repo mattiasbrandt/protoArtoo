@@ -2302,6 +2302,14 @@
       soundStateBadge.dataset.state = "disabled";
       return;
     }
+    // Saved on, but off this boot: no module is behind it. The line is the
+    // firmware's ("<picked> picked · sound is off", #370), and a press below
+    // is refused with where to switch it on.
+    if (data.audio.output === "off") {
+      soundStateBadge.textContent = data.audio.detail;
+      soundStateBadge.dataset.state = "disabled";
+      return;
+    }
     if (data.audio && typeof data.audio.link_ok === "boolean") {
       if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
         if (modLink) { modLink.textContent = "protoR2link using UART"; modLink.dataset.state = "warn"; }

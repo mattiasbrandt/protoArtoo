@@ -99,6 +99,9 @@ void setUp() {
     robotState = RobotState{};
     ConfigSnapshot snap = {};
     configCacheApply(snap);
+    // Audio output on for this boot, so the routes below reach their queue
+    // stubs; the sound-off test switches it off itself (#370).
+    configCacheSetActiveAudioEnabled(true);
 
     g_test_audio_capabilities = 0;
     g_test_audio_driver_name = "TEST";
@@ -188,6 +191,23 @@ void test_audio_post_play_queues_the_track() {
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
     TEST_ASSERT_EQUAL_UINT(1u, g_test_audio_play_track_calls);
     TEST_ASSERT_EQUAL_UINT16(7, g_test_audio_last_track);
+}
+
+// Sound switched off at boot (#370): nothing drains the queue, so a play is
+// refused with the reason the Console gives, and nothing is queued. The status
+// read names the picked module and says sound is off.
+void test_audio_is_refused_and_says_so_while_sound_is_off() {
+    configCacheSetActiveAudioEnabled(false);
+
+    const WebRequestTestParam play[] = {{"action", "play"}, {"track", "7"}};
+    callPost(handleAudioPost, play, 2);
+    TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("Sound is off. Switch it on in Configuration, then restart the droid."));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_play_track_calls);
+
+    callGet(handleAudioGet, nullptr, 0);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"output\":\"off\""));
 }
 
 void test_audio_post_play_while_sleeping_is_locked() {
@@ -836,6 +856,7 @@ int main() {
     RUN_TEST(test_audio_post_unknown_action_is_rejected);
     RUN_TEST(test_audio_post_play_queues_the_track);
     RUN_TEST(test_audio_post_play_while_sleeping_is_locked);
+    RUN_TEST(test_audio_is_refused_and_says_so_while_sound_is_off);
     RUN_TEST(test_audio_post_play_without_track_is_rejected);
     RUN_TEST(test_audio_post_play_rejects_unparseable_and_out_of_range_tracks);
     RUN_TEST(test_audio_post_stop_queues_a_stop);

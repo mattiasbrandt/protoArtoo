@@ -75,25 +75,29 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 // never a truncated document sent with HTTP 200 (#397 work item 8).
 //
 // Derivation: the template's 158 fixed bytes plus the longest value every field
-// can carry today -- the full product name "CHIRP Audio Trigger" (19),
-// capabilities 255 (3), "false" twice (10), "unknown" play state (7), "unknown"
-// device (8), three 65535 counters (15), the "blocked_by_dome_uart" token (20)
-// and its detail "Status unavailable: DomeLink is using UART" (41). That is 281
-// bytes plus the terminator, against the 256-byte buffer this endpoint used to
-// carry: the blocked-RX answer for a CHIRP lost its closing brace at 257 bytes
-// and, once the Driver row carried the full product name, was cut inside the
-// detail string at 271.
+// can carry today -- the output field answering "off" (15, #370), the full
+// product name "CHIRP Audio Trigger" (19), capabilities 255 (3), "false" twice
+// (10), "unknown" play state (7), "unknown" device (8), three 65535 counters
+// (15), the "blocked_by_dome_uart" token (20) and its detail "Status
+// unavailable: DomeLink is using UART" (41). That is 296 bytes plus the
+// terminator, against the 256-byte buffer this endpoint used to carry: the
+// blocked-RX answer for a CHIRP lost its closing brace at 257 bytes and, once
+// the Driver row carried the full product name, was cut inside the detail
+// string at 271.
 //
-// 320 leaves room for one more field rather than sitting on the exact figure,
-// and formatAudioStatusJson() reports what it actually needed, so an overrun is
-// caught by its caller instead of being sent.
+// 320 still leaves headroom above that figure after the output field took 15
+// of it, and formatAudioStatusJson() reports what it actually needed, so an
+// overrun is caught by its caller instead of being sent.
 static constexpr size_t AUDIO_STATUS_JSON_BUF_SIZE = 320;
 
 // Format JSON response for audio status endpoint.
 // Pure function - no globals, no Arduino, no FreeRTOS.
 // params: buf          - output buffer (must not be null)
 //         bufSize      - size of buf in bytes (AUDIO_STATUS_JSON_BUF_SIZE always fits)
-//         driverName   - driver name string e.g. "DY-SV5W" (must not be null)
+//         driverName   - driver name string e.g. "DY-SV5W" (must not be null); with
+//                        sound off, the picked member's product name
+//                        (audioSoundStatusIdentity(), include/audio_sound_member.h)
+//         outputOn     - audio output is on this boot; false answers "output":"off"
 //         capabilities - AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
 //         linkOk       - true if module responded to at least one UART query
 //         active       - true if firmware sent a play command recently (audioActive)
@@ -111,7 +115,7 @@ static constexpr size_t AUDIO_STATUS_JSON_BUF_SIZE = 320;
 //          requirement rather than a bare bool is what lets a test state the
 //          capacity this response needs instead of restating the template.
 // thread-safe: yes (pure function, no globals)
-int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
+int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, bool outputOn,
                           uint8_t capabilities, bool linkOk, bool active,
                           uint8_t playState, uint8_t device, uint16_t totalTracks,
                           uint16_t currentTrack, uint16_t missingTrack,

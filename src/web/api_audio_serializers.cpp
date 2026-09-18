@@ -27,7 +27,8 @@ const char* audioDeviceLabel(uint8_t device) {
                               : "unknown";
 }
 
-int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, uint8_t capabilities,
+int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, bool outputOn,
+                          uint8_t capabilities,
                           bool linkOk, bool active, uint8_t playState, uint8_t device,
                           uint16_t totalTracks, uint16_t currentTrack, uint16_t missingTrack,
                           const char* rxStatus, const char* rxDetail) {
@@ -38,11 +39,11 @@ int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, uin
     // Ignoring it is how this endpoint came to send JSON with no closing brace
     // under HTTP 200 whenever the RX detail was the long blocked-UART sentence.
     return snprintf(buf, bufSize,
-                    "{\"driver\":\"%s\",\"capabilities\":%u,\"link_ok\":%s,\"active\":%s,"
+                    "{\"driver\":\"%s\",\"output\":\"%s\",\"capabilities\":%u,\"link_ok\":%s,\"active\":%s,"
                     "\"play_state\":\"%s\",\"device\":\"%s\","
                     "\"total_tracks\":%u,\"current_track\":%u,\"missing_track\":%u,"
                     "\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
-                    driverName, (unsigned)capabilities, linkOk ? "true" : "false",
+                    driverName, outputOn ? "on" : "off", (unsigned)capabilities, linkOk ? "true" : "false",
                     active ? "true" : "false", playSt, devStr, (unsigned)totalTracks,
                     (unsigned)currentTrack, (unsigned)missingTrack, rxStatus, rxDetail);
 }

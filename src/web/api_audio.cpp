@@ -53,6 +53,7 @@
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "audio_catalog_gate.h"
+#include "audio_sound_member.h"
 #include "audio_task.h"
 #include "chirp_binding_keys.h"
 #include "config.h"
@@ -84,6 +85,18 @@ bool isSleepModeActive() {
 
 bool audioCatalogSupported() {
     return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
+// With audio output off at boot nothing drains the audio queue, so a play or
+// sound command is refused with the reason rather than answered "ok" onto a
+// queue nobody reads (#370, include/audio_sound_member.h). Checked last, just
+// before the enqueue, so a malformed request still gets its own 400.
+bool refusedWhileSoundOff(WebRequest& req) {
+    if (audioSoundOn()) {
+        return false;
+    }
+    webSendJsonError(req, 409, AUDIO_SOUND_OFF_REASON);
+    return true;
 }
 
 uint32_t packChirpBinding(uint16_t index, uint8_t bank, char page) {
@@ -831,6 +844,9 @@ AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSo
 // RobotState. The result is available via GET /api/audio after ~1.5 s
 // (3 x 300 ms query timeout + queue latency).
 void handleAudioQueryPost(WebRequest& req) {
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
     if (!audioQueueQueryStatus(SRC_WEB_API)) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
@@ -905,6 +921,9 @@ void handleAudioCatalogRefreshPost(WebRequest& req) {
         webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
     const uint32_t requestId = audioCatalogRefreshRequested();
     if (!audioQueueRefreshCatalog(SRC_WEB_API)) {
         // Nothing will ever run this one, so settle it here rather than leaving
@@ -965,6 +984,9 @@ void handleAudioPlayBankedPost(WebRequest& req) {
         return;
     }
 
+    if (refusedWhileSoundOff(req)) {
+        return;
+    }
     if (!audioQueuePlayTrackBanked((uint16_t)indexValue, (uint8_t)bankValue, page, SRC_WEB_API)) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
@@ -988,10 +1010,13 @@ void handleAudioGet(WebRequest& req) {
     AudioStatusSnapshot snap = {};
     captureAudioStatusSnapshot(&snap);
 
-    uint8_t caps = audioGetCapabilities();
+    // With sound off this names the module the builder picked, never the
+    // driver bound at boot (#370).
+    const SoundStatusIdentity sound = audioSoundStatusIdentity();
     char body[AUDIO_STATUS_JSON_BUF_SIZE];
     const int needed = formatAudioStatusJson(
-        body, sizeof(body), audioGetDriverName(), caps, snap.linkOk, snap.active, snap.playState,
+        body, sizeof(body), sound.driver, sound.on, sound.capabilities, snap.linkOk, snap.active,
+        snap.playState,
         snap.device, snap.totalTracks, snap.currentTrack, snap.missingTrack,
         audioRxStatusToken(snap.rxStatus), audioRxStatusDetail(snap.rxStatus));
     // A truncated document is not an answer. The buffer above is sized for the
@@ -1053,6 +1078,9 @@ void handleAudioPost(WebRequest& req) {
             webSendJsonError(req, 400, "track must be 1-65535");
             return;
         }
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
         if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
@@ -1064,6 +1092,9 @@ void handleAudioPost(WebRequest& req) {
 
     // ---- stop ----
     if (strcmp(action, "stop") == 0) {
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
         if (!audioQueueTrackStop(SRC_WEB_API)) {
             webSendJsonError(req, 503, "audio command queue full");
             return;
@@ -1089,6 +1120,9 @@ void handleAudioPost(WebRequest& req) {
         // Commit Step (ADR 0036 criterion 1, include/api_audio.h): the same
         // apply-then-persist sequence the Console's sound.action.set-volume
         // executor now shares.
+        if (refusedWhileSoundOff(req)) {
+            return;
+        }
         AudioSetVolumeCommitOutcome commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);
         if (!commit.queued) {
             webSendJsonError(req, 503, "audio command queue full");
@@ -1119,6 +1153,9 @@ void handleAudioPost(WebRequest& req) {
         // Limit cmd length to what audioCmdQueue dollar field can hold
         if (strlen(cmd) > 9) {
             webSendJsonError(req, 400, "cmd too long (max 9 chars)");
+            return;
+        }
+        if (refusedWhileSoundOff(req)) {
             return;
         }
         if (!audioQueueDollar(cmd, SRC_WEB_API)) {
