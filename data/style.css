@@ -7451,6 +7451,28 @@ body[data-page="wiring"] .wiring-tier > * + * {
 }
 
 /* ---------------------------------------------------------------------------
+   Wiring's bench copy (#366): the act that saves it
+
+   Its own block, so no rule above changes. The act and its answer stack, the
+   answer under the link it reports on (docs/ui-copy-voice.md rule 18), and the
+   answer keeps to a width that wraps rather than pushing the title aside. The
+   pictures need nothing here: their badge, stamp and promise carry their paint
+   as var() pairs on the elements themselves, which resolve to these same
+   tokens on screen and to paper under @media print.
+   --------------------------------------------------------------------------- */
+.wiring-acts {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2xs);
+}
+
+.wiring-acts .feedback {
+  margin: 0;
+  max-width: 36ch;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
    The body view: a picture of the droid, and the panel beside it (#352,
    ADR 0063)
 

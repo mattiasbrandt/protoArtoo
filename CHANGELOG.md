@@ -39,6 +39,10 @@ the patch releases, whose notes live on their own GitHub Release.
   it says so on the page and on every picture, and the shared rail is explained
   rather than drawn. Nothing on it is kept by hand, so it cannot go stale
   against the firmware the way a wiring document does.
+- **Take the wiring sheet to the bench on paper.** Wiring saves one file you
+  can print anywhere, no droid needed. Same groups, same counts as the screen.
+  Every picture carries the droid, the minute, a BETA mark, the promise and
+  the scope, so a cropped picture still says what it is.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,

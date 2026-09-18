@@ -110,7 +110,7 @@ const boot = async ({
   document.body.setAttribute("data-page", "home");
   document.currentScript = { dataset: { scripts: chain } };
 
-  const env = { document, outputs, components, manifest, posts: [], gets: [] };
+  const env = { document, outputs, components, manifest, posts: [], gets: [], files: new Map() };
   const windowListeners = new Map();
 
   const windowMock = {
@@ -254,6 +254,18 @@ const boot = async ({
     clearTimeout,
     setInterval,
     clearInterval,
+    // A saved file is a Blob behind an object URL, which is how the browser
+    // hands a download over. The URL is the only thing the page keeps, so the
+    // fake keeps the Blob behind it for the test to open.
+    Blob,
+    URL: {
+      createObjectURL: (blob) => {
+        const url = `blob:http://device/${env.files.size + 1}`;
+        env.files.set(url, blob);
+        return url;
+      },
+      revokeObjectURL: (url) => env.files.delete(url),
+    },
   };
   context.globalThis = context;
 
@@ -384,9 +396,60 @@ test("a latched estop does not rewrite the sheet", async () => {
 // It is a reference, and it stays current
 // ---------------------------------------------------------------------------
 
+// The bench copy and the screen copy are "the same document from one
+// generator" (CONTEXT.md "Wiring"): the file a builder saves and prints must
+// carry exactly the tiers, rows and counts the surface is showing. And it is
+// opened at a bench, often with no droid in reach, so it must ask for nothing
+// when it opens - no script, no stylesheet, no image (#366).
+test("the saved sheet is the sheet on the screen, and loads nothing when it opens", async () => {
+  const { MiniDOMParser } = await import("./helpers/mini_dom.js");
+  const env = await boot({
+    outputs: [
+      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+      output("ledc:1", "ARM2", { parts: ["utilLo"], component: "mg996r" }),
+      output("ledc:3", "AUX1"),
+    ],
+    components: { ...freshComponents(), arm1: { enabled: true, label: "ARM1" } },
+  });
+
+  const link = env.document.getElementById("wiring-save");
+  let followed = true;
+  link.fire("click", { preventDefault: () => (followed = false) });
+  assert.ok(followed, "the press hands the file to the browser rather than stopping it");
+  const blob = env.files.get(link.getAttribute("href"));
+  assert.ok(blob, "the link carries the saved file when the press is followed");
+  const file = await blob.text();
+  const saved = new MiniDOMParser().parseFromString(file);
+
+  const sheetOf = (root) =>
+    root.querySelectorAll(".wiring-tier").map((section) => ({
+      tier: section.dataset.tier,
+      count: section.querySelector(".sub").textContent,
+      rows: section
+        .querySelectorAll(".wiring-row")
+        .map((row) => row.dataset.part || row.dataset.output),
+    }));
+  const onScreen = sheetOf(env.document);
+  assert.deepEqual(
+    onScreen.map((section) => section.tier),
+    ["driven", "component-disabled", "part-not-assigned", "output-no-part"],
+    "the fixture puts a row in every tier, so a tier lost on either side shows",
+  );
+  assert.deepEqual(sheetOf(saved), onScreen);
+  assert.equal(saved.querySelectorAll(".wd").length, env.diagrams().length);
+
+  assert.doesNotMatch(file, /<(script|style|img|iframe|object)\b/i);
+  assert.doesNotMatch(file, /url\(|@import/i);
+  for (const [, href] of file.matchAll(/<link\b[^>]*\bhref="([^"]*)"/gi)) {
+    assert.match(href, /^data:/, `a <link> that opens ${href} fetches it`);
+  }
+});
+
 test("the sheet writes nothing to the droid", async () => {
   const env = await boot();
   await env.leaveAndReturn();
+  // Its one act saves a file on this computer, and that is not a write either.
+  env.document.getElementById("wiring-save").fire("click", {});
   assert.deepEqual(env.posts, [], "Wiring is a reference, not a control surface");
 });
 
