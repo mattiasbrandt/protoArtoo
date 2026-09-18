@@ -102,8 +102,7 @@
       subject: "part",
       noun: ["part", "parts"],
       footnote:
-        "A <b>Driven</b> row is a part an output records and whose output is switched on: " +
-        "this image puts a pulse on that lead.",
+        "<b>Driven</b>: the output is switched on, so this image puts a pulse on that lead.",
     },
     {
       id: "component-disabled",
@@ -111,8 +110,8 @@
       subject: "part",
       noun: ["part", "parts"],
       footnote:
-        "<b>Wired, switched off</b> means the lead is recorded and the output it is on is " +
-        "switched off, so the wiring is right and nothing moves until you switch it on.",
+        "<b>Wired, switched off</b>: the lead is right. Nothing moves until the output is " +
+        "switched on.",
     },
     {
       id: "part-not-assigned",
@@ -120,8 +119,8 @@
       subject: "part",
       noun: ["part", "parts"],
       footnote:
-        "<b>Nothing drives it</b> means no output on this droid records that part. It is still " +
-        "a part you can author a move for; it starts moving the day an output claims it.",
+        "<b>Nothing drives it</b>: no output claims the part. Moves you author for it wait " +
+        "until one does.",
     },
     {
       id: "output-no-part",
@@ -129,8 +128,8 @@
       subject: "output",
       noun: ["output", "outputs"],
       footnote:
-        "An <b>Output with no part</b> is a spare: the droid drives it, and nothing on the droid " +
-        "is recorded as being on the end of it.",
+        "<b>Output with no part</b>: a spare. The droid drives it, and nothing is recorded on " +
+        "the end.",
     },
   ];
 
@@ -257,8 +256,7 @@
           part,
           output: null,
           why:
-            `No output on this droid records ${esc(part.name)}, so nothing drives it. ` +
-            `Put it on an output in ${PARTS_ROUTE}.`,
+            `No output drives ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
         };
       }
       if (!switchedOn(toggles, output.name)) {
@@ -267,8 +265,8 @@
           part,
           output,
           why:
-            `${esc(outputLabel(output))} is switched off, so the lead is right and nothing ` +
-            `moves. ${setupRouteHtml("Switch it on")}.`,
+            `${esc(outputLabel(output))} is switched off: the lead is right, nothing moves. ` +
+            `${setupRouteHtml("Switch it on")}.`,
         };
       }
       return { tier: "driven", part, output, why: "" };
@@ -281,8 +279,8 @@
         part: null,
         output,
         why:
-          `Nothing on this droid is recorded on ${esc(outputLabel(output))}, so a lead here ` +
-          `moves nothing yet. Claim it from ${PARTS_ROUTE}.`,
+          `Nothing is recorded on ${esc(outputLabel(output))}, so a lead here moves nothing. ` +
+          `Claim it from ${PARTS_ROUTE}.`,
       }));
 
     return partRows.concat(outputRows);
@@ -729,8 +727,7 @@
     }
     return (
       `<p class="hint wiring-bound">Outside this sheet: ${clauses.join(" and ")}. ` +
-      `They are on the droid and they are not on this sheet, because this sheet says ` +
-      `${esc(PROMISE)}.</p>`
+      `This image does not drive them.</p>`
     );
   };
 
@@ -744,15 +741,14 @@
   // copy this whole view exists to abolish.
   // ---------------------------------------------------------------------------
   const promiseHtml = () =>
-    `Everything below says <b>${esc(PROMISE)}</b>, read from the Body Controller that ` +
-    `answered this page - not from a document anyone keeps by hand. It draws ` +
+    `Below is <b>${esc(PROMISE)}</b>, read off this Body Controller. It draws ` +
     `<b>${esc(SCOPE)}</b>.`;
 
   // The shared rail is described and never drawn (CONTEXT.md "Wiring"), and this
   // is the one place the droid's own pacing is stated, because the reason it
   // paces itself is the rail every servo shares.
   //
-  // The cadence carries its provenance in the same breath, and that is not
+  // The cadence carries its provenance in the line after it, and that is not
   // padding. CONTEXT.md "Cadence Floor" puts "the ~450 ms cadence (that figure
   // is the dome's)" in its _Avoid_ list, and include/sequence_bulk_centre.h
   // says why both are true: 450 ms is the DOME's measured figure, adopted
@@ -760,19 +756,14 @@
   // taken (#355), with "do not quietly let it become one". Stating it attributed
   // is the opposite of adopting it quietly.
   const railHtml = () =>
-    `<p class="prose">Every servo on this droid draws from one supply, and several of them ` +
-    `starting at once is what pulls that supply down - which drops every part the droid was ` +
-    `holding and loses its place in whatever it was doing. So the droid paces itself: when it ` +
-    `expands a move of its own, such as putting every output back to centre, it starts outputs ` +
-    `<b>${esc(CADENCE)}</b> apart, and an output that takes longer than that to travel holds ` +
-    `the next one off for as long as it is still moving.</p>` +
-    `<p class="hint">That figure was measured on the Dome Controller, where seven ring servos ` +
-    `share the dome supply. Nobody has measured this body's, so the droid stands in the dome's ` +
-    `number until somebody does.</p>` +
-    `<div class="note note-info"><b>How you fuse and distribute that supply is your build's, ` +
-    `and no picture on this page is a claim about it.</b> Work out the stall current of ` +
-    `everything on a rail rather than the idle draw: a servo fighting a linkage pulls several ` +
-    `times what it pulls sitting still, and that is the moment a shared rail gives out.</div>`;
+    `<p class="hint">Every servo shares one supply, and too many starting at once sag it. ` +
+    `So the droid starts its own moves, like centring every output, <b>${esc(CADENCE)}</b> ` +
+    `apart.</p>` +
+    `<p class="hint">That figure is the dome's, from its seven ring servos. Nobody has ` +
+    `measured the body's yet.</p>` +
+    `<div class="note note-info"><b>Fusing and power are your build's; nothing here draws ` +
+    `them.</b> Size the rail for stall current: a servo fighting a linkage pulls several ` +
+    `times its idle draw.</div>`;
 
   // ---------------------------------------------------------------------------
   // The footnote
@@ -785,9 +776,8 @@
     const lines = present.map((section) => `<li>${tierById.get(section.id).footnote}</li>`);
     if (hasDesignNames) {
       lines.push(
-        "<li><b>Design name</b> is what the part is called in the design files you printed it " +
-          "from, so the name on this sheet and the name on your slicer agree. Label the loom " +
-          "with it.</li>"
+        "<li><b>Design name</b> is the part's name in the files you printed it from, the " +
+          "same one your slicer shows. Label the loom with it.</li>"
       );
     }
     if (lines.length === 0) return "";
@@ -857,7 +847,7 @@
       loomSummary,
       loomHtml: lanes.length
         ? loomTableHtml(lanes) + loomDiagramHtml(lanes, boardName, made)
-        : '<p class="hint">This image reports no Board Lane at all, so there is no loom to draw.</p>',
+        : '<p class="hint">This image reports no Board Lane. No loom to draw.</p>',
       // Every tier that is present becomes a section; a tier that is not simply
       // is not here. The driven picture rides inside the Driven section, where
       // the rows it draws are.
