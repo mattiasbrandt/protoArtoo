@@ -29,10 +29,6 @@ const loadRehearsal = () => {
 
 const R = loadRehearsal();
 
-// Values made inside the vm carry that realm's prototypes, so they are compared
-// as plain data rather than with deepEqual against this realm's literals.
-const plain = (value) => JSON.parse(JSON.stringify(value));
-
 const seq = (steps) => ({ name: "DM:TEST", suppressMs: 8000, toggleGroup: "none", steps });
 
 // DM:HELLO as it shipped before #354.

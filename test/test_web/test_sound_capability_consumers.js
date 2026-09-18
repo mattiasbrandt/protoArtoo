@@ -137,20 +137,3 @@ test("a module with no status query at all loses the Total tracks row too", asyn
 // The dashboard's blocked-RX line names the fitted module
 // -----------------------------------------------------------------------------
 
-const statusPayload = (audio) => ({
-  audio,
-  dome_link: { state: "disconnected" },
-  estop: false,
-  sleepMode: false,
-});
-
-const renderDashboard = async (audio) => {
-  const env = loadPageModule("app.js", {
-    respond: () => ({ data: statusPayload(audio) }),
-  });
-  const grid = env.element("component-status-grid");
-  await env.runSection("app-initial-status", {});
-  await env.settle();
-  return String(grid.innerHTML);
-};
-

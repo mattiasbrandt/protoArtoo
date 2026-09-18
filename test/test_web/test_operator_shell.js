@@ -16,7 +16,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-import { MiniDocument, MiniDOMParser, clickOn } from "./helpers/mini_dom.js";
+import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");

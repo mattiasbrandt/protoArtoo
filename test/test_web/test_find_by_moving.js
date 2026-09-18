@@ -11,14 +11,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 
 import { bootParts, freshOutputs, withParts, output, sleep } from "./helpers/parts_surface.js";
 
 const NOT_WIRED = "– not wired –";
-const readCss = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../data/style.css"), "utf-8");
 
 // ---------------------------------------------------------------------------
 

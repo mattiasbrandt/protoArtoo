@@ -20,7 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { bootParts, freshOutputs, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { bootParts, output, sleep } from "./helpers/parts_surface.js";
 
 // ---------------------------------------------------------------------------
 

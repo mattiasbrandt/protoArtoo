@@ -21,15 +21,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFileSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, "../../data");
-const servoHtml = readFileSync(join(dataDir, "servo.html"), "utf-8");
 
 // Ends deliberately unlike the firmware defaults (2000/1000) and unlike each
 // other, so a test cannot pass on a fallback or on the wrong channel's number.

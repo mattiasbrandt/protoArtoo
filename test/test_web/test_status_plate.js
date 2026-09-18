@@ -22,7 +22,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-import { MiniDocument, MiniDOMParser, clickOn } from "./helpers/mini_dom.js";
+import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -544,8 +544,6 @@ const pointer = (env, target) => ({
 });
 
 const noticeShown = (env) => !env.document.getElementById("ignored-input-notice").classList.contains("hidden");
-const noticeText = (env) => env.document.getElementById("ignored-input-text").textContent;
-const noticeRoute = (env) => env.document.getElementById("ignored-input-route");
 
 test("a control that is merely waiting for the droid is not a control that is off", async () => {
   // The Dashboard marks a control aria-disabled while its request is in
@@ -560,22 +558,6 @@ test("a control that is merely waiting for the droid is not a control that is of
   pointer(env, pending).down();
   assert.equal(noticeShown(env), false, "busy is not off");
 });
-
-// The stylesheet read the way a browser stacks it: rules flattened, the last
-// declaration for a property winning, so this asserts the painted order rather
-// than the presence of a string. Same shape as the estop's own stacking test.
-const zIndexOf = (selector) => {
-  const css = readData("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  let value = null;
-  const rule = /([^{}]+)\{([^{}]*)\}/g;
-  let match;
-  while ((match = rule.exec(css)) !== null) {
-    if (!match[1].split(",").map((part) => part.trim()).includes(selector)) continue;
-    const declared = /(?:^|;)\s*z-index\s*:\s*([^;]+)/.exec(match[2]);
-    if (declared) value = Number(declared[1].trim());
-  }
-  return value;
-};
 
 // ---------------------------------------------------------------------------
 // A frame the shell has not verified (#346 reopened)

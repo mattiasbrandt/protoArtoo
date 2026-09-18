@@ -32,28 +32,6 @@ const helpRecordsWithParams = (opName, paramSpecs) => [
   { id: 2, type: "end", status: "ok", outcome: "completed" },
 ];
 
-// help response for an operation the catalog knows has no arguments: no
-// "params" field is emitted at all (console_module.cpp only emits it when
-// entry->params != nullptr).
-const helpRecordsNoParams = (opName) => [
-  { id: 2, type: "begin", operation: opName },
-  { id: 2, type: "field", name: "type", value: "action" },
-  { id: 2, type: "end", status: "ok", outcome: "completed" },
-];
-
-// A stateful fake localStorage, so a test can simulate "the same browser
-// storage surviving a page reload" by handing the same instance to a second
-// loadPageModule() call.
-const makeFakeStorage = () => {
-  const store = new Map();
-  return {
-    getItem: (key) => (store.has(key) ? store.get(key) : null),
-    setItem: (key, value) => store.set(key, String(value)),
-    removeItem: (key) => store.delete(key),
-    clear: () => store.clear(),
-  };
-};
-
 // A localStorage stand-in for a browser with site data blocked: every call
 // throws, the way some private-mode / storage-restricted browsers behave.
 const throwingStorage = {

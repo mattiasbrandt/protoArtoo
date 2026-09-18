@@ -15,14 +15,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 
 import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, "../../data");
 
 const OK_LOGS = "boot: ready\nwifi: connected";
 const OK_CONFIG = { system: { logLevel: 2 } };

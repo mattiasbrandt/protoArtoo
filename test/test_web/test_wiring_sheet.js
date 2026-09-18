@@ -317,20 +317,6 @@ const boot = async ({
   return env;
 };
 
-// The bound the sheet's promise draws, taken off the shipped catalog rather
-// than asserted as a literal: what the sheet must show is every Part this image
-// could drive, which is every Part whose declared control path is not the dome
-// link. The literal 42 is asserted separately, once, because that number IS the
-// ticket's claim.
-const catalogParts = () => {
-  const context = { window: {} };
-  vm.runInNewContext(readData("droid_parts.js"), context, { filename: "droid_parts.js" });
-  return context.window.DroidParts.parts;
-};
-
-const inScope = (part) =>
-  part.control !== null && part.control !== undefined && part.control !== "dome-link";
-
 // ---------------------------------------------------------------------------
 // The headline: a fresh droid reads honestly empty
 // ---------------------------------------------------------------------------

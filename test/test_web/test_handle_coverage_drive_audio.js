@@ -22,16 +22,6 @@ const CONFIG_PAYLOAD = {
   aux3OpenUs: 2000, aux3CloseUs: 1000,
 };
 
-const AUDIO_STATUS_PAYLOAD = {
-  driver: "I2S-simple",
-  link_ok: true,
-  device: "example",
-  play_state: "idle",
-  total_tracks: 10,
-  current_track: 0,
-  capabilities: 0x20, // AUDIO_CAP_CATALOG = 0x20
-};
-
 const AUDIO_CATALOG_PAYLOAD = {
   ready: true,
   banks: [{ bank: 0, page: 0 }],

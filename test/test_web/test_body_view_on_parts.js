@@ -13,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert";
 
-import { bootParts, freshOutputs, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { bootParts, withParts, output, sleep } from "./helpers/parts_surface.js";
 
 const marker = (env, id) =>
   env.document.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === id);

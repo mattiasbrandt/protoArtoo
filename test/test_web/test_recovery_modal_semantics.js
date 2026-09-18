@@ -32,12 +32,6 @@ const showOverlay = () => {
   return { ...env, state, backdrop };
 };
 
-const announcerOf = (backdrop) => {
-  const announcer = backdrop.querySelector(".recovery-countdown-announcer");
-  assert.ok(announcer, "the overlay must carry a countdown live region");
-  return announcer;
-};
-
 test("The overlay does not claim the rest of the page is inert", (t) => {
   const { backdrop } = showOverlay();
 

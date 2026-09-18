@@ -22,24 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import {
-  MockElement,
-  loadRecoveryView,
-  shellFrame,
-  stateShowingRecovery,
-  stateHidingRecovery,
-} from "./helpers/recovery_dom.js";
-
-// Puts the overlay on screen and hands back the live backdrop plus the
-// focusable controls currently inside it.
-const showOverlay = () => {
-  const env = loadRecoveryView();
-  const state = stateShowingRecovery(env.Core);
-  env.RecoveryView.render(state);
-  const backdrop = env.backdrop();
-  assert.ok(backdrop, "render must mount the recovery backdrop");
-  return { ...env, state, backdrop };
-};
+import { loadRecoveryView, shellFrame, stateShowingRecovery, stateHidingRecovery } from "./helpers/recovery_dom.js";
 
 // Puts the overlay on screen inside the shell's frame, which is where it is
 // drawn in the product: the work area holds the surface, the chrome sits
