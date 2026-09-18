@@ -318,5 +318,5 @@ test("an unsupported schema no longer claims a drawing it is not showing", async
 
   assert.doesNotMatch(html, /dome-svg-picker/);
   assert.match(html, /schema 99 not supported/);
-  assert.doesNotMatch(html, /Showing the built-in MK4 map/);
+  assert.doesNotMatch(html, /showing built-in MK4 layout/);
 });

@@ -1093,12 +1093,12 @@
             // version), so "not reachable" would send the operator chasing the wrong
             // problem. Show the schema warning for that case.
             if (!layoutAnswered) {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built. The panel map follows.</div>`;
+              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built — the panel map follows</div>`;
             } else if (layoutSource === 'unsupported') {
               const schemaWarning = window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported");
               sourceNotice = showsBuiltIn
-                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. Showing the built-in MK4 map.</div>`
-                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. No built-in map for your dome design.</div>`;
+                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — showing built-in MK4 layout</div>`
+                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning} — and no built-in map for the dome design you stated</div>`;
             } else if (!showsBuiltIn) {
               // Two different jobs for the builder, so two different sentences - the
               // same two the dashboard's dome card gives (data/dome_control.js): one
