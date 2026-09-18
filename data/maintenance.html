@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/feature_availability.js,/maintenance.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Maintenance - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate. This file is the one copy of this surface's markup and
+         the Operator Shell fetches it; fetching never runs scripts, so this
+         line is inert for the shell. A browser that lands here directly -- a
+         bookmark, an old link, a support conversation -- is handed to the shell
+         at this surface's route instead, so the address keeps opening what it
+         names (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#maintenance");</script>
+  </head>
+  <body data-page="maintenance">
+
+    <!-- The title is the name in the nav, and nothing under it (ADR 0066,
+         docs/ui-copy-voice.md rule 14). Every act on this page is named beside
+         the thing it acts on, so the title carries none of its own. -->
+    <div class="title">
+      <div>
+        <h1>Maintenance</h1>
+      </div>
+    </div>
+
+    <!-- Serial Connection Status -->
+    <div class="card">
+      <div class="sect"><h2>Serial links</h2><span class="sub">three lanes off this controller</span></div>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="indicator" id="serial-s1-light"></div>
+          <span>S1 &middot; Foot Drive</span>
+          <span class="indicator-text" id="serial-s1-state">...</span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s2-light"></div>
+          <span>S2 &middot; Audio</span>
+          <span class="indicator-text" id="serial-s2-state">...</span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="serial-s3-light"></div>
+          <span>S3 &middot; protoR2link</span>
+          <span class="indicator-text" id="serial-s3-state">...</span>
+        </div>
+      </div>
+      <p class="hint">S1 is UART1 at 115200 baud, S2 the sound serial at 9600 (which pins it uses depends on the module), S3 UART2 at 9600.</p>
+      <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Diagnostics -->
+    <div class="card">
+      <div class="sect"><h2>Diagnostics</h2><span class="sub">what the controller is using right now</span></div>
+      <form id="diag-form" class="form-grid">
+        <label class="field" for="log-level-select">
+          <span>Log verbosity</span>
+          <select id="log-level-select" name="logLevel">
+            <option value="1">1 — Error only (loss of function)</option>
+            <option value="2">2 — Warning (faults and safety warnings — recommended minimum)</option>
+            <option value="3">3 — Info (normal boot and service messages)</option>
+            <option value="4">4 — Debug (verbose, for development and fault diagnosis)</option>
+          </select>
+        </label>
+      </form>
+      <p class="hint">A new level applies to what gets logged at once. How deep the log history goes (16–48 lines) follows the saved level after the next restart.</p>
+      <dl class="status-grid">
+          <div class="status-item">
+            <dt>Uptime</dt>
+            <dd><span id="diag-uptime">...</span></dd>
+            <span class="hint">Controller runtime since boot</span>
+          </div>
+          <div class="status-item">
+            <dt>Memory free</dt>
+            <dd><span class="indicator" id="diag-heap-free-light"></span><span id="diag-heap-free">...</span></dd>
+            <span class="hint">Current free heap</span>
+          </div>
+          <div class="status-item">
+            <dt>Memory min since boot</dt>
+            <dd><span class="indicator" id="diag-heap-min-light"></span><span id="diag-heap-min">...</span></dd>
+            <span class="hint">Low-water mark</span>
+          </div>
+          <div class="status-item">
+            <dt>Largest block</dt>
+            <dd><span class="indicator" id="diag-heap-largest-light"></span><span id="diag-heap-largest">...</span></dd>
+            <span class="hint">Fragmentation indicator</span>
+          </div>
+      </dl>
+      <p id="diag-memory-note" class="hint">Memory Min is the lowest free heap seen since boot (historical low-water mark).</p>
+      <div id="diag-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Memory Profiler availability is declared by /api/identity. -->
+    <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
+         data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
+      <div class="feature-availability-header">
+        <div class="sect"><h2>Memory profiler</h2><span class="sub">where controller memory is going</span></div>
+        <div class="feature-availability-rail">
+          <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
+          <div id="profiler-availability-lamp" class="feature-availability-lamp-indicator feature-state-checking">
+            <span class="feature-availability-lamp" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div id="profiler-availability-reason" class="feature-availability-reason" role="status" aria-live="polite">Checking whether this controller can run Memory Profiler…</div>
+
+      <div id="profiler-content" class="feature-availability-content" inert aria-hidden="true">
+
+        <div class="sect"><h3>Fragmentation</h3><span class="sub">1 - largest block over free</span></div>
+        <div class="prof-bar-wrap" id="prof-frag-bar-wrap">
+          <div id="prof-frag-bar" class="prof-bar"></div>
+        </div>
+        <p id="prof-frag-label" class="hint"></p>
+
+        <dl class="status-grid">
+            <div class="status-item">
+              <dt>Heap free</dt>
+              <dd id="prof-heap-free">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Heap min</dt>
+              <dd id="prof-heap-min">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Largest block</dt>
+              <dd id="prof-heap-largest">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Frag ratio</dt>
+              <dd id="prof-frag-ratio">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Alloc blocks</dt>
+              <dd id="prof-alloc-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Free blocks</dt>
+              <dd id="prof-free-blocks">...</dd>
+            </div>
+            <div class="status-item">
+              <dt>Failed allocs</dt>
+              <dd id="prof-failed-allocs">...</dd>
+            </div>
+        </dl>
+
+        <div class="sect"><h3>Task stack headroom</h3><span class="sub">least free stack each task has had</span></div>
+        <div class="prof-table-wrap">
+          <table id="prof-hwm-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col" class="num">Headroom</th>
+                <th scope="col" class="num">State</th>
+              </tr>
+            </thead>
+            <tbody id="prof-hwm-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="prof-task-heap-section" hidden>
+          <div class="sect"><h3>Task heap</h3><span class="sub">per-task heap use, where the build records it</span></div>
+          <div class="prof-table-wrap">
+            <table id="prof-heap-table" class="prof-table">
+              <thead>
+                <tr>
+                  <th scope="col">Task</th>
+                  <th scope="col" class="num">Current</th>
+                  <th scope="col" class="num">Peak</th>
+                  <th scope="col" class="num">Count</th>
+                </tr>
+              </thead>
+              <tbody id="prof-heap-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sect"><h3>Mode snapshots</h3><span class="sub">the low-water mark inside each window</span></div>
+        <p id="prof-current-window" class="hint" hidden></p>
+        <div class="prof-table-wrap">
+          <table id="prof-snap-table" class="prof-table">
+            <thead>
+              <tr>
+                <th scope="col">Window</th>
+                <th scope="col" class="num">Min during</th>
+                <th scope="col" class="num">Largest block</th>
+                <th scope="col" class="num">Opened T+ms</th>
+              </tr>
+            </thead>
+            <tbody id="prof-snap-tbody"></tbody>
+          </table>
+        </div>
+        <div id="profiler-feedback" class="feedback" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- Backup & Restore -->
+    <div class="card">
+      <div class="sect"><h2>Backup</h2><span class="sub">a copy on your computer</span></div>
+      <p class="prose">Save what you made on this controller to a file, or put a saved file back. A restore <b>replaces</b> the parts you tick and never merges into them, so what you end up with is what the file holds.</p>
+
+      <div class="button-row button-row-compact">
+        <button id="backup-download-btn" class="btn" type="button">Download backup</button>
+        <button id="backup-file-trigger" class="btn" type="button">Choose a file to restore</button>
+      </div>
+      <input type="file" id="backup-file-input" accept=".json" hidden aria-label="Select backup file">
+
+      <div id="backup-summary" class="hint" hidden></div>
+
+      <div id="restore-sections" hidden>
+        <div class="restore-grid">
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-config"> <span>Core config</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-rc-map"> <span>RC mappings</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-audio-tracks"> <span>Audio tracks</span></label>
+          <label class="field-checkbox"><input type="checkbox" id="restore-chk-mood-map"> <span>Audio mood map</span></label>
+        </div>
+      </div>
+
+      <div id="restore-btn-row" class="button-row button-row-compact" hidden>
+        <button id="backup-restore-btn" class="btn" type="button">Restore the ticked parts</button>
+      </div>
+
+      <div id="backup-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- The single deliberate way back into guided Setup (#297, CONTEXT.md
+         "Maintenance"). The run itself is drawn over Configuration; this only
+         reopens it (data/maintenance.js). -->
+    <div class="card">
+      <div class="sect"><h2>Guided Setup</h2><span class="sub">the first run, again</span></div>
+      <div class="button-row button-row-compact">
+        <button id="setup-again-button" class="btn" type="button">Run guided Setup again</button>
+      </div>
+      <p class="hint">For a droid you skipped setting up, or rebuilt. Nothing you set is cleared.</p>
+      <div id="setup-again-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- System Controls -->
+    <div class="card">
+      <div class="sect"><h2>Restart</h2><span class="sub">about ten seconds off the air</span></div>
+      <p class="prose">Some hardware answers only take effect when the controller starts again. Restarting cuts every output and reopens the page's connection; nothing you have saved is lost.</p>
+      <div class="button-row button-row-compact">
+        <button id="reboot-button" class="btn danger" type="button">Restart the controller</button>
+      </div>
+      <div id="reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

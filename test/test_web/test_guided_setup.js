@@ -1,13 +1,16 @@
 // =============================================================================
 // test/test_web/test_guided_setup.js
 //
-// Guided Setup: the first-run takeover (#351).
+// Guided Setup: the first-run takeover (#351), drawn over Configuration (#404).
 //
-// These run the shipped data/setup.js against the shipped data/setup.html, with
-// the legacy asset set's product-art partial expanded exactly as the artoo_esp32
+// These run the shipped data/setup.js on the Configuration surface it takes
+// over - data/configuration.html with the surface's own script chain - with the
+// legacy asset set's product-art partial expanded exactly as the artoo_esp32
 // build serves it. The markup is the point rather than a fixture: which card is
 // on screen at each step is decided by a data-setup-step attribute in that file,
-// so a step whose host is renamed or lost has to turn this suite red.
+// so a step whose host is renamed or lost has to turn this suite red. The
+// run's record travelling with a backup is Maintenance's half, and runs on that
+// surface's own markup and chain.
 //
 // The defect behind the whole slice: every component toggle defaults false, so a
 // fresh flash boots inert and a category nobody was ever asked about is
@@ -31,15 +34,27 @@ import { MiniDOMParser } from "./helpers/mini_dom.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
-const setupSrc = readFileSync(join(dataDir, "setup.js"), "utf8");
+
+// Each surface as the shell mounts it: its markup, and the scripts its
+// <html data-scripts> loads after the shell's own.
+const SURFACES = {
+  configuration: {
+    html: "configuration.html",
+    scripts: ["feature_availability.js", "configuration.js", "setup.js"],
+  },
+  maintenance: {
+    html: "maintenance.html",
+    scripts: ["feature_availability.js", "maintenance.js"],
+  },
+};
 
 const INCLUDE_RE = /<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->/g;
 
-// setup.html as the artoo_esp32 build serves it: the legacy set's sprite
+// A surface as the artoo_esp32 build serves it: the legacy set's sprite
 // inlined. The recovery kernel is not what this suite is about and stays an
 // unexpanded comment, the way test_board_panel_identity_retry.js leaves it.
-const setupDocument = () => {
-  const page = readFileSync(join(dataDir, "setup.html"), "utf8").replace(
+const surfaceDocument = (html) => {
+  const page = readFileSync(join(dataDir, html), "utf8").replace(
     INCLUDE_RE,
     (directive, target) =>
       target === "_product_art.html"
@@ -116,15 +131,15 @@ const makeStub = () => ({
   click() {},
 });
 
-const boot = ({ config = freshConfig() } = {}) => {
-  const parsed = setupDocument();
+const boot = ({ config = freshConfig(), surface = "configuration" } = {}) => {
+  const parsed = surfaceDocument(SURFACES[surface].html);
   const posts = [];
   const sections = new Map();
   const timers = [];
   let nextTimer = 1;
 
-  // The real document for the ids and the two selectors this module actually
-  // asks for. Everything else gets a stub, because the rest of setup.js wires up
+  // The real document for the ids and the two selectors the run actually asks
+  // for. Everything else gets a stub, because the rest of the surface wires up
   // dozens of controls at load and none of that is what these tests are about -
   // and because mini_dom's selector grammar does not carry the compound
   // selector the segmented type controls use.
@@ -174,6 +189,8 @@ const boot = ({ config = freshConfig() } = {}) => {
       registerSection: (name, load) => sections.set(name, load),
       setResourceLabels() {},
       retryNow() {},
+      // Re-runs a section the way the bootstrap does on an explicit refresh.
+      refreshSections: (names) => names.forEach((name) => sections.get(name)?.()),
     },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
     PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
@@ -195,7 +212,7 @@ const boot = ({ config = freshConfig() } = {}) => {
     },
     setInterval: () => 0,
     clearInterval() {},
-    location: { origin: "http://device", href: "http://device/setup.html" },
+    location: { origin: "http://device", href: `http://device/${SURFACES[surface].html}` },
     localStorage: { getItem: () => null, setItem() {} },
     requestAnimationFrame: () => 1,
     confirm: () => true,
@@ -249,7 +266,9 @@ const boot = ({ config = freshConfig() } = {}) => {
   context.globalThis = context;
   for (const key of ["PABootstrap", "PageBootstrap"]) context[key] = windowMock[key];
 
-  vm.runInNewContext(setupSrc, context, { filename: "setup.js" });
+  for (const file of SURFACES[surface].scripts) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+  }
 
   const id = (name) => parsed.getElementById(name);
   const shown = (element) => Boolean(element) && !element.classList.contains("hidden");
@@ -265,6 +284,12 @@ const boot = ({ config = freshConfig() } = {}) => {
     parsed,
     posts,
     config,
+    location: windowMock.location,
+    // Delivers a window event to what the surface registered for it.
+    emitWindow: (type, event = {}) => (windowListeners.get(type) || []).forEach((handler) => handler(event)),
+    settle: async () => {
+      for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    },
     id,
     shown,
     host,
@@ -321,7 +346,7 @@ test("a droid configured before the record existed is not walked through a first
   env.flushTimers();
 
   assert.equal(env.shown(env.id("wizard-head")), false, "no run opens");
-  assert.equal(env.shown(env.cardHolding(env.id("backup-download-btn"))), true);
+  assert.equal(env.shown(env.cardHolding(env.id("enable-drive"))), true, "Configuration is its own cards");
   assert.deepEqual(env.posts, [], "and reading the page writes nothing to the controller");
 });
 
@@ -339,8 +364,7 @@ test("an inert droid with no record is a first run, not a grandfathered one", as
 // the controller was actually asked for. Shared by the two tests below, because
 // a key dropped on the way back in is the same defect whichever key it is.
 const restoreParamsFor = async (patch) => {
-  const env = boot();
-  await env.runSection();
+  const env = boot({ surface: "maintenance" });
   const backup = { schema: 1, config: { ...freshConfig(), ...patch } };
 
   const fileInput = env.id("backup-file-input");
@@ -402,4 +426,62 @@ test("a restore puts back the sound module and the droid build, which it used to
   assert.equal(restored.get("bodyDesign"), "mk3");
   assert.equal(restored.get("bodyVariant"), "simple");
   assert.equal(restored.get("fittedParts"), "domePie1,bodyDoorL");
+});
+
+// =============================================================================
+// The one way back in (#297, CONTEXT.md "Maintenance")
+//
+// The run never re-opens by itself. Maintenance carries the single deliberate
+// way back, and it may not do it by wiping what the builder answered: the
+// record of which questions were shown is the thing that keeps "never asked"
+// honest, and a reopened run nobody can move through is not open.
+// =============================================================================
+
+test("Maintenance's way back in writes the run and nothing the builder answered", async () => {
+  const finished = freshConfig();
+  finished.components.drive.enabled = true;
+  finished.guidedSetup = { run: "completed", recorded: true, visited: ["wifi", "drive", "name"] };
+  const env = boot({ config: finished, surface: "maintenance" });
+  env.click("setup-again-button");
+  await env.settle();
+
+  assert.equal(env.posts.length, 1, "one write");
+  assert.deepEqual(Object.keys(env.posts[0].body), ["guidedSetupRun"], "the run, and nothing else");
+  assert.equal(env.posts[0].get("guidedSetupRun"), "not-run");
+  assert.deepEqual(finished.guidedSetup.visited, ["wifi", "drive", "name"], "the questions that were asked stay asked");
+  assert.equal(env.location.hash, "configuration", "and the builder is taken to where the run is drawn");
+
+  // Set up before the record existed: with no record, not-run reads as set up
+  // all the same, so the empty record goes with it or nothing reopens.
+  const older = freshConfig();
+  older.components.drive.enabled = true;
+  older.guidedSetup = { run: "not-run", recorded: false, visited: [] };
+  const olderEnv = boot({ config: older, surface: "maintenance" });
+  olderEnv.click("setup-again-button");
+  await olderEnv.settle();
+  assert.equal(olderEnv.posts[0].get("guidedSetupRun"), "not-run");
+  assert.equal(olderEnv.posts[0].get("guidedSetupVisited"), "-");
+});
+
+test("a run reopened from Maintenance opens at its first question and can be moved through", async () => {
+  const config = freshConfig();
+  const env = boot({ config });
+  await env.runSection();
+  env.railClick(2);
+  env.click("wizard-stop");
+  await env.settle();
+  assert.equal(env.shown(env.id("wizard-head")), false, "stopping ended the run");
+
+  // What Maintenance's press leaves on the controller, then the word it sends
+  // once Configuration is back on screen.
+  config.guidedSetup.run = "not-run";
+  env.emitWindow("pa:guided-setup-reopened");
+  await env.settle();
+
+  assert.equal(env.shown(env.id("wizard-head")), true, "the run is open again");
+  assert.equal(env.chips().findIndex((chip) => chip.current), 0, "at its first question");
+  assert.equal(env.id("wizard-next").disabled, false, "Next can be pressed");
+  assert.equal(env.id("wizard-stop").disabled, false, "and so can Stop");
+  env.click("wizard-next");
+  assert.equal(env.chips().findIndex((chip) => chip.current), 1, "and pressing it moves the run on");
 });

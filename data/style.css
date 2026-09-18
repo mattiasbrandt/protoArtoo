@@ -3943,6 +3943,43 @@ body[data-page="setup"] .status-item .hint {
   margin-top: var(--space-2xs);
 }
 
+/* Configuration and Maintenance, the two surfaces #404 split the Setup page
+   into. What the two rule groups above do for Setup - the anatomy's spacing
+   ladder, and the serial lanes and memory readouts that read as a sentence
+   beside a light - these carry to the surface each card now lives on: the
+   component form and its cards to Configuration, the lanes and the readouts
+   to Maintenance. */
+body[data-page="configuration"] .card > * + *,
+body[data-page="configuration"] #feature-form > * + *,
+body[data-page="maintenance"] .card > * + * {
+  margin-top: var(--space-md);
+}
+
+body[data-page="maintenance"] .health-grid {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+body[data-page="maintenance"] .health-item {
+  height: auto;
+  padding-block: var(--space-2xs);
+}
+
+body[data-page="maintenance"] .indicator-text {
+  white-space: normal;
+  text-align: right;
+}
+
+body[data-page="maintenance"] .status-item dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+body[data-page="maintenance"] .status-item .hint {
+  display: block;
+  margin-top: var(--space-2xs);
+}
+
 /* Where an LED strip is routed, and what it is showing. The swatch is the one
    thing on this surface that paints a colour from data: it is the strip's own
    live colour, not a state, so it is set from the frame rather than tokened. */

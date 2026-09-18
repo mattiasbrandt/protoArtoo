@@ -227,7 +227,7 @@ Shell -- and its inline recovery kernel (`data/_recovery_kernel.html`) fetches
 chain is then handed over as a wave when that surface is first opened, and the
 shared prefix in it is skipped as already loaded. Every surface shares that
 prefix, then its own script(s), then `footer.js`; `dashboard.html` and
-`setup.html` additionally load `diagnostics.js`.
+`maintenance.html` additionally load `diagnostics.js`.
 
 | Surface | Script count | Notes |
 |---|---|---|
@@ -236,7 +236,8 @@ prefix, then its own script(s), then `footer.js`; `dashboard.html` and
 | `sound.html` | 5 | CHIRP catalog load uses the 12000ms deadline category |
 | `servo.html` | 5 | |
 | `dome.html` | 5 | |
-| `setup.html` | 6 | Adds `diagnostics.js` |
+| `configuration.html` | 7 | Adds `feature_availability.js`, and `setup.js` for the guided run it hosts |
+| `maintenance.html` | 7 | Adds `diagnostics.js` and `feature_availability.js` |
 | `rc.html` | 5 | Safety-adjacent (RC mapping) |
 | `drive.html` | 5 | Safety-adjacent (live vehicle control) |
 | `seq.html` | 10 | Adds `seq_protocol_check.js` plus the dome layout/panel-model chain |
@@ -246,7 +247,9 @@ Each of these files also carries a thin delegate that hands a direct visit to
 the shell at that surface's hash route, so every address that worked before
 ADR 0048 still opens what it names. A delegate carries **no** recovery kernel:
 its `<head>` never runs, so only `index.html` inlines it (ADR 0048 amendment,
-2026-09-13, #382).
+2026-09-13, #382). `setup.html` is not in the table: since #404 it is a
+forwarder with no body and no chain, kept so the old address opens
+Configuration through the `setup` alias.
 
 ## Page rollout order
 

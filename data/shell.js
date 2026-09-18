@@ -10,10 +10,11 @@
 // for /, the static handler's default file answers with the shell, and the
 // fragment never reaches the ESP32 -- so nothing here needs a firmware change.
 //
-// The eleven .html files stay addressable: each is still the single copy of its
-// surface's markup, which this file fetches and mounts, and each carries a thin
-// delegate that hands a direct visit over to the shell. Nothing that links to
-// one has to be rewritten.
+// Every surface's .html file stays addressable: each is still the single copy
+// of its surface's markup, which this file fetches and mounts, and each carries
+// a thin delegate that hands a direct visit over to the shell. Nothing that
+// links to one has to be rewritten - and a renamed surface's old file stays
+// behind as a forwarder for the same reason (data/setup.html).
 // =============================================================================
 (() => {
   // ---------------------------------------------------------------------------
@@ -53,10 +54,17 @@
     { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Wiring", aliases: [] },
     { page: "seq", doc: "/seq.html", icon: "timeline-outline", name: "Sequences", aliases: ["sequences"] },
     { page: "rc", doc: "/rc.html", icon: "controller-classic-outline", name: "RC Control", aliases: [] },
-    // Today's Setup is the surface a droid is configured from, which is what
-    // the sliders name; when C3 splits it (#288, #351) the Maintenance half
-    // takes wrench-outline.
-    { page: "setup", doc: "/setup.html", icon: "tune-variant", name: "Setup", aliases: [] },
+    // What the droid is made of, and the other half of what used to be one
+    // Setup page (#288, #404). It keeps the sliders that page wore, and `setup`
+    // is its alias because that page is what every link to /setup.html and
+    // #setup was written to reach: the page a component is switched on from.
+    // Guided Setup, the first-run run, has no row and no nav entry of its own:
+    // it is drawn over this surface while the droid is not set up
+    // (data/setup.js, CONTEXT.md "Setup").
+    { page: "configuration", doc: "/configuration.html", icon: "tune-variant", name: "Configuration", aliases: ["setup"] },
+    // Inspecting and repairing the controller, and the one way back into
+    // guided Setup (#288, #297, #404).
+    { page: "maintenance", doc: "/maintenance.html", icon: "wrench-outline", name: "Maintenance", aliases: [] },
     { page: "wifi", doc: "/wifi.html", icon: "wifi", name: "WiFi", aliases: [] },
     { page: "firmware", doc: "/firmware.html", icon: "chip", name: "Firmware", aliases: [] },
   ];
@@ -96,6 +104,9 @@
     "robot-outline": "M17.5 15.5C17.5 16.61 16.61 17.5 15.5 17.5S13.5 16.61 13.5 15.5 14.4 13.5 15.5 13.5 17.5 14.4 17.5 15.5M8.5 13.5C7.4 13.5 6.5 14.4 6.5 15.5S7.4 17.5 8.5 17.5 10.5 16.61 10.5 15.5 9.61 13.5 8.5 13.5M23 15V18C23 18.55 22.55 19 22 19H21V20C21 21.11 20.11 22 19 22H5C3.9 22 3 21.11 3 20V19H2C1.45 19 1 18.55 1 18V15C1 14.45 1.45 14 2 14H3C3 10.13 6.13 7 10 7H11V5.73C10.4 5.39 10 4.74 10 4C10 2.9 10.9 2 12 2S14 2.9 14 4C14 4.74 13.6 5.39 13 5.73V7H14C17.87 7 21 10.13 21 14H22C22.55 14 23 14.45 23 15M21 16H19V14C19 11.24 16.76 9 14 9H10C7.24 9 5 11.24 5 14V16H3V17H5V20H19V17H21V16Z",
     "wifi": "M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z",
     "chip": "M6,4H18V5H21V7H18V9H21V11H18V13H21V15H18V17H21V19H18V20H6V19H3V17H6V15H3V13H6V11H3V9H6V7H3V5H6V4M11,15V18H12V15H11M13,15V18H14V15H13M15,15V18H16V15H15Z",
+    // Maintenance's, the prototype's own choice for that row, copied in from
+    // prototypes/395-surface-anatomy/chrome.js:39 the way Wiring's was.
+    "wrench-outline": "M22.61,19L13.53,9.91C14.46,7.57 14,4.81 12.09,2.91C9.79,0.61 6.21,0.4 3.66,2.26L7.5,6.11L6.08,7.5L2.25,3.69C0.39,6.23 0.6,9.82 2.9,12.11C4.76,13.97 7.47,14.46 9.79,13.59L18.9,22.7C19.29,23.09 19.92,23.09 20.31,22.7L22.61,20.4C23,20 23,19.39 22.61,19M19.61,20.59L10.15,11.13C9.54,11.58 8.86,11.85 8.15,11.95C6.79,12.15 5.36,11.74 4.32,10.7C3.37,9.76 2.93,8.5 3,7.26L6.09,10.35L10.33,6.11L7.24,3C8.5,2.95 9.73,3.39 10.68,4.33C11.76,5.41 12.17,6.9 11.92,8.29C11.8,9 11.5,9.66 11.04,10.25L20.5,19.7L19.61,20.59Z",
     "stop-circle-outline": "M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4M9,9V15H15V9",
     "power-sleep": "M18.73,18C15.4,21.69 9.71,22 6,18.64C2.33,15.31 2.04,9.62 5.37,5.93C6.9,4.25 9,3.2 11.27,3C7.96,6.7 8.27,12.39 12,15.71C13.63,17.19 15.78,18 18,18C18.25,18 18.5,18 18.73,18Z",
     "restart": "M12,4C14.1,4 16.1,4.8 17.6,6.3C20.7,9.4 20.7,14.5 17.6,17.6C15.8,19.5 13.3,20.2 10.9,19.9L11.4,17.9C13.1,18.1 14.9,17.5 16.2,16.2C18.5,13.9 18.5,10.1 16.2,7.7C15.1,6.6 13.5,6 12,6V10.6L7,5.6L12,0.6V4M6.3,17.6C3.7,15 3.3,11 5.1,7.9L6.6,9.4C5.5,11.6 5.9,14.4 7.8,16.2C8.3,16.7 8.9,17.1 9.6,17.4L9,19.4C8,19 7.1,18.4 6.3,17.6Z",
@@ -165,12 +176,10 @@
         // is shaped by. Dormant until the C3 group (#351 and its siblings)
         // lands it as a destination (#288).
         "droidbuild",
-        // Today's Setup is the surface a droid is actually configured from --
-        // Hardware Components, LED Strip, Droid Identity. It leaves this row
-        // when C3 (#288) splits it into Configuration and Maintenance, not
-        // before. Guided Setup, the first-run takeover that leaves the nav for
-        // good (#351), is a different thing and is never in a group.
-        "setup",
+        // What the droid is made of -- Hardware Components, LED Strip, Droid
+        // Identity (#288, #404). Guided Setup is drawn over it while the droid
+        // is not set up, and is never in a group of its own (#351).
+        "configuration",
         // Servos stays beside Parts, and stays a page. The question #347 said
         // to put once the dial landed was put when it did (#364), and the
         // operator answered it on 2026-09-16: take out its calibration form,
@@ -186,8 +195,7 @@
       label: "Maintain",
       hint: "check the controller over and keep it up to date",
       members: [
-        // Dormant until the C3 group splits today's Setup into Configuration
-        // and Maintenance (#288, #351).
+        // The other half of what was one Setup page (#288, #404).
         "maintenance",
         "wifi",
         "firmware",
@@ -196,15 +204,6 @@
   ];
 
   const DEFAULT_PAGE = "home";
-
-  // Setup is the guided first-run takeover, not a place to come back to, so a
-  // cold boot must never land there. The reference solves this by never writing
-  // the authoring desk to the durable value at all, rather than by filtering it
-  // on the way out (r2d2-astromech-simulator src/js/config/workspaces.js:208),
-  // and that asymmetry is the point: the runtime answer CAN be Setup -- a
-  // reload of /#setup honours its address -- while the remembered answer
-  // structurally cannot be.
-  const NEVER_REMEMBERED = new Set(["setup"]);
 
   // Two maps, because an Activity Group's member row names a `page` and
   // nothing else: an alias resolves an address a builder typed, and must not
@@ -234,6 +233,17 @@
     ["/index.html", surfaceFor.get(DEFAULT_PAGE)],
   ]);
   SURFACES.forEach((surface) => surfaceForPath.set(surface.doc, surface));
+  // And the document a renamed surface used to be, read off the same rename
+  // record: a link to /setup.html is a click on this page, and it opens what the
+  // alias says rather than a full page load through the forwarder that file now
+  // is (#404). A surface's own document always wins, so an alias can never take
+  // over an address a surface is actually served from.
+  SURFACES.forEach((surface) => {
+    surface.aliases.forEach((alias) => {
+      const legacyDoc = `/${alias}.html`;
+      if (!surfaceForPath.has(legacyDoc)) surfaceForPath.set(legacyDoc, surface);
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // The remembered surface
@@ -265,18 +275,22 @@
     }
   };
 
+  // Every surface is a place to come back to. Guided Setup, which is not, was
+  // kept out of this value while it had a route of its own; it is now drawn over
+  // Configuration only while the droid is not set up, so landing there on a
+  // cold boot shows it exactly when it should be shown (#404).
   const rememberSurface = (page) => {
-    if (NEVER_REMEMBERED.has(page)) return;
     writeStored({ surface: page });
   };
 
   // The stored value is also corrected on the way in, and the correction is
-  // written back: a store that says Setup -- from a hand edit, or from a
-  // version that wrote it -- must stop saying Setup rather than be re-filtered
-  // on every boot.
+  // written back: a store naming nothing this build has -- from a hand edit, or
+  // from a version that had it -- must stop naming it rather than be re-filtered
+  // on every boot. An old spelling is not nothing: it resolves through the
+  // aliases like any address a builder typed.
   const rememberedSurface = () => {
     const stored = readStored().surface;
-    if (surfaceFor.has(stored) && !NEVER_REMEMBERED.has(stored)) return surfaceFor.get(stored);
+    if (surfaceFor.has(stored)) return surfaceFor.get(stored);
     if (stored !== undefined) writeStored({ surface: DEFAULT_PAGE });
     return surfaceFor.get(DEFAULT_PAGE);
   };
@@ -352,7 +366,8 @@
   // Identity is fetched once at boot and cached in window.PAIdentity.
   // Feature availability resolution reads this cache only and never probes endpoints
   // to discover capabilities — the manifest is authoritative and must not be rediscovered.
-  // Setup listens to the event, while the cache closes late-load ordering gaps.
+  // Feature Availability (data/feature_availability.js) listens to the event,
+  // while the cache closes late-load ordering gaps.
   // Layer 1 validation ensures the manifest conforms to the expected shape before
   // pa:identity-available is published; invalid manifests are treated as unavailable.
   const publishIdentity = (identity) => {
@@ -410,12 +425,20 @@
     publishIdentity(event.detail);
   });
 
+  // "Switch it on in Configuration", for a surface whose component is off. The
+  // destination is read out of SURFACES like every other place a surface is
+  // named, so the page a component is switched on from is named once (#288).
+  // The helpers keep their `setup` spelling because it is their callers' API -
+  // Configuration is what that page was renamed to (#404) - and every link
+  // written before the rename still arrives through the `setup` alias.
+  const componentHome = surfaceByPage.get("configuration");
   window.PAUi = window.PAUi || {};
   if (typeof window.PAUi.setupActionText !== "function") {
-    window.PAUi.setupActionText = (action) => `${action} in Setup`;
+    window.PAUi.setupActionText = (action) => `${action} in ${componentHome.name}`;
   }
   if (typeof window.PAUi.setupActionHtml !== "function") {
-    window.PAUi.setupActionHtml = (action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`;
+    window.PAUi.setupActionHtml = (action) =>
+      `${action} in <a class="setup-link" href="${componentHome.doc}">${componentHome.name}</a>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -1484,8 +1507,8 @@
   resumedNote.textContent =
     "Showing what this screen last read - it stopped asking while you were on another screen, and is asking again now.";
 
-  // Ids are not unique across surfaces -- Firmware and Setup both carry
-  // #reboot-button, Dashboard and Setup both carry #reboot-feedback -- so
+  // Ids are not unique across surfaces -- Firmware and Maintenance both carry
+  // #reboot-button, Dashboard and Maintenance both carry #reboot-feedback -- so
   // exactly one surface is in the document at a time. A surface's scripts find
   // their own elements by id and nothing else's, which is the same guarantee
   // they had as separate documents.
@@ -1744,9 +1767,10 @@
   // A click on a link to a surface's own document is a route change, not a page
   // load. Capture phase, so a surface's own delegated handler cannot swallow it
   // first; the click still reaches that handler, it just does not reach the
-  // browser's navigation. This is what lets the eleven .html addresses, and every
-  // caller that writes one (window.PAUi.setupActionHtml, servo.js, the
-  // disabled-reason lines in six pages), keep working unchanged.
+  // browser's navigation. This is what lets every surface's .html address, a
+  // renamed surface's old one, and every caller that writes one
+  // (window.PAUi.setupActionHtml, servo.js, the disabled-reason lines in six
+  // pages), keep working unchanged.
   document.addEventListener(
     "click",
     (event) => {

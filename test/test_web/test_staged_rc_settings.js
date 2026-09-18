@@ -50,7 +50,11 @@ const makeInteractiveElement = () => {
 // A small interaction-capable browser host for the save handlers. The shared
 // page-module harness intentionally does not retain per-element listeners, so
 // this local host keeps the issue-specific test independent of that contract.
-const loadInteractiveModule = (file, respond) => {
+//
+// `files` is one page module or a surface's chain in load order: the component
+// toggles are Configuration's, which loads the shared Feature Availability
+// module first (#404).
+const loadInteractiveModule = (files, respond) => {
   const elements = new Map();
   const timers = [];
   const modeCards = ["standard_pwm", "single_sbus", "dual_sbus"].map((mode) => {
@@ -160,7 +164,9 @@ const loadInteractiveModule = (file, respond) => {
   for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream"]) {
     context[key] = windowMock[key];
   }
-  vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  for (const file of Array.isArray(files) ? files : [files]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
 
   const settle = async () => {
     for (let turn = 0; turn < 4; turn += 1) {
@@ -186,6 +192,9 @@ const loadInteractiveModule = (file, respond) => {
     },
   };
 };
+
+// The component toggles' surface, as its page loads it.
+const CONFIGURATION = ["feature_availability.js", "configuration.js"];
 
 const SAVED_RC_DISABLED = {
   rc: { inputMode: "single_sbus", sbus: { recvCh2: false } },
@@ -222,7 +231,7 @@ test("non-RC component auto-save retains ordinary saved feedback", async () => {
     },
     system: {},
   };
-  const env = loadInteractiveModule("setup.js", async (_method, path) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
@@ -251,7 +260,7 @@ test("RC component auto-save reports that controller restart is required", async
     },
     system: {},
   };
-  const env = loadInteractiveModule("setup.js", async (_method, path) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
@@ -279,7 +288,7 @@ test("restart remains pending after a later non-RC component save", async () => 
     },
     system: {},
   };
-  const env = loadInteractiveModule("setup.js", async (_method, path) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
     return {};
@@ -312,7 +321,7 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
   let postCount = 0;
   const postedRcValues = [];
   const firstSaveResponse = new Promise((resolve) => { resolveFirstSave = resolve; });
-  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       postCount += 1;
@@ -378,7 +387,7 @@ test("boot-active RC diagnostics override staged disabled component settings", a
 test("WARNING #1: restart cue must survive a later save failure", async () => {
   const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
   let firstSaveSucceeds = true;
-  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       if (!firstSaveSucceeds) throw new Error("Save failed (simulated)");
@@ -431,7 +440,7 @@ test("WARNING #2: stale response must not overwrite newer RC pending state", asy
   const firstSavePromise = new Promise((resolve) => { firstSaveResolve = resolve; });
   const postedValues = [];
 
-  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const posted = {
@@ -497,7 +506,7 @@ test("generation guard prevents corrupted savedGeneration affecting future saves
   const firstSavePromise = new Promise((resolve) => { firstSaveResolve = resolve; });
   const thirdSavePromise = new Promise((resolve) => { thirdSaveResolve = resolve; });
 
-  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const ch1 = body.get("enableRcCh1") === "true";
@@ -570,7 +579,7 @@ test("generation guard prevents corrupted savedGeneration affecting future saves
 test("WARNING #3: reverting to boot-active value must clear restart cue", async () => {
   const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
 
-  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+  const env = loadInteractiveModule(CONFIGURATION, async (method, path, body) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (method === "POST" && path === "/api/config") {
       const newEnabled = body.get("enableRcCh1") === "true";
@@ -603,4 +612,44 @@ test("WARNING #3: reverting to boot-active value must clear restart cue", async 
     "restart requirement must clear when reverted to boot-active value"
   );
   assert.match(env.element("setup-save-summary").textContent, /Auto-save ready|Saved/);
+});
+
+// A change that has not reached the controller yet is lost if the controller
+// restarts under it. Restart used to share a page with the toggles and was
+// greyed out for exactly that window; since #404 it is on Maintenance, so the
+// guard has to hold across two surfaces loaded into one session.
+test("Restart waits for a component change still on its way to the controller", async () => {
+  const config = { components: { arm1: { enabled: false } }, system: {} };
+  const posts = [];
+  let answerSave = null;
+  const env = loadInteractiveModule([...CONFIGURATION, "maintenance.js"], async (method, path) => {
+    if (method === "POST") posts.push(path);
+    if (method === "POST" && path === "/api/config") {
+      // Held open, so the save is in flight for as long as the test says.
+      await new Promise((resolve) => {
+        answerSave = resolve;
+      });
+    }
+    if (path === "/api/config") return config;
+    return {};
+  });
+  await env.settle();
+  const reboots = () => posts.filter((path) => path === "/api/reboot").length;
+
+  env.element("enable-arm1").checked = true;
+  await env.element("enable-arm1").emit("change");
+  await env.element("reboot-button").emit("click");
+  assert.equal(reboots(), 0, "a change still waiting to be sent is not restarted away");
+  assert.match(env.element("reboot-feedback").textContent, /saving/i, "and the press says why nothing happened");
+
+  const saving = env.startTimer(300);
+  await env.settle();
+  await env.element("reboot-button").emit("click");
+  assert.equal(reboots(), 0, "nor one the controller has not answered yet");
+
+  answerSave();
+  await saving;
+  await env.settle();
+  await env.element("reboot-button").emit("click");
+  assert.equal(reboots(), 1, "once the save has landed, Restart restarts");
 });
