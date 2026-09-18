@@ -118,10 +118,45 @@ class ZeroDeltaGate(unittest.TestCase):
         self.assertIn("--expect-no-new-tests", notes[0])
 
     def test_shrinking_delta_is_not_this_checks_business(self):
-        # delta < 0 already fails via the shrink rule; zero_delta_ok stays out.
+        # delta < 0 is shrink_ok's business; zero_delta_ok stays out.
         self.assertEqual(
             slice_verify.zero_delta_ok(-2, ["data/app.js"], False, "web"), (True, [])
         )
+
+
+class TestShrinkWaiver(unittest.TestCase):
+    def test_shrinking_total_fails_without_the_waiver(self):
+        ok, notes = slice_verify.shrink_ok(-4, False, "web")
+        self.assertFalse(ok)
+        self.assertIn("--expect-test-shrink", notes[0])
+
+    def test_waiver_passes_with_the_count_in_the_ack(self):
+        ok, notes = slice_verify.shrink_ok(-4, True, "web")
+        self.assertTrue(ok)
+        self.assertIn("shrank by 4", notes[0])
+        self.assertIn("ACK (--expect-test-shrink)", notes[0])
+
+    def test_flat_or_growing_total_needs_no_ack(self):
+        self.assertEqual(slice_verify.shrink_ok(0, True, "web"), (True, []))
+        self.assertEqual(slice_verify.shrink_ok(2, False, "native"), (True, []))
+
+    def test_deleted_file_fails_without_the_waiver(self):
+        result = slice_verify.deleted_tests_result(["test/test_web/test_a.js"], False)
+        self.assertFalse(result.passed)
+
+    def test_waived_deletion_names_every_file_in_the_ack(self):
+        result = slice_verify.deleted_tests_result(
+            ["test/test_web/test_a.js", "test/test_web/test_b.js"], True
+        )
+        self.assertTrue(result.passed)
+        self.assertEqual(result.detail, "2")
+        self.assertIn("deleted: test/test_web/test_b.js", result.notes)
+        self.assertIn("ACK (--expect-test-shrink)", result.notes[-1])
+
+    def test_waiver_with_nothing_deleted_prints_no_ack(self):
+        result = slice_verify.deleted_tests_result([], True)
+        self.assertTrue(result.passed)
+        self.assertEqual(result.notes, [])
 
 
 class MutationRequirement(unittest.TestCase):

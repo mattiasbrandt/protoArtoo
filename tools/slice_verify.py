@@ -12,15 +12,17 @@ working-tree diff would always self-flag. Pre-existing instances in untouched
 files are never reported. Checks:
 
 1. native test total at HEAD vs base, plus suite pass/fail; a shrinking total
-   fails the gate (coverage reduction needs explicit coordinator acceptance),
-   and a flat total fails when the diff touches src/ or include/ — production
+   fails the gate unless the run carries a coordinator-sanctioned
+   --expect-test-shrink (the ACK is visible, with the count), and a flat
+   total fails when the diff touches src/ or include/ — production
    changes must grow the suite that covers them unless the run carries a
    coordinator-sanctioned --expect-no-new-tests (the ACK is visible)
 2. web suite (node:test) total at HEAD vs base, gated on process exit code and
    `# cancelled` — never on `# fail`, which is unreliable in both directions
    (a hung test vanishes from it; a broken invocation inflates it); a flat
    total fails when the diff touches data/ (beyond the version stamps), with
-   the same --expect-no-new-tests waiver
+   the same --expect-no-new-tests waiver, and a shrinking total fails with
+   the same --expect-test-shrink waiver
 3. mutation gate: a diff that touches web production JS (data/*.js) must
    carry mutation patches (--mutations, files or directories of *.patch);
    the gate runs tools/mutation_verify.py itself and fails unless every
@@ -28,7 +30,9 @@ files are never reported. Checks:
    patch, so a passing block *implies* killed mutations — waivable only via
    a visible, coordinator-sanctioned --expect-no-mutations ACK. The
    mutation table, `ran` column included, is printed in the block
-4. no test file deleted between base and HEAD (native or web)
+4. no test file deleted between base and HEAD (native or web), unless the
+   run carries --expect-test-shrink; every deleted file is then named in
+   the ACK
 5. `pio run -e artoo_esp32` exit code (never bare `pio run`)
 6. `tools/check_action_registry_drift.py` exit code
 7. `data/*version.json` must not appear in the diff
@@ -628,12 +632,29 @@ def zero_delta_ok(
     ]
 
 
+def shrink_ok(delta: int, waived: bool, suite: str) -> tuple[bool, list[str]]:
+    """A shrinking suite is coverage removed; it passes only under an explicit,
+    visible waiver, and the ACK carries the count so the block says how much."""
+    if delta >= 0:
+        return True, []
+    if waived:
+        return True, [
+            f"{suite} test count shrank by {-delta};"
+            " ACK (--expect-test-shrink); needs coordinator sanction"
+        ]
+    return False, [
+        f"{suite} test count shrank by {-delta}; shrinking coverage needs"
+        " coordinator-sanctioned --expect-test-shrink"
+    ]
+
+
 def check_native_tests(
     base_total: int | None,
     same_commit: bool,
     base_notes: list[str],
     production: list[str],
     expect_no_new_tests: bool,
+    expect_test_shrink: bool,
 ) -> CheckResult:
     info("running native tests at HEAD...")
     code, summary, output = run_native_tests(ROOT)
@@ -651,12 +672,10 @@ def check_native_tests(
     else:
         delta = total - base_total
         detail = f"{base_total} -> {total}  (delta {delta:+d})"
-        passed = code == 0 and succeeded == total and delta >= 0
-        if delta < 0:
-            notes.append(
-                f"native test count shrank by {-delta}; shrinking coverage"
-                " needs explicit coordinator acceptance"
-            )
+        passed = code == 0 and succeeded == total
+        shrink_passed, shrink_notes = shrink_ok(delta, expect_test_shrink, "native")
+        notes.extend(shrink_notes)
+        passed = passed and shrink_passed
         delta_ok, delta_notes = zero_delta_ok(
             delta, production, expect_no_new_tests, "native"
         )
@@ -675,6 +694,7 @@ def check_web_tests(
     base_notes: list[str],
     production: list[str],
     expect_no_new_tests: bool,
+    expect_test_shrink: bool,
 ) -> CheckResult:
     info("running web tests at HEAD (load-traced)...")
     code, counts, output = run_web_tests(ROOT, trace=True)
@@ -693,12 +713,10 @@ def check_web_tests(
     else:
         delta = total - base_total
         detail = f"{base_total} -> {total}  (delta {delta:+d})"
-        passed = code == 0 and cancelled == 0 and delta >= 0
-        if delta < 0:
-            notes.append(
-                f"web test count shrank by {-delta}; shrinking coverage"
-                " needs explicit coordinator acceptance"
-            )
+        passed = code == 0 and cancelled == 0
+        shrink_passed, shrink_notes = shrink_ok(delta, expect_test_shrink, "web")
+        notes.extend(shrink_notes)
+        passed = passed and shrink_passed
         delta_ok, delta_notes = zero_delta_ok(
             delta, production, expect_no_new_tests, "web"
         )
@@ -830,14 +848,24 @@ def mutation_table(stdout: str) -> list[str]:
     ]
 
 
-def check_deleted_tests(base_sha: str) -> CheckResult:
+def deleted_tests_result(names: list[str], waived: bool) -> CheckResult:
+    notes = [f"deleted: {name}" for name in names]
+    if names and waived:
+        notes.append("ACK (--expect-test-shrink); needs coordinator sanction")
+    elif names:
+        notes.append(
+            "deleting a test file needs coordinator-sanctioned --expect-test-shrink"
+        )
+    return CheckResult(
+        "deleted test files", str(len(names)), waived or not names, notes
+    )
+
+
+def check_deleted_tests(base_sha: str, expect_test_shrink: bool) -> CheckResult:
     names = git(
         ["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD", "--", "test/"]
     ).splitlines()
-    notes = [f"deleted: {name}" for name in names]
-    if names:
-        notes.append("deleting a test file needs explicit coordinator acceptance")
-    return CheckResult("deleted test files", str(len(names)), not names, notes)
+    return deleted_tests_result(names, expect_test_shrink)
 
 
 def check_command_exit(
@@ -1074,6 +1102,13 @@ def main() -> int:
         " the ACK is visible in the printed block",
     )
     parser.add_argument(
+        "--expect-test-shrink",
+        action="store_true",
+        help="acknowledge, with coordinator sanction, that this slice deletes"
+        " tests or test files; the ACK, the count and every deleted file are"
+        " visible in the printed block",
+    )
+    parser.add_argument(
         "--mutations",
         action="append",
         default=[],
@@ -1172,6 +1207,7 @@ def main() -> int:
             base_notes["native"],
             production["native"],
             args.expect_no_new_tests,
+            args.expect_test_shrink,
         )),
         stage("web", lambda: check_web_tests(
             base["web"],
@@ -1179,11 +1215,12 @@ def main() -> int:
             base_notes["web"],
             production["web"],
             args.expect_no_new_tests,
+            args.expect_test_shrink,
         )),
         stage("mutations", lambda: check_mutations(
             production["web"], mutations, args.expect_no_mutations
         )),
-        check_deleted_tests(base_sha),
+        check_deleted_tests(base_sha, args.expect_test_shrink),
     ]
 
     # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell,
@@ -1293,6 +1330,7 @@ def main() -> int:
                 "fenced": fences,
                 "expect_gate_edit": args.expect_gate_edit,
                 "expect_no_new_tests": args.expect_no_new_tests,
+                "expect_test_shrink": args.expect_test_shrink,
                 "expect_no_mutations": args.expect_no_mutations,
                 "mutations": mutations,
                 "production_files": production,
