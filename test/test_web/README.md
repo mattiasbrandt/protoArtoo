@@ -17,6 +17,34 @@ timeout does not count), requires every changed `data/*.js` file to be hit by
 at least one patch, and restores the tree. Standalone `tools/mutation_verify.py`
 runs are for authoring patches before the gate run.
 
+### What the runner counts as a kill
+
+The runner does not run the whole suite per patch. It runs **one test file at a
+time**, in its own `node --test` process: only the files that load the patched
+file (the load map, traced from the gate's HEAD web run by
+`tools/web_load_trace.cjs`), shortest first, and it **stops at the first file
+that kills the patch by assertion**. Anything it cannot be sure of - no map, a
+patched file no test opens, a patched file that is not `data/*.js` - widens to
+every test file.
+
+- **KILLED** - one file exited non-zero with a `not ok`, no cancelled test, no
+  `testTimeoutFailure`, and not by the runner's own 60 s timeout. The files
+  after it are not run.
+- **KILLED-BY-HANG** - no file killed by assertion, and at least one exited
+  non-zero some other way: a hang, a timeout, a crash. Rejected.
+- **SURVIVED** - no test that loads this file killed it. Rejected.
+
+A patch that one file kills by assertion while another file hangs is now
+KILLED. Before #405 that patch was KILLED-BY-HANG and rejected, because the
+whole suite ran and the hang was seen; stopping at the first kill never sees
+the hang. The behaviour is asserted. That is the rule now.
+
+The table's `ran` column is files run / files in the likely-set, e.g. `3/21`.
+It depends on how long each file took last time, so it can differ between two
+runs of the same patch; the verdict cannot. `tools/mutation_verify.py
+--whole-suite <patches>` runs the old way - every file in one invocation, no
+likely-set, no stop-early - for debugging a verdict you do not believe.
+
 ## Harness pattern
 
 - **Execute the shipped file.** `vm.runInNewContext(readFileSync("data/<module>.js"), context)`

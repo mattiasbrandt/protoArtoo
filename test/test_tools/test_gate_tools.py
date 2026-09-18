@@ -7,6 +7,9 @@ or `python3 -m unittest discover -s test/test_tools`; the slice gate runs this
 suite as its first check.
 """
 
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -204,6 +207,251 @@ class MutationVerdicts(unittest.TestCase):
         self.assertEqual(
             mutation_verify.verdict_for(1, counts, True, True), "KILLED-BY-HANG"
         )
+
+
+class PerFileOutcome(unittest.TestCase):
+    """The per-file runner's definition of a kill (#405): unchanged from the
+    suite-level one, applied to one file's process instead of the suite's."""
+
+    KILLED_COUNTS = {"tests": 12, "pass": 11, "fail": 1, "cancelled": 0}
+
+    def test_clean_assertion_kill(self):
+        self.assertEqual(
+            mutation_verify.file_outcome(1, self.KILLED_COUNTS, True, False),
+            mutation_verify.KILL,
+        )
+
+    def test_cancelled_test_is_a_hang(self):
+        counts = {"tests": 12, "pass": 11, "fail": 0, "cancelled": 1}
+        self.assertEqual(
+            mutation_verify.file_outcome(1, counts, True, False), mutation_verify.HANG
+        )
+
+    def test_per_test_timeout_failure_is_a_hang(self):
+        self.assertEqual(
+            mutation_verify.file_outcome(1, self.KILLED_COUNTS, True, True),
+            mutation_verify.HANG,
+        )
+
+    def test_runner_timeout_is_a_hang_even_with_a_not_ok(self):
+        self.assertEqual(
+            mutation_verify.file_outcome(124, self.KILLED_COUNTS, True, False),
+            mutation_verify.HANG,
+        )
+
+    def test_nonzero_exit_without_a_not_ok_is_not_a_kill(self):
+        self.assertEqual(
+            mutation_verify.file_outcome(1, {}, False, False), mutation_verify.HANG
+        )
+
+    def test_exit_zero_is_green(self):
+        counts = {"tests": 12, "pass": 12, "fail": 0, "cancelled": 0}
+        self.assertEqual(
+            mutation_verify.file_outcome(0, counts, False, False), mutation_verify.GREEN
+        )
+
+
+class PatchVerdictFromFiles(unittest.TestCase):
+    def test_every_file_green_survives(self):
+        green = mutation_verify.GREEN
+        self.assertEqual(mutation_verify.patch_verdict([green, green]), "SURVIVED")
+
+    def test_hang_without_a_kill_is_a_hang_kill(self):
+        outcomes = [mutation_verify.GREEN, mutation_verify.HANG]
+        self.assertEqual(mutation_verify.patch_verdict(outcomes), "KILLED-BY-HANG")
+
+    def test_assertion_kill_after_a_hang_is_killed(self):
+        # The documented loosening: stopping early at a kill never sees a hang
+        # in a later file, so a hang elsewhere no longer rejects the patch.
+        outcomes = [mutation_verify.HANG, mutation_verify.KILL]
+        self.assertEqual(mutation_verify.patch_verdict(outcomes), "KILLED")
+
+    def test_runner_stops_at_the_first_clean_kill(self):
+        calls = []
+
+        def fake_run_node(files, timeout):
+            calls.append(files[0])
+            if files[0] == "b.js":
+                return 1, "not ok 1 - b\n# tests 1\n# fail 1\n# cancelled 0\n"
+            return 0, "ok 1 - a\n# tests 1\n# pass 1\n# fail 0\n# cancelled 0\n"
+
+        class NoCache:
+            def record_duration(self, path, wall_ms):
+                pass
+
+        original = mutation_verify.run_node
+        mutation_verify.run_node = fake_run_node
+        try:
+            runs, verdict = mutation_verify.run_likely_set(["a.js", "b.js", "c.js"], NoCache())
+        finally:
+            mutation_verify.run_node = original
+        self.assertEqual(verdict, "KILLED")
+        self.assertEqual(calls, ["a.js", "b.js"])
+        self.assertEqual(len(runs), 2)
+
+
+class LikelySet(unittest.TestCase):
+    ALL = [
+        "test/test_web/test_a.js",
+        "test/test_web/test_b.js",
+        "test/test_web/test_c.js",
+    ]
+    MAP = {
+        "test/test_web/test_a.js": ["data/page_bootstrap.js", "data/shell.js"],
+        "test/test_web/test_b.js": ["data/wiring.js"],
+        "test/test_web/test_c.js": [],
+    }
+
+    def test_narrows_to_the_files_that_opened_the_patched_file(self):
+        selected, widened = mutation_verify.likely_set(["data/wiring.js"], self.MAP, self.ALL)
+        self.assertEqual(selected, ["test/test_web/test_b.js"])
+        self.assertIsNone(widened)
+
+    def test_union_across_patched_files(self):
+        selected, _ = mutation_verify.likely_set(
+            ["data/wiring.js", "data/shell.js"], self.MAP, self.ALL
+        )
+        self.assertEqual(selected, ["test/test_web/test_a.js", "test/test_web/test_b.js"])
+
+    def test_a_file_no_test_opens_widens_to_the_whole_suite(self):
+        # diagnostics.js at HEAD: no web test opens it. The empty likely-set
+        # is an unknown, and unknowns widen.
+        selected, widened = mutation_verify.likely_set(["data/diagnostics.js"], self.MAP, self.ALL)
+        self.assertEqual(selected, self.ALL)
+        self.assertIsNotNone(widened)
+
+    def test_one_unmapped_file_widens_even_beside_a_mapped_one(self):
+        selected, _ = mutation_verify.likely_set(
+            ["data/wiring.js", "data/diagnostics.js"], self.MAP, self.ALL
+        )
+        self.assertEqual(selected, self.ALL)
+
+    def test_a_patched_file_the_tracer_cannot_see_widens(self):
+        selected, _ = mutation_verify.likely_set(["data/index.html"], self.MAP, self.ALL)
+        self.assertEqual(selected, self.ALL)
+
+    def test_no_map_widens(self):
+        selected, _ = mutation_verify.likely_set(["data/wiring.js"], None, self.ALL)
+        self.assertEqual(selected, self.ALL)
+
+    def test_a_map_that_missed_a_test_file_widens(self):
+        partial = {k: v for k, v in self.MAP.items() if not k.endswith("test_c.js")}
+        selected, _ = mutation_verify.likely_set(["data/wiring.js"], partial, self.ALL)
+        self.assertEqual(selected, self.ALL)
+
+
+class ShortestFirst(unittest.TestCase):
+    SLOW = "test/test_web/test_status_plate_346.js"
+
+    def test_unknown_duration_runs_before_the_seeded_slow_file(self):
+        # Named to sort after the slow file, so only the seed can put it first.
+        ordered = mutation_verify.shortest_first(
+            [self.SLOW, "test/test_web/test_zz_new.js"], {}
+        )
+        self.assertEqual(ordered, ["test/test_web/test_zz_new.js", self.SLOW])
+
+    def test_cached_durations_order_the_rest(self):
+        ordered = mutation_verify.shortest_first(
+            ["test/test_web/test_b.js", "test/test_web/test_a.js"],
+            {"test/test_web/test_b.js": 40, "test/test_web/test_a.js": 900},
+        )
+        self.assertEqual(ordered, ["test/test_web/test_b.js", "test/test_web/test_a.js"])
+
+    def test_a_measured_time_replaces_the_seed(self):
+        ordered = mutation_verify.shortest_first(
+            [self.SLOW, "test/test_web/test_a.js"],
+            {self.SLOW: 10, "test/test_web/test_a.js": 900},
+        )
+        self.assertEqual(ordered[0], self.SLOW)
+
+
+class WebOnlyAllowList(unittest.TestCase):
+    def test_a_data_js_only_diff_is_web_only(self):
+        self.assertTrue(slice_verify.is_web_only(["data/app.js"]))
+
+    def test_web_tests_docs_css_and_html_stay_web_only(self):
+        self.assertTrue(slice_verify.is_web_only([
+            "data/app.js", "data/style.css", "data/index.html",
+            "test/test_web/test_app.js", "test/test_web/helpers/mini_dom.js",
+            "docs/agents/slice-gate.md",
+        ]))
+
+    def test_a_diff_that_also_has_src_is_not(self):
+        self.assertFalse(slice_verify.is_web_only(["data/app.js", "src/x.cpp"]))
+
+    def test_console_help_is_not_web_only(self):
+        # A native test reads data/console_help.txt.
+        self.assertFalse(slice_verify.is_web_only(["data/console_help.txt"]))
+
+    def test_data_subdirectories_are_not_web_only(self):
+        self.assertFalse(slice_verify.is_web_only(["data/asset-sets/r2/set.json"]))
+
+    def test_an_empty_diff_is_not_web_only(self):
+        self.assertFalse(slice_verify.is_web_only([]))
+
+
+class MutationTableInTheBlock(unittest.TestCase):
+    def test_table_keeps_rows_and_drops_the_runner_summary(self):
+        stdout = "runner: per file\nmutation  ran  verdict\nm01.patch  3/21  KILLED\n\nmutation gate: PASS\n"
+        self.assertEqual(
+            slice_verify.mutation_table(stdout),
+            ["runner: per file", "mutation  ran  verdict", "m01.patch  3/21  KILLED"],
+        )
+
+    def test_the_tracer_is_a_fenced_verifier(self):
+        self.assertIn("tools/web_load_trace.cjs", slice_verify.VERIFIER_SCRIPTS)
+
+
+class SeparateLocks(unittest.TestCase):
+    def test_the_web_lock_never_reads_as_holding_the_pio_lock(self):
+        pio_lock = sys.modules["pio_lock"]
+        self.assertEqual(pio_lock.held_env_for(pio_lock.lock_path()), pio_lock.HELD_ENV)
+        self.assertNotEqual(
+            pio_lock.held_env_for(slice_verify.WEBTEST_LOCK_PATH), pio_lock.HELD_ENV
+        )
+
+
+class LoadTraceCanary(unittest.TestCase):
+    """Pins the Node behaviour the load map rests on.
+
+    tools/web_load_trace.cjs sees a data/ file only because both require() and
+    import() read it with fs.readFileSync (Node 26.8.1). If a Node upgrade
+    changes that, this goes red here instead of every likely-set silently
+    widening - or worse, narrowing.
+    """
+
+    TRACER = Path(__file__).resolve().parents[2] / "tools" / "web_load_trace.cjs"
+
+    def test_require_and_import_are_both_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "data").mkdir()
+            (root / "test" / "test_web").mkdir(parents=True)
+            (root / "data" / "required.js").write_text("module.exports = 1;\n")
+            (root / "data" / "imported.js").write_text("module.exports = 2;\n")
+            (root / "data" / "unopened.js").write_text("module.exports = 3;\n")
+            (root / "test" / "test_web" / "test_canary.js").write_text(
+                'const test = require("node:test");\n'
+                'require("../../data/required.js");\n'
+                'test("imports", async () => { await import("../../data/imported.js"); });\n'
+            )
+            (root / "test" / "test_web" / "test_quiet.js").write_text(
+                'require("node:test")("opens nothing", () => {});\n'
+            )
+            out = root / "map.json"
+            env = {**os.environ, slice_verify.LOAD_TRACE_ENV: str(out)}
+            proc = subprocess.run(
+                ["node", "--require", str(self.TRACER), *slice_verify.WEB_TEST_FLAGS,
+                 "test/test_web/test_canary.js", "test/test_web/test_quiet.js"],
+                cwd=root, env=env, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertEqual(slice_verify.parse_tap_counts(proc.stdout)["tests"], 2)
+            self.assertEqual(json.loads(out.read_text()), {
+                "test/test_web/test_canary.js": ["data/imported.js", "data/required.js"],
+                "test/test_web/test_quiet.js": [],
+            })
+            self.assertFalse((root / "map.json.parts").exists())
 
 
 class GeneratedDataExclusion(unittest.TestCase):
