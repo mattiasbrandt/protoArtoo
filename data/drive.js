@@ -344,8 +344,8 @@
         // not spoken yet, the other is a droid whose feet were never switched
         // on, and only the second has anything for the builder to do.
         hbNoData.textContent = driveHardwareEnabled
-          ? "Nothing from the wheel controller yet. It reports once it is powered and talking to this board."
-          : `The feet are switched off, so there is no wheel controller to hear from — ${s1EnableInSetup}.`;
+          ? "Nothing from the wheel controller yet. It reports once powered and wired."
+          : `Feet off, so no wheel controller to hear. ${s1EnableInSetup}.`;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";
