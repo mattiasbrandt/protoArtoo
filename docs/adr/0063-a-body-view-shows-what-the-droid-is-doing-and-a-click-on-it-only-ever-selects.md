@@ -68,8 +68,8 @@ where it sits. The starting point is the operator's reference drawing
 named the way Printed Droid's terminology names them.
 
 **The features drawn follow the builder's design origin:** the **Body Design** and
-its **Design Variant**, for example MrBaddeley MK4 Complex or MK4 Simple. A
-Complex body shows its doors and hatches; a Simple body does not show doors it
+its **Design Variant**, for example MrBaddeley MK4 Complex or MK4 Basic. A
+Complex body shows its doors and hatches; a Basic body does not show doors it
 never had; a **Common Addition** appears only once it is added. The droid shape
 is R2-D2's for every builder, and the drawing says which design and variant it
 is showing.
