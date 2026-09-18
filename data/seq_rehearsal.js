@@ -44,16 +44,16 @@
   // than a fix (CONTEXT.md).
   const GAPS = Object.freeze({
     "dome-timing": {
-      msg: "How long a dome panel takes to move is the dome's to know, so a panel move cannot be timed here.",
-      closes: "It could be, if the dome published how long its panels take.",
+      msg: "Only the dome knows how long its panels take, so a panel move cannot be timed here.",
+      closes: "It could be, if the dome published its panel times.",
     },
     "body-timing": {
-      msg: "How long a body part takes to move is set on the output that drives it, and this page does not read that yet.",
+      msg: "A body part's move time is set on its output, and this page does not read it yet.",
       closes: "It could be, once the editor reads each output's time to full throw.",
     },
     "random-pick": {
-      msg: "A random step picks its panel when the sequence runs, so there is nothing fixed here to check.",
-      closes: "Nothing closes this; the pick is the point of the step.",
+      msg: "A random step picks its panel at run time. Nothing fixed to check.",
+      closes: "Nothing closes this; the pick is the point.",
     },
   });
 
@@ -150,7 +150,7 @@
       finding(
         "warning",
         "dispatch-spacing",
-        `${tight} dome ${tight === 1 ? "command follows" : "commands follow"} the one before by less than ${DOME_SPACING_MS} ms -- ${when}. The dome holds eight commands at a time and quietly drops what arrives past that; on 18 June that left a panel open.`,
+        `${tight} dome ${tight === 1 ? "command follows" : "commands follow"} the one before by less than ${DOME_SPACING_MS} ms -- ${when}. The dome holds eight and drops the rest, which can leave a panel open.`,
         `Space dome commands at least ${DOME_SPACING_MS} ms apart.`,
         { step: worst.after.step, n: tight },
       ),
@@ -195,7 +195,7 @@
       return finding(
         "warning",
         "retarget-before-arrival",
-        `${who} is told to ${label.verb} again at ${seconds(first.t)} with nothing in between${n > 1 ? `, ${n} times` : ""}. It is already on its way there, so the repeat moves nothing -- DM:HELLO made one open out of five this way.`,
+        `${who} is told to ${label.verb} again at ${seconds(first.t)} with nothing in between${n > 1 ? `, ${n} times` : ""}. It is already on its way, so the repeat moves nothing.`,
         `Delete the repeated ${label.verb}, or put the opposite move between them if ${who} should move twice.`,
         label.element ? { step: first.step, element: label.element, n } : { step: first.step, part: label.part, n },
       );
@@ -209,7 +209,7 @@
       finding(
         "warning",
         "quiet-in-sequence",
-        "$s stops the sound and also turns the droid's idle chatter off until it is switched off and on again.",
+        "$s stops the sound, and idle chatter too, until the droid is switched off and on.",
         "Delete the $s step. A sound stops by itself when it ends, and chatter carries on.",
         { step: hits[0].step, n: hits.length },
       ),
