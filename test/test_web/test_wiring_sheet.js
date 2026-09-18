@@ -353,6 +353,21 @@ test("switching an output off moves its part without touching the wiring", async
   assert.deepEqual(off.rowsOf("component-disabled").map((row) => row.dataset.part), ["utilUp"]);
 });
 
+// Every "no" names the builder's next move, and a wrong destination is the
+// defect CONTEXT.md "Availability Family" records (16 strings once named a
+// place a builder could not reach). An arm or AUX line is marked in use on
+// this surface now (#369), not on Configuration, so that is where its row
+// sends them - in words, because the saved bench copy has no page under it.
+test("an output not in use names where it is marked in use, and not Configuration", async () => {
+  const off = await boot({
+    outputs: [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })],
+    components: { ...freshComponents(), arm1: { enabled: false, label: "ARM1" } },
+  });
+  const [row] = off.rowsOf("component-disabled");
+  assert.match(row.textContent, /Outputs in use/, "the row names the control on this surface");
+  assert.doesNotMatch(row.textContent, /Configuration/, "and no longer the page the control left");
+});
+
 // A latched estop takes the pulse off every output, and that is not a fact
 // about anybody's wiring. The output-first table on Parts reads switched-off
 // off the pulse (data/parts.js), which would put the whole droid under "Wired,
