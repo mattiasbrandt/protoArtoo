@@ -146,3 +146,58 @@ test("Give it an output routes to the row's own picker and writes nothing", asyn
   assert.strictEqual(env.document.activeElement, env.partRow("smallDoor").querySelector("select"));
   assert.match(env.feedback(), /Choose the output that moves Small long door/);
 });
+
+// What the droid holds as its Droid Build, changed the way a builder elsewhere
+// would change it, and read back through the page's own seam.
+const holdFitted = async (env, fitted) => {
+  env.droidBuild.fitted = fitted;
+  await env.window.DroidBuild.load({ refresh: true });
+  await sleep(20);
+};
+const configPosts = (env) => env.posts.filter((post) => post.path === "/api/config");
+
+test("Drop takes a Part off through the Droid Build alone, and leaves its Output mapped", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  pick(env, "doorFL");
+  assert.equal(actButton(env, "fit").textContent, "Drop from build");
+
+  pressAct(env, "fit");
+  await sleep(40);
+
+  const writes = env.posts.filter((post) => post.path !== "/api/servo/outputs");
+  assert.equal(writes.length, 1, "one write, and nothing but the build");
+  assert.equal(writes[0].path, "/api/config");
+  assert.deepEqual(Object.keys(writes[0].form), ["fittedParts"]);
+  assert.equal(env.droidBuild.fitted.includes("doorFL"), false);
+  assert.deepEqual(env.outputs.find((each) => each.address === "ledc:0").parts, ["doorFL"], "the Output keeps the Part");
+  assert.ok(marker(env, "doorFL").classList.contains("is-unfitted"));
+  assert.match(env.feedback(), /Still mapped to ARM1/);
+  assert.equal(actButton(env, "wire").hidden, false, "the way to change the Output is offered");
+});
+
+test("Drop takes a Common Addition off as the group it was fitted as", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  await holdFitted(env, env.droidBuild.fitted.concat(["gripArm", "gripClaw"]));
+
+  pick(env, "gripArm");
+  pressAct(env, "fit");
+  await sleep(40);
+
+  assert.equal(configPosts(env).length, 1);
+  assert.equal(env.droidBuild.fitted.includes("gripArm"), false);
+  assert.equal(env.droidBuild.fitted.includes("gripClaw"), false, "an arm does not leave its claw behind");
+});
+
+test("a build change the droid refuses is not left on the picture", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  await holdFitted(env, env.droidBuild.fitted.filter((id) => id !== "doorFL"));
+  assert.ok(marker(env, "doorFL").classList.contains("is-unfitted"));
+
+  env.configFails = new Error("refused");
+  pick(env, "doorFL");
+  pressAct(env, "fit");
+  await sleep(40);
+
+  assert.ok(marker(env, "doorFL").classList.contains("is-unfitted"), "the picture shows what the droid holds");
+  assert.match(env.feedback(), /nothing was added/);
+});
