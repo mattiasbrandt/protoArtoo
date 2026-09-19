@@ -925,7 +925,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate, a fa
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
 - The release matrix should split **Audio backend and control logic** from **audible playback on real sound modules**, and sound-module families may have different support levels.
 - The release matrix should split **Dome serial/control logic**, **Dome motion/ESC**, and **protoR2link integration**.
-- The release matrix should split **Servo command logic**, **Servo setup/persistence**, and **physical servo actuation**; AUX outputs are secondary capability, not the primary servo surface.
+- The release matrix should split **Servo command logic**, **Servo setup/persistence**, and **physical servo actuation**; an Output carrying a light rather than a servo is secondary capability, not the primary servo surface.
 - The release matrix should split **Network connectivity**, **Web API/UI**, and **Firmware/filesystem update flow**.
 - The release matrix should split **Drive failsafe**, **Estop**, **Watchdog recovery**, and **Boot safety defaults**.
 - The release matrix should split **Configuration read/write persistence**, **Runtime application**, and **Reboot survival**.

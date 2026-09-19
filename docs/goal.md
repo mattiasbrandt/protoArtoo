@@ -40,7 +40,7 @@ It also explicitly targets builders whose droids are primarily static display pi
 | Drive subsystem | hoverboard integrations accepting Gen2.x-style UART frames at 115200 baud | protocol-contract compatibility over vendor lock |
 | Dome integration | bidirectional serial coordination with AstroPixelsPlus-class dome stacks | explicit command/status ownership boundaries |
 | Audio subsystem | body-side ownership; DY-SV5W as primary module | CHIRP Audio Trigger and SparkFun MP3 Trigger via driver abstraction |
-| Actuators | utility arms, AUX role-flex outputs, dome ESC path | servo/LED role flexibility without architecture fork |
+| Actuators | the board's Outputs (each a servo or an LED strip, named by what the board prints), dome ESC path | servo/LED role flexibility without architecture fork |
 
 ## Technical Support Intent
 
