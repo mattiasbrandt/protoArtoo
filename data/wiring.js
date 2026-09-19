@@ -47,10 +47,14 @@
   //
   // The bounded promise and the scope statement are the whole reason a
   // generated sheet is safe to take to a bench: they say what the sheet is
-  // about before a builder reads a single row. They sit on the surface's face
-  // AND on every picture, because a page gets cropped and a screenshot travels
-  // (#293).
+  // about before a builder reads a single row. They ride along the foot of the
+  // picture, because a picture gets cropped and a screenshot travels (#293).
+  //
+  // The page's own subtitle is SUBTITLE: one plain line saying what the page
+  // covers (operator, 2026-09-19 on #411: the old two sentences were "abit too
+  // poetic and descriptive"). Power has its own section, so it is not here.
   // ---------------------------------------------------------------------------
+  const SUBTITLE = "Where each wire goes on this board.";
   const PROMISE = "every signal this image puts on a wire";
   const SCOPE = "signal + ground only, power wiring is up to you";
 
@@ -716,15 +720,13 @@
   // ---------------------------------------------------------------------------
   // The two pieces that do not depend on what the droid answered
   //
-  // They are generated anyway, and that is the point: the bounded promise, the
-  // scope statement and the cadence have exactly one home each, so the screen
-  // header and the bench copy's header cannot come to say different things.
-  // Putting either sentence in data/wiring.html as well would be the second
-  // copy this whole view exists to abolish.
+  // They are generated anyway, and that is the point: the subtitle and the
+  // cadence have exactly one home each, so the screen header and the bench
+  // copy's header cannot come to say different things. Putting either in
+  // data/wiring.html as well would be the second copy this whole view exists
+  // to abolish.
   // ---------------------------------------------------------------------------
-  const promiseHtml = () =>
-    `Below is <b>${esc(PROMISE)}</b>, read off this Body Controller. It draws ` +
-    `<b>${esc(SCOPE)}</b>.`;
+  const promiseHtml = () => esc(SUBTITLE);
 
   // The shared rail is described and never drawn (CONTEXT.md "Wiring"), and this
   // is the one place the droid's own pacing is stated, because the reason it
@@ -854,6 +856,7 @@
   };
 
   window.PAWiring = Object.freeze({
+    SUBTITLE,
     PROMISE,
     SCOPE,
     CADENCE,
