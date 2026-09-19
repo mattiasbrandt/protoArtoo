@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/body_view.js,/parts.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/parts.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,22 +24,16 @@
     </div>
 
     <!-- The picture, at the head of the surface: a builder reads what the whole
-         droid is doing off it before they read a row (ADR 0063, #352). It is a
-         state display and not a part finder - a body part's name already
-         carries its location - so it is drawn to be read at a glance rather
-         than pointed at. The drawing and the panel beside it are written into
-         this card by data/body_view.js; a click on the picture only ever
-         selects, and the three acts are the named buttons in that panel. -->
+         droid is doing off it before they read a row (ADR 0063, #352, #372).
+         One card, three faces - Front, Rear and Dome (Top) - with the
+         selection panel, the legend and the Parts list in the rail beside it.
+         All of it is written into this card by data/body_view.js; a click on
+         the picture only ever selects, and the acts are the named buttons in
+         the panel. -->
     <div class="card">
-      <div class="sect">
-        <h2>Your droid</h2>
-        <span class="sub" id="bodyview-summary" role="status" aria-live="polite">Finding out what your droid is doing...</span>
-      </div>
-      <p class="hint">Pick a part on the drawing to act on it. Spare slots are in the table below.</p>
-      <p class="hint">Each part shows what the controller <b>told</b> it. A jammed part draws the same as a free one.</p>
-      <div class="bodyview">
-        <div class="bodyview-drawing" id="bodyview-drawing"></div>
-        <div class="bodyview-panel-host" id="bodyview-panel"></div>
+      <div class="bv-layout">
+        <div class="bv-drawing" id="bodyview-drawing"></div>
+        <div class="bv-rail" id="bodyview-panel"></div>
       </div>
     </div>
 

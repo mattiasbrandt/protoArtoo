@@ -1475,56 +1475,66 @@
   });
 
   // ---------------------------------------------------------------------------
-  // The body view (#352, ADR 0063)
+  // The droid picture (#352, #372, ADR 0063 as amended 2026-09-19)
   //
   // A picture of the droid at the head of this surface, showing many parts at
   // once - the one thing the two tables below cannot do, however honest each
-  // row is. data/body_view.js draws it and this file is its caller, and the
-  // seam between the two is the whole design: the renderer reports "this marker
-  // was picked" and knows nothing else, while everything about what a pick
-  // MEANS lives here, where the Output rows are.
+  // row is. One card, three faces: Front, Rear and Dome (Top).
+  // data/body_view.js draws it and this file is its caller, and the seam
+  // between the two is the whole design: the renderer reports "this marker was
+  // picked" and knows nothing else, while everything about what a pick MEANS
+  // lives here, where the Output rows are.
   //
   // THE VIEW NEVER WRITES. Every request below is made from this file, by an
-  // act the builder pressed by name in the panel. A click on the picture
-  // selects and does nothing else, which is what makes one gesture safe on a
-  // surface where most parts mid-build are unfitted, unclaimed or both.
+  // act the builder pressed by name in the panel, or by an Add in the Parts
+  // list beside the picture. A click on the picture selects and does nothing
+  // else, which is what makes one gesture safe on a surface where most parts
+  // mid-build are unfitted, unassigned or both.
   //
-  // THREE NAMED ACTS, and each one either runs or says what to do instead -
-  // #298's rule that every no names the builder's next move, kept by a refused
-  // button with a reason beside it rather than by a button that disappears.
+  // THE ACTS, and each one either runs or says what to do instead - #298's rule
+  // that every no names the builder's next move, kept by a refused button with
+  // a reason beside it rather than by a button that disappears:
   //
-  //   add it to the build   the Part joins the Fitted Parts (ADR 0047). It is a
-  //                         named act here and never a meaning attached to the
-  //                         click (ADR 0063's correction to CONTEXT.md).
-  //   give it an Output     routes to this Part's row in the part-first table
-  //                         and puts the cursor in its picker. Deliberately NOT
-  //                         a third picker of its own: the mapping has two
-  //                         projections of one table on this page and a third
-  //                         would be a surface that can disagree with them
-  //                         (CONTEXT.md "Parts").
-  //   move it               one press, one command: POST /api/servo
-  //                         action=travel runs the Part out to the end recorded
-  //                         as open, across to the end recorded as close, and
-  //                         back to where it was. The controller runs the whole
-  //                         out-and-back itself, so the part comes back even if
-  //                         this page has gone. Nothing follows a drag, and no
-  //                         Non-RC Control consent is asked - that flag has
-  //                         never reached POST /api/servo (ADR 0064).
+  //   Open it / Close it  one press, one command. A body Part's goes to
+  //                       POST /api/servo action=open or action=close on the
+  //                       Output it is on, which drives the Output to the end
+  //                       the builder RECORDED for that side; so it waits for
+  //                       measured ends, like every move this page makes. A
+  //                       dome piece's goes to POST /api/dome/cmd as the
+  //                       Panel Intent the vendored map names it by. A
+  //                       holoprojector is never offered it: it pans and tilts
+  //                       and never opens.
+  //   Add to build        the Part joins the Fitted Parts (ADR 0047). Offered
+  //                       only on a Part the droid does not carry.
+  //   Give it an output   routes to this Part's row in the part-first table
+  //                       and puts the cursor in its picker. Deliberately NOT a
+  //                       third picker of its own: the mapping has two
+  //                       projections of one table on this page and a third
+  //                       would be a surface that can disagree with them
+  //                       (CONTEXT.md "Parts"). Offered only where nothing is
+  //                       mapped yet.
+  //
+  // No Non-RC Control consent is asked for any of them - that flag has never
+  // reached POST /api/servo (ADR 0064).
   // ---------------------------------------------------------------------------
   const view = window.BodyView;
   const drawingHost = document.getElementById("bodyview-drawing");
-  const panelHost = document.getElementById("bodyview-panel");
-  const bodySummary = document.getElementById("bodyview-summary");
+  const railHost = document.getElementById("bodyview-panel");
 
   const ACTS = [
-    { id: "fit", label: "add it to the build" },
-    { id: "wire", label: "give it an Output" },
-    { id: "move", label: "move it" },
+    { id: "toggle", label: "Open it" },
+    { id: "fit", label: "Add to build" },
+    { id: "wire", label: "Give it an output" },
   ];
 
   let drawing = null;
   let panel = null;
-  let picked = null; // the marker the builder has selected, or null
+
+  // What this page has told each dome piece, by the Panel Intent target the
+  // vendored map names it with. The dome reports nothing back, so this is the
+  // whole of what is known: a piece this page has not opened draws Closed, the
+  // way the dome picker on the Dashboard has always drawn it.
+  const domeTold = new Map();
 
   // What one Part looks like on the picture, from the Output rows the droid
   // last answered with. Commanded, all of it: `at` is the width the controller
@@ -1534,46 +1544,32 @@
   // fraction to be of, which is its own mark rather than a made-up number.
   const markFor = (partId) => {
     const part = partById.get(partId);
-    const light = Boolean(kinds?.isLight(part));
     const output = outputs === null ? null : outputOf(outputs, partId);
-    if (outputs === null) return { mark: view.MARKS.UNKNOWN, light, said: "finding out" };
-    if (!output) return { mark: view.MARKS.UNDRIVEN, light, said: "nothing drives it yet" };
-    if (!output.reported) {
-      return { mark: view.MARKS.UNKNOWN, light, said: "this firmware does not say where it is" };
-    }
-    if (output.commandedUs === null) {
-      return { mark: view.MARKS.LIMP, light, said: LIMP_SAID[output.limp] || LIMP_SAID.off };
-    }
-    // A light has no travel, so it gets no position - the treatment removes
-    // what its Kind cannot promise (data/droid_part_kind.js), and a zero swing
-    // would still read as a promise about movement.
-    if (light) {
-      return { mark: view.MARKS.DRIVEN, light, said: `${outputLabel(output)} drives it` };
-    }
-    if (!output.calibrated) {
-      return {
-        mark: view.MARKS.UNMEASURED,
-        light,
-        said: `${outputLabel(output)} drives it, and nobody has measured its ends`,
-      };
-    }
+    if (outputs === null) return { mark: view.MARKS.UNKNOWN, said: "finding out" };
+    if (!output) return { mark: view.MARKS.UNASSIGNED };
+    if (!output.reported) return { mark: view.MARKS.UNKNOWN, said: "this firmware does not say where it is" };
+    if (output.commandedUs === null) return { mark: view.MARKS.LIMP };
+    // A light has no travel, so it gets no position and no Open: the treatment
+    // removes what its Kind cannot promise (data/droid_part_kind.js).
+    if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${outputLabel(output)}` };
+    if (!output.calibrated) return { mark: view.MARKS.UNMEASURED };
     const span = output.openUs - output.closeUs;
-    const at = span === 0 ? 0 : (output.commandedUs - output.closeUs) / span;
-    const shut = at <= 0.02;
-    const wide = at >= 0.98;
-    const told = wide ? "told to open" : shut ? "told to close" : "part way through its travel";
-    return { mark: view.MARKS.DRIVEN, light, at, said: `${told} by ${outputLabel(output)}` };
+    return { mark: view.MARKS.OPENABLE, at: span === 0 ? 0 : (output.commandedUs - output.closeUs) / span };
   };
 
-  // A marker can stand for several Parts - a holoprojector's axes, a light and
-  // the panel it sits on - and it is one shape, so it draws the state of the
-  // first Part on it that anything drives. The per-Part truth is the panel's:
-  // it lists every Part the marker stands for, each with its own Output.
+  // A dome piece can stand for several Parts - a panel and the light on it -
+  // and it is one shape, so it draws the state of the Part on it that
+  // something drives, the panel before the light. A piece with no Output of
+  // ours but a Panel Intent target is the dome's to move, and draws what this
+  // page last told it.
   const markerMark = (markerId) => {
-    const parts = drawing.partsOf(markerId);
-    const marks = parts.map(markFor);
-    const driven = marks.find((mark) => mark.mark !== view.MARKS.UNDRIVEN);
-    return driven || marks[0] || { mark: view.MARKS.UNKNOWN };
+    const marker = drawing.markerOf(markerId);
+    if (marker.panTilt) return {};
+    const own = marker.parts.filter((id) => !kinds?.isLight(partById.get(id)));
+    const wired = own.concat(marker.parts).find((id) => outputs !== null && outputOf(outputs, id) !== null);
+    if (wired) return markFor(wired);
+    if (marker.target) return { mark: view.MARKS.OPENABLE, at: domeTold.get(marker.target) ? 1 : 0 };
+    return markFor(own[0] || marker.parts[0]);
   };
 
   const fittedNow = () => {
@@ -1581,78 +1577,154 @@
     return build ? build.fitted : null;
   };
 
-  // The Output a travel would go through. POST /api/servo addresses an Output by
-  // the name a builder already knows it by, so an expander's unnamed row cannot
-  // be reached from here at all - the same bound the calibration dial keeps.
-  const travelOutputFor = (partId) => {
+  const designLabel = (half) => {
+    const build = window.DroidBuild?.current();
+    const design = build ? (catalog.designs || []).find((row) => row.id === build[half].design) : null;
+    if (!design) return "";
+    const variant = (design.variants || []).find((row) => row.id === build[half].variant);
+    return variant ? `${design.label} · ${variant.label}` : design.label;
+  };
+
+  // Which Parts are on this droid's picture: what the stated design seeds,
+  // plus whatever the builder has fitted beyond it - a Common Addition is on
+  // the picture once it is on the droid, and not before. Before the Droid
+  // Build has been read, the renderer's own default holds (everything but the
+  // additions), because an empty picture would read as "fitted nothing".
+  const pictureFor = () => {
+    const build = window.DroidBuild?.current();
+    const markerIds = drawing.markerIds();
+    if (!build) return { shown: null, domePending: false, domeNote: "" };
+    const onDroid = new Set(build.fitted);
+    ["body", "dome"].forEach((half) => {
+      const complement = window.DroidBuild.complementFor(build[half].design, build[half].variant, half);
+      complement.ids.forEach((id) => onDroid.add(id));
+    });
+    const shown = markerIds.filter((id) => drawing.markerOf(id).parts.some((partId) => onDroid.has(partId)));
+
+    // The dome drawing is the vendored MK4 Complex dome, and it is shown only
+    // where it IS the dome the builder says they built - the same rule the
+    // Dashboard's dome follows (data/dome_layout.js, tier 3). A drawing of
+    // somebody else's dome presented as theirs is worse than none.
+    const dome = build.dome;
+    const domeComplement = window.DroidBuild.complementFor(dome.design, dome.variant, "dome");
+    const domePending = dome.design !== "" && !domeComplement.known;
+    const drawingIsTheirs =
+      dome.design === "" ||
+      (dome.design === window.DOME_PANEL_MAP_DESIGN && dome.variant === window.DOME_PANEL_MAP_VARIANT);
+    let domeNote = "";
+    if (domePending) domeNote = "Dome parts pending. This build does not record which panels that dome carries.";
+    else if (!drawingIsTheirs) domeNote = "No drawing of that dome design yet.";
+    else if (!markerIds.some((id) => drawing.markerOf(id).half === "dome")) {
+      domeNote = "No dome drawing on this controller.";
+    }
+    return { shown, domePending, domeNote };
+  };
+
+  // The Output a body Part's Open it would go through. POST /api/servo
+  // addresses an Output by the name a builder already knows it by, so an
+  // expander's unnamed row cannot be reached from here at all - the same bound
+  // the calibration dial keeps.
+  const servoOutputFor = (partId) => {
     const output = outputs === null ? null : outputOf(outputs, partId);
     if (!output || output.name === "" || isLightRow(output) || !output.calibrated) return null;
     return output;
   };
 
-  // The first Part on this marker each act would act on, and the one sentence
-  // that says why an act cannot run. Every refusal names the next move.
+  // Everything the panel says about a pick, and the one sentence that says why
+  // an act cannot run. Every refusal names the next move.
   const describePick = (markerId) => {
-    const parts = drawing.partsOf(markerId);
+    const marker = drawing.markerOf(markerId);
+    const parts = marker.parts;
     const fitted = fittedNow();
     const unfitted = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) === -1);
+    const isFitted = unfitted.length < parts.length;
+    const own = parts.filter((id) => !kinds?.isLight(partById.get(id)));
+    const wiredPart = own.concat(parts).find((id) => outputs !== null && outputOf(outputs, id) !== null) || null;
+    const output = wiredPart === null ? null : outputOf(outputs, wiredPart);
+    const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
     const unwired = parts.filter((id) => outputs !== null && outputOf(outputs, id) === null);
-    const travelPart = parts.find((id) => travelOutputFor(id) !== null) || null;
-    const travelOutput = travelPart === null ? null : travelOutputFor(travelPart);
+    const mark = markerMark(markerId);
+    const cls = marker.panTilt ? null : view.markClass(mark, isFitted);
+    const open = cls === "open";
 
-    const facts = parts.map((id) => {
-      const output = outputs === null ? null : outputOf(outputs, id);
-      const kind = kinds?.isLight(partById.get(id)) ? " · light" : "";
-      return { term: partLabel(id), value: `${output ? outputLabel(output) : NOT_WIRED}${kind}` };
-    });
-    if (fitted !== null) {
-      facts.push({
-        term: "On your droid",
-        value: unfitted.length === 0 ? "yes" : unfitted.length === parts.length ? "not yet" : "in part",
-      });
+    let servo;
+    if (output) servo = `On a servo (${outputLabel(output)})`;
+    else if (marker.target) servo = "On a servo (dome-link)";
+    else if (outputs === null) servo = "Finding out";
+    else servo = "No output mapped";
+
+    const facts = [{ term: "Servo", value: servo }];
+    if (cls !== null) {
+      facts.push({ term: "State", value: cls === "unknown" ? mark.said || "Finding out" : view.LEGEND_TEXT[cls] });
     }
+    if (fitted !== null) facts.push({ term: "Fitted", value: isFitted ? "Yes" : "No" });
 
+    const part = partById.get(parts[0]);
+    const subtitle =
+      marker.half === "dome"
+        ? parts.map((id) => partById.get(id)?.shorthand || partLabel(id)).join(" · ")
+        : [part?.position, part?.cadName === null ? "Common Addition" : ""].filter(Boolean).join(" · ");
+
+    // The dome is moved over the dome link, so its Open it waits on nothing of
+    // ours but the estop; a body Part's waits on an Output with measured ends.
+    const canToggle = marker.panTilt
+      ? false
+      : output
+        ? servoOutput !== null
+        : Boolean(marker.target);
+
+    // A holoprojector is offered no act at all, so there is nothing refused
+    // to explain.
     let why = "";
-    if (outputs === null) {
-      // The droid has not answered with its Output rows yet, so what drives
-      // this Part is not known. Said as finding out rather than guessed at:
-      // every other sentence below would be a claim about a table nobody has
-      // read.
+    if (marker.panTilt) {
+      why = "";
+    } else if (!isFitted) {
+      why = "Not on your droid. Add it to your build first.";
+    } else if (outputs === null && !marker.target) {
       why = "Finding out what drives it.";
     } else if (estopLatched === null) {
-      // The droid has not said yet, which is not the same as a latched estop:
-      // the acts are held either way, and only one of them is something the
-      // builder can do anything about.
-      why = "Finding out if the droid is stopped. Move it waits for the answer.";
+      why = "Finding out if the droid is stopped. Open it waits for the answer.";
     } else if (estopLatched) {
       why = "Estop latched. Nothing moves until it is cleared.";
-    } else if (travelPart === null && unwired.length > 0) {
-      why = "Nothing drives it yet. Give it an output first.";
-    } else if (travelPart === null && parts.every((id) => kinds?.isLight(partById.get(id)))) {
-      why = "A light has no travel. Nothing to move.";
-    } else if (travelPart === null) {
+    } else if (!output && !marker.target) {
+      why = "No output mapped. Give it one first.";
+    } else if (output && isLightRow(output)) {
+      why = "A light has no travel. Nothing to open.";
+    } else if (output && !output.calibrated) {
       why = "Ends not measured yet. Press Calibrate on its output, below.";
-    } else {
-      why = `Move it runs the part open, then closed, then back, on ${outputLabel(travelOutput)}.`;
+    } else if (output && output.name === "") {
+      why = "Its output has no name this page can send to. Use the output's row below.";
     }
 
     return {
-      title: parts.length === 1 ? partLabel(parts[0]) : parts.map(partLabel).join(" · "),
+      title: marker.label,
+      subtitle,
       facts,
       acts: {
-        fit: { enabled: unfitted.length > 0 },
-        // Always offered where the Part has a row: giving an Output to a Part
-        // that already has one is moving it, which is a thing a builder does.
-        wire: { enabled: parts.some((id) => rows.has(id)) },
-        move: { enabled: travelPart !== null && estopLatched === false },
+        toggle: {
+          shown: !marker.panTilt,
+          label: open ? "Close it" : "Open it",
+          enabled: canToggle && isFitted && estopLatched === false,
+        },
+        fit: { shown: unfitted.length > 0, enabled: unfitted.length > 0 },
+        wire: {
+          shown: !marker.panTilt && !marker.target && unwired.length > 0,
+          enabled: parts.some((id) => rows.has(id)),
+        },
       },
       why,
-      parts,
+      marker,
+      open,
+      output: servoOutput,
       unfitted,
       unwired,
-      travelPart,
-      travelOutput,
     };
+  };
+
+  const paintPanel = () => {
+    const markerId = drawing.selected();
+    if (markerId === null) panel.clear();
+    else panel.show(describePick(markerId));
   };
 
   const paintBody = () => {
@@ -1661,47 +1733,54 @@
     drawing.markerIds().forEach((markerId) => {
       marks[markerId] = markerMark(markerId);
     });
-    // One kind of state at a time, and it says which. This surface shows the
-    // live half - what the droid was last told. A routine's moment is the same
-    // shape through the same renderer and is never mixed into this one.
-    drawing.update({ kind: view.STATE_KINDS.LIVE, marks });
-    if (picked !== null) panel.show(describePick(picked));
-    if (outputs === null) return;
-    const drawn = drawing.markerIds().length;
-    const driving = drawing
-      .markerIds()
-      .filter((markerId) => markerMark(markerId).mark !== view.MARKS.UNDRIVEN).length;
-    bodySummary.textContent =
-      `${drawn} ${drawn === 1 ? "part" : "parts"} on the picture · ` +
-      `${driving} with an output driving ${driving === 1 ? "it" : "them"}`;
+    const picture = pictureFor();
+    // One kind of state at a time. This surface shows the live kind - what the
+    // droid was last told. A routine's moment is the same shape through the
+    // same renderer and is never mixed into this one.
+    drawing.update({
+      kind: view.STATE_KINDS.LIVE,
+      marks,
+      shown: picture.shown,
+      fitted: fittedNow(),
+      stamp: designLabel("body"),
+      domePending: picture.domePending,
+      domeNote: picture.domeNote,
+    });
+    paintPanel();
+  };
+
+  const addToBuild = (ids, names) => {
+    const fitted = fittedNow();
+    if (fitted === null) return;
+    const missing = ids.filter((id) => fitted.indexOf(id) === -1);
+    if (missing.length === 0) return;
+    window.DroidBuild.applyDroidBuild({ fitted: fitted.concat(missing) })
+      .then((result) => {
+        showFeedback(
+          result.persisted
+            ? `${names} ${missing.length === 1 ? "is" : "are"} on your droid now.`
+            : `${names} did not reach the droid, so nothing was added.`,
+          result.persisted ? "success" : "error"
+        );
+        paintBody();
+      })
+      .catch((error) => {
+        showFeedback(`${names} was not added: ${window.PAApi.messageFor(error)}`, "error");
+      });
   };
 
   const runAct = (actId) => {
-    if (picked === null) return;
-    const pick = describePick(picked);
+    const markerId = drawing.selected();
+    if (markerId === null) return;
+    const pick = describePick(markerId);
     if (actId === "fit") {
-      const fitted = fittedNow();
-      if (fitted === null || pick.unfitted.length === 0) return;
-      const names = pick.unfitted.map(partLabel).join(", ");
-      window.DroidBuild.applyDroidBuild({ fitted: fitted.concat(pick.unfitted) })
-        .then((result) => {
-          showFeedback(
-            result.persisted
-              ? `${names} ${pick.unfitted.length === 1 ? "is" : "are"} on your droid now.`
-              : `${names} did not reach the droid, so nothing was added.`,
-            result.persisted ? "success" : "error"
-          );
-          paintBody();
-        })
-        .catch((error) => {
-          showFeedback(`${names} was not added: ${window.PAApi.messageFor(error)}`, "error");
-        });
+      addToBuild(pick.unfitted, pick.unfitted.map(partLabel).join(", "));
       return;
     }
     if (actId === "wire") {
       // A route, not a write: the picker on this Part's own row is where an
       // Output is chosen, and it is the same control either table uses.
-      const target = pick.unwired[0] || pick.parts[0];
+      const target = pick.unwired[0] || pick.marker.parts[0];
       const row = rows.get(target);
       if (!row) return;
       row.node.scrollIntoView?.({ block: "center" });
@@ -1709,51 +1788,74 @@
       showFeedback(`Choose the output that moves ${partLabel(target)} in its row below.`);
       return;
     }
-    if (actId === "move" && pick.travelPart !== null) {
-      const label = partLabel(pick.travelPart);
-      const gang = pick.travelOutput.parts.filter((id) => id !== pick.travelPart);
+    if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
+    const verb = pick.open ? "close" : "open";
+    const label = pick.marker.label;
+    if (pick.output) {
+      const gang = pick.output.parts.filter((id) => pick.marker.parts.indexOf(id) === -1);
       started(
         window.PAApi.postForm(
           "/api/servo",
-          { arm: pick.travelOutput.name.toLowerCase(), action: "travel" },
+          { arm: pick.output.name.toLowerCase(), action: verb },
           { timeoutMs: 4000 }
         ).then(
           () => {
             showFeedback(
-              `${label} is running through its travel and back.` +
+              `${label} told to ${verb}.` +
                 (gang.length ? ` ${listParts(gang)} ${gang.length === 1 ? "moves" : "move"} with it.` : ""),
               "success"
             );
             refresh();
           },
           (error) => {
-            showFeedback(`${label} did not move: ${window.PAApi.messageFor(error)}`, "error");
+            showFeedback(`${label} did not ${verb}: ${window.PAApi.messageFor(error)}`, "error");
           }
         )
       );
+      return;
     }
+    const target = pick.marker.target;
+    started(
+      window.PAApi.postForm("/api/dome/cmd", { cmd: `${verb === "open" ? ":OP" : ":CL"}${target}` }).then(
+        () => {
+          domeTold.set(target, verb === "open");
+          showFeedback(`${label} told to ${verb}.`, "success");
+          paintBody();
+        },
+        (error) => {
+          showFeedback(`${label} did not ${verb}: ${window.PAApi.messageFor(error)}`, "error");
+        }
+      )
+    );
   };
 
-  if (view && drawingHost && panelHost) {
+  if (view && drawingHost && railHost) {
+    panel = view.mountPanel(railHost, { acts: ACTS, onAct: runAct });
     drawing = view.mountDrawing(drawingHost, {
       parts: catalog.parts,
+      art: window.BodyArt,
+      domeSvg: window.DOME_PANEL_MAP_SVG,
+      railHost,
+      // Picking the Part already picked lets it go, so there is a way back to
+      // the empty panel.
       onPick: (markerId) => {
-        picked = drawing.select(markerId);
-        panel.show(describePick(picked));
+        drawing.select(drawing.selected() === markerId ? null : markerId);
+        paintPanel();
       },
+      onFace: () => paintPanel(),
+      onAdd: (group) => addToBuild(group.ids, group.label),
     });
-    panel = view.mountPanel(panelHost, { acts: ACTS, onAct: runAct });
-    panel.clear("Pick a part on the drawing to see what drives it and what you can do with it.");
-    // The Fitted Parts, so "add it to the build" knows what is already on the
-    // droid. One read, shared with every other surface that wants the Droid
-    // Build (data/droid_build.js holds it single-flight), and the picture draws
-    // from whatever the droid has answered so far rather than waiting on it.
+    // The Fitted Parts, so the picture knows what is on this droid. One read,
+    // shared with every other surface that wants the Droid Build
+    // (data/droid_build.js holds it single-flight), and the picture draws from
+    // whatever the droid has answered so far rather than waiting on it.
     window.DroidBuild?.load()?.then(() => paintBody());
+    window.DroidBuild?.onChange?.(() => paintBody());
     paintBody();
-    // The estop gates "move it" like every other act on this page, and it
-    // arrives on the status stream rather than on the bench feed. Subscribed
-    // here, below the definitions it calls, because the stream replays its last
-    // frame to a new subscriber synchronously.
+    // The estop gates every act on this page, and it arrives on the status
+    // stream rather than on the bench feed. Subscribed here, below the
+    // definitions it calls, because the stream replays its last frame to a new
+    // subscriber synchronously.
     window.PAStatusStream?.subscribe((eventType) => {
       if (eventType !== "status") return;
       paintBody();

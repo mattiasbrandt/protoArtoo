@@ -3,8 +3,16 @@
  *
  * SVG renderer for dome layout picker from structured geometry.
  * Converts the dome-served layout view-model (window.DomeLayout, see
- * data/dome_layout.js) into an interactive SVG picker matching data/panels.html
- * visual language.
+ * data/dome_layout.js) into an interactive SVG picker.
+ *
+ * THE LOOK IS NOT HERE. The picker is drawn in the droid picture's line
+ * language (#372, ADR 0063 as amended 2026-09-19): stroke only, one ink, no
+ * text on the drawing, the accent filling an open panel. That look lives in
+ * data/style.css, scoped to svg.dome-svg-picker, because the built-in MK4 map
+ * (data/dome_panel_model.js) is drawn as the same element and has to look the
+ * same - one set of rules for both, rather than a palette here and a second one
+ * there. This file emits structure and state classes only; the labels and
+ * callouts below are still emitted, and the stylesheet does not draw them.
  *
  * Exported: window.DomeLayoutRender
  * Main API: renderPicker(model) -> SVG string
@@ -102,7 +110,8 @@ window.DomeLayoutRender = (() => {
 
   /**
    * Determine CSS class string for element state.
-   * Maps to vendored MK4 SVG class names: .pr (ring), .pp (pie), .pf (fixed), .hp (holo).
+   * Maps to vendored MK4 SVG class names: .pr (ring), .pp (pie), .pf (fixed), .hp (holo),
+ * which data/style.css draws for both this picker and the built-in map.
    * Severity modifiers (.is-inactive, etc.) layer on top.
    *
    * @param {Object} elem - element from model
@@ -114,14 +123,14 @@ window.DomeLayoutRender = (() => {
     // Element type classes — VENDORED NAMES
     if (elem.element_type === "panel") {
       if (elem.panel_kind === "ring") {
-        classes.push("pr");  // ring panel — blue, selectable
+        classes.push("pr");  // ring panel, selectable
       } else if (elem.panel_kind === "pie") {
-        classes.push("pp");  // pie panel — darker blue, selectable
+        classes.push("pp");  // pie panel, selectable
       } else if (elem.panel_kind === "fixed") {
-        classes.push("pf");  // fixed panel — gray, non-selectable
+        classes.push("pf");  // fixed panel, non-selectable
       }
     } else if (elem.element_type === "holo") {
-      classes.push("hp");  // holo marker — green
+      classes.push("hp");  // holo marker
     } else if (elem.element_type === "psi") {
       classes.push("pf");  // PSI marker — use fixed styling
     } else if (elem.element_type === "logic") {
@@ -400,45 +409,8 @@ window.DomeLayoutRender = (() => {
       labelLayer += renderLabel(elem);
     }
 
-    // Inline CSS styling (vendored MK4 palette + state modifiers)
-    const css = `
-.dbg{fill:#b8bec8;stroke:#6b7280;stroke-width:1.5}
-.pbg{fill:#c4c9d4}
-.pr{fill:#1e3a8a;stroke:#3b82f6;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
-.pr:hover,.pr.open{fill:#ea580c}
-.pr.selected{fill:#ea580c;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(234, 88, 12, 0.9))}
-.pp{fill:#1e3a6e;stroke:#60a5fa;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
-.pp:hover,.pp.open{fill:#ea580c}
-.pp.selected{fill:#ea580c;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(234, 88, 12, 0.9))}
-.pe{fill:#c4c9d4;stroke:#9ca3af;stroke-width:.5}
-.pu{fill:#cdd3dd;stroke:#6b7280;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
-.pu:hover,.pu.open{fill:#9aa3b2}
-.pu.selected{fill:#7b8494;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(123, 132, 148, 0.9))}
-.pf{fill:#aeb6c2;stroke:#4b5563;stroke-width:1;pointer-events:none}
-.rl{stroke:#6b7280;stroke-width:.8;fill:none;pointer-events:none}
-.cr{fill:#0b1220;stroke:#3b82f6;stroke-width:2;cursor:pointer;pointer-events:auto}
-.cr:hover{fill:#0f1e40}
-.cr.selected{fill:#0f1e40;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 3px rgba(59, 130, 246, 0.9))}
-.cf{fill:#7e8aa0;stroke:#3a4250;stroke-width:1.2;pointer-events:none}
-.conn-r{stroke:#3b82f6;stroke-width:.8;opacity:.6;pointer-events:none}
-.conn-f{stroke:#4b5563;stroke-width:.7;opacity:.5;pointer-events:none}
-.lt{font:bold 11px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lp{font:bold 12px monospace;fill:#eaf2ff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lpf{font:bold 12px monospace;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lf{font:bold 10px sans-serif;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lf2{font:bold 9px sans-serif;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.hp{fill:#16a34a;stroke:#fff;stroke-width:.6;pointer-events:none}
-.lh{font:bold 8px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.is-inactive{opacity:.6}
-.is-disabled{opacity:.5;cursor:not-allowed}
-.is-unmapped,.is-unverified{opacity:.4}
-    `.trim();
-
     // Assemble final SVG: scaffolding → geometry → labels
     const svg = `<svg viewBox="${safeViewBox}" xmlns="http://www.w3.org/2000/svg" class="dome-svg-picker" style="width:100%;max-width:100%;display:block;margin:0 auto">
-<style>
-${css}
-</style>
 ${scaffolding}
 ${geometryLayer}
 ${labelLayer}
