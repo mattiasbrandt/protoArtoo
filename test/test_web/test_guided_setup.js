@@ -205,7 +205,9 @@ const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = 
         }
         const run = read("guidedSetupRun");
         const seen = read("guidedSetupVisited");
+        const done = read("guidedSetupSummaryDone");
         if (run !== undefined && run !== null) config.guidedSetup.run = run;
+        if (done !== undefined && done !== null) config.guidedSetup.summaryDone = done === "true";
         if (seen !== undefined && seen !== null) {
           config.guidedSetup.recorded = true;
           config.guidedSetup.visited = seen === "-" ? [] : seen.split(",");
@@ -425,6 +427,13 @@ test("Backup and Restore carries the run's record like any other config key", as
   assert.equal(configured.get("guidedSetupRun"), "completed");
   assert.equal(configured.get("guidedSetupVisited"), "wifi,drive");
 
+  // Done on the ended run's summary is the same record, and travels the same
+  // way: a restored droid whose builder dismissed it does not show it again.
+  const dismissed = await restoreParamsFor({
+    guidedSetup: { run: "completed", recorded: true, visited: ["wifi"], summaryDone: true },
+  });
+  assert.equal(dismissed.get("guidedSetupSummaryDone"), "true");
+
   const showedNothing = await restoreParamsFor({
     guidedSetup: { run: "skipped", recorded: true, visited: [] },
   });
@@ -543,6 +552,120 @@ test("a run reopened from Maintenance opens at its first question and can be mov
   assert.equal(env.id("wizard-stop").disabled, false, "and so can Stop");
   env.click("wizard-next");
   assert.equal(env.chips().findIndex((chip) => chip.current), 1, "and pressing it moves the run on");
+});
+
+// =============================================================================
+// What the ended run leaves behind (#371)
+//
+// The run's end, through the shipped markup and chain, by both of the ways a
+// run ends. Four things here would each make the summary lie with every row
+// still looking right: a question nobody was shown reported as answered, a
+// step the summary leaves out, a wait with no way to end it, and a summary
+// that reopens after the builder has dismissed it.
+// =============================================================================
+
+// The summary as a builder reads it: each row's step, its mark (null on a row
+// that is not about a question) and whether it carries a link out.
+const summaryRows = (env, heading) => {
+  // By position, not by an h3 selector, which mini_dom's grammar does not
+  // carry: a section is its .sect head, whose first child is the heading.
+  const section = env.id("setup-summary-body").children.find(
+    (child) => child.children[0]?.children[0]?.textContent === heading,
+  );
+  if (!section) return [];
+  return section.querySelector(".setup-summary-list").children.map((row) => ({
+    step: row.dataset.step,
+    mark: row.querySelector(".wizard-tick")?.textContent ?? null,
+    said: row.querySelector(".setup-summary-said")?.textContent ?? "",
+    href: row.querySelector("a")?.getAttribute("href") ?? null,
+  }));
+};
+
+// Every question in the run, read off the rail rather than typed: a chip with
+// a mark is a question, one without is shown rather than asked.
+const questionTitles = (env) => env.chips().filter((chip) => chip.tick !== null).map((chip) => chip.title);
+
+test("a finished run's summary names every question once, and only the ones shown as answered", async () => {
+  const env = boot();
+  await env.runSection();
+  const questions = questionTitles(env);
+
+  // Straight to the last question and Finish: everything jumped over was
+  // never on screen, and its "Not fitted" is a default nobody chose.
+  env.railClick(env.chips().length - 1);
+  env.click("wizard-next");
+  await env.settle();
+
+  assert.equal(env.config.guidedSetup.run, "completed");
+  assert.equal(env.shown(env.id("setup-summary")), true, "the run ends on its summary");
+  assert.equal(env.shown(env.id("wizard-head")), false, "and the run's chrome is gone");
+
+  const set = summaryRows(env, "What you set");
+  const notAsked = summaryRows(env, "Not asked");
+  assert.deepEqual(set.map((row) => row.step), ["wifi", "name"], "only the questions that were on screen");
+  assert.ok(set.every((row) => row.mark === "●"));
+  assert.ok(notAsked.length > 0 && notAsked.every((row) => row.mark === "○"), "the rest hollow, never ticked");
+  assert.ok(notAsked.every((row) => row.said.endsWith(", the default")), "and said to be the default");
+  assert.equal(
+    set.length + notAsked.length,
+    questions.length,
+    "every question in the run is in the summary exactly once",
+  );
+});
+
+test("stopping ends the run for good, on a summary that says what was never asked", async () => {
+  const config = freshConfig();
+  let env = boot({ config });
+  await env.runSection();
+  env.click("wizard-stop");
+  await env.settle();
+
+  const end = env.posts.find((post) => post.get("guidedSetupRun") !== undefined);
+  assert.equal(end.get("guidedSetupRun"), "skipped");
+  assert.equal(end.get("guidedSetupSummaryDone"), "false", "a run that ends leaves a summary");
+  assert.deepEqual(summaryRows(env, "What you set").map((row) => row.step), ["wifi"]);
+
+  // The next visit - or the same page after the droid restarted - reads the
+  // same record: the run stays over and the summary is drawn again from it.
+  env = boot({ config });
+  await env.runSection();
+  await env.settle();
+  assert.equal(env.shown(env.id("wizard-head")), false, "the run does not reopen on its own");
+  assert.equal(env.shown(env.id("setup-summary")), true);
+  assert.deepEqual(summaryRows(env, "What you set").map((row) => row.step), ["wifi"]);
+  assert.ok(summaryRows(env, "Not asked").every((row) => row.mark === "○"));
+});
+
+test("every wait in the summary carries the way to the restart", async () => {
+  // Saved with the feet fitted; the droid reports it started without them.
+  const config = freshConfig();
+  config.components.drive.enabled = true;
+  config.activeToggles = [];
+  config.guidedSetup = { run: "completed", recorded: true, visited: ["wifi", "drive"], summaryDone: false };
+  const env = boot({ config });
+  await env.runSection();
+  await env.settle();
+
+  const waiting = summaryRows(env, "Waiting for a restart");
+  assert.deepEqual(waiting.map((row) => row.step), ["drive"]);
+  assert.ok(waiting.every((row) => row.href === "#maintenance"), "no wait without its route to Maintenance's restart");
+});
+
+test("Done is the droid's answer: the summary goes once it is saved, and stays gone", async () => {
+  const config = freshConfig();
+  config.guidedSetup = { run: "completed", recorded: true, visited: ["wifi"], summaryDone: false };
+  let env = boot({ config });
+  await env.runSection();
+  env.click("setup-summary-done");
+  await env.settle();
+
+  assert.equal(env.posts.at(-1).get("guidedSetupSummaryDone"), "true");
+  assert.equal(env.shown(env.id("setup-summary")), false);
+
+  env = boot({ config });
+  await env.runSection();
+  await env.settle();
+  assert.equal(env.shown(env.id("setup-summary")), false, "a later visit does not bring it back");
 });
 
 // =============================================================================

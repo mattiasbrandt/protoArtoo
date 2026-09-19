@@ -20,6 +20,9 @@
 //   - another page shows the product the droid holds, read from the saved
 //     answer - the receiver by the wire its input mode speaks - as a card with
 //     nothing to press: it is chosen only here (#412).
+//   - a Body Controller this image was not built for says how to get it - an
+//     upload of its own build, with the route to Firmware - where it used to
+//     sit greyed with nothing to do about it (operator, 2026-09-19 on #371).
 // =============================================================================
 
 import { test } from "node:test";
@@ -88,4 +91,16 @@ test("another page is shown the radio and receiver the droid holds, as cards wit
   const card = picker.shownCard(picker.chosenReceiverPart());
   assert.equal(card.dataset.option, "rc_transmitter_sbus");
   assert.equal(card.querySelectorAll("button").length, 0, "shown here, never chosen here");
+});
+
+test("a Body Controller this image was not built for carries the route to its own build", async () => {
+  for (const [board, other] of [["artoo_esp32", "firebeetle2"], ["firebeetle2", "artoo_pcb"]]) {
+    const env = await ready({ board });
+    const plateOf = (id) => env.plate("body_controller", id);
+    const running = board === "artoo_esp32" ? "artoo_pcb" : "firebeetle2";
+    const route = (plate) => plate.children.find((child) => child.tagName === "A") || null;
+
+    assert.equal(route(plateOf(other))?.getAttribute("href"), "#firmware", `${board}: the other board says where to upload`);
+    assert.equal(route(plateOf(running)), null, `${board}: the board it runs on has nothing to switch to`);
+  }
 });
