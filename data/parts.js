@@ -1984,16 +1984,8 @@
   }
 
   // Owned by this surface, so the shell stops it when the operator leaves
-  // Parts and starts it on the way back (#360).
-  window.PASurface?.poll(
-    () =>
-      loadOutputs().then(
-        () => true,
-        (error) => {
-          console.warn("[parts] outputs poll failed:", error);
-          return false;
-        }
-      ),
-    { cadenceMs: POLL_MS, refreshOnReturn: true }
-  ).start();
+  // Parts and starts it on the way back (#360). A failed read is
+  // PASurface.poll()'s to report: catching it here handed the registry a
+  // fulfilled promise and marked Parts current on a read that never landed.
+  window.PASurface?.poll(() => loadOutputs(), { cadenceMs: POLL_MS, refreshOnReturn: true }).start();
 })();
