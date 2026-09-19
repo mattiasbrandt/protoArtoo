@@ -18,6 +18,7 @@
 #include "config_cache.h"
 #include "config_nvsio.h"
 #include "config_serializer.h"
+#include "console_config_fields.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
 
@@ -94,6 +95,47 @@ void test_pending_apply_is_true_when_staged_differs_from_active() {
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
     TEST_ASSERT_TRUE(doc["wifi"]["pendingApply"].as<bool>());
     TEST_ASSERT_TRUE(doc["wifi"]["networkRecovery"].as<bool>());
+}
+
+// What the droid STARTED with is reported beside what is saved (#371), from
+// the boot projections rather than from the saved config: a staged toggle and
+// a staged receiver mode read as saved on one side and as booted on the other,
+// which is the difference every "waiting for a restart" line is drawn from.
+void test_the_booted_toggles_and_receiver_differ_from_a_staged_save() {
+    ConfigSnapshot booted = readSnapshot();
+    booted.system.enable_drive = false;
+    booted.system.enable_rc_ch1 = true;
+    booted.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
+    configCacheApply(booted);
+    configCacheSetActiveComponentToggles(booted.system);
+    configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(booted.system));
+
+    // Saved since the droid started, not started on yet.
+    ConfigSnapshot staged = booted;
+    staged.system.enable_drive = true;
+    staged.system.enable_rc_ch1 = false;
+    staged.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    configCacheApply(staged);
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleConfigGet(req);
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_TRUE(doc["components"]["drive"]["enabled"].as<bool>());
+    TEST_ASSERT_FALSE(doc["components"]["rcCh1"]["enabled"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("single_sbus", doc["rc"]["inputMode"] | "");
+
+    bool driveOnAtBoot = false;
+    bool rcCh1OnAtBoot = false;
+    for (JsonVariant id : doc["activeToggles"].as<JsonArray>()) {
+        driveOnAtBoot = driveOnAtBoot || strcmp(id.as<const char*>(), "drive") == 0;
+        rcCh1OnAtBoot = rcCh1OnAtBoot || strcmp(id.as<const char*>(), "rcCh1") == 0;
+    }
+    TEST_ASSERT_FALSE(driveOnAtBoot);
+    TEST_ASSERT_TRUE(rcCh1OnAtBoot);
+    TEST_ASSERT_EQUAL_STRING("standard_pwm", doc["rc"]["activeInputMode"] | "");
 }
 
 // The five fixed field sets are gone from the schema, not from the browser:
@@ -213,6 +255,13 @@ void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
     memset(snap.wifi.ap_password, 'Q', sizeof(snap.wifi.ap_password) - 1);
     memset(snap.dome.dome_wifi_peer_ip, '9', sizeof(snap.dome.dome_wifi_peer_ip) - 1);
     configCacheApply(snap);
+    // Every Component Toggle on at boot: the longest the booted-toggle list
+    // can be (#371).
+    SystemConfig allOn = snap.system;
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        allOn.*(kComponentToggleFields[i].field) = true;
+    }
+    configCacheSetActiveComponentToggles(allOn);
 
     DroidBuildConfig build = {};
     droidBuildDefaults(&build);
@@ -502,6 +551,7 @@ int main() {
     RUN_TEST(test_the_servo_outputs_answer_carries_what_the_dial_edits);
     RUN_TEST(test_a_full_table_of_outputs_fits_under_the_route_ceiling);
     RUN_TEST(test_get_returns_config_json);
+    RUN_TEST(test_the_booted_toggles_and_receiver_differ_from_a_staged_save);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);
     RUN_TEST(test_the_old_field_names_are_answered_from_the_rows);
     RUN_TEST(test_pending_apply_is_true_when_staged_differs_from_active);

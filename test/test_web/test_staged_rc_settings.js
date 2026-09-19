@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { bootedDroid } from "./helpers/booted_droid.js";
 
 const makeInteractiveElement = () => {
   const listeners = new Map();
@@ -66,7 +67,9 @@ const loadInteractiveModule = (files, respond) => {
     if (!elements.has(id)) elements.set(id, makeInteractiveElement());
     return elements.get(id);
   };
-  const call = async (method, path, body) => ({ data: await respond(method, path, body) });
+  // The droid reports what it started with beside what it saved (#371).
+  const report = bootedDroid();
+  const call = async (method, path, body) => ({ data: report(method, path, await respond(method, path, body)) });
   class ApiError extends Error {}
 
   const windowMock = {

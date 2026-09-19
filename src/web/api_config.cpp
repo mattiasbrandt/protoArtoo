@@ -42,6 +42,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
@@ -630,6 +631,56 @@ void addAudioMemberFields(JsonDocument& doc) {
 }
 
 // -----------------------------------------------------------------------------
+// addActiveFields()
+// What the droid STARTED with, for every key that is read once at start: the
+// Component Toggles (ADR 0027) and the RC Receiver mode. A surface that says a
+// saved change is still waiting compares these against the saved values beside
+// them - never against what it happened to read first, which a page reload
+// resets to the saved value and so reports nothing waiting while the droid
+// still runs the old setting (#371).
+//
+// Both come from the boot projections setup() already publishes
+// (configCacheSetActiveComponentToggles(), configCacheSetActiveRcInput()), so
+// this costs no resident byte. The toggles go out as the list of ids switched
+// on at start, not as a flag on every entry: the response buffer below is a
+// fixed 3072 B, and fifteen "activeEnabled" fields would not fit its worst
+// case where one list of the ones that are on does.
+//
+// The id is the payload's own component key: the param name without its
+// "enable" and with the first letter lowered (enableDomeEsc -> domeEsc,
+// enableArm1 -> arm1), so the list names exactly the entries under
+// "components" and nothing keeps a second spelling of them.
+// -----------------------------------------------------------------------------
+void addActiveFields(JsonDocument& doc) {
+    static constexpr char kPrefix[] = "enable";
+    constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+
+    JsonArray toggles = doc["activeToggles"].to<JsonArray>();
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        if (!configCacheReadActiveComponentToggle(i)) {
+            continue;
+        }
+        const char* param = kComponentToggleFields[i].paramKey;
+        const size_t len = strlen(param);
+        // A mutable array, so ArduinoJson copies it rather than keeping a
+        // pointer into a buffer that is gone by the time the document
+        // serializes (the rule addGuidedSetupFields() below relies on too).
+        char id[24] = {};
+        if (strncmp(param, kPrefix, kPrefixLen) != 0 || len <= kPrefixLen ||
+            len - kPrefixLen >= sizeof(id)) {
+            continue;
+        }
+        memcpy(id, param + kPrefixLen, len - kPrefixLen);
+        id[0] = (char)tolower((unsigned char)id[0]);
+        toggles.add(id);
+    }
+
+    RcInputActiveConfig activeRc = {};
+    configCacheReadActiveRcInput(&activeRc);
+    doc["rc"]["activeInputMode"] = rcModeToString(static_cast<RcInputMode>(activeRc.mode));
+}
+
+// -----------------------------------------------------------------------------
 // addServoOutputFields()
 // The five fixed field sets, answered from the rows that replaced them.
 //
@@ -794,6 +845,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     }
     addServoOutputFields(doc);
     addAudioMemberFields(doc);
+    addActiveFields(doc);
     addDroidBuildFields(doc);
     addGuidedSetupFields(doc);
     WifiConfig activeWifi = {};
