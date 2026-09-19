@@ -596,7 +596,7 @@
       label: "ESTOP",
       // The single cell that acts rather than routes, so it carries no page.
       page: null,
-      affordance: "Cuts drive now",
+      affordance: "Cuts all movement",
       read: (status) =>
         estopIsLatched(status) ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
     },
@@ -849,12 +849,12 @@
                  they can see (WCAG 2.5.3 Label in Name) - the one control
                  where being unable to say "press STOP" would matter most. -->
             <button id="shell-estop-button" class="btn danger shell-estop-button" type="button"
-                    aria-label="STOP - cut drive now. Clear it on Foot Drive or Dashboard.">
+                    aria-label="STOP - cuts all movement.">
               ${icon("stop-circle-outline")}<span class="shell-estop-action">STOP</span>
             </button>
             <div class="shell-estop-lines">
               <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">${ESTOP_STATE_TEXT.unknown}</div>
-              <div class="shell-estop-consequence">Cuts drive - clear it on Foot Drive or Dashboard</div>
+              <div class="shell-estop-consequence">Cuts all movement</div>
               <div class="shell-estop-feedback feedback compact-feedback" id="shell-estop-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             </div>
           </div>
