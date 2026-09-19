@@ -68,6 +68,7 @@ no symbol, which is the failure this list would otherwise hide.
 | `console-line` | reserved for the Controller Console |
 | `chevron-right` | a disclosure's open/closed marker |
 | `arrow-left`, `arrow-right` | Foot Drive's pad, the pair turned a quarter for forward and reverse |
+| `printer-outline` | Wiring's printable wiring sheet act (#411; read from `@mdi/svg` 7.4.47 `svg/printer-outline.svg`, not one of the #398 twenty-two) |
 
 The #398 prototype (`git show 83acf0db:prototypes/395-surface-anatomy/chrome.js`;
 the prototype left the tree for the gitignored `tasks/prototypes/` on

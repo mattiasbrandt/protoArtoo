@@ -120,6 +120,10 @@
     // from a package nobody in this slice read (docs/icon-set-provenance.md).
     "arrow-left": "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z",
     "arrow-right": "M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z",
+    // Wiring's printable sheet (#411): not among the #398 twenty-two, so read
+    // from @mdi/svg 7.4.47 svg/printer-outline.svg, the -outline style the
+    // chrome's other icons keep.
+    "printer-outline": "M19 8C20.66 8 22 9.34 22 11V17H18V21H6V17H2V11C2 9.34 3.34 8 5 8H6V3H18V8H19M8 5V8H16V5H8M16 19V15H8V19H16M18 15H20V11C20 10.45 19.55 10 19 10H5C4.45 10 4 10.45 4 11V15H6V13H18V15M19 11.5C19 12.05 18.55 12.5 18 12.5C17.45 12.5 17 12.05 17 11.5C17 10.95 17.45 10.5 18 10.5C18.55 10.5 19 10.95 19 11.5Z",
   };
 
   const spriteHtml = () =>

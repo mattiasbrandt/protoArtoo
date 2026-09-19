@@ -45,7 +45,9 @@
         <p class="wiring-promise" id="wiring-promise"></p>
       </div>
       <div class="acts wiring-acts">
-        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Printable wiring sheet</a>
+        <!-- The printer icon stands for the word "Printable" (operator,
+             2026-09-19 on #411), so the whole name rides in aria-label. -->
+        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true" aria-label="Printable wiring sheet"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-printer-outline"/></svg>wiring sheet</a>
         <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
