@@ -572,8 +572,51 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // What another surface shows of a family: the product the droid holds, as a
+  // card drawn here - the same plate, picture and name a picker card has - but
+  // read-only. The RC page shows the radio and the receiver this way, and they
+  // are chosen only on Configuration (operator, 2026-09-19 on #412).
+  // ---------------------------------------------------------------------------
+
+  // The product a family's Component Member names, or null until the lineup and
+  // the config have both answered, or when the droid holds none.
+  const chosenPart = (family) => {
+    const member = MEMBER_FIELDS[family]?.saved(config);
+    if (!member) return null;
+    return partsOf(family).find((part) => part.id === member) || null;
+  };
+
+  // The RC Receiver the controller reads, found by the wire its rcInputMode
+  // speaks, or null.
+  const chosenReceiverPart = () => {
+    const wire = wireOfMode(RC_RECEIVER.saved(config));
+    if (!wire) return null;
+    return partsOf("radio_controller").find((part) => isReceiverRow(part) && part.protocol === wire) || null;
+  };
+
+  const shownCard = (part) => {
+    const plate = element("div", "droid-build-plate component-plate is-chosen component-plate-shown");
+    plate.dataset.option = part.id;
+    const face = element("div", "droid-build-card component-card");
+    face.appendChild(artFrame(artIdFor(part.id)));
+    face.appendChild(element("span", "droid-build-card-label", part.name));
+    plate.appendChild(face);
+    return plate;
+  };
+
   // artIdFor and artPartFor are exported for Wiring, whose diagram pictures and
   // names the board the same way a card here does (#411), so there is one
   // board-to-picture lookup.
-  window.ComponentPicker = { mount, adopt, answerFor, onChange, artIdFor, artPartFor };
+  window.ComponentPicker = {
+    mount,
+    adopt,
+    answerFor,
+    onChange,
+    artIdFor,
+    artPartFor,
+    chosenPart,
+    chosenReceiverPart,
+    shownCard,
+  };
 })();

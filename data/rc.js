@@ -26,6 +26,9 @@
   const rcModeSummary = document.getElementById("rc-mode-summary");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
+  const rcInputSummary = document.getElementById("rc-input-summary");
+  const rcRadioCard = document.getElementById("rc-radio-card");
+  const rcReceiverCard = document.getElementById("rc-receiver-card");
   
   const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
   const sbusRecvSel = document.getElementById("sbus-recv-sel");
@@ -424,6 +427,7 @@
   const setRcInputsEnabled = (enabled) => {
     rcInputsEnabled = enabled;
     rcDisabledCard?.classList.toggle("hidden", enabled);
+    if (rcInputSummary) rcInputSummary.textContent = enabled ? "live" : "no source is live";
 
     if (rcLearnBtn) {
       rcLearnBtn.disabled = !enabled;
@@ -1204,6 +1208,28 @@
     renderEditor();
   };
 
+  // The radio and the receiver the droid holds, each as the card Configuration
+  // shows it - its photo and its name, drawn by data/component_picker.js from
+  // the same lineup, so there is no second product-to-picture map here. Chosen
+  // only on Configuration; a family with nothing picked says where to pick it.
+  const paintProductCards = () => {
+    const picker = window.ComponentPicker;
+    if (!picker) return;
+    const show = (host, part, missing) => {
+      if (!host) return;
+      if (part) host.replaceChildren(picker.shownCard(part));
+      else {
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.innerHTML = `${missing} Pick it in <a class="setup-link" href="#configuration">Configuration</a>.`;
+        host.replaceChildren(note);
+      }
+    };
+    show(rcRadioCard, picker.chosenPart("radio_controller"), "No radio picked yet.");
+    show(rcReceiverCard, picker.chosenReceiverPart(), "No receiver picked yet.");
+  };
+  window.ComponentPicker?.onChange(paintProductCards);
+
   const loadRcMode = async ({ handle = null } = {}) => {
     try {
       const api = handle || window.PAApi;
@@ -1217,6 +1243,8 @@
       updateRecvSel(mode);
       setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
+      // The radio and receiver cards read the same config (data/component_picker.js).
+      window.ComponentPicker?.adopt(data);
     } catch (error) {
       const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
       switchRcMode(fallbackMode);
