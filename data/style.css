@@ -7110,18 +7110,6 @@ body[data-page="wiring"] .card > * + * {
   margin-top: var(--space-md);
 }
 
-body[data-page="wiring"] .wiring-tier > * + * {
-  margin-top: var(--space-md);
-}
-
-/* A tier is a section inside a plate: its own head, its own count, its own
-   table. The seam above it is what divides one tier from the next, so the
-   plates do not multiply with the tiers. */
-.wiring-tier + .wiring-tier {
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--border);
-}
-
 .wiring-table {
   width: 100%;
   border-collapse: collapse;
@@ -7162,17 +7150,7 @@ body[data-page="wiring"] .wiring-tier > * + * {
   background: var(--surface);
 }
 
-/* The loom's signals are two words at most, so its first column does not wrap:
-   "Foot Drive" split over two lines reads as two rows on an instrument panel.
-   The parts table's own first column keeps wrapping, because a part name runs
-   to "Dome side panel 12" and nowrapping it would push the reason column off
-   the plate. */
-.wiring-loom-table .wiring-row th[scope="row"] {
-  white-space: nowrap;
-}
-
-/* An address, a bus and a design name are markings rather than prose. */
-.wiring-address,
+/* A design name and a shorthand are markings rather than prose. */
 .wiring-cad,
 .wiring-shorthand {
   font-family: var(--font-mono);
@@ -7189,13 +7167,6 @@ body[data-page="wiring"] .wiring-tier > * + * {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-plate);
   padding: 0 var(--space-2xs);
-}
-
-/* An Output is a legend and an address, or the words for having neither. Both
-   are short and neither wraps: "- not wired -" broken over two lines reads as
-   two answers. */
-.wiring-output {
-  white-space: nowrap;
 }
 
 /* A value nobody has set, said rather than left blank: a blank cell reads as a

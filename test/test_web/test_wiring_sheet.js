@@ -299,23 +299,15 @@ const boot = async ({
   vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
   env.window = windowMock;
 
-  env.sections = () => document.querySelectorAll(".wiring-tier");
-  env.section = (tier) => env.sections().find((node) => node.dataset.tier === tier);
-  env.tierIds = () => env.sections().map((node) => node.dataset.tier);
-  // mini_dom's selector grammar has no tag-with-a-digit, and a shared harness
-  // is not this slice's to widen: the heading is the first thing in the section
-  // head, which the anatomy already requires it to be.
-  env.headingOf = (tier) =>
-    env.section(tier).querySelector(".sect").children[0].textContent.trim();
-  env.countOf = (tier) => env.section(tier).querySelector(".sub").textContent.trim();
-  env.rowsOf = (tier) =>
-    env.section(tier).querySelectorAll(".wiring-row");
-  env.loomRows = () => document.getElementById("wiring-loom").querySelectorAll(".wiring-row");
-  env.loomRow = (key) => env.loomRows().find((node) => node.dataset.lane === key);
+  // The one diagram's wires, each carrying the key it is drawn for: an Output
+  // Address, or a Board Lane's key.
+  env.wires = () => document.querySelectorAll(".wd-link");
+  env.wire = (key) => env.wires().find((node) => node.dataset.wire === key);
+  env.isLive = (key) => env.wire(key).classList.contains("is-live");
+  env.unusedRows = () => document.getElementById("wiring-unused").querySelectorAll(".wiring-row");
   env.diagrams = () => document.querySelectorAll(".wd");
   env.footnote = () => document.getElementById("wiring-footnote").textContent;
-  env.summary = () => document.getElementById("wiring-summary").textContent;
-  env.loomSummary = () => document.getElementById("wiring-loom-summary").textContent;
+  env.summary = () => document.getElementById("wiring-wires-summary").textContent;
   env.promise = () => document.getElementById("wiring-promise").textContent;
   env.rail = () => document.getElementById("wiring-rail").textContent;
   env.bound = () => document.querySelector(".wiring-bound")?.textContent ?? "";
@@ -332,8 +324,8 @@ const boot = async ({
 
   windowMock.location.hash = "#wiring";
   const deadline = Date.now() + 3000;
-  while (env.sections().length === 0) {
-    if (Date.now() > deadline) assert.fail("the Wiring surface never mounted and painted its rows");
+  while (env.wires().length === 0) {
+    if (Date.now() > deadline) assert.fail("the Wiring surface never mounted and drew its wires");
     await sleep(5);
   }
   await sleep(20);
@@ -348,42 +340,47 @@ const boot = async ({
 // The tier token, and the why
 // ---------------------------------------------------------------------------
 
-test("switching an output off moves its part without touching the wiring", async () => {
+test("switching an output off dashes its wire and keeps it on the sheet", async () => {
   const wired = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
   const on = await boot({
     outputs: structuredClone(wired),
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
-  assert.deepEqual(on.rowsOf("driven").map((row) => row.dataset.part), ["utilUp"]);
+  assert.equal(on.isLive("ledc:0"), true);
 
   const off = await boot({
     outputs: structuredClone(wired),
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
   });
-  assert.equal(off.section("driven"), undefined, "nothing is driven, so there is no Driven tier");
-  assert.deepEqual(off.rowsOf("component-disabled").map((row) => row.dataset.part), ["utilUp"]);
+  assert.equal(off.isLive("ledc:0"), false, "a lead nobody marked wired is drawn not wired");
+  assert.match(off.wire("ledc:0").textContent, /Upper utility arm/, "and still says what is on its end");
+  assert.equal(
+    off.unusedRows().find((row) => row.dataset.part === "utilUp"),
+    undefined,
+    "a part on an output is not Unused, whether or not the output is wired",
+  );
 });
 
 // Every "no" names the builder's next move, and a wrong destination is the
 // defect CONTEXT.md "Availability Family" records (16 strings once named a
 // place a builder could not reach). An Output is marked wired on this surface
-// now (#369), not on Configuration, so that is where its row sends them - in
-// words, because the saved bench copy has no page under it.
+// now (#369), not on Configuration, so that is where its wire sends them - in
+// words, because a picture carries no link and the saved copy has no page.
 test("an output not wired names where it is marked wired, and not Configuration", async () => {
   const off = await boot({
     outputs: [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })],
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
   });
-  const [row] = off.rowsOf("component-disabled");
-  assert.match(row.textContent, /under Outputs\b/, "the row names the control on this surface");
-  assert.doesNotMatch(row.textContent, /Configuration/, "and no longer the page the control left");
+  const text = off.wire("ledc:0").textContent;
+  assert.match(text, /Mark it under Outputs/, "the wire names the control on this surface");
+  assert.doesNotMatch(text, /Configuration/, "and no longer the page the control left");
 });
 
 // A latched estop takes the pulse off every output, and that is not a fact
 // about anybody's wiring. The output-first table on Parts reads switched-off
-// off the pulse (data/parts.js), which would put the whole droid under "Wired,
-// switched off" the moment the estop latches; this sheet reads the Component
-// Toggle instead, so a latched droid reads exactly as it read a moment before.
+// off the pulse (data/parts.js), which would draw the whole droid not wired
+// the moment the estop latches; this sheet reads the Component Toggle instead,
+// so a latched droid reads exactly as it read a moment before.
 test("a latched estop does not rewrite the sheet", async () => {
   const latched = [
     output("ledc:0", "ARM1", {
@@ -398,12 +395,7 @@ test("a latched estop does not rewrite the sheet", async () => {
     outputs: latched,
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
-  assert.deepEqual(
-    env.rowsOf("driven").map((row) => row.dataset.part),
-    ["utilUp"],
-    "the lead is still the lead, whatever the estop is doing",
-  );
-  assert.equal(env.section("component-disabled"), undefined);
+  assert.equal(env.isLive("ledc:0"), true, "the lead is still the lead, whatever the estop is doing");
 });
 
 // ---------------------------------------------------------------------------
@@ -447,20 +439,14 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
   const file = await blob.text();
   const saved = new MiniDOMParser().parseFromString(file);
 
-  const sheetOf = (root) =>
-    root.querySelectorAll(".wiring-tier").map((section) => ({
-      tier: section.dataset.tier,
-      count: section.querySelector(".sub").textContent,
-      rows: section
-        .querySelectorAll(".wiring-row")
-        .map((row) => row.dataset.part || row.dataset.output),
-    }));
+  const sheetOf = (root) => ({
+    wires: root.querySelectorAll(".wd-link").map((wire) => `${wire.dataset.wire}:${wire.classList.contains("is-live")}`),
+    unused: root.querySelectorAll(".wiring-row").map((row) => row.dataset.part),
+  });
   const onScreen = sheetOf(env.document);
-  assert.deepEqual(
-    onScreen.map((section) => section.tier),
-    ["driven", "component-disabled", "output-no-part", "part-not-assigned"],
-    "the fixture puts a row in every tier, so a tier lost on either side shows",
-  );
+  assert.ok(onScreen.wires.some((wire) => wire.endsWith(":true")), "the fixture draws a wired wire");
+  assert.ok(onScreen.wires.some((wire) => wire.endsWith(":false")), "and one not wired");
+  assert.ok(onScreen.unused.length > 0, "and Unused parts, so a list lost on either side shows");
   assert.deepEqual(sheetOf(saved), onScreen);
   assert.equal(saved.querySelectorAll(".wd").length, env.diagrams().length);
 

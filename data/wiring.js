@@ -67,79 +67,32 @@
   // typed into data/wiring.html as well would be the second copy this whole
   // view exists to abolish.
   //
-  // `tiers` is a proposal the operator picks from (#411): the review asked for
-  // "some thing simpler and concise" in place of "What this image will drive".
+  // The operator's words from the Wiring design review (#411): "The wires"
+  // for the loom, "Power wiring" for the shared rail. The section the sheet
+  // used to call "What this image will drive" is gone - which part an Output
+  // moves is the Parts mapping's job - and only its "Unused" list stays, as
+  // the last section on the page (operator, 2026-09-19).
   const PLATES = Object.freeze({
     wires: "The wires",
-    tiers: "What moves",
-    rail: "The shared rail",
+    rail: "Power wiring",
+    unused: "Unused",
   });
 
   // ---------------------------------------------------------------------------
-  // The four honesty tiers
+  // Unused
   //
-  // Disjoint by construction: a row is built into exactly one of them, and the
-  // tier travels ON the row as a token rather than as a predicate a reader has
-  // to re-derive from three fields. Two of the four tokens are Availability
-  // Reasons already (CONTEXT.md "Availability Reason"), which is deliberate --
-  // the vocabulary for "a Part no Output claims" and "switched off" exists, and
-  // a fifth spelling of either would be a second thing to keep in step. The
-  // other two name states that are not a "no" at all: a wired row and an
-  // output waiting for a lead. The ids are the tokens; what a builder reads is
-  // `heading`, and no id reaches the screen.
-  //
-  // `heading` is the operator's words from the Wiring design review (#411),
-  // which renamed #293's, and is not this file's to reword. The count rides in
-  // the section head's subtitle beside it, which is where the anatomy puts a
-  // count (docs/ui-copy-voice.md rule 15).
-  //
-  // `footnote` is what the generated footnote says about this tier. It is
-  // written here, beside the predicate it explains, so the foot of the sheet
-  // cannot define a tier the sheet no longer has -- the fault the reference's
-  // six-line literal footer shipped, where "planned" and "unmapped" share one
-  // definition zone and nothing regenerates either.
+  // A Part no Output claims: the one list the sheet keeps. Its token is the
+  // Availability Reason for exactly this (CONTEXT.md "Availability Reason"),
+  // and it rides on each row so a reader does not re-derive it. `footnote` is
+  // what the foot of the sheet says about the list, written beside it.
   // ---------------------------------------------------------------------------
-  const TIERS = [
-    {
-      id: "driven",
-      heading: "Wired",
-      subject: "part",
-      noun: ["part", "parts"],
-      footnote:
-        "<b>Wired</b>: the output is marked wired, so this image puts a pulse on that lead.",
-    },
-    {
-      id: "component-disabled",
-      heading: "Output not wired",
-      subject: "part",
-      noun: ["part", "parts"],
-      footnote:
-        "<b>Output not wired</b>: the part is on an output you have not marked wired. " +
-        "Nothing moves until you do.",
-    },
-    {
-      id: "output-no-part",
-      heading: "Output with no part",
-      subject: "output",
-      noun: ["output", "outputs"],
-      footnote:
-        "<b>Output with no part</b>: a spare. It gets a pulse, and nothing is recorded on " +
-        "the end.",
-    },
-    // Last on the sheet (operator, 2026-09-19 on #411): a part nothing claims
-    // is the least of what a builder holding a lead needs to read.
-    {
-      id: "part-not-assigned",
-      heading: "Unused",
-      subject: "part",
-      noun: ["part", "parts"],
-      footnote:
-        "<b>Unused</b>: no output claims the part. Moves you author for it wait until " +
-        "one does.",
-    },
-  ];
-
-  const tierById = new Map(TIERS.map((tier) => [tier.id, tier]));
+  const UNUSED = Object.freeze({
+    id: "part-not-assigned",
+    noun: ["part", "parts"],
+    footnote:
+      "<b>Unused</b>: no output claims the part. Moves you author for it wait until " +
+      "one does.",
+  });
 
   // ---------------------------------------------------------------------------
   // What the operator calls a Board Lane
@@ -165,20 +118,12 @@
 
   const plural = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
 
-  // Where a builder changes a Component Toggle today. The shell owns the one
-  // spelling of that route (data/shell.js, window.PAUi.setupActionHtml), so
-  // every "switched off" answer on this sheet names the same destination as
-  // every other surface's -- which is the half of "every no names the builder's
-  // next move" that a wrong link quietly breaks (CONTEXT.md "Availability
-  // Family": 16 strings once named a destination a builder could not reach).
-  const setupRouteHtml = (action) =>
-    window.PAUi?.setupActionHtml?.(action) ?? `${esc(action)} in Configuration`;
-
   // Where an Output is marked wired: on this surface, under the sheet
-  // (data/output_settings.js, #369). Named in words rather than linked,
-  // because the saved bench copy carries this sentence too and has no page
-  // under it.
+  // (data/output_settings.js, #369), and where a Board Lane is switched on.
+  // Named in words: a wire's note is picture text, which carries no link, and
+  // the saved bench copy has no page under it either.
   const OUTPUTS_PLATE = "Outputs";
+  const SWITCHES_PLACE = "Configuration";
 
   // Where a Part is put on an Output. Parts is the surface that owns that act,
   // and it is a destination that exists.
@@ -265,75 +210,22 @@
     return byAddress;
   };
 
-  // An Output as a builder reads it: what the board prints beside its pin,
-  // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
-  // Address"). The name GET /api/servo/outputs puts on a row is protoArtoo's
-  // word, the same on every board, and never reaches the sheet. An Output the
-  // board labels nothing - an expander channel - reads as its Output Address,
-  // which still says where it plugs in.
-  const outputLabel = (output) => output.label || output.address;
-
-  // Each Output of the table, carrying its board label and whether it is
-  // marked wired. Joined once, here, so every row, table cell and picture
-  // reads the same name. A row the config reports nothing for - an expander
-  // channel - has no switch anybody could have turned off, so it reads as
-  // wired rather than inventing one.
-  const boardOutputs = (outputs, components) => {
-    const reported = configOutputs(components);
-    return outputs.map((output) => {
-      const entry = reported.get(output.address);
-      const label = entry && typeof entry.label === "string" ? entry.label : "";
-      return { ...output, label, wired: entry ? entry.enabled === true : true };
-    });
-  };
-
   // The one place a Part is joined to the Output that moves it. A Part is on at
   // most one Output (CONTEXT.md "Part"), so the first hit is the answer.
   const outputForPart = (outputs, partId) =>
     outputs.find((output) => output.parts.includes(partId)) || null;
 
-  const wiringRows = ({ parts = [], outputs: reported = [], components = {} } = {}) => {
-    const outputs = boardOutputs(reported, components);
-    const partRows = parts.filter(drivableHere).map((part) => {
-      const output = outputForPart(outputs, part.id);
-      if (!output) {
-        return {
-          tier: "part-not-assigned",
-          part,
-          output: null,
-          why:
-            `No output claims ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
-        };
-      }
-      if (!output.wired) {
-        return {
-          tier: "component-disabled",
-          part,
-          output,
-          why:
-            `${esc(outputLabel(output))} is not marked wired, so nothing moves. ` +
-            `Mark it under ${OUTPUTS_PLATE}.`,
-        };
-      }
-      return { tier: "driven", part, output, why: "" };
-    });
-
-    const outputRows = outputs
-      .filter((output) => output.parts.length === 0)
-      .map((output) => ({
-        tier: "output-no-part",
-        part: null,
-        output,
-        why:
-          `Nothing is recorded on ${esc(outputLabel(output))}, so a lead here moves nothing. ` +
-          `Claim it from ${PARTS_ROUTE}.`,
+  const unusedRows = ({ parts = [], outputs = [] } = {}) =>
+    parts
+      .filter((part) => drivableHere(part) && !outputForPart(outputs, part.id))
+      .map((part) => ({
+        tier: UNUSED.id,
+        part,
+        why: `No output claims ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
       }));
 
-    return partRows.concat(outputRows);
-  };
-
   // ---------------------------------------------------------------------------
-  // The wires: one per Board Lane
+  // The Board Lanes: the serial links, one wire each
   // ---------------------------------------------------------------------------
   const loomRows = ({ lanes = {}, components = {}, capabilities = {} } = {}) => {
     const toggles = componentIndex(components);
@@ -355,10 +247,6 @@
         label: labelOf(toggles, key),
         shared,
         on,
-        why: on
-          ? ""
-          : `${esc(name)} is switched off, so nothing rides this lane. ` +
-            `${setupRouteHtml("Switch it on")}.`,
       };
     });
   };
@@ -558,9 +446,9 @@
   // TX and RX - two conductors and a signal both ways - so it is drawn as a
   // pair with an arrow at each end. A servo lead's signal is one conductor
   // running out to the part, so it is one line with one arrow.
-  const svgLink = (index, { live, wire, pair, silk, detail, name, role, note }) => {
+  const svgLink = (index, { key, live, ink: own, pair, silk, detail, name, role, note }) => {
     const y = TOP + index * ROW_H + ROW_H / 2;
-    const ink = live ? wire : WIRE_OFF;
+    const ink = live ? own : WIRE_OFF;
     const from = BOARD_X + BOARD_W;
     const to = BOX_X;
     const dash = live ? "" : ' stroke-dasharray="6 4"';
@@ -574,7 +462,7 @@
       `<path class="wd-arrow" d="M${tip - dir * 11} ${y - 5} L${tip} ${y} ` +
       `L${tip - dir * 11} ${y + 5} Z" style="fill:${ink}"/>`;
     return (
-      `<g class="wd-link ${live ? "is-live" : "is-idle"}">` +
+      `<g class="wd-link ${live ? "is-live" : "is-idle"}" data-wire="${escAttr(key)}">` +
       line +
       arrow(to - 1, 1) +
       (pair ? arrow(from + 1, -1) : "") +
@@ -632,34 +520,74 @@
     );
   };
 
-  const loomDiagramHtml = (lanes, made, order) => {
-    if (lanes.length === 0) return "";
-    const height = diagramHeight(lanes.length);
-    const title = `The wires: ${lanes.length} Board Lane${lanes.length === 1 ? "" : "s"} this image routes`;
-    return (
-      svgOpen(title, height) +
-      svgHead("Control signals", made) +
-      svgBoard(lanes.length, plural(lanes.length, ["wire", "wires"])) +
-      lanes
-        .map((lane, index) =>
-          svgLink(index, {
-            live: lane.on,
-            wire: wireInk(order, `lane:${lane.key}`),
-            pair: true,
-            silk: lane.label,
-            detail: laneBusText(lane),
-            name: lane.name,
-            role: lane.on ? "serial, both ways" : "switched off",
-            note: lane.on ? laneNote(lane) : "switched off - nothing rides this wire",
-          })
-        )
-        .join("") +
-      svgFoot(height) +
-      `</svg>`
-    );
+  // ---------------------------------------------------------------------------
+  // Every wire, in one picture
+  //
+  // One board and every wire that leaves it, as the operator's reference draws
+  // a loom (2026-09-19 on #411: "One diagram, every wire"): the firmware's
+  // Outputs in the order GET /api/config lists them, then its Board Lanes,
+  // then any Output only the servo table knows (an expander's) - the same
+  // order the colours are picked in (wireOrder()). What a lane table used to
+  // say beside the picture - which UART, which TX and RX pin - is on the
+  // lane's own wire now, after the board's label.
+  //
+  // Which part an Output moves is on its box, because that is what is on the
+  // end of the lead; which Output a part should be on is the Parts mapping's
+  // job, and this sheet does not answer it.
+  // ---------------------------------------------------------------------------
+  const partNames = (parts, ids) => {
+    const byId = new Map(parts.map((part) => [part.id, part.name]));
+    return ids.map((id) => byId.get(id) || id);
   };
 
-  const laneBusText = (lane) => `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`;
+  // What an Output carries, as the droid reported it: the LED strip where the
+  // strip is routed to it, else the servo recorded as fitted.
+  const outputRole = (entry, row, stripPin) => {
+    if (entry && entry.enabled === true && Number(entry.ledStripPin) > 0 && Number(entry.ledStripPin) === stripPin) {
+      return "the LED strip";
+    }
+    return row && row.component && row.component !== "none" ? row.component : "a servo";
+  };
+
+  // An Output's wire is named first by what the board prints beside its pin,
+  // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
+  // Address"), then by its address. The name GET /api/servo/outputs puts on a
+  // row is protoArtoo's word, the same on every board, and never reaches the
+  // sheet. An Output the config reports nothing for - an expander channel -
+  // has no label and no switch anybody could have turned off, so it reads as
+  // its address, and as wired.
+  const outputWire = (address, entry, row, { parts, stripPin, order }) => {
+    const live = entry ? entry.enabled === true : true;
+    const onIt = row ? partNames(parts, row.parts) : [];
+    let note = "signal on the pin, ground to the board's own ground";
+    if (!live) note = `not marked wired - nothing moves. Mark it under ${OUTPUTS_PLATE}`;
+    else if (onIt.length === 0) note = "a spare: it gets a pulse, and nothing is recorded on the end";
+    return {
+      key: address,
+      live,
+      ink: wireInk(order, address),
+      pair: false,
+      silk: entry && typeof entry.label === "string" ? entry.label : "",
+      detail: address,
+      name: onIt.length ? onIt.join(" + ") : "Nothing recorded",
+      role: outputRole(entry, row, stripPin),
+      note,
+    };
+  };
+
+  const laneWire = (lane, order) => ({
+    key: lane.key,
+    live: lane.on,
+    ink: wireInk(order, `lane:${lane.key}`),
+    pair: true,
+    silk: lane.label,
+    detail: `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`,
+    name: lane.name,
+    role: lane.on ? "serial, both ways" : "switched off",
+    note: lane.on
+      ? laneNote(lane)
+      : `switched off in ${SWITCHES_PLACE} - nothing rides this wire`,
+  });
 
   // A UART is crossed: this board's TX lands on the far end's RX (docs/pin_map.md,
   // "Dome Control slip ring wiring").
@@ -668,60 +596,35 @@
       ? "shares its UART with the dome link, RX only"
       : "TX to the far end's RX, RX to its TX, and ground";
 
-  // The wired signals: one wire per output this image is putting a pulse on,
-  // out to the part it moves. Ground is named because a servo lead has three
-  // wires and only two of them are this sheet's; the rail itself is described
-  // in its own plate and never drawn (CONTEXT.md "Wiring").
-  const signalDiagramHtml = (groups, made, order) => {
-    if (groups.length === 0) return "";
-    const height = diagramHeight(groups.length);
-    const title = `Signal and ground for ${groups.length} wired output${groups.length === 1 ? "" : "s"}`;
+  const sheetWires = (model = {}) => {
+    const { parts = [], outputs = [], components = {} } = model;
+    const stripPin = Number(model.stripPin) || 0;
+    const order = wireOrder(model);
+    const reported = configOutputs(components);
+    const rows = new Map(outputs.map((row) => [row.address, row]));
+    const context = { parts, stripPin, order };
+    const wires = [...reported.keys()].map((address) =>
+      outputWire(address, reported.get(address), rows.get(address), context)
+    );
+    loomRows(model).forEach((lane) => wires.push(laneWire(lane, order)));
+    outputs
+      .filter((row) => !reported.has(row.address))
+      .forEach((row) => wires.push(outputWire(row.address, null, row, context)));
+    return wires;
+  };
+
+  const wiresDiagramHtml = (wires, made) => {
+    if (wires.length === 0) return "";
+    const height = diagramHeight(wires.length);
+    const title = `The wires: ${plural(wires.length, ["wire", "wires"])} leaving the Body Controller`;
     return (
       svgOpen(title, height) +
       svgHead("Signal and ground", made) +
-      svgBoard(groups.length, plural(groups.length, ["wired output", "wired outputs"])) +
-      groups
-        .map((group, index) =>
-          svgLink(index, {
-            live: true,
-            wire: wireInk(order, group.address),
-            pair: false,
-            silk: group.silk,
-            detail: group.address,
-            name: group.parts.join(" + "),
-            role: group.component && group.component !== "none" ? group.component : "a servo",
-            note: "signal on the pin, ground to the board's own ground",
-          })
-        )
-        .join("") +
+      svgBoard(wires.length, plural(wires.length, ["wire", "wires"])) +
+      wires.map((wire, index) => svgLink(index, wire)).join("") +
       svgFoot(height) +
       `</svg>`
     );
-  };
-
-  // One wire per Output rather than one per Part, because a ganged lead is one
-  // wire and drawing it twice would put a channel number on the sheet twice --
-  // the fault the reference fixed by giving each board its own box
-  // (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:423-436).
-  const wiredGroups = (rows) => {
-    const groups = [];
-    rows
-      .filter((row) => row.tier === "driven")
-      .forEach((row) => {
-        const address = row.output.address;
-        let group = groups.find((each) => each.address === address);
-        if (!group) {
-          group = {
-            address,
-            silk: row.output.label,
-            component: row.output.component,
-            parts: [],
-          };
-          groups.push(group);
-        }
-        group.parts.push(row.part.name);
-      });
-    return groups;
   };
 
   // ---------------------------------------------------------------------------
@@ -759,24 +662,13 @@
     return `${esc(part.name)}${shorthand}${kind}`;
   };
 
-  // "- not wired -" is the project's own words for a Part no Output claims, and
-  // it is what the part-first table on Parts puts in the same cell
-  // (data/parts.js, NOT_WIRED). It is spelt out here rather than shared,
-  // because data/parts.js is fenced to another slice this wave; the two
-  // spellings must not drift, so this comment is where that is written down.
-  const NOT_WIRED = "\u2013 not wired \u2013";
-
-  const outputCellHtml = (output) => {
-    if (!output) return `<span class="wiring-dim">${esc(NOT_WIRED)}</span>`;
-    if (!output.label) return `<span class="wiring-address">${esc(output.address)}</span>`;
-    return `${esc(output.label)} <span class="wiring-address">${esc(output.address)}</span>`;
-  };
-
   const whyCellHtml = (why) => (why ? `<span class="wiring-why">${why}</span>` : "");
 
-  const partTableHtml = (rows) =>
+  // The Unused list: a part, its design name, where it sits on the droid, and
+  // the next move. No Output column - every row in it has none.
+  const unusedTableHtml = (rows) =>
     '<table class="wiring-table"><thead><tr>' +
-    "<th>Part</th><th>Design name</th><th>Where</th><th>Output</th><th>Why</th>" +
+    "<th>Part</th><th>Design name</th><th>Where</th><th>Why</th>" +
     "</tr></thead><tbody>" +
     rows
       .map(
@@ -787,63 +679,7 @@
           `<th scope="row">${partNameHtml(row.part)}</th>` +
           `<td class="wiring-design">${designNameHtml(row.part)}</td>` +
           `<td>${whereHtml(row.part)}</td>` +
-          `<td class="wiring-output">${outputCellHtml(row.output)}</td>` +
           `<td class="wiring-reason">${whyCellHtml(row.why)}</td></tr>`
-      )
-      .join("") +
-    "</tbody></table>";
-
-  // A row whose subject is an Output carries different columns, because kind
-  // decides which columns a row carries at all (CONTEXT.md "Output"): there is
-  // no part on it, so there is no design name and no place on the droid.
-  const outputTableHtml = (rows) =>
-    '<table class="wiring-table"><thead><tr>' +
-    "<th>Output</th><th>Address</th><th>What is fitted</th><th>Why</th>" +
-    "</tr></thead><tbody>" +
-    rows
-      .map(
-        (row) =>
-          `<tr class="wiring-row" data-tier="${row.tier}" data-output="${
-            escAttr(row.output.address)
-          }">` +
-          `<th scope="row">${esc(outputLabel(row.output))}</th>` +
-          `<td class="wiring-address">${esc(row.output.address)}</td>` +
-          `<td>${fittedHtml(row.output)}</td>` +
-          `<td class="wiring-reason">${whyCellHtml(row.why)}</td></tr>`
-      )
-      .join("") +
-    "</tbody></table>";
-
-  // "nothing recorded as fitted" and "an MG996R" are the same band of pulse
-  // widths and two different sentences, which is why the answer reports the
-  // component rather than the numbers (docs/api.md, GET /api/servo/outputs).
-  const fittedHtml = (output) =>
-    output.component && output.component !== "none"
-      ? esc(output.component)
-      : '<span class="wiring-dim">nothing recorded as fitted</span>';
-
-  const loomTableHtml = (lanes) =>
-    '<table class="wiring-table wiring-loom-table"><thead><tr>' +
-    "<th>Signal</th><th>On the board</th><th>Routed over</th><th>Why</th>" +
-    "</tr></thead><tbody>" +
-    lanes
-      .map(
-        (lane) =>
-          `<tr class="wiring-row" data-lane="${escAttr(lane.key)}" data-live="${
-            lane.on ? "yes" : "no"
-          }">` +
-          `<th scope="row">${esc(lane.name)}</th>` +
-          `<td>${
-            lane.label
-              ? esc(lane.label)
-              : '<span class="wiring-dim">no legend printed on this board</span>'
-          }</td>` +
-          `<td class="wiring-address">${esc(laneBusText(lane))}${
-            lane.shared
-              ? ' <span class="wiring-dim">shared with the dome link, RX only</span>'
-              : ""
-          }</td>` +
-          `<td class="wiring-reason">${whyCellHtml(lane.why)}</td></tr>`
       )
       .join("") +
     "</tbody></table>";
@@ -907,26 +743,25 @@
     `apart.</p>` +
     `<p class="hint">That figure is the dome's, from its seven ring servos. Nobody has ` +
     `measured the body's yet.</p>` +
-    `<div class="note note-info"><b>Fusing and power are your build's; nothing here draws ` +
-    `them.</b> Size the rail for stall current: a servo fighting a linkage pulls several ` +
-    `times its idle draw.</div>`;
+    `<div class="note note-info"><b>Power wiring is up to you; nothing here draws it.</b> ` +
+    `Size the rail for stall current: a servo fighting a linkage pulls several times its ` +
+    `idle draw.</div>`;
 
   // ---------------------------------------------------------------------------
-  // The footnote
+  // The footnote under Unused
   //
-  // Generated from the tiers actually on the sheet, in the sheet's own order,
-  // and from nothing else. A tier with no rows contributes no sentence, so the
-  // foot of the sheet can never define a section a builder cannot find.
+  // What the list means, and - when any row carries one - what a design name
+  // is. A line for a column the sheet does not show is never written.
   // ---------------------------------------------------------------------------
-  const footnoteHtml = (present, hasDesignNames) => {
-    const lines = present.map((section) => `<li>${tierById.get(section.id).footnote}</li>`);
-    if (hasDesignNames) {
+  const footnoteHtml = (rows) => {
+    if (rows.length === 0) return "";
+    const lines = [`<li>${UNUSED.footnote}</li>`];
+    if (rows.some((row) => typeof row.part.cadName === "string" && row.part.cadName !== "")) {
       lines.push(
         "<li><b>Design name</b> is the part's name in the files you printed it from, the " +
           "same one your slicer shows. Label the wire with it.</li>"
       );
     }
-    if (lines.length === 0) return "";
     return `<ul class="wiring-footnote">${lines.join("")}</ul>`;
   };
 
@@ -942,37 +777,9 @@
     const droidName = typeof model.droidName === "string" ? model.droidName : "";
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
-    const rows = wiringRows(model);
-    const lanes = loomRows(model);
-    const order = wireOrder(model);
-
-    const present = TIERS.map((tier) => {
-      const tierRows = rows.filter((row) => row.tier === tier.id);
-      if (tierRows.length === 0) return null;
-      return {
-        id: tier.id,
-        heading: tier.heading,
-        count: tierRows.length,
-        countText: plural(tierRows.length, tier.noun),
-        rows: tierRows,
-        tableHtml:
-          tier.subject === "output" ? outputTableHtml(tierRows) : partTableHtml(tierRows),
-      };
-    }).filter(Boolean);
-
-    const wired = wiredGroups(rows);
-    const hasDesignNames = rows.some(
-      (row) => row.part && typeof row.part.cadName === "string" && row.part.cadName !== ""
-    );
-
-    const wiredCount = rows.filter((row) => row.tier === "driven").length;
-    const summary =
-      `${plural(rows.length, ["row", "rows"])} · ${wiredCount} wired · ` +
-      `${rows.length - wiredCount} not`;
-
-    const lanesOn = lanes.filter((lane) => lane.on).length;
-    const loomSummary =
-      `${plural(lanes.length, ["lane", "lanes"])} · ${lanesOn} switched on`;
+    const wires = sheetWires(model);
+    const unused = unusedRows(model);
+    const idle = wires.filter((wire) => !wire.live).length;
 
     return {
       promise: PROMISE,
@@ -984,30 +791,18 @@
       droidName,
       stamp,
       fileName: sheetFileName(droidName, stamp),
-      rows,
-      lanes,
-      tiers: present,
-      summary,
-      loomSummary,
-      loomHtml: lanes.length
-        ? loomTableHtml(lanes) + loomDiagramHtml(lanes, made, order)
-        : '<p class="hint">This image reports no Board Lane. No wires to draw.</p>',
-      // Every tier that is present becomes a section; a tier that is not simply
-      // is not here. The wired picture rides inside the Wired section, where
-      // the rows it draws are.
-      tiersHtml:
-        present
-          .map(
-            (section) =>
-              `<section class="wiring-tier" data-tier="${section.id}">` +
-              `<div class="sect"><h3>${esc(section.heading)}</h3>` +
-              `<span class="sub">${section.countText}</span></div>` +
-              section.tableHtml +
-              (section.id === "driven" ? signalDiagramHtml(wired, made, order) : "") +
-              `</section>`
-          )
-          .join("") + outOfScopeHtml(parts),
-      footnoteHtml: footnoteHtml(present, hasDesignNames),
+      wires,
+      unused,
+      wiresSummary: `${plural(wires.length, ["wire", "wires"])} · ${idle} not wired`,
+      wiresHtml: wires.length
+        ? wiresDiagramHtml(wires, made)
+        : '<p class="hint">This image reports no wires to draw.</p>',
+      unusedSummary: plural(unused.length, UNUSED.noun),
+      unusedHtml:
+        (unused.length
+          ? unusedTableHtml(unused)
+          : '<p class="hint">Every part is on an output.</p>') + outOfScopeHtml(parts),
+      footnoteHtml: footnoteHtml(unused),
     };
   };
 
@@ -1015,7 +810,7 @@
   // wiringSheetFile()
   // The bench copy: what wiringDocument() made, in a file that stands alone.
   //
-  // It is a WRAPPER and nothing more. Every heading, tier, row, count,
+  // It is a WRAPPER and nothing more. Every heading, wire, row, count,
   // picture and sentence in it is a string the generator returned; this adds
   // only the frame a file needs to be a page.
   //
@@ -1050,10 +845,10 @@
       `<h1>Wiring</h1>` +
       `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
       `<p>${sheet.promiseHtml}</p>` +
-      `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.loomSummary}</p>${pictured(sheet.loomHtml)}` +
-      `<h2>${esc(sheet.plates.tiers)}</h2><p>${sheet.summary}</p>` +
-      `${pictured(sheet.tiersHtml)}${sheet.footnoteHtml}` +
+      `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.wiresSummary}</p>${pictured(sheet.wiresHtml)}` +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
+      `<h2>${esc(sheet.plates.unused)}</h2><p>${sheet.unusedSummary}</p>` +
+      `${sheet.unusedHtml}${sheet.footnoteHtml}` +
       "</body></html>\n"
     );
   };
@@ -1062,9 +857,9 @@
     PROMISE,
     SCOPE,
     CADENCE,
-    TIERS,
     PLATES,
-    wiringRows,
+    sheetWires,
+    unusedRows,
     loomRows,
     promiseHtml,
     railHtml,
@@ -1089,6 +884,7 @@
   let identity = window.PAIdentity || null;
   let outputs = [];
   let components = {};
+  let stripPin = 0;
   let answered = false;
 
   const model = () => ({
@@ -1097,6 +893,7 @@
     components,
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
+    stripPin,
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
 
@@ -1107,9 +904,9 @@
   // exactly the moment it matters.
   write("wiring-promise", promiseHtml());
   write("wiring-rail", railHtml());
-  write("wiring-loom-heading", esc(PLATES.wires));
-  write("wiring-tiers-heading", esc(PLATES.tiers));
+  write("wiring-wires-heading", esc(PLATES.wires));
   write("wiring-rail-heading", esc(PLATES.rail));
+  write("wiring-unused-heading", esc(PLATES.unused));
 
   // ---------------------------------------------------------------------------
   // The board's picture
@@ -1176,10 +973,10 @@
   // screenshot of them says when it was true, the same as the saved copy does.
   const paint = (stamp = sheetStamp()) => {
     const sheet = wiringDocument({ ...model(), stamp });
-    write("wiring-loom-summary", sheet.loomSummary);
-    write("wiring-summary", sheet.summary);
-    write("wiring-loom", sheet.loomHtml);
-    write("wiring-tiers", sheet.tiersHtml);
+    write("wiring-wires-summary", sheet.wiresSummary);
+    write("wiring-wires", sheet.wiresHtml);
+    write("wiring-unused-summary", sheet.unusedSummary);
+    write("wiring-unused", sheet.unusedHtml);
     write("wiring-footnote", sheet.footnoteHtml);
     fillBoardArt();
     return sheet;
@@ -1253,6 +1050,8 @@
       config?.data?.components && typeof config.data.components === "object"
         ? config.data.components
         : {};
+    // Which Output the LED strip is routed to, so its wire says so.
+    stripPin = Number(config?.data?.aux_led_pin) || 0;
     answered = true;
     paint();
     saveLink?.setAttribute("aria-disabled", "false");
