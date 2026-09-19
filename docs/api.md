@@ -618,14 +618,14 @@ curl -s -X POST http://artoo.local/api/servo/centre
 ### GET /api/servo/outputs
 
 Every live Servo Output row, the Parts each one drives, and where each has been
-told to be (ADR 0041, ADR 0050). Both projections of the Parts destination read
-this one answer — which Output moves a Part, and what an Output moves — so they
-cannot disagree. Read-only: a Part is moved with `movePart` on
+told to be (ADR 0041, ADR 0050). Both projections of the mapping read this one
+answer — which Output moves a Part (Parts), and what an Output moves (Servos) —
+so they cannot disagree. Read-only: a Part is moved with `movePart` on
 `POST /api/config`.
 
-It is also the Parts page's bench feed: the page reads it once a second while
-Parts is on screen and stops when you leave, so a commanded position reaches the
-output-first table without riding `/api/events`, which carries the estop (#318).
+It is also Servos' and Parts' bench feed: each page reads it once a second while
+it is on screen and stops when you leave, so a commanded position reaches the
+Outputs rows without riding `/api/events`, which carries the estop (#318).
 The Controller Console answers the same rows as `servo.api.get-outputs`.
 
 - Success: `200` JSON:
