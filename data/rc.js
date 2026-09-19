@@ -1212,17 +1212,20 @@
   // shows it - its photo and its name, drawn by data/component_picker.js from
   // the same lineup, so there is no second product-to-picture map here. Chosen
   // only on Configuration; a family with nothing picked says where to pick it.
+  // Until the droid has answered both the lineup and the config, a card says it
+  // is finding out: a null then means "not known yet", never "none picked",
+  // and saying the second would be a false state for one load cycle.
   const paintProductCards = () => {
     const picker = window.ComponentPicker;
     if (!picker) return;
     const show = (host, part, missing) => {
       if (!host) return;
-      if (part) host.replaceChildren(picker.shownCard(part));
-      else {
-        const note = document.createElement("p");
-        note.className = "hint";
-        note.innerHTML = `${missing} Pick it in <a class="setup-link" href="#configuration">Configuration</a>.`;
-        host.replaceChildren(note);
+      if (!picker.answered()) {
+        host.innerHTML = '<p class="hint">Reading it from the droid…</p>';
+      } else if (part) {
+        host.replaceChildren(picker.shownCard(part));
+      } else {
+        host.innerHTML = `<p class="hint">${missing} Pick it in <a class="setup-link" href="#configuration">Configuration</a>.</p>`;
       }
     };
     show(rcRadioCard, picker.chosenPart("radio_controller"), "No radio picked yet.");

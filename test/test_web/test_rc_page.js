@@ -11,12 +11,33 @@
 // invariant: a binding to one is named from GET /api/actions once that answer
 // arrives, whichever of the page's reads finished first. Before the fix a map
 // read that landed first left the binding showing its bare token for good.
+//
+// The radio and receiver cards say "not known yet" until the droid has
+// answered both reads they come from - the lineup and the config - and never
+// "none picked" in the meantime (the #360 false-state class).
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
+import vm from "node:vm";
+import { readFileSync } from "node:fs";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+
+// The shipped Component Picker, whose lineup read has not answered: its GET
+// never settles, the way a slow controller leaves it for one load cycle.
+const pickerAwaitingLineup = () => {
+  const context = {
+    window: { PAApi: { get: () => new Promise(() => {}) } },
+    document: { getElementById: () => null, createElement: () => ({ setAttribute() {}, appendChild() {} }) },
+    console,
+  };
+  context.globalThis = context;
+  for (const file of ["apply_timing.js", "product_art.js", "component_picker.js"]) {
+    vm.runInNewContext(readFileSync(new URL(`../../data/${file}`, import.meta.url), "utf8"), context, { filename: file });
+  }
+  return context.window.ComponentPicker;
+};
 
 const ACTIONS = [
   { id: 1, name: "drive.action.speed", display_name: "Speed", domain: "drive", description: "", token: "drive_speed", testable: false, one_shot: false, safety_critical: false },
@@ -53,4 +74,19 @@ test("a binding to an Output's toggle is named by the board once the firmware's 
   const summary = env.element("rc-summary-body").innerHTML;
   assert.match(summary, /<td>GPIO 4 Toggle<\/td>/, "the binding is named as the board names the Output");
   assert.doesNotMatch(summary, /<td>aux1_toggle<\/td>/, "and never left as its stored token");
+});
+
+test("before the droid has answered, the radio and receiver cards never say nothing is picked", async () => {
+  const env = loadPageModule("rc.js", { respond, overrides: { ComponentPicker: pickerAwaitingLineup() } });
+  await env.settle();
+
+  // The config lands (the picker adopts it); the lineup has not.
+  await env.runSection("rc-mode-mapping");
+  await env.settle();
+
+  for (const id of ["rc-radio-card", "rc-receiver-card"]) {
+    const said = env.element(id).innerHTML;
+    assert.doesNotMatch(said, /picked yet/, `${id} must not claim nothing is picked before the droid has said`);
+    assert.match(said, /Reading it from the droid/);
+  }
 });
