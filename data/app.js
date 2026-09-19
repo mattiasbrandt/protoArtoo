@@ -245,8 +245,10 @@
     outputLabels = Object.keys(entries)
       .filter((id) => typeof entries[id]?.address === "string" && entries[id].address !== "")
       .map((id) => [id, typeof entries[id].label === "string" && entries[id].label !== "" ? entries[id].label : entries[id].address]);
-    const last = window.PAStatusStream?.getLastStatus?.();
-    if (last) renderComponentStatus(last);
+    // Whichever arrived first, the card is drawn again from the last status
+    // this page applied, so the names follow on every delivery path - the
+    // stream and the fallback poll alike.
+    if (lastStatus) renderComponentStatus(lastStatus);
   };
 
   const renderComponentStatus = (payload) => {
