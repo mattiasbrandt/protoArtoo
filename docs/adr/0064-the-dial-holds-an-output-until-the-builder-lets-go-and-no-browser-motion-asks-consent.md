@@ -124,3 +124,7 @@ firmware already implements. ADR 0050, ADR 0062, ADR 0063 and `CONTEXT.md`'s
   settles it. #291 stays open for that: whether turning, nudging and capturing
   actually beats typing a number is a question for something rough, driven against
   a real Output.
+
+## Amendment 2026-09-19: it lives on Servos
+
+The calibration dial moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `CONTEXT.md` **Servos** and **Parts**.
