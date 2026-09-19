@@ -64,7 +64,7 @@ function makeElement(className) {
 
 // Build the page the card lives on, run data/dome_control.js against it, and
 // hand back the pieces a test drives it through.
-function renderCard({ domeDesign, domeVariant, complementKnown }) {
+function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   const card = makeElement("dome-control-card");
   const header = makeElement("dome-control-header");
   const body = makeElement("dome-control-body");
@@ -91,6 +91,21 @@ function renderCard({ domeDesign, domeVariant, complementKnown }) {
     usesVendoredDrawing: complementKnown === undefined,
   };
 
+  const posts = [];
+  // The drawing the card renders its picker into. Its click listener is the
+  // one a panel press reaches, so the test can press a panel for real.
+  const svg = makeElement("svg");
+  const document = {
+    body: { dataset: { page: "home" } },
+    getElementById: (id) => (id === "dome-control-card" ? card : null),
+    createElement: (tag) => {
+      const element = makeElement(tag);
+      element.query = (selector) => (selector === "svg" ? svg : null);
+      return element;
+    },
+    addEventListener() {},
+  };
+
   // `window` IS the global in a browser, so the sandbox is its own window -
   // the module reaches PAApi and PAUtils bare as well as through window., and
   // a harness that split the two would answer a question the page never asks.
@@ -106,18 +121,19 @@ function renderCard({ domeDesign, domeVariant, complementKnown }) {
     },
     DomeLayoutRender: { renderPicker: () => '<svg class="live"></svg>' },
     DomeCommandMap: { decodeCommandToElement: () => null },
+    // The session's last status, as the Operator Shell seeds it. Absent means
+    // the droid has not said yet.
+    PAStatusStream: { getLastStatus: () => status || null },
     PAApi: {
-      postForm: () => Promise.resolve({ ok: true, data: {} }),
+      postForm: (route, form) => {
+        posts.push({ route, form });
+        return Promise.resolve({ ok: true, data: {} });
+      },
       get: () => Promise.resolve({ ok: true, data: [] }),
       messageFor: (error) => String(error && error.message),
     },
     PAUtils: { escapeHtml: (value) => String(value) },
-    document: {
-      body: { dataset: { page: "home" } },
-      getElementById: (id) => (id === "dome-control-card" ? card : null),
-      createElement: (tag) => makeElement(tag),
-      addEventListener() {},
-    },
+    document,
     setTimeout,
     clearTimeout,
     Promise,
@@ -127,7 +143,25 @@ function renderCard({ domeDesign, domeVariant, complementKnown }) {
   vm.createContext(sandbox);
   vm.runInContext(read("dome_control.js"), sandbox);
 
-  return { card, header, body, expand: () => header.listeners.click[0]({ target: header }) };
+  // A press on the built-in map's panel with this Panel Intent target, the
+  // way a click reaches it: the picker's one delegated listener.
+  const press = (target) => {
+    const panel = { dataset: { target }, classList: { add() {}, remove() {} } };
+    const event = {
+      target: { closest: (selector) => (selector === "[data-target]" ? panel : null) },
+    };
+    return Promise.all(svg.listeners.click.map((listener) => listener(event)));
+  };
+
+  return {
+    card,
+    header,
+    body,
+    feedback,
+    posts,
+    press,
+    expand: () => header.listeners.click[0]({ target: header }),
+  };
 }
 
 // The card renders lazily on first expand, and every step of that is async.
@@ -152,3 +186,24 @@ test("a builder on another design is not shown a drawing of somebody else's droi
   assert.match(view.banner, /No built-in map for your dome design/);
 });
 
+// The estop holds every servo move a picture of the droid can start (operator,
+// 2026-09-19, #372). A panel press on this card went straight to the dome
+// whatever the estop said.
+test("a dome panel press sends nothing while the estop is latched or not yet known", async () => {
+  for (const status of [{ estop: true }, null]) {
+    const page = renderCard({ domeDesign: "mk4", domeVariant: "complex", status });
+    await page.expand();
+    await page.press("07");
+    assert.deepEqual(page.posts, [], `a press went out with the estop ${JSON.stringify(status)}`);
+    assert.match(page.feedback.textContent, /estop latched|stopped/i, "and the card says why");
+  }
+
+  const clear = renderCard({ domeDesign: "mk4", domeVariant: "complex", status: { estop: false } });
+  await clear.expand();
+  await clear.press("07");
+  assert.deepEqual(
+    clear.posts.map((post) => post.form.cmd),
+    [":OP07"],
+    "with the estop clear the same press opens the panel"
+  );
+});
