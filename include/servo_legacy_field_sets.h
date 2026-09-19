@@ -19,10 +19,10 @@
 //     would not delete a builder's calibration; it would silently drop it,
 //     which is the one thing #286 refuses. configSaveServoOutputs() removes
 //     the keys once the rows they became are safely down.
-//   - data/servo.js and data/setup.js still speak the old field names on
-//     /api/config, in both directions. The C1 wave rebuilds those pages onto
-//     the rows; until then the API answers them FROM the rows, so the browser
-//     sees the number the droid will actually drive to.
+//   - Backup and Restore (data/maintenance.js) still speak the old field
+//     names on /api/config, in both directions: a backup is that payload and a
+//     restore posts it back. The API answers them FROM the rows, so a backup
+//     holds the number the droid will actually drive to.
 //
 // This table is the only statement anywhere of which Output Address each set
 // was ever about: the names carry their channel in their spelling and nowhere

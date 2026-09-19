@@ -684,11 +684,12 @@ void addActiveFields(JsonDocument& doc) {
 // addServoOutputFields()
 // The five fixed field sets, answered from the rows that replaced them.
 //
-// data/servo.js and data/setup.js still read arm1OpenUs and its nine siblings,
-// and components.arm1.type beside them; the C1 wave is what rebuilds those
-// pages onto the Servo Output rows. Until then the names stay and the numbers
-// come from the row addressed to each set's channel, so a surface renders what
-// the droid will actually drive to (#345, ADR 0041).
+// Backup and Restore (data/maintenance.js) still carry arm1OpenUs and its nine
+// siblings - a backup is this payload, and a restore posts them back - and
+// Wiring and Servos reads components.arm1.type beside them
+// (data/output_settings.js). So the names stay, and the numbers come from the
+// row addressed to each set's channel, so what is backed up is what the droid
+// will actually drive to (#345, ADR 0041).
 //
 // It sits here rather than in populateConfigJson() because the live table is
 // exactly the runtime state a pure snapshot serializer cannot see -- the same

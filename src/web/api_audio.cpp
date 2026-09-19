@@ -212,8 +212,8 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
     JsonSliceWriter writer(out, capacity, offset);
     const AudioConfig& a = s_tracksAudio;
 
-    // Field order and spelling are the payload contract data/sound.js and
-    // data/setup.js read. Note snd_cat_snrk_* : the wire name is the short form
+    // Field order and spelling are the payload contract data/sound.js reads and
+    // Backup and Restore (data/maintenance.js) carries. Note snd_cat_snrk_* : the wire name is the short form
     // even though the config member is snd_cat_snarky_*.
     const AudioTrackField fields[] = {
         {"scream", a.snd_scream},

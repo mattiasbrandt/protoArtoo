@@ -5,8 +5,9 @@
 // a Lane says where it is routed. The rows below name the signals; the values
 // come from the board's own pin-map arm above in config.h, so a GPIO number
 // still has exactly one home and this manifest never becomes a second copy of
-// it -- which is the defect the Lane exists to close (data/setup.html states
-// artoo-esp32's GPIO numbers as fact on every board).
+// it -- which is the defect the Lane exists to close (the old Setup page,
+// before #404 split it into Configuration and Maintenance, stated artoo-esp32's
+// GPIO numbers as fact on every board).
 //
 // This file is an unguarded X-macro manifest, intentionally included
 // repeatedly. Define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin) before
