@@ -178,3 +178,7 @@ project already spends it on **Bench-Mode** and the **Bench Runbook**.
 - **Parts the destination sits beside Part the model term.** Deliberate: the plural
   is the page where a builder meets every Part of their droid, and the singular is
   what the page is full of.
+
+## Amendment 2026-09-19: it lives on Servos
+
+Find by Moving moves from **Parts** to **Servos**, with the rest of Parts' Outputs section (the output-first table, *centre all*, the calibration dial and Find by Moving). Operator, #412: *"move bascially all of the "Outputs" section pieces to the "Servos" page. They all seem related to servo calibration"*. The behaviour this ADR decides is unchanged; only the page it sits on moves. See `CONTEXT.md` **Servos** and **Parts**.
