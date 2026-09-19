@@ -1385,7 +1385,16 @@ Returns current config snapshot.
 - Success: `200` JSON including:
 - `drive`: speed limits, presets, web timeout, stationary
 - `rc`: input mode, SBUS timeout, `sbus.recvCh2`
-- `components`: enabled flags and servo type metadata
+- `components`: enabled flags and servo type metadata, and `label`, the Board
+  Component Label (`include/component_labels.inc`) where the board has one.
+  The body controller's **Outputs** come first, in the order a page draws
+  them, and are the entries that carry an `address` (#411): the Output Address
+  that joins the entry to its `GET /api/servo/outputs` row (`ledc:3`), the
+  `label` it is called by on screen (`ARM3`, `GPIO 4`), `enabledField` and
+  `typeField` - the `POST /api/config` fields that save it - and
+  `ledStripPin`, the `aux_led_pin` value that routes the LED strip to it,
+  present only on an Output that can carry the strip. A page iterates these
+  entries and keeps no list of Outputs of its own.
 - `dome`: pulse calibration, speed limit, random movement config, wifi peer IP
 - top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
 - `aux_led_pin`, `aux_led_count`
@@ -1417,7 +1426,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"type":"mg996r"},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000,"aux_led_pin":1,"aux_led_count":16}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","type":"mg996r"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","ledStripPin":1,"enabledField":"enableAux1","typeField":"aux1Type","type":"none"},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000,"aux_led_pin":1,"aux_led_count":16}
 ```
 
 ### POST /api/config

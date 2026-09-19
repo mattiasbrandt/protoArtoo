@@ -341,6 +341,55 @@ void test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen(void) {
     TEST_ASSERT_EQUAL_STRING("ARM5", components["aux3"]["label"] | "");
 }
 
+// --- Test 9 ---
+// The browser knows no Output (#411): Wiring and Servos draw one plate per
+// Output GET /api/config reports, and save it under the fields it names. So
+// every Output this controller drives - the rows servoOutputTableDefaults()
+// seeds - must be in that answer, with the words the board prints beside it,
+// its address, and both of its fields. An Output left out is one no page can
+// draw; one without a label is one a builder cannot find on the board.
+void test_populateConfigJson_reports_every_output_with_its_label(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.enable_aux2 = true;
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+    JsonObject components = doc["components"].as<JsonObject>();
+
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    size_t reported = 0;
+    for (JsonPair entry : components) {
+        if (!entry.value()["address"].is<const char*>()) continue;
+        ++reported;
+        TEST_ASSERT_TRUE(strlen(entry.value()["label"] | "") > 0);
+        TEST_ASSERT_TRUE(strlen(entry.value()["enabledField"] | "") > 0);
+        TEST_ASSERT_TRUE(strlen(entry.value()["typeField"] | "") > 0);
+    }
+    TEST_ASSERT_EQUAL_UINT(table.count, reported);
+
+    uint8_t stripPins = 0;
+    for (uint8_t i = 0; i < table.count; ++i) {
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        TEST_ASSERT_TRUE(servoOutputFormatAddress(address, sizeof(address), table.rows[i].driver,
+                                                  table.rows[i].channel));
+        bool found = false;
+        for (JsonPair entry : components) {
+            if (strcmp(entry.value()["address"] | "", address) != 0) continue;
+            found = true;
+            stripPins += entry.value()["ledStripPin"].is<unsigned>() ? 1 : 0;
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, address);
+    }
+    // Three lines can carry the strip (include/config.h AUX_LED_PIN_AUX1..3).
+    TEST_ASSERT_EQUAL_UINT(3u, stripPins);
+    // The enabled flag is read from the Output's own field, not a neighbour's.
+    TEST_ASSERT_TRUE(components["aux2"]["enabled"].as<bool>());
+    TEST_ASSERT_FALSE(components["aux1"]["enabled"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("enableAux2", components["aux2"]["enabledField"] | "");
+    TEST_ASSERT_EQUAL_STRING("ledc:4", components["aux2"]["address"] | "");
+    TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_AUX2, components["aux2"]["ledStripPin"].as<unsigned>());
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateConfigJson_typical_valid_json);
@@ -352,5 +401,6 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);
     RUN_TEST(test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen);
+    RUN_TEST(test_populateConfigJson_reports_every_output_with_its_label);
     return UNITY_END();
 }
