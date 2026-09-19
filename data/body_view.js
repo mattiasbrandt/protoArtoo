@@ -787,6 +787,10 @@
       const target = event && event.target;
       const cell = target && target.closest ? target.closest("[data-marker]") : null;
       if (!cell) return;
+      // The panel describes the shown face's half, so a pick always lands on
+      // the face it was made on - the same turn the Parts list makes.
+      const marker = byMarker.get(cell.dataset.marker);
+      if (marker && marker.face !== currentFace) showFace(marker.face);
       onPick(cell.dataset.marker);
     };
     host.querySelectorAll(".bv-svg").forEach((svg) => {
