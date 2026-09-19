@@ -125,7 +125,10 @@ const configOutputs = (outputs) =>
 
 // `components` replaces the GET /api/config Output entries configOutputs()
 // would derive, for a test that needs an Output unwired or carrying the strip.
-const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, components = null } = {}) => {
+// `decoys` is markup placed in the document before the surface mounts: a test
+// that asserts something is gone writes a decoy where it used to be and
+// checks nothing reads or writes it (test/test_web/README.md).
+const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, components = null, decoys = [] } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -551,6 +554,12 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
   env.navigate = (to) => {
     windowMock.location.hash = to;
   };
+
+  decoys.forEach((html) => {
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    holder.children.slice().forEach((child) => document.body.appendChild(child));
+  });
 
   windowMock.location.hash = `#${surface}`;
   const painted = () =>

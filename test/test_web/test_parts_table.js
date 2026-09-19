@@ -17,6 +17,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { bootParts as bootPartsSurface, sleep as wait } from "./helpers/parts_surface.js";
 
 // mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
 // table paints its position marks through element.style. A plain object per
@@ -363,4 +364,28 @@ test("a move the droid refuses says the droid's reason and shows the table as it
 test("a Part the droid drives and the page does not know is named, never dropped", async () => {
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["domeEye"] }) });
   assert.match(env.text("parts-summary"), /also drives domeEye/);
+});
+
+// The output-first table, back to centre, Find by moving and the calibration
+// dial moved to Servos, and their code was deleted from Parts rather than
+// hidden (operator, 2026-09-19 on #412). A decoy stands where the table used to
+// be drawn: Parts must write nothing into it, build no table of its own, and
+// never ask the droid to move anything while it sits on screen.
+test("Parts carries none of the Output pieces that moved to Servos", async () => {
+  const env = await bootPartsSurface({ decoys: ['<div id="outputs-table" data-decoy="yes"></div>'] });
+  await env.frame();
+  await wait(20);
+
+  const tables = env.document.querySelectorAll("#outputs-table");
+  assert.equal(tables.length, 1, "Parts builds no output table of its own");
+  assert.equal(tables[0].dataset.decoy, "yes");
+  assert.equal(tables[0].children.length, 0, "and writes nothing into the one that stands where it was");
+  for (const moved of [".cal-panel", ".outputs-centre", ".parts-find", ".outputs-row"]) {
+    assert.equal(env.document.querySelectorAll(moved).length, 0, `no ${moved} on Parts`);
+  }
+  assert.deepStrictEqual(
+    env.posts.filter((post) => post.path.startsWith("/api/servo")),
+    [],
+    "and nothing on it asks the droid to move a servo",
+  );
 });

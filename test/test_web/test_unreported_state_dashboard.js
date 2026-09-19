@@ -135,3 +135,29 @@ test("a mood the droid has not reported reads Not reported, not mood zero", () =
   assert.equal(unknown.env.element("snapshot-mood").textContent, "Not reported");
   assert.doesNotMatch(unknown.env.element("snapshot-mood").textContent, /77/);
 });
+
+// An Output the firmware did not report is not on the Dashboard either. Which
+// Outputs exist and what each is called is GET /api/config's answer (every
+// components{} entry carrying an address); the card names them from it, and a
+// status key it cannot place is not dressed up as an Output with a name this
+// page made up (ADR 0033 Amendment 2026-09-19). The ids here follow no pattern
+// on purpose, and `aux1` is the old protoArtoo word a page might still know.
+test("the component card names Outputs as the firmware reported them, and no others", async () => {
+  const config = {
+    ...CONFIG,
+    components: {
+      q7: { enabled: true, label: "GPIO 49", address: "ledc:0", enabledField: "e7", typeField: "t7" },
+    },
+  };
+  const env = dashboard(
+    { q7: { state: "ready", detail: "Target 1500 us" }, aux1: { state: "ready", detail: "Servo channel enabled" } },
+    { config },
+  );
+  await env.runSection("app-initial-status");
+  await env.runSection("app-log-level");
+  await env.settle();
+
+  const card = env.element("component-status-grid").innerHTML;
+  assert.match(card, /GPIO 49/, "the Output is named as its board prints it");
+  assert.doesNotMatch(card, /AUX|aux1/i, "and nothing the firmware did not report is listed");
+});

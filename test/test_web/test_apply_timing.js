@@ -6,7 +6,7 @@
 // structured field. Configuration as the browser runs it
 // (helpers/configuration_surface.js).
 //
-// Four invariants earn their place, each a rule the slice exists to hold:
+// Five invariants earn their place, each a rule the slice exists to hold:
 //   - a step that does not state its timing is not drawn. A default here is
 //     the blanket "applies straight away" promise this field replaced, which
 //     was false for at least three steps;
@@ -16,7 +16,10 @@
 //   - amber means the builder must restart. A change that only waits for the
 //     next start is never amber (#327's Status Colour rule);
 //   - a Radio Controller member pick changes nothing on the controller, so its
-//     card never reads as waiting on a restart, while a Sound member does.
+//     card never reads as waiting on a restart, while a Sound member does;
+//   - an answer the droid uses at once says nothing about when: only one that
+//     waits for a start or a restart carries a line (operator, 2026-09-19 on
+//     #412).
 // =============================================================================
 
 import { test } from "node:test";
@@ -111,4 +114,13 @@ test("a Sound member waits for the next start; a Radio Controller member never w
     "chosen",
     "the radio drives nothing on the controller, so a pick of it is never pending",
   );
+});
+
+test("an answer the droid uses at once carries no timing line at all", async () => {
+  const env = await ready();
+  const line = timingLine(env, "name");
+
+  assert.equal(line.textContent, "", "an immediate answer says nothing about when");
+  assert.equal(line.classList.contains("hidden"), true, "and draws no empty note");
+  assert.notEqual(timingLine(env, "sound").textContent, "", "while one that waits for a start still says so");
 });
