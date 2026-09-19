@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 d1ad64368e70fdbc46c971627e4de058d5762a0d06125ee464fa9fe4ddcac918
+ * Source digest: sha256 376e00bdd8eab5cc50f0ca21b23020ef7605fb0be765cb7b298f34fae182de0b
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,7 +54,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "d1ad64368e70fdbc46c971627e4de058d5762a0d06125ee464fa9fe4ddcac918",
+    "sourceSha256": "376e00bdd8eab5cc50f0ca21b23020ef7605fb0be765cb7b298f34fae182de0b",
     "designs": [
       {
         "id": "mk4",
@@ -928,7 +928,7 @@
         "aliases": [
           "Gripper arm"
         ],
-        "position": "front-left",
+        "position": "front-right",
         "control": "none",
         "cadName": null
       },
@@ -941,7 +941,7 @@
         "aliases": [
           "Gripper claw"
         ],
-        "position": "front-left",
+        "position": "front-right",
         "control": "none",
         "cadName": null
       },
@@ -954,7 +954,7 @@
         "aliases": [
           "Interface arm"
         ],
-        "position": "front-right",
+        "position": "front-left",
         "control": "none",
         "cadName": null
       },
@@ -967,7 +967,7 @@
         "aliases": [
           "Interface tool"
         ],
-        "position": "front-right",
+        "position": "front-left",
         "control": "none",
         "cadName": null
       },
