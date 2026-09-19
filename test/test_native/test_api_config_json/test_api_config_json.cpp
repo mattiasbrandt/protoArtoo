@@ -324,6 +324,23 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
     TEST_ASSERT_NULL(strstr(out, "supersecret"));
 }
 
+// --- Test 8 ---
+// A wire on Wiring is named first by what the board prints beside it (#411,
+// CONTEXT.md "Wiring"), and the Artoo PCB prints its three AUX Outputs ARM3,
+// ARM4 and ARM5 (docs/pin_map.md, the traced board). This inventory shipped
+// them as AUX1-AUX3 - protoArtoo's word - so every sheet named those three
+// leads by a legend printed nowhere on the board in a builder's hand.
+void test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+
+    JsonObject components = doc["components"].as<JsonObject>();
+    TEST_ASSERT_EQUAL_STRING("ARM3", components["aux1"]["label"] | "");
+    TEST_ASSERT_EQUAL_STRING("ARM4", components["aux2"]["label"] | "");
+    TEST_ASSERT_EQUAL_STRING("ARM5", components["aux3"]["label"] | "");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateConfigJson_typical_valid_json);
@@ -334,5 +351,6 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);
+    RUN_TEST(test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen);
     return UNITY_END();
 }
