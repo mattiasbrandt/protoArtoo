@@ -304,7 +304,7 @@
     if (key !== findSet && document.activeElement !== findPick) {
       const keep = findPick.value;
       findPick.innerHTML = unwired.length
-        ? `<option value="">Pick a part that is ${NOT_WIRED}</option>` +
+        ? `<option value="">Pick a part nothing drives</option>` +
           groupParts(unwired)
             .map(
               (group) =>
