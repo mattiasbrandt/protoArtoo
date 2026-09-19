@@ -329,5 +329,85 @@ class Minification(_StagingCase):
         self.assertIn("esbuild is not on PATH", str(ctx.exception))
 
 
+
+class _BoardEnv(_FakeSConsEnv):
+    """A fake env that also answers what a #board include asks: the env's
+    build_flags and the project directory the Component Registry lives in."""
+
+    def __init__(self, project_data_dir, build_dir, project_dir, flags, custom_asset_set="myset"):
+        super().__init__(project_data_dir, build_dir, custom_asset_set)
+        self._vars["$PROJECT_DIR"] = str(project_dir)
+        self._flags = flags
+
+    def GetProjectOption(self, name, default=None):
+        if name == "build_flags":
+            return self._flags
+        return super().GetProjectOption(name, default)
+
+
+class BoardDrawingInclude(unittest.TestCase):
+    """`PA:INCLUDE _product_art.html#board` inlines only the running board's
+    drawing (#411). Wiring pictures one board, and the whole sprite cost the
+    4 MB board 11.5 KB of gzipped image to show it. Which board is the
+    Component Registry's own (PA_BOARD == ...) gate, never a second map."""
+
+    REGISTRY = (
+        'PA_COMPONENT_PART( 1, "alpha_pcb", "Alpha", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_ALPHA))\n"
+        'PA_COMPONENT_PART( 2, "beta_pcb", "Beta", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_BETA))\n"
+        'PA_COMPONENT_PART( 3, "gamma_esc", "Gamma", COMPONENT_CATEGORY_DOME_ESC, "pwm", '
+        "COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_BETA))\n"
+    )
+    SPRITE = (
+        '<svg class="product-art-sprite" aria-hidden="true">'
+        '<symbol id="art-alpha_pcb" viewBox="0 0 400 300"><path d="ALPHA"/></symbol>'
+        '<symbol id="art-beta_pcb" viewBox="0 0 400 300"><path d="BETA"/></symbol>'
+        '<symbol id="art-gamma_esc" viewBox="0 0 400 300"><path d="GAMMA"/></symbol>'
+        "</svg>"
+    )
+    DELEGATE = '<script>window.PAShellDelegate = true; location.replace("/#w");</script>'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.project = root
+        self.src = root / "data"
+        self.build = root / "build"
+        (self.src / "asset-sets" / "myset").mkdir(parents=True)
+        self.build.mkdir()
+        (root / "include").mkdir()
+        (root / "include" / "component_registry.inc").write_text(self.REGISTRY, encoding="utf-8")
+        (self.src / "_recovery_kernel.html").write_text("KERNEL", encoding="utf-8")
+
+    def _stage(self, sprite, flags, include="_art.html#board"):
+        (self.src / "asset-sets" / "myset" / "_art.html").write_text(sprite, encoding="utf-8")
+        (self.src / "page.html").write_text(
+            self.DELEGATE + "<body><!-- PA:INCLUDE %s --></body>" % include, encoding="utf-8"
+        )
+        _run_gzip_fsdata(_BoardEnv(self.src, self.build, self.project, flags))
+        with gzip.open(self.build / "fsdata_gz" / "page.html.gz", "rt", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_only_the_running_boards_drawing_is_inlined_in_the_sprites_own_wrapper(self):
+        staged = self._stage(self.SPRITE, ["-DPA_LOG_LEVEL=2", "-DPA_BOARD=PA_BOARD_BETA"])
+        self.assertIn('<symbol id="art-beta_pcb"', staged)
+        self.assertNotIn("art-alpha_pcb", staged, "a peer board's drawing is not this board's")
+        self.assertNotIn("art-gamma_esc", staged, "another family gated on the same board is not the board")
+        self.assertIn('<svg class="product-art-sprite" aria-hidden="true">', staged)
+
+    def test_a_sprite_with_no_drawing_for_the_board_inlines_nothing(self):
+        staged = self._stage("<!-- photographs, no drawings -->", ["-DPA_BOARD=PA_BOARD_ALPHA"])
+        self.assertEqual(staged, self.DELEGATE + "<body></body>")
+
+    def test_an_env_with_no_board_or_an_unknown_fragment_fails_the_build(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._stage(self.SPRITE, ["-DPA_LOG_LEVEL=2"])
+        self.assertIn("-DPA_BOARD=", str(ctx.exception))
+        with self.assertRaises(SystemExit) as ctx:
+            self._stage(self.SPRITE, ["-DPA_BOARD=PA_BOARD_BETA"], include="_art.html#dome")
+        self.assertIn("'#dome' is not a fragment", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
