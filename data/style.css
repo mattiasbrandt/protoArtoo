@@ -123,6 +123,27 @@
   --panel-open: #ff9f43;
   --panel-open-edge: #ff7f00;
 
+  /* The Wiring diagram's wires (operator, 2026-09-19 on #411, CONTEXT.md
+     "Status Colour"). Each wire takes its own colour, the way a real loom is
+     told apart, and the colour NAMES the wire: it carries no state, so none of
+     these sits on the green / amber / red / grey of a health signal or on the
+     interaction blue. A numbered palette, not a colour per wire: which wires
+     a board has is the firmware's answer, and a wire takes the colour at its
+     place in that answer (data/wiring.js wireOrder(), data/output_settings.js
+     wireStyle()), round again past eight. --wire-off is a wire to something
+     not wired, drawn dashed. Mid tones on purpose: the same value reads on the
+     dark plate and on paper, so the print block does not re-point them, and
+     the saved bench copy is inked with these values as it is saved. */
+  --wire-1: #a39d3a;
+  --wire-2: #5a9f3c;
+  --wire-3: #2e9f8b;
+  --wire-4: #4270c2;
+  --wire-5: #7f52c6;
+  --wire-6: #b5573a;
+  --wire-7: #b44f94;
+  --wire-8: #9a7a4e;
+  --wire-off: #8a93a0;
+
   /* Spacing. The anatomy's ladder is --space-2xs through --space-2xl:
      4 / 8 / 12 / 16 / 24 / 32. A rule that wants a step between two of those
      picks one of them. --space-3xs and --space-xs are the finer steps the
@@ -7240,11 +7261,19 @@ body[data-page="wiring"] .wiring-tier > * + * {
 }
 
 .wd-scope,
-.wd-bus,
 .wd-note,
+.wd-role,
 .wd-board-sub {
   fill: var(--text-faint);
   font-size: var(--fs-hint);
+}
+
+/* The words over a wire: the board's printed label first, in the wire's own
+   colour (painted on the element by data/wiring.js), then the rest in the
+   dim ink. */
+.wd-bus {
+  fill: var(--text-dim);
+  font-size: var(--fs-sect);
 }
 
 .wd-board-face {
@@ -7253,10 +7282,16 @@ body[data-page="wiring"] .wiring-tier > * + * {
   stroke-width: 1.5;
 }
 
-.wd-board-name {
-  fill: var(--text);
-  font-size: var(--fs-sect);
-  text-anchor: middle;
+/* The board's own picture, the Component Picker's frame (data/product_art.js)
+   filling the slot the diagram leaves for it. */
+.wd-board-slot {
+  width: 100%;
+  height: 100%;
+}
+
+.wd-board-slot .component-card-art {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 .wd-board-sub {
@@ -7265,34 +7300,26 @@ body[data-page="wiring"] .wiring-tier > * + * {
 
 .wd-box {
   fill: var(--surface);
-  stroke: var(--border-strong);
 }
 
 .wd-name {
   fill: var(--text);
-  font-size: var(--fs-sect);
+  font-size: var(--fs-cell);
   font-weight: 600;
 }
 
+/* A wire's colour, weight and dash are its own and are painted on the element
+   by data/wiring.js (each wire's --wire-* token, and --wire-off dashed for a
+   wire to something not wired), so no rule here restates them: a rule would
+   beat the presentation attribute and paint every wire one ink. */
 .wd-line {
   fill: none;
-  stroke: var(--text-dim);
-  stroke-width: 1.8;
 }
 
-.wd-arrow {
-  fill: var(--text-dim);
-}
-
-/* Not driving anything: broken, and dimmer than the ink beside it. */
-.wd-link.is-idle .wd-line {
-  stroke: var(--text-faint);
-  stroke-width: 1.3;
-  stroke-dasharray: 5 4;
-}
-
-.wd-link.is-idle .wd-arrow {
-  fill: var(--text-faint);
+/* The box a live wire runs into wears the wire's colour on its edge, painted
+   with the wire; one that is not wired keeps the plain seam. */
+.wd-box {
+  stroke-width: 1.2;
 }
 
 .wd-link.is-idle .wd-box {
@@ -8307,11 +8334,10 @@ button.droid-build-card:disabled {
 }
 
 /* ---------------------------------------------------------------------------
-   The arm and AUX outputs on Wiring and Servos (#369,
-   data/output_settings.js): the same output plates, with the plate's head as
-   the press on Wiring and the servo type as the shared segmented control
-   under it. An output in use takes the chosen treatment, as a switched-on
-   output did on Configuration.
+   The Outputs on Wiring and Servos (#369, data/output_settings.js): the same
+   output plates, with the plate's head as the press on Wiring and the servo
+   type as the shared segmented control under it. A wired output takes the
+   chosen treatment, as a switched-on output did on Configuration.
    --------------------------------------------------------------------------- */
 .output-plates > .output-setting {
   display: grid;
@@ -8372,6 +8398,110 @@ button.output-setting-head:focus-visible {
 
 .output-setting-note {
   margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Wiring's Outputs, drawn as the board they sit on (operator, 2026-09-19 on
+   #411: the section "looks to basic and boring"). Each plate is one Output:
+   the name the board prints beside it in the mono of a silkscreen, the
+   three-pin header its lead plugs onto, and a stripe along its top in the
+   colour its wire is drawn in on the sheet above - the same --wire-* token,
+   picked by the Output's place in the firmware's answer (data-wire, set by
+   data/output_settings.js), so a plate and its line are found by eye. The stripe names the wire and is
+   never a state (CONTEXT.md "Status Colour"): a wire not wired is the one grey
+   and dashed, as on the diagram, and "wired" itself is the builder's pick, so
+   it keeps the chosen blue on the plate's edge like every other pick.
+   --------------------------------------------------------------------------- */
+#wiring-outputs-body .output-plates {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+}
+
+/* A plate's wire colour, by its place in the firmware's answer. It is the
+   plate's `color`, so the stripe and the lit signal pin read it as
+   currentColor; every word on the plate names its own ink below. */
+.output-wire[data-wire="1"] { color: var(--wire-1); }
+.output-wire[data-wire="2"] { color: var(--wire-2); }
+.output-wire[data-wire="3"] { color: var(--wire-3); }
+.output-wire[data-wire="4"] { color: var(--wire-4); }
+.output-wire[data-wire="5"] { color: var(--wire-5); }
+.output-wire[data-wire="6"] { color: var(--wire-6); }
+.output-wire[data-wire="7"] { color: var(--wire-7); }
+.output-wire[data-wire="8"] { color: var(--wire-8); }
+
+.output-plates > .output-wire {
+  align-content: start;
+  border-top: 3px solid currentColor;
+}
+
+/* A wired plate takes the chosen blue on its edge (.output-setting.is-on),
+   and keeps its wire's colour on top: the stripe names the wire, the edge
+   says it was picked. */
+.output-plates > .output-wire.is-on {
+  border-top-color: currentColor;
+}
+
+.output-plates > .output-wire:not(.is-on) {
+  border-top-style: dashed;
+  border-top-color: var(--wire-off);
+}
+
+/* The head passes the plate's wire colour down to the pin header; the name
+   takes the text ink back. */
+.output-wire-head {
+  gap: var(--space-md);
+  color: inherit;
+}
+
+.output-wire .output-seg {
+  color: var(--text-dim);
+}
+
+/* A servo header seen from above: signal, power, ground. The signal pin lights
+   in the wire's colour once the Output is wired; power and ground stay plain,
+   since power is the builder's and never this sheet's (CONTEXT.md "Wiring"). */
+.output-wire-header {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+}
+
+.output-wire-pin {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 1px;
+  background: var(--surface-alt);
+}
+
+.output-wire.is-on .output-wire-pin.is-signal {
+  border-color: currentColor;
+  background: currentColor;
+  box-shadow: 0 0 6px color-mix(in srgb, currentColor 60%, transparent);
+}
+
+.output-wire-name {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-h2);
+  letter-spacing: 0.06em;
+}
+
+.output-wire .toggle-status {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+.output-wire-carries {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 /* ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 // to, and which part will it move?" It is a reference, not a control surface:
 // it writes nothing, and no act on it reaches the droid.
 //
-// EVERYTHING ON IT IS GENERATED. The loom comes from the Board Lanes the
+// EVERYTHING ON IT IS GENERATED. The wires come from the Board Lanes the
 // running firmware reports (GET /api/identity), the rows from this droid's own
 // Servo Output table (GET /api/servo/outputs) joined to the Droid Parts
 // Catalog, and the switches from the Component Toggles (GET /api/config).
@@ -51,8 +51,8 @@
   // AND on every picture, because a page gets cropped and a screenshot travels
   // (#293).
   // ---------------------------------------------------------------------------
-  const PROMISE = "what this image will actually drive";
-  const SCOPE = "signal + ground only, power distribution is your build's business";
+  const PROMISE = "every signal this image puts on a wire";
+  const SCOPE = "signal + ground only, power wiring is up to you";
 
   // The pace the droid holds between outputs it starts itself. Typed here, and
   // that is worth saying out loud: SEQ_CADENCE_FLOOR_MS lives in
@@ -66,9 +66,12 @@
   // prints them, so a heading reworded here is reworded in both, and a heading
   // typed into data/wiring.html as well would be the second copy this whole
   // view exists to abolish.
+  //
+  // `tiers` is a proposal the operator picks from (#411): the review asked for
+  // "some thing simpler and concise" in place of "What this image will drive".
   const PLATES = Object.freeze({
-    loom: "The loom",
-    tiers: "What this image will drive",
+    wires: "The wires",
+    tiers: "What moves",
     rail: "The shared rail",
   });
 
@@ -81,13 +84,14 @@
   // Reasons already (CONTEXT.md "Availability Reason"), which is deliberate --
   // the vocabulary for "a Part no Output claims" and "switched off" exists, and
   // a fifth spelling of either would be a second thing to keep in step. The
-  // other two name states that are not a "no" at all: a driven row and an
-  // output waiting for a lead.
+  // other two name states that are not a "no" at all: a wired row and an
+  // output waiting for a lead. The ids are the tokens; what a builder reads is
+  // `heading`, and no id reaches the screen.
   //
-  // `heading` is verbatim from #293 and is not this file's to reword. The count
-  // rides in the section head's subtitle beside it, which is where the anatomy
-  // puts a count (docs/ui-copy-voice.md rule 15) -- so the heading stays the
-  // four words it is required to be and the number is still in the head.
+  // `heading` is the operator's words from the Wiring design review (#411),
+  // which renamed #293's, and is not this file's to reword. The count rides in
+  // the section head's subtitle beside it, which is where the anatomy puts a
+  // count (docs/ui-copy-voice.md rule 15).
   //
   // `footnote` is what the generated footnote says about this tier. It is
   // written here, beside the predicate it explains, so the foot of the sheet
@@ -98,29 +102,20 @@
   const TIERS = [
     {
       id: "driven",
-      heading: "Driven",
+      heading: "Wired",
       subject: "part",
       noun: ["part", "parts"],
       footnote:
-        "<b>Driven</b>: the output is switched on, so this image puts a pulse on that lead.",
+        "<b>Wired</b>: the output is marked wired, so this image puts a pulse on that lead.",
     },
     {
       id: "component-disabled",
-      heading: "Wired, switched off",
+      heading: "Output not wired",
       subject: "part",
       noun: ["part", "parts"],
       footnote:
-        "<b>Wired, switched off</b>: the lead is right. Nothing moves until the output is " +
-        "switched on.",
-    },
-    {
-      id: "part-not-assigned",
-      heading: "Nothing drives it",
-      subject: "part",
-      noun: ["part", "parts"],
-      footnote:
-        "<b>Nothing drives it</b>: no output claims the part. Moves you author for it wait " +
-        "until one does.",
+        "<b>Output not wired</b>: the part is on an output you have not marked wired. " +
+        "Nothing moves until you do.",
     },
     {
       id: "output-no-part",
@@ -128,8 +123,19 @@
       subject: "output",
       noun: ["output", "outputs"],
       footnote:
-        "<b>Output with no part</b>: a spare. The droid drives it, and nothing is recorded on " +
+        "<b>Output with no part</b>: a spare. It gets a pulse, and nothing is recorded on " +
         "the end.",
+    },
+    // Last on the sheet (operator, 2026-09-19 on #411): a part nothing claims
+    // is the least of what a builder holding a lead needs to read.
+    {
+      id: "part-not-assigned",
+      heading: "Unused",
+      subject: "part",
+      noun: ["part", "parts"],
+      footnote:
+        "<b>Unused</b>: no output claims the part. Moves you author for it wait until " +
+        "one does.",
     },
   ];
 
@@ -168,11 +174,11 @@
   const setupRouteHtml = (action) =>
     window.PAUi?.setupActionHtml?.(action) ?? `${esc(action)} in Configuration`;
 
-  // Where an arm or AUX output is marked in use: on this surface, under the
-  // sheet (data/output_settings.js, #369). Named in words rather than linked,
+  // Where an Output is marked wired: on this surface, under the sheet
+  // (data/output_settings.js, #369). Named in words rather than linked,
   // because the saved bench copy carries this sentence too and has no page
   // under it.
-  const OUTPUTS_IN_USE = "Outputs in use";
+  const OUTPUTS_PLATE = "Outputs";
 
   // Where a Part is put on an Output. Parts is the surface that owns that act,
   // and it is a destination that exists.
@@ -182,10 +188,10 @@
   // The rows
   // ---------------------------------------------------------------------------
 
-  // What this image could drive at all, which is what bounds the promise. A
+  // What this image could move at all, which is what bounds the promise. A
   // Part whose control path is the dome link is the Dome Controller's to move,
   // not this image's, and a Part that declares no control path (the two dome
-  // orientation fixtures) is not driven by anything. Both are named and counted
+  // orientation fixtures) is not moved by anything. Both are named and counted
   // on the sheet rather than dropped -- see outOfScopeHtml() -- because a bound
   // a builder cannot see is indistinguishable from a row that went missing.
   //
@@ -210,11 +216,10 @@
   // including one with the dome link switched off. Measured while building this
   // sheet, 2026-09-17.
   //
-  // So the join folds the name to lower case, which also lets an Output's board
-  // legend (ARM1) reach its own toggle (arm1) through the same door. Folding
-  // rather than a rename table is what keeps a lane added later joining with no
-  // edit here -- which is the whole point of a manifest where adding a lane is
-  // adding a row.
+  // So the join folds the name to lower case. Folding rather than a rename
+  // table is what keeps a lane added later joining with no edit here -- which
+  // is the whole point of a manifest where adding a lane is adding a row. An
+  // Output does not join here at all: it joins on its address (configOutputs()).
   // ---------------------------------------------------------------------------
   const componentIndex = (components) => {
     const index = new Map();
@@ -225,35 +230,70 @@
     return index;
   };
 
-  // A signal the config carries no toggle for -- an expander row, which has no
-  // name either -- is not one anybody has switched off, so it reads as on
-  // rather than inventing a switch for it.
+  // A signal the config carries no toggle for is not one anybody has switched
+  // off, so it reads as on rather than inventing a switch for it.
   const switchedOn = (toggles, name) => {
     const entry = toggles.get(String(name || "").toLowerCase());
     return entry ? entry.enabled === true : true;
   };
 
   // The Board Component Label: the silkscreen text this board prints beside the
-  // thing (ADR 0033). Absent where a board has no established label, which is
-  // every row on firebeetle2 today -- so a caller shows the address instead
-  // rather than a legend that is printed nowhere.
+  // thing (ADR 0033). The firmware reports it under components.<id>.label
+  // (include/component_labels.inc), and it is the ONLY place a board's printed
+  // words come from: this file keeps no copy of any board's legend.
   const labelOf = (toggles, name) => {
     const entry = toggles.get(String(name || "").toLowerCase());
     const label = entry ? entry.label : null;
     return typeof label === "string" && label !== "" ? label : "";
   };
 
-  // An Output as a builder reads it: the legend on the board where it has one,
-  // and the Output Address otherwise.
-  const outputLabel = (output) => output.name || output.address;
+  // The Outputs as GET /api/config reports them: every components{} entry
+  // that carries an `address`, in the firmware's order (src/web/api_config.cpp
+  // CONFIG_OUTPUTS, docs/api.md). This file knows no Output of its own - which
+  // exist, and what each is called, is the running firmware's answer
+  // (operator, 2026-09-19 on #411) - so this is the one door an Output's
+  // label and its wired flag come in by, keyed by the Output Address that
+  // also names its GET /api/servo/outputs row.
+  const configOutputs = (components) => {
+    const byAddress = new Map();
+    Object.keys(components || {}).forEach((key) => {
+      const entry = components[key];
+      if (entry && typeof entry.address === "string" && entry.address !== "") {
+        byAddress.set(entry.address, entry);
+      }
+    });
+    return byAddress;
+  };
 
-  // The one place a Part is joined to the Output that drives it. A Part is on at
+  // An Output as a builder reads it: what the board prints beside its pin,
+  // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
+  // Address"). The name GET /api/servo/outputs puts on a row is protoArtoo's
+  // word, the same on every board, and never reaches the sheet. An Output the
+  // board labels nothing - an expander channel - reads as its Output Address,
+  // which still says where it plugs in.
+  const outputLabel = (output) => output.label || output.address;
+
+  // Each Output of the table, carrying its board label and whether it is
+  // marked wired. Joined once, here, so every row, table cell and picture
+  // reads the same name. A row the config reports nothing for - an expander
+  // channel - has no switch anybody could have turned off, so it reads as
+  // wired rather than inventing one.
+  const boardOutputs = (outputs, components) => {
+    const reported = configOutputs(components);
+    return outputs.map((output) => {
+      const entry = reported.get(output.address);
+      const label = entry && typeof entry.label === "string" ? entry.label : "";
+      return { ...output, label, wired: entry ? entry.enabled === true : true };
+    });
+  };
+
+  // The one place a Part is joined to the Output that moves it. A Part is on at
   // most one Output (CONTEXT.md "Part"), so the first hit is the answer.
   const outputForPart = (outputs, partId) =>
     outputs.find((output) => output.parts.includes(partId)) || null;
 
-  const wiringRows = ({ parts = [], outputs = [], components = {} } = {}) => {
-    const toggles = componentIndex(components);
+  const wiringRows = ({ parts = [], outputs: reported = [], components = {} } = {}) => {
+    const outputs = boardOutputs(reported, components);
     const partRows = parts.filter(drivableHere).map((part) => {
       const output = outputForPart(outputs, part.id);
       if (!output) {
@@ -262,17 +302,17 @@
           part,
           output: null,
           why:
-            `No output drives ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
+            `No output claims ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
         };
       }
-      if (!switchedOn(toggles, output.name)) {
+      if (!output.wired) {
         return {
           tier: "component-disabled",
           part,
           output,
           why:
-            `${esc(outputLabel(output))} is not marked in use: the lead is right, nothing moves. ` +
-            `Mark it in use under ${OUTPUTS_IN_USE}.`,
+            `${esc(outputLabel(output))} is not marked wired, so nothing moves. ` +
+            `Mark it under ${OUTPUTS_PLATE}.`,
         };
       }
       return { tier: "driven", part, output, why: "" };
@@ -293,7 +333,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The loom
+  // The wires: one per Board Lane
   // ---------------------------------------------------------------------------
   const loomRows = ({ lanes = {}, components = {}, capabilities = {} } = {}) => {
     const toggles = componentIndex(components);
@@ -331,19 +371,25 @@
   // it is not showing, because the header that said it is no longer attached
   // (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:481, whose per-board
   // line does the same two jobs).
+  //
+  // The layout is the one the operator pointed at in the Wiring design review
+  // (2026-09-19, #411): the board a block on the left, and each wire leaving it
+  // as its own horizontal line to a box on the right, its name over the line
+  // and a dim note under it.
   // ---------------------------------------------------------------------------
-  const ROW_H = 46;
+  const ROW_H = 64;
   const DIAGRAM_W = 960;
   const BOARD_X = 24;
-  const BOARD_W = 190;
-  const BOX_X = 520;
-  const BOX_W = 416;
+  const BOARD_W = 200;
+  const BOX_X = 648;
+  const BOX_W = 288;
+  const BOX_H = 40;
   const TOP = 46;
   // The foot carries two lines, the promise and the scope statement.
   const FOOT_H = 48;
-  const BADGE_W = 46;
-  const BADGE_H = 16;
   const RIGHT_X = DIAGRAM_W - BOARD_X;
+  // Where a wire's words start, clear of the board's edge.
+  const WIRE_TEXT_X = BOARD_X + BOARD_W + 22;
 
   // ---------------------------------------------------------------------------
   // The paper beneath the stylesheet
@@ -367,6 +413,43 @@
   const SEAM_STRONG = "var(--border-strong,#999999)";
   const PLATE = "var(--surface,#ffffff)";
   const PLATE_RAISED = "var(--surface-alt,#ffffff)";
+
+  // ---------------------------------------------------------------------------
+  // Each wire's own colour
+  //
+  // A wire is told apart from its neighbours the way a real loom's are: by its
+  // own colour (CONTEXT.md "Status Colour", the Wiring exception, operator
+  // 2026-09-19 on #411). The colour NAMES a wire and carries no state; a wire
+  // to something not wired takes the one grey instead, and is dashed.
+  //
+  // Which colour is picked by the wire's place in one order - the Outputs as
+  // GET /api/config lists them, then the Board Lanes as the identity lists
+  // them, then any Output only the servo table knows (an expander's) - from
+  // the numbered palette --wire-1..--wire-8 in data/style.css, round again
+  // past eight. Nothing here knows which wires a board has: the order is the
+  // firmware's answer, and data/output_settings.js picks an Output plate's
+  // colour from the same answer the same way, so a plate and its line match.
+  //
+  // The colours live in the stylesheet only. This file writes a token's name
+  // and never a value, painted as an inline style so it beats nothing and
+  // nothing beats it; the bench copy, which has no stylesheet, has each token
+  // resolved into it as it is saved (inkedForFile()).
+  // ---------------------------------------------------------------------------
+  const WIRE_PALETTE = 8;
+  const WIRE_OFF = "var(--wire-off)";
+
+  const wireOrder = ({ components = {}, lanes = {}, outputs = [] } = {}) => {
+    const order = [...configOutputs(components).keys(), ...Object.keys(lanes).map((key) => `lane:${key}`)];
+    outputs.forEach((output) => {
+      if (!order.includes(output.address)) order.push(output.address);
+    });
+    return order;
+  };
+
+  const wireInk = (order, key) => {
+    const at = order.indexOf(key);
+    return `var(--wire-${((at < 0 ? order.length : at) % WIRE_PALETTE) + 1})`;
+  };
 
   // Sizes in the picture's own units, matching the type tokens the stylesheet
   // gives the same classes (--fs-hint 10, --fs-sect 11, --fs-cell 13).
@@ -403,35 +486,18 @@
   // ---------------------------------------------------------------------------
   // What travels with every picture
   //
-  // The badge, the droid and the minute in the head; the bounded promise and
-  // the scope statement along the foot. A picture that leaves the page -- a
-  // crop, a photo of the printout, a paste into a build thread -- has lost
-  // the header that said all four, and a printed page loses its header first
-  // (#293). The promise carries where it came from in the same line: this
-  // image reported it, and it was not read out of docs/pin_map.md, which is not
-  // on the droid.
-  //
-  // The badge is drawn in ink rather than the reference's amber. Amber here is
-  // a Status Colour -- "degraded, and you can do something about it" -- and a
-  // sheet being new is not a state of the droid (CONTEXT.md "Status Colour").
-  // What BETA means rides in the badge's <title>, which is what a hover and a
-  // screen reader get.
+  // The droid and the minute in the head; the bounded promise and the scope
+  // statement along the foot. A picture that leaves the page -- a crop, a
+  // photo of the printout, a paste into a build thread -- has lost the header
+  // that said all of them, and a printed page loses its header first (#293).
   // ---------------------------------------------------------------------------
-  const svgBadge = () =>
-    `<g class="wd-beta"><title>New sheet. Check it against the droid before you cut a ` +
-    `wire.</title>` +
-    `<rect class="wd-beta-edge" x="${RIGHT_X - BADGE_W}" y="11" width="${BADGE_W}" ` +
-    `height="${BADGE_H}" rx="3" fill="none" stroke="${INK}" stroke-width="1.4"/>` +
-    `<text class="wd-beta-mark" x="${RIGHT_X - BADGE_W / 2}" y="22.5" fill="${INK}" ` +
-    `font-size="9.5" font-weight="700" letter-spacing=".12em" text-anchor="middle">BETA</text></g>`;
-
   const svgStamp = (droidName, stamp) =>
-    `<text class="wd-stamp" x="${RIGHT_X - BADGE_W - 10}" y="23" ${SMALL} text-anchor="end">` +
+    `<text class="wd-stamp" x="${RIGHT_X}" y="23" ${SMALL} text-anchor="end">` +
     `${droidName ? `${esc(droidName)} · ` : ""}made ${esc(stampText(stamp))}</text>`;
 
   const svgFoot = (height) =>
     `<text class="wd-scope wd-promise" x="${BOARD_X}" y="${height - 26}" ${SMALL}>` +
-    `${esc(PROMISE)} - as the firmware reports it, not a pin map</text>` +
+    `${esc(PROMISE)}</text>` +
     `<text class="wd-scope" x="${BOARD_X}" y="${height - 12}" ${SMALL}>${esc(SCOPE)}</text>`;
 
   const svgOpen = (title, height) =>
@@ -442,8 +508,7 @@
   const svgHead = (text, { droidName, stamp }) =>
     `<text class="wd-title" x="${BOARD_X}" y="24" fill="${INK}" font-size="13" ` +
     `font-weight="600">${esc(text)}</text>` +
-    svgStamp(droidName, stamp) +
-    svgBadge();
+    svgStamp(droidName, stamp);
 
   // SVG text does not wrap: an over-long label runs out past its box and over
   // whatever is beside it. So a label that will not fit is cut and the whole of
@@ -464,63 +529,128 @@
     return `<text class="${className}" x="${x}" y="${y}" ${paint}>${esc(shown)}${title}</text>`;
   };
 
-  // One row: the Body Controller's edge, out to the thing on the end of it. A
-  // line that is not live is dashed AND says why on the row, because a dashed
-  // line on its own is a convention a builder has to be taught. The paper
-  // carries the same difference the .is-idle rules draw on screen.
-  const svgLink = (index, { live, busText, name, note }) => {
-    const y = TOP + index * ROW_H + ROW_H / 2;
-    const state = live ? "is-live" : "is-idle";
-    const line = live
-      ? `stroke="${INK_DIM}" stroke-width="1.8"`
-      : `stroke="${INK_FAINT}" stroke-width="1.3" stroke-dasharray="5 4"`;
+  // The words over a wire. What the board prints beside the pin comes first,
+  // in the wire's own colour, and what this sheet has always said about the
+  // wire follows it (operator, 2026-09-19 on #411: "the wire lines in the
+  // drawing should initally say what pcb silkscreen label and then what we
+  // have now"). A wire the board prints nothing beside has only the second.
+  const svgWireName = (y, { silk, detail, ink }) => {
+    const room = 52 - (silk ? silk.length + 3 : 0);
+    const whole = String(detail ?? "");
+    const shown = clip(whole, room);
+    const title = shown === whole ? "" : `<title>${esc(whole)}</title>`;
+    const first = silk
+      ? `<tspan class="wd-silk" style="fill:${ink}" font-weight="700">${esc(silk)}</tspan>` +
+        (shown ? " · " : "")
+      : "";
     return (
-      `<g class="wd-link ${state}">` +
-      `<path class="wd-line" d="M${BOARD_X + BOARD_W} ${y} H ${BOX_X}" fill="none" ${line}/>` +
-      `<path class="wd-arrow" d="M${BOX_X - 12} ${y - 4} L${BOX_X - 3} ${y} L${BOX_X - 12} ${y + 4} Z" ` +
-      `fill="${live ? INK_DIM : INK_FAINT}"/>` +
-      svgText("wd-bus", BOARD_X + BOARD_W + 12, y - 7, busText, 48, SMALL) +
-      `<rect class="wd-box" x="${BOX_X}" y="${y - 17}" width="${BOX_W}" height="34" rx="2" ` +
-      `fill="${PLATE}" stroke="${live ? SEAM_STRONG : SEAM}"/>` +
-      svgText("wd-name", BOX_X + 10, y - 3, name, 58,
-        `fill="${live ? INK : INK_DIM}" font-size="11" font-weight="600"`) +
-      svgText("wd-note", BOX_X + 10, y + 11, note, 64, SMALL) +
+      `<text class="wd-bus" x="${WIRE_TEXT_X}" y="${y - 9}" fill="${INK_DIM}" font-size="11">` +
+      `${first}${esc(shown)}${title}</text>`
+    );
+  };
+
+  // One wire: out of the board's edge to the thing on the end of it, in its
+  // own colour. A wire that is not wired is grey and dashed AND says why on
+  // its row, because a dashed line on its own is a convention a builder has to
+  // be taught.
+  //
+  // The line type says what the wire carries. A Board Lane is a serial link,
+  // TX and RX - two conductors and a signal both ways - so it is drawn as a
+  // pair with an arrow at each end. A servo lead's signal is one conductor
+  // running out to the part, so it is one line with one arrow.
+  const svgLink = (index, { live, wire, pair, silk, detail, name, role, note }) => {
+    const y = TOP + index * ROW_H + ROW_H / 2;
+    const ink = live ? wire : WIRE_OFF;
+    const from = BOARD_X + BOARD_W;
+    const to = BOX_X;
+    const dash = live ? "" : ' stroke-dasharray="6 4"';
+    const stroke = `fill="none" style="stroke:${ink}" stroke-width="${pair ? 1.6 : 2.2}"${dash}`;
+    const line = pair
+      ? `<path class="wd-line" d="M${from + 10} ${y - 2.5} H ${to - 10} ` +
+        `M${from + 10} ${y + 2.5} H ${to - 10}" ${stroke}/>`
+      : `<path class="wd-line" d="M${from} ${y} H ${to - 10}" ${stroke}/>`;
+    // An arrowhead with its tip at `tip`, pointing along `dir` (+1 right).
+    const arrow = (tip, dir) =>
+      `<path class="wd-arrow" d="M${tip - dir * 11} ${y - 5} L${tip} ${y} ` +
+      `L${tip - dir * 11} ${y + 5} Z" style="fill:${ink}"/>`;
+    return (
+      `<g class="wd-link ${live ? "is-live" : "is-idle"}">` +
+      line +
+      arrow(to - 1, 1) +
+      (pair ? arrow(from + 1, -1) : "") +
+      svgWireName(y, { silk, detail, ink }) +
+      svgText("wd-note", WIRE_TEXT_X, y + 18, note, 60, SMALL) +
+      `<rect class="wd-box" x="${BOX_X}" y="${y - BOX_H / 2}" width="${BOX_W}" ` +
+      `height="${BOX_H}" rx="2" fill="${PLATE}" ` +
+      (live ? `style="stroke:${ink}"` : `stroke="${SEAM}"`) +
+      ` stroke-width="1.2"/>` +
+      svgText("wd-name", BOX_X + 12, y - 3, name, 36,
+        `fill="${live ? INK : INK_DIM}" font-size="12" font-weight="600"`) +
+      svgText("wd-role", BOX_X + 12, y + 12, role, 42, SMALL) +
       `</g>`
     );
   };
 
-  // The caption says what the box is driving rather than repeating its own
-  // name, which is the one fact a reader cannot get from the box itself.
+  // ---------------------------------------------------------------------------
+  // The board
+  //
+  // The builder's own Body Controller, drawn as its product picture rather
+  // than named (operator, 2026-09-19 on #411: "instead of the text 'Body
+  // Controller' we should use our existing selected actual body controller
+  // product image"). The picture is not this file's to draw: the generator
+  // leaves a slot, and the screen caller fills it with the Component Picker's
+  // own frame for the board this image runs on (fillBoardArt() below), so a
+  // product card and this block cannot come to show two different boards. The
+  // bench copy carries the same picture, made standalone (boardArtForFile()).
+  //
+  // The caption says how many wires leave the board, which is the one fact a
+  // reader cannot get from the picture itself.
+  // ---------------------------------------------------------------------------
+  const BOARD_SLOT = '<div xmlns="http://www.w3.org/1999/xhtml" class="wd-board-slot"></div>';
+
+  // The board is never shorter than its picture and caption need, so a sheet
+  // with one or two wires is as tall as the board rather than as its wires.
+  const BOARD_MIN_H = 172;
+  const boardHeight = (rowCount) => Math.max(BOARD_MIN_H, rowCount * ROW_H - 16);
+  const diagramHeight = (rowCount) => TOP + 8 + boardHeight(rowCount) + 8 + FOOT_H;
+
   const svgBoard = (rowCount, caption) => {
-    const height = Math.max(90, rowCount * ROW_H - 22);
-    const y = TOP + 6;
+    const height = boardHeight(rowCount);
+    const y = TOP + 8;
+    const artW = BOARD_W - 24;
+    const artH = Math.round((artW * 3) / 4);
+    const artY = Math.round(y + Math.max(12, (height - artH - 24) / 2));
     return (
       `<g class="wd-board">` +
-      `<rect class="wd-board-face" x="${BOARD_X}" y="${y}" width="${BOARD_W}" height="${height}" rx="2" ` +
-      `fill="${PLATE_RAISED}" stroke="${SEAM_STRONG}" stroke-width="1.5"/>` +
-      `<text class="wd-board-name" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 - 4}" ` +
-      `fill="${INK}" font-size="11" text-anchor="middle">Body Controller</text>` +
-      `<text class="wd-board-sub" x="${BOARD_X + BOARD_W / 2}" y="${y + height / 2 + 12}" ` +
+      `<rect class="wd-board-face" x="${BOARD_X}" y="${y}" width="${BOARD_W}" height="${height}" ` +
+      `rx="2" fill="${PLATE_RAISED}" stroke="${SEAM_STRONG}" stroke-width="1.5"/>` +
+      `<foreignObject class="wd-board-art" x="${BOARD_X + 12}" y="${artY}" width="${artW}" ` +
+      `height="${artH}">${BOARD_SLOT}</foreignObject>` +
+      `<text class="wd-board-sub" x="${BOARD_X + BOARD_W / 2}" y="${y + height - 12}" ` +
       `${SMALL} text-anchor="middle">${esc(caption)}</text>` +
       `</g>`
     );
   };
 
-  const loomDiagramHtml = (lanes, boardName, made) => {
+  const loomDiagramHtml = (lanes, made, order) => {
     if (lanes.length === 0) return "";
-    const height = TOP + lanes.length * ROW_H + FOOT_H;
-    const title = `The loom: ${lanes.length} Board Lane${lanes.length === 1 ? "" : "s"} this image routes`;
+    const height = diagramHeight(lanes.length);
+    const title = `The wires: ${lanes.length} Board Lane${lanes.length === 1 ? "" : "s"} this image routes`;
     return (
       svgOpen(title, height) +
-      svgHead(`Control signals - ${boardName}`, made) +
-      svgBoard(lanes.length, plural(lanes.length, ["lane", "lanes"])) +
+      svgHead("Control signals", made) +
+      svgBoard(lanes.length, plural(lanes.length, ["wire", "wires"])) +
       lanes
         .map((lane, index) =>
           svgLink(index, {
             live: lane.on,
-            busText: laneBusText(lane),
+            wire: wireInk(order, `lane:${lane.key}`),
+            pair: true,
+            silk: lane.label,
+            detail: laneBusText(lane),
             name: lane.name,
-            note: lane.on ? laneWhere(lane) : "switched off - nothing rides this lane",
+            role: lane.on ? "serial, both ways" : "switched off",
+            note: lane.on ? laneNote(lane) : "switched off - nothing rides this wire",
           })
         )
         .join("") +
@@ -531,29 +661,35 @@
 
   const laneBusText = (lane) => `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`;
 
-  const laneWhere = (lane) => {
-    const where = lane.label ? `${lane.label} on the board` : "no legend printed on this board";
-    return lane.shared ? `${where} - shares this UART with the dome link, RX only` : where;
-  };
+  // A UART is crossed: this board's TX lands on the far end's RX (docs/pin_map.md,
+  // "Dome Control slip ring wiring").
+  const laneNote = (lane) =>
+    lane.shared
+      ? "shares its UART with the dome link, RX only"
+      : "TX to the far end's RX, RX to its TX, and ground";
 
-  // The driven signals: one pin stub per output this image is putting a pulse
-  // on, out to the part it moves. Ground is drawn because a servo lead has
-  // three wires and only two of them are this sheet's; the rail itself is
-  // described in its own plate and never drawn (CONTEXT.md "Wiring").
-  const signalDiagramHtml = (driven, boardName, made) => {
-    if (driven.length === 0) return "";
-    const height = TOP + driven.length * ROW_H + FOOT_H;
-    const title = `Signal and ground for ${driven.length} driven output${driven.length === 1 ? "" : "s"}`;
+  // The wired signals: one wire per output this image is putting a pulse on,
+  // out to the part it moves. Ground is named because a servo lead has three
+  // wires and only two of them are this sheet's; the rail itself is described
+  // in its own plate and never drawn (CONTEXT.md "Wiring").
+  const signalDiagramHtml = (groups, made, order) => {
+    if (groups.length === 0) return "";
+    const height = diagramHeight(groups.length);
+    const title = `Signal and ground for ${groups.length} wired output${groups.length === 1 ? "" : "s"}`;
     return (
       svgOpen(title, height) +
-      svgHead(`Signal and ground - ${boardName}`, made) +
-      svgBoard(driven.length, plural(driven.length, ["driven output", "driven outputs"])) +
-      driven
+      svgHead("Signal and ground", made) +
+      svgBoard(groups.length, plural(groups.length, ["wired output", "wired outputs"])) +
+      groups
         .map((group, index) =>
           svgLink(index, {
             live: true,
-            busText: `${group.label} - ${group.address}`,
+            wire: wireInk(order, group.address),
+            pair: false,
+            silk: group.silk,
+            detail: group.address,
             name: group.parts.join(" + "),
+            role: group.component && group.component !== "none" ? group.component : "a servo",
             note: "signal on the pin, ground to the board's own ground",
           })
         )
@@ -563,11 +699,11 @@
     );
   };
 
-  // One box per Output rather than one per Part, because a ganged lead is one
+  // One wire per Output rather than one per Part, because a ganged lead is one
   // wire and drawing it twice would put a channel number on the sheet twice --
   // the fault the reference fixed by giving each board its own box
   // (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:423-436).
-  const drivenGroups = (rows) => {
+  const wiredGroups = (rows) => {
     const groups = [];
     rows
       .filter((row) => row.tier === "driven")
@@ -575,7 +711,12 @@
         const address = row.output.address;
         let group = groups.find((each) => each.address === address);
         if (!group) {
-          group = { address, label: outputLabel(row.output), parts: [] };
+          group = {
+            address,
+            silk: row.output.label,
+            component: row.output.component,
+            parts: [],
+          };
           groups.push(group);
         }
         group.parts.push(row.part.name);
@@ -627,9 +768,8 @@
 
   const outputCellHtml = (output) => {
     if (!output) return `<span class="wiring-dim">${esc(NOT_WIRED)}</span>`;
-    return (
-      `${esc(outputLabel(output))} <span class="wiring-address">${esc(output.address)}</span>`
-    );
+    if (!output.label) return `<span class="wiring-address">${esc(output.address)}</span>`;
+    return `${esc(output.label)} <span class="wiring-address">${esc(output.address)}</span>`;
   };
 
   const whyCellHtml = (why) => (why ? `<span class="wiring-why">${why}</span>` : "");
@@ -658,7 +798,7 @@
   // no part on it, so there is no design name and no place on the droid.
   const outputTableHtml = (rows) =>
     '<table class="wiring-table"><thead><tr>' +
-    "<th>Output</th><th>On the board</th><th>What is fitted</th><th>Why</th>" +
+    "<th>Output</th><th>Address</th><th>What is fitted</th><th>Why</th>" +
     "</tr></thead><tbody>" +
     rows
       .map(
@@ -711,7 +851,7 @@
   // ---------------------------------------------------------------------------
   // The bound, said out loud
   //
-  // The parts this image does not drive are named and counted rather than
+  // The parts this image does not move are named and counted rather than
   // filtered away in silence. No row is hidden (#296): a row that is outside
   // the promise is outside it for a reason the sheet states, and this one
   // carries no link and no destination because there is nothing for a builder
@@ -725,15 +865,15 @@
     const clauses = [];
     if (domeLink > 0) {
       clauses.push(
-        `${plural(domeLink, ["part", "parts"])} the Dome Controller drives over the dome link`
+        `${plural(domeLink, ["part", "parts"])} the Dome Controller moves over the dome link`
       );
     }
     if (noPath > 0) {
-      clauses.push(`${plural(noPath, ["part", "parts"])} nothing on this droid drives at all`);
+      clauses.push(`${plural(noPath, ["part", "parts"])} nothing on this droid moves at all`);
     }
     return (
       `<p class="hint wiring-bound">Outside this sheet: ${clauses.join(" and ")}. ` +
-      `This image does not drive them.</p>`
+      `This image sends them no signal.</p>`
     );
   };
 
@@ -783,7 +923,7 @@
     if (hasDesignNames) {
       lines.push(
         "<li><b>Design name</b> is the part's name in the files you printed it from, the " +
-          "same one your slicer shows. Label the loom with it.</li>"
+          "same one your slicer shows. Label the wire with it.</li>"
       );
     }
     if (lines.length === 0) return "";
@@ -799,13 +939,12 @@
   // ---------------------------------------------------------------------------
   const wiringDocument = (model = {}) => {
     const parts = model.parts || [];
-    const outputs = model.outputs || [];
-    const boardName = model.boardName || "Body Controller";
     const droidName = typeof model.droidName === "string" ? model.droidName : "";
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
     const rows = wiringRows(model);
     const lanes = loomRows(model);
+    const order = wireOrder(model);
 
     const present = TIERS.map((tier) => {
       const tierRows = rows.filter((row) => row.tier === tier.id);
@@ -821,15 +960,15 @@
       };
     }).filter(Boolean);
 
-    const driven = drivenGroups(rows);
+    const wired = wiredGroups(rows);
     const hasDesignNames = rows.some(
       (row) => row.part && typeof row.part.cadName === "string" && row.part.cadName !== ""
     );
 
-    const drivenCount = rows.filter((row) => row.tier === "driven").length;
+    const wiredCount = rows.filter((row) => row.tier === "driven").length;
     const summary =
-      `${plural(rows.length, ["row", "rows"])} · ${drivenCount} driven · ` +
-      `${rows.length - drivenCount} not`;
+      `${plural(rows.length, ["row", "rows"])} · ${wiredCount} wired · ` +
+      `${rows.length - wiredCount} not`;
 
     const lanesOn = lanes.filter((lane) => lane.on).length;
     const loomSummary =
@@ -842,7 +981,6 @@
       promiseHtml: promiseHtml(),
       railHtml: railHtml(),
       plates: PLATES,
-      boardName,
       droidName,
       stamp,
       fileName: sheetFileName(droidName, stamp),
@@ -852,10 +990,10 @@
       summary,
       loomSummary,
       loomHtml: lanes.length
-        ? loomTableHtml(lanes) + loomDiagramHtml(lanes, boardName, made)
-        : '<p class="hint">This image reports no Board Lane. No loom to draw.</p>',
+        ? loomTableHtml(lanes) + loomDiagramHtml(lanes, made, order)
+        : '<p class="hint">This image reports no Board Lane. No wires to draw.</p>',
       // Every tier that is present becomes a section; a tier that is not simply
-      // is not here. The driven picture rides inside the Driven section, where
+      // is not here. The wired picture rides inside the Wired section, where
       // the rows it draws are.
       tiersHtml:
         present
@@ -865,7 +1003,7 @@
               `<div class="sect"><h3>${esc(section.heading)}</h3>` +
               `<span class="sub">${section.countText}</span></div>` +
               section.tableHtml +
-              (section.id === "driven" ? signalDiagramHtml(driven, boardName, made) : "") +
+              (section.id === "driven" ? signalDiagramHtml(wired, made, order) : "") +
               `</section>`
           )
           .join("") + outOfScopeHtml(parts),
@@ -891,10 +1029,17 @@
   // that made it, so the "Put it on an output in Parts" links still reach Parts
   // when this is opened from a download folder rather than resolving against
   // the disk.
+  //
+  // `boardArt` is the one thing the file is handed besides the sheet: the
+  // board's picture, already made standalone by the caller (boardArtForFile()),
+  // put into every board slot the generator left. Without it the slots stay
+  // empty and the board is a plain block, which is still a true sheet.
   // ---------------------------------------------------------------------------
-  const wiringSheetFile = (sheet, origin = "") => {
+  const wiringSheetFile = (sheet, origin = "", boardArt = "") => {
     const madeAt = stampText(sheet.stamp);
     const about = sheet.droidName ? `${sheet.droidName} - ${madeAt}` : madeAt;
+    const pictured = (html) =>
+      boardArt ? html.split(BOARD_SLOT).join(BOARD_SLOT.replace("></div>", `>${boardArt}</div>`)) : html;
     return (
       "<!doctype html>\n" +
       '<html lang="en"><head><meta charset="utf-8">' +
@@ -905,9 +1050,9 @@
       `<h1>Wiring</h1>` +
       `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
       `<p>${sheet.promiseHtml}</p>` +
-      `<h2>${esc(sheet.plates.loom)}</h2><p>${sheet.loomSummary}</p>${sheet.loomHtml}` +
+      `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.loomSummary}</p>${pictured(sheet.loomHtml)}` +
       `<h2>${esc(sheet.plates.tiers)}</h2><p>${sheet.summary}</p>` +
-      `${sheet.tiersHtml}${sheet.footnoteHtml}` +
+      `${pictured(sheet.tiersHtml)}${sheet.footnoteHtml}` +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
       "</body></html>\n"
     );
@@ -952,7 +1097,6 @@
     components,
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
-    boardName: "Body Controller",
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
 
@@ -963,9 +1107,69 @@
   // exactly the moment it matters.
   write("wiring-promise", promiseHtml());
   write("wiring-rail", railHtml());
-  write("wiring-loom-heading", esc(PLATES.loom));
+  write("wiring-loom-heading", esc(PLATES.wires));
   write("wiring-tiers-heading", esc(PLATES.tiers));
   write("wiring-rail-heading", esc(PLATES.rail));
+
+  // ---------------------------------------------------------------------------
+  // The board's picture
+  //
+  // Found the way the Component Picker finds it, with its own lookup and its
+  // own frame (data/component_picker.js artIdFor, data/product_art.js), and no
+  // board-to-picture map of this surface's. The board's GPIO outputs are a
+  // product of their own, "Body controller board GPIO", and #369 settled that
+  // it is pictured by whichever Body Controller this image runs on - which is
+  // exactly the board this sheet draws. Until the lineup has answered there is
+  // no board to name, and the frame stays empty rather than guessing one.
+  // ---------------------------------------------------------------------------
+  const BOARD_GPIO_PRODUCT = "esp32_gpio_ledc";
+  const boardArtId = () => window.ComponentPicker?.artIdFor?.(BOARD_GPIO_PRODUCT) || null;
+
+  const fillBoardArt = () => {
+    const frame = window.PAProductArt?.frame;
+    if (!frame) return;
+    const id = boardArtId();
+    document.querySelectorAll(".wd-board-slot").forEach((slot) => slot.replaceChildren(frame(id)));
+  };
+
+  // The same picture for the bench copy, which fetches nothing when it opens:
+  // the drawing's own symbol copied in where the page has one, else the
+  // photograph the frame is showing, painted into the file as data. A
+  // photograph that has not arrived yet leaves the file's board plain.
+  const PICTURE_BOX = 'viewBox="0 0 400 300" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"';
+
+  const boardArtForFile = () => {
+    const id = boardArtId();
+    if (!id) return "";
+    const symbol = document.getElementById(`art-${id}`);
+    if (symbol) return `<svg ${PICTURE_BOX}>${symbol.innerHTML}</svg>`;
+    const photo = document.querySelector(".wd-board-slot img");
+    if (!photo || !photo.complete || !photo.naturalWidth) return "";
+    const scale = Math.min(400 / photo.naturalWidth, 300 / photo.naturalHeight, 1);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(photo.naturalWidth * scale);
+    canvas.height = Math.round(photo.naturalHeight * scale);
+    canvas.getContext("2d").drawImage(photo, 0, 0, canvas.width, canvas.height);
+    return (
+      `<svg ${PICTURE_BOX}><image href="${canvas.toDataURL("image/png")}" x="0" y="0" ` +
+      `width="400" height="300" preserveAspectRatio="xMidYMid meet"/></svg>`
+    );
+  };
+
+  // The wire colours as the bench copy needs them. The file carries no
+  // stylesheet, so each --wire-* token the pictures name is resolved to the
+  // value the stylesheet gives it right now, and the file is inked with that.
+  // The stylesheet stays the one place a wire colour is written down.
+  const inkedForFile = (file) => {
+    const style = window.getComputedStyle?.(document.documentElement);
+    if (!style) return file;
+    return file.replace(/var\((--wire-(?:\d+|off))\)/g, (whole, token) => style.getPropertyValue(token).trim() || whole);
+  };
+
+  // The lineup can answer after the sheet is up; the board's picture follows it.
+  window.ComponentPicker?.onChange?.(() => {
+    if (answered) fillBoardArt();
+  });
 
   // The pictures on screen carry the minute they were drawn - when this
   // surface last read the droid, or when its sheet was last saved - so a
@@ -977,6 +1181,7 @@
     write("wiring-loom", sheet.loomHtml);
     write("wiring-tiers", sheet.tiersHtml);
     write("wiring-footnote", sheet.footnoteHtml);
+    fillBoardArt();
     return sheet;
   };
 
@@ -1007,7 +1212,7 @@
     }
     try {
       const sheet = paint(sheetStamp(new Date()));
-      const file = wiringSheetFile(sheet, window.location?.origin || "");
+      const file = inkedForFile(wiringSheetFile(sheet, window.location?.origin || "", boardArtForFile()));
       if (savedUrl) URL.revokeObjectURL(savedUrl);
       savedUrl = URL.createObjectURL(new Blob([file], { type: "text/html" }));
       saveLink.setAttribute("href", savedUrl);
@@ -1058,7 +1263,7 @@
   // surface, and POST /api/identity republishes it (data/shell.js).
   //
   // It repaints only once the droid's own table has answered. The lanes alone
-  // would draw a sheet with every part under "Nothing drives it" and no outputs
+  // would draw a sheet with every part under "Unused" and no outputs
   // at all - which is the right answer for a fresh droid and a wrong one for
   // every other, so it is not a sheet worth flashing up on the way to the real
   // one.
@@ -1073,7 +1278,7 @@
       "/wiring.js": "the wiring sheet",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
-      label: "what this image drives",
+      label: "the wiring sheet",
     });
   } else {
     loadSheet().catch((error) => console.warn("[wiring] sheet unavailable:", error));

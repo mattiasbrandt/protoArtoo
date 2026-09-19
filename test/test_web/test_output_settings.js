@@ -29,13 +29,24 @@ import { MiniDocument } from "./helpers/mini_dom.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 
+// The Outputs as GET /api/config reports them (src/web/api_config.cpp
+// CONFIG_OUTPUTS): the page draws one plate per entry that carries an address
+// and saves it under the fields the entry names.
+const OUTPUT_FACTS = {
+  arm1: { label: "ARM1", address: "ledc:0", enabledField: "enableArm1", typeField: "arm1Type" },
+  arm2: { label: "ARM2", address: "ledc:1", enabledField: "enableArm2", typeField: "arm2Type" },
+  aux1: { label: "ARM3", address: "ledc:3", ledStripPin: 1, enabledField: "enableAux1", typeField: "aux1Type" },
+  aux2: { label: "ARM4", address: "ledc:4", ledStripPin: 2, enabledField: "enableAux2", typeField: "aux2Type" },
+  aux3: { label: "ARM5", address: "ledc:5", ledStripPin: 3, enabledField: "enableAux3", typeField: "aux3Type" },
+};
+
 const CONFIG = () => ({
   components: {
-    arm1: { enabled: true, type: "mg996r" },
-    arm2: { enabled: false, type: "mg90s" },
-    aux1: { enabled: false, type: "none" },
-    aux2: { enabled: true, type: "rgb" },
-    aux3: { enabled: true, type: "mg996r" },
+    arm1: { ...OUTPUT_FACTS.arm1, enabled: true, type: "mg996r" },
+    arm2: { ...OUTPUT_FACTS.arm2, enabled: false, type: "mg90s" },
+    aux1: { ...OUTPUT_FACTS.aux1, enabled: false, type: "none" },
+    aux2: { ...OUTPUT_FACTS.aux2, enabled: true, type: "rgb" },
+    aux3: { ...OUTPUT_FACTS.aux3, enabled: true, type: "mg996r" },
   },
   aux_led_pin: 2,
 });
@@ -60,9 +71,8 @@ const boot = () => {
       },
       postForm: async (path, form) => {
         posts.push({ path, form: { ...form } });
-        for (const id of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-          const upper = id.charAt(0).toUpperCase() + id.slice(1);
-          config.components[id] = { enabled: form[`enable${upper}`] === "true", type: form[`${id}Type`] };
+        for (const [id, facts] of Object.entries(OUTPUT_FACTS)) {
+          config.components[id] = { ...facts, enabled: form[facts.enabledField] === "true", type: form[facts.typeField] };
         }
         config.aux_led_pin = Number(form.aux_led_pin);
         return { ok: true, data: config };

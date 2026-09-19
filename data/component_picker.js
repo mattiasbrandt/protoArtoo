@@ -565,5 +565,7 @@
     });
   }
 
-  window.ComponentPicker = { mount, adopt, answerFor, onChange };
+  // artIdFor is exported for Wiring, whose diagrams picture the board the same
+  // way a card here does (#411), so there is one board-to-picture lookup.
+  window.ComponentPicker = { mount, adopt, answerFor, onChange, artIdFor };
 })();

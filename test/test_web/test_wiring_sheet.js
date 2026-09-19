@@ -79,13 +79,24 @@ const freshOutputs = () => [
 ];
 
 // A fresh controller's Component Toggles: everything off, which is what an
-// unprovisioned controller carries (CONTEXT.md "Setup").
+// unprovisioned controller carries (CONTEXT.md "Setup"). The five Outputs come
+// as GET /api/config reports them (src/web/api_config.cpp CONFIG_OUTPUTS): the
+// board's label, the address that joins each to its servo row, and the fields
+// that save it.
+const configOutput = (address, label, id, enabled, strip = 0) => ({
+  enabled,
+  label,
+  address,
+  ...(strip ? { ledStripPin: strip } : {}),
+  enabledField: `enable${id[0].toUpperCase()}${id.slice(1)}`,
+  typeField: `${id}Type`,
+});
 const freshComponents = () => ({
-  arm1: { enabled: false, type: "mg996r", label: "ARM1" },
-  arm2: { enabled: false, type: "mg996r", label: "ARM2" },
-  aux1: { enabled: false, type: "none", label: "AUX1" },
-  aux2: { enabled: false, type: "none", label: "AUX2" },
-  aux3: { enabled: false, type: "none", label: "AUX3" },
+  arm1: configOutput("ledc:0", "ARM1", "arm1", false),
+  arm2: configOutput("ledc:1", "ARM2", "arm2", false),
+  aux1: configOutput("ledc:3", "ARM3", "aux1", false, 1),
+  aux2: configOutput("ledc:4", "ARM4", "aux2", false, 2),
+  aux3: configOutput("ledc:5", "ARM5", "aux3", false, 3),
   drive: { enabled: false, label: "S1" },
   audio: { enabled: false, label: "S2" },
   protoR2link: { enabled: false, label: "S3" },
@@ -341,13 +352,13 @@ test("switching an output off moves its part without touching the wiring", async
   const wired = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
   const on = await boot({
     outputs: structuredClone(wired),
-    components: { ...freshComponents(), arm1: { enabled: true, label: "ARM1" } },
+    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
   assert.deepEqual(on.rowsOf("driven").map((row) => row.dataset.part), ["utilUp"]);
 
   const off = await boot({
     outputs: structuredClone(wired),
-    components: { ...freshComponents(), arm1: { enabled: false, label: "ARM1" } },
+    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
   });
   assert.equal(off.section("driven"), undefined, "nothing is driven, so there is no Driven tier");
   assert.deepEqual(off.rowsOf("component-disabled").map((row) => row.dataset.part), ["utilUp"]);
@@ -355,16 +366,16 @@ test("switching an output off moves its part without touching the wiring", async
 
 // Every "no" names the builder's next move, and a wrong destination is the
 // defect CONTEXT.md "Availability Family" records (16 strings once named a
-// place a builder could not reach). An arm or AUX line is marked in use on
-// this surface now (#369), not on Configuration, so that is where its row
-// sends them - in words, because the saved bench copy has no page under it.
-test("an output not in use names where it is marked in use, and not Configuration", async () => {
+// place a builder could not reach). An Output is marked wired on this surface
+// now (#369), not on Configuration, so that is where its row sends them - in
+// words, because the saved bench copy has no page under it.
+test("an output not wired names where it is marked wired, and not Configuration", async () => {
   const off = await boot({
     outputs: [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })],
-    components: { ...freshComponents(), arm1: { enabled: false, label: "ARM1" } },
+    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
   });
   const [row] = off.rowsOf("component-disabled");
-  assert.match(row.textContent, /Outputs in use/, "the row names the control on this surface");
+  assert.match(row.textContent, /under Outputs\b/, "the row names the control on this surface");
   assert.doesNotMatch(row.textContent, /Configuration/, "and no longer the page the control left");
 });
 
@@ -385,7 +396,7 @@ test("a latched estop does not rewrite the sheet", async () => {
   ];
   const env = await boot({
     outputs: latched,
-    components: { ...freshComponents(), arm1: { enabled: true, label: "ARM1" } },
+    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
   assert.deepEqual(
     env.rowsOf("driven").map((row) => row.dataset.part),
@@ -424,7 +435,7 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
       output("ledc:1", "ARM2", { parts: ["utilLo"], component: "mg996r" }),
       output("ledc:3", "AUX1"),
     ],
-    components: { ...freshComponents(), arm1: { enabled: true, label: "ARM1" } },
+    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
 
   const link = env.document.getElementById("wiring-save");
@@ -447,7 +458,7 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
   const onScreen = sheetOf(env.document);
   assert.deepEqual(
     onScreen.map((section) => section.tier),
-    ["driven", "component-disabled", "part-not-assigned", "output-no-part"],
+    ["driven", "component-disabled", "output-no-part", "part-not-assigned"],
     "the fixture puts a row in every tier, so a tier lost on either side shows",
   );
   assert.deepEqual(sheetOf(saved), onScreen);
