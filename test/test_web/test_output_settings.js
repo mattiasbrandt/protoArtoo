@@ -176,12 +176,14 @@ test("an in-use tick waits for the next start until it is put back; a servo type
 // can carry the LED strip and which fields save it are the firmware's answer,
 // so a board with a different set - other names, other addresses, other
 // fields, fewer of them - is drawn and saved exactly as it reports itself, and
-// a save never writes a field the firmware did not name.
+// a save never writes a field the firmware did not name. The field names here
+// follow no pattern on purpose: a page that derived them from the id would
+// pass with the real firmware's names and still be wrong.
 test("the plates are the Outputs the firmware reports, and a save writes only the fields it names", async () => {
   const env = boot({
     components: {
-      out7: { label: "GPIO 49", address: "ledc:7", enabledField: "enableOut7", typeField: "out7Type", enabled: false, type: "mg996r" },
-      out9: { label: "GPIO 4", address: "ledc:9", ledStripPin: 2, enabledField: "enableOut9", typeField: "out9Type", enabled: true, type: "none" },
+      out7: { label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", enabled: false, type: "mg996r" },
+      out9: { label: "GPIO 4", address: "ledc:9", ledStripPin: 2, enabledField: "wiredO9", typeField: "servoO9", enabled: true, type: "none" },
       domeEsc: { enabled: true, label: "GPIO 48" },
     },
     aux_led_pin: 0,
@@ -202,8 +204,8 @@ test("the plates are the Outputs the firmware reports, and a save writes only th
   env.option(env.wiring("out9"), "rgb").fire("click", {});
   await env.flush();
   const form = env.posts.at(-1).form;
-  assert.deepEqual(Object.keys(form).sort(), ["aux_led_pin", "enableOut7", "enableOut9", "out7Type", "out9Type"]);
-  assert.equal(form.enableOut7, "true");
-  assert.equal(form.out9Type, "rgb");
+  assert.deepEqual(Object.keys(form).sort(), ["aux_led_pin", "servoO7", "servoO9", "wiredO7", "wiredO9"]);
+  assert.equal(form.wiredO7, "true");
+  assert.equal(form.servoO9, "rgb");
   assert.equal(form.aux_led_pin, "2", "the strip is routed by the line the firmware gave that Output");
 });
