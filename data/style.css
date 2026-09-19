@@ -2922,6 +2922,18 @@ body.sleep-mode-active {
   color: var(--text);
 }
 
+/* What is on an Output's lead, after its name (#412): the Part names Parts
+   shows, quieter than the board's label, and absent when nothing is assigned. */
+.output-parts {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+p.output-parts {
+  margin: 0;
+  font-size: var(--fs-cell);
+}
+
 .arm-position {
   font-family: var(--font-mono);
   font-size: var(--fs-sect);

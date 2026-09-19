@@ -5,7 +5,7 @@
 // it - the shared outputs module (data/output_settings.js), Wiring's mount of it
 // (data/wiring_outputs.js) and the Servos module - on a real node tree.
 //
-// Four invariants earn their place:
+// Five invariants earn their place:
 //   - Test Open and Test Close drive to the end the droid RECORDED, read from
 //     GET /api/config, and never to a number a box on this page holds (#400).
 //   - The test controls write no configuration: an end is set on Parts.
@@ -17,6 +17,9 @@
 //   - The page draws the Outputs the firmware reported and no others, and an
 //     Output given the LED strip stops offering servo moves at once - a press
 //     there would send a servo command down an LED strip's data line.
+//   - What is on an Output's lead is the firmware's GET /api/servo/outputs
+//     answer, joined by address, never by name - so a label a board spells
+//     differently from the row's address still finds its Parts.
 // =============================================================================
 
 import { test } from "node:test";
@@ -52,6 +55,17 @@ const CONFIG = () => ({
   aux_led_pin: 0,
 });
 
+// GET /api/servo/outputs: GPIO 5 drives two ganged Parts, the rest nothing. The
+// names are deliberately not the config's labels, so a page joining by name
+// instead of by address finds no Parts at all.
+const SERVO_ROWS = () => [
+  { address: "ledc:0", name: "", parts: [] },
+  { address: "ledc:1", name: "", parts: [] },
+  { address: "ledc:3", name: "", parts: [] },
+  { address: "ledc:4", name: "", parts: ["doorFL", "doorFR"] },
+  { address: "ledc:5", name: "", parts: [] },
+];
+
 const boot = async (config = CONFIG()) => {
   const document = new MiniDocument();
   for (const id of [
@@ -71,6 +85,7 @@ const boot = async (config = CONFIG()) => {
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
         requests.push({ method: "GET", path });
+        if (path === "/api/servo/outputs") return { ok: true, data: { outputs: SERVO_ROWS() } };
         return { ok: true, data: path === "/api/config" ? config : {} };
       },
       postForm: async (path, form) => {
@@ -95,7 +110,7 @@ const boot = async (config = CONFIG()) => {
   };
   const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout };
   context.globalThis = context;
-  for (const file of ["apply_timing.js", "output_settings.js", "wiring_outputs.js", "servo.js"]) {
+  for (const file of ["droid_parts.js", "apply_timing.js", "output_settings.js", "wiring_outputs.js", "servo.js"]) {
     vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context);
   }
   const settle = async () => {
@@ -200,4 +215,14 @@ test("an Output given the LED strip stops offering servo moves the moment the an
     "no servo control is left on the LED strip's Output");
   assert.equal(env.rowIn("servo-test-rows", "aux2"), undefined, "and it has no test row");
   assert.ok(env.press("output-controls", "aux1", "open"), "the other Outputs keep theirs");
+});
+
+test("an Output names the Parts the firmware has on it, joined by address, and writes nothing", async () => {
+  const env = await boot();
+  const named = (host, id) => env.rowIn(host, id).querySelector(".arm-name").textContent;
+
+  assert.equal(named("output-controls", "aux2"), "GPIO 5 · Left body door, Right body door");
+  assert.equal(named("servo-test-rows", "aux2"), "GPIO 5 · Left body door, Right body door");
+  assert.equal(named("output-controls", "aux1"), "GPIO 4", "nothing assigned, nothing extra");
+  assert.deepStrictEqual(env.configPosts(), [], "the assignment is read here, never changed");
 });

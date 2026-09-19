@@ -284,7 +284,12 @@
 
   // Servos' plate: which servo the output carries. An Output set to LED strip
   // has no servo, and says where that is answered.
-  const typePlate = (output) => {
+  //
+  // A host may say what is on the end of each Output's lead (`describe`,
+  // Servos' Part names, read from GET /api/servo/outputs): it goes under the
+  // head, and an Output with nothing assigned gets no line at all (operator,
+  // 2026-09-19 on #412: "if it has one"). Read-only: the assignment is Parts'.
+  const typePlate = (output, view) => {
     const answer = state[output.id];
     const name = nameOf(output);
     const plate = element("div", "output-plate output-setting");
@@ -294,6 +299,8 @@
     head.appendChild(element("span", "toggle-label", name));
     head.appendChild(element("span", "toggle-status", answer.enabled ? WIRED : NOT_WIRED));
     plate.appendChild(head);
+    const onIt = typeof view?.describe === "function" ? view.describe(output) : "";
+    if (onIt) plate.appendChild(element("p", "output-parts", onIt));
     if (output.strip && answer.type === LED_STRIP) {
       plate.appendChild(element("p", "hint output-setting-note", "Carries the LED strip. Set on Wiring."));
       return plate;
@@ -314,7 +321,7 @@
       return;
     }
     const plates = element("div", "output-plates");
-    outputs.forEach((output) => plates.appendChild(view.plate(output)));
+    outputs.forEach((output) => plates.appendChild(view.plate(output, view)));
     // When this view's answer bites, beside the outputs it asks about.
     const timing = element("p", "apply-timing");
     TIMING.paint(timing, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
@@ -360,6 +367,7 @@
    * @param {object} hosts
    * @param {Element} hosts.body - where the plates go
    * @param {Element} hosts.feedback - the save line under them
+   * @param {function} [hosts.describe] - what is on an Output's lead, or ""
    */
   const mount = (kind, hosts) => {
     if (!hosts?.body || !hosts?.feedback) return;
@@ -374,5 +382,10 @@
     return () => listeners.delete(listener);
   };
 
-  window.PAOutputSettings = { mount, onChange };
+  // Draw every view again, for a host whose `describe` answer has changed.
+  const redraw = () => {
+    if (state) renderAll();
+  };
+
+  window.PAOutputSettings = { mount, onChange, redraw };
 })();

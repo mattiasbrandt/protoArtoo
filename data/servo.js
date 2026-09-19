@@ -17,6 +17,10 @@
 // firmware gave it. Rows join the status payload and the recorded ends by the
 // Output's stored id, never by its name.
 //
+// Wherever it names an Output it also names the Part(s) assigned to it, read
+// from GET /api/servo/outputs - the same answer Parts reads - and never changes
+// one: an assignment is Parts'.
+//
 // READS calibration via GET /api/config and never writes it: an end is set on
 // Parts, by driving the part and pressing the button for that end, and this
 // page's Test Open and Test Close drive to the ends the droid recorded there
@@ -52,6 +56,29 @@
   const endOf = (id, end) => {
     const value = Number(config?.[`${id}${end === "open" ? "OpenUs" : "CloseUs"}`]);
     return Number.isFinite(value) && value > 0 ? value : end === "open" ? DEFAULT_OPEN_US : DEFAULT_CLOSE_US;
+  };
+
+  // What is on the end of each Output's lead: the Part ids GET /api/servo/outputs
+  // lists on its row, keyed by Output Address - the same answer Parts reads, so
+  // there is no second mapping - named the way Parts names them, from the
+  // catalog (data/droid_parts.js). Read-only here; an assignment is changed on
+  // Parts. An Output with none gets nothing extra (operator, 2026-09-19 on
+  // #412: "if it has one").
+  let partsByAddress = new Map();
+  const partById = new Map((window.DroidParts?.parts || []).map((part) => [part.id, part]));
+  const partName = (id) => {
+    const part = partById.get(id);
+    if (!part) return id;
+    return part.shorthand ? `${part.name} (${part.shorthand})` : part.name;
+  };
+  const partsOn = (output) => (partsByAddress.get(output.address) || []).map(partName).join(", ");
+
+  // The Output's name, and after it what it drives where it drives something.
+  const nameCell = (output) => {
+    const cell = element("span", "arm-name", output.name);
+    const onIt = partsOn(output);
+    if (onIt) cell.appendChild(element("span", "output-parts", ` · ${onIt}`));
+    return cell;
   };
 
   const LED_STRIP = "rgb";
@@ -122,7 +149,7 @@
   const controlRow = (output) => {
     const row = element("div", "arm-control-row");
     row.dataset.output = output.id;
-    row.appendChild(element("span", "arm-name", output.name));
+    row.appendChild(nameCell(output));
     if (answer[output.id]?.type === LED_STRIP) {
       row.appendChild(element("span", "arm-position", "LED strip · set its length in Configuration"));
       return row;
@@ -143,7 +170,7 @@
   const testRow = (output) => {
     const row = element("div", "arm-control-row");
     row.dataset.output = output.id;
-    row.appendChild(element("span", "arm-name", output.name));
+    row.appendChild(nameCell(output));
     row.appendChild(element("span", "arm-position", "type a width, or drive to a recorded end"));
     const acts = element("span", "arm-acts");
     const width = element("input", "input-narrow");
@@ -178,7 +205,7 @@
     if (!controls) return;
     const shown = outputs.filter(present);
     const drivable = shown.filter((output) => carriesServo(output.id));
-    const shape = shown.map((output) => `${output.id}:${output.name}:${answer[output.id]?.type}`).join(",");
+    const shape = shown.map((output) => `${output.id}:${output.name}:${answer[output.id]?.type}:${partsOn(output)}`).join(",");
 
     if (shape !== drawn) {
       drawn = shape;
@@ -245,19 +272,32 @@
   // Page Recovery: register startup API load as a section so the bootstrap
   // can show recovery state if the config fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const loadAssignments = async ({ handle = null } = {}) => {
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/servo/outputs");
+    const rows = result?.data?.outputs;
+    if (!Array.isArray(rows)) throw new Error("the droid's outputs answer carries no table");
+    partsByAddress = new Map(rows.map((row) => [String(row.address), Array.isArray(row.parts) ? row.parts.map(String) : []]));
+    render();
+    window.PAOutputSettings?.redraw?.();
+  };
+
   const SECTIONS = [
     ["servo-calibration", loadCalib, "servo calibration"],
+    ["servo-assignments", loadAssignments, "the parts on each output"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadCalib().catch(() => {});
+      loadAssignments().catch((error) => console.error("[servo] parts read failed:", error));
       return;
     }
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
+      "/droid_parts.js": "the parts catalog",
       "/output_settings.js": "the outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
@@ -276,6 +316,7 @@
   window.PAOutputSettings?.mount("type", {
     body: document.getElementById("servo-types-body"),
     feedback: document.getElementById("servo-types-feedback"),
+    describe: partsOn,
   });
   window.PAOutputSettings?.onChange((state, facts) => {
     if (!state || !Array.isArray(facts)) return;
