@@ -134,6 +134,8 @@ struct ConfigPartMove {
 struct ConfigGuidedSetupEdit {
     bool runChanged = false;
     bool visitedChanged = false;
+    bool summaryDoneChanged = false;
+    bool summaryDone = false;
     GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
     GuidedSetupConfig visited = {};
 };

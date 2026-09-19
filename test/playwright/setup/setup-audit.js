@@ -37,14 +37,6 @@ async function collect(page, label) {
         text: document.getElementById('feature-feedback')?.textContent?.trim() || '',
         className: document.getElementById('feature-feedback')?.className || '',
       },
-      serialFeedback: {
-        text: document.getElementById('serial-status-line')?.textContent?.trim() || '',
-        className: document.getElementById('serial-status-line')?.className || '',
-      },
-      diagFeedback: {
-        text: document.getElementById('diag-feedback')?.textContent?.trim() || '',
-        className: document.getElementById('diag-feedback')?.className || '',
-      },
     };
   });
 

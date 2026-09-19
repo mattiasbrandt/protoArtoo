@@ -89,12 +89,19 @@ enum GuidedSetupRun : uint8_t {
 
 // -----------------------------------------------------------------------------
 // GuidedSetupConfig
-// The whole record: where the run stands, which steps have been on screen, and
-// whether anything was ever written at all.
+// The whole record: where the run stands, which steps have been on screen,
+// whether anything was ever written at all, and whether the builder has
+// dismissed the summary the ended run leaves on Configuration (#371).
+//
+// `summaryDone` is config like the rest of the record, so Backup and Restore
+// carries it with no exclusion list (operator, 2026-09-19 on #371). Ending a run
+// writes it back to false, so a run Maintenance reopened ends on a fresh
+// summary rather than on the dismissal of the last one.
 // -----------------------------------------------------------------------------
 struct GuidedSetupConfig {
     GuidedSetupRun run;
     bool recorded;  // false == no record exists; see the header note
+    bool summaryDone;
     char visited[GUIDED_SETUP_VISITED_STR_MAX + 1];
 };
 
@@ -306,5 +313,6 @@ inline void guidedSetupDefaults(GuidedSetupConfig* out) {
     }
     out->run = GUIDED_SETUP_NOT_RUN;
     out->recorded = false;
+    out->summaryDone = false;
     out->visited[0] = '\0';
 }

@@ -1407,7 +1407,14 @@ Returns current config snapshot.
 
 - Success: `200` JSON including:
 - `drive`: speed limits, presets, web timeout, stationary
-- `rc`: input mode, SBUS timeout, `sbus.recvCh2`
+- `rc`: input mode, SBUS timeout, `sbus.recvCh2`, and `activeInputMode`, the
+  input mode the droid started with (#371). A saved `inputMode` that differs
+  from it is waiting for a restart.
+- `activeToggles`: the ids of the Component Toggles (the `components` keys) the
+  droid started with switched on (#371). Every toggle is read once at start
+  (ADR 0027), so an entry whose saved `enabled` differs from its membership here
+  is a change still waiting for the droid. A page compares against this, never
+  against what it happened to read first.
 - `components`: enabled flags and servo type metadata, and `label`, the Board
   Component Label (`include/component_labels.inc`) where the board has one.
   The body controller's **Outputs** come first, in the order a page draws
@@ -1435,7 +1442,9 @@ Returns current config snapshot.
   are different facts about a droid. **`recorded` is not redundant with an empty
   `visited`**: a controller configured before this record existed carries no
   record, and only that case may be read as "these answers were given before
-  anything could say so". Which steps EXIST is the browser's, not the
+  anything could say so". `summaryDone` is whether the builder pressed Done on
+  the summary the ended run leaves on Configuration (#371); absent from storage,
+  it reads `false`. Which steps EXIST is the browser's, not the
   firmware's — the run is drawn in `data/setup.js` and its list grows, so
   firmware stores the keys it is handed and checks their form alone.
 - `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart). Plaintext passwords are never returned.
@@ -1496,7 +1505,10 @@ Updates supported config fields and persists to NVS.
   else is `400` rather than dropped — a shortened record would report a step the
   builder *was* shown as one they never were. The two fields are independent:
   marking a step visited says nothing about whether the run has ended, and
-  ending the run says nothing about which steps were shown.
+  ending the run says nothing about which steps were shown. And
+  `guidedSetupSummaryDone` — `true` or `false`, anything else `400`
+  `{"ok":false,"error":"guidedSetupSummaryDone must be true or false"}`; ending a
+  run sends `false` so the run that ended has a summary to show (#371).
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`

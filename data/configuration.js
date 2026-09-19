@@ -97,17 +97,20 @@ const BOARD_LABELS = {
   let rcChangeGeneration = 0;
   let savedRcChangeGeneration = 0;
   let rcRestartPending = false;
-  // What the droid is running, as this page first read it: every Component
-  // Toggle and the LED strip's count. Each is read once at start (ADR 0027), so
-  // a saved value that differs from this one is a change still waiting for the
-  // droid, and one put back to it is not (#370). The RC half of this is what
-  // "restart required" has always been computed from.
+  // What the droid is running: every Component Toggle and the receiver type,
+  // as the droid itself reports it started with them (activeToggles and
+  // rc.activeInputMode, src/web/api_config.cpp). Each is read once at start
+  // (ADR 0027), so a saved value that differs is a change still waiting for the
+  // droid, and one put back to it is not (#370). Never what this page happened
+  // to read first: a reload between a save and a restart would take the saved
+  // value for the running one and report nothing waiting (#371). The RC half
+  // is what "restart required" is computed from.
   let bootActiveToggles = {};
-  let bootActiveLedCount = null;
-  // The receiver type the droid booted with, and the one it has saved since.
-  // Chosen on the Radio Controller cards (data/component_picker.js), and like
-  // a channel toggle it takes effect only after a restart.
   let bootActiveRcMode = null;
+  // The LED strip's count as this page first read it. The droid does not report
+  // the count it started with, so this one comparison still resets on a reload;
+  // the strip is not a guided step and the summary does not read it.
+  let bootActiveLedCount = null;
   let savedRcMode = null;
   // The config the droid last answered with, which is what "saved" means below.
   let lastSaved = null;
@@ -480,12 +483,8 @@ const BOARD_LABELS = {
   const renderFeatures = (payload) => {
     const components = payload?.components || {};
 
-    // Capture what the droid is running on the first load (when the page
-    // initializes)
-    const isInitialLoad = Object.keys(bootActiveToggles).length === 0;
-    if (isInitialLoad) {
-      captureBootActiveState(payload);
-    }
+    const isInitialLoad = lastSaved === null;
+    readBootActiveState(payload, isInitialLoad);
     lastSaved = payload || null;
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
@@ -511,6 +510,11 @@ const BOARD_LABELS = {
       toggle.input.checked = Boolean(togglePayload[payloadKey]);
       updateToggleStatus(toggleKey);
     });
+    // A payload with no RC edit of this page's still on its way says, on its
+    // own, whether the droid owes a restart - which is what a page opened after
+    // the save, or reloaded, has to go on. An edit in flight leaves it to the
+    // save that carries the edit (saveFeatures below).
+    if (rcChangeGeneration === savedRcChangeGeneration) rcRestartPending = checkIfRcRestartNeeded();
 
     // Populate component labels (badges and descriptions) from the config response.
     // Maps API keys to internal component names used for ID lookups.
@@ -593,19 +597,20 @@ const BOARD_LABELS = {
     notifyTimingChange();
   };
 
-  const captureBootActiveState = (config) => {
-    // Snapshot every Component Toggle, the receiver type and the LED strip's
-    // count at page load (boot-active truth). Later, if saved state matches
-    // this, nothing is waiting on the next start.
-    if (typeof config?.rc?.inputMode === "string") bootActiveRcMode = config.rc.inputMode;
-    if (config?.components) {
-      for (const key of Object.keys(featureToggles)) {
-        if (config.components[key] !== undefined) {
-          bootActiveToggles[key] = Boolean(config.components[key]?.enabled);
-        }
-      }
+  // What the droid started with, from every payload it sends: it does not
+  // change until the droid restarts, and a restart is a new page. A firmware
+  // that predates the report sends neither field, and then nothing is read as
+  // waiting rather than guessed at.
+  const readBootActiveState = (config, isInitialLoad) => {
+    if (typeof config?.rc?.activeInputMode === "string") bootActiveRcMode = config.rc.activeInputMode;
+    if (Array.isArray(config?.activeToggles)) {
+      const on = new Set(config.activeToggles);
+      bootActiveToggles = {};
+      Object.keys(featureToggles).forEach((key) => {
+        bootActiveToggles[key] = on.has(key);
+      });
     }
-    if (config?.aux_led_count !== undefined) bootActiveLedCount = Number(config.aux_led_count);
+    if (isInitialLoad && config?.aux_led_count !== undefined) bootActiveLedCount = Number(config.aux_led_count);
   };
 
   const checkIfRcRestartNeeded = () => {

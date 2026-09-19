@@ -211,6 +211,9 @@
   const RUN_COMPLETED = "completed";
 
   let runState = RUN_NOT_RUN;
+  // Whether the builder dismissed the ended run's summary: the droid's record,
+  // not this page's (include/guided_setup.h).
+  let summaryDone = false;
   // A droid configured before this record existed carries no record at all
   // (include/guided_setup.h). Its answers are real, once-considered ones, so it
   // is not walked through a first run and its categories are not reported as
@@ -272,7 +275,10 @@
     return node || null;
   };
 
+  let layoutPhase = "checking";
+
   const applyLayout = (phase) => {
+    layoutPhase = phase;
     const checking = document.getElementById("wizard-checking");
     const foot = document.getElementById("wizard-foot");
     show(checking, phase === "checking");
@@ -298,6 +304,9 @@
 
     cards().forEach((card) => {
       if (card === checking || card === head || card === foot) return;
+      // The summary decides for itself, below: it is on the ended page only
+      // when there was a run to summarise.
+      if (card === summaryCard) return;
       if (phase === "checking") {
         show(card, false);
         return;
@@ -314,6 +323,7 @@
     hosts.forEach((host) => {
       show(host, phase === "ended" || host === currentHost);
     });
+    renderSummary();
   };
 
   // ---------------------------------------------------------------------------
@@ -451,6 +461,205 @@
   };
 
   // ---------------------------------------------------------------------------
+  // What the run leaves behind (#371)
+  //
+  // Three sections, and every one is a walk over STEPS and nothing else, so a
+  // step added to the array is in the summary the moment its row lands, and
+  // every count shown is arithmetic on the walk (r2d2-astromech-simulator
+  // v1.79.0, src/js/config/hardware.js:1080 sweeps its review the same way):
+  //   set        the questions the builder was shown, and what each answers now
+  //   waiting    the steps holding a saved change the droid has not started on,
+  //              each carrying the route to the restart: a wait with no way to
+  //              end it is a complaint, not a finding (#287)
+  //   not asked  the questions never on screen, hollow, with the default they
+  //              show. That default is usually "Not fitted", a statement about
+  //              the droid nobody made, so it is never reported as an answer
+  //
+  // It keeps no record of its own. The visited record, the answers and the end
+  // of the run are the droid's saved config, and what is waiting is
+  // Configuration's comparison against what the droid started with, so after a
+  // restart the same walk draws the same summary, with nothing left waiting.
+  // ---------------------------------------------------------------------------
+  const summaryCard = document.getElementById("setup-summary");
+  const summaryCount = document.getElementById("setup-summary-count");
+  const summaryHint = document.getElementById("setup-summary-hint");
+  const summaryBody = document.getElementById("setup-summary-body");
+
+  const summaryDoneButton = document.getElementById("setup-summary-done");
+  const summaryFeedback = document.getElementById("setup-summary-feedback");
+
+  // A droid whose run never happened - grandfathered, or not run yet - has
+  // nothing to summarise, and a summary the builder pressed Done on is gone
+  // for good (operator, 2026-09-19 on #371).
+  const summaryApplies = () => (runState === RUN_COMPLETED || runState === RUN_SKIPPED) && !summaryDone;
+
+  const hostFor = (step) => stepHosts().find((host) => host.dataset.setupStep === step.key) || null;
+
+  const summaryElement = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const summarySection = (title, sub, rows) => {
+    const section = summaryElement("div", "setup-summary-section");
+    const head = summaryElement("div", "sect");
+    head.appendChild(summaryElement("h3", "", title));
+    head.appendChild(summaryElement("span", "sub", sub));
+    section.appendChild(head);
+    const list = summaryElement("ul", "setup-summary-list");
+    rows.forEach((row) => list.appendChild(row));
+    section.appendChild(list);
+    return section;
+  };
+
+  // One line of the summary: the step's name, what is said about it, and - on
+  // a line about a question - the rail's own mark, filled for one the builder
+  // was shown and hollow for one they never were.
+  const summaryRow = (step, { seen, said = "" } = {}) => {
+    const row = summaryElement("li", "setup-summary-row");
+    row.dataset.step = step.key;
+    const name = summaryElement("span", "setup-summary-name");
+    if (seen !== undefined) {
+      name.appendChild(summaryElement("span", seen ? "wizard-tick" : "wizard-tick is-unseen", seen ? "●" : "○"));
+    }
+    name.appendChild(summaryElement("span", "", step.title));
+    row.appendChild(name);
+    row.appendChild(summaryElement("span", "setup-summary-said", said));
+    return row;
+  };
+
+  // The way to answer a question the run never asked. Most steps live on this
+  // surface and are scrolled to; a step whose host is run-only names its own
+  // home in the markup (data-setup-home), because once the run is over its
+  // card is gone from this page.
+  const answerItRoute = (step) => {
+    const host = hostFor(step);
+    const home = host?.dataset.setupHome;
+    if (home) {
+      const link = summaryElement("a", "btn btn-sm", "Answer it");
+      link.setAttribute("href", home);
+      return link;
+    }
+    const button = summaryElement("button", "btn btn-sm", "Answer it");
+    button.type = "button";
+    button.addEventListener("click", () => host?.scrollIntoView?.({ behavior: "smooth", block: "center" }));
+    return button;
+  };
+
+  const renderSummary = () => {
+    // Only on the ended page: between Maintenance's way back in and the
+    // droid's answer, the run's end is still the old one.
+    const drawn = layoutPhase === "ended" && summaryApplies();
+    show(summaryCard, drawn);
+    if (!drawn || !summaryBody) return;
+
+    const questions = STEPS.filter(isQuestion);
+    const asked = questions.filter((step) => visited.has(step.key));
+    const notAsked = questions.filter((step) => !visited.has(step.key));
+    const waiting = STEPS.filter((step) => window.PAConfiguration?.isPending(step.key) && TIMING.line(step.applies, { pending: true }));
+    // A family with nothing chosen - the RC Radio before a pick - answers
+    // empty, and that is its answer rather than a read still in flight.
+    const answerOf = (step) => String(step.answer?.() || "") || "Nothing picked";
+
+    if (summaryCount) {
+      const ended = runState === RUN_COMPLETED ? "finished" : "stopped";
+      summaryCount.textContent = `${ended} · ${asked.length} of ${questions.length} questions answered`;
+    }
+    if (summaryHint) {
+      summaryHint.textContent =
+        runState === RUN_COMPLETED
+          ? "Saved on the droid. Change any of it below."
+          : "Stopped early. What you set is saved; the rest is on its default.";
+    }
+
+    summaryBody.innerHTML = "";
+
+    summaryBody.appendChild(
+      summarySection(
+        "What you set",
+        `${asked.length} answered`,
+        asked.map((step) => summaryRow(step, { seen: true, said: answerOf(step) })),
+      ),
+    );
+
+    const waitingRows = waiting.map((step) => {
+      const said = TIMING.line(step.applies, { pending: true });
+      const row = summaryRow(step);
+      const note = row.querySelector(".setup-summary-said");
+      note.className = `setup-summary-said note ${said.tone === "act" ? "note-act" : "note-info"}`;
+      // Every wait carries its way out, whatever its tone: a change staged for
+      // the next start is still one a restart brings in now.
+      const route = said.route || TIMING.RESTART_ROUTE;
+      note.textContent = `${said.text} `;
+      const link = summaryElement("a", "setup-link", `${route.label}.`);
+      link.setAttribute("href", route.href);
+      note.appendChild(link);
+      return row;
+    });
+    const waitingSection = summarySection(
+      "Waiting for a restart",
+      waiting.length > 0 ? `${waiting.length} waiting` : "nothing waiting",
+      waitingRows,
+    );
+    if (waiting.length === 0) {
+      waitingSection.appendChild(summaryElement("p", "hint", "The droid is already running everything you set."));
+    }
+    summaryBody.appendChild(waitingSection);
+
+    if (notAsked.length > 0) {
+      summaryBody.appendChild(
+        summarySection(
+          "Not asked",
+          `${notAsked.length} on the default`,
+          notAsked.map((step) => {
+            const row = summaryRow(step, { seen: false, said: `${answerOf(step)}, the default` });
+            row.appendChild(answerItRoute(step));
+            return row;
+          }),
+        ),
+      );
+    }
+  };
+
+  const setSummaryFeedback = (message, variant = "") => {
+    if (!summaryFeedback) return;
+    summaryFeedback.textContent = message;
+    summaryFeedback.className = variant ? `feedback ${variant}` : "feedback";
+  };
+
+  // Done is saved on the droid, so the summary stays gone across visits,
+  // restarts and a restore of this droid's backup. It goes only once the droid
+  // has taken it: a card that vanished on a refused save would be back on the
+  // next visit with no word about why.
+  const dismissSummary = async () => {
+    if (!window.PAApi || !summaryDoneButton) return;
+    summaryDoneButton.disabled = true;
+    setSummaryFeedback("Saving…");
+    try {
+      await window.PAApi.postForm("/api/config", { guidedSetupSummaryDone: "true" }, { timeoutMs: 5000 });
+    } catch (error) {
+      console.error("[setup] summary dismissal failed:", error);
+      setSummaryFeedback(`The droid did not save it: ${window.PAApi.messageFor(error)}`, "error");
+      summaryDoneButton.disabled = false;
+      return;
+    }
+    summaryDone = true;
+    summaryDoneButton.disabled = false;
+    setSummaryFeedback("");
+    renderSummary();
+  };
+  summaryDoneButton?.addEventListener("click", dismissSummary);
+
+  // Whatever changed an answer or a wait, the one of the two views that is on
+  // screen says so: the rail while the run is live, the summary once it ended.
+  const redraw = () => {
+    if (runHasEnded()) renderSummary();
+    else renderRail();
+  };
+
+  // ---------------------------------------------------------------------------
   // The visited record
   //
   // A step becomes visited the moment it is on screen, and the record is written
@@ -512,9 +721,11 @@
     });
     setFeedback("Saving…");
     try {
+      // A run that ends leaves a summary, even when an earlier run's was
+      // dismissed: Maintenance's way back in keeps the rest of the record.
       await window.PAApi.postForm(
         "/api/config",
-        { guidedSetupRun: how, guidedSetupVisited: visitedParam() },
+        { guidedSetupRun: how, guidedSetupVisited: visitedParam(), guidedSetupSummaryDone: "false" },
         { timeoutMs: 5000 },
       );
     } catch (error) {
@@ -531,9 +742,13 @@
       return;
     }
     runState = how;
+    summaryDone = false;
     ending = false;
     setFeedback("");
     applyLayout("ended");
+    // The summary is the first card on the page, and the builder was looking
+    // at the last step, which may have been a long way down it.
+    summaryCard?.scrollIntoView?.({ block: "start" });
   };
 
   if (backButton) backButton.addEventListener("click", () => goTo(current - 1));
@@ -548,27 +763,24 @@
   }
   if (stopButton) stopButton.addEventListener("click", () => endRun(RUN_SKIPPED));
 
-  // An answer changed under the builder's hand, so the rail says what they are
-  // looking at rather than what it said when the step opened.
-  document.getElementById("feature-form")?.addEventListener("change", () => {
-    if (!runHasEnded()) renderRail();
-  });
-  document.getElementById("droid-name-input")?.addEventListener("input", () => {
-    if (!runHasEnded()) renderRail();
-  });
+  // An answer changed under the builder's hand, so the rail - or, once the run
+  // has ended, the summary - says what they are looking at rather than what it
+  // said when it was drawn.
+  document.getElementById("feature-form")?.addEventListener("change", redraw);
+  document.getElementById("droid-name-input")?.addEventListener("input", redraw);
   // The Droid Build is not a form control: it changes through its seam, and
   // the seam tells every surface when it has.
-  window.DroidBuild?.onChange(() => {
-    if (!runHasEnded()) renderRail();
-  });
+  window.DroidBuild?.onChange(redraw);
   // Nor is a Component Picker card: a pick, or the droid's answer to one,
   // redraws the cards and then says so here.
-  window.ComponentPicker?.onChange(() => {
-    if (!runHasEnded()) renderRail();
-  });
+  window.ComponentPicker?.onChange(redraw);
   // A save, or the droid's answer to one, can start or end a change waiting
-  // on the next start - whether or not the run is still live.
-  window.PAConfiguration?.onChange(paintTimings);
+  // on the next start - whether or not the run is still live - and the
+  // summary's restart section is that same fact.
+  window.PAConfiguration?.onChange(() => {
+    paintTimings();
+    if (runHasEnded()) renderSummary();
+  });
   paintTimings();
 
   // ---------------------------------------------------------------------------
@@ -612,7 +824,8 @@
     // BOARD_LABELS is data/configuration.js's, which the surface loads before
     // this file: one word for the board, read by its picture and by this step.
     boardLabel = BOARD_LABELS[board] || String(board);
-    if (!runHasEnded()) renderStep();
+    if (runHasEnded()) renderSummary();
+    else renderStep();
   };
 
   window.addEventListener("pa:identity-available", (event) => applyIdentity(event.detail));
@@ -631,6 +844,7 @@
     const guided = config?.guidedSetup || {};
 
     runState = typeof guided.run === "string" ? guided.run : RUN_NOT_RUN;
+    summaryDone = guided.summaryDone === true;
     grandfathered = guided.recorded === false && configuredBeforeTheRecordExisted(config);
     (Array.isArray(guided.visited) ? guided.visited : []).forEach((key) => visited.add(String(key)));
 

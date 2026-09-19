@@ -45,8 +45,10 @@
   // several keys bites as late as the latest of them.
   const ORDER = [NOTHING, IMMEDIATE, AT_REBOOT, RESTART_REQUIRED];
 
-  // Where a builder restarts the droid (data/maintenance.html, #404).
-  const RESTART_ROUTE = { href: "#maintenance", label: "Restart it on Maintenance" };
+  // Where a builder restarts the droid (data/maintenance.html, #404). Frozen,
+  // because it is published below and a surface that edited its copy would
+  // edit every surface's.
+  const RESTART_ROUTE = Object.freeze({ href: "#maintenance", label: "Restart it on Maintenance" });
 
   // Before anything has changed: when an answer here would bite. An immediate
   // answer says nothing at all (operator, 2026-09-19 on #412): the droid simply
@@ -172,6 +174,7 @@
     AT_REBOOT,
     RESTART_REQUIRED,
     NOTHING,
+    RESTART_ROUTE,
     isStated,
     latest,
     line,

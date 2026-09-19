@@ -617,9 +617,9 @@ void handleProfilerGet(WebRequest& req) {
     }
     if (body == nullptr) {
         // The async route aborted the connection here. The seam has no abort,
-        // and a 500 is the better answer regardless: setup.js reads the status
-        // code to decide whether the profiler UI exists at all, and a dropped
-        // connection is indistinguishable from the endpoint being absent.
+        // and a 500 is the better answer regardless: Maintenance's profiler
+        // (data/maintenance.js) says a failed read in its feedback line, and a
+        // dropped connection is indistinguishable from the endpoint being absent.
         webSendJsonError(req, 500, "profiler buffer alloc failed");
         return;
     }

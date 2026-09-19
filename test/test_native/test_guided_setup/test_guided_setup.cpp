@@ -122,6 +122,30 @@ void test_skipped_and_completed_stay_distinguishable() {
     TEST_ASSERT_EQUAL_STRING("not-run", guidedSetupRunId(GUIDED_SETUP_NOT_RUN));
 }
 
+// The summary's dismissal is config (#371): Done survives the next cold boot,
+// and a controller that ended its run before the key existed shows the summary
+// rather than reading as dismissed.
+void test_a_dismissed_summary_stays_dismissed_and_an_absent_key_does_not_dismiss() {
+    GuidedSetupConfig saved = {};
+    guidedSetupDefaults(&saved);
+    saved.run = GUIDED_SETUP_COMPLETED;
+    saved.recorded = true;
+    saved.summaryDone = true;
+
+    GuidedSetupConfig loaded = {};
+    GuidedSetupRepairReport report = {};
+    roundTrip(saved, &loaded, &report);
+    TEST_ASSERT_TRUE(loaded.summaryDone);
+
+    MapReader older;
+    older.set("gsetup_run", (uint32_t)GUIDED_SETUP_COMPLETED);
+    // std::string, not a literal: a const char* would pick the bool overload.
+    older.set("gsetup_visited", std::string("wifi"));
+    configDeserializeGuidedSetup(older, &loaded, &report);
+    TEST_ASSERT_EQUAL_UINT8(GUIDED_SETUP_COMPLETED, loaded.run);
+    TEST_ASSERT_FALSE(loaded.summaryDone);
+}
+
 // A run state this image cannot name reads as a run that has NOT ended, and says
 // it repaired something. Erring the other way would lock a builder out of the
 // only guided pass over a damaged byte.
@@ -191,5 +215,6 @@ int main() {
     RUN_TEST(test_a_malformed_key_is_dropped_and_counted_and_an_unfamiliar_one_is_kept);
     RUN_TEST(test_a_step_drawn_twice_is_carried_once);
     RUN_TEST(test_a_prefix_is_not_a_visit);
+    RUN_TEST(test_a_dismissed_summary_stays_dismissed_and_an_absent_key_does_not_dismiss);
     return UNITY_END();
 }

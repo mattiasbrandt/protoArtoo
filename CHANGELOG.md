@@ -78,6 +78,17 @@ the patch releases, whose notes live on their own GitHub Release.
   Setup does not ask again. The two are kept apart, so a droid you answered and
   a droid you walked away from are still different afterwards. All of it travels
   with Backup and Restore like any other setting.
+- **Setup ends by telling you where your droid stands.** When the guided run
+  finishes, or you stop it, a summary at the top of Configuration lists what
+  you set, what is still waiting for a restart (each with the way to
+  Maintenance's Restart), and every question you were never asked, hollow and
+  showing its default, with a button to answer it. It stays until you press
+  Done, and a backup carries that. A change still waiting for a restart now
+  says so after you reload the page too, because the droid reports what it
+  started with.
+- **Another board says how to switch to it.** On the Body Controller cards, the
+  board this firmware was not built for says it needs its own firmware and
+  links to Firmware, instead of sitting greyed with nothing to do about it.
 - **Say which droid you built.** Configuration and the guided run ask your
   Dome Design and your Body Design, each at its variant, and the two can come
   from different designs: an MK4.1 dome on an MK4 Basic body is an ordinary

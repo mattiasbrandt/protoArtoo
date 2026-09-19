@@ -531,6 +531,20 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         result->changed = true;
     }
 
+    // Whether the ended run's summary has been dismissed (#371): a third fact,
+    // merged on its own for the reason the two above are.
+    if (configParamHas(params, "guidedSetupSummaryDone")) {
+        const char* value = configParamGet(params, "guidedSetupSummaryDone");
+        if (strcmp(value, "true") != 0 && strcmp(value, "false") != 0) {
+            setError(result, "guidedSetupSummaryDone must be true or false");
+            return;
+        }
+        result->guidedSetup.summaryDone = strcmp(value, "true") == 0;
+        result->guidedSetup.summaryDoneChanged = true;
+        appendApplied(&result->applied, "[CFG] guidedSetupSummaryDone updated to %s", value);
+        result->changed = true;
+    }
+
     // A Part's place on the Outputs (ADR 0050, #347). All three fields or none:
     // a move that names only where a Part is going cannot say which Output it is
     // taking the Part away from, and that half is the one a builder has to be

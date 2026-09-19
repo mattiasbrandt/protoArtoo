@@ -53,6 +53,12 @@ constexpr char DROID_BUILD_FITTED_KEY[] = "dbuild_parts";
 // answers they are.
 constexpr char GUIDED_SETUP_RUN_KEY[] = "gsetup_run";
 constexpr char GUIDED_SETUP_VISITED_KEY[] = "gsetup_visited";
+// Whether the builder pressed Done on the ended run's summary (#371). Absent
+// reads as not done, so a controller that ended its run before this key existed
+// shows the summary once.
+constexpr char GUIDED_SETUP_SUMMARY_DONE_KEY[] = "gsetup_done";
+static_assert(sizeof(GUIDED_SETUP_SUMMARY_DONE_KEY) - 1 <= 15,
+              "an NVS key longer than 15 characters is refused by Preferences");
 static_assert(sizeof(GUIDED_SETUP_RUN_KEY) - 1 <= 15,
               "an NVS key longer than 15 characters is refused by Preferences");
 static_assert(sizeof(GUIDED_SETUP_VISITED_KEY) - 1 <= 15,
@@ -905,6 +911,7 @@ void configDeserializeDroidBuild(const ConfigReader& r, DroidBuildConfig* out,
 bool configSerializeGuidedSetup(const GuidedSetupConfig& cfg, ConfigWriter& w) {
     bool ok = w.writeU8(GUIDED_SETUP_RUN_KEY, (uint8_t)cfg.run);
     ok = w.writeStr(GUIDED_SETUP_VISITED_KEY, guidedSetupVisitedStored(cfg)) && ok;
+    ok = w.writeBool(GUIDED_SETUP_SUMMARY_DONE_KEY, cfg.summaryDone) && ok;
     return ok;
 }
 
@@ -920,6 +927,7 @@ void configDeserializeGuidedSetup(const ConfigReader& r, GuidedSetupConfig* out,
     const uint8_t storedRun = r.readU8(GUIDED_SETUP_RUN_KEY, (uint8_t)GUIDED_SETUP_NOT_RUN);
     out->run = guidedSetupRunFromStored(storedRun);
     local.runRepaired = ((uint8_t)out->run != storedRun);
+    out->summaryDone = r.readBool(GUIDED_SETUP_SUMMARY_DONE_KEY, false);
 
     // Absent, sentinel, or a list - and the first of those is the one that
     // carries a fact nothing else can: guided Setup has never been drawn on this

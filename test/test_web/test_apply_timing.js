@@ -19,7 +19,10 @@
 //     card never reads as waiting on a restart, while a Sound member does;
 //   - an answer the droid uses at once says nothing about when: only one that
 //     waits for a start or a restart carries a line (operator, 2026-09-19 on
-//     #412).
+//     #412);
+//   - what is waiting is read against what the droid says it started with,
+//     never against the page's own first read, so a page opened between a
+//     save and a restart still says so - the defect #371 found.
 // =============================================================================
 
 import { test } from "node:test";
@@ -27,7 +30,7 @@ import assert from "node:assert";
 import fs from "fs";
 import { syncBuiltinESMExports } from "module";
 
-import { ready } from "./helpers/configuration_surface.js";
+import { configured, ready } from "./helpers/configuration_surface.js";
 
 const timingLine = (env, step) =>
   env.parsed.querySelector(`[data-setup-step="${step}"]`).querySelector("[data-apply-timing]");
@@ -123,4 +126,19 @@ test("an answer the droid uses at once carries no timing line at all", async () 
   assert.equal(line.textContent, "", "an immediate answer says nothing about when");
   assert.equal(line.classList.contains("hidden"), true, "and draws no empty note");
   assert.notEqual(timingLine(env, "sound").textContent, "", "while one that waits for a start still says so");
+});
+
+test("a page opened between a save and a restart still says the change is waiting", async () => {
+  // Saved: Foot Drive fitted and two SBUS receivers. Started with: neither.
+  const config = configured();
+  config.activeToggles = Object.keys(config.components).filter(
+    (id) => id !== "drive" && config.components[id].enabled === true,
+  );
+  config.rc.activeInputMode = "standard_pwm";
+  const env = await ready({ config });
+
+  assert.equal(timingLine(env, "drive").dataset.pending, "true", "the droid still runs without its feet");
+  const rc = timingLine(env, "rc");
+  assert.equal(rc.dataset.pending, "true", "and still reads the receiver it started with");
+  assert.ok(rc.classList.contains("note-act"), "which the builder must restart for: amber");
 });

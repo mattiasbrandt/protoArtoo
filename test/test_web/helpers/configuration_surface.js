@@ -14,6 +14,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
+import { bootedDroid } from "./booted_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -65,7 +66,7 @@ const lineupFor = (board) => {
   };
 };
 
-const configured = () => ({
+export const configured = () => ({
   components: {
     domeEsc: { enabled: false },
     rcCh1: { enabled: true },
@@ -109,6 +110,8 @@ const stub = () => ({
 export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true, config = configured() } = {}) => {
   const parsed = surfaceDocument(set);
   const lineup = lineupFor(board);
+  // The droid reports what it started with beside what it saved (#371).
+  const report = bootedDroid();
   const posts = [];
   const sections = new Map();
   const timers = [];
@@ -158,14 +161,14 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
     PAApi: {
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
-        if (path === "/api/config") return { ok: true, data: config };
+        if (path === "/api/config") return { ok: true, data: report("GET", path, config) };
         if (path === "/api/identity/components") return { ok: true, data: lineup };
         throw new Error(`unexpected GET ${path}`);
       },
       postForm: async (path, body) => {
         const read = apply(body);
         posts.push({ path, get: read });
-        return { ok: true, data: config };
+        return { ok: true, data: report("POST", path, config) };
       },
     },
     PABootstrap: {

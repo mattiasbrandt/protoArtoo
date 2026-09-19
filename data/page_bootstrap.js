@@ -544,8 +544,8 @@
   // has not answered since.
   //
   // It answers for a SURFACE, not for one poll of it: Sound owns two (the
-  // status fallback and the audio module's own) and Setup owns two (the serial
-  // fallback and the memory profiler). A surface is current only when
+  // status fallback and the audio module's own) and Maintenance owns two (the
+  // serial fallback and the memory profiler). A surface is current only when
   // everything it asks for has answered, so one poll of two is not an answer
   // from the surface (#360).
   //

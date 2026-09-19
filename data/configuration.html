@@ -68,6 +68,22 @@
       <p class="hint">Finding out whether this droid is set up.</p>
     </div>
 
+    <!-- What the run left behind (#371): what was set, what still waits for a
+         restart, and what was never asked. Shown once the run has ended - by
+         reaching the last step or by stopping - and drawn by data/setup.js from
+         the run's steps and the droid's saved record, so it carries no list of
+         its own and reads the same after a restart. It stays until Done, which
+         is saved on the droid like the rest of the run's record. -->
+    <div class="card hidden" id="setup-summary">
+      <div class="sect"><h2 id="setup-summary-title">Setup</h2><span class="sub" id="setup-summary-count"></span></div>
+      <p class="hint" id="setup-summary-hint"></p>
+      <div id="setup-summary-body"></div>
+      <div class="button-row button-row-compact">
+        <button id="setup-summary-done" class="btn" type="button">Done</button>
+      </div>
+      <div id="setup-summary-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <div class="card hidden" id="wizard-head">
       <!-- The rail: the questions in this run, the one you are on, and what
            each one currently answers. A hollow mark is a question that has not
@@ -85,7 +101,9 @@
          #288 closed. -->
     <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
       <div class="sect"><h2>WiFi</h2><span class="sub" id="wizard-wifi-state">finding out</span></div>
-      <div data-setup-step="wifi">
+      <!-- data-setup-home: where this step is answered once the run is over,
+           since this card is the run's alone (data/setup.js). -->
+      <div data-setup-step="wifi" data-setup-home="#wifi">
         <p class="note hidden apply-timing" data-apply-timing></p>
         <p class="note" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
         <div class="button-row button-row-compact">
