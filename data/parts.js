@@ -1851,8 +1851,18 @@
     if (markerId === null) return;
     const pick = describePick(markerId);
     if (actId === "fit") {
-      if (pick.isFitted) dropFromBuild(pick.onDroid, pick.onDroid.map(partLabel).join(", "));
-      else addToBuild(pick.unfitted, pick.unfitted.map(partLabel).join(", "));
+      if (pick.isFitted) {
+        // A Common Addition comes off the way the Parts list fits it, as one
+        // group: an arm without its claw is not a thing a builder has on the
+        // bench (operator, 2026-09-19 on #373).
+        const group = view.ADDITION_GROUPS.find((each) => each.ids.some((id) => pick.onDroid.indexOf(id) !== -1));
+        const fitted = fittedNow() || [];
+        const leaving = group ? group.ids.filter((id) => fitted.indexOf(id) !== -1) : pick.onDroid;
+        const whole = group && leaving.length === group.ids.length;
+        dropFromBuild(leaving, whole ? group.label : leaving.map(partLabel).join(", "));
+      } else {
+        addToBuild(pick.unfitted, pick.unfitted.map(partLabel).join(", "));
+      }
       return;
     }
     if (actId === "wire") {
