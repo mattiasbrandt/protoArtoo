@@ -815,8 +815,12 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4656 -> 582
 // the Radio Controller's Component Member, and both chains carry a snapshot by
 // value; the pre-slice base walks 8320 and 5776 on this chip. The rule lands
 // on the steps the stacks already are, so neither allocation moves.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8352;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8352 -> 10440 -> 10752
+// Re-derived 2026-09-19 (#412): Console 8352 -> 8368. The Console now names an
+// Output by the running board's label, and onCliCommand's deepest route (from
+// consoleExecuteCommand) walks 7904 against 7888 at the pre-slice base; the
+// rule still lands on 10752, so the allocation does not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8368;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8368 -> 10460 -> 10752
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5792;
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5792 -> 7240 -> 7680
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
