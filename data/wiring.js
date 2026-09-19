@@ -956,7 +956,7 @@
     if (!id) return "";
     const symbol = document.getElementById(`art-${id}`);
     if (symbol) return `<svg ${PICTURE_BOX}>${symbol.innerHTML}</svg>`;
-    const photo = document.querySelector(".wd-board-slot img");
+    const photo = document.querySelector(".wd-board-slot")?.querySelector("img");
     if (!photo || !photo.complete || !photo.naturalWidth) return "";
     const scale = Math.min(400 / photo.naturalWidth, 300 / photo.naturalHeight, 1);
     const canvas = document.createElement("canvas");
