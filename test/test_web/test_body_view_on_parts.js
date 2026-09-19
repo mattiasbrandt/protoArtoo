@@ -1,14 +1,16 @@
 // =============================================================================
 // test/test_web/test_body_view_on_parts.js
 //
-// The body view where it actually runs: mounted on the shipped Parts surface,
-// inside the shipped Operator Shell, against a fake droid (#352, ADR 0063).
+// The droid picture where it actually runs: mounted on the shipped Parts
+// surface, inside the shipped Operator Shell, against a fake droid (#352,
+// #372, ADR 0063 as amended 2026-09-19).
 //
 // The renderer's own contract is held by test_body_view.js. What these hold
 // is the thing that only exists once a caller is wired up: that the picture is
 // painted from the SAME answer the two tables are painted from, that a click
-// sends nothing, that a press sends exactly one command and no width, and that
-// every refusal names the builder's next move rather than stopping at no.
+// sends nothing, that a press sends exactly one command and no width, that the
+// estop holds every move the picture can start, that a holoprojector is never
+// offered one, and that every refusal names the builder's next move.
 // =============================================================================
 import test from "node:test";
 import assert from "node:assert";
@@ -24,9 +26,12 @@ const actButton = (env, id) =>
 const pressAct = (env, id) =>
   env.document.querySelector(".bodyview-panel-acts").fire("click", { target: actButton(env, id) });
 const pick = (env, markerId) =>
-  env.document.querySelector(".bodyview-svg").fire("click", { target: marker(env, markerId) });
-const travels = (env) =>
-  env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "travel");
+  env.document
+    .querySelectorAll(".bv-svg")
+    .find((svg) => svg.querySelectorAll("[data-marker]").some((node) => node.dataset.marker === markerId))
+    .fire("click", { target: marker(env, markerId) });
+const servoPosts = (env) => env.posts.filter((post) => post.path === "/api/servo");
+const domePosts = (env) => env.posts.filter((post) => post.path === "/api/dome/cmd");
 const facts = (env) =>
   env.document.querySelectorAll(".bodyview-panel-facts")[0].childNodes.map((node) => node.textContent);
 
@@ -50,9 +55,9 @@ test("a part nothing drives makes no claim about where it is", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
 
   const smallDoor = marker(env, "smallDoor");
-  assert.ok(smallDoor.classList.contains("is-undriven"));
-  assert.equal(smallDoor.classList.contains("has-position"), false);
-  assert.match(smallDoor.getAttribute("aria-label"), /nothing drives it yet/);
+  assert.ok(smallDoor.classList.contains("is-unassigned"));
+  assert.equal(smallDoor.classList.contains("is-open"), false);
+  assert.equal(smallDoor.classList.contains("is-closed"), false);
 });
 
 test("a click only selects: the panel fills and the droid is asked for nothing", async () => {
@@ -60,65 +65,77 @@ test("a click only selects: the panel fills and the droid is asked for nothing",
   const before = env.posts.length;
 
   pick(env, "doorFL");
+  pick(env, "dome-pp1");
 
   assert.equal(env.posts.length, before, "picking a part sends no request at all");
-  assert.match(panelTitle(env), /Left body door/);
+  assert.match(panelTitle(env), /Dome pie 1/);
   assert.ok(marker(env, "doorFL").classList.contains("is-selected"));
-  assert.deepEqual(
-    facts(env).filter((text) => text.includes("ARM1")),
-    ["ARM1"],
-    "the panel says what drives it"
-  );
+  assert.ok(marker(env, "dome-pp1").classList.contains("is-selected"));
 });
 
-test("move it sends one command naming the output, and no width", async () => {
+test("Open it sends one command naming the output and the end, and no width", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
   pick(env, "doorFL");
 
-  assert.equal(actButton(env, "move").disabled, false);
-  assert.match(panelWhy(env), /runs the part open, then closed, then back/);
+  assert.ok(facts(env).some((text) => text.includes("ARM1")), "the panel names the servo it is on");
+  assert.equal(actButton(env, "toggle").disabled, false);
 
-  pressAct(env, "move");
+  pressAct(env, "toggle");
   await sleep(20);
 
-  assert.equal(travels(env).length, 1, "one press, one command - the droid runs the out-and-back");
-  assert.deepEqual(travels(env)[0].form, { arm: "arm1", action: "travel" });
-  assert.equal("positionUs" in travels(env)[0].form, false, "no width travels with it");
-  assert.match(env.feedback(), /running through its travel and back/);
+  assert.equal(servoPosts(env).length, 1, "one press, one command");
+  // Six tenths of the way to the open end draws Open, so the press closes it.
+  assert.deepEqual(servoPosts(env)[0].form, { arm: "arm1", action: "close" });
+  assert.equal("positionUs" in servoPosts(env)[0].form, false, "no width travels with it");
 });
 
-test("a part ganged to another says so before it moves them both", async () => {
+test("a part ganged to another says so when it moves them both", async () => {
   const outputs = measuredArm1();
   outputs.find((each) => each.address === "ledc:0").parts = ["doorFL", "doorFR"];
   const env = await bootParts({ outputs });
 
   pick(env, "doorFL");
-  pressAct(env, "move");
+  pressAct(env, "toggle");
   await sleep(20);
 
   assert.match(env.feedback(), /Right body door/, "the part sharing the lead is named");
 });
 
-test("move it is refused under a latched estop, and says which no it is", async () => {
+test("the estop holds every move the picture can start, body and dome, and says which no it is", async () => {
   const env = await bootParts({ outputs: measuredArm1(), estop: true });
-  pick(env, "doorFL");
 
-  assert.equal(actButton(env, "move").disabled, true);
-  assert.equal(actButton(env, "move").getAttribute("aria-disabled"), "true");
-  assert.match(panelWhy(env), /Estop latched/);
-
-  pressAct(env, "move");
+  ["doorFL", "dome-pp1"].forEach((id) => {
+    pick(env, id);
+    assert.equal(actButton(env, "toggle").disabled, true, `${id} is held`);
+    assert.equal(actButton(env, "toggle").getAttribute("aria-disabled"), "true");
+    assert.match(panelWhy(env), /Estop latched/);
+    pressAct(env, "toggle");
+  });
   await sleep(20);
-  assert.equal(travels(env).length, 0);
+  assert.equal(servoPosts(env).length, 0, "no servo command under a latched estop");
+  assert.equal(domePosts(env).length, 0, "no dome command under a latched estop");
 
   // Cleared, and the act comes back without the builder picking again.
   env.pushStatus({ estop: false });
   await sleep(20);
-  assert.equal(actButton(env, "move").disabled, false);
-  assert.match(panelWhy(env), /runs the part open/);
+  assert.equal(actButton(env, "toggle").disabled, false);
+  pressAct(env, "toggle");
+  await sleep(20);
+  assert.deepEqual(domePosts(env).map((post) => post.form.cmd), [":OPP1"]);
 });
 
-test("give it an Output routes to the row's own picker and writes nothing", async () => {
+test("a holoprojector is offered no Open at all, only its facts", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+
+  pick(env, "dome-hp3");
+
+  assert.equal(actButton(env, "toggle").hidden, true, "a pan and tilt device never opens");
+  pressAct(env, "toggle");
+  await sleep(20);
+  assert.equal(domePosts(env).length, 0);
+});
+
+test("Give it an output routes to the row's own picker and writes nothing", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
   const before = env.posts.length;
 
@@ -129,4 +146,3 @@ test("give it an Output routes to the row's own picker and writes nothing", asyn
   assert.strictEqual(env.document.activeElement, env.partRow("smallDoor").querySelector("select"));
   assert.match(env.feedback(), /Choose the output that moves Small long door/);
 });
-

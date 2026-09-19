@@ -5,7 +5,8 @@
 // fake droid, the way test_outputs_table.js does inside its own file, and
 // adds what a Find by Moving run needs the droid to answer: a nudgesDone count
 // on every Output, POST /api/servo, a status stream the test can push an estop
-// onto, and a PAApi.gateControls the shipped one's shape. Kept beside the
+// onto, and a PAApi.gateControls the shipped one's shape. The droid picture
+// adds POST /api/dome/cmd. Kept beside the
 // mini_dom rather than inside it: nothing here bends the DOM to the code under
 // test, it only stands in for the droid (test/test_web/README.md).
 // =============================================================================
@@ -39,6 +40,18 @@ const part2Marker = bootstrapFile.indexOf("// =========================== PART 2
 const part3Marker = bootstrapFile.indexOf("// ============================ PART 3");
 const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
 const part3Src = bootstrapFile.substring(part3Marker);
+
+// What a fresh controller comes up with fitted: the pre-selected design's
+// complement, read from the shipped catalog rather than typed out here, so a
+// catalog change cannot leave this fake droid carrying parts no design has.
+const shippedCatalog = (() => {
+  const context = { window: {} };
+  vm.runInNewContext(readData("droid_parts.js"), context, { filename: "droid_parts.js" });
+  return context.window.DroidParts;
+})();
+const MK4_COMPLEX = shippedCatalog.designs
+  .find((design) => design.id === "mk4")
+  .variants.find((variant) => variant.id === "complex").seeds;
 
 const IDENTITY = {
   droidName: "artoo",
@@ -111,7 +124,13 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     // What the device holds as the Droid Build. A fresh controller comes up on
     // the pre-selected design with that design's complement fitted, which is
     // what data/droid_build.js adopts at boot.
-    droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: [] },
+    droidBuild: {
+      domeDesign: "mk4",
+      domeVariant: "complex",
+      bodyDesign: "mk4",
+      bodyVariant: "complex",
+      fitted: MK4_COMPLEX.slice(),
+    },
   };
 
   const windowListeners = new Map();
@@ -268,6 +287,9 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
           env.outputs.find((each) => each.address === form.movePartTo)?.parts.push(form.movePart);
           return { ok: true, status: 200, data: {} };
         }
+        // A dome panel press: the droid relays it over the dome link and
+        // answers at once. Nothing comes back about where the panel is.
+        if (path === "/api/dome/cmd") return { ok: true, status: 200, data: { ok: true } };
         throw new Error(`unexpected POST ${path}`);
       },
       estopPostForm: async (path) => {
@@ -368,6 +390,8 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     "/droid_parts.js": readData("droid_parts.js"),
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/droid_build.js": readData("droid_build.js"),
+    "/dome_panel_model.js": readData("dome_panel_model.js"),
+    "/body_art.js": readData("body_art.js"),
     "/body_view.js": readData("body_view.js"),
     "/parts.js": readData("parts.js"),
   };
