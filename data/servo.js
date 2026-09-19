@@ -1,298 +1,217 @@
 // =============================================================================
 // servo.js
 //
-// Servos page controller — arm servo controls, AUX output controls, and the
-// per-output test controls (ARM1/ARM2 and AUX servo channels).
-// SSE-first status delivery (consume `status` events from PAStatusStream),
-// with visibility-aware fallback polling when SSE is unavailable.
-// Sends open/close/stop/position commands via POST /api/servo.
+// Servos page controller: one row per Output the droid reports, with Open,
+// Close and Stop where the Output carries a servo, and a Test row per such
+// Output. SSE-first status delivery (consume `status` events from
+// PAStatusStream), with visibility-aware fallback polling when SSE is
+// unavailable. Sends open/close/stop/position commands via POST /api/servo.
+//
+// THIS FILE KNOWS NO OUTPUT. Which Outputs the droid has, what each is called
+// and what each carries is the firmware's answer, handed over by
+// data/output_settings.js from GET /api/config (every components{} entry
+// carrying an `address`, in the firmware's order). An Output is called by what
+// its board prints beside the pin - ARM3 on the Artoo PCB, GPIO 4 on the
+// FireBeetle 2 - and that word is also what POST /api/servo takes to move it
+// (ADR 0033 Amendment 2026-09-19), so a row sends the name it shows, as the
+// firmware gave it. Rows join the status payload and the recorded ends by the
+// Output's stored id, never by its name.
+//
 // READS calibration via GET /api/config and never writes it: an end is set on
 // Parts, by driving the part and pressing the button for that end, and this
 // page's Test Open and Test Close drive to the ends the droid recorded there
 // (#400). The `calib` names below are kept because reading the calibration is
 // still exactly what they do.
-// Component types (mg996r/mg90s/rgb/none) are read from /api/config to render
-// type-appropriate controls per AUX channel. Which servo each output carries
-// is set on this page through data/output_settings.js (#369), which tells
-// this file when the answer changes.
 // =============================================================================
 (() => {
-  const armControlsCard      = document.getElementById("arm-controls-card");
-  const armControlsContainer = document.getElementById("arm-controls-container");
-  const armControlsSummary   = document.getElementById("arm-controls-summary");
-  const noArmsCard           = document.getElementById("no-arms-card");
-  const armFeedback          = document.getElementById("arm-feedback");
+  const controls = document.getElementById("output-controls");
+  const controlsSummary = document.getElementById("output-controls-summary");
+  const outputFeedback = document.getElementById("output-feedback");
+  const servoTestCard = document.getElementById("servo-test-card");
+  const testRows = document.getElementById("servo-test-rows");
+  const calibFeedback = document.getElementById("calib-feedback");
 
-  const auxControlsCard      = document.getElementById("aux-controls-card");
-  const auxControlsContainer = document.getElementById("aux-controls-container");
-  const auxControlsSummary   = document.getElementById("aux-controls-summary");
-  const auxFeedback          = document.getElementById("aux-feedback");
+  // The Outputs as data/output_settings.js last handed them over - id, name,
+  // address - in the firmware's order, and the answer for each: whether it is
+  // wired and what it carries.
+  let outputs = [];
+  let answer = {};
+  let lastPayload = {};
 
-  const servoTestCard        = document.getElementById("servo-test-card");
-  const arm1TestSection      = document.getElementById("arm1-test-section");
-  const arm2TestSection      = document.getElementById("arm2-test-section");
-  const aux1TestSection      = document.getElementById("aux1-test-section");
-  const aux2TestSection      = document.getElementById("aux2-test-section");
-  const aux3TestSection      = document.getElementById("aux3-test-section");
-
-  const arm1TestUs           = document.getElementById("arm1-test-us");
-  const arm2TestUs           = document.getElementById("arm2-test-us");
-  const aux1TestUs           = document.getElementById("aux1-test-us");
-  const aux2TestUs           = document.getElementById("aux2-test-us");
-  const aux3TestUs           = document.getElementById("aux3-test-us");
-  const calibFeedback        = document.getElementById("calib-feedback");
-
-  // Component types loaded from /api/config — determines AUX rendering
-  let auxTypes = { aux1: "none", aux2: "none", aux3: "none" };
-  let auxConfigured = { aux1: false, aux2: false, aux3: false };
-
-  // The recorded ends, read from /api/config and never written from here. Test
-  // Open and Test Close drive to these, so what a builder sees is what the
-  // droid will really do when something says open -- not whatever number a box
-  // on this page happened to be holding.
+  // The recorded ends, read from /api/config and never written from here, keyed
+  // by the Output's stored id. Test Open and Test Close drive to these, so what
+  // a builder sees is what the droid will really do when something says open.
   //
   // The defaults stand in when a field is absent, which is a real answer rather
   // than a missing one: addServoOutputFields() leaves an Output Address with no
   // live row OUT of the document instead of inventing a number, and names this
-  // fallback as the reason it may (src/web/api_config.cpp:624).
-  const endpoints = {
-    arm1Open: 2000, arm1Close: 1000,
-    arm2Open: 2000, arm2Close: 1000,
-    aux1Open: 2000, aux1Close: 1000,
-    aux2Open: 2000, aux2Close: 1000,
-    aux3Open: 2000, aux3Close: 1000,
+  // fallback as the reason it may (src/web/api_config.cpp).
+  const DEFAULT_OPEN_US = 2000;
+  const DEFAULT_CLOSE_US = 1000;
+  let config = null;
+  const endOf = (id, end) => {
+    const value = Number(config?.[`${id}${end === "open" ? "OpenUs" : "CloseUs"}`]);
+    return Number.isFinite(value) && value > 0 ? value : end === "open" ? DEFAULT_OPEN_US : DEFAULT_CLOSE_US;
   };
 
+  const LED_STRIP = "rgb";
+  const SERVO_LABELS = { mg996r: "MG996R servo", mg90s: "MG90S servo" };
+  const carriesServo = (id) => Boolean(SERVO_LABELS[answer[id]?.type]);
 
-  // -------------------------------------------------------------------------
-  // Servo command helpers
-  // -------------------------------------------------------------------------
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const button = (label, onPress) => {
+    const node = element("button", "btn", label);
+    node.type = "button";
+    node.addEventListener("click", onPress);
+    return node;
+  };
+
   const setFeedback = (el, text, cls = "") => {
     if (!el) return;
     el.textContent = text;
     el.className = cls ? `feedback ${cls}` : "feedback";
   };
 
-  const postServoAction = async (arm, action, feedbackEl) => {
+  // -------------------------------------------------------------------------
+  // What a press sends. `output.name` is the firmware's word for the Output,
+  // sent exactly as it came: a space in it (GPIO 49) is the board's, and the
+  // firmware matches it.
+  // -------------------------------------------------------------------------
+  const postServoAction = async (output, action) => {
     if (!window.PAApi) return;
-    const fb = feedbackEl || armFeedback;
-    const label = `${arm} ${action}`;
+    const label = `${output.name} ${action}`;
     try {
-      await window.PAApi.postForm("/api/servo", { arm, action }, { timeoutMs: 3000 });
-      setFeedback(fb, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+      await window.PAApi.postForm("/api/servo", { arm: output.name, action }, { timeoutMs: 3000 });
+      setFeedback(outputFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      setFeedback(fb, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+      setFeedback(outputFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
-  const postServoPosition = async (arm, pulseUs, feedbackEl) => {
+  const postServoPosition = async (output, pulseUs) => {
     if (!window.PAApi) return;
-    const fb = feedbackEl || armFeedback;
-    const label = `${arm} → ${pulseUs} µs`;
+    const label = `${output.name} → ${pulseUs} µs`;
     try {
       await window.PAApi.postForm("/api/servo",
-        { arm, action: "position", positionUs: String(pulseUs) },
+        { arm: output.name, action: "position", positionUs: String(pulseUs) },
         { timeoutMs: 3000 });
-      setFeedback(fb, `Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
+      setFeedback(outputFeedback, `Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      setFeedback(fb, `Test ${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+      setFeedback(outputFeedback, `Test ${label} failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   // -------------------------------------------------------------------------
-  // renderArmControls() — ARM1/ARM2 open/close/stop buttons
+  // The rows. An Output is on this page when it is wired or the droid reports
+  // it live; what it carries decides what its row offers.
   // -------------------------------------------------------------------------
-  const ARM_DEFS = [
-    { id: "arm1", name: "Utility Arm 1",  label: "ARM1" },
-    { id: "arm2", name: "Utility Arm 2", label: "ARM2" },
-  ];
+  const present = (output) => Boolean(answer[output.id]?.enabled) || output.id in lastPayload;
 
-  let renderedArmIds = null;
+  const detailOf = (output) => {
+    const type = SERVO_LABELS[answer[output.id]?.type] || "";
+    const live = typeof lastPayload[output.id]?.detail === "string" ? lastPayload[output.id].detail : "";
+    return type && live ? `${type} · ${live}` : type || live;
+  };
 
-  // The section head's subtitle, which is a count rather than a tagline
-  // (ADR 0066, docs/ui-copy-voice.md rule 8). It counts the arms the droid
-  // answered for, so it cannot disagree with the rows under it.
-  const armSummary = (count) =>
-    count === 0 ? "none switched on" : `${count} of ${ARM_DEFS.length} switched on`;
+  const controlRow = (output) => {
+    const row = element("div", "arm-control-row");
+    row.dataset.output = output.id;
+    row.appendChild(element("span", "arm-name", output.name));
+    if (answer[output.id]?.type === LED_STRIP) {
+      row.appendChild(element("span", "arm-position", "LED strip · set its length in Configuration"));
+      return row;
+    }
+    const position = element("span", "arm-position", detailOf(output));
+    position.dataset.detail = output.id;
+    row.appendChild(position);
+    const acts = element("span", "arm-acts");
+    for (const [label, action] of [["Open", "open"], ["Close", "close"], ["Stop", "stop"]]) {
+      const press = button(label, () => postServoAction(output, action));
+      press.dataset.action = action;
+      acts.appendChild(press);
+    }
+    row.appendChild(acts);
+    return row;
+  };
 
-  const renderArmControls = (payload) => {
-    const enabled = ARM_DEFS.filter((a) => a.id in payload);
-    const ids = enabled.map((a) => a.id).join(",");
+  const testRow = (output) => {
+    const row = element("div", "arm-control-row");
+    row.dataset.output = output.id;
+    row.appendChild(element("span", "arm-name", output.name));
+    row.appendChild(element("span", "arm-position", "type a width, or drive to a recorded end"));
+    const acts = element("span", "arm-acts");
+    const width = element("input", "input-narrow");
+    width.type = "number";
+    width.min = "500";
+    width.max = "2500";
+    width.step = "10";
+    width.value = "1500";
+    width.setAttribute("aria-label", `${output.name} test pulse width in microseconds`);
+    acts.appendChild(width);
+    const test = button(`Test ${output.name}`, () => postServoPosition(output, Number(width.value) || 1500));
+    test.dataset.action = "test";
+    const open = button("Test Open", () => postServoPosition(output, endOf(output.id, "open")));
+    open.dataset.action = "test-open";
+    const close = button("Test Close", () => postServoPosition(output, endOf(output.id, "close")));
+    close.dataset.action = "test-close";
+    [test, open, close].forEach((node) => acts.appendChild(node));
+    row.appendChild(acts);
+    return row;
+  };
 
-    if (noArmsCard)      noArmsCard.classList.toggle("hidden", enabled.length > 0);
-    if (armControlsCard) armControlsCard.classList.toggle("hidden", enabled.length === 0);
-    if (armControlsSummary) armControlsSummary.textContent = armSummary(enabled.length);
+  const summaryText = (shown) => {
+    const wired = outputs.filter((output) => answer[output.id]?.enabled).length;
+    const drive = shown.filter((output) => carriesServo(output.id)).length;
+    return `${wired} of ${outputs.length} wired · ${drive} ${drive === 1 ? "drives a servo" : "drive a servo"}`;
+  };
 
-    if (enabled.length === 0) return;
+  // Drawn again only when what the rows are made of changes, so a status frame
+  // arriving every second does not rebuild buttons under a builder's finger.
+  let drawn = null;
+  const render = () => {
+    if (!controls) return;
+    const shown = outputs.filter(present);
+    const drivable = shown.filter((output) => carriesServo(output.id));
+    const shape = shown.map((output) => `${output.id}:${output.name}:${answer[output.id]?.type}`).join(",");
 
-    if (armControlsContainer && ids !== renderedArmIds) {
-      renderedArmIds = ids;
-      armControlsContainer.innerHTML = enabled.map((arm) => {
-        const detail = window.PAUtils.escapeHtml(payload[arm.id]?.detail || "");
-        return `
-          <div class="arm-control-row" id="row-${arm.id}">
-            <span class="arm-name">${arm.name}</span>
-            <span class="arm-position" id="pos-${arm.id}">${detail}</span>
-            <span class="arm-acts">
-              <button class="btn" data-arm="${arm.id}" data-action="open"  type="button">Open</button>
-              <button class="btn" data-arm="${arm.id}" data-action="close" type="button">Close</button>
-              <button class="btn" data-arm="${arm.id}" data-action="stop"  type="button">Stop</button>
-            </span>
-          </div>`;
-      }).join("");
-
-      armControlsContainer.querySelectorAll("[data-arm]").forEach((btn) => {
-        btn.addEventListener("click", () =>
-          postServoAction(btn.dataset.arm, btn.dataset.action, armFeedback));
+    if (shape !== drawn) {
+      drawn = shape;
+      if (outputs.length === 0) {
+        controls.replaceChildren(element("p", "hint", "Reading the outputs from the droid…"));
+      } else if (shown.length === 0) {
+        const note = element("p", "note");
+        note.innerHTML = '<b>No output wired.</b> Mark one wired on <a class="setup-link" href="#wiring">Wiring</a>.';
+        controls.replaceChildren(note);
+      } else {
+        const rows = shown.filter((output) => carriesServo(output.id) || answer[output.id]?.type === LED_STRIP);
+        controls.replaceChildren(...(rows.length
+          ? rows.map(controlRow)
+          : [element("p", "note", "Nothing to drive. The wired outputs carry nothing yet.")]));
+      }
+      if (testRows) testRows.replaceChildren(...drivable.map(testRow));
+    } else {
+      shown.forEach((output) => {
+        const detail = Array.from(controls.querySelectorAll("[data-detail]"))
+          .find((node) => node.dataset.detail === output.id);
+        if (detail) detail.textContent = detailOf(output);
       });
-    } else if (armControlsContainer) {
-      enabled.forEach((arm) => {
-        const el = document.getElementById(`pos-${arm.id}`);
-        if (el) el.textContent = payload[arm.id]?.detail || "";
-      });
     }
+    if (controlsSummary) controlsSummary.textContent = outputs.length ? summaryText(shown) : "finding out";
+    if (servoTestCard) servoTestCard.classList.toggle("hidden", drivable.length === 0);
   };
 
   // -------------------------------------------------------------------------
-  // renderAuxControls() — AUX1/2/3 type-appropriate controls
+  // Status rendering -- shared by SSE and fallback polling paths
   // -------------------------------------------------------------------------
-  const AUX_DEFS = [
-    { id: "aux1", name: "AUX 1", label: "AUX1" },
-    { id: "aux2", name: "AUX 2", label: "AUX2" },
-    { id: "aux3", name: "AUX 3", label: "AUX3" },
-  ];
-
-  // The arm and AUX lines are marked in use, and an AUX line given the LED
-  // strip, on Wiring (data/output_settings.js, #369), so that is where these
-  // sentences send a builder.
-  const setupActionHtml = (action) => `${action} on <a class="setup-link" href="#wiring">Wiring</a>`;
-  // The strip's count and preview stay on Configuration until Lights (#410).
-  const ledCountText = window.PAUi?.setupActionText?.("set its length") || "set its length in Configuration";
-  const isServoType = (type) => type === "mg996r" || type === "mg90s";
-  const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
-
-  const buildAuxLedRow = (aux) => `
-    <div class="arm-control-row" id="row-${aux.id}">
-      <span class="arm-name">${aux.name}</span>
-      <span class="arm-position">LED strip &middot; ${ledCountText}</span>
-    </div>`;
-
-  const buildAuxServoRow = (aux, detail, typeLabel) => {
-    const descriptor = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
-    return `
-      <div class="arm-control-row" id="row-${aux.id}">
-        <span class="arm-name">${aux.name}</span>
-        <span class="arm-position" id="pos-${aux.id}">${descriptor}</span>
-        <span class="arm-acts">
-          <button class="btn" data-arm="${aux.id}" data-action="open" type="button">Open</button>
-          <button class="btn" data-arm="${aux.id}" data-action="close" type="button">Close</button>
-          <button class="btn" data-arm="${aux.id}" data-action="stop" type="button">Stop</button>
-        </span>
-      </div>`;
-  };
-
-  const bindAuxActionDelegation = () => {
-    if (!auxControlsContainer || auxControlsContainer.dataset.actionsBound === "1") return;
-    auxControlsContainer.dataset.actionsBound = "1";
-    auxControlsContainer.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-arm][data-action]");
-      if (!button || !auxControlsContainer.contains(button)) return;
-      postServoAction(button.dataset.arm, button.dataset.action, auxFeedback);
-    });
-  };
-
-  let renderedAuxIds = null;
-
-  // The AUX section head's subtitle. Two counts, because they are two different
-  // facts a builder needs: how many AUX lines are switched on at all, and how
-  // many of those carry something this page can drive. An LED strip is switched
-  // on and has no position, so the second count is smaller on purpose.
-  const auxSummary = (enabled) => {
-    if (enabled.length === 0) return "none switched on";
-    const drivable = enabled.filter((aux) => isServoType(auxTypes[aux.id])).length;
-    return `${enabled.length} of ${AUX_DEFS.length} switched on · ${drivable} ${
-      drivable === 1 ? "drives a servo" : "drive a servo"
-    }`;
-  };
-
-  const renderAuxControls = (payload) => {
-    const enabled = AUX_DEFS.filter((a) => auxConfigured[a.id] || (a.id in payload));
-    if (auxControlsCard) auxControlsCard.classList.remove("hidden");
-    if (auxControlsSummary) auxControlsSummary.textContent = auxSummary(enabled);
-    if (!auxControlsContainer) return;
-    bindAuxActionDelegation();
-
-    if (enabled.length === 0) {
-      renderedAuxIds = "none";
-      auxControlsContainer.innerHTML =
-        `<p class="note"><b>No AUX output in use.</b> ${setupActionHtml("Mark one in use")}.</p>`;
-      return;
-    }
-
-    const ids = enabled.map((a) => `${a.id}:${auxTypes[a.id]}`).join(",");
-    if (ids !== renderedAuxIds) {
-      renderedAuxIds = ids;
-      const rows = enabled.map((aux) => {
-        const type = auxTypes[aux.id] || "none";
-        const detail = window.PAUtils.escapeHtml(payload[aux.id]?.detail || "");
-        const typeLabel = auxTypeLabel(type);
-        if (type === "rgb") return buildAuxLedRow(aux);
-        if (isServoType(type)) return buildAuxServoRow(aux, detail, typeLabel);
-        return "";
-      }).filter(Boolean);
-
-      auxControlsContainer.innerHTML = rows.length > 0
-        ? rows.join("")
-        : "<p class=\"note\"><b>Nothing to drive.</b> The AUX outputs that are on have nothing set on them.</p>";
-      return;
-    }
-
-    enabled.forEach((aux) => {
-      const el = document.getElementById(`pos-${aux.id}`);
-      if (!el) return;
-      const type = auxTypes[aux.id] || "none";
-      if (!isServoType(type)) return;
-      const typeLabel = auxTypeLabel(type);
-      const detail = payload[aux.id]?.detail || "";
-      el.textContent = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
-    });
-  };
-
-  // -------------------------------------------------------------------------
-  // renderTestSections() — show/hide test sections per enabled state + type
-  // -------------------------------------------------------------------------
-  const renderTestSections = (payload) => {
-    const arm1Present = "arm1" in payload;
-    const arm2Present = "arm2" in payload;
-    const aux1Present = auxConfigured.aux1 || ("aux1" in payload);
-    const aux2Present = auxConfigured.aux2 || ("aux2" in payload);
-    const aux3Present = auxConfigured.aux3 || ("aux3" in payload);
-
-
-    const aux1Servo = aux1Present && isServoType(auxTypes.aux1);
-    const aux2Servo = aux2Present && isServoType(auxTypes.aux2);
-    const aux3Servo = aux3Present && isServoType(auxTypes.aux3);
-
-    const anyTestable = arm1Present || arm2Present || aux1Servo || aux2Servo || aux3Servo;
-
-    if (servoTestCard)   servoTestCard.classList.toggle("hidden", !anyTestable);
-    if (arm1TestSection) arm1TestSection.classList.toggle("hidden", !arm1Present);
-    if (arm2TestSection) arm2TestSection.classList.toggle("hidden", !arm2Present);
-    if (aux1TestSection) aux1TestSection.classList.toggle("hidden", !aux1Servo);
-    if (aux2TestSection) aux2TestSection.classList.toggle("hidden", !aux2Servo);
-    if (aux3TestSection) aux3TestSection.classList.toggle("hidden", !aux3Servo);
-  };
-
-  // -------------------------------------------------------------------------
-  // Status rendering — shared by SSE and fallback polling paths
-  // -------------------------------------------------------------------------
-  let lastPayload = null;
-
   const renderStatus = (payload) => {
-    lastPayload = payload;
-    renderArmControls(payload);
-    renderAuxControls(payload);
-    renderTestSections(payload);
+    lastPayload = payload && typeof payload === "object" ? payload : {};
+    render();
   };
 
   const refreshStatusOnce = async () => {
@@ -302,90 +221,25 @@
   };
 
   // -------------------------------------------------------------------------
-  // Calibration load — read only
+  // Calibration load -- read only
   // -------------------------------------------------------------------------
-  const setCalibFeedback = (text, cls = "") => {
-    if (!calibFeedback) return;
-    calibFeedback.textContent = text;
-    calibFeedback.className = cls ? `feedback ${cls}` : "feedback";
-  };
-
   const loadCalib = async ({ handle = null } = {}) => {
     if (!window.PAApi) throw new Error("API helper unavailable");
-    setCalibFeedback("Loading calibration...");
+    setFeedback(calibFeedback, "Loading calibration...");
     try {
       const api = handle || window.PAApi;
       const result = await api.get("/api/config");
-      const cfg = result.data;
-
-      // Arm ends
-      endpoints.arm1Open  = cfg.arm1OpenUs  ?? 2000;
-      endpoints.arm1Close = cfg.arm1CloseUs ?? 1000;
-      endpoints.arm2Open  = cfg.arm2OpenUs  ?? 2000;
-      endpoints.arm2Close = cfg.arm2CloseUs ?? 1000;
-
-      // AUX ends
-      endpoints.aux1Open  = cfg.aux1OpenUs  ?? 2000;
-      endpoints.aux1Close = cfg.aux1CloseUs ?? 1000;
-      endpoints.aux2Open  = cfg.aux2OpenUs  ?? 2000;
-      endpoints.aux2Close = cfg.aux2CloseUs ?? 1000;
-      endpoints.aux3Open  = cfg.aux3OpenUs  ?? 2000;
-      endpoints.aux3Close = cfg.aux3CloseUs ?? 1000;
-
-      // Pre-populate test inputs at neutral
-      if (arm1TestUs) arm1TestUs.value = 1500;
-      if (arm2TestUs) arm2TestUs.value = 1500;
-      if (aux1TestUs) aux1TestUs.value = 1500;
-      if (aux2TestUs) aux2TestUs.value = 1500;
-      if (aux3TestUs) aux3TestUs.value = 1500;
-
-      const components = cfg?.components || {};
-      auxTypes.aux1 = String(components.aux1?.type || "none");
-      auxTypes.aux2 = String(components.aux2?.type || "none");
-      auxTypes.aux3 = String(components.aux3?.type || "none");
-      auxConfigured.aux1 = Boolean(components.aux1?.enabled);
-      auxConfigured.aux2 = Boolean(components.aux2?.enabled);
-      auxConfigured.aux3 = Boolean(components.aux3?.enabled);
-      // Re-render AUX controls now that types are known
-      renderAuxControls(lastPayload || {});
-      renderTestSections(lastPayload || {});
-
-      setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
+      config = result.data || {};
+      setFeedback(calibFeedback, `Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[servo] loadCalib failed:", error);
-      setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
+      setFeedback(calibFeedback, `Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
       throw error;
     }
   };
 
   // -------------------------------------------------------------------------
-  // Test buttons — send SERVO_CMD_POSITION immediately. Test Open and Test
-  // Close drive to the ends `endpoints` holds; nothing on this page writes one.
-  // -------------------------------------------------------------------------
-  const wireTestBtn = (btnId, armId, getUs, fb) => {
-    const btn = document.getElementById(btnId);
-    if (btn) btn.addEventListener("click", () =>
-      postServoPosition(armId, Number(getUs()), fb || armFeedback));
-  };
-
-  wireTestBtn("arm1-test-btn",       "arm1", () => arm1TestUs?.value || 1500);
-  wireTestBtn("arm1-open-test-btn",  "arm1", () => endpoints.arm1Open);
-  wireTestBtn("arm1-close-test-btn", "arm1", () => endpoints.arm1Close);
-  wireTestBtn("arm2-test-btn",       "arm2", () => arm2TestUs?.value || 1500);
-  wireTestBtn("arm2-open-test-btn",  "arm2", () => endpoints.arm2Open);
-  wireTestBtn("arm2-close-test-btn", "arm2", () => endpoints.arm2Close);
-  wireTestBtn("aux1-test-btn",       "aux1", () => aux1TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux1-open-test-btn",  "aux1", () => endpoints.aux1Open,  auxFeedback);
-  wireTestBtn("aux1-close-test-btn", "aux1", () => endpoints.aux1Close, auxFeedback);
-  wireTestBtn("aux2-test-btn",       "aux2", () => aux2TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux2-open-test-btn",  "aux2", () => endpoints.aux2Open,  auxFeedback);
-  wireTestBtn("aux2-close-test-btn", "aux2", () => endpoints.aux2Close, auxFeedback);
-  wireTestBtn("aux3-test-btn",       "aux3", () => aux3TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux3-open-test-btn",  "aux3", () => endpoints.aux3Open,  auxFeedback);
-  wireTestBtn("aux3-close-test-btn", "aux3", () => endpoints.aux3Close, auxFeedback);
-
-  // -------------------------------------------------------------------------
-  // Boot — load config then start status subscription
+  // Boot -- load config then start status subscription
   // -------------------------------------------------------------------------
 
   // Page Recovery: register startup API load as a section so the bootstrap
@@ -404,7 +258,7 @@
       "/web_api.js": "controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
-      "/output_settings.js": "arm and AUX outputs",
+      "/output_settings.js": "the outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
     });
@@ -415,21 +269,19 @@
 
   startPageLoad();
 
-  // The servo on each output, set here; the in-use ticks and the LED strip
-  // are Wiring's. One answer drawn on both surfaces (data/output_settings.js),
-  // and the test rows below follow it the moment it changes.
+  // The servo on each output, set here; the wired ticks and the LED strip are
+  // Wiring's. One answer drawn on both surfaces (data/output_settings.js), and
+  // the rows on this page follow it the moment it changes - an Output just
+  // given the LED strip stops offering servo moves at once.
   window.PAOutputSettings?.mount("type", {
     body: document.getElementById("servo-types-body"),
     feedback: document.getElementById("servo-types-feedback"),
   });
-  window.PAOutputSettings?.onChange((outputs) => {
-    if (!outputs) return;
-    ["aux1", "aux2", "aux3"].forEach((id) => {
-      auxTypes[id] = outputs[id].type;
-      auxConfigured[id] = outputs[id].enabled;
-    });
-    renderAuxControls(lastPayload || {});
-    renderTestSections(lastPayload || {});
+  window.PAOutputSettings?.onChange((state, facts) => {
+    if (!state || !Array.isArray(facts)) return;
+    outputs = facts;
+    answer = state;
+    render();
   });
 
   // SSE-first status updates with visibility-aware fallback polling.

@@ -55,9 +55,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const freshOutputs = () => [
   { address: "ledc:0", name: "ARM1", parts: [] },
   { address: "ledc:1", name: "ARM2", parts: [] },
-  { address: "ledc:3", name: "AUX1", parts: [] },
-  { address: "ledc:4", name: "AUX2", parts: [] },
-  { address: "ledc:5", name: "AUX3", parts: [] },
+  { address: "ledc:3", name: "ARM3", parts: [] },
+  { address: "ledc:4", name: "ARM4", parts: [] },
+  { address: "ledc:5", name: "ARM5", parts: [] },
 ];
 
 const withParts = (assignments) => {
@@ -303,8 +303,8 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.text("parts-move-title"), "Part already wired");
   assert.equal(
     env.text("parts-move-body"),
-    "Left body door is on ARM1. Move it to AUX1 and unwire it from ARM1? " +
-      "ARM1 keeps driving Right body door. Upper utility arm is on AUX1 too — they will move together.",
+    "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
+      "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
   assert.equal(env.text("parts-move-confirm"), "Move it", "the button that agrees is the verb");
 
@@ -316,7 +316,7 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.dialog.open, false);
   assert.equal(env.select("doorFL").value, "ledc:3", "the table repaints from what the droid now says");
   assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still driven");
-  assert.equal(env.text("parts-feedback"), "Left body door is on AUX1.");
+  assert.equal(env.text("parts-feedback"), "Left body door is on ARM3.");
 });
 
 test("cancelling the question sends nothing and puts the control back", async () => {
@@ -325,7 +325,7 @@ test("cancelling the question sends nothing and puts the control back", async ()
   env.pick("doorFL", "ledc:4");
   assert.equal(
     env.text("parts-move-body"),
-    "Left body door is on ARM1. Move it to AUX2 and unwire it from ARM1? ARM1 will drive nothing.",
+    "Left body door is on ARM1. Move it to ARM4 and unwire it from ARM1? ARM1 will drive nothing.",
   );
   env.click("parts-move-cancel");
   await sleep(20);

@@ -12,7 +12,7 @@
 // board prints beside each, which one can carry the LED strip and which config
 // fields save it all come from the running firmware, in GET /api/config: every
 // components{} entry that carries an `address` is an Output, in the order the
-// firmware lists them (src/web/api_config.cpp CONFIG_OUTPUTS, docs/api.md).
+// firmware lists them (include/board_outputs.h BOARD_OUTPUTS, docs/api.md).
 // A plate is drawn per entry and saved under the fields that entry names. The
 // operator's rule, 2026-09-19 on #411: "the outputs is supposed to be dynamic,
 // thats the whole point of the wiring and mapping we have" - and an Output is
@@ -321,9 +321,14 @@
     view.body.replaceChildren(plates, timing);
   };
 
+  // A listener is handed the answer and the Outputs it is about - id, label,
+  // address, strip - in the firmware's order, so a surface that draws its own
+  // rows (Servos' controls) draws them from the same list and names each the
+  // same way, and never keeps a list of its own.
   const renderAll = () => {
     views.forEach(render);
-    listeners.forEach((listener) => listener(state));
+    const facts = outputs.map((output) => ({ ...output, name: nameOf(output) }));
+    listeners.forEach((listener) => listener(state, facts));
   };
 
   let loading = null;

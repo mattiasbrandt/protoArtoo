@@ -29,44 +29,31 @@
       </div>
     </div>
 
-    <!-- Which servo each arm and AUX line carries (operator, 2026-09-18 on
-         #369): drawn by data/output_settings.js, the same answer Wiring's
-         in-use ticks are part of, so the two cannot disagree. -->
+    <!-- Which servo each Output carries (operator, 2026-09-18 on #369): drawn
+         by data/output_settings.js, the same answer Wiring's wired ticks are
+         part of, so the two cannot disagree. -->
     <div class="card">
       <div class="sect"><h2>Servo on each output</h2><span class="sub">sets how far it swings</span></div>
       <div id="servo-types-body"></div>
       <div id="servo-types-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Arm Controls (ARM1 / ARM2 only) -->
-    <div class="card hidden" id="arm-controls-card">
-      <div class="sect"><h2>Utility arms</h2><span class="sub" id="arm-controls-summary">finding out</span></div>
-      <div id="arm-controls-container"></div>
-      <p class="hint">Open and Close drive to the ends set on Parts. Stop drives the arm to centre; it does not hold it where it is.</p>
-      <div id="arm-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+    <!-- Every Output the droid reports, one row each, named by what its board
+         prints beside the pin (ADR 0033 Amendment 2026-09-19). The rows are
+         drawn by data/servo.js from the firmware's list; this page names no
+         Output of its own. -->
+    <div class="card" id="output-controls-card">
+      <div class="sect"><h2>Outputs</h2><span class="sub" id="output-controls-summary">finding out</span></div>
+      <div id="output-controls"></div>
+      <p class="hint">Open and Close drive to the ends set on Parts. Stop drives the servo to centre; it does not hold it there. An LED strip has no position, so it gets no buttons.</p>
+      <div id="output-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
-    <!-- No arm switched on. An empty state says why it is empty and offers the
-         act that ends it; the card wears the "change it here" Availability
-         Family treatment, because the switch is one screen away. -->
-    <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
-      <div class="sect"><h2>Utility arms</h2><span class="sub">none switched on</span></div>
-      <p class="note"><b>No arm switched on.</b> <a class="setup-link" href="#wiring">Mark ARM1 or ARM2 in use on Wiring</a></p>
-    </div>
-
-    <!-- AUX (AUX1 / AUX2 / AUX3) -->
-    <div class="card" id="aux-controls-card">
-      <div class="sect"><h2>AUX outputs</h2><span class="sub" id="aux-controls-summary">finding out</span></div>
-      <div id="aux-controls-container"></div>
-      <p class="hint">Say what is on each AUX line on <a class="setup-link" href="#wiring">Wiring</a>. An LED strip has no position, so it gets no buttons.</p>
-      <div id="aux-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
-    </div>
-
-    <!-- Test a servo (ARM1 / ARM2 / AUX servo channels)
-         The typed endpoint form that stood here until #400 is gone: an end is
-         set on Parts now, by driving the part and pressing the button for that
-         end, and this page keeps only what moves a part. Test Open and Test
-         Close therefore drive to the ends the droid has RECORDED, read from
+    <!-- Test a servo, one row per wired Output that carries one. The typed
+         endpoint form that stood here until #400 is gone: an end is set on
+         Parts now, by driving the part and pressing the button for that end,
+         and this page keeps only what moves a part. Test Open and Test Close
+         therefore drive to the ends the droid has RECORDED, read from
          /api/config, rather than to a number typed on this page -- so what they
          show is what the droid will actually do when something says open. -->
     <div class="card hidden" id="servo-test-card">
@@ -76,70 +63,7 @@
         <b>Every button here moves hardware.</b> Keep hands clear of the arms and panels.
       </div>
 
-      <!-- ARM1 (shown only when ARM1 enabled) -->
-      <div class="arm-control-row hidden" id="arm1-test-section">
-        <span class="arm-name">Utility Arm 1</span>
-        <span class="arm-position">ARM1 &middot; type a width, or drive to a recorded end</span>
-        <span class="arm-acts">
-          <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-            aria-label="ARM1 test pulse width in microseconds" class="input-narrow">
-          <button class="btn" type="button" id="arm1-test-btn">Test ARM1</button>
-          <button class="btn" type="button" id="arm1-open-test-btn">Test Open</button>
-          <button class="btn" type="button" id="arm1-close-test-btn">Test Close</button>
-        </span>
-      </div>
-
-      <!-- ARM2 (shown only when ARM2 enabled) -->
-      <div class="arm-control-row hidden" id="arm2-test-section">
-        <span class="arm-name">Utility Arm 2</span>
-        <span class="arm-position">ARM2 &middot; type a width, or drive to a recorded end</span>
-        <span class="arm-acts">
-          <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-            aria-label="ARM2 test pulse width in microseconds" class="input-narrow">
-          <button class="btn" type="button" id="arm2-test-btn">Test ARM2</button>
-          <button class="btn" type="button" id="arm2-open-test-btn">Test Open</button>
-          <button class="btn" type="button" id="arm2-close-test-btn">Test Close</button>
-        </span>
-      </div>
-
-      <!-- AUX1 (shown only when AUX1 enabled and type is a servo) -->
-      <div class="arm-control-row hidden" id="aux1-test-section">
-        <span class="arm-name">AUX 1</span>
-        <span class="arm-position">AUX1 &middot; type a width, or drive to a recorded end</span>
-        <span class="arm-acts">
-          <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
-            aria-label="AUX1 test pulse width in microseconds" class="input-narrow">
-          <button class="btn" type="button" id="aux1-test-btn">Test AUX1</button>
-          <button class="btn" type="button" id="aux1-open-test-btn">Test Open</button>
-          <button class="btn" type="button" id="aux1-close-test-btn">Test Close</button>
-        </span>
-      </div>
-
-      <!-- AUX2 (shown only when AUX2 enabled and type is a servo) -->
-      <div class="arm-control-row hidden" id="aux2-test-section">
-        <span class="arm-name">AUX 2</span>
-        <span class="arm-position">AUX2 &middot; type a width, or drive to a recorded end</span>
-        <span class="arm-acts">
-          <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
-            aria-label="AUX2 test pulse width in microseconds" class="input-narrow">
-          <button class="btn" type="button" id="aux2-test-btn">Test AUX2</button>
-          <button class="btn" type="button" id="aux2-open-test-btn">Test Open</button>
-          <button class="btn" type="button" id="aux2-close-test-btn">Test Close</button>
-        </span>
-      </div>
-
-      <!-- AUX3 (shown only when AUX3 enabled and type is a servo) -->
-      <div class="arm-control-row hidden" id="aux3-test-section">
-        <span class="arm-name">AUX 3</span>
-        <span class="arm-position">AUX3 &middot; type a width, or drive to a recorded end</span>
-        <span class="arm-acts">
-          <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
-            aria-label="AUX3 test pulse width in microseconds" class="input-narrow">
-          <button class="btn" type="button" id="aux3-test-btn">Test AUX3</button>
-          <button class="btn" type="button" id="aux3-open-test-btn">Test Open</button>
-          <button class="btn" type="button" id="aux3-close-test-btn">Test Close</button>
-        </span>
-      </div>
+      <div id="servo-test-rows"></div>
 
       <p class="hint">A typed width is sent once and saved nowhere.</p>
       <!-- Still the calibration line, on a card that no longer sets one: Test

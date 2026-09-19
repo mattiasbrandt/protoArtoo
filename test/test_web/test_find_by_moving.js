@@ -23,8 +23,8 @@ test("pressing it nudges the first spare output, one at a time, and steps on onl
   env.pressFind("doorRL");
   await sleep(20);
 
-  assert.deepEqual(env.nudges(), [{ path: "/api/servo", form: { arm: "arm2", action: "nudge" } }],
-    "ARM1 drives a Part and AUX3 has no pulse, so ARM2 is the first spare Output");
+  assert.deepEqual(env.nudges(), [{ path: "/api/servo", form: { arm: "ARM2", action: "nudge" } }],
+    "ARM1 drives a Part and ARM5 has no pulse, so ARM2 is the first spare Output");
   assert.equal(env.findButton("doorRL").hidden, true, "the run takes the button's place");
   assert.ok(env.runPanel(), "the run is on the row");
   assert.equal(env.runPanel().closest("[data-part]").dataset.part, "doorRL");
@@ -40,8 +40,8 @@ test("pressing it nudges the first spare output, one at a time, and steps on onl
   // Output is nudged.
   env.endNudge("ledc:1");
   await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2", "aux1"]);
-  assert.match(env.runText(), /Nudging AUX1 \(2 of 3\)/);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM3"]);
+  assert.match(env.runText(), /Nudging ARM3 \(2 of 3\)/);
 
   // A count that moved on some other Output is not this nudge ending.
   env.endNudge("ledc:1");
@@ -50,7 +50,7 @@ test("pressing it nudges the first spare output, one at a time, and steps on onl
 
   env.endNudge("ledc:3");
   await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2", "aux1", "aux2"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM3", "ARM4"]);
   assert.equal(env.moves().length, 0, "nothing has been wired: the builder has not said which one");
 });
 
@@ -76,14 +76,14 @@ test("a pass through every spare output with no press ends with the Part still n
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["utilUp"], "ledc:3": ["utilDown"] }) });
   env.pressFind("doorRL");
   await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"]);
   env.endNudge("ledc:1");
   await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2", "aux2"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM4"]);
   env.endNudge("ledc:4");
   await env.frame();
 
-  assert.equal(env.nudges().length, 2, "two spare Outputs, two nudges, never AUX3 which has no pulse");
+  assert.equal(env.nudges().length, 2, "two spare Outputs, two nudges, never ARM5 which has no pulse");
   assert.equal(env.runPanel(), null);
   assert.match(env.feedback(), /None of the 2 spare outputs moved Rear-left body door in one pass, so it stays – not wired –/);
   assert.equal(env.moves().length, 0);
@@ -137,7 +137,7 @@ test("an estop mid-run ends the run at once and stops showing the nudged output'
   const env = await bootParts();
   env.pressFind("doorRL");
   await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm1"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM1"]);
   // The droid's last answer had ARM1 part way out.
   env.outputs[0].commandedUs = 1600;
   env.outputs[0].targetUs = 1400;
@@ -228,6 +228,6 @@ test("an Output without a name the servo route takes is not nudged", async () =>
     env.endNudge(address);
     await env.frame();
   }
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm1", "arm2", "aux1", "aux2"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM1", "ARM2", "ARM3", "ARM4"]);
   assert.equal(env.runPanel(), null);
 });

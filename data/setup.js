@@ -137,13 +137,13 @@
       answer: () => pickedIn("dome_controller"),
     },
     {
-      // Shown, not asked, since the arms and AUX lines moved to Wiring and
-      // Servos (#369): what drives the servos is the board's own outputs, and
+      // Shown, not asked, since the Outputs moved to Wiring and Servos
+      // (#369): what drives the servos is the board's own outputs, and
       // nothing on this step is a choice.
       key: "_servos",
       title: "Body servo controller",
       q: "The board's own outputs drive the body's servos.",
-      why: "Nothing to pick here. Mark the arms and AUX lines you wired on Wiring.",
+      why: "Nothing to pick here. Mark the outputs you wired on Wiring.",
       applies: TIMING.NOTHING,
       answer: () => pickedIn("body_servo_controller"),
     },

@@ -36,7 +36,7 @@ test("opening the dial takes the Output at the width it is already standing at, 
   assert.match(env.dialText("cal-title"), /Calibrating ARM1/);
   assert.deepEqual(
     env.holds().map((post) => post.form),
-    [{ arm: "arm1", action: "hold", positionUs: "1750" }],
+    [{ arm: "ARM1", action: "hold", positionUs: "1750" }],
     "the first hold is at the width the droid said the Output was already holding",
   );
   assert.equal(env.dialText("cal-readout"), "1750 µs");
@@ -81,12 +81,30 @@ test("the hold is kept alive while the dial is open, and stops when it is closed
   assert.equal(env.dialOpen(), false);
 });
 
+// The word a move is sent with is the Output's label exactly as the firmware
+// gave it - the board's own word, which is what POST /api/servo takes (ADR 0033
+// Amendment 2026-09-19). A FireBeetle 2 prints GPIO 49, space included; a page
+// that folded or rewrote the label into an id of its own would send a word that
+// board's firmware refuses.
+test("a move names its Output by the board's label as the droid gave it, space and all", async () => {
+  const outputs = freshOutputs();
+  outputs[0] = output("ledc:0", "GPIO 49", { commandedUs: 1600, targetUs: 1600 });
+  const env = await bootParts({ outputs });
+  env.pressCalibrate("ledc:0");
+  await sleep(20);
+  env.pressPulsesOff("ledc:0");
+  await sleep(40);
+
+  assert.deepEqual(env.holds()[0].form, { arm: "GPIO 49", action: "hold", positionUs: "1600" });
+  assert.deepEqual(env.releases().map((post) => post.form.arm), ["GPIO 49"]);
+});
+
 test("pulses off from a row makes the Output limp at once and says which way it is limp", async () => {
   const env = await bootParts();
   env.pressPulsesOff("ledc:0");
   await sleep(40);
 
-  assert.deepEqual(env.releases().map((post) => post.form), [{ arm: "arm1", action: "release" }]);
+  assert.deepEqual(env.releases().map((post) => post.form), [{ arm: "ARM1", action: "release" }]);
   assert.match(env.feedback(), /ARM1 is limp — nothing is driving it, so it will sit wherever it is/);
   await env.frame();
   assert.equal(env.text("ledc:0", "outputs-release"), "Limp - pulses off");
@@ -126,7 +144,7 @@ test("pulses off during a Find by Moving run ends the run at once and says which
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.pressFind("doorRL");
   await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2"], "ARM2 is the first spare Output");
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"], "ARM2 is the first spare Output");
   assert.ok(env.runPanel(), "the run is on the row");
 
   env.pressPulsesOff("ledc:1");
@@ -154,7 +172,7 @@ test("an Output going limp under a run ends the run rather than stepping on to t
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.pressFind("doorRL");
   await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["arm2"]);
+  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"]);
 
   // Anything that takes the pulse off counts the nudge as ended, so without the
   // limp check the count going up would read as "try the next one".
@@ -217,7 +235,7 @@ test("leaving Parts lets go of the Output rather than leaving it driven", async 
   await sleep(180);
 
   assert.equal(env.releases().length, 1, "the hold ends when the page that took it goes away");
-  assert.equal(env.releases()[0].form.arm, "arm1");
+  assert.equal(env.releases()[0].form.arm, "ARM1");
 });
 
 test("the dial closes itself if its Output leaves the droid's answer", async () => {
@@ -226,7 +244,7 @@ test("the dial closes itself if its Output leaves the droid's answer", async () 
   await sleep(20);
   assert.equal(env.dialOpen(), true);
 
-  // A reboot into a different firmware: AUX2 is not there any more.
+  // A reboot into a different firmware: ARM4 is not there any more.
   env.outputs = env.outputs.filter((each) => each.address !== "ledc:4");
   await env.frame();
 

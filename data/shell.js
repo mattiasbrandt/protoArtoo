@@ -190,7 +190,7 @@
         // to put once the dial landed was put when it did (#364), and the
         // operator answered it on 2026-09-16: take out its calibration form,
         // keep the page. It now holds only what it is actually for -- driving
-        // an arm, driving an AUX servo -- and an end is set on Parts (#400).
+        // the servo on each Output -- and an end is set on Parts (#400).
         "servo",
         "parts",
         "wiring",

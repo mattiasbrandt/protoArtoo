@@ -3,8 +3,8 @@
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
 // The Droid Build, the Component Picker's families and the toggles behind
-// them, the LED strip's count and route, and the droid's name. The arm and
-// AUX outputs moved to Wiring and Servos (data/output_settings.js, #369).
+// them, the LED strip's count and route, and the droid's name. The Outputs
+// moved to Wiring and Servos (data/output_settings.js, #369).
 // Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
@@ -47,13 +47,16 @@ const BOARD_LABELS = {
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
-  // The arm and AUX outputs - in use, servo type, LED strip line - are set on
-  // Wiring and Servos now (data/output_settings.js, #369). This surface keeps
-  // the LED strip's count and preview, and reads where the strip is routed
-  // from the saved config rather than deriving it: it no longer holds the AUX
-  // rows it was derived from, and never sends aux_led_pin.
-  const AUX_LINE_LABELS = { 1: "AUX1", 2: "AUX2", 3: "AUX3" };
+  // The Outputs - wired, servo type, which one carries the LED strip - are set
+  // on Wiring and Servos now (data/output_settings.js, #369). This surface
+  // keeps the LED strip's count and preview, and reads where the strip is
+  // routed from the saved config rather than deriving it, and never sends
+  // aux_led_pin. The Output carrying it is named by what its board prints -
+  // the config entry whose ledStripPin is the routed pin, and its label (ADR
+  // 0033 Amendment 2026-09-19) - never by a list this page keeps.
   let routedAuxPin = 0;
+  let stripOutputNames = {};  // { [aux_led_pin value]: the Output's name }
+  const stripOutputName = (pin) => stripOutputNames[pin] || "";
 
   const featureFeedback = document.getElementById("feature-feedback");
   const auxLedCountInput = document.getElementById("aux-led-count");
@@ -362,7 +365,7 @@ const BOARD_LABELS = {
   };
 
   const updateAuxLedConfigVisibility = () => {
-    const line = AUX_LINE_LABELS[routedAuxPin] || "";
+    const line = stripOutputName(routedAuxPin);
     const hasRgb = Boolean(line);
 
     if (auxLedCountInput) {
@@ -374,7 +377,7 @@ const BOARD_LABELS = {
     // operator 2026-09-16). The two readouts say the same fact at two lengths -
     // the section head says where, the pill beside the count says which line.
     if (auxLedRouteStatus) {
-      auxLedRouteStatus.textContent = hasRgb ? `Routed via ${line} LED` : "Not routed";
+      auxLedRouteStatus.textContent = hasRgb ? `On ${line}` : "Not routed";
     }
     if (auxLedRouteBadge) {
       auxLedRouteBadge.textContent = hasRgb ? line : "Not routed";
@@ -571,6 +574,13 @@ const BOARD_LABELS = {
     });
 
     routedAuxPin = Number(payload?.aux_led_pin || 0);
+    stripOutputNames = {};
+    Object.values(payload?.components || {}).forEach((entry) => {
+      const pin = Number(entry?.ledStripPin) || 0;
+      if (pin > 0 && typeof entry.address === "string") {
+        stripOutputNames[pin] = typeof entry.label === "string" && entry.label !== "" ? entry.label : entry.address;
+      }
+    });
 
     if (auxLedCountInput && payload?.aux_led_count !== undefined) {
       auxLedCountInput.value = String(payload.aux_led_count);
@@ -886,12 +896,12 @@ const BOARD_LABELS = {
     // beside them already shows the one thing on this row that is a colour, and
     // it is the strip's own live colour rather than a state.
     if (!available) {
-      auxLedPreviewText.textContent = `LED strip on AUX${pin} unavailable`;
+      auxLedPreviewText.textContent = `LED strip on ${stripOutputName(pin) || "its output"} unavailable`;
       auxLedPreviewNote.textContent = "The strip is recorded, but the controller could not start it.";
       return;
     }
 
-    auxLedPreviewText.textContent = `AUX${pin} LED - ${effect}`;
+    auxLedPreviewText.textContent = `${stripOutputName(pin) || "LED strip"} - ${effect}`;
     auxLedPreviewNote.textContent = `Live colour ${r},${g},${b} with the ${effect} effect.`;
   };
 

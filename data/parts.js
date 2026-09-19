@@ -127,6 +127,16 @@
   };
   const listParts = (ids) => ids.map(partLabel).join(", ");
   const outputLabel = (output) => output.name || output.address;
+
+  // The word POST /api/servo moves an Output by: the board's own label for it,
+  // exactly as GET /api/servo/outputs gave it - ARM3 on the Artoo PCB, GPIO 49
+  // on the FireBeetle 2, the space included (ADR 0033 Amendment 2026-09-19).
+  // Never folded or rewritten: the label is not an id to be derived from, and a
+  // board whose label is not the old protoArtoo word would be sent a word it
+  // refuses. An Output no board labels - an expander's row - has none, and the
+  // route cannot move it.
+  const servoWord = (output) => output.name;
+  const hasServoWord = (output) => servoWord(output) !== "";
   const optionText = (output) =>
     `${outputLabel(output)} · ${output.parts.length ? listParts(output.parts) : "drives nothing"}`;
 
@@ -676,7 +686,7 @@
   // Output with none cannot twitch, and the firmware would refuse it), and a
   // name the servo route takes as its arm.
   const spareOutputs = () =>
-    outputs.filter((output) => output.parts.length === 0 && output.commandedUs !== null && output.name !== "");
+    outputs.filter((output) => output.parts.length === 0 && output.commandedUs !== null && hasServoWord(output));
 
   const gateFind = () => window.PAApi.gateControls(findButtons(), estopLatched === false);
 
@@ -731,7 +741,7 @@
     runText.textContent =
       `Nudging ${outputLabel(output)} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
     try {
-      await window.PAApi.postForm("/api/servo", { arm: output.name.toLowerCase(), action: "nudge" }, { timeoutMs: 4000 });
+      await window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "nudge" }, { timeoutMs: 4000 });
     } catch (error) {
       if (run === current) {
         endRun(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${label} stays ${NOT_WIRED}.`, "error");
@@ -938,7 +948,7 @@
   // An Output a dial can drive: one with travel, and with a name the servo
   // route takes as its arm. A light has neither a position nor anything to let
   // go of, and an expander's unnamed row cannot be addressed by POST /api/servo.
-  const isDriveable = (output) => !isLightRow(output) && output.name !== "";
+  const isDriveable = (output) => !isLightRow(output) && hasServoWord(output);
 
   let dial = null; // the Output being calibrated, at most one
 
@@ -1042,7 +1052,7 @@
     try {
       await window.PAApi.postForm(
         "/api/servo",
-        { arm: output.name.toLowerCase(), action, ...extra },
+        { arm: servoWord(output), action, ...extra },
         { timeoutMs: 4000 }
       );
       return true;
@@ -1437,7 +1447,7 @@
     try {
       await window.PAApi.postForm(
         "/api/servo",
-        { arm: output.name.toLowerCase(), action: "release" },
+        { arm: servoWord(output), action: "release" },
         { timeoutMs: 4000 }
       );
     } catch (error) {
@@ -1635,7 +1645,7 @@
   // the calibration dial keeps.
   const servoOutputFor = (partId) => {
     const output = outputs === null ? null : outputOf(outputs, partId);
-    if (!output || output.name === "" || isLightRow(output) || !output.calibrated) return null;
+    if (!output || !hasServoWord(output) || isLightRow(output) || !output.calibrated) return null;
     return output;
   };
 
@@ -1707,7 +1717,7 @@
       why = "A light has no travel. Nothing to open.";
     } else if (output && !output.calibrated) {
       why = "Ends not measured yet. Press Calibrate on its output, below.";
-    } else if (output && output.name === "") {
+    } else if (output && !hasServoWord(output)) {
       why = "Its output has no name this page can send to. Use the output's row below.";
     }
 
@@ -1891,7 +1901,7 @@
       started(
         window.PAApi.postForm(
           "/api/servo",
-          { arm: pick.output.name.toLowerCase(), action: verb },
+          { arm: servoWord(pick.output), action: verb },
           { timeoutMs: 4000 }
         ).then(
           () => {

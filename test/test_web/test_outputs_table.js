@@ -79,9 +79,9 @@ const output = (address, name, extra = {}) => ({
 const freshOutputs = () => [
   output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
   output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:3", "AUX1"),
-  output("ledc:4", "AUX2"),
-  output("ledc:5", "AUX3"),
+  output("ledc:3", "ARM3"),
+  output("ledc:4", "ARM4"),
+  output("ledc:5", "ARM5"),
 ];
 
 const withParts = (assignments, outputs = freshOutputs()) => {
@@ -333,8 +333,8 @@ test("taking a Part off another Output from this table is asked in the part-firs
   assert.equal(env.byId("parts-move-body").textContent, expected.body);
   assert.equal(
     env.byId("parts-move-body").textContent,
-    "Left body door is on ARM1. Move it to AUX1 and unwire it from ARM1? " +
-      "ARM1 keeps driving Right body door. Upper utility arm is on AUX1 too — they will move together.",
+    "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
+      "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
   assert.equal(picker.value, "", "the picker goes back to its prompt");
 

@@ -83,14 +83,14 @@ export const output = (address, name, extra = {}) => ({
   ...extra,
 });
 
-// A controller with ARM1 and ARM2 switched on and standing at neutral, AUX1
-// and AUX2 on, and AUX3 off.
+// A controller with ARM1 and ARM2 switched on and standing at neutral, ARM3
+// and ARM4 on, and ARM5 off.
 export const freshOutputs = () => [
   output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
   output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:3", "AUX1", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:4", "AUX2", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:5", "AUX3"),
+  output("ledc:3", "ARM3", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:4", "ARM4", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:5", "ARM5"),
 ];
 
 export const withParts = (assignments, outputs = freshOutputs()) => {
@@ -201,7 +201,10 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
             env.nudgeFails = null;
             throw error;
           }
-          const row = env.outputs.find((each) => each.name.toLowerCase() === form.arm);
+          // The firmware finds the Output by its board's label, case and
+          // spaces set aside (include/board_outputs.h boardOutputWordMatches()).
+          const word = (text) => String(text).replace(/ /g, "").toUpperCase();
+          const row = env.outputs.find((each) => each.name !== "" && word(each.name) === word(form.arm));
           // A hold drives the output there and keeps the pulse on it, with
           // both firmware bounds armed. Nothing here expires it: the bounds
           // are the controller's, and a test that wants one fires it with
