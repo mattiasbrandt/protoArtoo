@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 376e00bdd8eab5cc50f0ca21b23020ef7605fb0be765cb7b298f34fae182de0b
+ * Source digest: sha256 425d0f7581e46842744b8ce1160039b3b74a2c6214cd6656711ffcece4a51479
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,7 +54,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "376e00bdd8eab5cc50f0ca21b23020ef7605fb0be765cb7b298f34fae182de0b",
+    "sourceSha256": "425d0f7581e46842744b8ce1160039b3b74a2c6214cd6656711ffcece4a51479",
     "designs": [
       {
         "id": "mk4",
@@ -824,7 +824,7 @@
           "Charge bay",
           "Charge Bay"
         ],
-        "position": "front-right",
+        "position": "front-left",
         "control": "none",
         "cadName": "ChargingBayDoor"
       },
@@ -841,7 +841,7 @@
           "Large Data Port (LDP)",
           "LDP"
         ],
-        "position": "front-left",
+        "position": "front-right",
         "control": "none",
         "cadName": "DataPortDoor"
       },

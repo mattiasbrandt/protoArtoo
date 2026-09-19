@@ -412,8 +412,11 @@ body_doors:
   - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door", "Right Front Breadpan"],     position: front-right, control: none }
   - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door", "Left Rear Breadpan"],   position: rear-left,   control: none }
   - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door", "Right Rear Breadpan"], position: rear-right,  control: none }
-  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport", "Data Port", "Large Data Port (LDP)", "LDP"], position: front-left,  control: none }
-  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay", "Charge Bay"],             position: front-right, control: none }
+  # The Data Port sits on the right of the front and the Charge Bay on the
+  # left, where the operator placed them on the picked body picture (#408,
+  # #372); these two rows carried the sides swapped until then.
+  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport", "Data Port", "Large Data Port (LDP)", "LDP"], position: front-right, control: none }
+  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay", "Charge Bay"],             position: front-left,  control: none }
   - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door", "Small Door"],                         position: front,       control: none }
   # MK4 Complex only. They carry no position word: where each sits is the
   # picked body picture's placement (#408), held in the droid picture's one
