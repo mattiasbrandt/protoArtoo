@@ -446,8 +446,10 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
   const onScreen = sheetOf(env.document);
   assert.ok(onScreen.wires.some((wire) => wire.endsWith(":true")), "the fixture draws a wired wire");
   assert.ok(onScreen.wires.some((wire) => wire.endsWith(":false")), "and one not wired");
-  assert.ok(onScreen.unused.length > 0, "and Unused parts, so a list lost on either side shows");
-  assert.deepEqual(sheetOf(saved), onScreen);
+  assert.ok(onScreen.unused.length > 0, "and Unused parts");
+  // The bench copy is the wires and their power; Unused stays on the screen
+  // only (operator, 2026-09-19 on #411).
+  assert.deepEqual(sheetOf(saved), { ...onScreen, unused: [] });
   assert.equal(saved.querySelectorAll(".wd").length, env.diagrams().length);
 
   assert.doesNotMatch(file, /<(script|style|img|iframe|object)\b/i);

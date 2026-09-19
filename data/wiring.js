@@ -617,13 +617,17 @@
     return wires;
   };
 
-  const wiresDiagramHtml = (wires, made) => {
+  // Titled with the board it draws, by the product name the lineup gives it
+  // (operator, 2026-09-19 on #411: "it would make more sense for it to name and
+  // title the actual board name"). Until the lineup has answered there is no
+  // name to give, and the title waits rather than guessing one.
+  const wiresDiagramHtml = (wires, made, boardName) => {
     if (wires.length === 0) return "";
     const height = diagramHeight(wires.length);
-    const title = `The wires: ${plural(wires.length, ["wire", "wires"])} leaving the Body Controller`;
+    const title = `The wires: ${plural(wires.length, ["wire", "wires"])} leaving ${boardName || "the Body Controller"}`;
     return (
       svgOpen(title, height) +
-      svgHead("Signal and ground", made) +
+      svgHead(boardName, made) +
       svgBoard(wires.length, plural(wires.length, ["wire", "wires"])) +
       wires.map((wire, index) => svgLink(index, wire)).join("") +
       svgFoot(height) +
@@ -777,6 +781,7 @@
   const wiringDocument = (model = {}) => {
     const parts = model.parts || [];
     const droidName = typeof model.droidName === "string" ? model.droidName : "";
+    const boardName = typeof model.boardName === "string" ? model.boardName : "";
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
     const wires = sheetWires(model);
@@ -797,7 +802,7 @@
       unused,
       wiresSummary: `${plural(wires.length, ["wire", "wires"])} · ${idle} not wired`,
       wiresHtml: wires.length
-        ? wiresDiagramHtml(wires, made)
+        ? wiresDiagramHtml(wires, made, boardName)
         : '<p class="hint">This image reports no wires to draw.</p>',
       unusedSummary: plural(unused.length, UNUSED.noun),
       unusedHtml:
@@ -812,7 +817,7 @@
   // wiringSheetFile()
   // The bench copy: what wiringDocument() made, in a file that stands alone.
   //
-  // It is a WRAPPER and nothing more. Every heading, wire, row, count,
+  // It is a WRAPPER and nothing more. Every heading, wire, count,
   // picture and sentence in it is a string the generator returned; this adds
   // only the frame a file needs to be a page.
   //
@@ -826,6 +831,10 @@
   // that made it, so the "Put it on an output in Parts" links still reach Parts
   // when this is opened from a download folder rather than resolving against
   // the disk.
+  //
+  // WHAT IT LEAVES OUT: Unused. The screen keeps it, last; the bench copy is
+  // the wires and their power, and a list of parts nothing claims is not
+  // something a builder takes to the bench (operator, 2026-09-19 on #411).
   //
   // `boardArt` is the one thing the file is handed besides the sheet: the
   // board's picture, already made standalone by the caller (boardArtForFile()),
@@ -849,8 +858,6 @@
       `<p>${sheet.promiseHtml}</p>` +
       `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.wiresSummary}</p>${pictured(sheet.wiresHtml)}` +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
-      `<h2>${esc(sheet.plates.unused)}</h2><p>${sheet.unusedSummary}</p>` +
-      `${sheet.unusedHtml}${sheet.footnoteHtml}` +
       "</body></html>\n"
     );
   };
@@ -890,6 +897,13 @@
   let stripPin = 0;
   let answered = false;
 
+  // The product the board's GPIO outputs are - "Body controller board GPIO" -
+  // which the picker pictures with the Body Controller this image runs on.
+  // Its lineup entry gives the diagram both its picture and its title (see
+  // "The board's picture" below).
+  const BOARD_GPIO_PRODUCT = "esp32_gpio_ledc";
+  const boardArtId = () => window.ComponentPicker?.artIdFor?.(BOARD_GPIO_PRODUCT) || null;
+
   const model = () => ({
     parts: window.DroidParts?.parts || [],
     outputs,
@@ -897,6 +911,7 @@
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
     stripPin,
+    boardName: window.ComponentPicker?.artPartFor?.(BOARD_GPIO_PRODUCT)?.name || "",
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
 
@@ -922,8 +937,6 @@
   // exactly the board this sheet draws. Until the lineup has answered there is
   // no board to name, and the frame stays empty rather than guessing one.
   // ---------------------------------------------------------------------------
-  const BOARD_GPIO_PRODUCT = "esp32_gpio_ledc";
-  const boardArtId = () => window.ComponentPicker?.artIdFor?.(BOARD_GPIO_PRODUCT) || null;
 
   const fillBoardArt = () => {
     const frame = window.PAProductArt?.frame;
@@ -966,9 +979,10 @@
     return file.replace(/var\((--wire-(?:\d+|off))\)/g, (whole, token) => style.getPropertyValue(token).trim() || whole);
   };
 
-  // The lineup can answer after the sheet is up; the board's picture follows it.
+  // The lineup can answer after the sheet is up; the board's picture and its
+  // name in the diagram's title follow it.
   window.ComponentPicker?.onChange?.(() => {
-    if (answered) fillBoardArt();
+    if (answered) paint();
   });
 
   // The pictures on screen carry the minute they were drawn - when this

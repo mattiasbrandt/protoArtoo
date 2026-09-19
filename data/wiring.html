@@ -11,13 +11,13 @@
   </head>
   <body data-page="wiring">
 
-    <!-- The asset set's product drawings (ADR 0065), for the board picture the
-         diagrams draw in place of the words "Body Controller" (#411). The
-         legacy set inlines a symbol per product; the default set's partial is
-         empty and the picture is the photograph. In the body, because the
-         Operator Shell mounts only a surface's body (data/configuration.html
-         says the same for its cards). -->
-    <!-- PA:INCLUDE _product_art.html -->
+    <!-- The running board's own drawing (ADR 0065), for the board picture the
+         diagram draws in place of the words "Body Controller" (#411). #board
+         inlines only that one symbol of the set's sprite (tools/gzip_fsdata.py
+         BOARD_FRAGMENT); the default set's sprite is empty and the picture is
+         the photograph. In the body, because the Operator Shell mounts only a
+         surface's body. -->
+    <!-- PA:INCLUDE _product_art.html#board -->
 
     <!-- The title is the name in the nav, and under it one plain line saying
          what the page covers (ADR 0066; operator, 2026-09-19 on #411). The
@@ -45,7 +45,7 @@
         <p class="wiring-promise" id="wiring-promise"></p>
       </div>
       <div class="acts wiring-acts">
-        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Save sheet to print</a>
+        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Printable wiring sheet</a>
         <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
@@ -61,7 +61,6 @@
         <h2 id="wiring-wires-heading"></h2>
         <span class="sub" id="wiring-wires-summary" role="status" aria-live="polite">Finding out what this image wires...</span>
       </div>
-      <p class="hint">One wire per output and per serial link. A dashed wire is not wired yet or switched off: run it anyway.</p>
       <div id="wiring-wires"></div>
       <p class="hint">The dome ESC and the RC receiver have no lane yet, so this sheet gives them no pin.</p>
     </div>

@@ -146,7 +146,14 @@
   const artIdFor = (id) => {
     const family = PRODUCT_SUB_SELECTIONS[id]?.borrowsArt;
     if (!family) return id;
-    return partsOf(family).find((part) => part.included === true)?.id || null;
+    return artPartFor(id)?.id || null;
+  };
+  // The lineup entry behind that picture, so a caller that names the product
+  // it pictures reads the same row (Wiring's board, #411).
+  const artPartFor = (id) => {
+    const family = PRODUCT_SUB_SELECTIONS[id]?.borrowsArt;
+    if (!family) return (lineup?.parts || []).find((part) => part.id === id) || null;
+    return partsOf(family).find((part) => part.included === true) || null;
   };
   const wireOfMode = (mode) =>
     Object.keys(RC_RECEIVER.wires).find((wire) => RC_RECEIVER.wires[wire].modes.includes(mode)) || null;
@@ -565,7 +572,8 @@
     });
   }
 
-  // artIdFor is exported for Wiring, whose diagrams picture the board the same
-  // way a card here does (#411), so there is one board-to-picture lookup.
-  window.ComponentPicker = { mount, adopt, answerFor, onChange, artIdFor };
+  // artIdFor and artPartFor are exported for Wiring, whose diagram pictures and
+  // names the board the same way a card here does (#411), so there is one
+  // board-to-picture lookup.
+  window.ComponentPicker = { mount, adopt, answerFor, onChange, artIdFor, artPartFor };
 })();
