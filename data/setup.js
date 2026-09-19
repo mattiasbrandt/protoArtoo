@@ -211,6 +211,9 @@
   const RUN_COMPLETED = "completed";
 
   let runState = RUN_NOT_RUN;
+  // Whether the builder dismissed the ended run's summary: the droid's record,
+  // not this page's (include/guided_setup.h).
+  let summaryDone = false;
   // A droid configured before this record existed carries no record at all
   // (include/guided_setup.h). Its answers are real, once-considered ones, so it
   // is not walked through a first run and its categories are not reported as
@@ -482,9 +485,13 @@
   const summaryHint = document.getElementById("setup-summary-hint");
   const summaryBody = document.getElementById("setup-summary-body");
 
+  const summaryDoneButton = document.getElementById("setup-summary-done");
+  const summaryFeedback = document.getElementById("setup-summary-feedback");
+
   // A droid whose run never happened - grandfathered, or not run yet - has
-  // nothing to summarise.
-  const summaryApplies = () => runState === RUN_COMPLETED || runState === RUN_SKIPPED;
+  // nothing to summarise, and a summary the builder pressed Done on is gone
+  // for good (operator, 2026-09-19 on #371).
+  const summaryApplies = () => (runState === RUN_COMPLETED || runState === RUN_SKIPPED) && !summaryDone;
 
   const hostFor = (step) => stepHosts().find((host) => host.dataset.setupStep === step.key) || null;
 
@@ -616,6 +623,35 @@
     }
   };
 
+  const setSummaryFeedback = (message, variant = "") => {
+    if (!summaryFeedback) return;
+    summaryFeedback.textContent = message;
+    summaryFeedback.className = variant ? `feedback ${variant}` : "feedback";
+  };
+
+  // Done is saved on the droid, so the summary stays gone across visits,
+  // restarts and a restore of this droid's backup. It goes only once the droid
+  // has taken it: a card that vanished on a refused save would be back on the
+  // next visit with no word about why.
+  const dismissSummary = async () => {
+    if (!window.PAApi || !summaryDoneButton) return;
+    summaryDoneButton.disabled = true;
+    setSummaryFeedback("Saving…");
+    try {
+      await window.PAApi.postForm("/api/config", { guidedSetupSummaryDone: "true" }, { timeoutMs: 5000 });
+    } catch (error) {
+      console.error("[setup] summary dismissal failed:", error);
+      setSummaryFeedback(`The droid did not save it: ${window.PAApi.messageFor(error)}`, "error");
+      summaryDoneButton.disabled = false;
+      return;
+    }
+    summaryDone = true;
+    summaryDoneButton.disabled = false;
+    setSummaryFeedback("");
+    renderSummary();
+  };
+  summaryDoneButton?.addEventListener("click", dismissSummary);
+
   // Whatever changed an answer or a wait, the one of the two views that is on
   // screen says so: the rail while the run is live, the summary once it ended.
   const redraw = () => {
@@ -685,9 +721,11 @@
     });
     setFeedback("Saving…");
     try {
+      // A run that ends leaves a summary, even when an earlier run's was
+      // dismissed: Maintenance's way back in keeps the rest of the record.
       await window.PAApi.postForm(
         "/api/config",
-        { guidedSetupRun: how, guidedSetupVisited: visitedParam() },
+        { guidedSetupRun: how, guidedSetupVisited: visitedParam(), guidedSetupSummaryDone: "false" },
         { timeoutMs: 5000 },
       );
     } catch (error) {
@@ -704,6 +742,7 @@
       return;
     }
     runState = how;
+    summaryDone = false;
     ending = false;
     setFeedback("");
     applyLayout("ended");
@@ -805,6 +844,7 @@
     const guided = config?.guidedSetup || {};
 
     runState = typeof guided.run === "string" ? guided.run : RUN_NOT_RUN;
+    summaryDone = guided.summaryDone === true;
     grandfathered = guided.recorded === false && configuredBeforeTheRecordExisted(config);
     (Array.isArray(guided.visited) ? guided.visited : []).forEach((key) => visited.add(String(key)));
 

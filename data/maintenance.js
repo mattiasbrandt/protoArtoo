@@ -419,6 +419,8 @@
       // sentinel; an empty form value would not survive the round trip as one.
       p.set('guidedSetupVisited', guided.visited.length > 0 ? guided.visited.join(',') : '-');
     }
+    // Whether the ended run's summary was dismissed (#371) is the same record.
+    if (typeof guided.summaryDone === 'boolean') p.set('guidedSetupSummaryDone', String(guided.summaryDone));
 
     return p;
   };

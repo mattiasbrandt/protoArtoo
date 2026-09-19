@@ -806,6 +806,7 @@ void addGuidedSetupFields(JsonDocument& doc) {
     JsonObject guidedSetup = doc["guidedSetup"].to<JsonObject>();
     guidedSetup["run"] = guidedSetupRunId(guided.run);
     guidedSetup["recorded"] = guided.recorded;
+    guidedSetup["summaryDone"] = guided.summaryDone;
 
     JsonArray visited = guidedSetup["visited"].to<JsonArray>();
     const char* cursor = guided.visited;
@@ -1006,11 +1007,15 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // a step visited says nothing about whether the run has ended, and ending the
     // run says nothing about which steps were shown - so a request carrying one
     // must leave the other exactly as it stood.
-    if (result.guidedSetup.runChanged || result.guidedSetup.visitedChanged) {
+    if (result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
+        result.guidedSetup.summaryDoneChanged) {
         GuidedSetupConfig guided = {};
         configCacheReadGuidedSetup(&guided);
         if (result.guidedSetup.runChanged) {
             guided.run = result.guidedSetup.run;
+        }
+        if (result.guidedSetup.summaryDoneChanged) {
+            guided.summaryDone = result.guidedSetup.summaryDone;
         }
         if (result.guidedSetup.visitedChanged) {
             guided.recorded = true;
@@ -1076,7 +1081,8 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // the next boot that guided Setup has never been drawn on this controller,
     // and writing one on every config POST would spend that distinction on a
     // request that was about the log level.
-    if ((result.guidedSetup.runChanged || result.guidedSetup.visitedChanged) &&
+    if ((result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
+         result.guidedSetup.summaryDoneChanged) &&
         !configSaveGuidedSetup(prefs)) {
         prefs.end();
         outcome.persisted = false;

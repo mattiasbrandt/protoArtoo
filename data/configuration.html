@@ -72,11 +72,16 @@
          restart, and what was never asked. Shown once the run has ended - by
          reaching the last step or by stopping - and drawn by data/setup.js from
          the run's steps and the droid's saved record, so it carries no list of
-         its own and reads the same after a restart. -->
+         its own and reads the same after a restart. It stays until Done, which
+         is saved on the droid like the rest of the run's record. -->
     <div class="card hidden" id="setup-summary">
       <div class="sect"><h2 id="setup-summary-title">Setup</h2><span class="sub" id="setup-summary-count"></span></div>
       <p class="hint" id="setup-summary-hint"></p>
       <div id="setup-summary-body"></div>
+      <div class="button-row button-row-compact">
+        <button id="setup-summary-done" class="btn" type="button">Done</button>
+      </div>
+      <div id="setup-summary-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <div class="card hidden" id="wizard-head">
