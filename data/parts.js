@@ -1504,15 +1504,22 @@
   //                       Panel Intent the vendored map names it by. A
   //                       holoprojector is never offered it: it pans and tilts
   //                       and never opens.
-  //   Add to build        the Part joins the Fitted Parts (ADR 0047). Offered
-  //                       only on a Part the droid does not carry.
+  //   Drop from build /   one button, worded by where the Part is: Drop on a
+  //   Add to build        Part the droid carries, Add on one it does not. The
+  //                       Part leaves or joins the Fitted Parts (ADR 0047)
+  //                       through applyDroidBuild() and nothing else. Dropping
+  //                       leaves the Part's Output alone: the builder took the
+  //                       Part off, and whether the lead came off too is theirs
+  //                       to say, so the panel says the Output is still mapped
+  //                       and routes to its picker rather than unmapping it.
   //   Give it an output   routes to this Part's row in the part-first table
   //                       and puts the cursor in its picker. Deliberately NOT a
   //                       third picker of its own: the mapping has two
   //                       projections of one table on this page and a third
   //                       would be a surface that can disagree with them
-  //                       (CONTEXT.md "Parts"). Offered only where nothing is
-  //                       mapped yet.
+  //                       (CONTEXT.md "Parts"). Offered where nothing is mapped
+  //                       yet, and as Change its output on a Part off the droid
+  //                       that still has an Output mapped.
   //
   // No Non-RC Control consent is asked for any of them - that flag has never
   // reached POST /api/servo (ADR 0064).
@@ -1523,7 +1530,7 @@
 
   const ACTS = [
     { id: "toggle", label: "Open it" },
-    { id: "fit", label: "Add to build" },
+    { id: "fit", label: "Drop from build" },
     { id: "wire", label: "Give it an output" },
   ];
 
@@ -1637,12 +1644,16 @@
     const parts = marker.parts;
     const fitted = fittedNow();
     const unfitted = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) === -1);
+    const onDroid = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) !== -1);
     const isFitted = unfitted.length < parts.length;
     const own = parts.filter((id) => !kinds?.isLight(partById.get(id)));
     const wiredPart = own.concat(parts).find((id) => outputs !== null && outputOf(outputs, id) !== null) || null;
     const output = wiredPart === null ? null : outputOf(outputs, wiredPart);
     const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
     const unwired = parts.filter((id) => outputs !== null && outputOf(outputs, id) === null);
+    // A Part off the droid with an Output still mapped: the two facts disagree,
+    // and neither is wrong, so the panel says both and changes neither.
+    const offButMapped = fitted !== null && !isFitted && output !== null;
     const mark = markerMark(markerId);
     const cls = marker.panTilt ? null : view.markClass(mark, isFitted);
     const open = cls === "open";
@@ -1678,6 +1689,8 @@
     let why = "";
     if (marker.panTilt) {
       why = "";
+    } else if (offButMapped) {
+      why = `Not on your droid, but still mapped to ${outputLabel(output)}. Add it back, or change its output.`;
     } else if (!isFitted) {
       why = "Not on your droid. Add it to your build first.";
     } else if (outputs === null && !marker.target) {
@@ -1706,9 +1719,14 @@
           label: open ? "Close it" : "Open it",
           enabled: canToggle && isFitted && estopLatched === false,
         },
-        fit: { shown: unfitted.length > 0, enabled: unfitted.length > 0 },
+        fit: {
+          shown: fitted !== null,
+          label: isFitted ? "Drop from build" : "Add to build",
+          enabled: fitted !== null,
+        },
         wire: {
-          shown: !marker.panTilt && !marker.target && unwired.length > 0,
+          shown: offButMapped || (!marker.panTilt && !marker.target && unwired.length > 0),
+          label: offButMapped ? "Change its output" : "Give it an output",
           enabled: parts.some((id) => rows.has(id)),
         },
       },
@@ -1716,8 +1734,12 @@
       marker,
       open,
       output: servoOutput,
+      isFitted,
+      onDroid,
       unfitted,
       unwired,
+      offButMapped,
+      wiredPart,
     };
   };
 
@@ -1788,23 +1810,65 @@
       });
   };
 
+  // Drop takes the Part off the droid and leaves its Output exactly as it was:
+  // the lead may still be plugged in, and only the builder knows. So a dropped
+  // Part that still has an Output mapped is said, with where to change it, and
+  // never unmapped here.
+  const dropFromBuild = (ids, names) => {
+    const fitted = fittedNow();
+    if (fitted === null) return;
+    const leaving = ids.filter((id) => fitted.indexOf(id) !== -1);
+    if (leaving.length === 0) return;
+    writeFitted(fitted.filter((id) => leaving.indexOf(id) === -1))
+      .then(() => {
+        const now = fittedNow() || [];
+        if (!leaving.every((id) => now.indexOf(id) === -1)) {
+          showFeedback(`${names} did not reach the droid, so nothing was dropped.`, "error");
+          paintBody();
+          return;
+        }
+        const mapped = [];
+        leaving.forEach((id) => {
+          const output = outputs === null ? null : outputOf(outputs, id);
+          if (output && mapped.indexOf(outputLabel(output)) === -1) mapped.push(outputLabel(output));
+        });
+        const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
+        showFeedback(
+          mapped.length
+            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output below if the lead came off too.`
+            : off,
+          mapped.length ? "warning" : "success"
+        );
+        paintBody();
+      })
+      .catch((error) => {
+        showFeedback(`${names} was not dropped: ${window.PAApi.messageFor(error)}`, "error");
+      });
+  };
+
   const runAct = (actId) => {
     const markerId = drawing.selected();
     if (markerId === null) return;
     const pick = describePick(markerId);
     if (actId === "fit") {
-      addToBuild(pick.unfitted, pick.unfitted.map(partLabel).join(", "));
+      if (pick.isFitted) dropFromBuild(pick.onDroid, pick.onDroid.map(partLabel).join(", "));
+      else addToBuild(pick.unfitted, pick.unfitted.map(partLabel).join(", "));
       return;
     }
     if (actId === "wire") {
       // A route, not a write: the picker on this Part's own row is where an
-      // Output is chosen, and it is the same control either table uses.
-      const target = pick.unwired[0] || pick.marker.parts[0];
+      // Output is chosen or taken off, and it is the same control either
+      // table uses.
+      const target = pick.offButMapped ? pick.wiredPart : pick.unwired[0] || pick.marker.parts[0];
       const row = rows.get(target);
       if (!row) return;
       row.node.scrollIntoView?.({ block: "center" });
       row.select.focus();
-      showFeedback(`Choose the output that moves ${partLabel(target)} in its row below.`);
+      showFeedback(
+        pick.offButMapped
+          ? `Pick ${NOT_WIRED} in ${partLabel(target)}'s row below if the lead came off too.`
+          : `Choose the output that moves ${partLabel(target)} in its row below.`
+      );
       return;
     }
     if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
